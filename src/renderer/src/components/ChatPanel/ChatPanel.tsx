@@ -7,7 +7,7 @@ import { Message, PetState } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
 import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
-import { loadMessages, saveMessages, clearMessages } from '../../core/memory'
+import { saveMessages, clearMessages } from '../../core/memory'
 import './ChatPanel.css'
 
 interface ChatPanelProps {
@@ -15,12 +15,14 @@ interface ChatPanelProps {
   petState: PetState
   onPetStateChange: (state: PetState) => void
   onClose: () => void
+  initialShowSettings?: boolean
+  onSettingsClose?: () => void
 }
 
-export default function ChatPanel({ position, petState, onPetStateChange, onClose }: ChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>(() => loadMessages())
+export default function ChatPanel({ position, petState, onPetStateChange, onClose, initialShowSettings, onSettingsClose }: ChatPanelProps) {
+  const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
+  const [showSettings, setShowSettings] = useState(initialShowSettings || false)
   const abortRef = useRef<AbortController | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -141,7 +143,7 @@ export default function ChatPanel({ position, petState, onPetStateChange, onClos
       onMouseLeave={() => window.electronAPI.setIgnoreMouseEvents(true)}
     >
       {showSettings ? (
-        <Settings onClose={() => setShowSettings(false)} />
+        <Settings onClose={() => { setShowSettings(false); onSettingsClose?.() }} />
       ) : (
         <>
           <TopBar
@@ -150,7 +152,7 @@ export default function ChatPanel({ position, petState, onPetStateChange, onClos
             onClose={onClose}
           />
           <MessageArea messages={messages} isStreaming={isStreaming} />
-          <InputArea onSend={handleSend} disabled={isStreaming} />
+          <InputArea onSend={handleSend} disabled={isStreaming} autoFocus />
         </>
       )}
     </div>

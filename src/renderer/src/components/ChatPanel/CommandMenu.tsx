@@ -1,5 +1,6 @@
 interface CommandMenuProps {
   filter: string
+  selectedIndex: number
   onSelect: (cmd: string) => void
   onClose: () => void
 }
@@ -11,19 +12,21 @@ const COMMANDS = [
   { cmd: '/help', desc: '查看可用指令' }
 ]
 
-export default function CommandMenu({ filter, onSelect, onClose }: CommandMenuProps) {
-  const filtered = COMMANDS.filter((c) =>
-    c.cmd.startsWith(filter) || filter === '/'
-  )
+export function getFilteredCommands(filter: string) {
+  return COMMANDS.filter((c) => c.cmd.startsWith(filter) || filter === '/')
+}
+
+export default function CommandMenu({ filter, selectedIndex, onSelect, onClose }: CommandMenuProps) {
+  const filtered = getFilteredCommands(filter)
 
   if (filtered.length === 0) return null
 
   return (
     <div className="command-menu">
-      {filtered.map((c) => (
+      {filtered.map((c, i) => (
         <button
           key={c.cmd}
-          className="command-item"
+          className={`command-item${i === selectedIndex ? ' selected' : ''}`}
           onClick={() => onSelect(c.cmd)}
         >
           <span className="command-name">{c.cmd}</span>

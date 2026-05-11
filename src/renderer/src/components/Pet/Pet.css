@@ -7,6 +7,10 @@
   z-index: 9999;
 }
 
+.pet-container.pet-snapping {
+  transition: left 0.2s ease-out, top 0.2s ease-out;
+}
+
 .pet-container:active {
   cursor: grabbing;
 }
@@ -74,4 +78,33 @@
   0% { transform: scale(1); }
   50% { transform: scale(1.2); }
   100% { transform: scale(1); }
+}
+
+/* Context Menu */
+.pet-context-menu {
+  position: absolute;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  z-index: 10000;
+  min-width: 120px;
+}
+
+.pet-context-menu button {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.pet-context-menu button:hover {
+  background: var(--hover-bg);
 }

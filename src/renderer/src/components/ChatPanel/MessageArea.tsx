@@ -13,13 +13,8 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  if (messages.length === 0) {
-    return (
-      <div className="message-area message-area-empty">
-        <p>你好！有什么我可以帮你的吗？</p>
-        <p className="message-hint">输入消息开始对话，/ 打开指令菜单</p>
-      </div>
-    )
+  if (messages.length === 0 && !isStreaming) {
+    return null
   }
 
   return (
