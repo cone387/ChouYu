@@ -74,9 +74,13 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
 
       if (didSnap) {
         setSnapping(true)
-        setTimeout(() => setSnapping(false), 300)
+        requestAnimationFrame(() => {
+          onPositionChange({ x, y })
+        })
+        setTimeout(() => setSnapping(false), 350)
+      } else {
+        onPositionChange({ x, y })
       }
-      onPositionChange({ x, y })
     },
     [onPositionChange, onClick]
   )
