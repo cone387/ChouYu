@@ -73,6 +73,10 @@
   background: var(--hover-bg);
 }
 
+.topbar-btn-active {
+  color: var(--accent);
+}
+
 /* Message Area */
 .message-area {
   flex: 1;
@@ -166,11 +170,6 @@
   border: 1px solid var(--input-border);
   border-radius: 12px;
   background: var(--input-bg);
-  transition: border-color 0.15s;
-}
-
-.input-container:focus-within {
-  border-color: var(--input-focus-border);
 }
 
 .input-textarea {

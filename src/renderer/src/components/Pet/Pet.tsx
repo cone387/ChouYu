@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import PetSvg from './PetSvg'
 import { PetState } from '../../shared/types'
-import { SNAP_DISTANCE } from '../../shared/constants'
+import { SNAP_DISTANCE, DEFAULT_PET_SIZE } from '../../shared/constants'
 import './Pet.css'
 
 interface PetProps {
@@ -29,6 +29,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
         x: e.clientX - position.x,
         y: e.clientY - position.y
       }
+      window.electronAPI.setIgnoreMouseEvents(false)
       e.preventDefault()
     },
     [position]
@@ -36,17 +37,20 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     setContextMenu({ x: e.clientX, y: e.clientY })
   }, [])
 
   useEffect(() => {
     if (!contextMenu) return
-    const dismiss = () => setContextMenu(null)
-    window.addEventListener('click', dismiss)
-    window.addEventListener('contextmenu', dismiss)
+    const dismiss = (e: MouseEvent) => {
+      setContextMenu(null)
+    }
+    setTimeout(() => {
+      window.addEventListener('mousedown', dismiss)
+    }, 0)
     return () => {
-      window.removeEventListener('click', dismiss)
-      window.removeEventListener('contextmenu', dismiss)
+      window.removeEventListener('mousedown', dismiss)
     }
   }, [contextMenu])
 
@@ -62,6 +66,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
     const handleMouseUp = (e: MouseEvent) => {
       if (!isDragging.current) return
       isDragging.current = false
+      window.electronAPI.setIgnoreMouseEvents(true)
 
       if (!hasDragged.current) {
         onClick()
@@ -75,13 +80,13 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
       let didSnap = false
 
       if (x < SNAP_DISTANCE) { x = 0; didSnap = true }
-      else if (x + 80 > screenW - SNAP_DISTANCE) { x = screenW - 80; didSnap = true }
+      else if (x + DEFAULT_PET_SIZE > screenW - SNAP_DISTANCE) { x = screenW - DEFAULT_PET_SIZE; didSnap = true }
       if (y < SNAP_DISTANCE) { y = 0; didSnap = true }
-      else if (y + 80 > screenH - SNAP_DISTANCE) { y = screenH - 80; didSnap = true }
+      else if (y + DEFAULT_PET_SIZE > screenH - SNAP_DISTANCE) { y = screenH - DEFAULT_PET_SIZE; didSnap = true }
 
       if (didSnap) {
         setSnapping(true)
-        setTimeout(() => setSnapping(false), 200)
+        setTimeout(() => setSnapping(false), 250)
       }
       onPositionChange({ x, y })
     }
@@ -101,7 +106,11 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
         style={{ left: position.x, top: position.y }}
         onMouseDown={handleMouseDown}
         onContextMenu={handleContextMenu}
-        onMouseEnter={() => window.electronAPI.setIgnoreMouseEvents(false)}
+        onMouseEnter={() => {
+          if (!isDragging.current) {
+            window.electronAPI.setIgnoreMouseEvents(false)
+          }
+        }}
         onMouseLeave={() => {
           if (!isDragging.current && !contextMenu) {
             window.electronAPI.setIgnoreMouseEvents(true)

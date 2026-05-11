@@ -23,6 +23,8 @@ export function setupTray(mainWindow: BrowserWindow): void {
     {
       label: '设置',
       click: () => {
+        mainWindow.show()
+        mainWindow.setIgnoreMouseEvents(false)
         mainWindow.webContents.send('open-settings')
       }
     },

@@ -23,11 +23,13 @@ export default function ChatPanel({ position, petState, onPetStateChange, onClos
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
+  const [showHistory, setShowHistory] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     saveMessages(messages)
+    if (messages.length > 0) setShowHistory(true)
   }, [messages])
 
   useEffect(() => {
@@ -148,10 +150,12 @@ export default function ChatPanel({ position, petState, onPetStateChange, onClos
         <>
           <TopBar
             status={getStatusText()}
+            showHistory={showHistory}
+            onToggleHistory={() => setShowHistory((v) => !v)}
             onNewTopic={handleNewTopic}
             onClose={onClose}
           />
-          <MessageArea messages={messages} isStreaming={isStreaming} />
+          {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
           <InputArea onSend={handleSend} disabled={isStreaming} autoFocus />
         </>
       )}
