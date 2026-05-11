@@ -30,6 +30,10 @@ function createWindow(): void {
 
   mainWindow.setIgnoreMouseEvents(true, { forward: true })
 
+  if (!app.isPackaged) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {

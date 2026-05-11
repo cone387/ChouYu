@@ -25,6 +25,8 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
       isDragging.current = true
       hasDragged.current = false
       setSnapping(false)
+      ;(window as any).__petDragging = true
+      window.electronAPI.setIgnoreMouseEvents(false)
       dragOffset.current = {
         x: e.clientX - position.x,
         y: e.clientY - position.y
@@ -63,6 +65,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
     const handleMouseUp = (e: MouseEvent) => {
       if (!isDragging.current) return
       isDragging.current = false
+      ;(window as any).__petDragging = false
 
       if (!hasDragged.current) {
         onClick()

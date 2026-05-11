@@ -17,6 +17,7 @@ function App() {
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
+      if ((window as any).__petDragging) return
       const el = document.elementFromPoint(e.clientX, e.clientY)
       const isOverUI = el && el.closest('[data-interactive]')
       if (isOverUI && ignoreRef.current) {
