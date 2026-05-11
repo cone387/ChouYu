@@ -1,0 +1,16 @@
+appId: com.chouyu.app
+productName: ChouYu
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**/*
+  - "!out/types-*"
+win:
+  target:
+    - nsis
+  icon: resources/icon.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true

@@ -1,0 +1,77 @@
+.pet-container {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  cursor: grab;
+  user-select: none;
+  z-index: 9999;
+}
+
+.pet-container:active {
+  cursor: grabbing;
+}
+
+/* Idle: 浮动 + 眨眼 */
+.pet-state-idle .pet-svg {
+  animation: pet-float 2s ease-in-out infinite;
+}
+
+.pet-state-idle .eye-pupil {
+  animation: pet-blink 4s ease-in-out infinite;
+}
+
+@keyframes pet-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes pet-blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+
+/* Thinking: pulse */
+.pet-state-thinking .pet-svg {
+  animation: pet-think 0.8s ease-in-out infinite;
+}
+
+@keyframes pet-think {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+/* Talking: 弹跳 */
+.pet-state-talking .pet-svg {
+  animation: pet-talk 0.3s ease-in-out infinite;
+}
+
+@keyframes pet-talk {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* Sleeping: 缩小 + 半透明 */
+.pet-state-sleeping .pet-svg {
+  transform: scale(0.9);
+  opacity: 0.7;
+}
+
+.pet-state-sleeping .zzz-text {
+  animation: zzz-float 1.5s ease-in-out infinite;
+}
+
+@keyframes zzz-float {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-4px); }
+}
+
+/* Happy: 弹跳一次 */
+.pet-state-happy .pet-svg {
+  animation: pet-happy 0.4s ease-out;
+}
+
+@keyframes pet-happy {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
