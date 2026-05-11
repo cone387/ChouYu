@@ -8,9 +8,14 @@
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   animation: panel-open 200ms ease-out;
   z-index: 9998;
+}
+
+.chat-panel > .message-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 @keyframes panel-open {
@@ -32,6 +37,7 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   cursor: default;
+  flex-shrink: 0;
 }
 
 .chat-topbar-left {
@@ -79,8 +85,6 @@
 
 /* Message Area */
 .message-area {
-  flex: 1;
-  overflow-y: auto;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -164,12 +168,15 @@
 .input-area {
   padding: 12px;
   position: relative;
+  flex-shrink: 0;
 }
 
 .input-container {
   border: 1px solid var(--input-border);
   border-radius: 12px;
   background: var(--input-bg);
+  display: flex;
+  flex-direction: column;
 }
 
 .input-textarea {
@@ -185,6 +192,8 @@
   background: transparent;
   color: var(--text-primary);
   outline: none;
+  box-sizing: border-box;
+}
 }
 
 .input-textarea::placeholder {
