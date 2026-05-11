@@ -29,7 +29,6 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
         x: e.clientX - position.x,
         y: e.clientY - position.y
       }
-      window.electronAPI.setIgnoreMouseEvents(false)
       e.preventDefault()
     },
     [position]
@@ -43,9 +42,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
 
   useEffect(() => {
     if (!contextMenu) return
-    const dismiss = (e: MouseEvent) => {
-      setContextMenu(null)
-    }
+    const dismiss = () => setContextMenu(null)
     setTimeout(() => {
       window.addEventListener('mousedown', dismiss)
     }, 0)
@@ -66,7 +63,6 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
     const handleMouseUp = (e: MouseEvent) => {
       if (!isDragging.current) return
       isDragging.current = false
-      window.electronAPI.setIgnoreMouseEvents(true)
 
       if (!hasDragged.current) {
         onClick()
@@ -102,29 +98,19 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
   return (
     <>
       <div
+        data-interactive
         className={`pet-container pet-state-${state}${snapping ? ' pet-snapping' : ''}`}
         style={{ left: position.x, top: position.y }}
         onMouseDown={handleMouseDown}
         onContextMenu={handleContextMenu}
-        onMouseEnter={() => {
-          if (!isDragging.current) {
-            window.electronAPI.setIgnoreMouseEvents(false)
-          }
-        }}
-        onMouseLeave={() => {
-          if (!isDragging.current && !contextMenu) {
-            window.electronAPI.setIgnoreMouseEvents(true)
-          }
-        }}
       >
         <PetSvg state={state} />
       </div>
       {contextMenu && (
         <div
+          data-interactive
           className="pet-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
-          onMouseEnter={() => window.electronAPI.setIgnoreMouseEvents(false)}
-          onMouseLeave={() => window.electronAPI.setIgnoreMouseEvents(true)}
         >
           <button onClick={() => { setContextMenu(null); onOpenSettings() }}>设置</button>
           <button onClick={() => { setContextMenu(null); window.close() }}>退出</button>

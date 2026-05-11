@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const e = require\\('./node_modules/electron'\\); console.log\\('electron path:', e\\)\")",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:5173/src/main.tsx)",
+      "Bash(curl -s http://localhost:5173/src/App.tsx)",
+      "Bash(curl -s \"http://localhost:5173/src/App.tsx\")",
+      "Bash(env -u ELECTRON_RUN_AS_NODE npx electron-vite build)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

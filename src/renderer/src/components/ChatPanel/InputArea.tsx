@@ -103,17 +103,23 @@ export default function InputArea({ onSend, disabled, autoFocus }: InputAreaProp
         />
         <div className="input-toolbar">
           <div className="input-toolbar-left">
-            <button className="toolbar-btn" title="附件（待实现）">📎</button>
+            <button className="toolbar-btn" title="附件（待实现）">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5l6-6a2.5 2.5 0 013.5 3.5l-5.5 5.5a1 1 0 01-1.5-1.5L11 5.5"/>
+              </svg>
+            </button>
           </div>
           <div className="input-toolbar-right">
-            <button className="toolbar-btn model-btn" title="切换模型">gpt-4o ▾</button>
+            <button className="toolbar-btn model-btn" title="切换模型">gpt-4o</button>
             <button
               className="toolbar-btn send-btn"
               onClick={handleSend}
               disabled={disabled || !value.trim()}
               title="发送"
             >
-              ⏎
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M2.5 2.5l11 5.5-11 5.5v-4l7-1.5-7-1.5v-4z"/>
+              </svg>
             </button>
           </div>
         </div>

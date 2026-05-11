@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import { PetState } from './shared/types'
@@ -13,6 +13,23 @@ function App() {
   const [panelVisible, setPanelVisible] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [petState, setPetState] = useState<PetState>('idle')
+  const ignoreRef = useRef(true)
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const isOverUI = el && el.closest('[data-interactive]')
+      if (isOverUI && ignoreRef.current) {
+        ignoreRef.current = false
+        window.electronAPI.setIgnoreMouseEvents(false)
+      } else if (!isOverUI && !ignoreRef.current) {
+        ignoreRef.current = true
+        window.electronAPI.setIgnoreMouseEvents(true)
+      }
+    }
+    document.addEventListener('mousemove', handleMouseMove)
+    return () => document.removeEventListener('mousemove', handleMouseMove)
+  }, [])
 
   const togglePanel = useCallback(() => {
     setPanelVisible((v) => !v)
@@ -73,10 +90,7 @@ function App() {
           position={panelPos}
           petState={petState}
           onPetStateChange={setPetState}
-          onClose={() => {
-            setPanelVisible(false)
-            window.electronAPI.setIgnoreMouseEvents(true)
-          }}
+          onClose={() => setPanelVisible(false)}
           initialShowSettings={showSettings}
           onSettingsClose={() => setShowSettings(false)}
         />

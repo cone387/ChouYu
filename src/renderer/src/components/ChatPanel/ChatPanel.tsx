@@ -139,10 +139,9 @@ export default function ChatPanel({ position, petState, onPetStateChange, onClos
   return (
     <div
       ref={panelRef}
+      data-interactive
       className="chat-panel"
       style={{ left: position.x, top: position.y }}
-      onMouseEnter={() => window.electronAPI.setIgnoreMouseEvents(false)}
-      onMouseLeave={() => window.electronAPI.setIgnoreMouseEvents(true)}
     >
       {showSettings ? (
         <Settings onClose={() => { setShowSettings(false); onSettingsClose?.() }} />
