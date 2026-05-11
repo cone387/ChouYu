@@ -16,11 +16,12 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
   const isDragging = useRef(false)
   const hasDragged = useRef(false)
   const dragOffset = useRef({ x: 0, y: 0 })
+  const containerRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [snapping, setSnapping] = useState(false)
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
       if (e.button !== 0) return
       isDragging.current = true
       hasDragged.current = false
@@ -31,41 +32,29 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
         x: e.clientX - position.x,
         y: e.clientY - position.y
       }
+      containerRef.current?.setPointerCapture(e.pointerId)
       e.preventDefault()
     },
     [position]
   )
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setContextMenu({ x: e.clientX, y: e.clientY })
-  }, [])
-
-  useEffect(() => {
-    if (!contextMenu) return
-    const dismiss = () => setContextMenu(null)
-    setTimeout(() => {
-      window.addEventListener('mousedown', dismiss)
-    }, 0)
-    return () => {
-      window.removeEventListener('mousedown', dismiss)
-    }
-  }, [contextMenu])
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
       if (!isDragging.current) return
       hasDragged.current = true
       const x = e.clientX - dragOffset.current.x
       const y = e.clientY - dragOffset.current.y
       onPositionChange({ x, y })
-    }
+    },
+    [onPositionChange]
+  )
 
-    const handleMouseUp = (e: MouseEvent) => {
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent) => {
       if (!isDragging.current) return
       isDragging.current = false
       ;(window as any).__petDragging = false
+      containerRef.current?.releasePointerCapture(e.pointerId)
 
       if (!hasDragged.current) {
         onClick()
@@ -85,26 +74,40 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
 
       if (didSnap) {
         setSnapping(true)
-        setTimeout(() => setSnapping(false), 250)
+        setTimeout(() => setSnapping(false), 300)
       }
       onPositionChange({ x, y })
-    }
+    },
+    [onPositionChange, onClick]
+  )
 
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }, [])
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const dismiss = () => setContextMenu(null)
+    setTimeout(() => {
+      window.addEventListener('mousedown', dismiss)
+    }, 0)
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
+      window.removeEventListener('mousedown', dismiss)
     }
-  }, [onPositionChange, onClick])
+  }, [contextMenu])
 
   return (
     <>
       <div
+        ref={containerRef}
         data-interactive
         className={`pet-container pet-state-${state}${snapping ? ' pet-snapping' : ''}`}
         style={{ left: position.x, top: position.y }}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
         onContextMenu={handleContextMenu}
       >
         <PetSvg state={state} />

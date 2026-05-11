@@ -7,7 +7,13 @@
       "Bash(curl -s http://localhost:5173/src/App.tsx)",
       "Bash(curl -s \"http://localhost:5173/src/App.tsx\")",
       "Bash(env -u ELECTRON_RUN_AS_NODE npx electron-vite build)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Read(//d/codespace/ChewyBBTalk/desktop/src/main/ball/**)",
+      "Read(//d/codespace/ChewyBBTalk/desktop/src/shared/**)",
+      "Read(//d/codespace/ChewyBBTalk/desktop/src/renderer/ball/**)",
+      "Read(//d/codespace/ChewyBBTalk/desktop/src/main/windows/**)",
+      "Read(//d/codespace/ChewyBBTalk/desktop/src/main/ipc/**)",
+      "Read(//d/codespace/ChewyBBTalk/desktop/src/main/**)"
     ]
   }
 }
