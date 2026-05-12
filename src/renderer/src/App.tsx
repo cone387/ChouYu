@@ -127,27 +127,25 @@ function App() {
 
   return (
     <div className="app-container">
-      <div style={{ display: screenshotImage ? 'none' : undefined }}>
-        <Pet
-          position={petPosition}
-          onPositionChange={setPetPosition}
-          onClick={togglePanel}
-          onOpenSettings={openSettings}
-          state={petState}
+      <Pet
+        position={petPosition}
+        onPositionChange={setPetPosition}
+        onClick={togglePanel}
+        onOpenSettings={openSettings}
+        state={petState}
+      />
+      {panelVisible && panelPosition && (
+        <ChatPanel
+          position={panelPosition}
+          onPositionChange={setPanelPosition}
+          petState={petState}
+          onPetStateChange={setPetState}
+          onClose={() => setPanelVisible(false)}
+          initialShowSettings={showSettings}
+          onSettingsClose={() => setShowSettings(false)}
+          onScreenshot={startScreenshot}
         />
-        {panelVisible && panelPosition && (
-          <ChatPanel
-            position={panelPosition}
-            onPositionChange={setPanelPosition}
-            petState={petState}
-            onPetStateChange={setPetState}
-            onClose={() => setPanelVisible(false)}
-            initialShowSettings={showSettings}
-            onSettingsClose={() => setShowSettings(false)}
-            onScreenshot={startScreenshot}
-          />
-        )}
-      </div>
+      )}
       {screenshotImage && (
         <ScreenCapture
           imageDataUrl={screenshotImage}

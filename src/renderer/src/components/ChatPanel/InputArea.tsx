@@ -153,6 +153,38 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     setAttachments((prev) => prev.filter((_, i) => i !== index))
   }, [])
 
+  const [dragOver, setDragOver] = useState(false)
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    const files = Array.from(e.dataTransfer.files)
+    files.forEach((file) => {
+      const reader = new FileReader()
+      const isImage = file.type.startsWith('image/')
+      if (isImage) {
+        reader.onload = () => {
+          setAttachments((prev) => [...prev, { type: 'image', data: reader.result as string, name: file.name }])
+        }
+        reader.readAsDataURL(file)
+      } else {
+        reader.onload = () => {
+          setAttachments((prev) => [...prev, { type: 'text', data: reader.result as string, name: file.name }])
+        }
+        reader.readAsText(file)
+      }
+    })
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback(() => {
+    setDragOver(false)
+  }, [])
+
   const filteredModels = modelSearch
     ? modelOptions.filter((m) => m.toLowerCase().includes(modelSearch.toLowerCase()))
     : modelOptions
@@ -167,7 +199,12 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
           onClose={() => setShowCommands(false)}
         />
       )}
-      <div className="input-container">
+      <div
+        className={`input-container${dragOver ? ' drag-over' : ''}`}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+      >
         {attachments.length > 0 && (
           <div className="attachment-list">
             {attachments.map((att, i) => (

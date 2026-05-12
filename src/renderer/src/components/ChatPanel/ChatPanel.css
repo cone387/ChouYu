@@ -10,6 +10,7 @@
   flex-direction: column;
   animation: panel-open 200ms ease-out;
   z-index: 9998;
+  transition: top 200ms ease-out;
 }
 
 .chat-panel-drag-handle {
@@ -574,7 +575,6 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
 }
 
 .attachment-item {
@@ -704,4 +704,30 @@
 .message-area::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 2px;
+}
+
+/* Drag Over */
+.input-container.drag-over {
+  border-color: var(--accent);
+  background: rgba(106, 92, 231, 0.04);
+}
+
+/* Image Preview Overlay */
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  cursor: pointer;
+}
+
+.image-preview-img {
+  max-width: 90%;
+  max-height: 90%;
+  object-fit: contain;
+  border-radius: 8px;
+  cursor: default;
 }

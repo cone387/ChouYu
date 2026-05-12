@@ -39,8 +39,25 @@ function CodeBlock({ className, children }: { className?: string; children: stri
   )
 }
 
+function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  return (
+    <div className="image-preview-overlay" onClick={onClose}>
+      <img src={src} className="image-preview-img" onClick={(e) => e.stopPropagation()} />
+    </div>
+  )
+}
+
 export default function MessageArea({ messages, isStreaming }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -69,7 +86,7 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
           <div className="message-body">
             <div className="message-bubble">
               {msg.imageUrl && (
-                <img src={msg.imageUrl} className="message-image" alt="截图" />
+                <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
               )}
               {msg.role === 'assistant' ? (
                 <ReactMarkdown
@@ -116,6 +133,7 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
         </div>
       )}
       <div ref={bottomRef} />
+      {previewImage && <ImagePreview src={previewImage} onClose={() => setPreviewImage(null)} />}
     </div>
   )
 }

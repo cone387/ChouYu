@@ -79,6 +79,20 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     saveMessages(messages)
   }, [messages])
 
+  useEffect(() => {
+    if (!showHistory) return
+    const panelEl = panelRef.current
+    if (!panelEl) return
+    requestAnimationFrame(() => {
+      const rect = panelEl.getBoundingClientRect()
+      const screenH = window.innerHeight
+      if (rect.bottom > screenH - 4) {
+        const newY = Math.max(4, position.y - (rect.bottom - screenH + 8))
+        onPositionChange({ ...position, x: position.x, y: newY })
+      }
+    })
+  }, [showHistory])
+
   const handleClose = useCallback(() => {
     setClosing(true)
     setTimeout(() => onClose(), 180)

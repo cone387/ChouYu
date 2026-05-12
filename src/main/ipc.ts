@@ -37,9 +37,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try {
       const display = screen.getPrimaryDisplay()
       const { width, height } = display.size
+      const scale = display.scaleFactor || 1
       const sources = await desktopCapturer.getSources({
         types: ['screen'],
-        thumbnailSize: { width, height }
+        thumbnailSize: { width: Math.round(width * scale), height: Math.round(height * scale) }
       })
       if (shouldHide) mainWindow.show()
       if (sources.length > 0) {
