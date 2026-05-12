@@ -8,21 +8,49 @@ interface ScreenCaptureProps {
 }
 
 export default function ScreenCapture({ imageDataUrl, onCapture, onCancel }: ScreenCaptureProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [drawing, setDrawing] = useState(false)
   const [rect, setRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const startRef = useRef({ x: 0, y: 0 })
+  const rectRef = useRef(rect)
+  rectRef.current = rect
+
+  const handleConfirm = useCallback(() => {
+    const r = rectRef.current
+    if (!r || r.w < 10 || r.h < 10) {
+      onCancel()
+      return
+    }
+    const img = new Image()
+    img.onload = () => {
+      const scaleX = img.width / window.innerWidth
+      const scaleY = img.height / window.innerHeight
+      const canvas = document.createElement('canvas')
+      canvas.width = r.w * scaleX
+      canvas.height = r.h * scaleY
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(
+        img,
+        r.x * scaleX, r.y * scaleY,
+        r.w * scaleX, r.h * scaleY,
+        0, 0,
+        canvas.width, canvas.height
+      )
+      onCapture(canvas.toDataURL('image/png'))
+    }
+    img.src = imageDataUrl
+  }, [imageDataUrl, onCapture, onCancel])
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel()
-      if (e.key === 'Enter' && rect) handleConfirm()
+      if (e.key === 'Enter') handleConfirm()
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [rect, onCancel])
+  }, [onCancel, handleConfirm])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.screen-capture-toolbar')) return
     setDrawing(true)
     startRef.current = { x: e.clientX, y: e.clientY }
     setRect({ x: e.clientX, y: e.clientY, w: 0, h: 0 })
@@ -40,31 +68,6 @@ export default function ScreenCapture({ imageDataUrl, onCapture, onCancel }: Scr
   const handleMouseUp = useCallback(() => {
     setDrawing(false)
   }, [])
-
-  const handleConfirm = useCallback(() => {
-    if (!rect || rect.w < 10 || rect.h < 10) {
-      onCancel()
-      return
-    }
-    const img = new Image()
-    img.onload = () => {
-      const scaleX = img.width / window.innerWidth
-      const scaleY = img.height / window.innerHeight
-      const canvas = document.createElement('canvas')
-      canvas.width = rect.w * scaleX
-      canvas.height = rect.h * scaleY
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(
-        img,
-        rect.x * scaleX, rect.y * scaleY,
-        rect.w * scaleX, rect.h * scaleY,
-        0, 0,
-        canvas.width, canvas.height
-      )
-      onCapture(canvas.toDataURL('image/png'))
-    }
-    img.src = imageDataUrl
-  }, [rect, imageDataUrl, onCapture])
 
   return (
     <div
@@ -84,8 +87,8 @@ export default function ScreenCapture({ imageDataUrl, onCapture, onCancel }: Scr
           />
           {!drawing && (
             <div className="screen-capture-toolbar" style={{ left: rect.x + rect.w - 70, top: rect.y + rect.h + 8 }}>
-              <button className="sc-btn sc-btn-cancel" onClick={onCancel}>✕</button>
-              <button className="sc-btn sc-btn-confirm" onClick={handleConfirm}>✓</button>
+              <button className="sc-btn sc-btn-cancel" onMouseDown={(e) => e.stopPropagation()} onClick={onCancel}>✕</button>
+              <button className="sc-btn sc-btn-confirm" onMouseDown={(e) => e.stopPropagation()} onClick={handleConfirm}>✓</button>
             </div>
           )}
         </>

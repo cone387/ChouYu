@@ -179,8 +179,9 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
           <div className="input-toolbar-left">
             <button className="toolbar-btn screenshot-btn" title="截图" onClick={handleScreenshot}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 5L5 2M14 5L11 2M2 11L5 14M14 11L11 14"/>
-                <rect x="4" y="4" width="8" height="8" strokeDasharray="2 2"/>
+                <circle cx="5" cy="12" r="2"/>
+                <circle cx="11" cy="12" r="2"/>
+                <path d="M6.5 10.5L11 3M9.5 10.5L5 3"/>
               </svg>
             </button>
             <button className="toolbar-btn" title="附件" onClick={handleFileSelect}>
