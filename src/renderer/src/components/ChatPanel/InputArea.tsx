@@ -8,16 +8,17 @@ interface InputAreaProps {
   model?: string
   onModelChange?: (model: string) => void
   onAttachment?: (attachment: { type: 'image' | 'text'; data: string; name: string }) => void
+  onScreenshot?: (callback: (dataUrl: string) => void) => void
 }
 
-const MODEL_OPTIONS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long']
+const FALLBACK_MODELS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long']
 
-export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onAttachment }: InputAreaProps) {
+export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onAttachment, onScreenshot }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
+  const [modelOptions, setModelOptions] = useState<string[]>(FALLBACK_MODELS)
   const [cmdIndex, setCmdIndex] = useState(0)
-  const [screenshotting, setScreenshotting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -39,6 +40,12 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     document.addEventListener('mousedown', dismiss)
     return () => document.removeEventListener('mousedown', dismiss)
   }, [showModelSelector])
+
+  useEffect(() => {
+    window.electronAPI.fetchModels().then((models) => {
+      if (models && models.length > 0) setModelOptions(models)
+    })
+  }, [])
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
@@ -107,17 +114,11 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     }
   }
 
-  const handleScreenshot = useCallback(async () => {
-    setScreenshotting(true)
-    try {
-      const dataUrl = await window.electronAPI.takeScreenshot()
-      if (dataUrl) {
-        onAttachment?.({ type: 'image', data: dataUrl, name: '截图.png' })
-      }
-    } finally {
-      setScreenshotting(false)
-    }
-  }, [onAttachment])
+  const handleScreenshot = useCallback(() => {
+    onScreenshot?.((dataUrl) => {
+      onAttachment?.({ type: 'image', data: dataUrl, name: '截图.png' })
+    })
+  }, [onScreenshot, onAttachment])
 
   const handleAttachment = useCallback(async () => {
     const result = await window.electronAPI.openFileDialog()
@@ -150,10 +151,10 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         />
         <div className="input-toolbar">
           <div className="input-toolbar-left">
-            <button className="toolbar-btn screenshot-btn" title="截图" onClick={handleScreenshot} disabled={screenshotting}>
+            <button className="toolbar-btn screenshot-btn" title="截图" onClick={handleScreenshot}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 3h3l1-1.5h4L11 3h3v10H2z"/>
-                <circle cx="8" cy="8.5" r="2.5" fill="none"/>
+                <path d="M2 5L5 2M14 5L11 2M2 11L5 14M14 11L11 14"/>
+                <rect x="4" y="4" width="8" height="8" strokeDasharray="2 2"/>
               </svg>
             </button>
             <button className="toolbar-btn" title="附件" onClick={handleAttachment}>
@@ -166,7 +167,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
             <div className="model-selector">
               {showModelSelector && (
                 <div className="model-dropdown">
-                  {MODEL_OPTIONS.map((m) => (
+                  {modelOptions.map((m) => (
                     <button
                       key={m}
                       className={`model-option${m === model ? ' active' : ''}`}

@@ -18,9 +18,10 @@ interface ChatPanelProps {
   onClose: () => void
   initialShowSettings?: boolean
   onSettingsClose?: () => void
+  onScreenshot?: (callback: (dataUrl: string) => void) => void
 }
 
-export default function ChatPanel({ position, onPositionChange, petState, onPetStateChange, onClose, initialShowSettings, onSettingsClose }: ChatPanelProps) {
+export default function ChatPanel({ position, onPositionChange, petState, onPetStateChange, onClose, initialShowSettings, onSettingsClose, onScreenshot }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
@@ -199,14 +200,12 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
   }, [])
 
   const handleAttachment = useCallback((attachment: { type: 'image' | 'text'; data: string; name: string }) => {
-    const content = attachment.type === 'image'
-      ? `[截图: ${attachment.name}]`
-      : `[文件: ${attachment.name}]\n${attachment.data.slice(0, 2000)}`
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content,
-      timestamp: Date.now()
+      content: attachment.type === 'image' ? '' : attachment.data.slice(0, 2000),
+      timestamp: Date.now(),
+      imageUrl: attachment.type === 'image' ? attachment.data : undefined
     }
     setMessages((prev) => [...prev, userMsg])
     setShowHistory(true)
@@ -247,7 +246,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
             />
           </div>
           {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
-          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onAttachment={handleAttachment} />
+          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onAttachment={handleAttachment} onScreenshot={onScreenshot} />
         </>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
+import ScreenCapture from './components/ScreenCapture/ScreenCapture'
 import { PetState } from './shared/types'
 import { PANEL_WIDTH } from './shared/constants'
 
@@ -11,6 +12,8 @@ function App() {
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [petState, setPetState] = useState<PetState>('idle')
+  const [screenshotImage, setScreenshotImage] = useState<string | null>(null)
+  const screenshotCallbackRef = useRef<((dataUrl: string) => void) | null>(null)
   const ignoreRef = useRef(true)
 
   useEffect(() => {
@@ -93,6 +96,29 @@ function App() {
     return cleanup
   }, [openSettings])
 
+  const startScreenshot = useCallback((callback: (dataUrl: string) => void) => {
+    screenshotCallbackRef.current = callback
+    window.electronAPI.takeScreenshot().then((dataUrl) => {
+      if (dataUrl) {
+        window.electronAPI.setIgnoreMouseEvents(false)
+        setScreenshotImage(dataUrl)
+      }
+    })
+  }, [])
+
+  const handleScreenshotCapture = useCallback((croppedDataUrl: string) => {
+    setScreenshotImage(null)
+    window.electronAPI.setIgnoreMouseEvents(true)
+    screenshotCallbackRef.current?.(croppedDataUrl)
+    screenshotCallbackRef.current = null
+  }, [])
+
+  const handleScreenshotCancel = useCallback(() => {
+    setScreenshotImage(null)
+    window.electronAPI.setIgnoreMouseEvents(true)
+    screenshotCallbackRef.current = null
+  }, [])
+
   useEffect(() => {
     if (positionLoaded) {
       window.electronAPI.db.setState('pet-position', JSON.stringify(petPosition))
@@ -101,22 +127,34 @@ function App() {
 
   return (
     <div className="app-container">
-      <Pet
-        position={petPosition}
-        onPositionChange={setPetPosition}
-        onClick={togglePanel}
-        onOpenSettings={openSettings}
-        state={petState}
-      />
-      {panelVisible && panelPosition && (
-        <ChatPanel
-          position={panelPosition}
-          onPositionChange={setPanelPosition}
-          petState={petState}
-          onPetStateChange={setPetState}
-          onClose={() => setPanelVisible(false)}
-          initialShowSettings={showSettings}
-          onSettingsClose={() => setShowSettings(false)}
+      {!screenshotImage && (
+        <>
+          <Pet
+            position={petPosition}
+            onPositionChange={setPetPosition}
+            onClick={togglePanel}
+            onOpenSettings={openSettings}
+            state={petState}
+          />
+          {panelVisible && panelPosition && (
+            <ChatPanel
+              position={panelPosition}
+              onPositionChange={setPanelPosition}
+              petState={petState}
+              onPetStateChange={setPetState}
+              onClose={() => setPanelVisible(false)}
+              initialShowSettings={showSettings}
+              onSettingsClose={() => setShowSettings(false)}
+              onScreenshot={startScreenshot}
+            />
+          )}
+        </>
+      )}
+      {screenshotImage && (
+        <ScreenCapture
+          imageDataUrl={screenshotImage}
+          onCapture={handleScreenshotCapture}
+          onCancel={handleScreenshotCancel}
         />
       )}
     </div>

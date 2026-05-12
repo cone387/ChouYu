@@ -73,6 +73,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return { type: 'text', data: text, name: path.basename(filePath) }
   })
 
+  ipcMain.handle('fetch-models', async () => {
+    const config = getConfig()
+    if (!config.baseUrl || !config.apiKey) return []
+    try {
+      const url = config.baseUrl.replace(/\/$/, '') + '/models'
+      const resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${config.apiKey}` }
+      })
+      if (!resp.ok) return []
+      const json = await resp.json()
+      const models = json.data || []
+      return models.map((m: any) => m.id).filter(Boolean)
+    } catch {
+      return []
+    }
+  })
+
   ipcMain.handle('db:get-config', () => getConfig())
   ipcMain.handle('db:save-config', (_event, patch) => saveConfig(patch))
   ipcMain.handle('db:get-messages', () => getMessages())

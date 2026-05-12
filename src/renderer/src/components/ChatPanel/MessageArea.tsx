@@ -68,6 +68,9 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
           )}
           <div className="message-body">
             <div className="message-bubble">
+              {msg.imageUrl && (
+                <img src={msg.imageUrl} className="message-image" alt="截图" />
+              )}
               {msg.role === 'assistant' ? (
                 <ReactMarkdown
                   components={{
@@ -81,7 +84,7 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
                   }}
                 >{msg.content}</ReactMarkdown>
               ) : (
-                <span>{msg.content}</span>
+                msg.content && <span>{msg.content}</span>
               )}
             </div>
             <div className="message-meta">

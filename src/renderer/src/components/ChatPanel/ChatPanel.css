@@ -386,6 +386,16 @@
   color: var(--text-muted);
 }
 
+/* Message Image */
+.message-image {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  object-fit: contain;
+}
+
 /* Code Block */
 .code-block {
   margin: 8px 0;

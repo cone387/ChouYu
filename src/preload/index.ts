@@ -9,6 +9,7 @@ const api = {
   },
   takeScreenshot: () => ipcRenderer.invoke('take-screenshot'),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
+  fetchModels: () => ipcRenderer.invoke('fetch-models'),
   onTogglePanel: (callback: () => void) => {
     ipcRenderer.on('toggle-panel', callback)
     return () => {

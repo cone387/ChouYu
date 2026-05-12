@@ -3,6 +3,7 @@ export interface ElectronAPI {
   log: (msg: string) => void
   takeScreenshot: () => Promise<string | null>
   openFileDialog: () => Promise<{ type: 'image' | 'text'; data: string; name: string } | null>
+  fetchModels: () => Promise<string[]>
   onTogglePanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
   db: {
@@ -29,6 +30,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: number
+  imageUrl?: string
 }
 
 export interface ChatSession {

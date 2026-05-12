@@ -34,7 +34,7 @@ export default function TopBar({ status, showHistory, onToggleHistory, onNewTopi
             <path d="M2 5h10M2 9h6"/>
           </svg>
         </button>
-        <button className="topbar-btn" onClick={onNewTopic} title="新话题">
+        <button className="topbar-btn" onClick={onNewTopic} title="清空对话，开始新话题">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <path d="M7 2v10M2 7h10"/>
           </svg>
