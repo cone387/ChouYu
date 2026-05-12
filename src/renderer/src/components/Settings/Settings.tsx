@@ -5,30 +5,28 @@ import './Settings.css'
 
 interface SettingsProps {
   onClose: () => void
+  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
 }
 
-export default function Settings({ onClose }: SettingsProps) {
-  const [config, setConfig] = useState<AppConfig>(() => {
-    try {
-      const raw = localStorage.getItem('chouyu-config')
-      return raw ? { ...DEFAULT_CONFIG, ...JSON.parse(raw) } : DEFAULT_CONFIG
-    } catch {
-      return DEFAULT_CONFIG
-    }
-  })
+export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
+  const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showKey, setShowKey] = useState(false)
+
+  useEffect(() => {
+    window.electronAPI.db.getConfig().then(setConfig)
+  }, [])
 
   const save = (patch: Partial<AppConfig>) => {
     const updated = { ...config, ...patch }
     setConfig(updated)
-    localStorage.setItem('chouyu-config', JSON.stringify(updated))
+    window.electronAPI.db.saveConfig(patch)
   }
 
   return (
     <div className="settings-panel">
-      <div className="settings-header">
-        <button className="settings-back" onClick={onClose}>&larr; 返回</button>
+      <div className="settings-header chat-panel-drag-handle" {...dragHandleProps}>
         <span className="settings-title">设置</span>
+        <button className="settings-close" onClick={onClose}>&times;</button>
       </div>
 
       <div className="settings-content">

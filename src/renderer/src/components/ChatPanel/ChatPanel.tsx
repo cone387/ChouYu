@@ -1,17 +1,18 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import TopBar from './TopBar'
 import MessageArea from './MessageArea'
 import InputArea from './InputArea'
 import Settings from '../Settings/Settings'
-import { Message, PetState } from '../../shared/types'
+import { Message, PetState, AppConfig } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
 import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
-import { saveMessages, clearMessages } from '../../core/memory'
+import { loadMessages, saveMessages, clearMessages } from '../../core/memory'
 import './ChatPanel.css'
 
 interface ChatPanelProps {
   position: { x: number; y: number }
+  onPositionChange: (pos: { x: number; y: number }) => void
   petState: PetState
   onPetStateChange: (state: PetState) => void
   onClose: () => void
@@ -19,17 +20,59 @@ interface ChatPanelProps {
   onSettingsClose?: () => void
 }
 
-export default function ChatPanel({ position, petState, onPetStateChange, onClose, initialShowSettings, onSettingsClose }: ChatPanelProps) {
+export default function ChatPanel({ position, onPositionChange, petState, onPetStateChange, onClose, initialShowSettings, onSettingsClose }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
   const [showHistory, setShowHistory] = useState(false)
+  const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const abortRef = useRef<AbortController | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0 })
+  const initializedRef = useRef(false)
 
   useEffect(() => {
+    loadMessages().then((msgs) => {
+      setMessages(msgs)
+      initializedRef.current = true
+    })
+    window.electronAPI.db.getConfig().then(setConfig)
+  }, [])
+
+  useEffect(() => {
+    if (initialShowSettings) setShowSettings(true)
+  }, [initialShowSettings])
+
+  const handleDragStart = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    dragRef.current = {
+      dragging: true,
+      startX: e.screenX,
+      startY: e.screenY,
+      posX: position.x,
+      posY: position.y
+    }
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  }, [position])
+
+  const handleDragMove = useCallback((e: React.PointerEvent) => {
+    if (!dragRef.current.dragging) return
+    const dx = e.screenX - dragRef.current.startX
+    const dy = e.screenY - dragRef.current.startY
+    onPositionChange({
+      x: dragRef.current.posX + dx,
+      y: dragRef.current.posY + dy
+    })
+  }, [onPositionChange])
+
+  const handleDragEnd = useCallback(() => {
+    dragRef.current.dragging = false
+  }, [])
+
+  useEffect(() => {
+    if (!initializedRef.current) return
     saveMessages(messages)
-    if (messages.length > 0) setShowHistory(true)
   }, [messages])
 
   useEffect(() => {
@@ -58,6 +101,11 @@ export default function ChatPanel({ position, petState, onPetStateChange, onClos
     }
     if (content === '/settings') {
       setShowSettings(true)
+      const screenH = window.innerHeight
+      const panelH = 360
+      if (position.y + panelH > screenH - 4) {
+        onPositionChange({ ...position, y: Math.max(4, screenH - panelH - 4) })
+      }
       return
     }
 
@@ -69,10 +117,10 @@ export default function ChatPanel({ position, petState, onPetStateChange, onClos
     }
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
+    setShowHistory(true)
     onPetStateChange('thinking')
     setIsStreaming(true)
 
-    const config = { ...DEFAULT_CONFIG, ...getStoredConfig() }
     const systemPrompt = buildSystemPrompt()
     const history = buildMessages(newMessages)
 
@@ -140,33 +188,40 @@ export default function ChatPanel({ position, petState, onPetStateChange, onClos
     <div
       ref={panelRef}
       data-interactive
-      className="chat-panel"
+      className={`chat-panel${showSettings ? ' chat-panel-settings' : ''}`}
       style={{ left: position.x, top: position.y }}
     >
       {showSettings ? (
-        <Settings onClose={() => { setShowSettings(false); onSettingsClose?.() }} />
+        <Settings
+          onClose={() => { setShowSettings(false); onSettingsClose?.(); onClose() }}
+          dragHandleProps={{
+            onPointerDown: handleDragStart,
+            onPointerMove: handleDragMove,
+            onPointerUp: handleDragEnd,
+            onPointerCancel: handleDragEnd
+          }}
+        />
       ) : (
         <>
-          <TopBar
-            status={getStatusText()}
-            showHistory={showHistory}
-            onToggleHistory={() => setShowHistory((v) => !v)}
-            onNewTopic={handleNewTopic}
-            onClose={onClose}
-          />
+          <div
+            className="chat-panel-drag-handle"
+            onPointerDown={handleDragStart}
+            onPointerMove={handleDragMove}
+            onPointerUp={handleDragEnd}
+            onPointerCancel={handleDragEnd}
+          >
+            <TopBar
+              status={getStatusText()}
+              showHistory={showHistory}
+              onToggleHistory={() => setShowHistory((v) => !v)}
+              onNewTopic={handleNewTopic}
+              onClose={onClose}
+            />
+          </div>
           {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
-          <InputArea onSend={handleSend} disabled={isStreaming} autoFocus />
+          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} />
         </>
       )}
     </div>
   )
-}
-
-function getStoredConfig() {
-  try {
-    const raw = localStorage.getItem('chouyu-config')
-    return raw ? JSON.parse(raw) : {}
-  } catch {
-    return {}
-  }
 }

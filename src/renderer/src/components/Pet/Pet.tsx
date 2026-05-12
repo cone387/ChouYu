@@ -20,19 +20,20 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
   const containerRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
-  posRef.current = position
-
-  const applyPosition = useCallback((x: number, y: number, animate: boolean) => {
+  const applyPosition = useCallback((x: number, y: number) => {
     const el = containerRef.current
     if (!el) return
-    if (animate) {
-      el.classList.add('pet-snapping')
-    } else {
-      el.classList.remove('pet-snapping')
-    }
     el.style.left = x + 'px'
     el.style.top = y + 'px'
   }, [])
+
+  // Sync DOM position when prop changes (e.g. from DB load)
+  useEffect(() => {
+    if (!draggingRef.current) {
+      applyPosition(position.x, position.y)
+      posRef.current = position
+    }
+  }, [position.x, position.y, applyPosition])
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return
@@ -62,7 +63,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
 
       const nextX = dragStartRef.current.posX + dx
       const nextY = dragStartRef.current.posY + dy
-      applyPosition(nextX, nextY, false)
+      applyPosition(nextX, nextY)
       posRef.current = { x: nextX, y: nextY }
     }
 
@@ -84,17 +85,27 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
       let snapY = y
       let didSnap = false
 
-      if (x < SNAP_DISTANCE) { snapX = 0; didSnap = true }
-      else if (x + DEFAULT_PET_SIZE > screenW - SNAP_DISTANCE) { snapX = screenW - DEFAULT_PET_SIZE; didSnap = true }
-      if (y < SNAP_DISTANCE) { snapY = 0; didSnap = true }
-      else if (y + DEFAULT_PET_SIZE > screenH - SNAP_DISTANCE) { snapY = screenH - DEFAULT_PET_SIZE; didSnap = true }
+      if (x < SNAP_DISTANCE) { snapX = -(DEFAULT_PET_SIZE / 2); didSnap = true }
+      else if (x + DEFAULT_PET_SIZE > screenW - SNAP_DISTANCE) { snapX = screenW - DEFAULT_PET_SIZE / 2; didSnap = true }
+      if (y < SNAP_DISTANCE) { snapY = -(DEFAULT_PET_SIZE / 2); didSnap = true }
+      else if (y + DEFAULT_PET_SIZE > screenH - SNAP_DISTANCE) { snapY = screenH - DEFAULT_PET_SIZE / 2; didSnap = true }
 
       if (didSnap) {
-        applyPosition(snapX, snapY, true)
+        const el = containerRef.current!
+        const dx = snapX - x
+        const dy = snapY - y
+        // Set final position immediately
+        el.style.left = snapX + 'px'
+        el.style.top = snapY + 'px'
+        // Animate from old to new using transform (GPU-composited, always works)
+        el.animate(
+          [
+            { transform: `translate(${-dx}px, ${-dy}px)` },
+            { transform: 'translate(0, 0)' }
+          ],
+          { duration: 300, easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)' }
+        )
         posRef.current = { x: snapX, y: snapY }
-        setTimeout(() => {
-          containerRef.current?.classList.remove('pet-snapping')
-        }, 350)
       }
 
       onPositionChange(posRef.current)
@@ -108,17 +119,27 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setContextMenu({ x: e.clientX, y: e.clientY })
+    const menuW = 120
+    const menuH = 80
+    let x = e.clientX
+    let y = e.clientY
+    if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 4
+    if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 4
+    if (x < 4) x = 4
+    if (y < 4) y = 4
+    setContextMenu({ x, y })
   }, [])
 
   useEffect(() => {
     if (!contextMenu) return
-    const dismiss = () => setContextMenu(null)
-    setTimeout(() => {
-      window.addEventListener('mousedown', dismiss)
-    }, 0)
+    const dismiss = (e: PointerEvent) => {
+      const target = e.target as HTMLElement
+      if (target.closest('.pet-context-menu')) return
+      setContextMenu(null)
+    }
+    window.addEventListener('pointerdown', dismiss, true)
     return () => {
-      window.removeEventListener('mousedown', dismiss)
+      window.removeEventListener('pointerdown', dismiss, true)
     }
   }, [contextMenu])
 
@@ -128,7 +149,6 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
         ref={containerRef}
         data-interactive
         className={`pet-container pet-state-${state}`}
-        style={{ left: position.x, top: position.y }}
         onPointerDown={handlePointerDown}
         onContextMenu={handleContextMenu}
       >

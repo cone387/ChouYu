@@ -2,18 +2,24 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import { PetState } from './shared/types'
-import { PANEL_WIDTH, PANEL_COMPACT_HEIGHT, PANEL_GAP } from './shared/constants'
+import { PANEL_WIDTH } from './shared/constants'
 
 function App() {
-  const [petPosition, setPetPosition] = useState(() => {
-    const saved = localStorage.getItem('pet-position')
-    if (saved) return JSON.parse(saved)
-    return { x: window.innerWidth - 180, y: window.innerHeight - 180 }
-  })
+  const [petPosition, setPetPosition] = useState({ x: window.innerWidth - 180, y: window.innerHeight - 180 })
+  const [positionLoaded, setPositionLoaded] = useState(false)
   const [panelVisible, setPanelVisible] = useState(false)
+  const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [petState, setPetState] = useState<PetState>('idle')
   const ignoreRef = useRef(true)
+
+  useEffect(() => {
+    window.electronAPI.db.getState('pet-position').then((val) => {
+      if (val) {
+        try { setPetPosition(JSON.parse(val)) } catch {}
+      }
+    }).catch(() => {}).finally(() => setPositionLoaded(true))
+  }, [])
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -32,14 +38,50 @@ function App() {
     return () => document.removeEventListener('mousemove', handleMouseMove)
   }, [])
 
-  const togglePanel = useCallback(() => {
-    setPanelVisible((v) => !v)
+  const calcPanelPosition = useCallback((petPos: { x: number; y: number }, panelH = 140) => {
+    const screenW = window.innerWidth
+    const screenH = window.innerHeight
+    const petCenterX = petPos.x + 40
+    const petCenterY = petPos.y + 40
+    const isLeft = petCenterX <= screenW / 2
+    const isTop = petCenterY < screenH / 3
+
+    const gap = 4
+
+    let x = isLeft
+      ? petPos.x + 80 + gap
+      : petPos.x - PANEL_WIDTH - gap
+
+    let y: number
+    if (isTop) {
+      y = petPos.y + 80 + gap
+    } else {
+      y = petPos.y - panelH - gap
+    }
+
+    // Clamp to screen
+    if (x < 4) x = 4
+    if (x + PANEL_WIDTH > screenW - 4) x = screenW - PANEL_WIDTH - 4
+    if (y < 4) y = 4
+    if (y + panelH > screenH - 4) y = screenH - panelH - 4
+
+    return { x, y }
   }, [])
 
+  const togglePanel = useCallback(() => {
+    setPanelVisible((v) => {
+      if (!v) {
+        setPanelPosition(calcPanelPosition(petPosition))
+      }
+      return !v
+    })
+  }, [petPosition, calcPanelPosition])
+
   const openSettings = useCallback(() => {
+    setPanelPosition(calcPanelPosition(petPosition, 360))
     setPanelVisible(true)
     setShowSettings(true)
-  }, [])
+  }, [petPosition, calcPanelPosition])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onTogglePanel(togglePanel)
@@ -52,30 +94,10 @@ function App() {
   }, [openSettings])
 
   useEffect(() => {
-    localStorage.setItem('pet-position', JSON.stringify(petPosition))
-  }, [petPosition])
-
-  const getPanelPosition = () => {
-    const screenW = window.innerWidth
-    const screenH = window.innerHeight
-    const petCenterX = petPosition.x + 40
-    const isRight = petCenterX > screenW / 2
-
-    let x = isRight
-      ? petPosition.x - PANEL_WIDTH - PANEL_GAP
-      : petPosition.x + 80 + PANEL_GAP
-
-    let y = petPosition.y
-
-    if (x < PANEL_GAP) x = PANEL_GAP
-    if (x + PANEL_WIDTH > screenW - PANEL_GAP) x = screenW - PANEL_WIDTH - PANEL_GAP
-    if (y + PANEL_COMPACT_HEIGHT > screenH - PANEL_GAP) y = screenH - PANEL_COMPACT_HEIGHT - PANEL_GAP
-    if (y < PANEL_GAP) y = PANEL_GAP
-
-    return { x, y }
-  }
-
-  const panelPos = getPanelPosition()
+    if (positionLoaded) {
+      window.electronAPI.db.setState('pet-position', JSON.stringify(petPosition))
+    }
+  }, [petPosition, positionLoaded])
 
   return (
     <div className="app-container">
@@ -86,9 +108,10 @@ function App() {
         onOpenSettings={openSettings}
         state={petState}
       />
-      {panelVisible && (
+      {panelVisible && panelPosition && (
         <ChatPanel
-          position={panelPos}
+          position={panelPosition}
+          onPositionChange={setPanelPosition}
           petState={petState}
           onPetStateChange={setPetState}
           onClose={() => setPanelVisible(false)}

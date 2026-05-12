@@ -1,7 +1,17 @@
 export interface ElectronAPI {
   setIgnoreMouseEvents: (ignore: boolean) => void
+  log: (msg: string) => void
   onTogglePanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
+  db: {
+    getConfig: () => Promise<AppConfig>
+    saveConfig: (cfg: Partial<AppConfig>) => Promise<void>
+    getMessages: () => Promise<Message[]>
+    saveMessages: (msgs: Message[]) => Promise<void>
+    clearMessages: () => Promise<void>
+    getState: (key: string) => Promise<string | null>
+    setState: (key: string, value: string) => Promise<void>
+  }
 }
 
 declare global {

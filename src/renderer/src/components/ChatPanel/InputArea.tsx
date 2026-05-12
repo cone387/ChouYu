@@ -1,17 +1,27 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import CommandMenu, { getFilteredCommands } from './CommandMenu'
 
 interface InputAreaProps {
   onSend: (content: string) => void
   disabled: boolean
   autoFocus?: boolean
+  model?: string
 }
 
-export default function InputArea({ onSend, disabled, autoFocus }: InputAreaProps) {
+export default function InputArea({ onSend, disabled, autoFocus, model }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [cmdIndex, setCmdIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (autoFocus === false) return
+    const tryFocus = () => textareaRef.current?.focus()
+    tryFocus()
+    const t1 = setTimeout(tryFocus, 100)
+    const t2 = setTimeout(tryFocus, 300)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [])
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
@@ -110,7 +120,7 @@ export default function InputArea({ onSend, disabled, autoFocus }: InputAreaProp
             </button>
           </div>
           <div className="input-toolbar-right">
-            <button className="toolbar-btn model-btn" title="切换模型">gpt-4o</button>
+            <button className="toolbar-btn model-btn" title="当前模型">{model || 'AI'}</button>
             <button
               className="toolbar-btn send-btn"
               onClick={handleSend}

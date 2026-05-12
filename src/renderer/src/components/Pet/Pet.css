@@ -8,11 +8,6 @@
   touch-action: none;
 }
 
-.pet-container.pet-snapping {
-  transition: left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
-              top 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
 .pet-container:active {
   cursor: grabbing;
 }
@@ -109,4 +104,13 @@
 
 .pet-context-menu button:hover {
   background: var(--hover-bg);
+}
+
+.pet-context-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
 }

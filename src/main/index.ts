@@ -3,6 +3,7 @@ import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { setupTray } from './tray'
 import { registerHotkey } from './hotkey'
+import { initDatabase } from './database'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -30,9 +31,10 @@ function createWindow(): void {
 
   mainWindow.setIgnoreMouseEvents(true, { forward: true })
 
-  if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
-  }
+  // DevTools: uncomment to debug
+  // if (!app.isPackaged) {
+  //   mainWindow.webContents.openDevTools({ mode: 'detach' })
+  // }
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -42,6 +44,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  initDatabase()
   createWindow()
   registerIpcHandlers(mainWindow!)
   setupTray(mainWindow!)

@@ -1,23 +1,13 @@
 import { Message } from '../shared/types'
-import { MAX_HISTORY_MESSAGES } from '../shared/constants'
 
-const STORAGE_KEY = 'chouyu-messages'
-
-export function loadMessages(): Message[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    return JSON.parse(raw)
-  } catch {
-    return []
-  }
+export async function loadMessages(): Promise<Message[]> {
+  return window.electronAPI.db.getMessages()
 }
 
-export function saveMessages(messages: Message[]): void {
-  const toSave = messages.slice(-MAX_HISTORY_MESSAGES)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
+export async function saveMessages(messages: Message[]): Promise<void> {
+  await window.electronAPI.db.saveMessages(messages)
 }
 
-export function clearMessages(): void {
-  localStorage.removeItem(STORAGE_KEY)
+export async function clearMessages(): Promise<void> {
+  await window.electronAPI.db.clearMessages()
 }
