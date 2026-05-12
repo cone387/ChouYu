@@ -17,6 +17,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: number
+  imageUrl?: string
 }
 
 interface StoreData {

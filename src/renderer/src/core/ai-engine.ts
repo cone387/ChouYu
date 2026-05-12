@@ -16,6 +16,18 @@ export async function streamChat(
   }
 }
 
+function buildOpenAIContent(m: Message): string | Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> {
+  if (!m.imageUrl) return m.content
+  const parts: Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> = []
+  if (m.content) {
+    parts.push({ type: 'text', text: m.content })
+  } else {
+    parts.push({ type: 'text', text: '请看这张图片' })
+  }
+  parts.push({ type: 'image_url', image_url: { url: m.imageUrl, detail: 'high' } })
+  return parts
+}
+
 async function streamOpenAI(
   messages: Message[],
   systemPrompt: string,
@@ -25,8 +37,15 @@ async function streamOpenAI(
 ): Promise<void> {
   const apiMessages = [
     { role: 'system', content: systemPrompt },
-    ...messages.map((m) => ({ role: m.role, content: m.content }))
+    ...messages.map((m) => ({ role: m.role, content: buildOpenAIContent(m) }))
   ]
+
+  console.log('[AI] sending messages:', apiMessages.map((m) => ({
+    role: m.role,
+    contentType: Array.isArray(m.content) ? m.content.map((p) => p.type) : 'text',
+    hasImage: Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url')
+  })))
+  console.log('[AI] model:', config.model, '| baseUrl:', config.baseUrl)
 
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -87,10 +106,18 @@ async function streamClaude(
   onChunk: StreamCallback,
   signal?: AbortSignal
 ): Promise<void> {
-  const apiMessages = messages.map((m) => ({
-    role: m.role as 'user' | 'assistant',
-    content: m.content
-  }))
+  const apiMessages = messages.map((m) => {
+    if (!m.imageUrl) return { role: m.role as 'user' | 'assistant', content: m.content }
+    const parts: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
+    if (m.imageUrl.startsWith('data:')) {
+      const match = m.imageUrl.match(/^data:(image\/[^;]+);base64,(.+)$/)
+      if (match) {
+        parts.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } })
+      }
+    }
+    if (m.content) parts.push({ type: 'text', text: m.content })
+    return { role: m.role as 'user' | 'assistant', content: parts.length > 0 ? parts : m.content }
+  })
 
   const response = await fetch(`${config.baseUrl}/messages`, {
     method: 'POST',

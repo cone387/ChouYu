@@ -8,7 +8,10 @@
       "Bash(rm -rf package-lock.json)",
       "Bash(rm -rf node_modules)",
       "Bash(echo 'console.log\\(process.versions\\)')",
-      "Bash(\"node_modules/electron/dist/electron.exe\" test-electron.js)"
+      "Bash(\"node_modules/electron/dist/electron.exe\" test-electron.js)",
+      "Bash(node -e ' *)",
+      "Bash(npx electron-builder *)",
+      "Bash(CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --win --publish never)"
     ]
   }
 }
