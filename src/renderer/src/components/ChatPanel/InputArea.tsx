@@ -6,11 +6,15 @@ interface InputAreaProps {
   disabled: boolean
   autoFocus?: boolean
   model?: string
+  onModelChange?: (model: string) => void
 }
 
-export default function InputArea({ onSend, disabled, autoFocus, model }: InputAreaProps) {
+const MODEL_OPTIONS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'gpt-4o', 'gpt-3.5-turbo', 'claude-3-sonnet']
+
+export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
+  const [showModelSelector, setShowModelSelector] = useState(false)
   const [cmdIndex, setCmdIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -22,6 +26,17 @@ export default function InputArea({ onSend, disabled, autoFocus, model }: InputA
     const t2 = setTimeout(tryFocus, 300)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
+
+  useEffect(() => {
+    if (!showModelSelector) return
+    const dismiss = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.model-selector')) {
+        setShowModelSelector(false)
+      }
+    }
+    document.addEventListener('mousedown', dismiss)
+    return () => document.removeEventListener('mousedown', dismiss)
+  }, [showModelSelector])
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
@@ -51,6 +66,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model }: InputA
       }
       if (e.key === 'Escape') {
         e.preventDefault()
+        e.nativeEvent.stopImmediatePropagation()
         setShowCommands(false)
         return
       }
@@ -113,6 +129,13 @@ export default function InputArea({ onSend, disabled, autoFocus, model }: InputA
         />
         <div className="input-toolbar">
           <div className="input-toolbar-left">
+            <button className="toolbar-btn screenshot-btn" title="截图" onClick={() => {/* TODO: implement screenshot */}}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="12" height="10" rx="2"/>
+                <circle cx="8" cy="8" r="2.5"/>
+                <path d="M5 3V2M11 3V2"/>
+              </svg>
+            </button>
             <button className="toolbar-btn" title="附件（待实现）">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5l6-6a2.5 2.5 0 013.5 3.5l-5.5 5.5a1 1 0 01-1.5-1.5L11 5.5"/>
@@ -120,7 +143,22 @@ export default function InputArea({ onSend, disabled, autoFocus, model }: InputA
             </button>
           </div>
           <div className="input-toolbar-right">
-            <button className="toolbar-btn model-btn" title="当前模型">{model || 'AI'}</button>
+            <div className="model-selector">
+              {showModelSelector && (
+                <div className="model-dropdown">
+                  {MODEL_OPTIONS.map((m) => (
+                    <button
+                      key={m}
+                      className={`model-option${m === model ? ' active' : ''}`}
+                      onClick={() => { onModelChange?.(m); setShowModelSelector(false) }}
+                    >{m}</button>
+                  ))}
+                </div>
+              )}
+              <button className="toolbar-btn model-btn" title="切换模型" onClick={() => setShowModelSelector((v) => !v)}>
+                {model || 'AI'}
+              </button>
+            </div>
             <button
               className="toolbar-btn send-btn"
               onClick={handleSend}

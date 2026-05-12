@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Message } from '../../shared/types'
 
@@ -10,6 +10,33 @@ interface MessageAreaProps {
 function formatTime(ts: number) {
   const d = new Date(ts)
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  return (
+    <button className="copy-btn" onClick={handleCopy} title="复制">
+      {copied ? '✓' : '📋'}
+    </button>
+  )
+}
+
+function CodeBlock({ className, children }: { className?: string; children: string }) {
+  const lang = className?.replace('language-', '') || ''
+  return (
+    <div className="code-block">
+      <div className="code-block-header">
+        <span className="code-block-lang">{lang}</span>
+        <CopyButton text={children.replace(/\n$/, '')} />
+      </div>
+      <pre><code>{children}</code></pre>
+    </div>
+  )
 }
 
 export default function MessageArea({ messages, isStreaming }: MessageAreaProps) {
@@ -42,12 +69,27 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
           <div className="message-body">
             <div className="message-bubble">
               {msg.role === 'assistant' ? (
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                <ReactMarkdown
+                  components={{
+                    code({ className, children }) {
+                      const isBlock = className || String(children).includes('\n')
+                      if (isBlock) {
+                        return <CodeBlock className={className}>{String(children)}</CodeBlock>
+                      }
+                      return <code>{children}</code>
+                    }
+                  }}
+                >{msg.content}</ReactMarkdown>
               ) : (
                 <span>{msg.content}</span>
               )}
             </div>
-            <span className="message-time">{formatTime(msg.timestamp)}</span>
+            <div className="message-meta">
+              <span className="message-time">{formatTime(msg.timestamp)}</span>
+              {msg.role === 'assistant' && msg.content && (
+                <CopyButton text={msg.content} />
+              )}
+            </div>
           </div>
         </div>
       ))}

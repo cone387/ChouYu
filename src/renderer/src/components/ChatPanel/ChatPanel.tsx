@@ -26,6 +26,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
   const [showHistory, setShowHistory] = useState(false)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
+  const [closing, setClosing] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0 })
@@ -75,13 +76,18 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     saveMessages(messages)
   }, [messages])
 
+  const handleClose = useCallback(() => {
+    setClosing(true)
+    setTimeout(() => onClose(), 180)
+  }, [onClose])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') handleClose()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [handleClose])
 
   const handleSend = async (content: string) => {
     if (content === '/clear') {
@@ -174,6 +180,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     if (abortRef.current) abortRef.current.abort()
     setMessages([])
     clearMessages()
+    setShowHistory(false)
     setIsStreaming(false)
     onPetStateChange('idle')
   }
@@ -184,16 +191,21 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     return '在线'
   }
 
+  const handleModelChange = useCallback((newModel: string) => {
+    setConfig((prev) => ({ ...prev, model: newModel }))
+    window.electronAPI.db.saveConfig({ model: newModel })
+  }, [])
+
   return (
     <div
       ref={panelRef}
       data-interactive
-      className={`chat-panel${showSettings ? ' chat-panel-settings' : ''}`}
+      className={`chat-panel${showSettings ? ' chat-panel-settings' : ''}${closing ? ' closing' : ''}`}
       style={{ left: position.x, top: position.y }}
     >
       {showSettings ? (
         <Settings
-          onClose={() => { setShowSettings(false); onSettingsClose?.(); onClose() }}
+          onClose={() => { setShowSettings(false); onSettingsClose?.(); handleClose() }}
           dragHandleProps={{
             onPointerDown: handleDragStart,
             onPointerMove: handleDragMove,
@@ -215,11 +227,11 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
               showHistory={showHistory}
               onToggleHistory={() => setShowHistory((v) => !v)}
               onNewTopic={handleNewTopic}
-              onClose={onClose}
+              onClose={handleClose}
             />
           </div>
           {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
-          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} />
+          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} />
         </>
       )}
     </div>

@@ -386,6 +386,155 @@
   color: var(--text-muted);
 }
 
+/* Code Block */
+.code-block {
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #1e1e2e;
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.code-block-lang {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.code-block pre code {
+  color: #e0def4;
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  background: none;
+  padding: 0;
+}
+
+/* Copy Button */
+.copy-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 150ms, background 150ms;
+}
+
+.code-block-header .copy-btn {
+  opacity: 0.6;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.code-block-header .copy-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.message:hover .message-meta .copy-btn {
+  opacity: 1;
+}
+
+.message-meta .copy-btn:hover {
+  background: var(--hover-bg);
+}
+
+/* Topbar Avatar */
+.topbar-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Model Selector */
+.model-selector {
+  position: relative;
+}
+
+.model-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  padding: 4px;
+  min-width: 140px;
+  animation: cmd-appear 120ms ease-out;
+  z-index: 100;
+}
+
+.model-option {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.model-option:hover {
+  background: var(--hover-bg);
+}
+
+.model-option.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Panel Close Animation */
+.chat-panel.closing {
+  animation: panel-close 180ms ease-in forwards;
+}
+
+@keyframes panel-close {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+/* Screenshot Button */
+.screenshot-btn svg {
+  stroke: currentColor;
+}
+
 /* Scrollbar */
 .message-area::-webkit-scrollbar {
   width: 4px;
