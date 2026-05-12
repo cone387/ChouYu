@@ -1,6 +1,8 @@
 export interface ElectronAPI {
   setIgnoreMouseEvents: (ignore: boolean) => void
   log: (msg: string) => void
+  takeScreenshot: () => Promise<string | null>
+  openFileDialog: () => Promise<{ type: 'image' | 'text'; data: string; name: string } | null>
   onTogglePanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
   db: {

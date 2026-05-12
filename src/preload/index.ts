@@ -7,6 +7,8 @@ const api = {
   log: (msg: string) => {
     ipcRenderer.send('renderer-log', msg)
   },
+  takeScreenshot: () => ipcRenderer.invoke('take-screenshot'),
+  openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   onTogglePanel: (callback: () => void) => {
     ipcRenderer.on('toggle-panel', callback)
     return () => {

@@ -46,6 +46,8 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
 
   const handleDragStart = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return
+    const target = e.target as HTMLElement
+    if (target.closest('button')) return
     e.preventDefault()
     dragRef.current = {
       dragging: true,
@@ -54,7 +56,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
       posX: position.x,
       posY: position.y
     }
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   }, [position])
 
   const handleDragMove = useCallback((e: React.PointerEvent) => {
@@ -196,6 +198,20 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     window.electronAPI.db.saveConfig({ model: newModel })
   }, [])
 
+  const handleAttachment = useCallback((attachment: { type: 'image' | 'text'; data: string; name: string }) => {
+    const content = attachment.type === 'image'
+      ? `[截图: ${attachment.name}]`
+      : `[文件: ${attachment.name}]\n${attachment.data.slice(0, 2000)}`
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content,
+      timestamp: Date.now()
+    }
+    setMessages((prev) => [...prev, userMsg])
+    setShowHistory(true)
+  }, [])
+
   return (
     <div
       ref={panelRef}
@@ -231,7 +247,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
             />
           </div>
           {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
-          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} />
+          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onAttachment={handleAttachment} />
         </>
       )}
     </div>

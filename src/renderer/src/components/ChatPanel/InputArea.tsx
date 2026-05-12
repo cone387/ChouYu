@@ -7,15 +7,17 @@ interface InputAreaProps {
   autoFocus?: boolean
   model?: string
   onModelChange?: (model: string) => void
+  onAttachment?: (attachment: { type: 'image' | 'text'; data: string; name: string }) => void
 }
 
-const MODEL_OPTIONS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'gpt-4o', 'gpt-3.5-turbo', 'claude-3-sonnet']
+const MODEL_OPTIONS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long']
 
-export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange }: InputAreaProps) {
+export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onAttachment }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [cmdIndex, setCmdIndex] = useState(0)
+  const [screenshotting, setScreenshotting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -105,6 +107,25 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     }
   }
 
+  const handleScreenshot = useCallback(async () => {
+    setScreenshotting(true)
+    try {
+      const dataUrl = await window.electronAPI.takeScreenshot()
+      if (dataUrl) {
+        onAttachment?.({ type: 'image', data: dataUrl, name: '截图.png' })
+      }
+    } finally {
+      setScreenshotting(false)
+    }
+  }, [onAttachment])
+
+  const handleAttachment = useCallback(async () => {
+    const result = await window.electronAPI.openFileDialog()
+    if (result) {
+      onAttachment?.(result)
+    }
+  }, [onAttachment])
+
   return (
     <div className="input-area">
       {showCommands && (
@@ -129,14 +150,13 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         />
         <div className="input-toolbar">
           <div className="input-toolbar-left">
-            <button className="toolbar-btn screenshot-btn" title="截图" onClick={() => {/* TODO: implement screenshot */}}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="12" height="10" rx="2"/>
-                <circle cx="8" cy="8" r="2.5"/>
-                <path d="M5 3V2M11 3V2"/>
+            <button className="toolbar-btn screenshot-btn" title="截图" onClick={handleScreenshot} disabled={screenshotting}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 3h3l1-1.5h4L11 3h3v10H2z"/>
+                <circle cx="8" cy="8.5" r="2.5" fill="none"/>
               </svg>
             </button>
-            <button className="toolbar-btn" title="附件（待实现）">
+            <button className="toolbar-btn" title="附件" onClick={handleAttachment}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5l6-6a2.5 2.5 0 013.5 3.5l-5.5 5.5a1 1 0 01-1.5-1.5L11 5.5"/>
               </svg>
