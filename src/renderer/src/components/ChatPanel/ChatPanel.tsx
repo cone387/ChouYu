@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import TopBar from './TopBar'
 import MessageArea from './MessageArea'
-import InputArea from './InputArea'
+import InputArea, { PendingAttachment } from './InputArea'
 import Settings from '../Settings/Settings'
 import { Message, PetState, AppConfig } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
@@ -92,7 +92,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleClose])
 
-  const handleSend = async (content: string) => {
+  const handleSend = async (content: string, attachment?: PendingAttachment) => {
     if (content === '/clear') {
       setMessages([])
       clearMessages()
@@ -118,11 +118,19 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
       return
     }
 
+    let msgContent = content
+    if (attachment) {
+      if (attachment.type === 'text') {
+        msgContent = content ? `${content}\n\n[附件: ${attachment.name}]\n${attachment.data.slice(0, 2000)}` : `[附件: ${attachment.name}]\n${attachment.data.slice(0, 2000)}`
+      }
+    }
+
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content,
-      timestamp: Date.now()
+      content: msgContent,
+      timestamp: Date.now(),
+      imageUrl: attachment?.type === 'image' ? attachment.data : undefined
     }
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
@@ -199,18 +207,6 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     window.electronAPI.db.saveConfig({ model: newModel })
   }, [])
 
-  const handleAttachment = useCallback((attachment: { type: 'image' | 'text'; data: string; name: string }) => {
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: attachment.type === 'image' ? '' : attachment.data.slice(0, 2000),
-      timestamp: Date.now(),
-      imageUrl: attachment.type === 'image' ? attachment.data : undefined
-    }
-    setMessages((prev) => [...prev, userMsg])
-    setShowHistory(true)
-  }, [])
-
   return (
     <div
       ref={panelRef}
@@ -246,7 +242,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
             />
           </div>
           {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
-          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onAttachment={handleAttachment} onScreenshot={onScreenshot} />
+          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} />
         </>
       )}
     </div>

@@ -68,13 +68,14 @@ export default function ScreenCapture({ imageDataUrl, onCapture, onCancel }: Scr
 
   return (
     <div
+      data-interactive
       className="screen-capture-overlay"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
       <img src={imageDataUrl} className="screen-capture-bg" draggable={false} />
-      <div className="screen-capture-mask" />
+      {!rect && <div className="screen-capture-mask" />}
       {rect && rect.w > 0 && rect.h > 0 && (
         <>
           <div

@@ -1,24 +1,31 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import CommandMenu, { getFilteredCommands } from './CommandMenu'
 
+export interface PendingAttachment {
+  type: 'image' | 'text'
+  data: string
+  name: string
+}
+
 interface InputAreaProps {
-  onSend: (content: string) => void
+  onSend: (content: string, attachment?: PendingAttachment) => void
   disabled: boolean
   autoFocus?: boolean
   model?: string
   onModelChange?: (model: string) => void
-  onAttachment?: (attachment: { type: 'image' | 'text'; data: string; name: string }) => void
   onScreenshot?: (callback: (dataUrl: string) => void) => void
 }
 
 const FALLBACK_MODELS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long']
 
-export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onAttachment, onScreenshot }: InputAreaProps) {
+export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onScreenshot }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [modelOptions, setModelOptions] = useState<string[]>(FALLBACK_MODELS)
+  const [modelSearch, setModelSearch] = useState('')
   const [cmdIndex, setCmdIndex] = useState(0)
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -32,6 +39,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
 
   useEffect(() => {
     if (!showModelSelector) return
+    setModelSearch('')
     const dismiss = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest('.model-selector')) {
         setShowModelSelector(false)
@@ -49,11 +57,12 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
-    if (!trimmed || disabled) return
-    onSend(trimmed)
+    if ((!trimmed && !attachment) || disabled) return
+    onSend(trimmed, attachment || undefined)
     setValue('')
+    setAttachment(null)
     setShowCommands(false)
-  }, [value, disabled, onSend])
+  }, [value, disabled, onSend, attachment])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showCommands) {
@@ -116,16 +125,20 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
 
   const handleScreenshot = useCallback(() => {
     onScreenshot?.((dataUrl) => {
-      onAttachment?.({ type: 'image', data: dataUrl, name: '截图.png' })
+      setAttachment({ type: 'image', data: dataUrl, name: '截图.png' })
     })
-  }, [onScreenshot, onAttachment])
+  }, [onScreenshot])
 
-  const handleAttachment = useCallback(async () => {
+  const handleFileSelect = useCallback(async () => {
     const result = await window.electronAPI.openFileDialog()
     if (result) {
-      onAttachment?.(result)
+      setAttachment(result)
     }
-  }, [onAttachment])
+  }, [])
+
+  const filteredModels = modelSearch
+    ? modelOptions.filter((m) => m.toLowerCase().includes(modelSearch.toLowerCase()))
+    : modelOptions
 
   return (
     <div className="input-area">
@@ -138,6 +151,19 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         />
       )}
       <div className="input-container">
+        {attachment && (
+          <div className="attachment-preview">
+            {attachment.type === 'image' ? (
+              <img src={attachment.data} className="attachment-thumb" alt={attachment.name} />
+            ) : (
+              <div className="attachment-file">
+                <span className="attachment-file-icon">📄</span>
+                <span className="attachment-file-name">{attachment.name}</span>
+              </div>
+            )}
+            <button className="attachment-remove" onClick={() => setAttachment(null)}>✕</button>
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           className="input-textarea"
@@ -157,7 +183,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                 <rect x="4" y="4" width="8" height="8" strokeDasharray="2 2"/>
               </svg>
             </button>
-            <button className="toolbar-btn" title="附件" onClick={handleAttachment}>
+            <button className="toolbar-btn" title="附件" onClick={handleFileSelect}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5l6-6a2.5 2.5 0 013.5 3.5l-5.5 5.5a1 1 0 01-1.5-1.5L11 5.5"/>
               </svg>
@@ -167,13 +193,26 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
             <div className="model-selector">
               {showModelSelector && (
                 <div className="model-dropdown">
-                  {modelOptions.map((m) => (
-                    <button
-                      key={m}
-                      className={`model-option${m === model ? ' active' : ''}`}
-                      onClick={() => { onModelChange?.(m); setShowModelSelector(false) }}
-                    >{m}</button>
-                  ))}
+                  <input
+                    className="model-search"
+                    placeholder="搜索模型..."
+                    value={modelSearch}
+                    onChange={(e) => setModelSearch(e.target.value)}
+                    autoFocus
+                    onMouseDown={(e) => e.stopPropagation()}
+                  />
+                  <div className="model-list">
+                    {filteredModels.map((m) => (
+                      <button
+                        key={m}
+                        className={`model-option${m === model ? ' active' : ''}`}
+                        onClick={() => { onModelChange?.(m); setShowModelSelector(false) }}
+                      >{m}</button>
+                    ))}
+                    {filteredModels.length === 0 && (
+                      <div className="model-empty">无匹配模型</div>
+                    )}
+                  </div>
                 </div>
               )}
               <button className="toolbar-btn model-btn" title="切换模型" onClick={() => setShowModelSelector((v) => !v)}>
@@ -183,7 +222,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
             <button
               className="toolbar-btn send-btn"
               onClick={handleSend}
-              disabled={disabled || !value.trim()}
+              disabled={disabled || (!value.trim() && !attachment)}
               title="发送"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
