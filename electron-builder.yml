@@ -15,10 +15,6 @@ publish:
 mac:
   category: public.app-category.utilities
   icon: resources/icon.png
-  hardenedRuntime: true
-  gatekeeperAssess: false
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
   target:
     - target: dmg
       arch:
@@ -26,8 +22,6 @@ mac:
     - target: zip
       arch:
         - universal
-  notarize:
-    teamId: ${env.APPLE_TEAM_ID}
 
 dmg:
   sign: false
