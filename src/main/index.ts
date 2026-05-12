@@ -4,6 +4,7 @@ import { registerIpcHandlers } from './ipc'
 import { setupTray } from './tray'
 import { registerHotkey } from './hotkey'
 import { initDatabase } from './database'
+import { initAutoUpdater } from './updater'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -31,10 +32,19 @@ function createWindow(): void {
 
   mainWindow.setIgnoreMouseEvents(true, { forward: true })
 
-  // DevTools: uncomment to debug
-  // if (!app.isPackaged) {
-  //   mainWindow.webContents.openDevTools({ mode: 'detach' })
-  // }
+  if (!app.isPackaged) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+    mainWindow.webContents.on('before-input-event', (_event, input) => {
+      if (input.control && input.shift && input.key.toLowerCase() === 'i') {
+        _event.preventDefault()
+        if (mainWindow!.webContents.isDevToolsOpened()) {
+          mainWindow!.webContents.closeDevTools()
+        } else {
+          mainWindow!.webContents.openDevTools({ mode: 'detach' })
+        }
+      }
+    })
+  }
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -49,6 +59,10 @@ app.whenReady().then(() => {
   registerIpcHandlers(mainWindow!)
   setupTray(mainWindow!)
   registerHotkey(mainWindow!)
+
+  if (app.isPackaged) {
+    initAutoUpdater(mainWindow!)
+  }
 })
 
 app.on('window-all-closed', () => {

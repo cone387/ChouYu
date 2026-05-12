@@ -6,10 +6,36 @@ directories:
 files:
   - out/**/*
   - "!out/types-*"
+
+publish:
+  provider: github
+  owner: cone387
+  repo: ChouYu
+
+mac:
+  category: public.app-category.utilities
+  icon: resources/icon.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch:
+        - universal
+    - target: zip
+      arch:
+        - universal
+  notarize:
+    teamId: ${env.APPLE_TEAM_ID}
+
+dmg:
+  sign: false
+
 win:
+  icon: resources/icon.png
   target:
     - nsis
-  icon: resources/icon.png
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
