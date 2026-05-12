@@ -23,7 +23,8 @@
 }
 
 .chat-panel-settings {
-  min-height: 360px;
+  min-height: 320px;
+  height: 360px;
 }
 
 .chat-panel > .message-area {
@@ -487,6 +488,53 @@
 /* Model Selector */
 .model-selector {
   position: relative;
+}
+
+.model-btn-group {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border-radius: 6px;
+  transition: background 150ms;
+}
+
+.model-btn-group:hover {
+  background: var(--hover-bg);
+}
+
+.model-btn-group .model-btn {
+  border-radius: 6px 0 0 6px;
+  padding-right: 2px;
+}
+
+.model-btn-group .model-btn:hover {
+  background: transparent;
+}
+
+.model-arrow {
+  border-radius: 0 6px 6px 0 !important;
+  padding: 6px 3px !important;
+  opacity: 0.5;
+  position: relative;
+}
+
+.model-arrow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--border);
+}
+
+.model-btn-group:hover .model-arrow {
+  opacity: 0.8;
+}
+
+.model-arrow:hover {
+  opacity: 1 !important;
+  background: transparent !important;
 }
 
 .model-dropdown {

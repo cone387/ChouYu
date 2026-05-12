@@ -231,7 +231,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     >
       {showSettings ? (
         <Settings
-          onClose={() => { setShowSettings(false); onSettingsClose?.(); handleClose() }}
+          onClose={() => { setShowSettings(false); onSettingsClose?.() }}
           dragHandleProps={{
             onPointerDown: handleDragStart,
             onPointerMove: handleDragMove,
@@ -252,6 +252,14 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
               status={getStatusText()}
               showHistory={showHistory}
               onToggleHistory={() => setShowHistory((v) => !v)}
+              onSettings={() => {
+                setShowSettings(true)
+                const screenH = window.innerHeight
+                const panelH = 360
+                if (position.y + panelH > screenH - 4) {
+                  onPositionChange({ ...position, y: Math.max(4, screenH - panelH - 4) })
+                }
+              }}
               onNewTopic={handleNewTopic}
               onClose={handleClose}
             />

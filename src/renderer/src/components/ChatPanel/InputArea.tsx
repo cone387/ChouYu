@@ -326,9 +326,16 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                   </div>
                 </div>
               )}
-              <button className="toolbar-btn model-btn" title="切换模型" onClick={() => setShowModelSelector((v) => !v)}>
-                {model || 'AI'}
-              </button>
+              <div className="model-btn-group">
+                <button className="toolbar-btn model-btn" title="切换模型" onClick={() => setShowModelSelector((v) => !v)}>
+                  {model || 'AI'}
+                </button>
+                <button className="toolbar-btn model-arrow" title="选择模型" onClick={() => setShowModelSelector((v) => !v)}>
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                    <path d="M1 3l3 3 3-3"/>
+                  </svg>
+                </button>
+              </div>
             </div>
             <button
               className="toolbar-btn send-btn"
