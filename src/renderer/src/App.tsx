@@ -96,9 +96,9 @@ function App() {
     return cleanup
   }, [openSettings])
 
-  const startScreenshot = useCallback((callback: (dataUrl: string) => void) => {
+  const startScreenshot = useCallback((hidePanel: boolean, callback: (dataUrl: string) => void) => {
     screenshotCallbackRef.current = callback
-    window.electronAPI.takeScreenshot().then((dataUrl) => {
+    window.electronAPI.takeScreenshot(hidePanel).then((dataUrl) => {
       if (dataUrl) {
         window.electronAPI.setIgnoreMouseEvents(false)
         setScreenshotImage(dataUrl)
@@ -127,29 +127,27 @@ function App() {
 
   return (
     <div className="app-container">
-      {!screenshotImage && (
-        <>
-          <Pet
-            position={petPosition}
-            onPositionChange={setPetPosition}
-            onClick={togglePanel}
-            onOpenSettings={openSettings}
-            state={petState}
+      <div style={{ display: screenshotImage ? 'none' : undefined }}>
+        <Pet
+          position={petPosition}
+          onPositionChange={setPetPosition}
+          onClick={togglePanel}
+          onOpenSettings={openSettings}
+          state={petState}
+        />
+        {panelVisible && panelPosition && (
+          <ChatPanel
+            position={panelPosition}
+            onPositionChange={setPanelPosition}
+            petState={petState}
+            onPetStateChange={setPetState}
+            onClose={() => setPanelVisible(false)}
+            initialShowSettings={showSettings}
+            onSettingsClose={() => setShowSettings(false)}
+            onScreenshot={startScreenshot}
           />
-          {panelVisible && panelPosition && (
-            <ChatPanel
-              position={panelPosition}
-              onPositionChange={setPanelPosition}
-              petState={petState}
-              onPetStateChange={setPetState}
-              onClose={() => setPanelVisible(false)}
-              initialShowSettings={showSettings}
-              onSettingsClose={() => setShowSettings(false)}
-              onScreenshot={startScreenshot}
-            />
-          )}
-        </>
-      )}
+        )}
+      </div>
       {screenshotImage && (
         <ScreenCapture
           imageDataUrl={screenshotImage}

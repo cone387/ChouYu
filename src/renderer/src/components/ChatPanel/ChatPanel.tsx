@@ -18,7 +18,7 @@ interface ChatPanelProps {
   onClose: () => void
   initialShowSettings?: boolean
   onSettingsClose?: () => void
-  onScreenshot?: (callback: (dataUrl: string) => void) => void
+  onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
 }
 
 export default function ChatPanel({ position, onPositionChange, petState, onPetStateChange, onClose, initialShowSettings, onSettingsClose, onScreenshot }: ChatPanelProps) {
@@ -92,7 +92,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleClose])
 
-  const handleSend = async (content: string, attachment?: PendingAttachment) => {
+  const handleSend = async (content: string, attachments?: PendingAttachment[]) => {
     if (content === '/clear') {
       setMessages([])
       clearMessages()
@@ -119,10 +119,11 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     }
 
     let msgContent = content
-    if (attachment) {
-      if (attachment.type === 'text') {
-        msgContent = content ? `${content}\n\n[附件: ${attachment.name}]\n${attachment.data.slice(0, 2000)}` : `[附件: ${attachment.name}]\n${attachment.data.slice(0, 2000)}`
-      }
+    const imageAttachment = attachments?.find((a) => a.type === 'image')
+    const textAttachments = attachments?.filter((a) => a.type === 'text') || []
+    if (textAttachments.length > 0) {
+      const textParts = textAttachments.map((a) => `[附件: ${a.name}]\n${a.data.slice(0, 2000)}`)
+      msgContent = content ? `${content}\n\n${textParts.join('\n\n')}` : textParts.join('\n\n')
     }
 
     const userMsg: Message = {
@@ -130,7 +131,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
       role: 'user',
       content: msgContent,
       timestamp: Date.now(),
-      imageUrl: attachment?.type === 'image' ? attachment.data : undefined
+      imageUrl: imageAttachment?.data
     }
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)

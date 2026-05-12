@@ -30,8 +30,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     mainWindow.webContents.send('toggle-panel')
   })
 
-  ipcMain.handle('take-screenshot', async () => {
-    mainWindow.hide()
+  ipcMain.handle('take-screenshot', async (_event, hideWindow?: boolean) => {
+    const shouldHide = hideWindow !== false
+    if (shouldHide) mainWindow.hide()
     await new Promise((r) => setTimeout(r, 200))
     try {
       const display = screen.getPrimaryDisplay()
@@ -40,12 +41,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         types: ['screen'],
         thumbnailSize: { width, height }
       })
-      mainWindow.show()
+      if (shouldHide) mainWindow.show()
       if (sources.length > 0) {
         return sources[0].thumbnail.toDataURL()
       }
     } catch {
-      mainWindow.show()
+      if (shouldHide) mainWindow.show()
     }
     return null
   })

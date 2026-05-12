@@ -8,12 +8,12 @@ export interface PendingAttachment {
 }
 
 interface InputAreaProps {
-  onSend: (content: string, attachment?: PendingAttachment) => void
+  onSend: (content: string, attachments?: PendingAttachment[]) => void
   disabled: boolean
   autoFocus?: boolean
   model?: string
   onModelChange?: (model: string) => void
-  onScreenshot?: (callback: (dataUrl: string) => void) => void
+  onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
 }
 
 const FALLBACK_MODELS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long']
@@ -22,10 +22,11 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
+  const [showScreenshotMenu, setShowScreenshotMenu] = useState(false)
   const [modelOptions, setModelOptions] = useState<string[]>(FALLBACK_MODELS)
   const [modelSearch, setModelSearch] = useState('')
   const [cmdIndex, setCmdIndex] = useState(0)
-  const [attachment, setAttachment] = useState<PendingAttachment | null>(null)
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -50,6 +51,17 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   }, [showModelSelector])
 
   useEffect(() => {
+    if (!showScreenshotMenu) return
+    const dismiss = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.screenshot-selector')) {
+        setShowScreenshotMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', dismiss)
+    return () => document.removeEventListener('mousedown', dismiss)
+  }, [showScreenshotMenu])
+
+  useEffect(() => {
     window.electronAPI.fetchModels().then((models) => {
       if (models && models.length > 0) setModelOptions(models)
     })
@@ -57,12 +69,12 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
-    if ((!trimmed && !attachment) || disabled) return
-    onSend(trimmed, attachment || undefined)
+    if ((!trimmed && attachments.length === 0) || disabled) return
+    onSend(trimmed, attachments.length > 0 ? attachments : undefined)
     setValue('')
-    setAttachment(null)
+    setAttachments([])
     setShowCommands(false)
-  }, [value, disabled, onSend, attachment])
+  }, [value, disabled, onSend, attachments])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showCommands) {
@@ -123,17 +135,22 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     }
   }
 
-  const handleScreenshot = useCallback(() => {
-    onScreenshot?.((dataUrl) => {
-      setAttachment({ type: 'image', data: dataUrl, name: '截图.png' })
+  const doScreenshot = useCallback((hidePanel: boolean) => {
+    setShowScreenshotMenu(false)
+    onScreenshot?.(hidePanel, (dataUrl) => {
+      setAttachments((prev) => [...prev, { type: 'image', data: dataUrl, name: `截图${prev.length + 1}.png` }])
     })
   }, [onScreenshot])
 
   const handleFileSelect = useCallback(async () => {
     const result = await window.electronAPI.openFileDialog()
     if (result) {
-      setAttachment(result)
+      setAttachments((prev) => [...prev, result])
     }
+  }, [])
+
+  const removeAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
   }, [])
 
   const filteredModels = modelSearch
@@ -151,17 +168,21 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         />
       )}
       <div className="input-container">
-        {attachment && (
-          <div className="attachment-preview">
-            {attachment.type === 'image' ? (
-              <img src={attachment.data} className="attachment-thumb" alt={attachment.name} />
-            ) : (
-              <div className="attachment-file">
-                <span className="attachment-file-icon">📄</span>
-                <span className="attachment-file-name">{attachment.name}</span>
+        {attachments.length > 0 && (
+          <div className="attachment-list">
+            {attachments.map((att, i) => (
+              <div key={i} className="attachment-item">
+                {att.type === 'image' ? (
+                  <img src={att.data} className="attachment-thumb" alt={att.name} />
+                ) : (
+                  <div className="attachment-file">
+                    <span className="attachment-file-icon">📄</span>
+                    <span className="attachment-file-name">{att.name}</span>
+                  </div>
+                )}
+                <button className="attachment-remove" onClick={() => removeAttachment(i)}>✕</button>
               </div>
-            )}
-            <button className="attachment-remove" onClick={() => setAttachment(null)}>✕</button>
+            ))}
           </div>
         )}
         <textarea
@@ -177,13 +198,21 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         />
         <div className="input-toolbar">
           <div className="input-toolbar-left">
-            <button className="toolbar-btn screenshot-btn" title="截图" onClick={handleScreenshot}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="5" cy="12" r="2"/>
-                <circle cx="11" cy="12" r="2"/>
-                <path d="M6.5 10.5L11 3M9.5 10.5L5 3"/>
-              </svg>
-            </button>
+            <div className="screenshot-selector">
+              {showScreenshotMenu && (
+                <div className="screenshot-dropdown">
+                  <button className="screenshot-option" onClick={() => doScreenshot(true)}>截图（隐藏窗口）</button>
+                  <button className="screenshot-option" onClick={() => doScreenshot(false)}>截图（保留窗口）</button>
+                </div>
+              )}
+              <button className="toolbar-btn screenshot-btn" title="截图" onClick={() => setShowScreenshotMenu((v) => !v)}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="5" cy="12" r="2"/>
+                  <circle cx="11" cy="12" r="2"/>
+                  <path d="M6.5 10.5L11 3M9.5 10.5L5 3"/>
+                </svg>
+              </button>
+            </div>
             <button className="toolbar-btn" title="附件" onClick={handleFileSelect}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5l6-6a2.5 2.5 0 013.5 3.5l-5.5 5.5a1 1 0 01-1.5-1.5L11 5.5"/>
@@ -223,7 +252,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
             <button
               className="toolbar-btn send-btn"
               onClick={handleSend}
-              disabled={disabled || (!value.trim() && !attachment)}
+              disabled={disabled || (!value.trim() && attachments.length === 0)}
               title="发送"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
