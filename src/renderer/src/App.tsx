@@ -108,6 +108,7 @@ function App() {
 
   const handleScreenshotCapture = useCallback((croppedDataUrl: string) => {
     setScreenshotImage(null)
+    ignoreRef.current = true
     window.electronAPI.setIgnoreMouseEvents(true)
     screenshotCallbackRef.current?.(croppedDataUrl)
     screenshotCallbackRef.current = null
@@ -115,6 +116,7 @@ function App() {
 
   const handleScreenshotCancel = useCallback(() => {
     setScreenshotImage(null)
+    ignoreRef.current = true
     window.electronAPI.setIgnoreMouseEvents(true)
     screenshotCallbackRef.current = null
   }, [])
