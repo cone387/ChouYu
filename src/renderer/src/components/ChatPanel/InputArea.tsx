@@ -23,10 +23,12 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   const [showCommands, setShowCommands] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [showScreenshotMenu, setShowScreenshotMenu] = useState(false)
+  const [hideWindowOnCapture, setHideWindowOnCapture] = useState(true)
   const [modelOptions, setModelOptions] = useState<string[]>(FALLBACK_MODELS)
   const [modelSearch, setModelSearch] = useState('')
   const [cmdIndex, setCmdIndex] = useState(0)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -135,12 +137,13 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     }
   }
 
-  const doScreenshot = useCallback((hidePanel: boolean) => {
+  const doScreenshot = useCallback((hidePanel?: boolean) => {
     setShowScreenshotMenu(false)
-    onScreenshot?.(hidePanel, (dataUrl) => {
+    const hide = hidePanel ?? hideWindowOnCapture
+    onScreenshot?.(hide, (dataUrl) => {
       setAttachments((prev) => [...prev, { type: 'image', data: dataUrl, name: `截图${prev.length + 1}.png` }])
     })
-  }, [onScreenshot])
+  }, [onScreenshot, hideWindowOnCapture])
 
   const handleFileSelect = useCallback(async () => {
     const result = await window.electronAPI.openFileDialog()
@@ -210,7 +213,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
             {attachments.map((att, i) => (
               <div key={i} className="attachment-item">
                 {att.type === 'image' ? (
-                  <img src={att.data} className="attachment-thumb" alt={att.name} />
+                  <img src={att.data} className="attachment-thumb" alt={att.name} onClick={() => setPreviewImage(att.data)} />
                 ) : (
                   <div className="attachment-file">
                     <span className="attachment-file-icon">📄</span>
@@ -238,17 +241,58 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
             <div className="screenshot-selector">
               {showScreenshotMenu && (
                 <div className="screenshot-dropdown">
-                  <button className="screenshot-option" onClick={() => doScreenshot(true)}>截图（隐藏窗口）</button>
-                  <button className="screenshot-option" onClick={() => doScreenshot(false)}>截图（保留窗口）</button>
+                  <button className="screenshot-menu-item" onClick={() => doScreenshot()}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="5" cy="12" r="2"/><circle cx="11" cy="12" r="2"/>
+                      <path d="M6.5 10.5L11 3M9.5 10.5L5 3"/>
+                    </svg>
+                    <span className="screenshot-menu-label">截图</span>
+                    <span className="screenshot-menu-shortcut">Ctrl+Shift+A</span>
+                  </button>
+                  <button className="screenshot-menu-item disabled" disabled>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <rect x="2" y="3" width="12" height="10" rx="1"/><path d="M5 8h6M8 5v6"/>
+                    </svg>
+                    <span className="screenshot-menu-label">文字识别</span>
+                  </button>
+                  <button className="screenshot-menu-item disabled" disabled>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 10l4-4 3 3 5-5"/>
+                    </svg>
+                    <span className="screenshot-menu-label">滚动截图</span>
+                  </button>
+                  <button className="screenshot-menu-item disabled" disabled>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="2" fill="currentColor"/>
+                    </svg>
+                    <span className="screenshot-menu-label">录屏</span>
+                    <span className="screenshot-menu-shortcut">Ctrl+Shift+R</span>
+                  </button>
+                  <div className="screenshot-menu-divider" />
+                  <label className="screenshot-menu-item screenshot-menu-check">
+                    <input
+                      type="checkbox"
+                      checked={hideWindowOnCapture}
+                      onChange={(e) => setHideWindowOnCapture(e.target.checked)}
+                    />
+                    <span className="screenshot-menu-label">隐藏当前窗口</span>
+                  </label>
                 </div>
               )}
-              <button className="toolbar-btn screenshot-btn" title="截图" onClick={() => setShowScreenshotMenu((v) => !v)}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="5" cy="12" r="2"/>
-                  <circle cx="11" cy="12" r="2"/>
-                  <path d="M6.5 10.5L11 3M9.5 10.5L5 3"/>
-                </svg>
-              </button>
+              <div className="screenshot-btn-group">
+                <button className="toolbar-btn screenshot-btn" title="截图" onClick={() => doScreenshot()}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="5" cy="12" r="2"/>
+                    <circle cx="11" cy="12" r="2"/>
+                    <path d="M6.5 10.5L11 3M9.5 10.5L5 3"/>
+                  </svg>
+                </button>
+                <button className="toolbar-btn screenshot-arrow" title="截图选项" onClick={() => setShowScreenshotMenu((v) => !v)}>
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                    <path d="M1 3l3 3 3-3"/>
+                  </svg>
+                </button>
+              </div>
             </div>
             <button className="toolbar-btn" title="附件" onClick={handleFileSelect}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -299,6 +343,11 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
           </div>
         </div>
       </div>
+      {previewImage && (
+        <div className="image-preview-overlay" onClick={() => setPreviewImage(null)}>
+          <img src={previewImage} className="image-preview-img" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   )
 }

@@ -588,6 +588,11 @@
   border-radius: 6px;
   object-fit: cover;
   border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.attachment-thumb:hover {
+  border-color: var(--accent);
 }
 
 .attachment-file {
@@ -639,6 +644,53 @@
   position: relative;
 }
 
+.screenshot-btn-group {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border-radius: 6px;
+  transition: background 150ms;
+}
+
+.screenshot-btn-group:hover {
+  background: var(--hover-bg);
+}
+
+.screenshot-btn-group .screenshot-btn {
+  border-radius: 6px 0 0 6px;
+  padding-right: 4px;
+}
+
+.screenshot-btn-group .screenshot-btn:hover {
+  background: transparent;
+}
+
+.screenshot-arrow {
+  border-radius: 0 6px 6px 0 !important;
+  padding: 6px 3px !important;
+  opacity: 0.5;
+  position: relative;
+}
+
+.screenshot-arrow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--border);
+}
+
+.screenshot-btn-group:hover .screenshot-arrow {
+  opacity: 0.8;
+}
+
+.screenshot-arrow:hover {
+  opacity: 1 !important;
+  background: transparent !important;
+}
+
 .screenshot-dropdown {
   position: absolute;
   bottom: calc(100% + 4px);
@@ -648,13 +700,15 @@
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
   padding: 4px;
-  min-width: 140px;
+  min-width: 180px;
   animation: cmd-appear 120ms ease-out;
   z-index: 100;
 }
 
-.screenshot-option {
-  display: block;
+.screenshot-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   border: none;
   background: transparent;
@@ -667,8 +721,40 @@
   white-space: nowrap;
 }
 
-.screenshot-option:hover {
+.screenshot-menu-item:hover:not(:disabled) {
   background: var(--hover-bg);
+}
+
+.screenshot-menu-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.screenshot-menu-label {
+  flex: 1;
+}
+
+.screenshot-menu-shortcut {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.screenshot-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 8px;
+}
+
+.screenshot-menu-check {
+  cursor: pointer;
+}
+
+.screenshot-menu-check input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 /* Panel Close Animation */
