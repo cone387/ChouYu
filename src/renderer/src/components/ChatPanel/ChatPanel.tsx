@@ -17,6 +17,7 @@ interface ChatPanelProps {
   petState: PetState
   onPetStateChange: (state: PetState) => void
   onHide: () => void
+  onClose: () => void
   initialShowSettings?: boolean
   onSettingsClose?: () => void
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
@@ -24,7 +25,7 @@ interface ChatPanelProps {
   onPluginIdConsumed?: () => void
 }
 
-export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed }: ChatPanelProps) {
+export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
@@ -110,11 +111,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onHide()
+      if (e.key === 'Escape' && visible) onClose()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onHide])
+  }, [onClose, visible])
 
   const pluginCommands = plugins.map((p) => ({ cmd: '/' + p.command, desc: p.description }))
 
@@ -331,7 +332,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 }
               }}
               onNewTopic={handleNewTopic}
-              onClose={onHide}
+              onHide={onHide}
+              onClose={onClose}
             />
           </div>
           {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}

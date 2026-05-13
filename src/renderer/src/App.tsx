@@ -177,6 +177,7 @@ function App() {
           petState={petState}
           onPetStateChange={setPetState}
           onHide={() => setPanelVisible(false)}
+          onClose={() => { setPanelVisible(false); setPanelInitialized(false) }}
           initialShowSettings={showSettings}
           onSettingsClose={() => setShowSettings(false)}
           onScreenshot={startScreenshot}

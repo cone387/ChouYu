@@ -4,10 +4,11 @@ interface TopBarProps {
   onToggleHistory: () => void
   onNewTopic: () => void
   onSettings: () => void
+  onHide: () => void
   onClose: () => void
 }
 
-export default function TopBar({ status, showHistory, onToggleHistory, onNewTopic, onSettings, onClose }: TopBarProps) {
+export default function TopBar({ status, showHistory, onToggleHistory, onNewTopic, onSettings, onHide, onClose }: TopBarProps) {
   return (
     <div className="chat-topbar">
       <div className="chat-topbar-left">
@@ -44,6 +45,11 @@ export default function TopBar({ status, showHistory, onToggleHistory, onNewTopi
         <button className="topbar-btn" onClick={onNewTopic} title="清空对话，开始新话题">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <path d="M7 2v10M2 7h10"/>
+          </svg>
+        </button>
+        <button className="topbar-btn" onClick={onHide} title="隐藏面板">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M3 7h8"/>
           </svg>
         </button>
         <button className="topbar-btn" onClick={onClose} title="关闭">
