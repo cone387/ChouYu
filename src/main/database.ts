@@ -29,7 +29,7 @@ interface StoreData {
 const DEFAULT_CONFIG: AppConfig = {
   provider: 'openai',
   baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  apiKey: 'sk-d7fdb9297d5542a896f3d119a090e188',
+  apiKey: '',
   model: 'qwen-plus',
   hotkey: 'Alt+Space',
   autoStart: false,

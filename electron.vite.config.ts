@@ -6,13 +6,15 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     build: {
-      outDir: 'out/main'
+      outDir: 'out/main',
+      minify: true
     }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
-      outDir: 'out/preload'
+      outDir: 'out/preload',
+      minify: true
     }
   },
   renderer: {
@@ -23,7 +25,17 @@ export default defineConfig({
     },
     plugins: [react()],
     build: {
-      outDir: 'out/renderer'
+      outDir: 'out/renderer',
+      minify: 'esbuild',
+      cssMinify: true,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            react: ['react', 'react-dom'],
+            markdown: ['react-markdown']
+          }
+        }
+      }
     }
   }
 })

@@ -22,6 +22,7 @@ function createWindow(): void {
     skipTaskbar: true,
     resizable: false,
     hasShadow: false,
+    show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -31,6 +32,11 @@ function createWindow(): void {
   })
 
   mainWindow.setIgnoreMouseEvents(true, { forward: true })
+
+  // Show window once renderer is ready to avoid blank frame
+  mainWindow.once('ready-to-show', () => {
+    mainWindow!.show()
+  })
 
   if (!app.isPackaged) {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
@@ -54,14 +60,18 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  initDatabase()
+  // Create window first so UI appears quickly
   createWindow()
+
+  // Then init data and handlers
+  initDatabase()
   registerIpcHandlers(mainWindow!)
   setupTray(mainWindow!)
   registerHotkey(mainWindow!)
 
   if (app.isPackaged) {
-    initAutoUpdater(mainWindow!)
+    // Delay update check to avoid competing with startup I/O
+    setTimeout(() => initAutoUpdater(mainWindow!), 5000)
   }
 })
 

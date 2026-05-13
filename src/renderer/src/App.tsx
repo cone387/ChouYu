@@ -25,20 +25,36 @@ function App() {
   }, [])
 
   useEffect(() => {
+    let rafId: number | null = null
+    let lastX = 0
+    let lastY = 0
+
     const handleMouseMove = (e: MouseEvent) => {
-      if ((window as any).__petDragging) return
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      const isOverUI = el && el.closest('[data-interactive]')
-      if (isOverUI && ignoreRef.current) {
-        ignoreRef.current = false
-        window.electronAPI.setIgnoreMouseEvents(false)
-      } else if (!isOverUI && !ignoreRef.current) {
-        ignoreRef.current = true
-        window.electronAPI.setIgnoreMouseEvents(true)
-      }
+      // Skip if barely moved (within 4px)
+      if (Math.abs(e.clientX - lastX) < 4 && Math.abs(e.clientY - lastY) < 4) return
+      lastX = e.clientX
+      lastY = e.clientY
+
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        if ((window as any).__petDragging) return
+        const el = document.elementFromPoint(lastX, lastY)
+        const isOverUI = el && el.closest('[data-interactive]')
+        if (isOverUI && ignoreRef.current) {
+          ignoreRef.current = false
+          window.electronAPI.setIgnoreMouseEvents(false)
+        } else if (!isOverUI && !ignoreRef.current) {
+          ignoreRef.current = true
+          window.electronAPI.setIgnoreMouseEvents(true)
+        }
+      })
     }
     document.addEventListener('mousemove', handleMouseMove)
-    return () => document.removeEventListener('mousemove', handleMouseMove)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
   }, [])
 
   const calcPanelPosition = useCallback((petPos: { x: number; y: number }, panelH = 140) => {
