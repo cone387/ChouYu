@@ -61,6 +61,16 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }
   }, [initialPluginId, plugins, onPluginIdConsumed])
 
+  // Re-focus textarea when panel becomes visible again
+  useEffect(() => {
+    if (visible && panelRef.current) {
+      const textarea = panelRef.current.querySelector('.input-textarea') as HTMLTextAreaElement | null
+      if (textarea) {
+        setTimeout(() => textarea.focus(), 50)
+      }
+    }
+  }, [visible])
+
   const handleDragStart = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return
     const target = e.target as HTMLElement
@@ -80,14 +90,24 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (!dragRef.current.dragging) return
     const dx = e.screenX - dragRef.current.startX
     const dy = e.screenY - dragRef.current.startY
-    onPositionChange({
-      x: dragRef.current.posX + dx,
-      y: dragRef.current.posY + dy
-    })
-  }, [onPositionChange])
+    // Use transform during drag to avoid re-rendering message list
+    if (panelRef.current) {
+      panelRef.current.style.transform = `translate(${dx}px, ${dy}px)`
+    }
+  }, [])
 
   const handleDragEnd = useCallback(() => {
+    if (!dragRef.current.dragging) return
     dragRef.current.dragging = false
+    const dx = (panelRef.current?.style.transform.match(/translate\((.+?)px/)?.[1]) || '0'
+    const dy = (panelRef.current?.style.transform.match(/,\s*(.+?)px/)?.[1]) || '0'
+    if (panelRef.current) {
+      panelRef.current.style.transform = ''
+    }
+    onPositionChange({
+      x: dragRef.current.posX + Number(dx),
+      y: dragRef.current.posY + Number(dy)
+    })
   }, [])
 
   useEffect(() => {

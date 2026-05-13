@@ -22,6 +22,12 @@ const api = {
       ipcRenderer.removeListener('open-settings', callback)
     }
   },
+  onHidePanel: (callback: () => void) => {
+    ipcRenderer.on('hide-panel', callback)
+    return () => {
+      ipcRenderer.removeListener('hide-panel', callback)
+    }
+  },
   onPluginHotkey: (callback: (pluginId: string) => void) => {
     const handler = (_e: unknown, pluginId: string) => callback(pluginId)
     ipcRenderer.on('plugin-hotkey', handler)

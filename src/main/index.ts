@@ -34,24 +34,29 @@ function createWindow(): void {
 
   mainWindow.setIgnoreMouseEvents(true, { forward: true })
 
+  // Intercept keyboard shortcuts
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    // Prevent Ctrl+W from closing the window (only hide the panel)
+    if (input.control && !input.shift && input.key.toLowerCase() === 'w') {
+      _event.preventDefault()
+      mainWindow!.webContents.send('hide-panel')
+      return
+    }
+    // Dev tools toggle (dev mode only)
+    if (!app.isPackaged && input.control && input.shift && input.key.toLowerCase() === 'i') {
+      _event.preventDefault()
+      if (mainWindow!.webContents.isDevToolsOpened()) {
+        mainWindow!.webContents.closeDevTools()
+      } else {
+        mainWindow!.webContents.openDevTools({ mode: 'detach' })
+      }
+    }
+  })
+
   // Show window once renderer is ready to avoid blank frame
   mainWindow.once('ready-to-show', () => {
     mainWindow!.show()
   })
-
-  if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
-    mainWindow.webContents.on('before-input-event', (_event, input) => {
-      if (input.control && input.shift && input.key.toLowerCase() === 'i') {
-        _event.preventDefault()
-        if (mainWindow!.webContents.isDevToolsOpened()) {
-          mainWindow!.webContents.closeDevTools()
-        } else {
-          mainWindow!.webContents.openDevTools({ mode: 'detach' })
-        }
-      }
-    })
-  }
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -64,14 +69,17 @@ app.whenReady().then(async () => {
   // Init database first (needed by plugins and IPC handlers)
   initDatabase()
 
+  // Register plugins and IPC channels synchronously (before window loads renderer)
+  pluginRegistry.register()
+
   // Create window
   createWindow()
 
   // Register IPC handlers immediately after window creation
   registerIpcHandlers(mainWindow!)
 
-  // Plugin init can be async - IPC handlers are already registered
-  await pluginRegistry.initialize()
+  // Async plugin init (network requests etc) - IPC handlers already available
+  await pluginRegistry.initializePlugins()
   setupTray(mainWindow!)
   registerHotkey(mainWindow!)
 

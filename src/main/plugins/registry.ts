@@ -10,8 +10,8 @@ class PluginRegistry {
   private plugins: Map<string, PluginDefinition> = new Map()
   private contexts: Map<string, PluginContext> = new Map()
 
-  /** 初始化所有插件并注册 IPC 通道 */
-  async initialize(): Promise<void> {
+  /** 同步注册插件和 IPC 通道（在 app 启动时立即调用） */
+  register(): void {
     // 检查命令冲突
     this.checkCommandConflicts()
 
@@ -22,7 +22,12 @@ class PluginRegistry {
       this.plugins.set(plugin.id, plugin)
     }
 
-    // 初始化插件（init 失败不影响其他插件）
+    // 自动注册 IPC 通道
+    this.registerIpcChannels()
+  }
+
+  /** 异步初始化插件（init 可能涉及网络请求等） */
+  async initializePlugins(): Promise<void> {
     for (const plugin of PLUGINS) {
       if (plugin.init) {
         try {
@@ -32,9 +37,6 @@ class PluginRegistry {
         }
       }
     }
-
-    // 自动注册 IPC 通道
-    this.registerIpcChannels()
   }
 
   /** 获取所有插件 */

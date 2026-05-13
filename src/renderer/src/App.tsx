@@ -114,6 +114,13 @@ function App() {
   }, [togglePanel])
 
   useEffect(() => {
+    const cleanup = window.electronAPI.onHidePanel(() => {
+      setPanelVisible(false)
+    })
+    return cleanup
+  }, [])
+
+  useEffect(() => {
     const cleanup = window.electronAPI.onOpenSettings(openSettings)
     return cleanup
   }, [openSettings])
