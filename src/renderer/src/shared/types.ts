@@ -100,6 +100,8 @@ export interface Message {
   content: string
   timestamp: number
   imageUrl?: string
+  /** Plugin result data - if present, render as plugin card instead of markdown */
+  pluginData?: PluginMessageData
 }
 
 export interface ChatSession {

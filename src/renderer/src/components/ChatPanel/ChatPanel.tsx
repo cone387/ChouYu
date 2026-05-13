@@ -110,24 +110,6 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
 
   const pluginCommands = plugins.map((p) => ({ cmd: '/' + p.command, desc: p.description }))
 
-  const formatPluginMessage = (result: PluginMessageData): string => {
-    const icon = result.pluginIcon || '🔌'
-    let formatted = `${icon} ${result.pluginName} · ${result.message}`
-
-    if (result.inputContent) {
-      const truncated = result.inputContent.length > 80
-        ? result.inputContent.slice(0, 80) + '…'
-        : result.inputContent
-      formatted += `\n\n> ${truncated}`
-    }
-
-    if (result.detail) {
-      formatted += `\n\n${result.detail}`
-    }
-
-    return formatted
-  }
-
   const handleSend = async (content: string, attachments?: PendingAttachment[]) => {
     // Plugin command detection (before built-in commands)
     for (const plugin of plugins) {
@@ -135,12 +117,12 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
       if (content.startsWith(prefix) || content === `/${plugin.command}`) {
         const extractedContent = content.startsWith(prefix) ? content.slice(prefix.length) : ''
         const result: PluginMessageData = await window.electronAPI.plugin.execute(plugin.id, extractedContent)
-        const formattedContent = formatPluginMessage(result)
         const resultMsg: Message = {
           id: Date.now().toString(),
           role: 'assistant',
-          content: formattedContent,
-          timestamp: Date.now()
+          content: result.message,
+          timestamp: Date.now(),
+          pluginData: result
         }
         setMessages((prev) => [...prev, resultMsg])
         setShowHistory(true)

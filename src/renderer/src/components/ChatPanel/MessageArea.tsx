@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Message } from '../../shared/types'
+import PluginMessageCard from './PluginMessageCard'
 
 interface MessageAreaProps {
   messages: Message[]
@@ -88,7 +89,9 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
               {msg.imageUrl && (
                 <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
               )}
-              {msg.role === 'assistant' ? (
+              {msg.pluginData ? (
+                <PluginMessageCard data={msg.pluginData} />
+              ) : msg.role === 'assistant' ? (
                 <ReactMarkdown
                   components={{
                     code({ className, children }) {
