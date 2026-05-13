@@ -10,9 +10,11 @@ function App() {
   const [positionLoaded, setPositionLoaded] = useState(false)
   const [panelVisible, setPanelVisible] = useState(false)
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
+  const [panelInitialized, setPanelInitialized] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [petState, setPetState] = useState<PetState>('idle')
   const [screenshotImage, setScreenshotImage] = useState<string | null>(null)
+  const [activePluginId, setActivePluginId] = useState<string | null>(null)
   const screenshotCallbackRef = useRef<((dataUrl: string) => void) | null>(null)
   const ignoreRef = useRef(true)
 
@@ -90,17 +92,19 @@ function App() {
   const togglePanel = useCallback(() => {
     setPanelVisible((v) => {
       if (!v) {
+        if (!panelInitialized) setPanelInitialized(true)
         setPanelPosition(calcPanelPosition(petPosition))
         // Ensure window gets focus so textarea can receive it
         window.focus()
       }
       return !v
     })
-  }, [petPosition, calcPanelPosition])
+  }, [petPosition, calcPanelPosition, panelInitialized])
 
   const openSettings = useCallback(() => {
     setPanelPosition(calcPanelPosition(petPosition, 360))
     setPanelVisible(true)
+    setPanelInitialized(true)
     setShowSettings(true)
   }, [petPosition, calcPanelPosition])
 
@@ -113,6 +117,17 @@ function App() {
     const cleanup = window.electronAPI.onOpenSettings(openSettings)
     return cleanup
   }, [openSettings])
+
+  useEffect(() => {
+    const cleanup = window.electronAPI.onPluginHotkey((pluginId) => {
+      if (!panelInitialized) setPanelInitialized(true)
+      setPanelPosition(calcPanelPosition(petPosition))
+      setPanelVisible(true)
+      setActivePluginId(pluginId)
+      window.focus()
+    })
+    return cleanup
+  }, [petPosition, calcPanelPosition, panelInitialized])
 
   const startScreenshot = useCallback((hidePanel: boolean, callback: (dataUrl: string) => void) => {
     screenshotCallbackRef.current = callback
@@ -154,16 +169,19 @@ function App() {
         onOpenSettings={openSettings}
         state={petState}
       />
-      {panelVisible && panelPosition && (
+      {panelInitialized && panelPosition && (
         <ChatPanel
+          visible={panelVisible}
           position={panelPosition}
           onPositionChange={setPanelPosition}
           petState={petState}
           onPetStateChange={setPetState}
-          onClose={() => setPanelVisible(false)}
+          onHide={() => setPanelVisible(false)}
           initialShowSettings={showSettings}
           onSettingsClose={() => setShowSettings(false)}
           onScreenshot={startScreenshot}
+          initialPluginId={activePluginId}
+          onPluginIdConsumed={() => setActivePluginId(null)}
         />
       )}
       {screenshotImage && (

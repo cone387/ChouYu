@@ -34,7 +34,11 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
       icon: p.icon || '🔌'
     }))
 
-  const allNavItems = [...NAV_ITEMS, ...pluginNavItems]
+  const allNavItems = [
+    ...NAV_ITEMS.filter(item => item.key !== 'about'),
+    ...pluginNavItems,
+    ...NAV_ITEMS.filter(item => item.key === 'about')
+  ]
 
   const save = (patch: Partial<AppConfig>) => {
     const updated = { ...config, ...patch }

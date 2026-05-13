@@ -17,11 +17,13 @@ interface InputAreaProps {
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
   plugins?: PluginInfo[]
   pluginCommands?: { cmd: string; desc: string }[]
+  initialActivePlugin?: PluginInfo | null
+  onInitialPluginConsumed?: () => void
 }
 
 const FALLBACK_MODELS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long']
 
-export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onScreenshot, plugins, pluginCommands }: InputAreaProps) {
+export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
@@ -44,6 +46,13 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     const t2 = setTimeout(tryFocus, 300)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
+
+  useEffect(() => {
+    if (initialActivePlugin) {
+      setActivePlugin(initialActivePlugin)
+      onInitialPluginConsumed?.()
+    }
+  }, [initialActivePlugin, onInitialPluginConsumed])
 
   useEffect(() => {
     if (!showModelSelector) return

@@ -22,6 +22,11 @@ const api = {
       ipcRenderer.removeListener('open-settings', callback)
     }
   },
+  onPluginHotkey: (callback: (pluginId: string) => void) => {
+    const handler = (_e: unknown, pluginId: string) => callback(pluginId)
+    ipcRenderer.on('plugin-hotkey', handler)
+    return () => { ipcRenderer.removeListener('plugin-hotkey', handler) }
+  },
   db: {
     getConfig: () => ipcRenderer.invoke('db:get-config'),
     saveConfig: (cfg: Record<string, unknown>) => ipcRenderer.invoke('db:save-config', cfg),

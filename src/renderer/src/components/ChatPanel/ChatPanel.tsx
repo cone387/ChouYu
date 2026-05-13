@@ -11,24 +11,27 @@ import { loadMessages, saveMessages, clearMessages } from '../../core/memory'
 import './ChatPanel.css'
 
 interface ChatPanelProps {
+  visible: boolean
   position: { x: number; y: number }
   onPositionChange: (pos: { x: number; y: number }) => void
   petState: PetState
   onPetStateChange: (state: PetState) => void
-  onClose: () => void
+  onHide: () => void
   initialShowSettings?: boolean
   onSettingsClose?: () => void
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
+  initialPluginId?: string | null
+  onPluginIdConsumed?: () => void
 }
 
-export default function ChatPanel({ position, onPositionChange, petState, onPetStateChange, onClose, initialShowSettings, onSettingsClose, onScreenshot }: ChatPanelProps) {
+export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
   const [showHistory, setShowHistory] = useState(false)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
-  const [closing, setClosing] = useState(false)
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
+  const [activePluginForInput, setActivePluginForInput] = useState<PluginInfo | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0 })
@@ -46,6 +49,16 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
   useEffect(() => {
     if (initialShowSettings) setShowSettings(true)
   }, [initialShowSettings])
+
+  useEffect(() => {
+    if (initialPluginId && plugins.length > 0) {
+      const matchedPlugin = plugins.find(p => p.id === initialPluginId)
+      if (matchedPlugin) {
+        setActivePluginForInput(matchedPlugin)
+      }
+      onPluginIdConsumed?.()
+    }
+  }, [initialPluginId, plugins, onPluginIdConsumed])
 
   const handleDragStart = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return
@@ -95,18 +108,13 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     })
   }, [showHistory])
 
-  const handleClose = useCallback(() => {
-    setClosing(true)
-    setTimeout(() => onClose(), 180)
-  }, [onClose])
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose()
+      if (e.key === 'Escape') onHide()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleClose])
+  }, [onHide])
 
   const pluginCommands = plugins.map((p) => ({ cmd: '/' + p.command, desc: p.description }))
 
@@ -288,8 +296,8 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     <div
       ref={panelRef}
       data-interactive
-      className={`chat-panel${showSettings ? ' chat-panel-settings' : ''}${closing ? ' closing' : ''}`}
-      style={{ left: position.x, top: position.y }}
+      className={`chat-panel${showSettings ? ' chat-panel-settings' : ''}`}
+      style={{ left: position.x, top: position.y, display: visible ? undefined : 'none' }}
     >
       {showSettings ? (
         <Settings
@@ -323,11 +331,11 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
                 }
               }}
               onNewTopic={handleNewTopic}
-              onClose={handleClose}
+              onClose={onHide}
             />
           </div>
           {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
-          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} plugins={plugins} pluginCommands={pluginCommands} />
+          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} plugins={plugins} pluginCommands={pluginCommands} initialActivePlugin={activePluginForInput} onInitialPluginConsumed={() => setActivePluginForInput(null)} />
         </>
       )}
     </div>

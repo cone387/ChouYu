@@ -13,6 +13,8 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
   const [activeMethodId, setActiveMethodId] = useState<string>('')
   const [feedToPet, setFeedToPet] = useState(false)
+  const [customIcon, setCustomIcon] = useState('')
+  const [hotkey, setHotkey] = useState('')
 
   const authMethods = plugin.authMethods || []
 
@@ -33,6 +35,14 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
     // Load feedToPet preference
     window.electronAPI.db.getState(`plugin:${plugin.id}:feedToPet`).then((val) => {
       setFeedToPet(val === 'true')
+    })
+    // Load custom icon
+    window.electronAPI.db.getState(`plugin:${plugin.id}:customIcon`).then((val) => {
+      if (val) setCustomIcon(val)
+    })
+    // Load hotkey
+    window.electronAPI.db.getState(`plugin:${plugin.id}:hotkey`).then((val) => {
+      if (val) setHotkey(val)
     })
   }, [plugin.id])
 
@@ -107,6 +117,37 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
 
   return (
     <div className="settings-pane">
+      <div className="settings-field">
+        <label>图标</label>
+        <input
+          type="text"
+          value={customIcon}
+          onChange={(e) => {
+            const val = e.target.value
+            setCustomIcon(val)
+            window.electronAPI.db.setState(`plugin:${plugin.id}:customIcon`, val)
+          }}
+          placeholder={plugin.icon || '🔌'}
+          maxLength={2}
+          style={{ width: 60 }}
+        />
+      </div>
+      <div className="settings-field">
+        <label>快捷键</label>
+        <input
+          type="text"
+          value={hotkey}
+          onChange={(e) => {
+            const val = e.target.value
+            setHotkey(val)
+            window.electronAPI.db.setState(`plugin:${plugin.id}:hotkey`, val)
+          }}
+          placeholder="例如 Alt+B"
+          style={{ width: 120 }}
+        />
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>设置后需重启生效</span>
+      </div>
+      <div style={{ borderTop: '1px solid var(--border)', margin: '12px 0' }} />
       {authenticated ? (
         <>
           <div className="settings-field settings-field-row">

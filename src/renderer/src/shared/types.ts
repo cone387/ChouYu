@@ -68,6 +68,7 @@ export interface ElectronAPI {
   fetchModels: () => Promise<string[]>
   onTogglePanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
+  onPluginHotkey: (callback: (pluginId: string) => void) => () => void
   db: {
     getConfig: () => Promise<AppConfig>
     saveConfig: (cfg: Partial<AppConfig>) => Promise<void>
