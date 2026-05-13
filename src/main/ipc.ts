@@ -84,9 +84,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         headers: { 'Authorization': `Bearer ${config.apiKey}` }
       })
       if (!resp.ok) return []
-      const json = await resp.json()
+      const json = (await resp.json()) as { data?: { id?: string }[] }
       const models = json.data || []
-      return models.map((m: any) => m.id).filter(Boolean)
+      return models.map((m) => m.id).filter(Boolean)
     } catch {
       return []
     }

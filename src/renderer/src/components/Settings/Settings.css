@@ -305,3 +305,90 @@
   color: var(--text-secondary);
   margin-top: 4px;
 }
+
+/* Plugin Auth Tabs */
+.plugin-auth-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.plugin-auth-tab {
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 150ms, border-color 150ms;
+}
+
+.plugin-auth-tab:hover {
+  color: var(--text-primary);
+}
+
+.plugin-auth-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Plugin Auth Button */
+.plugin-auth-btn {
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 150ms;
+}
+
+.plugin-auth-btn:hover {
+  opacity: 0.9;
+}
+
+.plugin-auth-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plugin-logout-btn {
+  background: var(--border);
+  color: var(--text-secondary);
+}
+
+.plugin-logout-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+/* Plugin Auth Status */
+.plugin-auth-status {
+  font-size: 12px;
+  color: #4caf50;
+  font-weight: 500;
+}
+
+/* Plugin Message */
+.plugin-message {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.plugin-message-ok {
+  background: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
+}
+
+.plugin-message-error {
+  background: rgba(244, 67, 54, 0.1);
+  color: #f44336;
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { AppConfig } from '../../shared/types'
+import { AppConfig, PluginInfo } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
+import PluginSettingsTab from './PluginSettingsTab'
 import './Settings.css'
 
 interface SettingsProps {
@@ -12,18 +13,28 @@ const NAV_ITEMS = [
   { key: 'ai', label: 'AI 提供者', icon: 'M4 7a4 4 0 018 0v1a2 2 0 012 2v4a2 2 0 01-2 2H2a2 2 0 01-2-2v-4a2 2 0 012-2V7z' },
   { key: 'general', label: '通用', icon: 'M7 1.5v2M7 10.5v2M1.5 7h2M10.5 7h2M3 3l1.4 1.4M9.6 9.6l1.4 1.4M11 3l-1.4 1.4M4.4 9.6L3 11' },
   { key: 'about', label: '关于', icon: 'M7 4v3M7 9.5v.5' }
-] as const
-
-type NavKey = typeof NAV_ITEMS[number]['key']
+]
 
 export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showKey, setShowKey] = useState(false)
-  const [activeNav, setActiveNav] = useState<NavKey>('ai')
+  const [activeNav, setActiveNav] = useState<string>('ai')
+  const [plugins, setPlugins] = useState<PluginInfo[]>([])
 
   useEffect(() => {
     window.electronAPI.db.getConfig().then(setConfig)
+    window.electronAPI.plugin.getPlugins().then(setPlugins)
   }, [])
+
+  const pluginNavItems = plugins
+    .filter((p) => p.hasAuth)
+    .map((p) => ({
+      key: `plugin-${p.id}`,
+      label: p.name,
+      icon: p.icon || '🔌'
+    }))
+
+  const allNavItems = [...NAV_ITEMS, ...pluginNavItems]
 
   const save = (patch: Partial<AppConfig>) => {
     const updated = { ...config, ...patch }
@@ -40,17 +51,21 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
 
       <div className="settings-body">
         <nav className="settings-nav">
-          {NAV_ITEMS.map((item) => (
+          {allNavItems.map((item) => (
             <button
               key={item.key}
               className={`settings-nav-item${activeNav === item.key ? ' active' : ''}`}
               onClick={() => setActiveNav(item.key)}
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
-                {item.key === 'ai' && <><rect x="2" y="3" width="10" height="9" rx="2"/><circle cx="5" cy="7.5" r="1"/><circle cx="9" cy="7.5" r="1"/><path d="M5 3V1.5M9 3V1.5"/></>}
-                {item.key === 'general' && <><circle cx="7" cy="7" r="2"/><path d={item.icon}/></>}
-                {item.key === 'about' && <><circle cx="7" cy="7" r="5.5"/><path d={item.icon}/></>}
-              </svg>
+              {item.key.startsWith('plugin-') ? (
+                <span className="settings-nav-icon-emoji">{item.icon}</span>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                  {item.key === 'ai' && <><rect x="2" y="3" width="10" height="9" rx="2"/><circle cx="5" cy="7.5" r="1"/><circle cx="9" cy="7.5" r="1"/><path d="M5 3V1.5M9 3V1.5"/></>}
+                  {item.key === 'general' && <><circle cx="7" cy="7" r="2"/><path d={item.icon}/></>}
+                  {item.key === 'about' && <><circle cx="7" cy="7" r="5.5"/><path d={item.icon}/></>}
+                </svg>
+              )}
               <span>{item.label}</span>
             </button>
           ))}
@@ -152,6 +167,13 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
               <div className="settings-about-desc">你的桌面 AI 宠物助手</div>
             </div>
           )}
+
+          {activeNav.startsWith('plugin-') && (() => {
+            const pluginId = activeNav.replace('plugin-', '')
+            const plugin = plugins.find((p) => p.id === pluginId)
+            if (!plugin) return null
+            return <PluginSettingsTab plugin={plugin} />
+          })()}
         </div>
       </div>
     </div>

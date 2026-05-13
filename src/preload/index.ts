@@ -31,6 +31,18 @@ const api = {
     getState: (key: string) => ipcRenderer.invoke('db:get-state', key),
     setState: (key: string, value: string) => ipcRenderer.invoke('db:set-state', key, value)
   },
+  plugin: {
+    execute: (pluginId: string, content: string) =>
+      ipcRenderer.invoke(`plugin:${pluginId}:execute`, content),
+    login: (pluginId: string, credentials: Record<string, string>) =>
+      ipcRenderer.invoke(`plugin:${pluginId}:login`, credentials),
+    logout: (pluginId: string) =>
+      ipcRenderer.invoke(`plugin:${pluginId}:logout`),
+    isAuthenticated: (pluginId: string) =>
+      ipcRenderer.invoke(`plugin:${pluginId}:is-authenticated`),
+    getPlugins: () =>
+      ipcRenderer.invoke('plugin:get-plugins')
+  },
   update: {
     onAvailable: (callback: (info: { version: string }) => void) => {
       const handler = (_e: unknown, info: { version: string }) => callback(info)

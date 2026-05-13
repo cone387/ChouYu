@@ -3,7 +3,7 @@ import TopBar from './TopBar'
 import MessageArea from './MessageArea'
 import InputArea, { PendingAttachment } from './InputArea'
 import Settings from '../Settings/Settings'
-import { Message, PetState, AppConfig } from '../../shared/types'
+import { Message, PetState, AppConfig, PluginInfo, PluginMessageData } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
 import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
@@ -28,6 +28,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
   const [showHistory, setShowHistory] = useState(false)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [closing, setClosing] = useState(false)
+  const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const abortRef = useRef<AbortController | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0 })
@@ -39,6 +40,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
       initializedRef.current = true
     })
     window.electronAPI.db.getConfig().then(setConfig)
+    window.electronAPI.plugin.getPlugins().then(setPlugins)
   }, [])
 
   useEffect(() => {
@@ -106,7 +108,85 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleClose])
 
+  const pluginCommands = plugins.map((p) => ({ cmd: '/' + p.command, desc: p.description }))
+
+  const formatPluginMessage = (result: PluginMessageData): string => {
+    const icon = result.pluginIcon || '🔌'
+    let formatted = `${icon} ${result.pluginName} · ${result.message}`
+
+    if (result.inputContent) {
+      const truncated = result.inputContent.length > 80
+        ? result.inputContent.slice(0, 80) + '…'
+        : result.inputContent
+      formatted += `\n\n> ${truncated}`
+    }
+
+    if (result.detail) {
+      formatted += `\n\n${result.detail}`
+    }
+
+    return formatted
+  }
+
   const handleSend = async (content: string, attachments?: PendingAttachment[]) => {
+    // Plugin command detection (before built-in commands)
+    for (const plugin of plugins) {
+      const prefix = `/${plugin.command} `
+      if (content.startsWith(prefix) || content === `/${plugin.command}`) {
+        const extractedContent = content.startsWith(prefix) ? content.slice(prefix.length) : ''
+        const result: PluginMessageData = await window.electronAPI.plugin.execute(plugin.id, extractedContent)
+        const formattedContent = formatPluginMessage(result)
+        const resultMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: formattedContent,
+          timestamp: Date.now()
+        }
+        setMessages((prev) => [...prev, resultMsg])
+        setShowHistory(true)
+
+        // If feedToPet is enabled (user setting), let the AI pet comment on the result
+        const feedToPetSetting = await window.electronAPI.db.getState(`plugin:${plugin.id}:feedToPet`)
+        if (feedToPetSetting === 'true' && result.ok) {
+          const petPrompt = `用户刚通过 ${plugin.name} 插件执行了操作：\n输入：${extractedContent}\n结果：${result.message}\n\n请用你的性格简短评论一下（1-2句话）。`
+          const systemPrompt = buildSystemPrompt()
+          const petMsgId = (Date.now() + 2).toString()
+          let petAccumulated = ''
+          onPetStateChange('thinking')
+          setIsStreaming(true)
+          const petAbort = new AbortController()
+          try {
+            await streamChat(
+              [{ role: 'user', content: petPrompt, id: petMsgId + '-prompt', timestamp: Date.now() }],
+              systemPrompt,
+              config,
+              (chunk, done) => {
+                if (done) {
+                  onPetStateChange('idle')
+                  setIsStreaming(false)
+                  return
+                }
+                petAccumulated += chunk
+                onPetStateChange('talking')
+                setMessages((prev) => {
+                  const existing = prev.find((m) => m.id === petMsgId)
+                  if (existing) {
+                    return prev.map((m) => m.id === petMsgId ? { ...m, content: petAccumulated } : m)
+                  }
+                  return [...prev, { id: petMsgId, role: 'assistant', content: petAccumulated, timestamp: Date.now() }]
+                })
+              },
+              petAbort.signal
+            )
+          } catch {
+            onPetStateChange('idle')
+            setIsStreaming(false)
+          }
+        }
+        return
+      }
+    }
+
     if (content === '/clear') {
       setMessages([])
       clearMessages()
@@ -265,7 +345,7 @@ export default function ChatPanel({ position, onPositionChange, petState, onPetS
             />
           </div>
           {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
-          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} />
+          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} plugins={plugins} pluginCommands={pluginCommands} />
         </>
       )}
     </div>

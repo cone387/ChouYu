@@ -5,6 +5,7 @@ import { setupTray } from './tray'
 import { registerHotkey } from './hotkey'
 import { initDatabase } from './database'
 import { initAutoUpdater } from './updater'
+import { pluginRegistry } from './plugins/registry'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -59,13 +60,18 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  // Create window first so UI appears quickly
+app.whenReady().then(async () => {
+  // Init database first (needed by plugins and IPC handlers)
+  initDatabase()
+
+  // Create window
   createWindow()
 
-  // Then init data and handlers
-  initDatabase()
+  // Register IPC handlers immediately after window creation
   registerIpcHandlers(mainWindow!)
+
+  // Plugin init can be async - IPC handlers are already registered
+  await pluginRegistry.initialize()
   setupTray(mainWindow!)
   registerHotkey(mainWindow!)
 

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import CommandMenu, { getFilteredCommands } from './CommandMenu'
+import { PluginInfo } from '../../shared/types'
 
 export interface PendingAttachment {
   type: 'image' | 'text'
@@ -14,11 +15,13 @@ interface InputAreaProps {
   model?: string
   onModelChange?: (model: string) => void
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
+  plugins?: PluginInfo[]
+  pluginCommands?: { cmd: string; desc: string }[]
 }
 
 const FALLBACK_MODELS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long']
 
-export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onScreenshot }: InputAreaProps) {
+export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onScreenshot, plugins, pluginCommands }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
@@ -29,6 +32,8 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   const [cmdIndex, setCmdIndex] = useState(0)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [activePlugin, setActivePlugin] = useState<PluginInfo | null>(null)
+  const [showPluginOverflow, setShowPluginOverflow] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -64,6 +69,17 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   }, [showScreenshotMenu])
 
   useEffect(() => {
+    if (!showPluginOverflow) return
+    const dismiss = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.plugin-overflow-wrapper')) {
+        setShowPluginOverflow(false)
+      }
+    }
+    document.addEventListener('mousedown', dismiss)
+    return () => document.removeEventListener('mousedown', dismiss)
+  }, [showPluginOverflow])
+
+  useEffect(() => {
     window.electronAPI.fetchModels().then((models) => {
       if (models && models.length > 0) setModelOptions(models)
     })
@@ -72,15 +88,38 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
     if ((!trimmed && attachments.length === 0) || disabled) return
+    if (activePlugin) {
+      onSend(`/${activePlugin.command} ${trimmed}`)
+      setValue('')
+      setAttachments([])
+      setShowCommands(false)
+      setActivePlugin(null)
+      // Keep focus on textarea after plugin execution
+      setTimeout(() => textareaRef.current?.focus(), 50)
+      return
+    }
     onSend(trimmed, attachments.length > 0 ? attachments : undefined)
     setValue('')
     setAttachments([])
     setShowCommands(false)
-  }, [value, disabled, onSend, attachments])
+  }, [value, disabled, onSend, attachments, activePlugin])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && activePlugin) {
+      e.preventDefault()
+      e.nativeEvent.stopImmediatePropagation()
+      setActivePlugin(null)
+      return
+    }
+
     if (showCommands) {
-      const filtered = getFilteredCommands(value)
+      const allCommands = pluginCommands ? [...[
+        { cmd: '/clear', desc: '清空对话，新话题' },
+        { cmd: '/settings', desc: '打开设置' },
+        { cmd: '/model', desc: '切换模型' },
+        { cmd: '/help', desc: '查看可用指令' }
+      ], ...pluginCommands] : undefined
+      const filtered = getFilteredCommands(value, allCommands)
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setCmdIndex((prev) => (prev + 1) % filtered.length)
@@ -91,7 +130,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         setCmdIndex((prev) => (prev - 1 + filtered.length) % filtered.length)
         return
       }
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault()
         if (filtered[cmdIndex]) handleCommand(filtered[cmdIndex].cmd)
         return
@@ -131,9 +170,17 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
       case '/settings':
         onSend('/settings')
         break
-      default:
+      default: {
+        // Find matching plugin for placeholder hint
+        const matchedPlugin = (plugins || []).find((p) => `/${p.command}` === cmd)
         setValue(cmd + ' ')
         textareaRef.current?.focus()
+        // Temporarily show plugin placeholder as hint
+        if (matchedPlugin && textareaRef.current) {
+          textareaRef.current.setAttribute('placeholder', matchedPlugin.inputPlaceholder || matchedPlugin.description)
+        }
+        break
+      }
     }
   }
 
@@ -200,6 +247,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
           selectedIndex={cmdIndex}
           onSelect={handleCommand}
           onClose={() => setShowCommands(false)}
+          pluginCommands={pluginCommands}
         />
       )}
       <div
@@ -231,7 +279,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="输入消息，/ 打开指令菜单..."
+          placeholder={activePlugin ? (activePlugin.inputPlaceholder || '输入内容...') : '输入消息，/ 打开指令菜单...'}
           rows={2}
           disabled={disabled}
           autoFocus={autoFocus}
@@ -299,6 +347,51 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                 <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5l6-6a2.5 2.5 0 013.5 3.5l-5.5 5.5a1 1 0 01-1.5-1.5L11 5.5"/>
               </svg>
             </button>
+            {(() => {
+              const iconPlugins = (plugins || []).filter((p) => p.icon)
+              const visible = iconPlugins.slice(0, 2)
+              const overflow = iconPlugins.slice(2)
+              return (
+                <>
+                  {visible.map((p) => (
+                    <button
+                      key={p.id}
+                      className={`toolbar-btn plugin-btn${activePlugin?.id === p.id ? ' active' : ''}`}
+                      title={p.name}
+                      onClick={() => setActivePlugin(activePlugin?.id === p.id ? null : p)}
+                    >
+                      <span className="plugin-btn-icon">{p.icon}</span>
+                    </button>
+                  ))}
+                  {overflow.length > 0 && (
+                    <div className="plugin-overflow-wrapper">
+                      <button
+                        className="toolbar-btn plugin-overflow-btn"
+                        title="更多插件"
+                        onClick={() => setShowPluginOverflow((v) => !v)}
+                      >⋯</button>
+                      {showPluginOverflow && (
+                        <div className="plugin-overflow-menu">
+                          {overflow.map((p) => (
+                            <button
+                              key={p.id}
+                              className="plugin-overflow-item"
+                              onClick={() => { setActivePlugin(p); setShowPluginOverflow(false) }}
+                            >
+                              <span>{p.icon}</span>
+                              <span>{p.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+            {activePlugin && (
+              <span className="plugin-active-badge">{activePlugin.name}</span>
+            )}
           </div>
           <div className="input-toolbar-right">
             <div className="model-selector">

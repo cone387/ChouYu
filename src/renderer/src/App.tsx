@@ -91,6 +91,8 @@ function App() {
     setPanelVisible((v) => {
       if (!v) {
         setPanelPosition(calcPanelPosition(petPosition))
+        // Ensure window gets focus so textarea can receive it
+        window.focus()
       }
       return !v
     })
