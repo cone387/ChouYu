@@ -7,6 +7,10 @@ files:
   - out/**/*
   - "!out/types-*"
 
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+
 publish:
   provider: github
   owner: cone387
