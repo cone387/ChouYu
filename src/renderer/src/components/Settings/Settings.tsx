@@ -20,10 +20,12 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
   const [showKey, setShowKey] = useState(false)
   const [activeNav, setActiveNav] = useState<string>('ai')
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
+  const [appVersion, setAppVersion] = useState<string>('')
 
   useEffect(() => {
     window.electronAPI.db.getConfig().then(setConfig)
     window.electronAPI.plugin.getPlugins().then(setPlugins)
+    window.electronAPI.getAppVersion().then(setAppVersion)
   }, [])
 
   const pluginNavItems = plugins
@@ -167,7 +169,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                 </svg>
               </div>
               <div className="settings-about-name">ChouYu</div>
-              <div className="settings-about-version">v1.0.0</div>
+              <div className="settings-about-version">v{appVersion}</div>
               <div className="settings-about-desc">你的桌面 AI 宠物助手</div>
             </div>
           )}

@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog } from 'electron'
+import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import {
@@ -91,6 +91,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return []
     }
   })
+
+  ipcMain.handle('get-app-version', () => app.getVersion())
 
   ipcMain.handle('db:get-config', () => getConfig())
   ipcMain.handle('db:save-config', (_event, patch) => saveConfig(patch))

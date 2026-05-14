@@ -61,6 +61,7 @@ export interface PluginInfo {
 }
 
 export interface ElectronAPI {
+  getAppVersion: () => Promise<string>
   setIgnoreMouseEvents: (ignore: boolean) => void
   log: (msg: string) => void
   takeScreenshot: (hideWindow?: boolean) => Promise<string | null>
