@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
-import { PetState } from './shared/types'
-import { PANEL_WIDTH } from './shared/constants'
+import { AppConfig, PetState } from './shared/types'
+import { DEFAULT_CONFIG, PANEL_WIDTH } from './shared/constants'
 import { proactiveEngine } from './core/proactive'
 
 function App() {
@@ -20,10 +20,12 @@ function App() {
   const [proactiveMsg, setProactiveMsg] = useState<string | null>(null)
   const [pendingDrop, setPendingDrop] = useState<{ type: 'image' | 'text'; data: string; name: string } | null>(null)
   const [pendingClipboardMsg, setPendingClipboardMsg] = useState<string | null>(null)
+  const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const screenshotCallbackRef = useRef<((dataUrl: string) => void) | null>(null)
   const ignoreRef = useRef(true)
 
   useEffect(() => {
+    window.electronAPI.db.getConfig().then(setConfig)
     window.electronAPI.db.getState('pet-position').then((val) => {
       if (val) {
         try { setPetPosition(JSON.parse(val)) } catch {}
@@ -31,15 +33,16 @@ function App() {
     }).catch(() => {}).finally(() => setPositionLoaded(true))
   }, [])
 
-  // Clipboard watcher
+  // Clipboard watcher - respect config
   useEffect(() => {
+    if (!config.clipboardWatch) return
     const cleanup = window.electronAPI.onClipboardChange((text) => {
       if (text.length > 0 && text.length <= 500) {
         setClipboardText(text)
       }
     })
     return cleanup
-  }, [])
+  }, [config.clipboardWatch])
 
   // Auto-dismiss clipboard toast after 5s
   useEffect(() => {
@@ -48,13 +51,14 @@ function App() {
     return () => clearTimeout(t)
   }, [clipboardText])
 
-  // Proactive engine
+  // Proactive engine - respect config
   useEffect(() => {
+    if (!config.proactiveGreeting && !config.proactiveRestReminder) return
     proactiveEngine.start((msg) => {
       setProactiveMsg(msg)
-    })
+    }, { greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder })
     return () => proactiveEngine.stop()
-  }, [])
+  }, [config.proactiveGreeting, config.proactiveRestReminder])
 
   // Auto-dismiss proactive message after 8s
   useEffect(() => {
@@ -93,6 +97,49 @@ function App() {
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
       if (rafId !== null) cancelAnimationFrame(rafId)
+    }
+  }, [])
+
+  // Disable click-through during external file drag so drop events reach Pet
+  useEffect(() => {
+    let dragCounter = 0
+    const onDragEnter = (e: DragEvent) => {
+      e.preventDefault()
+      dragCounter++
+      if (dragCounter === 1) {
+        ignoreRef.current = false
+        window.electronAPI.setIgnoreMouseEvents(false)
+      }
+    }
+    const onDragLeave = () => {
+      dragCounter--
+      if (dragCounter <= 0) {
+        dragCounter = 0
+        ignoreRef.current = true
+        window.electronAPI.setIgnoreMouseEvents(true)
+      }
+    }
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault()
+      dragCounter = 0
+      // Restore click-through after a short delay (let the Pet's onDrop fire first)
+      setTimeout(() => {
+        ignoreRef.current = true
+        window.electronAPI.setIgnoreMouseEvents(true)
+      }, 100)
+    }
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault()
+    }
+    document.addEventListener('dragenter', onDragEnter)
+    document.addEventListener('dragleave', onDragLeave)
+    document.addEventListener('drop', onDrop)
+    document.addEventListener('dragover', onDragOver)
+    return () => {
+      document.removeEventListener('dragenter', onDragEnter)
+      document.removeEventListener('dragleave', onDragLeave)
+      document.removeEventListener('drop', onDrop)
+      document.removeEventListener('dragover', onDragOver)
     }
   }, [])
 

@@ -2,8 +2,8 @@
  * Proactive Engine - makes the pet speak on its own occasionally.
  *
  * Rules:
- * - Greet on first launch of the day
- * - Remind user to rest after 60 minutes of continuous use
+ * - Greet on first launch of the day (configurable)
+ * - Remind user to rest after 60 minutes of continuous use (configurable)
  * - Max 1 proactive message per 60 minutes
  */
 
@@ -12,22 +12,32 @@ const REST_REMINDER_INTERVAL = 60 * 60 * 1000 // 60 minutes
 
 type ProactiveCallback = (message: string) => void
 
+export interface ProactiveOptions {
+  greeting: boolean
+  restReminder: boolean
+}
+
 class ProactiveEngine {
   private lastProactiveTime = 0
-  private startTime = Date.now()
   private restTimer: ReturnType<typeof setTimeout> | null = null
   private callback: ProactiveCallback | null = null
   private greeted = false
+  private options: ProactiveOptions = { greeting: true, restReminder: true }
 
-  start(callback: ProactiveCallback): void {
+  start(callback: ProactiveCallback, options?: ProactiveOptions): void {
+    this.stop()
     this.callback = callback
-    this.startTime = Date.now()
+    this.options = options || { greeting: true, restReminder: true }
 
     // Greet after a short delay
-    setTimeout(() => this.tryGreet(), 3000)
+    if (this.options.greeting && !this.greeted) {
+      setTimeout(() => this.tryGreet(), 3000)
+    }
 
     // Start rest reminder timer
-    this.restTimer = setTimeout(() => this.remindRest(), REST_REMINDER_INTERVAL)
+    if (this.options.restReminder) {
+      this.restTimer = setTimeout(() => this.remindRest(), REST_REMINDER_INTERVAL)
+    }
   }
 
   stop(): void {
@@ -40,6 +50,7 @@ class ProactiveEngine {
 
   /** Call this when user interacts to reset rest timer */
   userActivity(): void {
+    if (!this.options.restReminder) return
     if (this.restTimer) clearTimeout(this.restTimer)
     this.restTimer = setTimeout(() => this.remindRest(), REST_REMINDER_INTERVAL)
   }
@@ -54,7 +65,7 @@ class ProactiveEngine {
     this.callback(message)
   }
 
-  private async tryGreet(): Promise<void> {
+  private tryGreet(): void {
     if (this.greeted || !this.canSpeak()) return
     this.greeted = true
 
@@ -73,7 +84,6 @@ class ProactiveEngine {
 
   private remindRest(): void {
     if (!this.canSpeak()) {
-      // Retry later
       this.restTimer = setTimeout(() => this.remindRest(), 10 * 60 * 1000)
       return
     }
@@ -87,7 +97,6 @@ class ProactiveEngine {
     const msg = messages[Math.floor(Math.random() * messages.length)]
     this.speak(msg)
 
-    // Schedule next reminder
     this.restTimer = setTimeout(() => this.remindRest(), REST_REMINDER_INTERVAL)
   }
 }

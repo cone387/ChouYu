@@ -169,6 +169,41 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                 <label>唤出面板</label>
                 <kbd className="settings-kbd">{config.hotkey}</kbd>
               </div>
+
+              <div className="settings-section-title">智能功能</div>
+              <div className="settings-field settings-field-row">
+                <label>开机问好</label>
+                <label className="settings-switch">
+                  <input
+                    type="checkbox"
+                    checked={config.proactiveGreeting}
+                    onChange={(e) => save({ proactiveGreeting: e.target.checked })}
+                  />
+                  <span className="settings-switch-slider" />
+                </label>
+              </div>
+              <div className="settings-field settings-field-row">
+                <label>久坐提醒</label>
+                <label className="settings-switch">
+                  <input
+                    type="checkbox"
+                    checked={config.proactiveRestReminder}
+                    onChange={(e) => save({ proactiveRestReminder: e.target.checked })}
+                  />
+                  <span className="settings-switch-slider" />
+                </label>
+              </div>
+              <div className="settings-field settings-field-row">
+                <label>剪贴板感知</label>
+                <label className="settings-switch">
+                  <input
+                    type="checkbox"
+                    checked={config.clipboardWatch}
+                    onChange={(e) => save({ clipboardWatch: e.target.checked })}
+                  />
+                  <span className="settings-switch-slider" />
+                </label>
+              </div>
             </div>
           )}
 

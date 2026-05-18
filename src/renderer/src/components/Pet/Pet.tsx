@@ -167,15 +167,28 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
     }
   }, [onFileDrop])
 
+  const dragCounterRef = useRef(0)
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
+  }, [])
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounterRef.current++
     setDragOver(true)
   }, [])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    setDragOver(false)
+    e.stopPropagation()
+    dragCounterRef.current--
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0
+      setDragOver(false)
+    }
   }, [])
 
   return (
@@ -188,6 +201,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
         onContextMenu={handleContextMenu}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
       >
         <PetSvg state={state} />

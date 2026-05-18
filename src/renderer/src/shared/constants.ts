@@ -15,5 +15,8 @@ export const DEFAULT_CONFIG = {
   model: 'qwen-plus',
   hotkey: 'Alt+Space',
   autoStart: false,
-  petSize: DEFAULT_PET_SIZE
+  petSize: DEFAULT_PET_SIZE,
+  proactiveGreeting: true,
+  proactiveRestReminder: true,
+  clipboardWatch: true
 }

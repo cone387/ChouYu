@@ -131,4 +131,7 @@ export interface AppConfig {
   hotkey: string
   autoStart: boolean
   petSize: number
+  proactiveGreeting: boolean
+  proactiveRestReminder: boolean
+  clipboardWatch: boolean
 }
