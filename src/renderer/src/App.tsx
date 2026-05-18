@@ -4,6 +4,7 @@ import ChatPanel from './components/ChatPanel/ChatPanel'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
 import { PetState } from './shared/types'
 import { PANEL_WIDTH } from './shared/constants'
+import { proactiveEngine } from './core/proactive'
 
 function App() {
   const [petPosition, setPetPosition] = useState({ x: window.innerWidth - 180, y: window.innerHeight - 180 })
@@ -15,6 +16,10 @@ function App() {
   const [petState, setPetState] = useState<PetState>('idle')
   const [screenshotImage, setScreenshotImage] = useState<string | null>(null)
   const [activePluginId, setActivePluginId] = useState<string | null>(null)
+  const [clipboardText, setClipboardText] = useState<string | null>(null)
+  const [proactiveMsg, setProactiveMsg] = useState<string | null>(null)
+  const [pendingDrop, setPendingDrop] = useState<{ type: 'image' | 'text'; data: string; name: string } | null>(null)
+  const [pendingClipboardMsg, setPendingClipboardMsg] = useState<string | null>(null)
   const screenshotCallbackRef = useRef<((dataUrl: string) => void) | null>(null)
   const ignoreRef = useRef(true)
 
@@ -25,6 +30,38 @@ function App() {
       }
     }).catch(() => {}).finally(() => setPositionLoaded(true))
   }, [])
+
+  // Clipboard watcher
+  useEffect(() => {
+    const cleanup = window.electronAPI.onClipboardChange((text) => {
+      if (text.length > 0 && text.length <= 500) {
+        setClipboardText(text)
+      }
+    })
+    return cleanup
+  }, [])
+
+  // Auto-dismiss clipboard toast after 5s
+  useEffect(() => {
+    if (!clipboardText) return
+    const t = setTimeout(() => setClipboardText(null), 5000)
+    return () => clearTimeout(t)
+  }, [clipboardText])
+
+  // Proactive engine
+  useEffect(() => {
+    proactiveEngine.start((msg) => {
+      setProactiveMsg(msg)
+    })
+    return () => proactiveEngine.stop()
+  }, [])
+
+  // Auto-dismiss proactive message after 8s
+  useEffect(() => {
+    if (!proactiveMsg) return
+    const t = setTimeout(() => setProactiveMsg(null), 8000)
+    return () => clearTimeout(t)
+  }, [proactiveMsg])
 
   useEffect(() => {
     let rafId: number | null = null
@@ -90,11 +127,11 @@ function App() {
   }, [])
 
   const togglePanel = useCallback(() => {
+    proactiveEngine.userActivity()
     setPanelVisible((v) => {
       if (!v) {
         if (!panelInitialized) setPanelInitialized(true)
         setPanelPosition(calcPanelPosition(petPosition))
-        // Ensure window gets focus so textarea can receive it
         window.focus()
       }
       return !v
@@ -161,6 +198,32 @@ function App() {
     screenshotCallbackRef.current = null
   }, [])
 
+  const handleFileDrop = useCallback((file: { type: 'image' | 'text'; data: string; name: string }) => {
+    setPendingDrop(file)
+    // Open panel with the file attached
+    if (!panelInitialized) setPanelInitialized(true)
+    setPanelPosition(calcPanelPosition(petPosition))
+    setPanelVisible(true)
+    window.focus()
+  }, [petPosition, calcPanelPosition, panelInitialized])
+
+  const handleClipboardAction = useCallback((action: 'translate' | 'summarize' | 'ask') => {
+    const text = clipboardText
+    setClipboardText(null)
+    if (!text) return
+
+    let msg = ''
+    if (action === 'translate') msg = `请翻译以下内容：\n\n${text}`
+    else if (action === 'summarize') msg = `请总结以下内容：\n\n${text}`
+    else msg = text
+
+    setPendingClipboardMsg(msg)
+    if (!panelInitialized) setPanelInitialized(true)
+    setPanelPosition(calcPanelPosition(petPosition))
+    setPanelVisible(true)
+    window.focus()
+  }, [clipboardText, petPosition, calcPanelPosition, panelInitialized])
+
   useEffect(() => {
     if (positionLoaded) {
       window.electronAPI.db.setState('pet-position', JSON.stringify(petPosition))
@@ -175,7 +238,34 @@ function App() {
         onClick={togglePanel}
         onOpenSettings={openSettings}
         state={petState}
+        onFileDrop={handleFileDrop}
       />
+      {/* Proactive message bubble */}
+      {proactiveMsg && (
+        <div
+          data-interactive
+          className="pet-bubble proactive-bubble"
+          style={{ left: petPosition.x + 90, top: petPosition.y - 10 }}
+          onClick={() => setProactiveMsg(null)}
+        >
+          {proactiveMsg}
+        </div>
+      )}
+      {/* Clipboard toast */}
+      {clipboardText && (
+        <div
+          data-interactive
+          className="pet-bubble clipboard-bubble"
+          style={{ left: petPosition.x + 90, top: petPosition.y + 20 }}
+        >
+          <div className="clipboard-bubble-text">{clipboardText.length > 60 ? clipboardText.slice(0, 60) + '...' : clipboardText}</div>
+          <div className="clipboard-bubble-actions">
+            <button onClick={() => handleClipboardAction('translate')}>翻译</button>
+            <button onClick={() => handleClipboardAction('summarize')}>总结</button>
+            <button onClick={() => setClipboardText(null)}>✕</button>
+          </div>
+        </div>
+      )}
       {panelInitialized && panelPosition && (
         <ChatPanel
           visible={panelVisible}
@@ -190,6 +280,10 @@ function App() {
           onScreenshot={startScreenshot}
           initialPluginId={activePluginId}
           onPluginIdConsumed={() => setActivePluginId(null)}
+          pendingAttachment={pendingDrop}
+          onPendingAttachmentConsumed={() => setPendingDrop(null)}
+          pendingMessage={pendingClipboardMsg}
+          onPendingMessageConsumed={() => setPendingClipboardMsg(null)}
         />
       )}
       {screenshotImage && (

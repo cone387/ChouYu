@@ -36,6 +36,11 @@ const api = {
     ipcRenderer.on('plugin-hotkey', handler)
     return () => { ipcRenderer.removeListener('plugin-hotkey', handler) }
   },
+  onClipboardChange: (callback: (text: string) => void) => {
+    const handler = (_e: unknown, text: string) => callback(text)
+    ipcRenderer.on('clipboard:changed', handler)
+    return () => { ipcRenderer.removeListener('clipboard:changed', handler) }
+  },
   db: {
     getConfig: () => ipcRenderer.invoke('db:get-config'),
     saveConfig: (cfg: Record<string, unknown>) => ipcRenderer.invoke('db:save-config', cfg),

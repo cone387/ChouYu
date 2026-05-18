@@ -19,11 +19,13 @@ interface InputAreaProps {
   pluginCommands?: { cmd: string; desc: string }[]
   initialActivePlugin?: PluginInfo | null
   onInitialPluginConsumed?: () => void
+  initialAttachment?: PendingAttachment | null
+  onInitialAttachmentConsumed?: () => void
 }
 
 const FALLBACK_MODELS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long']
 
-export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed }: InputAreaProps) {
+export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
@@ -53,6 +55,13 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
       onInitialPluginConsumed?.()
     }
   }, [initialActivePlugin, onInitialPluginConsumed])
+
+  useEffect(() => {
+    if (initialAttachment) {
+      setAttachments((prev) => [...prev, initialAttachment])
+      onInitialAttachmentConsumed?.()
+    }
+  }, [initialAttachment, onInitialAttachmentConsumed])
 
   useEffect(() => {
     if (!showModelSelector) return

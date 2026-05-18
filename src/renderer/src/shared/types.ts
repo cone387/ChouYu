@@ -73,6 +73,7 @@ export interface ElectronAPI {
   onOpenSettings: (callback: () => void) => () => void
   onHidePanel: (callback: () => void) => () => void
   onPluginHotkey: (callback: (pluginId: string) => void) => () => void
+  onClipboardChange: (callback: (text: string) => void) => () => void
   db: {
     getConfig: () => Promise<AppConfig>
     saveConfig: (cfg: Partial<AppConfig>) => Promise<void>

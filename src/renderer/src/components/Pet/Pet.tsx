@@ -10,15 +10,17 @@ interface PetProps {
   onClick: () => void
   onOpenSettings: () => void
   state: PetState
+  onFileDrop?: (file: { type: 'image' | 'text'; data: string; name: string }) => void
 }
 
-export default function Pet({ position, onPositionChange, onClick, onOpenSettings, state }: PetProps) {
+export default function Pet({ position, onPositionChange, onClick, onOpenSettings, state, onFileDrop }: PetProps) {
   const draggingRef = useRef(false)
   const hasDraggedRef = useRef(false)
   const dragStartRef = useRef({ screenX: 0, screenY: 0, posX: 0, posY: 0 })
   const posRef = useRef(position)
   const containerRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [dragOver, setDragOver] = useState(false)
 
   const applyPosition = useCallback((x: number, y: number) => {
     const el = containerRef.current
@@ -143,14 +145,50 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
     }
   }, [contextMenu])
 
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length === 0) return
+    const file = files[0]
+    const reader = new FileReader()
+    const isImage = file.type.startsWith('image/')
+    if (isImage) {
+      reader.onload = () => {
+        onFileDrop?.({ type: 'image', data: reader.result as string, name: file.name })
+      }
+      reader.readAsDataURL(file)
+    } else {
+      reader.onload = () => {
+        onFileDrop?.({ type: 'text', data: reader.result as string, name: file.name })
+      }
+      reader.readAsText(file)
+    }
+  }, [onFileDrop])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+  }, [])
+
   return (
     <>
       <div
         ref={containerRef}
         data-interactive
-        className={`pet-container pet-state-${state}`}
+        className={`pet-container pet-state-${state}${dragOver ? ' pet-drop-target' : ''}`}
         onPointerDown={handlePointerDown}
         onContextMenu={handleContextMenu}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
       >
         <PetSvg state={state} />
       </div>

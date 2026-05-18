@@ -6,6 +6,7 @@ import { registerHotkey } from './hotkey'
 import { initDatabase, getConfig } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
+import { startClipboardWatcher } from './clipboard'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -82,6 +83,7 @@ app.whenReady().then(async () => {
   await pluginRegistry.initializePlugins()
   setupTray(mainWindow!)
   registerHotkey(mainWindow!)
+  startClipboardWatcher(mainWindow!)
 
   if (app.isPackaged) {
     // Sync auto-start setting with system

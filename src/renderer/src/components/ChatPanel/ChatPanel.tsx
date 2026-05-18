@@ -23,9 +23,13 @@ interface ChatPanelProps {
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
   initialPluginId?: string | null
   onPluginIdConsumed?: () => void
+  pendingAttachment?: { type: 'image' | 'text'; data: string; name: string } | null
+  onPendingAttachmentConsumed?: () => void
+  pendingMessage?: string | null
+  onPendingMessageConsumed?: () => void
 }
 
-export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed }: ChatPanelProps) {
+export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
@@ -60,6 +64,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       onPluginIdConsumed?.()
     }
   }, [initialPluginId, plugins, onPluginIdConsumed])
+
+  // Auto-send pending message (from clipboard action)
+  useEffect(() => {
+    if (pendingMessage && !isStreaming) {
+      handleSend(pendingMessage)
+      onPendingMessageConsumed?.()
+    }
+  }, [pendingMessage])
 
   // Re-focus textarea when panel becomes visible again
   useEffect(() => {
@@ -357,7 +369,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             />
           </div>
           {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
-          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} plugins={plugins} pluginCommands={pluginCommands} initialActivePlugin={activePluginForInput} onInitialPluginConsumed={() => setActivePluginForInput(null)} />
+          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} plugins={plugins} pluginCommands={pluginCommands} initialActivePlugin={activePluginForInput} onInitialPluginConsumed={() => setActivePluginForInput(null)} initialAttachment={pendingAttachment} onInitialAttachmentConsumed={onPendingAttachmentConsumed} />
         </>
       )}
     </div>
