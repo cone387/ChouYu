@@ -21,11 +21,23 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
   const [activeNav, setActiveNav] = useState<string>('ai')
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [appVersion, setAppVersion] = useState<string>('')
+  const [updateStatus, setUpdateStatus] = useState<string>('')
 
   useEffect(() => {
     window.electronAPI.db.getConfig().then(setConfig)
     window.electronAPI.plugin.getPlugins().then(setPlugins)
     window.electronAPI.getAppVersion().then(setAppVersion)
+
+    const cleanups = [
+      window.electronAPI.update.onAvailable((info) => setUpdateStatus(`发现新版本 v${info.version}`)),
+      window.electronAPI.update.onNotAvailable(() => setUpdateStatus('已是最新版本')),
+      window.electronAPI.update.onError((msg) => setUpdateStatus(`检查失败: ${msg}`)),
+    ]
+    // If no event fires within 10s, assume up-to-date
+    const timer = setTimeout(() => {
+      setUpdateStatus((prev) => prev === '检查中...' ? '已是最新版本' : prev)
+    }, 10000)
+    return () => { cleanups.forEach((fn) => fn()); clearTimeout(timer) }
   }, [])
 
   const pluginNavItems = plugins
@@ -133,7 +145,11 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                   <input
                     type="checkbox"
                     checked={config.autoStart}
-                    onChange={(e) => save({ autoStart: e.target.checked })}
+                    onChange={(e) => {
+                      const enabled = e.target.checked
+                      save({ autoStart: enabled })
+                      window.electronAPI.setAutoStart(enabled)
+                    }}
                   />
                   <span className="settings-switch-slider" />
                 </label>
@@ -171,6 +187,16 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
               <div className="settings-about-name">ChouYu</div>
               <div className="settings-about-version">v{appVersion}</div>
               <div className="settings-about-desc">你的桌面 AI 宠物助手</div>
+              <button
+                className="settings-about-update-btn"
+                onClick={() => {
+                  setUpdateStatus('检查中...')
+                  window.electronAPI.checkForUpdates().catch(() => setUpdateStatus('检查失败'))
+                }}
+                disabled={updateStatus === '检查中...'}
+              >
+                {updateStatus || '检查更新'}
+              </button>
             </div>
           )}
 

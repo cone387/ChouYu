@@ -392,3 +392,26 @@
   background: rgba(244, 67, 54, 0.1);
   color: #f44336;
 }
+
+/* About Update Button */
+.settings-about-update-btn {
+  margin-top: 12px;
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+
+.settings-about-update-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.settings-about-update-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

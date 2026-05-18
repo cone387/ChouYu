@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import fs from 'fs'
 import path from 'path'
 import {
@@ -93,6 +94,22 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   ipcMain.handle('get-app-version', () => app.getVersion())
+
+  ipcMain.handle('set-auto-start', (_event, enabled: boolean) => {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      openAsHidden: true
+    })
+  })
+
+  ipcMain.handle('check-for-updates', () => {
+    if (!app.isPackaged) {
+      // Dev mode: updater won't work, notify renderer directly
+      mainWindow.webContents.send('update:error', '开发模式下无法检查更新')
+      return null
+    }
+    return autoUpdater.checkForUpdates()
+  })
 
   ipcMain.handle('db:get-config', () => getConfig())
   ipcMain.handle('db:save-config', (_event, patch) => saveConfig(patch))

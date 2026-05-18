@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  setAutoStart: (enabled: boolean) => ipcRenderer.invoke('set-auto-start', enabled),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   setIgnoreMouseEvents: (ignore: boolean) => {
     ipcRenderer.send('set-ignore-mouse-events', ignore)
   },
@@ -60,6 +62,10 @@ const api = {
       const handler = (_e: unknown, info: { version: string }) => callback(info)
       ipcRenderer.on('update:available', handler)
       return () => { ipcRenderer.removeListener('update:available', handler) }
+    },
+    onNotAvailable: (callback: () => void) => {
+      ipcRenderer.on('update:not-available', callback)
+      return () => { ipcRenderer.removeListener('update:not-available', callback) }
     },
     onDownloading: (callback: () => void) => {
       ipcRenderer.on('update:downloading', callback)

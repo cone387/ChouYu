@@ -62,6 +62,8 @@ export interface PluginInfo {
 
 export interface ElectronAPI {
   getAppVersion: () => Promise<string>
+  setAutoStart: (enabled: boolean) => Promise<void>
+  checkForUpdates: () => Promise<void>
   setIgnoreMouseEvents: (ignore: boolean) => void
   log: (msg: string) => void
   takeScreenshot: (hideWindow?: boolean) => Promise<string | null>
@@ -86,6 +88,14 @@ export interface ElectronAPI {
     logout: (pluginId: string) => Promise<void>
     isAuthenticated: (pluginId: string) => Promise<boolean>
     getPlugins: () => Promise<PluginInfo[]>
+  }
+  update: {
+    onAvailable: (callback: (info: { version: string }) => void) => () => void
+    onNotAvailable: (callback: () => void) => () => void
+    onDownloading: (callback: () => void) => () => void
+    onProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void) => () => void
+    onDownloaded: (callback: (info: { version: string }) => void) => () => void
+    onError: (callback: (message: string) => void) => () => void
   }
 }
 

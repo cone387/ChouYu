@@ -3,7 +3,7 @@ import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { setupTray } from './tray'
 import { registerHotkey } from './hotkey'
-import { initDatabase } from './database'
+import { initDatabase, getConfig } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 
@@ -84,6 +84,13 @@ app.whenReady().then(async () => {
   registerHotkey(mainWindow!)
 
   if (app.isPackaged) {
+    // Sync auto-start setting with system
+    const config = getConfig()
+    app.setLoginItemSettings({
+      openAtLogin: config.autoStart ?? false,
+      openAsHidden: true
+    })
+
     // Delay update check to avoid competing with startup I/O
     setTimeout(() => initAutoUpdater(mainWindow!), 5000)
   }
