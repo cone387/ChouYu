@@ -3,7 +3,7 @@ import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
 import { AppConfig, PetState } from './shared/types'
-import { DEFAULT_CONFIG, PANEL_COMPACT_HEIGHT, PANEL_WIDTH } from './shared/constants'
+import { DEFAULT_CONFIG, PANEL_COMPACT_HEIGHT, PANEL_SETTINGS_HEIGHT, PANEL_WIDTH } from './shared/constants'
 import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
 
@@ -230,7 +230,7 @@ function App() {
   }, [restoreClickThrough])
 
   const openSettings = useCallback(() => {
-    setPanelPosition(calcPanelPosition(petPosition, 360))
+    setPanelPosition(calcPanelPosition(petPosition, PANEL_SETTINGS_HEIGHT))
     setPanelVisible(true)
     setPanelInitialized(true)
     setShowSettings(true)

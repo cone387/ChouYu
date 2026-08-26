@@ -14,6 +14,7 @@
   --code-bg: #f4f3fa;
   --accent: #6c5ce7;
   --accent-hover: #5b4bc4;
+  --on-accent: #ffffff;
   --hover-bg: rgba(83, 77, 126, 0.06);
   --input-bg: #fbfbfd;
   --input-border: rgba(49, 46, 82, 0.10);
@@ -40,6 +41,7 @@
     --code-bg: #25243a;
     --accent: #a69aff;
     --accent-hover: #b9b1ff;
+    --on-accent: #1e1e2e;
     --hover-bg: rgba(186, 177, 255, 0.08);
     --input-bg: #222231;
     --input-border: rgba(255, 255, 255, 0.08);

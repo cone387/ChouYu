@@ -6,6 +6,7 @@ export const SNAP_DISTANCE = 5
 export const PANEL_WIDTH = 420
 export const PANEL_HEIGHT = 520
 export const PANEL_COMPACT_HEIGHT = 200
+export const PANEL_SETTINGS_HEIGHT = 440
 export const PANEL_GAP = 12
 export const SLEEP_TIMEOUT = 5 * 60 * 1000
 export const MAX_HISTORY_MESSAGES = 30

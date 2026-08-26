@@ -128,7 +128,12 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
 
   return (
     <div className="settings-pane">
-      <div className="settings-field">
+      <div className="settings-pane-heading">
+        <h2>{plugin.name}</h2>
+        <p>{plugin.description}</p>
+      </div>
+      <div className="settings-card">
+      <div className="settings-field plugin-icon-field">
         <label>图标</label>
         <input
           type="text"
@@ -143,7 +148,7 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
           style={{ width: 60 }}
         />
       </div>
-      <div className="settings-field">
+      <div className="settings-field plugin-hotkey-field">
         <label>快捷键</label>
         <input
           type="text"
@@ -151,12 +156,13 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
           onChange={(e) => setHotkey(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void handleHotkeySave() }}
           placeholder="例如 Alt+B"
-          style={{ width: 120 }}
         />
         <button className="settings-secondary-btn" onClick={() => { void handleHotkeySave() }}>应用</button>
         <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>留空并应用可清除快捷键</span>
       </div>
-      <div style={{ borderTop: '1px solid var(--border)', margin: '12px 0' }} />
+      </div>
+      <div className="settings-section-title">账户连接</div>
+      <div className="settings-card">
       {authenticated ? (
         <>
           <div className="settings-field settings-field-row">
@@ -230,12 +236,14 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
           {message.text}
         </div>
       )}
+      </div>
 
-      <div className="settings-field settings-field-row" style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+      <div className="settings-card settings-field-row plugin-comment-card">
         <label>执行后宠物评论</label>
         <label className="settings-switch">
           <input
             type="checkbox"
+            aria-label="执行后宠物评论"
             checked={feedToPet}
             onChange={(e) => {
               setFeedToPet(e.target.checked)

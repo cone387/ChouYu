@@ -88,12 +88,13 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
       </div>
 
       <div className="settings-body">
-        <nav className="settings-nav">
+        <nav className="settings-nav" aria-label="设置分类">
           {allNavItems.map((item) => (
             <button
               key={item.key}
               className={`settings-nav-item${activeNav === item.key ? ' active' : ''}`}
               onClick={() => setActiveNav(item.key)}
+              aria-current={activeNav === item.key ? 'page' : undefined}
             >
               {item.key.startsWith('plugin-') ? (
                 <span className="settings-nav-icon-emoji">{item.icon}</span>
@@ -113,8 +114,13 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
         <div className="settings-content">
           {activeNav === 'ai' && (
             <div className="settings-pane">
-              <div className="settings-field">
-                <label htmlFor="settings-provider">Provider</label>
+              <div className="settings-pane-heading">
+                <h2>AI 提供者</h2>
+                <p>配置用于对话的服务地址、凭据和默认模型。</p>
+              </div>
+              <div className="settings-card">
+                <div className="settings-field">
+                <label htmlFor="settings-provider">服务类型</label>
                 <select
                   id="settings-provider"
                   value={config.provider}
@@ -162,12 +168,18 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                   placeholder="gpt-4o"
                 />
               </div>
+              </div>
             </div>
           )}
 
           {activeNav === 'persona' && (
             <div className="settings-pane settings-persona-pane">
-              <div className="settings-field">
+              <div className="settings-pane-heading">
+                <h2>角色人格</h2>
+                <p>定义 ChouYu 的性格、语气和回复风格。</p>
+              </div>
+              <div className="settings-card settings-persona-card">
+                <div className="settings-field">
                 <label htmlFor="settings-soul">SOUL.md 人格设定</label>
                 <textarea
                   id="settings-soul"
@@ -183,16 +195,23 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                   onClick={() => { setConfig((prev) => ({ ...prev, soulMd: DEFAULT_SOUL_MD })); void save({ soulMd: DEFAULT_SOUL_MD }) }}
                 >恢复默认人格</button>
               </div>
+              </div>
             </div>
           )}
 
           {activeNav === 'general' && (
             <div className="settings-pane">
+              <div className="settings-pane-heading">
+                <h2>通用设置</h2>
+                <p>调整启动行为、宠物显示和常用快捷键。</p>
+              </div>
+              <div className="settings-card">
               <div className="settings-field settings-field-row">
                 <label>开机自启</label>
                 <label className="settings-switch">
                   <input
                     type="checkbox"
+                    aria-label="开机自启"
                     checked={config.autoStart}
                     onChange={(e) => {
                       const enabled = e.target.checked
@@ -203,8 +222,9 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                 </label>
               </div>
               <div className="settings-field">
-                <label>宠物大小 <span className="settings-field-value">{config.petSize}px</span></label>
+                <label htmlFor="settings-pet-size">宠物大小 <span className="settings-field-value">{config.petSize}px</span></label>
                 <input
+                  id="settings-pet-size"
                   type="range"
                   min="40"
                   max="160"
@@ -231,13 +251,16 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                 </div>
               </div>
               <div id="settings-hotkey-help" className="settings-help">示例：Alt+Space、CommandOrControl+Shift+Y</div>
+              </div>
 
               <div className="settings-section-title">智能功能</div>
+              <div className="settings-card settings-toggle-card">
               <div className="settings-field settings-field-row">
                 <label>开机问好</label>
                 <label className="settings-switch">
                   <input
                     type="checkbox"
+                    aria-label="开机问好"
                     checked={config.proactiveGreeting}
                     onChange={(e) => save({ proactiveGreeting: e.target.checked })}
                   />
@@ -249,6 +272,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                 <label className="settings-switch">
                   <input
                     type="checkbox"
+                    aria-label="久坐提醒"
                     checked={config.proactiveRestReminder}
                     onChange={(e) => save({ proactiveRestReminder: e.target.checked })}
                   />
@@ -260,11 +284,13 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                 <label className="settings-switch">
                   <input
                     type="checkbox"
+                    aria-label="剪贴板感知"
                     checked={config.clipboardWatch}
                     onChange={(e) => save({ clipboardWatch: e.target.checked })}
                   />
                   <span className="settings-switch-slider" />
                 </label>
+              </div>
               </div>
             </div>
           )}
