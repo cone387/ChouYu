@@ -59,19 +59,20 @@ export function updateMainHotkey(accelerator: string): boolean {
   return false
 }
 
-function loadPluginHotkeys(mainWindow: BrowserWindow): void {
+function loadPluginHotkeys(mainWindow: BrowserWindow): string[] {
   const hotkeysJson = getState('plugin-hotkeys')
   const hotkeys: Record<string, string> = {}
+  const failedPluginIds: string[] = []
   try {
     if (hotkeysJson) Object.assign(hotkeys, JSON.parse(hotkeysJson))
     for (const plugin of pluginRegistry.getPlugins()) {
       const accelerator = getState(`plugin:${plugin.id}:hotkey`)
-      if (accelerator) hotkeys[plugin.id] = accelerator
+      if (accelerator !== null) hotkeys[plugin.id] = accelerator
     }
     for (const [pluginId, accelerator] of Object.entries(hotkeys)) {
       if (!accelerator) continue
       try {
-        globalShortcut.register(accelerator, () => {
+        const registered = globalShortcut.register(accelerator, () => {
           if (!mainWindow.isFocused()) {
             mainWindow.setAlwaysOnTop(true, 'screen-saver')
             mainWindow.focus()
@@ -79,17 +80,20 @@ function loadPluginHotkeys(mainWindow: BrowserWindow): void {
           }
           mainWindow.webContents.send('plugin-hotkey', pluginId)
         })
-        registeredPluginHotkeys.push(accelerator)
+        if (registered) registeredPluginHotkeys.push(accelerator)
+        else failedPluginIds.push(pluginId)
       } catch (err) {
+        failedPluginIds.push(pluginId)
         console.error(`[Hotkey] Failed to register plugin hotkey "${accelerator}" for ${pluginId}:`, err)
       }
     }
   } catch (err) {
     console.error('[Hotkey] Failed to parse plugin-hotkeys:', err)
   }
+  return failedPluginIds
 }
 
-export function reloadPluginHotkeys(mainWindow: BrowserWindow): void {
+export function reloadPluginHotkeys(mainWindow: BrowserWindow): string[] {
   // Unregister old plugin hotkeys
   for (const accelerator of registeredPluginHotkeys) {
     try {
@@ -98,5 +102,5 @@ export function reloadPluginHotkeys(mainWindow: BrowserWindow): void {
   }
   registeredPluginHotkeys = []
   // Re-register from current state
-  loadPluginHotkeys(mainWindow)
+  return loadPluginHotkeys(mainWindow)
 }

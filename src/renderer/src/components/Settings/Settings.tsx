@@ -38,6 +38,9 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
     const cleanups = [
       window.electronAPI.update.onAvailable((info) => setUpdateStatus(`发现新版本 v${info.version}`)),
       window.electronAPI.update.onNotAvailable(() => setUpdateStatus('已是最新版本')),
+      window.electronAPI.update.onDownloading(() => setUpdateStatus('正在下载更新…')),
+      window.electronAPI.update.onProgress((progress) => setUpdateStatus(`下载中 ${Math.round(progress.percent)}%`)),
+      window.electronAPI.update.onDownloaded((info) => setUpdateStatus(`v${info.version} 已下载，退出时安装`)),
       window.electronAPI.update.onError((msg) => setUpdateStatus(`检查失败: ${msg}`)),
     ]
     // If no event fires within 10s, assume up-to-date

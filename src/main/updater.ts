@@ -4,8 +4,14 @@ import { BrowserWindow, dialog } from 'electron'
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
 
+let initialized = false
+
 export function initAutoUpdater(mainWindow: BrowserWindow): void {
-  autoUpdater.checkForUpdates()
+  if (initialized) {
+    void autoUpdater.checkForUpdates()
+    return
+  }
+  initialized = true
 
   autoUpdater.on('update-available', (info: UpdateInfo) => {
     mainWindow.webContents.send('update:available', {
@@ -64,4 +70,6 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
   autoUpdater.on('error', (err) => {
     mainWindow.webContents.send('update:error', err.message)
   })
+
+  void autoUpdater.checkForUpdates()
 }

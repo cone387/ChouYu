@@ -39,7 +39,8 @@ API Key 和插件 Token 使用 Electron `safeStorage` 加密后保存在本机�
 |------|------|
 | `/clear` | 清空对话 |
 | `/settings` | 打开设置 |
-| `/model` | 切换模型 |
+| `/model` | 打开模型选择器 |
+| `/model 模型名` | 直接切换到指定模型 |
 | `/help` | 查看帮助 |
 | `/bb 内容` | 发布碎碎念到 BBTalk（需先登录） |
 
@@ -87,6 +88,7 @@ src/
 
 - [系统架构](docs/architecture.md)
 - [V1 功能规格](docs/v1-spec.md)
+- [当前功能状态](docs/current-status.md)
 - [插件开发指南](docs/plugin-guide.md)
 
 ## 开发

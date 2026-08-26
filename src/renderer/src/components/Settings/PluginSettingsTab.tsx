@@ -101,6 +101,17 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
     }
   }
 
+  const handleHotkeySave = async () => {
+    setMessage(null)
+    try {
+      await window.electronAPI.db.setState(`plugin:${plugin.id}:hotkey`, hotkey.trim())
+      setHotkey(hotkey.trim())
+      setMessage({ ok: true, text: hotkey.trim() ? '快捷键已生效' : '快捷键已清除' })
+    } catch (error) {
+      setMessage({ ok: false, text: error instanceof Error ? error.message : '快捷键设置失败' })
+    }
+  }
+
   const getButtonText = () => {
     if (!activeMethod) return '登录'
     switch (activeMethod.id) {
@@ -137,15 +148,13 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
         <input
           type="text"
           value={hotkey}
-          onChange={(e) => {
-            const val = e.target.value
-            setHotkey(val)
-            window.electronAPI.db.setState(`plugin:${plugin.id}:hotkey`, val)
-          }}
+          onChange={(e) => setHotkey(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') void handleHotkeySave() }}
           placeholder="例如 Alt+B"
           style={{ width: 120 }}
         />
-        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>设置后需重启生效</span>
+        <button className="settings-secondary-btn" onClick={() => { void handleHotkeySave() }}>应用</button>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>留空并应用可清除快捷键</span>
       </div>
       <div style={{ borderTop: '1px solid var(--border)', margin: '12px 0' }} />
       {authenticated ? (

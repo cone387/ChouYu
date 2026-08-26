@@ -866,6 +866,13 @@
   cursor: default;
 }
 
+.attachment-error {
+  margin: 0 8px 6px;
+  color: var(--error, #b42318);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .image-preview-close {
   position: fixed;
   top: 20px;

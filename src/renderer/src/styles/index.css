@@ -18,6 +18,8 @@
   --input-border: rgba(0, 0, 0, 0.12);
   --input-focus-border: var(--accent);
   --focus-ring: rgba(74, 158, 255, 0.45);
+  --error: #b42318;
+  --error-border: rgba(180, 35, 24, 0.35);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,6 +43,8 @@
     --input-border: rgba(255, 255, 255, 0.08);
     --input-focus-border: var(--accent);
     --focus-ring: rgba(106, 176, 255, 0.55);
+    --error: #ff8a80;
+    --error-border: rgba(255, 138, 128, 0.45);
   }
 }
 
@@ -143,6 +147,23 @@ html, body, #root {
 .clipboard-bubble-actions button:hover {
   background: var(--accent);
   color: white;
+}
+
+.file-error-bubble {
+  display: flex;
+  max-width: 280px;
+  align-items: flex-start;
+  gap: 8px;
+  border-color: var(--error-border);
+  color: var(--error);
+}
+
+.file-error-bubble button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
 }
 
 @media (pointer: coarse) {

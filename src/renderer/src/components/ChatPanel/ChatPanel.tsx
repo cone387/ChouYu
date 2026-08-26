@@ -38,10 +38,24 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [activePluginForInput, setActivePluginForInput] = useState<PluginInfo | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const happyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0 })
   const initializedRef = useRef(false)
   const latestMessagesRef = useRef<Message[]>([])
+
+  const refreshPlugins = useCallback(async () => {
+    setPlugins(await window.electronAPI.plugin.getPlugins())
+  }, [])
+
+  const finishPetResponse = useCallback(() => {
+    if (happyTimerRef.current) clearTimeout(happyTimerRef.current)
+    onPetStateChange('happy')
+    happyTimerRef.current = setTimeout(() => {
+      onPetStateChange('idle')
+      happyTimerRef.current = null
+    }, 650)
+  }, [onPetStateChange])
 
   useEffect(() => {
     loadMessages().then((msgs) => {
@@ -49,7 +63,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       initializedRef.current = true
     })
     window.electronAPI.db.getConfig().then(setConfig)
-    window.electronAPI.plugin.getPlugins().then(setPlugins)
+    void refreshPlugins()
   }, [])
 
   useEffect(() => window.electronAPI.onConfigChanged(setConfig), [])
@@ -133,6 +147,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [messages])
 
   useEffect(() => () => {
+    abortRef.current?.abort()
+    if (happyTimerRef.current) clearTimeout(happyTimerRef.current)
+    onPetStateChange('idle')
     if (initializedRef.current) void saveMessages(latestMessagesRef.current)
   }, [])
 
@@ -161,6 +178,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const pluginCommands = plugins.map((p) => ({ cmd: '/' + p.command, desc: p.description }))
 
   const handleSend = async (content: string, attachments?: PendingAttachment[]) => {
+    if (happyTimerRef.current) {
+      clearTimeout(happyTimerRef.current)
+      happyTimerRef.current = null
+    }
     // Plugin command detection (before built-in commands)
     for (const plugin of plugins) {
       const prefix = `/${plugin.command} `
@@ -187,6 +208,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           onPetStateChange('thinking')
           setIsStreaming(true)
           const petAbort = new AbortController()
+          abortRef.current = petAbort
           try {
             await streamChat(
               [{ role: 'user', content: petPrompt, id: petMsgId + '-prompt', timestamp: Date.now() }],
@@ -194,7 +216,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               config,
               (chunk, done) => {
                 if (done) {
-                  onPetStateChange('idle')
+                  finishPetResponse()
                   setIsStreaming(false)
                   return
                 }
@@ -243,6 +265,43 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       }
       return
     }
+    if (content === '/model' || content.startsWith('/model ')) {
+      const requestedModel = content.slice('/model'.length).trim()
+      if (!requestedModel) {
+        const modelHelpMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: '请从输入框右下角的模型菜单中选择模型，或输入 `/model 模型名称`。',
+          timestamp: Date.now()
+        }
+        setMessages((prev) => [...prev, modelHelpMsg])
+        setShowHistory(true)
+        return
+      }
+
+      try {
+        const saved = await window.electronAPI.db.saveConfig({ model: requestedModel })
+        setConfig(saved)
+        const modelChangedMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `已切换到模型 \`${saved.model}\`。`,
+          timestamp: Date.now()
+        }
+        setMessages((prev) => [...prev, modelChangedMsg])
+        setShowHistory(true)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '模型切换失败'
+        setMessages((prev) => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `模型切换失败：${message}`,
+          timestamp: Date.now()
+        }])
+        setShowHistory(true)
+      }
+      return
+    }
 
     let msgContent = content
     const imageAttachment = attachments?.find((a) => a.type === 'image')
@@ -280,7 +339,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         config,
         (chunk, done) => {
           if (done) {
-            onPetStateChange('idle')
+            finishPetResponse()
             setIsStreaming(false)
             return
           }
@@ -343,7 +402,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     >
       {showSettings ? (
         <Settings
-          onClose={() => { setShowSettings(false); onSettingsClose?.() }}
+          onClose={() => { setShowSettings(false); void refreshPlugins(); onSettingsClose?.() }}
           dragHandleProps={{
             onPointerDown: handleDragStart,
             onPointerMove: handleDragMove,

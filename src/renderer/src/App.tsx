@@ -5,6 +5,7 @@ import ScreenCapture from './components/ScreenCapture/ScreenCapture'
 import { AppConfig, PetState } from './shared/types'
 import { DEFAULT_CONFIG, PANEL_WIDTH } from './shared/constants'
 import { proactiveEngine } from './core/proactive'
+import { stateMachine } from './core/state-machine'
 
 function App() {
   const [petPosition, setPetPosition] = useState({ x: window.innerWidth - 180, y: window.innerHeight - 180 })
@@ -13,16 +14,33 @@ function App() {
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [panelInitialized, setPanelInitialized] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [petState, setPetState] = useState<PetState>('idle')
+  const [petState, setPetState] = useState<PetState>(stateMachine.getState())
   const [screenshotImage, setScreenshotImage] = useState<string | null>(null)
   const [activePluginId, setActivePluginId] = useState<string | null>(null)
   const [clipboardText, setClipboardText] = useState<string | null>(null)
   const [proactiveMsg, setProactiveMsg] = useState<string | null>(null)
   const [pendingDrop, setPendingDrop] = useState<{ type: 'image' | 'text'; data: string; name: string } | null>(null)
   const [pendingClipboardMsg, setPendingClipboardMsg] = useState<string | null>(null)
+  const [fileDropError, setFileDropError] = useState<string | null>(null)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const screenshotCallbackRef = useRef<((dataUrl: string) => void) | null>(null)
   const ignoreRef = useRef(true)
+
+  useEffect(() => {
+    const unsubscribe = stateMachine.onStateChange(setPetState)
+    stateMachine.userActivity()
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    const markActivity = () => stateMachine.userActivity()
+    window.addEventListener('pointerdown', markActivity, true)
+    window.addEventListener('keydown', markActivity, true)
+    return () => {
+      window.removeEventListener('pointerdown', markActivity, true)
+      window.removeEventListener('keydown', markActivity, true)
+    }
+  }, [])
 
   useEffect(() => {
     window.electronAPI.db.getConfig().then(setConfig)
@@ -68,6 +86,12 @@ function App() {
     const t = setTimeout(() => setProactiveMsg(null), 8000)
     return () => clearTimeout(t)
   }, [proactiveMsg])
+
+  useEffect(() => {
+    if (!fileDropError) return
+    const timer = setTimeout(() => setFileDropError(null), 5000)
+    return () => clearTimeout(timer)
+  }, [fileDropError])
 
   useEffect(() => {
     let rafId: number | null = null
@@ -177,6 +201,7 @@ function App() {
 
   const togglePanel = useCallback(() => {
     proactiveEngine.userActivity()
+    stateMachine.userActivity()
     setPanelVisible((v) => {
       if (!v) {
         if (!panelInitialized) setPanelInitialized(true)
@@ -186,6 +211,23 @@ function App() {
       return !v
     })
   }, [petPosition, calcPanelPosition, panelInitialized])
+
+  const restoreClickThrough = useCallback(() => {
+    ignoreRef.current = true
+    window.electronAPI.setIgnoreMouseEvents(true)
+  }, [])
+
+  const hidePanel = useCallback(() => {
+    setPanelVisible(false)
+    restoreClickThrough()
+  }, [restoreClickThrough])
+
+  const closePanel = useCallback(() => {
+    setPanelVisible(false)
+    setPanelInitialized(false)
+    setShowSettings(false)
+    restoreClickThrough()
+  }, [restoreClickThrough])
 
   const openSettings = useCallback(() => {
     setPanelPosition(calcPanelPosition(petPosition, 360))
@@ -201,10 +243,10 @@ function App() {
 
   useEffect(() => {
     const cleanup = window.electronAPI.onHidePanel(() => {
-      setPanelVisible(false)
+      hidePanel()
     })
     return cleanup
-  }, [])
+  }, [hidePanel])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onOpenSettings(openSettings)
@@ -224,12 +266,20 @@ function App() {
 
   const startScreenshot = useCallback((hidePanel: boolean, callback: (dataUrl: string) => void) => {
     screenshotCallbackRef.current = callback
-    window.electronAPI.takeScreenshot(hidePanel).then((dataUrl) => {
-      if (dataUrl) {
-        window.electronAPI.setIgnoreMouseEvents(false)
-        setScreenshotImage(dataUrl)
-      }
-    })
+    window.electronAPI.takeScreenshot(hidePanel)
+      .then((dataUrl) => {
+        if (dataUrl) {
+          window.electronAPI.setIgnoreMouseEvents(false)
+          setScreenshotImage(dataUrl)
+          return
+        }
+        screenshotCallbackRef.current = null
+        setFileDropError('截图失败，请稍后重试。')
+      })
+      .catch(() => {
+        screenshotCallbackRef.current = null
+        setFileDropError('截图失败，请检查系统的屏幕录制权限。')
+      })
   }, [])
 
   const handleScreenshotCapture = useCallback((croppedDataUrl: string) => {
@@ -248,6 +298,7 @@ function App() {
   }, [])
 
   const handleFileDrop = useCallback((file: { type: 'image' | 'text'; data: string; name: string }) => {
+    stateMachine.userActivity()
     setPendingDrop(file)
     // Open panel with the file attached
     if (!panelInitialized) setPanelInitialized(true)
@@ -260,6 +311,7 @@ function App() {
     const text = clipboardText
     setClipboardText(null)
     if (!text) return
+    stateMachine.userActivity()
 
     let msg = ''
     if (action === 'translate') msg = `请翻译以下内容：\n\n${text}`
@@ -289,6 +341,7 @@ function App() {
         state={petState}
         size={config.petSize}
         onFileDrop={handleFileDrop}
+        onFileDropError={setFileDropError}
       />
       {/* Proactive message bubble */}
       {proactiveMsg && (
@@ -322,15 +375,26 @@ function App() {
           </div>
         </div>
       )}
+      {fileDropError && (
+        <div
+          data-interactive
+          className="pet-bubble file-error-bubble"
+          style={{ left: petPosition.x + config.petSize + 10, top: petPosition.y + 20 }}
+          role="alert"
+        >
+          <span>{fileDropError}</span>
+          <button onClick={() => setFileDropError(null)} aria-label="关闭附件错误提示">✕</button>
+        </div>
+      )}
       {panelInitialized && panelPosition && (
         <ChatPanel
           visible={panelVisible}
           position={panelPosition}
           onPositionChange={setPanelPosition}
           petState={petState}
-          onPetStateChange={setPetState}
-          onHide={() => setPanelVisible(false)}
-          onClose={() => { setPanelVisible(false); setPanelInitialized(false) }}
+          onPetStateChange={(state) => stateMachine.transition(state)}
+          onHide={hidePanel}
+          onClose={closePanel}
           initialShowSettings={showSettings}
           onSettingsClose={() => setShowSettings(false)}
           onScreenshot={startScreenshot}

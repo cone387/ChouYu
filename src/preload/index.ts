@@ -3,6 +3,7 @@ import type { AppConfig } from '../shared/config'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  quitApp: () => ipcRenderer.invoke('quit-app'),
   setAutoStart: (enabled: boolean) => ipcRenderer.invoke('set-auto-start', enabled),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   setIgnoreMouseEvents: (ignore: boolean) => {

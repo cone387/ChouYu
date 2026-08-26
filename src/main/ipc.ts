@@ -1,10 +1,10 @@
 import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app } from 'electron'
-import { autoUpdater } from 'electron-updater'
 import fs from 'fs'
 import path from 'path'
 import { sanitizeConfigPatch } from '../shared/config'
 import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { setClipboardWatcherEnabled } from './clipboard'
+import { initAutoUpdater } from './updater'
 import {
   getConfig,
   saveConfig,
@@ -96,9 +96,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try {
       const baseUrl = new URL(config.baseUrl)
       if (!['http:', 'https:'].includes(baseUrl.protocol)) return []
-      const url = config.baseUrl.replace(/\/$/, '') + '/models'
+      const url = config.baseUrl.replace(/\/+$/, '') + '/models'
+      const headers = config.provider === 'claude'
+        ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' }
+        : { 'Authorization': `Bearer ${config.apiKey}` }
       const resp = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${config.apiKey}` }
+        headers,
+        signal: AbortSignal.timeout(10_000)
       })
       if (!resp.ok) return []
       const json = (await resp.json()) as { data?: { id?: string }[] }
@@ -110,6 +114,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   ipcMain.handle('get-app-version', () => app.getVersion())
+
+  ipcMain.handle('quit-app', () => {
+    app.quit()
+  })
 
   ipcMain.handle('set-auto-start', (_event, enabled: boolean) => {
     app.setLoginItemSettings({
@@ -124,7 +132,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       mainWindow.webContents.send('update:error', '开发模式下无法检查更新')
       return null
     }
-    return autoUpdater.checkForUpdates()
+    initAutoUpdater(mainWindow)
+    return null
   })
 
   ipcMain.handle('db:get-config', () => getConfig())
@@ -154,7 +163,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('db:set-state', (_event, key, value) => {
     if (typeof key !== 'string' || !key || key.length > 256) throw new Error('Invalid state key')
     if (typeof value !== 'string' || value.length > 1_000_000) throw new Error('Invalid state value')
+    const pluginHotkeyMatch = key.match(/^plugin:([^:]+):hotkey$/)
+    const previousValue = pluginHotkeyMatch ? getState(key) ?? '' : ''
     setState(key, value)
-    if (/^plugin:[^:]+:hotkey$/.test(key)) reloadPluginHotkeys(mainWindow)
+    if (pluginHotkeyMatch) {
+      const failedPluginIds = reloadPluginHotkeys(mainWindow)
+      if (failedPluginIds.includes(pluginHotkeyMatch[1])) {
+        setState(key, previousValue)
+        reloadPluginHotkeys(mainWindow)
+        throw new Error(`快捷键“${value}”无效或已被其他程序占用`)
+      }
+    }
   })
 }

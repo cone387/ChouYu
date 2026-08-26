@@ -3,10 +3,12 @@ import { SLEEP_TIMEOUT } from '../shared/constants'
 
 type StateListener = (state: PetState) => void
 
-class StateMachine {
+export class StateMachine {
   private state: PetState = 'idle'
   private listeners: StateListener[] = []
   private sleepTimer: ReturnType<typeof setTimeout> | null = null
+
+  constructor(private readonly sleepTimeout = SLEEP_TIMEOUT) {}
 
   getState(): PetState {
     return this.state
@@ -38,7 +40,7 @@ class StateMachine {
     if (this.state === 'idle') {
       this.sleepTimer = setTimeout(() => {
         this.transition('sleeping')
-      }, SLEEP_TIMEOUT)
+      }, this.sleepTimeout)
     }
   }
 

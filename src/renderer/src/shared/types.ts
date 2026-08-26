@@ -65,6 +65,7 @@ export interface PluginInfo {
 
 export interface ElectronAPI {
   getAppVersion: () => Promise<string>
+  quitApp: () => Promise<void>
   setAutoStart: (enabled: boolean) => Promise<void>
   checkForUpdates: () => Promise<void>
   setIgnoreMouseEvents: (ignore: boolean) => void

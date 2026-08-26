@@ -1,12 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import CommandMenu, { getFilteredCommands } from './CommandMenu'
 import { PluginInfo } from '../../shared/types'
-
-export interface PendingAttachment {
-  type: 'image' | 'text'
-  data: string
-  name: string
-}
+import {
+  getAttachmentValidationError,
+  MAX_ATTACHMENT_COUNT,
+  readAttachmentFile,
+  type PendingAttachment
+} from '../../core/attachments'
+export type { PendingAttachment } from '../../core/attachments'
 
 interface InputAreaProps {
   onSend: (content: string, attachments?: PendingAttachment[]) => void
@@ -38,6 +39,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [activePlugin, setActivePlugin] = useState<PluginInfo | null>(null)
   const [showPluginOverflow, setShowPluginOverflow] = useState(false)
+  const [attachmentError, setAttachmentError] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -58,7 +60,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
 
   useEffect(() => {
     if (initialAttachment) {
-      setAttachments((prev) => [...prev, initialAttachment])
+      setAttachments((prev) => prev.length < MAX_ATTACHMENT_COUNT ? [...prev, initialAttachment] : prev)
       onInitialAttachmentConsumed?.()
     }
   }, [initialAttachment, onInitialAttachmentConsumed])
@@ -119,6 +121,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     onSend(trimmed, attachments.length > 0 ? attachments : undefined)
     setValue('')
     setAttachments([])
+    setAttachmentError('')
     setShowCommands(false)
   }, [value, disabled, onSend, attachments, activePlugin])
 
@@ -188,6 +191,9 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
       case '/settings':
         onSend('/settings')
         break
+      case '/model':
+        setShowModelSelector(true)
+        break
       default: {
         // Find matching plugin for placeholder hint
         const matchedPlugin = (plugins || []).find((p) => `/${p.command}` === cmd)
@@ -203,19 +209,41 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   }
 
   const doScreenshot = useCallback((hidePanel?: boolean) => {
+    if (attachments.length >= MAX_ATTACHMENT_COUNT) {
+      setAttachmentError(`最多添加 ${MAX_ATTACHMENT_COUNT} 个附件。`)
+      return
+    }
     setShowScreenshotMenu(false)
     const hide = hidePanel ?? hideWindowOnCapture
     onScreenshot?.(hide, (dataUrl) => {
-      setAttachments((prev) => [...prev, { type: 'image', data: dataUrl, name: `截图${prev.length + 1}.png` }])
+      setAttachments((prev) => prev.length < MAX_ATTACHMENT_COUNT
+        ? [...prev, { type: 'image', data: dataUrl, name: `截图${prev.length + 1}.png` }]
+        : prev)
     })
-  }, [onScreenshot, hideWindowOnCapture])
+  }, [attachments.length, onScreenshot, hideWindowOnCapture])
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        doScreenshot()
+      }
+    }
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  }, [doScreenshot])
 
   const handleFileSelect = useCallback(async () => {
+    if (attachments.length >= MAX_ATTACHMENT_COUNT) {
+      setAttachmentError(`最多添加 ${MAX_ATTACHMENT_COUNT} 个附件。`)
+      return
+    }
     const result = await window.electronAPI.openFileDialog()
     if (result) {
       setAttachments((prev) => [...prev, result])
+      setAttachmentError('')
     }
-  }, [])
+  }, [attachments.length])
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
@@ -227,22 +255,21 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     e.preventDefault()
     setDragOver(false)
     const files = Array.from(e.dataTransfer.files)
+    let nextCount = attachments.length
+    let firstError = ''
     files.forEach((file) => {
-      const reader = new FileReader()
-      const isImage = file.type.startsWith('image/')
-      if (isImage) {
-        reader.onload = () => {
-          setAttachments((prev) => [...prev, { type: 'image', data: reader.result as string, name: file.name }])
-        }
-        reader.readAsDataURL(file)
-      } else {
-        reader.onload = () => {
-          setAttachments((prev) => [...prev, { type: 'text', data: reader.result as string, name: file.name }])
-        }
-        reader.readAsText(file)
+      const validationError = getAttachmentValidationError(file, nextCount)
+      if (validationError) {
+        firstError ||= validationError
+        return
       }
+      nextCount++
+      void readAttachmentFile(file)
+        .then((attachment) => setAttachments((prev) => [...prev, attachment]))
+        .catch((error) => setAttachmentError(error instanceof Error ? error.message : '附件读取失败'))
     })
-  }, [])
+    setAttachmentError(firstError)
+  }, [attachments.length])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -274,6 +301,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
+        {attachmentError && <div className="attachment-error" role="alert">{attachmentError}</div>}
         {attachments.length > 0 && (
           <div className="attachment-list">
             {attachments.map((att, i) => (
@@ -333,7 +361,6 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                       <circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="2" fill="currentColor"/>
                     </svg>
                     <span className="screenshot-menu-label">录屏</span>
-                    <span className="screenshot-menu-shortcut">Ctrl+Shift+R</span>
                   </button>
                   <div className="screenshot-menu-divider" />
                   <label className="screenshot-menu-item screenshot-menu-check">

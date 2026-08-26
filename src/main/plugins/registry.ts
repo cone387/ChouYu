@@ -56,7 +56,7 @@ class PluginRegistry {
       command: p.command,
       name: p.name,
       description: p.description,
-      icon: p.icon,
+      icon: getState(`plugin:${p.id}:customIcon`) || p.icon,
       inputPlaceholder: p.inputPlaceholder,
       requiresContent: p.requiresContent,
       feedToPet: p.feedToPet,

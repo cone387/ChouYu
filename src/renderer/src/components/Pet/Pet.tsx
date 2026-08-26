@@ -2,6 +2,7 @@ import { useRef, useCallback, useEffect, useState } from 'react'
 import PetSvg from './PetSvg'
 import { PetState } from '../../shared/types'
 import { SNAP_DISTANCE } from '../../shared/constants'
+import { getAttachmentValidationError, readAttachmentFile } from '../../core/attachments'
 import './Pet.css'
 
 interface PetProps {
@@ -12,9 +13,10 @@ interface PetProps {
   state: PetState
   size: number
   onFileDrop?: (file: { type: 'image' | 'text'; data: string; name: string }) => void
+  onFileDropError?: (message: string) => void
 }
 
-export default function Pet({ position, onPositionChange, onClick, onOpenSettings, state, size, onFileDrop }: PetProps) {
+export default function Pet({ position, onPositionChange, onClick, onOpenSettings, state, size, onFileDrop, onFileDropError }: PetProps) {
   const draggingRef = useRef(false)
   const hasDraggedRef = useRef(false)
   const dragStartRef = useRef({ screenX: 0, screenY: 0, posX: 0, posY: 0 })
@@ -153,20 +155,15 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
     const files = Array.from(e.dataTransfer.files)
     if (files.length === 0) return
     const file = files[0]
-    const reader = new FileReader()
-    const isImage = file.type.startsWith('image/')
-    if (isImage) {
-      reader.onload = () => {
-        onFileDrop?.({ type: 'image', data: reader.result as string, name: file.name })
-      }
-      reader.readAsDataURL(file)
-    } else {
-      reader.onload = () => {
-        onFileDrop?.({ type: 'text', data: reader.result as string, name: file.name })
-      }
-      reader.readAsText(file)
+    const validationError = getAttachmentValidationError(file)
+    if (validationError) {
+      onFileDropError?.(validationError)
+      return
     }
-  }, [onFileDrop])
+    void readAttachmentFile(file)
+      .then((attachment) => onFileDrop?.(attachment))
+      .catch((error) => onFileDropError?.(error instanceof Error ? error.message : '附件读取失败'))
+  }, [onFileDrop, onFileDropError])
 
   const dragCounterRef = useRef(0)
 
@@ -224,7 +221,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button onClick={() => { setContextMenu(null); onOpenSettings() }}>设置</button>
-          <button onClick={() => { setContextMenu(null); window.close() }}>退出</button>
+          <button onClick={() => { setContextMenu(null); void window.electronAPI.quitApp() }}>退出</button>
         </div>
       )}
     </>
