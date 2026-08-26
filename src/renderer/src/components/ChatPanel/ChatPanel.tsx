@@ -4,7 +4,7 @@ import MessageArea from './MessageArea'
 import InputArea, { PendingAttachment } from './InputArea'
 import Settings from '../Settings/Settings'
 import { Message, PetState, AppConfig, PluginInfo, PluginMessageData } from '../../shared/types'
-import { DEFAULT_CONFIG, PANEL_SETTINGS_HEIGHT } from '../../shared/constants'
+import { DEFAULT_CONFIG, PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH } from '../../shared/constants'
 import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
 import { loadMessages, saveMessages, clearMessages } from '../../core/memory'
@@ -432,8 +432,12 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 setShowSettings(true)
                 const screenH = window.innerHeight
                 const panelH = PANEL_SETTINGS_HEIGHT
-                if (position.y + panelH > screenH - 4) {
-                  onPositionChange({ ...position, y: Math.max(4, screenH - panelH - 4) })
+                const panelX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_SETTINGS_WIDTH - 4))
+                const panelY = position.y + panelH > screenH - 4
+                  ? Math.max(4, screenH - panelH - 4)
+                  : position.y
+                if (panelX !== position.x || panelY !== position.y) {
+                  onPositionChange({ x: panelX, y: panelY })
                 }
               }}
               onNewTopic={handleNewTopic}

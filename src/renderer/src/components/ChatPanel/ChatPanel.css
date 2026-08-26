@@ -26,6 +26,7 @@
 }
 
 .chat-panel-settings {
+  width: min(520px, calc(100vw - 16px));
   min-height: 380px;
   height: min(440px, calc(100vh - 8px));
 }

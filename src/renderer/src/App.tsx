@@ -3,7 +3,7 @@ import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
 import { AppConfig, PetState } from './shared/types'
-import { DEFAULT_CONFIG, PANEL_COMPACT_HEIGHT, PANEL_SETTINGS_HEIGHT, PANEL_WIDTH } from './shared/constants'
+import { DEFAULT_CONFIG, PANEL_COMPACT_HEIGHT, PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH, PANEL_WIDTH } from './shared/constants'
 import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
 
@@ -169,7 +169,7 @@ function App() {
     }
   }, [])
 
-  const calcPanelPosition = useCallback((petPos: { x: number; y: number }, panelH = PANEL_COMPACT_HEIGHT) => {
+  const calcPanelPosition = useCallback((petPos: { x: number; y: number }, panelH = PANEL_COMPACT_HEIGHT, panelW = PANEL_WIDTH) => {
     const screenW = window.innerWidth
     const screenH = window.innerHeight
     const petCenterX = petPos.x + config.petSize / 2
@@ -181,7 +181,7 @@ function App() {
 
     let x = isLeft
       ? petPos.x + config.petSize + gap
-      : petPos.x - PANEL_WIDTH - gap
+      : petPos.x - panelW - gap
 
     let y: number
     if (isTop) {
@@ -192,7 +192,7 @@ function App() {
 
     // Clamp to screen
     if (x < 4) x = 4
-    if (x + PANEL_WIDTH > screenW - 4) x = screenW - PANEL_WIDTH - 4
+    if (x + panelW > screenW - 4) x = screenW - panelW - 4
     if (y < 4) y = 4
     if (y + panelH > screenH - 4) y = screenH - panelH - 4
 
@@ -230,7 +230,7 @@ function App() {
   }, [restoreClickThrough])
 
   const openSettings = useCallback(() => {
-    setPanelPosition(calcPanelPosition(petPosition, PANEL_SETTINGS_HEIGHT))
+    setPanelPosition(calcPanelPosition(petPosition, PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH))
     setPanelVisible(true)
     setPanelInitialized(true)
     setShowSettings(true)

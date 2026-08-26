@@ -82,7 +82,6 @@
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   color: var(--accent);
   font-weight: 600;
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .settings-nav-item svg {
@@ -266,6 +265,49 @@
 .settings-key-toggle:hover {
   border-color: var(--accent);
   background: var(--hover-bg);
+}
+
+.settings-model-row {
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+}
+
+.settings-model-row input {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-fetch-btn {
+  flex: 0 0 auto;
+  min-width: 74px;
+  padding: 7px 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 160ms, border-color 160ms, color 160ms;
+}
+
+.settings-fetch-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.settings-fetch-btn:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.settings-model-status {
+  min-height: 16px;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* Switch */

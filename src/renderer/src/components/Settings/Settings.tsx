@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { AppConfig, PluginInfo } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
 import { DEFAULT_SOUL_MD } from '../../../../shared/config'
@@ -26,6 +26,21 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
   const [updateStatus, setUpdateStatus] = useState<string>('')
   const [hotkeyDraft, setHotkeyDraft] = useState(DEFAULT_CONFIG.hotkey)
   const [saveError, setSaveError] = useState('')
+  const [modelOptions, setModelOptions] = useState<string[]>([])
+  const [modelFetchStatus, setModelFetchStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle')
+
+  const fetchAvailableModels = useCallback(async () => {
+    setModelFetchStatus('loading')
+    try {
+      const models = await window.electronAPI.fetchModels()
+      const availableModels = Array.from(new Set(models.filter((item): item is string => Boolean(item && item.trim()))))
+      setModelOptions(availableModels)
+      setModelFetchStatus(availableModels.length > 0 ? 'ready' : 'unavailable')
+    } catch {
+      setModelOptions([])
+      setModelFetchStatus('unavailable')
+    }
+  }, [])
 
   useEffect(() => {
     window.electronAPI.db.getConfig().then((loaded) => {
@@ -68,6 +83,10 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
     const updated = { ...config, ...patch }
     setConfig(updated)
     setSaveError('')
+    if (patch.provider || patch.baseUrl !== undefined || patch.apiKey !== undefined) {
+      setModelOptions([])
+      setModelFetchStatus('idle')
+    }
     try {
       const saved = await window.electronAPI.db.saveConfig(patch)
       setConfig(saved)
@@ -158,15 +177,35 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                 </div>
               </div>
               <div className="settings-field">
-                <label htmlFor="settings-model">模型</label>
-                <input
-                  id="settings-model"
-                  type="text"
-                  value={config.model}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, model: e.target.value }))}
-                  onBlur={() => { void save({ model: config.model }) }}
-                  placeholder="gpt-4o"
-                />
+                <label htmlFor="settings-model">默认模型</label>
+                <div className="settings-model-row">
+                  <input
+                    id="settings-model"
+                    type="text"
+                    list="settings-model-options"
+                    value={config.model}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, model: e.target.value }))}
+                    onBlur={() => { void save({ model: config.model }) }}
+                    placeholder="先获取模型，或手动输入模型名"
+                    aria-describedby="settings-model-help"
+                  />
+                  <button
+                    type="button"
+                    className="settings-fetch-btn"
+                    onClick={() => { void fetchAvailableModels() }}
+                    disabled={modelFetchStatus === 'loading'}
+                  >
+                    {modelFetchStatus === 'loading' ? '获取中…' : '获取模型'}
+                  </button>
+                </div>
+                <datalist id="settings-model-options">
+                  {modelOptions.map((model) => <option key={model} value={model} />)}
+                </datalist>
+                <div id="settings-model-help" className="settings-model-status" role="status">
+                  {modelFetchStatus === 'idle' && '配置好 Provider、Base URL 和 API Key 后，点击获取模型。'}
+                  {modelFetchStatus === 'ready' && `已获取 ${modelOptions.length} 个可用模型。`}
+                  {modelFetchStatus === 'unavailable' && '未获取到模型，请检查配置或手动输入模型名。'}
+                </div>
               </div>
               </div>
             </div>
