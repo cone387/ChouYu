@@ -644,6 +644,23 @@
   text-align: center;
 }
 
+.model-refresh-btn {
+  display: block;
+  margin: 8px auto 0;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.model-refresh-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
 /* Attachment Preview */
 .attachment-list {
   display: flex;

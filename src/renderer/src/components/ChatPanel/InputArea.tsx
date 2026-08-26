@@ -24,15 +24,14 @@ interface InputAreaProps {
   onInitialAttachmentConsumed?: () => void
 }
 
-const FALLBACK_MODELS = ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long']
-
 export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [showScreenshotMenu, setShowScreenshotMenu] = useState(false)
   const [hideWindowOnCapture, setHideWindowOnCapture] = useState(true)
-  const [modelOptions, setModelOptions] = useState<string[]>(FALLBACK_MODELS)
+  const [modelOptions, setModelOptions] = useState<string[]>([])
+  const [modelListStatus, setModelListStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [modelSearch, setModelSearch] = useState('')
   const [cmdIndex, setCmdIndex] = useState(0)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
@@ -110,11 +109,25 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     return () => document.removeEventListener('mousedown', dismiss)
   }, [showPluginOverflow])
 
-  useEffect(() => {
-    window.electronAPI.fetchModels().then((models) => {
-      if (models && models.length > 0) setModelOptions(models)
-    })
+  const refreshModels = useCallback(async () => {
+    setModelListStatus('loading')
+    try {
+      const models = await window.electronAPI.fetchModels()
+      const availableModels = Array.from(new Set(models.filter((item): item is string => Boolean(item && item.trim()))))
+      setModelOptions(availableModels)
+      setModelListStatus(availableModels.length > 0 ? 'ready' : 'unavailable')
+    } catch {
+      setModelOptions([])
+      setModelListStatus('unavailable')
+    }
   }, [])
+
+  useEffect(() => {
+    void refreshModels()
+    return window.electronAPI.onConfigChanged(() => {
+      void refreshModels()
+    })
+  }, [refreshModels])
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
@@ -484,8 +497,17 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                         aria-selected={m === model}
                       >{m}</button>
                     ))}
-                    {filteredModels.length === 0 && (
-                      <div className="model-empty">无匹配模型</div>
+                    {filteredModels.length === 0 && modelListStatus === 'loading' && (
+                      <div className="model-empty">正在加载可用模型…</div>
+                    )}
+                    {filteredModels.length === 0 && modelListStatus === 'unavailable' && (
+                      <div className="model-empty">
+                        <span>暂无可用模型，请先配置 API Key 或检查供应商地址。</span>
+                        <button className="model-refresh-btn" onClick={() => { void refreshModels() }}>重新检查</button>
+                      </div>
+                    )}
+                    {filteredModels.length === 0 && modelListStatus === 'ready' && (
+                      <div className="model-empty">没有匹配的模型</div>
                     )}
                   </div>
                 </div>
