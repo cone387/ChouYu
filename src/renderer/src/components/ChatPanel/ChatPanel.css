@@ -50,7 +50,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
   cursor: default;
   flex-shrink: 0;
 }
@@ -251,33 +251,46 @@
 
 /* Input Area */
 .input-area {
-  padding: 12px;
+  padding: 0;
   position: relative;
   flex-shrink: 0;
+  background: var(--input-bg);
+  border: none;
+  border-top: 1px solid var(--divider);
+  border-radius: 0 0 12px 12px;
+  overflow: visible;
 }
 
 .input-container {
-  border: 1px solid var(--input-border);
-  border-radius: 12px;
-  background: var(--input-bg);
+  border: none;
+  border-radius: 0;
+  background: transparent;
   display: flex;
   flex-direction: column;
 }
 
 .input-textarea {
   width: 100%;
-  min-height: 48px;
-  max-height: 120px;
+  min-height: 92px;
+  max-height: 220px;
   resize: none;
   border: none;
-  border-radius: 12px 12px 0 0;
-  padding: 12px 14px 4px;
+  border-radius: 0;
+  padding: 16px 16px 14px;
   font-size: 14px;
   font-family: inherit;
   background: transparent;
   color: var(--text-primary);
   outline: none;
   box-sizing: border-box;
+}
+
+/* The editor is intentionally quiet: focus is indicated by the caret only. */
+.input-textarea:focus,
+.input-textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent;
 }
 
 .input-textarea::placeholder {
@@ -288,7 +301,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 8px 8px;
+  min-height: 48px;
+  padding: 7px 10px 9px;
+  border-top: 1px solid var(--divider);
+  background: transparent;
 }
 
 .input-toolbar-left,
@@ -305,7 +321,7 @@
   padding: 5px 6px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -313,6 +329,7 @@
 
 .toolbar-btn:hover {
   background: var(--hover-bg);
+  color: var(--text-secondary);
 }
 
 .model-btn {
@@ -320,13 +337,19 @@
   color: var(--text-muted);
 }
 
+.model-btn-group:hover,
+.screenshot-btn-group:hover {
+  color: var(--text-secondary);
+}
+
 .send-btn {
   background: var(--accent);
   color: white;
   padding: 6px;
   border-radius: 50%;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
+  box-shadow: 0 2px 6px rgba(108, 92, 231, 0.20);
 }
 
 .send-btn:hover:not(:disabled) {
@@ -341,9 +364,9 @@
 /* Command Menu */
 .command-menu {
   position: absolute;
-  bottom: 100%;
-  left: 12px;
-  right: 12px;
+  bottom: calc(100% + 8px);
+  left: 8px;
+  right: 8px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -842,7 +865,8 @@
 
 /* Drag Over */
 .input-container.drag-over {
-  border-color: var(--accent);
+  outline: 2px dashed var(--accent);
+  outline-offset: -3px;
   background: rgba(106, 92, 231, 0.04);
 }
 

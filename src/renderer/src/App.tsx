@@ -3,7 +3,7 @@ import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
 import { AppConfig, PetState } from './shared/types'
-import { DEFAULT_CONFIG, PANEL_WIDTH } from './shared/constants'
+import { DEFAULT_CONFIG, PANEL_COMPACT_HEIGHT, PANEL_WIDTH } from './shared/constants'
 import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
 
@@ -169,7 +169,7 @@ function App() {
     }
   }, [])
 
-  const calcPanelPosition = useCallback((petPos: { x: number; y: number }, panelH = 140) => {
+  const calcPanelPosition = useCallback((petPos: { x: number; y: number }, panelH = PANEL_COMPACT_HEIGHT) => {
     const screenW = window.innerWidth
     const screenH = window.innerHeight
     const petCenterX = petPos.x + config.petSize / 2

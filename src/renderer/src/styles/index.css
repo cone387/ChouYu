@@ -1,23 +1,24 @@
 :root {
   --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
+  --bg-secondary: #f7f7fb;
   --bg-panel: rgba(255, 255, 255, 0.98);
   --text-primary: #1a1a1a;
-  --text-secondary: #666666;
-  --text-muted: #999999;
+  --text-secondary: #626273;
+  --text-muted: #9292a3;
   --border: rgba(0, 0, 0, 0.08);
+  --divider: rgba(49, 46, 82, 0.045);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
   --user-msg-bg: #e8f4fd;
   --ai-msg-bg: transparent;
   --code-bg: #f4f4f8;
-  --accent: #4a9eff;
-  --accent-hover: #3a8eef;
-  --hover-bg: rgba(0, 0, 0, 0.04);
-  --input-bg: #ffffff;
-  --input-border: rgba(0, 0, 0, 0.12);
-  --input-focus-border: var(--accent);
-  --focus-ring: rgba(74, 158, 255, 0.45);
+  --accent: #6c5ce7;
+  --accent-hover: #5b4bc4;
+  --hover-bg: rgba(83, 77, 126, 0.06);
+  --input-bg: #fbfbfd;
+  --input-border: rgba(49, 46, 82, 0.10);
+  --input-focus-border: transparent;
+  --focus-ring: rgba(108, 92, 231, 0.24);
   --error: #b42318;
   --error-border: rgba(180, 35, 24, 0.35);
 }
@@ -25,24 +26,25 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg-primary: #1e1e2e;
-    --bg-secondary: #252536;
+    --bg-secondary: #252535;
     --bg-panel: rgba(30, 30, 46, 0.98);
     --text-primary: #f0f0f0;
-    --text-secondary: #a0a0a0;
-    --text-muted: #666666;
+    --text-secondary: #aaa9bb;
+    --text-muted: #77768b;
     --border: rgba(255, 255, 255, 0.06);
+    --divider: rgba(220, 216, 255, 0.045);
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
     --user-msg-bg: rgba(100, 160, 255, 0.12);
     --ai-msg-bg: transparent;
     --code-bg: #1a1a2e;
-    --accent: #6ab0ff;
-    --accent-hover: #8ac4ff;
-    --hover-bg: rgba(255, 255, 255, 0.04);
-    --input-bg: #252536;
+    --accent: #a69aff;
+    --accent-hover: #b9b1ff;
+    --hover-bg: rgba(186, 177, 255, 0.08);
+    --input-bg: #222231;
     --input-border: rgba(255, 255, 255, 0.08);
-    --input-focus-border: var(--accent);
-    --focus-ring: rgba(106, 176, 255, 0.55);
+    --input-focus-border: transparent;
+    --focus-ring: rgba(166, 153, 255, 0.35);
     --error: #ff8a80;
     --error-border: rgba(255, 138, 128, 0.45);
   }

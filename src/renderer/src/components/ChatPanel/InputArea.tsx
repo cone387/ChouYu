@@ -326,7 +326,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={activePlugin ? (activePlugin.inputPlaceholder || '输入内容...') : '输入消息，/ 打开指令菜单...'}
-          rows={2}
+          rows={3}
           disabled={disabled}
           autoFocus={autoFocus}
           aria-label={activePlugin ? `${activePlugin.name} 输入内容` : '输入消息'}
