@@ -1,6 +1,6 @@
 .chat-panel {
   position: absolute;
-  width: 400px;
+  width: min(420px, calc(100vw - 16px));
   max-height: min(520px, calc(100vh - 8px));
   background: var(--bg-panel);
   border-radius: 12px;
@@ -10,7 +10,10 @@
   flex-direction: column;
   animation: panel-open 200ms ease-out;
   z-index: 9998;
-  transition: top 200ms ease-out;
+  /* Position is committed after transform-based dragging; a top transition here
+     would briefly reveal the old layout position and look like a jump. */
+  transition: none;
+  will-change: transform;
 }
 
 .chat-panel-drag-handle {
@@ -160,8 +163,9 @@
 }
 
 .message-user .message-bubble {
-  background: var(--accent);
-  color: #fff;
+  background: var(--user-msg-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--divider);
   border-radius: 16px 16px 4px 16px;
   padding: 8px 14px;
   font-size: 14px;
@@ -175,7 +179,7 @@
 
 .message-assistant .message-bubble {
   background: var(--ai-msg-bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--divider);
   border-radius: 16px 16px 16px 4px;
   padding: 8px 14px;
   font-size: 14px;
@@ -427,7 +431,7 @@
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border);
-  background: #1e1e2e;
+  background: var(--code-bg);
 }
 
 .code-block-header {
@@ -435,13 +439,13 @@
   align-items: center;
   justify-content: space-between;
   padding: 4px 10px;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--code-bg) 82%, var(--text-primary));
+  border-bottom: 1px solid var(--divider);
 }
 
 .code-block-lang {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   font-family: 'Cascadia Code', 'Fira Code', monospace;
 }
 
@@ -455,7 +459,7 @@
 }
 
 .code-block pre code {
-  color: #e0def4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: 'Cascadia Code', 'Fira Code', monospace;
   background: none;
@@ -1017,4 +1021,26 @@
   background: var(--hover-bg);
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* Keep plugin identity available without letting colorful icons dominate the composer. */
+.plugin-btn-icon {
+  filter: grayscale(1);
+  opacity: 0.72;
+  transition: opacity 150ms ease, filter 150ms ease;
+}
+
+.plugin-btn:hover .plugin-btn-icon,
+.plugin-btn.active .plugin-btn-icon {
+  filter: grayscale(0);
+  opacity: 1;
+}
+
+.plugin-active-badge {
+  color: var(--text-muted);
+  font-size: 11px;
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

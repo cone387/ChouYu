@@ -40,7 +40,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const abortRef = useRef<AbortController | null>(null)
   const happyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0 })
+  const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
   const initializedRef = useRef(false)
   const latestMessagesRef = useRef<Message[]>([])
 
@@ -110,7 +110,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       startX: e.screenX,
       startY: e.screenY,
       posX: position.x,
-      posY: position.y
+      posY: position.y,
+      dx: 0,
+      dy: 0
     }
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   }, [position])
@@ -119,6 +121,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (!dragRef.current.dragging) return
     const dx = e.screenX - dragRef.current.startX
     const dy = e.screenY - dragRef.current.startY
+    dragRef.current.dx = dx
+    dragRef.current.dy = dy
     // Use transform during drag to avoid re-rendering message list
     if (panelRef.current) {
       panelRef.current.style.transform = `translate(${dx}px, ${dy}px)`
@@ -128,15 +132,16 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const handleDragEnd = useCallback(() => {
     if (!dragRef.current.dragging) return
     dragRef.current.dragging = false
-    const dx = (panelRef.current?.style.transform.match(/translate\((.+?)px/)?.[1]) || '0'
-    const dy = (panelRef.current?.style.transform.match(/,\s*(.+?)px/)?.[1]) || '0'
+    const { posX, posY, dx, dy } = dragRef.current
+    const nextPosition = { x: posX + dx, y: posY + dy }
     if (panelRef.current) {
+      // Commit the layout position before removing the drag transform. This
+      // keeps the visual position continuous across the React state update.
+      panelRef.current.style.left = `${nextPosition.x}px`
+      panelRef.current.style.top = `${nextPosition.y}px`
       panelRef.current.style.transform = ''
     }
-    onPositionChange({
-      x: dragRef.current.posX + Number(dx),
-      y: dragRef.current.posY + Number(dy)
-    })
+    onPositionChange(nextPosition)
   }, [])
 
   useEffect(() => {

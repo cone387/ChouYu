@@ -9,9 +9,9 @@
   --divider: rgba(49, 46, 82, 0.045);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
-  --user-msg-bg: #e8f4fd;
+  --user-msg-bg: #f0effb;
   --ai-msg-bg: transparent;
-  --code-bg: #f4f4f8;
+  --code-bg: #f4f3fa;
   --accent: #6c5ce7;
   --accent-hover: #5b4bc4;
   --hover-bg: rgba(83, 77, 126, 0.06);
@@ -35,9 +35,9 @@
     --divider: rgba(220, 216, 255, 0.045);
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
-    --user-msg-bg: rgba(100, 160, 255, 0.12);
+    --user-msg-bg: rgba(108, 92, 231, 0.18);
     --ai-msg-bg: transparent;
-    --code-bg: #1a1a2e;
+    --code-bg: #25243a;
     --accent: #a69aff;
     --accent-hover: #b9b1ff;
     --hover-bg: rgba(186, 177, 255, 0.08);

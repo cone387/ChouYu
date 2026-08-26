@@ -42,6 +42,17 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   const [attachmentError, setAttachmentError] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const resizeTextarea = useCallback(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`
+  }, [])
+
+  useEffect(() => {
+    resizeTextarea()
+  }, [value, resizeTextarea])
+
   useEffect(() => {
     if (autoFocus === false) return
     const tryFocus = () => textareaRef.current?.focus()
@@ -162,6 +173,12 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         setShowCommands(false)
         return
       }
+    }
+
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      handleSend()
+      return
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -329,6 +346,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
           rows={3}
           disabled={disabled}
           autoFocus={autoFocus}
+          aria-keyshortcuts="Control+Enter Meta+Enter"
           aria-label={activePlugin ? `${activePlugin.name} 输入内容` : '输入消息'}
         />
         <div className="input-toolbar">
