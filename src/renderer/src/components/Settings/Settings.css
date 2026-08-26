@@ -428,3 +428,68 @@
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
+
+.settings-persona-pane {
+  height: 100%;
+}
+
+.settings-soul-editor {
+  width: 100%;
+  min-height: 210px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.settings-hotkey-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 190px;
+}
+
+.settings-hotkey-row input {
+  min-width: 0;
+}
+
+.settings-secondary-btn {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.settings-secondary-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.settings-help {
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.settings-error {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: #c62828;
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+}

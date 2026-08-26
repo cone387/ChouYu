@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { AppConfig, PluginInfo } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
+import { DEFAULT_SOUL_MD } from '../../../../shared/config'
 import PluginSettingsTab from './PluginSettingsTab'
 import './Settings.css'
 
@@ -11,6 +12,7 @@ interface SettingsProps {
 
 const NAV_ITEMS = [
   { key: 'ai', label: 'AI 提供者', icon: 'M4 7a4 4 0 018 0v1a2 2 0 012 2v4a2 2 0 01-2 2H2a2 2 0 01-2-2v-4a2 2 0 012-2V7z' },
+  { key: 'persona', label: '角色人格', icon: 'M7 1.5a3 3 0 013 3c0 2-3 4-3 4s-3-2-3-4a3 3 0 013-3z' },
   { key: 'general', label: '通用', icon: 'M7 1.5v2M7 10.5v2M1.5 7h2M10.5 7h2M3 3l1.4 1.4M9.6 9.6l1.4 1.4M11 3l-1.4 1.4M4.4 9.6L3 11' },
   { key: 'about', label: '关于', icon: 'M7 4v3M7 9.5v.5' }
 ]
@@ -22,9 +24,14 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [appVersion, setAppVersion] = useState<string>('')
   const [updateStatus, setUpdateStatus] = useState<string>('')
+  const [hotkeyDraft, setHotkeyDraft] = useState(DEFAULT_CONFIG.hotkey)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
-    window.electronAPI.db.getConfig().then(setConfig)
+    window.electronAPI.db.getConfig().then((loaded) => {
+      setConfig(loaded)
+      setHotkeyDraft(loaded.hotkey)
+    })
     window.electronAPI.plugin.getPlugins().then(setPlugins)
     window.electronAPI.getAppVersion().then(setAppVersion)
 
@@ -54,17 +61,27 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
     ...NAV_ITEMS.filter(item => item.key === 'about')
   ]
 
-  const save = (patch: Partial<AppConfig>) => {
+  const save = async (patch: Partial<AppConfig>) => {
     const updated = { ...config, ...patch }
     setConfig(updated)
-    window.electronAPI.db.saveConfig(patch)
+    setSaveError('')
+    try {
+      const saved = await window.electronAPI.db.saveConfig(patch)
+      setConfig(saved)
+      setHotkeyDraft(saved.hotkey)
+    } catch (error) {
+      const current = await window.electronAPI.db.getConfig()
+      setConfig(current)
+      setHotkeyDraft(current.hotkey)
+      setSaveError(error instanceof Error ? error.message : '设置保存失败')
+    }
   }
 
   return (
     <div className="settings-panel">
       <div className="settings-header chat-panel-drag-handle" {...dragHandleProps}>
         <span className="settings-title">设置</span>
-        <button className="settings-close" onClick={onClose}>&times;</button>
+        <button className="settings-close" onClick={onClose} aria-label="关闭设置">&times;</button>
       </div>
 
       <div className="settings-body">
@@ -80,6 +97,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
               ) : (
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
                   {item.key === 'ai' && <><rect x="2" y="3" width="10" height="9" rx="2"/><circle cx="5" cy="7.5" r="1"/><circle cx="9" cy="7.5" r="1"/><path d="M5 3V1.5M9 3V1.5"/></>}
+                  {item.key === 'persona' && <><circle cx="7" cy="5" r="2.5"/><path d="M2.5 12c.7-2.3 2.2-3.5 4.5-3.5s3.8 1.2 4.5 3.5"/></>}
                   {item.key === 'general' && <><circle cx="7" cy="7" r="2"/><path d={item.icon}/></>}
                   {item.key === 'about' && <><circle cx="7" cy="7" r="5.5"/><path d={item.icon}/></>}
                 </svg>
@@ -93,8 +111,9 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
           {activeNav === 'ai' && (
             <div className="settings-pane">
               <div className="settings-field">
-                <label>Provider</label>
+                <label htmlFor="settings-provider">Provider</label>
                 <select
+                  id="settings-provider"
                   value={config.provider}
                   onChange={(e) => save({ provider: e.target.value as 'openai' | 'claude' })}
                 >
@@ -103,36 +122,63 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                 </select>
               </div>
               <div className="settings-field">
-                <label>Base URL</label>
+                <label htmlFor="settings-base-url">Base URL</label>
                 <input
+                  id="settings-base-url"
                   type="text"
                   value={config.baseUrl}
-                  onChange={(e) => save({ baseUrl: e.target.value })}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                  onBlur={() => { void save({ baseUrl: config.baseUrl }) }}
                   placeholder="https://api.openai.com/v1"
                 />
               </div>
               <div className="settings-field">
-                <label>API Key</label>
+                <label htmlFor="settings-api-key">API Key</label>
                 <div className="settings-key-row">
                   <input
+                    id="settings-api-key"
                     type={showKey ? 'text' : 'password'}
                     value={config.apiKey}
-                    onChange={(e) => save({ apiKey: e.target.value })}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
+                    onBlur={() => { void save({ apiKey: config.apiKey }) }}
                     placeholder="sk-..."
                   />
-                  <button className="settings-key-toggle" onClick={() => setShowKey(!showKey)}>
+                  <button className="settings-key-toggle" onClick={() => setShowKey(!showKey)} aria-label={showKey ? '隐藏 API Key' : '显示 API Key'}>
                     {showKey ? '隐藏' : '显示'}
                   </button>
                 </div>
               </div>
               <div className="settings-field">
-                <label>模型</label>
+                <label htmlFor="settings-model">模型</label>
                 <input
+                  id="settings-model"
                   type="text"
                   value={config.model}
-                  onChange={(e) => save({ model: e.target.value })}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, model: e.target.value }))}
+                  onBlur={() => { void save({ model: config.model }) }}
                   placeholder="gpt-4o"
                 />
+              </div>
+            </div>
+          )}
+
+          {activeNav === 'persona' && (
+            <div className="settings-pane settings-persona-pane">
+              <div className="settings-field">
+                <label htmlFor="settings-soul">SOUL.md 人格设定</label>
+                <textarea
+                  id="settings-soul"
+                  className="settings-soul-editor"
+                  value={config.soulMd}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, soulMd: e.target.value }))}
+                  onBlur={() => { void save({ soulMd: config.soulMd }) }}
+                  aria-describedby="settings-soul-help"
+                />
+                <div id="settings-soul-help" className="settings-help">保存后会立即应用到下一次 AI 对话。</div>
+                <button
+                  className="settings-secondary-btn"
+                  onClick={() => { setConfig((prev) => ({ ...prev, soulMd: DEFAULT_SOUL_MD })); void save({ soulMd: DEFAULT_SOUL_MD }) }}
+                >恢复默认人格</button>
               </div>
             </div>
           )}
@@ -147,8 +193,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                     checked={config.autoStart}
                     onChange={(e) => {
                       const enabled = e.target.checked
-                      save({ autoStart: enabled })
-                      window.electronAPI.setAutoStart(enabled)
+                      void save({ autoStart: enabled })
                     }}
                   />
                   <span className="settings-switch-slider" />
@@ -162,13 +207,27 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                   max="160"
                   step="8"
                   value={config.petSize}
-                  onChange={(e) => save({ petSize: Number(e.target.value) })}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, petSize: Number(e.target.value) }))}
+                  onPointerUp={() => { void save({ petSize: config.petSize }) }}
+                  onKeyUp={() => { void save({ petSize: config.petSize }) }}
+                  onBlur={() => { void save({ petSize: config.petSize }) }}
                 />
               </div>
               <div className="settings-field settings-field-row">
-                <label>唤出面板</label>
-                <kbd className="settings-kbd">{config.hotkey}</kbd>
+                <label htmlFor="settings-hotkey">唤出面板</label>
+                <div className="settings-hotkey-row">
+                  <input
+                    id="settings-hotkey"
+                    type="text"
+                    value={hotkeyDraft}
+                    onChange={(e) => setHotkeyDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') void save({ hotkey: hotkeyDraft }) }}
+                    aria-describedby="settings-hotkey-help"
+                  />
+                  <button className="settings-secondary-btn" onClick={() => { void save({ hotkey: hotkeyDraft }) }}>应用</button>
+                </div>
               </div>
+              <div id="settings-hotkey-help" className="settings-help">示例：Alt+Space、CommandOrControl+Shift+Y</div>
 
               <div className="settings-section-title">智能功能</div>
               <div className="settings-field settings-field-row">
@@ -241,6 +300,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
             if (!plugin) return null
             return <PluginSettingsTab plugin={plugin} />
           })()}
+          {saveError && <div className="settings-error" role="alert">{saveError}</div>}
         </div>
       </div>
     </div>

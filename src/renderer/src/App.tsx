@@ -33,6 +33,8 @@ function App() {
     }).catch(() => {}).finally(() => setPositionLoaded(true))
   }, [])
 
+  useEffect(() => window.electronAPI.onConfigChanged(setConfig), [])
+
   // Clipboard watcher - respect config
   useEffect(() => {
     if (!config.clipboardWatch) return
@@ -146,20 +148,20 @@ function App() {
   const calcPanelPosition = useCallback((petPos: { x: number; y: number }, panelH = 140) => {
     const screenW = window.innerWidth
     const screenH = window.innerHeight
-    const petCenterX = petPos.x + 40
-    const petCenterY = petPos.y + 40
+    const petCenterX = petPos.x + config.petSize / 2
+    const petCenterY = petPos.y + config.petSize / 2
     const isLeft = petCenterX <= screenW / 2
     const isTop = petCenterY < screenH / 3
 
     const gap = 4
 
     let x = isLeft
-      ? petPos.x + 80 + gap
+      ? petPos.x + config.petSize + gap
       : petPos.x - PANEL_WIDTH - gap
 
     let y: number
     if (isTop) {
-      y = petPos.y + 80 + gap
+      y = petPos.y + config.petSize + gap
     } else {
       y = petPos.y - panelH - gap
     }
@@ -171,7 +173,7 @@ function App() {
     if (y + panelH > screenH - 4) y = screenH - panelH - 4
 
     return { x, y }
-  }, [])
+  }, [config.petSize])
 
   const togglePanel = useCallback(() => {
     proactiveEngine.userActivity()
@@ -285,6 +287,7 @@ function App() {
         onClick={togglePanel}
         onOpenSettings={openSettings}
         state={petState}
+        size={config.petSize}
         onFileDrop={handleFileDrop}
       />
       {/* Proactive message bubble */}
@@ -292,8 +295,12 @@ function App() {
         <div
           data-interactive
           className="pet-bubble proactive-bubble"
-          style={{ left: petPosition.x + 90, top: petPosition.y - 10 }}
+          style={{ left: petPosition.x + config.petSize + 10, top: petPosition.y - 10 }}
           onClick={() => setProactiveMsg(null)}
+          role="button"
+          tabIndex={0}
+          aria-label={`${proactiveMsg}，点击关闭`}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProactiveMsg(null) }}
         >
           {proactiveMsg}
         </div>
@@ -303,13 +310,15 @@ function App() {
         <div
           data-interactive
           className="pet-bubble clipboard-bubble"
-          style={{ left: petPosition.x + 90, top: petPosition.y + 20 }}
+          style={{ left: petPosition.x + config.petSize + 10, top: petPosition.y + 20 }}
+          role="status"
+          aria-live="polite"
         >
           <div className="clipboard-bubble-text">{clipboardText.length > 60 ? clipboardText.slice(0, 60) + '...' : clipboardText}</div>
           <div className="clipboard-bubble-actions">
             <button onClick={() => handleClipboardAction('translate')}>翻译</button>
             <button onClick={() => handleClipboardAction('summarize')}>总结</button>
-            <button onClick={() => setClipboardText(null)}>✕</button>
+            <button onClick={() => setClipboardText(null)} aria-label="关闭剪贴板提示">✕</button>
           </div>
         </div>
       )}

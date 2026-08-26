@@ -286,7 +286,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                     <span className="attachment-file-name">{att.name}</span>
                   </div>
                 )}
-                <button className="attachment-remove" onClick={() => removeAttachment(i)}>✕</button>
+                <button className="attachment-remove" onClick={() => removeAttachment(i)} aria-label={`移除附件 ${att.name}`}>✕</button>
               </div>
             ))}
           </div>
@@ -301,6 +301,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
           rows={2}
           disabled={disabled}
           autoFocus={autoFocus}
+          aria-label={activePlugin ? `${activePlugin.name} 输入内容` : '输入消息'}
         />
         <div className="input-toolbar">
           <div className="input-toolbar-left">
@@ -346,21 +347,21 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                 </div>
               )}
               <div className="screenshot-btn-group">
-                <button className="toolbar-btn screenshot-btn" title="截图" onClick={() => doScreenshot()}>
+                <button className="toolbar-btn screenshot-btn" title="截图" aria-label="截图" onClick={() => doScreenshot()}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="5" cy="12" r="2"/>
                     <circle cx="11" cy="12" r="2"/>
                     <path d="M6.5 10.5L11 3M9.5 10.5L5 3"/>
                   </svg>
                 </button>
-                <button className="toolbar-btn screenshot-arrow" title="截图选项" onClick={() => setShowScreenshotMenu((v) => !v)}>
+                <button className="toolbar-btn screenshot-arrow" title="截图选项" aria-label="打开截图选项" aria-expanded={showScreenshotMenu} onClick={() => setShowScreenshotMenu((v) => !v)}>
                   <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
                     <path d="M1 3l3 3 3-3"/>
                   </svg>
                 </button>
               </div>
             </div>
-            <button className="toolbar-btn" title="附件" onClick={handleFileSelect}>
+            <button className="toolbar-btn" title="附件" aria-label="添加附件" onClick={handleFileSelect}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5l6-6a2.5 2.5 0 013.5 3.5l-5.5 5.5a1 1 0 01-1.5-1.5L11 5.5"/>
               </svg>
@@ -376,6 +377,8 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                       key={p.id}
                       className={`toolbar-btn plugin-btn${activePlugin?.id === p.id ? ' active' : ''}`}
                       title={p.name}
+                      aria-label={`使用 ${p.name} 插件`}
+                      aria-pressed={activePlugin?.id === p.id}
                       onClick={() => setActivePlugin(activePlugin?.id === p.id ? null : p)}
                     >
                       <span className="plugin-btn-icon">{p.icon}</span>
@@ -386,6 +389,8 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                       <button
                         className="toolbar-btn plugin-overflow-btn"
                         title="更多插件"
+                        aria-label="更多插件"
+                        aria-expanded={showPluginOverflow}
                         onClick={() => setShowPluginOverflow((v) => !v)}
                       >⋯</button>
                       {showPluginOverflow && (
@@ -421,14 +426,17 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                     value={modelSearch}
                     onChange={(e) => setModelSearch(e.target.value)}
                     autoFocus
+                    aria-label="搜索模型"
                     onMouseDown={(e) => e.stopPropagation()}
                   />
-                  <div className="model-list">
+                  <div className="model-list" role="listbox" aria-label="可用模型">
                     {filteredModels.map((m) => (
                       <button
                         key={m}
                         className={`model-option${m === model ? ' active' : ''}`}
                         onClick={() => { onModelChange?.(m); setShowModelSelector(false) }}
+                        role="option"
+                        aria-selected={m === model}
                       >{m}</button>
                     ))}
                     {filteredModels.length === 0 && (
@@ -438,10 +446,10 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
                 </div>
               )}
               <div className="model-btn-group">
-                <button className="toolbar-btn model-btn" title="切换模型" onClick={() => setShowModelSelector((v) => !v)}>
+                <button className="toolbar-btn model-btn" title="切换模型" aria-label={`当前模型 ${model || 'AI'}，点击切换`} aria-expanded={showModelSelector} onClick={() => setShowModelSelector((v) => !v)}>
                   {model || 'AI'}
                 </button>
-                <button className="toolbar-btn model-arrow" title="选择模型" onClick={() => setShowModelSelector((v) => !v)}>
+                <button className="toolbar-btn model-arrow" title="选择模型" aria-label="打开模型列表" aria-expanded={showModelSelector} onClick={() => setShowModelSelector((v) => !v)}>
                   <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
                     <path d="M1 3l3 3 3-3"/>
                   </svg>
@@ -453,6 +461,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
               onClick={handleSend}
               disabled={disabled || (!value.trim() && attachments.length === 0)}
               title="发送"
+              aria-label="发送消息"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M2.5 2.5l11 5.5-11 5.5v-4l7-1.5-7-1.5v-4z"/>
@@ -462,8 +471,8 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         </div>
       </div>
       {previewImage && (
-        <div className="image-preview-overlay" onClick={() => setPreviewImage(null)}>
-          <img src={previewImage} className="image-preview-img" onClick={(e) => e.stopPropagation()} />
+        <div className="image-preview-overlay" onClick={() => setPreviewImage(null)} role="dialog" aria-modal="true" aria-label="附件图片预览">
+          <img src={previewImage} className="image-preview-img" alt="待发送附件预览" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
     </div>

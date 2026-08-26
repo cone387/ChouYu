@@ -21,8 +21,12 @@ function CopyButton({ text }: { text: string }) {
     setTimeout(() => setCopied(false), 1500)
   }
   return (
-    <button className="copy-btn" onClick={handleCopy} title="复制">
-      {copied ? '✓' : '📋'}
+    <button className="copy-btn" onClick={handleCopy} title="复制" aria-label={copied ? '已复制' : '复制内容'}>
+      {copied ? '✓' : (
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+          <rect x="5" y="5" width="8" height="8" rx="1"/><path d="M3 11H2.5A1.5 1.5 0 011 9.5v-7A1.5 1.5 0 012.5 1h7A1.5 1.5 0 0111 2.5V3"/>
+        </svg>
+      )}
     </button>
   )
 }
@@ -50,8 +54,9 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   }, [onClose])
 
   return (
-    <div className="image-preview-overlay" onClick={onClose}>
-      <img src={src} className="image-preview-img" onClick={(e) => e.stopPropagation()} />
+    <div className="image-preview-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="图片预览">
+      <img src={src} className="image-preview-img" alt="对话附件预览" onClick={(e) => e.stopPropagation()} />
+      <button className="image-preview-close" onClick={onClose} aria-label="关闭图片预览">×</button>
     </div>
   )
 }
@@ -61,7 +66,8 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    bottomRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' })
   }, [messages])
 
   if (messages.length === 0 && !isStreaming) {
@@ -69,11 +75,11 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
   }
 
   return (
-    <div className="message-area">
+    <div className="message-area" aria-live="polite" aria-busy={isStreaming}>
       {messages.map((msg) => (
         <div key={msg.id} className={`message message-${msg.role}`}>
           {msg.role === 'assistant' && (
-            <div className="message-avatar">
+            <div className="message-avatar" aria-hidden="true">
               <svg width="28" height="28" viewBox="0 0 80 80">
                 <circle cx="40" cy="44" r="28" fill="#6C5CE7"/>
                 <ellipse cx="30" cy="38" rx="4" ry="5" fill="white"/>
@@ -118,7 +124,7 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
       ))}
       {isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
         <div className="message message-assistant">
-          <div className="message-avatar">
+          <div className="message-avatar" aria-hidden="true">
             <svg width="28" height="28" viewBox="0 0 80 80">
               <circle cx="40" cy="44" r="28" fill="#6C5CE7"/>
               <ellipse cx="30" cy="38" rx="4" ry="5" fill="white"/>
@@ -129,7 +135,7 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
             </svg>
           </div>
           <div className="message-body">
-            <div className="message-bubble typing-indicator">
+            <div className="message-bubble typing-indicator" role="status" aria-label="AI 正在回复">
               <span></span><span></span><span></span>
             </div>
           </div>

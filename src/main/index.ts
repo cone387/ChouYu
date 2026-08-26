@@ -1,12 +1,12 @@
-import { app, BrowserWindow, screen } from 'electron'
+import { app, BrowserWindow, screen, shell, globalShortcut } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { setupTray } from './tray'
 import { registerHotkey } from './hotkey'
-import { initDatabase, getConfig } from './database'
+import { initDatabase, getConfig, flushDatabase } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
-import { startClipboardWatcher } from './clipboard'
+import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -27,9 +27,31 @@ function createWindow(): void {
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false
+    }
+  })
+
+  const openExternal = (target: string): void => {
+    try {
+      const url = new URL(target)
+      if (url.protocol === 'https:' || url.protocol === 'http:') {
+        void shell.openExternal(url.toString())
+      }
+    } catch {
+      // Ignore malformed or unsupported URLs.
+    }
+  }
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url)
+    return { action: 'deny' }
+  })
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== mainWindow?.webContents.getURL()) {
+      event.preventDefault()
+      openExternal(url)
     }
   })
 
@@ -83,7 +105,7 @@ app.whenReady().then(async () => {
   await pluginRegistry.initializePlugins()
   setupTray(mainWindow!)
   registerHotkey(mainWindow!)
-  startClipboardWatcher(mainWindow!)
+  setClipboardWatcherEnabled(mainWindow!, getConfig().clipboardWatch)
 
   if (app.isPackaged) {
     // Sync auto-start setting with system
@@ -100,6 +122,12 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   app.quit()
+})
+
+app.on('before-quit', () => {
+  stopClipboardWatcher()
+  flushDatabase()
+  globalShortcut.unregisterAll()
 })
 
 export { mainWindow }

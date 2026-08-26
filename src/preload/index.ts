@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AppConfig } from '../shared/config'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
@@ -41,9 +42,14 @@ const api = {
     ipcRenderer.on('clipboard:changed', handler)
     return () => { ipcRenderer.removeListener('clipboard:changed', handler) }
   },
+  onConfigChanged: (callback: (config: AppConfig) => void) => {
+    const handler = (_e: unknown, config: AppConfig) => callback(config)
+    ipcRenderer.on('config:changed', handler)
+    return () => { ipcRenderer.removeListener('config:changed', handler) }
+  },
   db: {
     getConfig: () => ipcRenderer.invoke('db:get-config'),
-    saveConfig: (cfg: Record<string, unknown>) => ipcRenderer.invoke('db:save-config', cfg),
+    saveConfig: (cfg: Partial<AppConfig>) => ipcRenderer.invoke('db:save-config', cfg) as Promise<AppConfig>,
     getMessages: () => ipcRenderer.invoke('db:get-messages'),
     saveMessages: (msgs: unknown[]) => ipcRenderer.invoke('db:save-messages', msgs),
     clearMessages: () => ipcRenderer.invoke('db:clear-messages'),

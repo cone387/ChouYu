@@ -17,6 +17,7 @@
   --input-bg: #ffffff;
   --input-border: rgba(0, 0, 0, 0.12);
   --input-focus-border: var(--accent);
+  --focus-ring: rgba(74, 158, 255, 0.45);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -39,6 +40,7 @@
     --input-bg: #252536;
     --input-border: rgba(255, 255, 255, 0.08);
     --input-focus-border: var(--accent);
+    --focus-ring: rgba(106, 176, 255, 0.55);
   }
 }
 
@@ -46,6 +48,29 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea,
+[role="button"] {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+
+button:disabled {
+  cursor: not-allowed;
 }
 
 html, body, #root {
@@ -118,4 +143,24 @@ html, body, #root {
 .clipboard-bubble-actions button:hover {
   background: var(--accent);
   color: white;
+}
+
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  input[type="checkbox"] + span {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

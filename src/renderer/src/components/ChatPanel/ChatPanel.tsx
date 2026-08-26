@@ -41,6 +41,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0 })
   const initializedRef = useRef(false)
+  const latestMessagesRef = useRef<Message[]>([])
 
   useEffect(() => {
     loadMessages().then((msgs) => {
@@ -50,6 +51,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     window.electronAPI.db.getConfig().then(setConfig)
     window.electronAPI.plugin.getPlugins().then(setPlugins)
   }, [])
+
+  useEffect(() => window.electronAPI.onConfigChanged(setConfig), [])
 
   useEffect(() => {
     if (initialShowSettings) setShowSettings(true)
@@ -123,9 +126,15 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [])
 
   useEffect(() => {
+    latestMessagesRef.current = messages
     if (!initializedRef.current) return
-    saveMessages(messages)
+    const timer = setTimeout(() => { void saveMessages(messages) }, 500)
+    return () => clearTimeout(timer)
   }, [messages])
+
+  useEffect(() => () => {
+    if (initializedRef.current) void saveMessages(latestMessagesRef.current)
+  }, [])
 
   useEffect(() => {
     if (!showHistory) return
@@ -172,7 +181,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         const feedToPetSetting = await window.electronAPI.db.getState(`plugin:${plugin.id}:feedToPet`)
         if (feedToPetSetting === 'true' && result.ok) {
           const petPrompt = `用户刚通过 ${plugin.name} 插件执行了操作：\n输入：${extractedContent}\n结果：${result.message}\n\n请用你的性格简短评论一下（1-2句话）。`
-          const systemPrompt = buildSystemPrompt()
+          const systemPrompt = buildSystemPrompt(config.soulMd)
           const petMsgId = (Date.now() + 2).toString()
           let petAccumulated = ''
           onPetStateChange('thinking')
@@ -256,7 +265,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     onPetStateChange('thinking')
     setIsStreaming(true)
 
-    const systemPrompt = buildSystemPrompt()
+    const systemPrompt = buildSystemPrompt(config.soulMd)
     const history = buildMessages(newMessages)
 
     const aiMsgId = (Date.now() + 1).toString()

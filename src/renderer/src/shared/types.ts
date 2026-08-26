@@ -1,3 +1,6 @@
+import type { AppConfig } from '../../../shared/config'
+export type { AppConfig } from '../../../shared/config'
+
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
 export interface ExecuteResult {
   message: string           // 状态文本: "发布成功 ✓" / "翻译完成"
@@ -74,9 +77,10 @@ export interface ElectronAPI {
   onHidePanel: (callback: () => void) => () => void
   onPluginHotkey: (callback: (pluginId: string) => void) => () => void
   onClipboardChange: (callback: (text: string) => void) => () => void
+  onConfigChanged: (callback: (config: AppConfig) => void) => () => void
   db: {
     getConfig: () => Promise<AppConfig>
-    saveConfig: (cfg: Partial<AppConfig>) => Promise<void>
+    saveConfig: (cfg: Partial<AppConfig>) => Promise<AppConfig>
     getMessages: () => Promise<Message[]>
     saveMessages: (msgs: Message[]) => Promise<void>
     clearMessages: () => Promise<void>
@@ -121,17 +125,4 @@ export interface Message {
 export interface ChatSession {
   messages: Message[]
   createdAt: number
-}
-
-export interface AppConfig {
-  provider: 'openai' | 'claude'
-  baseUrl: string
-  apiKey: string
-  model: string
-  hotkey: string
-  autoStart: boolean
-  petSize: number
-  proactiveGreeting: boolean
-  proactiveRestReminder: boolean
-  clipboardWatch: boolean
 }

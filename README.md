@@ -8,8 +8,8 @@
 - 💬 AI 对话，支持流式输出和 Markdown 渲染
 - 🧠 对话记忆，关闭重开后能接着聊
 - 🔌 插件系统，可接入外部服务（BBTalk、翻译等）
-- 📸 截图识别（开发中）
-- 🎨 可自定义角色人格（SOUL.md）
+- 📸 截图并发送给支持视觉能力的模型
+- 🎨 在设置中直接编辑 SOUL.md 角色人格
 
 ## 快速开始
 
@@ -30,6 +30,8 @@ npm run package:win
 2. 按 `Alt+Space` 唤出聊天面板
 3. 在设置中配置 AI Provider 和 API Key
 4. 开始聊天
+
+API Key 和插件 Token 使用 Electron `safeStorage` 加密后保存在本机；剪贴板感知默认关闭，可在“设置 → 通用”中主动开启。
 
 ### 斜杠命令
 
@@ -99,6 +101,8 @@ npm run test
 # 构建
 npm run build
 ```
+
+提交到 `master` 或创建 Pull Request 时，CI 会自动执行类型检查、测试和生产构建；发布标签只有在质量检查通过后才会继续打包。
 
 ## License
 

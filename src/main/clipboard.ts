@@ -4,6 +4,7 @@ let lastText = ''
 let timer: ReturnType<typeof setInterval> | null = null
 
 export function startClipboardWatcher(mainWindow: BrowserWindow): void {
+  stopClipboardWatcher()
   lastText = clipboard.readText() || ''
 
   timer = setInterval(() => {
@@ -13,6 +14,11 @@ export function startClipboardWatcher(mainWindow: BrowserWindow): void {
       mainWindow.webContents.send('clipboard:changed', current)
     }
   }, 1500)
+}
+
+export function setClipboardWatcherEnabled(mainWindow: BrowserWindow, enabled: boolean): void {
+  if (enabled) startClipboardWatcher(mainWindow)
+  else stopClipboardWatcher()
 }
 
 export function stopClipboardWatcher(): void {

@@ -24,12 +24,14 @@ export default function CommandMenu({ filter, selectedIndex, onSelect, onClose, 
   if (filtered.length === 0) return null
 
   return (
-    <div className="command-menu">
+    <div className="command-menu" role="listbox" aria-label="斜杠命令">
       {filtered.map((c, i) => (
         <button
           key={c.cmd}
           className={`command-item${i === selectedIndex ? ' selected' : ''}`}
           onClick={() => onSelect(c.cmd)}
+          role="option"
+          aria-selected={i === selectedIndex}
         >
           <span className="command-name">{c.cmd}</span>
           <span className="command-desc">{c.desc}</span>

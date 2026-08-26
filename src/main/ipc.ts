@@ -2,6 +2,9 @@ import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app } from 'el
 import { autoUpdater } from 'electron-updater'
 import fs from 'fs'
 import path from 'path'
+import { sanitizeConfigPatch } from '../shared/config'
+import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
+import { setClipboardWatcherEnabled } from './clipboard'
 import {
   getConfig,
   saveConfig,
@@ -36,7 +39,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (shouldHide) mainWindow.hide()
     await new Promise((r) => setTimeout(r, 200))
     try {
-      const display = screen.getPrimaryDisplay()
+      const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
       const { width, height } = display.size
       const scale = display.scaleFactor || 1
       const sources = await desktopCapturer.getSources({
@@ -44,8 +47,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         thumbnailSize: { width: Math.round(width * scale), height: Math.round(height * scale) }
       })
       if (shouldHide) mainWindow.show()
-      if (sources.length > 0) {
-        return sources[0].thumbnail.toDataURL()
+      const source = sources.find((candidate) => candidate.display_id === String(display.id)) || sources[0]
+      if (source) {
+        return source.thumbnail.toDataURL()
       }
     } catch {
       if (shouldHide) mainWindow.show()
@@ -66,13 +70,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const filePath = result.filePaths[0]
     const ext = path.extname(filePath).toLowerCase()
     const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+    const stat = await fs.promises.stat(filePath)
+    const maxBytes = imageExts.includes(ext) ? 10 * 1024 * 1024 : 2 * 1024 * 1024
+    if (stat.size > maxBytes) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        message: '文件过大',
+        detail: imageExts.includes(ext) ? '图片不能超过 10 MB。' : '文本文件不能超过 2 MB。'
+      })
+      return null
+    }
     if (imageExts.includes(ext)) {
-      const data = fs.readFileSync(filePath)
+      const data = await fs.promises.readFile(filePath)
       const base64 = data.toString('base64')
       const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.webp' ? 'image/webp' : 'image/bmp'
       return { type: 'image', data: `data:${mime};base64,${base64}`, name: path.basename(filePath) }
     }
-    const text = fs.readFileSync(filePath, 'utf-8')
+    const text = await fs.promises.readFile(filePath, 'utf-8')
     return { type: 'text', data: text, name: path.basename(filePath) }
   })
 
@@ -80,6 +94,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const config = getConfig()
     if (!config.baseUrl || !config.apiKey) return []
     try {
+      const baseUrl = new URL(config.baseUrl)
+      if (!['http:', 'https:'].includes(baseUrl.protocol)) return []
       const url = config.baseUrl.replace(/\/$/, '') + '/models'
       const resp = await fetch(url, {
         headers: { 'Authorization': `Bearer ${config.apiKey}` }
@@ -112,10 +128,33 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   ipcMain.handle('db:get-config', () => getConfig())
-  ipcMain.handle('db:save-config', (_event, patch) => saveConfig(patch))
+  ipcMain.handle('db:save-config', (_event, rawPatch) => {
+    const patch = sanitizeConfigPatch(rawPatch)
+    if (patch.hotkey && !updateMainHotkey(patch.hotkey)) {
+      throw new Error(`快捷键“${patch.hotkey}”无效或已被其他程序占用`)
+    }
+    saveConfig(patch)
+    const updated = getConfig()
+    if (typeof patch.autoStart === 'boolean') {
+      app.setLoginItemSettings({ openAtLogin: patch.autoStart, openAsHidden: true })
+    }
+    if (typeof patch.clipboardWatch === 'boolean') {
+      setClipboardWatcherEnabled(mainWindow, patch.clipboardWatch)
+    }
+    mainWindow.webContents.send('config:changed', updated)
+    return updated
+  })
   ipcMain.handle('db:get-messages', () => getMessages())
   ipcMain.handle('db:save-messages', (_event, messages) => saveMessages(messages))
   ipcMain.handle('db:clear-messages', () => clearMessages())
-  ipcMain.handle('db:get-state', (_event, key) => getState(key))
-  ipcMain.handle('db:set-state', (_event, key, value) => setState(key, value))
+  ipcMain.handle('db:get-state', (_event, key) => {
+    if (typeof key !== 'string' || key.length > 256) return null
+    return getState(key)
+  })
+  ipcMain.handle('db:set-state', (_event, key, value) => {
+    if (typeof key !== 'string' || !key || key.length > 256) throw new Error('Invalid state key')
+    if (typeof value !== 'string' || value.length > 1_000_000) throw new Error('Invalid state value')
+    setState(key, value)
+    if (/^plugin:[^:]+:hotkey$/.test(key)) reloadPluginHotkeys(mainWindow)
+  })
 }

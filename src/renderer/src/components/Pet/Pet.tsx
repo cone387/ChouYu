@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import PetSvg from './PetSvg'
 import { PetState } from '../../shared/types'
-import { SNAP_DISTANCE, DEFAULT_PET_SIZE } from '../../shared/constants'
+import { SNAP_DISTANCE } from '../../shared/constants'
 import './Pet.css'
 
 interface PetProps {
@@ -10,10 +10,11 @@ interface PetProps {
   onClick: () => void
   onOpenSettings: () => void
   state: PetState
+  size: number
   onFileDrop?: (file: { type: 'image' | 'text'; data: string; name: string }) => void
 }
 
-export default function Pet({ position, onPositionChange, onClick, onOpenSettings, state, onFileDrop }: PetProps) {
+export default function Pet({ position, onPositionChange, onClick, onOpenSettings, state, size, onFileDrop }: PetProps) {
   const draggingRef = useRef(false)
   const hasDraggedRef = useRef(false)
   const dragStartRef = useRef({ screenX: 0, screenY: 0, posX: 0, posY: 0 })
@@ -87,10 +88,10 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
       let snapY = y
       let didSnap = false
 
-      if (x < SNAP_DISTANCE) { snapX = -(DEFAULT_PET_SIZE / 2); didSnap = true }
-      else if (x + DEFAULT_PET_SIZE > screenW - SNAP_DISTANCE) { snapX = screenW - DEFAULT_PET_SIZE / 2; didSnap = true }
-      if (y < SNAP_DISTANCE) { snapY = -(DEFAULT_PET_SIZE / 2); didSnap = true }
-      else if (y + DEFAULT_PET_SIZE > screenH - SNAP_DISTANCE) { snapY = screenH - DEFAULT_PET_SIZE / 2; didSnap = true }
+      if (x < SNAP_DISTANCE) { snapX = -(size / 2); didSnap = true }
+      else if (x + size > screenW - SNAP_DISTANCE) { snapX = screenW - size / 2; didSnap = true }
+      if (y < SNAP_DISTANCE) { snapY = -(size / 2); didSnap = true }
+      else if (y + size > screenH - SNAP_DISTANCE) { snapY = screenH - size / 2; didSnap = true }
 
       if (didSnap) {
         const el = containerRef.current!
@@ -116,7 +117,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
     window.addEventListener('pointermove', onMove, true)
     window.addEventListener('pointerup', onUp, true)
     window.addEventListener('pointercancel', onUp, true)
-  }, [onClick, onPositionChange, applyPosition])
+  }, [onClick, onPositionChange, applyPosition, size])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -196,8 +197,18 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
       <div
         ref={containerRef}
         data-interactive
+        role="button"
+        tabIndex={0}
+        aria-label="ChouYu 桌面宠物，按 Enter 打开聊天"
         className={`pet-container pet-state-${state}${dragOver ? ' pet-drop-target' : ''}`}
+        style={{ width: size, height: size }}
         onPointerDown={handlePointerDown}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onClick()
+          }
+        }}
         onContextMenu={handleContextMenu}
         onDrop={handleDrop}
         onDragOver={handleDragOver}

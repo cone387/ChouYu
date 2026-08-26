@@ -12,6 +12,11 @@
   cursor: grabbing;
 }
 
+.pet-svg {
+  width: 100%;
+  height: 100%;
+}
+
 /* Idle: 浮动 + 眨眼 */
 .pet-state-idle .pet-svg {
   animation: pet-float 2s ease-in-out infinite;

@@ -866,6 +866,20 @@
   cursor: default;
 }
 
+.image-preview-close {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  font-size: 22px;
+}
+
 /* Plugin Message Card */
 .plugin-card {
   padding: 0;

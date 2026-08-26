@@ -2,6 +2,42 @@ import { Message, AppConfig } from '../shared/types'
 
 export type StreamCallback = (chunk: string, done: boolean) => void
 
+export interface ParsedStreamEvent {
+  text: string
+  done: boolean
+}
+
+function getSsePayload(line: string): string | null {
+  const trimmed = line.trim()
+  if (!trimmed.startsWith('data:')) return null
+  return trimmed.slice(5).trimStart()
+}
+
+export function parseOpenAIStreamLine(line: string): ParsedStreamEvent | null {
+  const payload = getSsePayload(line)
+  if (payload === null) return null
+  if (payload === '[DONE]') return { text: '', done: true }
+  try {
+    const json = JSON.parse(payload)
+    return { text: json.choices?.[0]?.delta?.content || '', done: false }
+  } catch {
+    return null
+  }
+}
+
+export function parseClaudeStreamLine(line: string): ParsedStreamEvent | null {
+  const payload = getSsePayload(line)
+  if (payload === null) return null
+  try {
+    const json = JSON.parse(payload)
+    if (json.type === 'message_stop') return { text: '', done: true }
+    if (json.type === 'content_block_delta') return { text: json.delta?.text || '', done: false }
+  } catch {
+    return null
+  }
+  return null
+}
+
 export async function streamChat(
   messages: Message[],
   systemPrompt: string,
@@ -69,6 +105,13 @@ async function streamOpenAI(
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let completed = false
+
+  const finish = () => {
+    if (completed) return
+    completed = true
+    onChunk('', true)
+  }
 
   while (true) {
     const { done, value } = await reader.read()
@@ -79,24 +122,14 @@ async function streamOpenAI(
     buffer = lines.pop() || ''
 
     for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed === 'data: [DONE]') {
-        if (trimmed === 'data: [DONE]') onChunk('', true)
-        continue
-      }
-      if (!trimmed.startsWith('data: ')) continue
-
-      try {
-        const json = JSON.parse(trimmed.slice(6))
-        const content = json.choices?.[0]?.delta?.content
-        if (content) onChunk(content, false)
-      } catch {
-        // skip malformed JSON
-      }
+      const event = parseOpenAIStreamLine(line)
+      if (!event) continue
+      if (event.text) onChunk(event.text, false)
+      if (event.done) finish()
     }
   }
 
-  onChunk('', true)
+  finish()
 }
 
 async function streamClaude(
@@ -144,6 +177,13 @@ async function streamClaude(
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let completed = false
+
+  const finish = () => {
+    if (completed) return
+    completed = true
+    onChunk('', true)
+  }
 
   while (true) {
     const { done, value } = await reader.read()
@@ -154,22 +194,12 @@ async function streamClaude(
     buffer = lines.pop() || ''
 
     for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed || !trimmed.startsWith('data: ')) continue
-
-      try {
-        const json = JSON.parse(trimmed.slice(6))
-        if (json.type === 'content_block_delta') {
-          const text = json.delta?.text
-          if (text) onChunk(text, false)
-        } else if (json.type === 'message_stop') {
-          onChunk('', true)
-        }
-      } catch {
-        // skip
-      }
+      const event = parseClaudeStreamLine(line)
+      if (!event) continue
+      if (event.text) onChunk(event.text, false)
+      if (event.done) finish()
     }
   }
 
-  onChunk('', true)
+  finish()
 }

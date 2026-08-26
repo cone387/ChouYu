@@ -87,8 +87,8 @@ export default function ScreenCapture({ imageDataUrl, onCapture, onCancel }: Scr
           />
           {!drawing && (
             <div className="screen-capture-toolbar" style={{ left: rect.x + rect.w - 70, top: rect.y + rect.h + 8 }}>
-              <button className="sc-btn sc-btn-cancel" onMouseDown={(e) => e.stopPropagation()} onClick={onCancel}>✕</button>
-              <button className="sc-btn sc-btn-confirm" onMouseDown={(e) => e.stopPropagation()} onClick={handleConfirm}>✓</button>
+              <button className="sc-btn sc-btn-cancel" aria-label="取消截图" onMouseDown={(e) => e.stopPropagation()} onClick={onCancel}>✕</button>
+              <button className="sc-btn sc-btn-confirm" aria-label="确认截图" onMouseDown={(e) => e.stopPropagation()} onClick={handleConfirm}>✓</button>
             </div>
           )}
         </>
