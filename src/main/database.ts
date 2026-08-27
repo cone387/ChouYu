@@ -1,7 +1,15 @@
 import { app, safeStorage } from 'electron'
+import { randomUUID } from 'crypto'
 import path from 'path'
 import fs from 'fs'
 import { AppConfig, DEFAULT_APP_CONFIG, normalizeConfig } from '../shared/config'
+import {
+  DEFAULT_SESSION_TITLE,
+  MAX_SESSION_MESSAGES,
+  buildSessionPreview,
+  deriveSessionTitle,
+  normalizeSessionTitle
+} from '../shared/sessions'
 
 export interface Message {
   id: string
@@ -13,14 +21,42 @@ export interface Message {
   pluginData?: unknown
 }
 
+export interface ChatSession {
+  id: string
+  title: string
+  messages: Message[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ChatSessionSummary {
+  id: string
+  title: string
+  preview: string
+  messageCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface SessionWorkspace {
+  sessions: ChatSessionSummary[]
+  activeSession: ChatSession
+}
+
 interface StoreData {
   version: number
   config: AppConfig
-  messages: Message[]
+  sessions: ChatSession[]
+  activeSessionId: string
   state: Record<string, string>
 }
 
-const STORE_VERSION = 2
+interface PersistedStoreData extends Partial<StoreData> {
+  messages?: Message[]
+}
+
+const STORE_VERSION = 3
+const MAX_SESSIONS = 100
 const ENCRYPTED_PREFIX = 'safe:v1:'
 
 let store: StoreData
@@ -48,31 +84,138 @@ function isSecretStateKey(key: string): boolean {
   return normalized.includes('token') || normalized.includes('password') || normalized.includes('api_key')
 }
 
+function sanitizeMessages(value: unknown): Message[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .slice(-MAX_SESSION_MESSAGES)
+    .filter((message): message is Message => Boolean(
+      message && typeof message === 'object' && ['user', 'assistant', 'system'].includes(message.role)
+    ))
+    .map((message) => ({
+      ...message,
+      id: String(message.id || randomUUID()).slice(0, 128),
+      content: String(message.content ?? '').slice(0, 200_000),
+      timestamp: Number.isFinite(message.timestamp) ? message.timestamp : Date.now(),
+      responseStatus: message.responseStatus === 'error' || message.responseStatus === 'stopped'
+        ? message.responseStatus
+        : undefined,
+      // Screenshots can be several MB. Keep them in the active runtime session but
+      // do not embed base64 image data in the durable JSON conversation store.
+      imageUrl: typeof message.imageUrl === 'string' && !message.imageUrl.startsWith('data:')
+        ? message.imageUrl.slice(0, 4096)
+        : undefined
+    }))
+}
+
+function createSession(messages: Message[] = [], title?: string, now = Date.now()): ChatSession {
+  return {
+    id: randomUUID(),
+    title: title ? normalizeSessionTitle(title) : deriveSessionTitle(messages),
+    messages: sanitizeMessages(messages),
+    createdAt: now,
+    updatedAt: now
+  }
+}
+
+function normalizeSessions(value: unknown): ChatSession[] {
+  if (!Array.isArray(value)) return []
+  const ids = new Set<string>()
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const input = item as Partial<ChatSession>
+      const id = typeof input.id === 'string' && input.id && !ids.has(input.id) ? input.id.slice(0, 128) : randomUUID()
+      ids.add(id)
+      const messages = sanitizeMessages(input.messages)
+      const createdAt = Number.isFinite(input.createdAt) ? Number(input.createdAt) : Date.now()
+      const updatedAt = Number.isFinite(input.updatedAt) ? Number(input.updatedAt) : createdAt
+      return {
+        id,
+        title: normalizeSessionTitle(typeof input.title === 'string' ? input.title : deriveSessionTitle(messages)),
+        messages,
+        createdAt,
+        updatedAt
+      }
+    })
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_SESSIONS)
+}
+
+function cloneSession(session: ChatSession): ChatSession {
+  return { ...session, messages: session.messages.map((message) => ({ ...message })) }
+}
+
+function toSummary(session: ChatSession): ChatSessionSummary {
+  return {
+    id: session.id,
+    title: session.title,
+    preview: buildSessionPreview(session.messages),
+    messageCount: session.messages.length,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt
+  }
+}
+
+function getActiveSessionInternal(): ChatSession {
+  let session = store.sessions.find((candidate) => candidate.id === store.activeSessionId)
+  if (!session) {
+    session = store.sessions[0] || createSession()
+    if (!store.sessions.some((candidate) => candidate.id === session!.id)) store.sessions.push(session)
+    store.activeSessionId = session.id
+  }
+  return session
+}
+
 function load(): StoreData {
   try {
     if (fs.existsSync(filePath)) {
       const raw = fs.readFileSync(filePath, 'utf-8')
-      const data = JSON.parse(raw) as Partial<StoreData>
+      const data = JSON.parse(raw) as PersistedStoreData
       const persistedConfig: Partial<AppConfig> = data.config && typeof data.config === 'object' ? data.config : {}
       const persistedState = data.state && typeof data.state === 'object' ? data.state : {}
+      let sessions = normalizeSessions(data.sessions)
+
+      // Version 2 stored one global messages array. Preserve it as the first session.
+      if (sessions.length === 0) {
+        const legacyMessages = sanitizeMessages(data.messages)
+        sessions = [createSession(legacyMessages, legacyMessages.length ? undefined : DEFAULT_SESSION_TITLE)]
+      }
+
+      const requestedActiveId = typeof data.activeSessionId === 'string' ? data.activeSessionId : ''
+      const activeSessionId = sessions.some((session) => session.id === requestedActiveId)
+        ? requestedActiveId
+        : sessions[0].id
+
       return {
         version: STORE_VERSION,
         config: normalizeConfig({ ...persistedConfig, apiKey: unprotect(persistedConfig.apiKey) }),
-        messages: Array.isArray(data.messages) ? data.messages.slice(-30) : [],
+        sessions,
+        activeSessionId,
         state: Object.fromEntries(
           Object.entries(persistedState).map(([key, value]) => [key, isSecretStateKey(key) ? unprotect(value) : value])
         )
       }
     }
-  } catch {}
-  return { version: STORE_VERSION, config: { ...DEFAULT_APP_CONFIG }, messages: [], state: {} }
+  } catch (error) {
+    console.error('Failed to load data:', error)
+  }
+
+  const session = createSession()
+  return {
+    version: STORE_VERSION,
+    config: { ...DEFAULT_APP_CONFIG },
+    sessions: [session],
+    activeSessionId: session.id,
+    state: {}
+  }
 }
 
 function serializeStore(): StoreData {
   return {
     version: STORE_VERSION,
     config: { ...store.config, apiKey: protect(store.config.apiKey) },
-    messages: store.messages,
+    sessions: store.sessions,
+    activeSessionId: store.activeSessionId,
     state: Object.fromEntries(
       Object.entries(store.state).map(([key, value]) => [key, isSecretStateKey(key) ? protect(value) : value])
     )
@@ -90,14 +233,14 @@ function persist(): void {
     const tempPath = `${filePath}.tmp`
     fs.writeFileSync(tempPath, JSON.stringify(serializeStore(), null, 2), 'utf-8')
     fs.renameSync(tempPath, filePath)
-  } catch (e) {
-    console.error('Failed to persist data:', e)
+  } catch (error) {
+    console.error('Failed to persist data:', error)
   }
 }
 
 function schedulePersist(): void {
   if (persistTimer) clearTimeout(persistTimer)
-  persistTimer = setTimeout(persist, 750)
+  persistTimer = setTimeout(persist, 500)
 }
 
 export function initDatabase(): void {
@@ -115,30 +258,91 @@ export function saveConfig(patch: Partial<AppConfig>): void {
   persist()
 }
 
+export function getSessions(): ChatSessionSummary[] {
+  return store.sessions
+    .map(toSummary)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+export function getActiveSession(): ChatSession {
+  return cloneSession(getActiveSessionInternal())
+}
+
+export function getSession(id: string): ChatSession | null {
+  const session = store.sessions.find((candidate) => candidate.id === id)
+  return session ? cloneSession(session) : null
+}
+
+export function getSessionWorkspace(): SessionWorkspace {
+  return { sessions: getSessions(), activeSession: getActiveSession() }
+}
+
+export function createChatSession(title?: string): SessionWorkspace {
+  const session = createSession([], title)
+  store.sessions.unshift(session)
+  store.sessions = store.sessions.slice(0, MAX_SESSIONS)
+  store.activeSessionId = session.id
+  persist()
+  return getSessionWorkspace()
+}
+
+export function selectChatSession(id: string): SessionWorkspace {
+  if (!store.sessions.some((session) => session.id === id)) throw new Error('会话不存在或已被删除。')
+  store.activeSessionId = id
+  persist()
+  return getSessionWorkspace()
+}
+
+export function renameChatSession(id: string, title: string): ChatSessionSummary[] {
+  const session = store.sessions.find((candidate) => candidate.id === id)
+  if (!session) throw new Error('会话不存在或已被删除。')
+  session.title = normalizeSessionTitle(title)
+  session.updatedAt = Date.now()
+  persist()
+  return getSessions()
+}
+
+export function deleteChatSession(id: string): SessionWorkspace {
+  const index = store.sessions.findIndex((candidate) => candidate.id === id)
+  if (index < 0) throw new Error('会话不存在或已被删除。')
+  const deletingActive = store.activeSessionId === id
+  store.sessions.splice(index, 1)
+  if (store.sessions.length === 0) store.sessions.push(createSession())
+  if (deletingActive) store.activeSessionId = store.sessions[Math.min(index, store.sessions.length - 1)].id
+  persist()
+  return getSessionWorkspace()
+}
+
+export function saveSessionMessages(id: string, messages: Message[]): SessionWorkspace {
+  const session = store.sessions.find((candidate) => candidate.id === id)
+  if (!session) throw new Error('会话不存在或已被删除。')
+  session.messages = sanitizeMessages(messages)
+  session.updatedAt = Date.now()
+  if (session.title === DEFAULT_SESSION_TITLE) session.title = deriveSessionTitle(session.messages)
+  schedulePersist()
+  return getSessionWorkspace()
+}
+
+export function clearActiveSessionMessages(): SessionWorkspace {
+  const session = getActiveSessionInternal()
+  session.messages = []
+  session.title = DEFAULT_SESSION_TITLE
+  session.updatedAt = Date.now()
+  persist()
+  return getSessionWorkspace()
+}
+
+// Compatibility wrappers for older renderer calls and plugins.
 export function getMessages(): Message[] {
-  return store.messages
+  return getActiveSession().messages
 }
 
 export function saveMessages(messages: Message[]): void {
-  if (!Array.isArray(messages)) return
-  store.messages = messages
-    .slice(-30)
-    .filter((message) => message && ['user', 'assistant', 'system'].includes(message.role))
-    .map((message) => ({
-      ...message,
-      id: String(message.id).slice(0, 128),
-      content: String(message.content ?? '').slice(0, 200_000),
-      timestamp: Number.isFinite(message.timestamp) ? message.timestamp : Date.now(),
-      // Screenshots can be several MB. Keep them in the active session but do not
-      // embed base64 image data in the durable JSON conversation store.
-      imageUrl: message.imageUrl?.startsWith('data:') ? undefined : message.imageUrl
-    }))
-  schedulePersist()
+  saveSessionMessages(store.activeSessionId, messages)
 }
 
 export function clearMessages(): void {
-  store.messages = []
-  persist()
+  clearActiveSessionMessages()
 }
 
 export function getState(key: string): string | null {

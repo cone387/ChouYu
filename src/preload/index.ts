@@ -70,6 +70,13 @@ const api = {
     getMessages: () => ipcRenderer.invoke('db:get-messages'),
     saveMessages: (msgs: unknown[]) => ipcRenderer.invoke('db:save-messages', msgs),
     clearMessages: () => ipcRenderer.invoke('db:clear-messages'),
+    getSessionWorkspace: () => ipcRenderer.invoke('db:get-session-workspace'),
+    createSession: (title?: string) => ipcRenderer.invoke('db:create-session', title),
+    selectSession: (id: string) => ipcRenderer.invoke('db:select-session', id),
+    renameSession: (id: string, title: string) => ipcRenderer.invoke('db:rename-session', id, title),
+    deleteSession: (id: string) => ipcRenderer.invoke('db:delete-session', id),
+    saveSessionMessages: (id: string, msgs: unknown[]) => ipcRenderer.invoke('db:save-session-messages', id, msgs),
+    exportSession: (id: string) => ipcRenderer.invoke('db:export-session', id),
     getState: (key: string) => ipcRenderer.invoke('db:get-state', key),
     setState: (key: string, value: string) => ipcRenderer.invoke('db:set-state', key, value)
   },

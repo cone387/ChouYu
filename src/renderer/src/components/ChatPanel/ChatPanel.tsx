@@ -3,11 +3,28 @@ import TopBar from './TopBar'
 import MessageArea from './MessageArea'
 import InputArea, { PendingAttachment } from './InputArea'
 import Settings from '../Settings/Settings'
-import { Message, PetState, AppConfig, PluginInfo, PluginMessageData } from '../../shared/types'
-import { DEFAULT_CONFIG, PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH } from '../../shared/constants'
+import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
+import OnboardingCard from '../Onboarding/OnboardingCard'
+import {
+  Message,
+  PetState,
+  AppConfig,
+  PluginInfo,
+  PluginMessageData,
+  ChatSessionSummary,
+  SessionWorkspace
+} from '../../shared/types'
+import {
+  DEFAULT_CONFIG,
+  MAX_HISTORY_MESSAGES,
+  PANEL_HEIGHT,
+  PANEL_SETTINGS_HEIGHT,
+  PANEL_SETTINGS_WIDTH,
+  PANEL_WORKSPACE_WIDTH
+} from '../../shared/constants'
 import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
-import { loadMessages, saveMessages, clearMessages } from '../../core/memory'
+import { loadSessionWorkspace, saveActiveSessionMessages } from '../../core/memory'
 import { getConversationForRetry } from '../../core/conversation-actions'
 import './ChatPanel.css'
 
@@ -32,9 +49,14 @@ interface ChatPanelProps {
 
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
+  const [activeSessionId, setActiveSessionId] = useState('')
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
-  const [showHistory, setShowHistory] = useState(false)
+  const [showSessions, setShowSessions] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [activePluginForInput, setActivePluginForInput] = useState<PluginInfo | null>(null)
@@ -45,9 +67,18 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
   const initializedRef = useRef(false)
   const latestMessagesRef = useRef<Message[]>([])
+  const activeSessionIdRef = useRef('')
 
   const refreshPlugins = useCallback(async () => {
     setPlugins(await window.electronAPI.plugin.getPlugins())
+  }, [])
+
+  const applyWorkspace = useCallback((workspace: SessionWorkspace) => {
+    activeSessionIdRef.current = workspace.activeSession.id
+    latestMessagesRef.current = workspace.activeSession.messages
+    setActiveSessionId(workspace.activeSession.id)
+    setMessages(workspace.activeSession.messages)
+    setSessions(workspace.sessions)
   }, [])
 
   const finishPetResponse = useCallback(() => {
@@ -59,76 +90,101 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }, 650)
   }, [onPetStateChange])
 
-  useEffect(() => {
-    loadMessages().then((msgs) => {
-      setMessages(msgs)
-      initializedRef.current = true
-    })
-    window.electronAPI.db.getConfig().then(setConfig)
-    void refreshPlugins()
+  const stopActiveResponse = useCallback(() => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    activeResponseIdRef.current = null
+    setIsStreaming(false)
+    onPetStateChange('idle')
+  }, [onPetStateChange])
+
+  const persistCurrentSession = useCallback(async () => {
+    const id = activeSessionIdRef.current
+    if (!id || !initializedRef.current) return
+    const workspace = await saveActiveSessionMessages(id, latestMessagesRef.current)
+    setSessions(workspace.sessions)
   }, [])
 
-  useEffect(() => window.electronAPI.onConfigChanged(setConfig), [])
+  useEffect(() => {
+    Promise.all([
+      loadSessionWorkspace(),
+      window.electronAPI.db.getConfig(),
+      window.electronAPI.db.getState('onboarding-dismissed')
+    ]).then(([workspace, loadedConfig, onboardingDismissed]) => {
+      applyWorkspace(workspace)
+      setConfig(loadedConfig)
+      setShowOnboarding(!loadedConfig.apiKey && onboardingDismissed !== 'true')
+      initializedRef.current = true
+      setWorkspaceLoaded(true)
+    })
+    void refreshPlugins()
+  }, [applyWorkspace, refreshPlugins])
+
+  useEffect(() => window.electronAPI.onConfigChanged((nextConfig) => {
+    setConfig(nextConfig)
+    if (nextConfig.apiKey) setShowOnboarding(false)
+  }), [])
 
   useEffect(() => {
-    if (initialShowSettings) setShowSettings(true)
+    if (initialShowSettings) {
+      setShowSessions(false)
+      setShowSettings(true)
+    }
   }, [initialShowSettings])
 
   useEffect(() => {
     if (initialPluginId && plugins.length > 0) {
-      const matchedPlugin = plugins.find(p => p.id === initialPluginId)
-      if (matchedPlugin) {
-        setActivePluginForInput(matchedPlugin)
-      }
+      const matchedPlugin = plugins.find((plugin) => plugin.id === initialPluginId)
+      if (matchedPlugin) setActivePluginForInput(matchedPlugin)
       onPluginIdConsumed?.()
     }
   }, [initialPluginId, plugins, onPluginIdConsumed])
 
-  // Auto-send pending message (from clipboard action)
   useEffect(() => {
-    if (pendingMessage && !isStreaming) {
-      handleSend(pendingMessage)
+    if (pendingMessage && !isStreaming && workspaceLoaded) {
+      void handleSend(pendingMessage)
       onPendingMessageConsumed?.()
     }
-  }, [pendingMessage])
+  }, [pendingMessage, isStreaming, workspaceLoaded])
 
-  // Re-focus textarea when panel becomes visible again
   useEffect(() => {
-    if (visible && panelRef.current) {
+    if (visible && panelRef.current && !showSettings && !showSessions) {
       const textarea = panelRef.current.querySelector('.input-textarea') as HTMLTextAreaElement | null
-      if (textarea) {
-        setTimeout(() => textarea.focus(), 50)
-      }
+      if (textarea) setTimeout(() => textarea.focus(), 50)
     }
-  }, [visible])
+  }, [visible, showSettings, showSessions])
 
-  const handleDragStart = useCallback((e: React.PointerEvent) => {
-    if (e.button !== 0) return
-    const target = e.target as HTMLElement
-    if (target.closest('button')) return
-    e.preventDefault()
+  useEffect(() => {
+    if (!showSessions) return
+    const nextX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_WORKSPACE_WIDTH - 4))
+    const nextY = Math.min(Math.max(4, position.y), Math.max(4, window.innerHeight - PANEL_HEIGHT - 4))
+    if (nextX !== position.x || nextY !== position.y) onPositionChange({ x: nextX, y: nextY })
+  }, [showSessions])
+
+  const handleDragStart = useCallback((event: React.PointerEvent) => {
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    if (target.closest('button, input, textarea, select')) return
+    event.preventDefault()
     dragRef.current = {
       dragging: true,
-      startX: e.screenX,
-      startY: e.screenY,
+      startX: event.screenX,
+      startY: event.screenY,
       posX: position.x,
       posY: position.y,
       dx: 0,
       dy: 0
     }
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   }, [position])
 
-  const handleDragMove = useCallback((e: React.PointerEvent) => {
+  const handleDragMove = useCallback((event: React.PointerEvent) => {
     if (!dragRef.current.dragging) return
-    const dx = e.screenX - dragRef.current.startX
-    const dy = e.screenY - dragRef.current.startY
+    const dx = event.screenX - dragRef.current.startX
+    const dy = event.screenY - dragRef.current.startY
     dragRef.current.dx = dx
     dragRef.current.dy = dy
-    // Use transform during drag to avoid re-rendering message list
-    if (panelRef.current) {
-      panelRef.current.style.transform = `translate(${dx}px, ${dy}px)`
-    }
+    if (panelRef.current) panelRef.current.style.transform = `translate(${dx}px, ${dy}px)`
   }, [])
 
   const handleDragEnd = useCallback(() => {
@@ -137,52 +193,107 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     const { posX, posY, dx, dy } = dragRef.current
     const nextPosition = { x: posX + dx, y: posY + dy }
     if (panelRef.current) {
-      // Commit the layout position before removing the drag transform. This
-      // keeps the visual position continuous across the React state update.
       panelRef.current.style.left = `${nextPosition.x}px`
       panelRef.current.style.top = `${nextPosition.y}px`
       panelRef.current.style.transform = ''
     }
     onPositionChange(nextPosition)
-  }, [])
+  }, [onPositionChange])
 
   useEffect(() => {
     latestMessagesRef.current = messages
-    if (!initializedRef.current) return
-    const timer = setTimeout(() => { void saveMessages(messages) }, 500)
+    if (!initializedRef.current || !activeSessionId) return
+    const sessionId = activeSessionId
+    const timer = setTimeout(() => {
+      void saveActiveSessionMessages(sessionId, messages).then((workspace) => {
+        if (activeSessionIdRef.current === sessionId) setSessions(workspace.sessions)
+      })
+    }, 450)
     return () => clearTimeout(timer)
-  }, [messages])
+  }, [messages, activeSessionId])
 
   useEffect(() => () => {
     abortRef.current?.abort()
     if (happyTimerRef.current) clearTimeout(happyTimerRef.current)
     onPetStateChange('idle')
-    if (initializedRef.current) void saveMessages(latestMessagesRef.current)
+    if (initializedRef.current && activeSessionIdRef.current) {
+      void window.electronAPI.db.saveSessionMessages(activeSessionIdRef.current, latestMessagesRef.current)
+    }
   }, [])
 
   useEffect(() => {
-    if (!showHistory) return
+    if (messages.length === 0 && !isStreaming) return
     const panelEl = panelRef.current
     if (!panelEl) return
     requestAnimationFrame(() => {
       const rect = panelEl.getBoundingClientRect()
-      const screenH = window.innerHeight
-      if (rect.bottom > screenH - 4) {
-        const newY = Math.max(4, position.y - (rect.bottom - screenH + 8))
-        onPositionChange({ ...position, x: position.x, y: newY })
+      if (rect.bottom > window.innerHeight - 4) {
+        onPositionChange({ ...position, y: Math.max(4, position.y - (rect.bottom - window.innerHeight + 8)) })
       }
     })
-  }, [showHistory])
+  }, [messages.length, isStreaming])
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && visible) onClose()
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !visible) return
+      if (confirmClear) {
+        setConfirmClear(false)
+        return
+      }
+      if (showSessions) {
+        setShowSessions(false)
+        return
+      }
+      if (showSettings) {
+        setShowSettings(false)
+        onSettingsClose?.()
+        return
+      }
+      onClose()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose, visible])
+  }, [confirmClear, onClose, onSettingsClose, showSessions, showSettings, visible])
 
-  const pluginCommands = plugins.map((p) => ({ cmd: '/' + p.command, desc: p.description }))
+  const createSession = useCallback(async () => {
+    stopActiveResponse()
+    await persistCurrentSession()
+    const workspace = await window.electronAPI.db.createSession()
+    applyWorkspace(workspace)
+  }, [applyWorkspace, persistCurrentSession, stopActiveResponse])
+
+  const selectSession = useCallback(async (id: string) => {
+    if (id === activeSessionIdRef.current) return
+    stopActiveResponse()
+    await persistCurrentSession()
+    applyWorkspace(await window.electronAPI.db.selectSession(id))
+  }, [applyWorkspace, persistCurrentSession, stopActiveResponse])
+
+  const renameSession = useCallback(async (id: string, title: string) => {
+    setSessions(await window.electronAPI.db.renameSession(id, title))
+  }, [])
+
+  const deleteSession = useCallback(async (id: string) => {
+    if (id === activeSessionIdRef.current) stopActiveResponse()
+    applyWorkspace(await window.electronAPI.db.deleteSession(id))
+  }, [applyWorkspace, stopActiveResponse])
+
+  const exportSession = useCallback(async (id: string) => {
+    await persistCurrentSession()
+    const result = await window.electronAPI.db.exportSession(id)
+    return result.ok
+  }, [persistCurrentSession])
+
+  const clearCurrentSession = useCallback(async () => {
+    stopActiveResponse()
+    setMessages([])
+    setConfirmClear(false)
+    if (!activeSessionIdRef.current) return
+    const workspace = await window.electronAPI.db.saveSessionMessages(activeSessionIdRef.current, [])
+    setSessions(workspace.sessions)
+  }, [stopActiveResponse])
+
+  const pluginCommands = plugins.map((plugin) => ({ cmd: '/' + plugin.command, desc: plugin.description }))
 
   const generateAIResponse = useCallback(async (conversation: Message[]) => {
     const systemPrompt = buildSystemPrompt(config.soulMd)
@@ -210,19 +321,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           }
           accumulated += chunk
           onPetStateChange('talking')
-          setMessages((prev) => {
-            const existing = prev.find((message) => message.id === aiMsgId)
+          setMessages((previous) => {
+            const existing = previous.find((message) => message.id === aiMsgId)
             if (existing) {
-              return prev.map((message) => message.id === aiMsgId
+              return previous.map((message) => message.id === aiMsgId
                 ? { ...message, content: accumulated, responseStatus: undefined }
                 : message)
             }
-            return [...prev, {
-              id: aiMsgId,
-              role: 'assistant',
-              content: accumulated,
-              timestamp: Date.now()
-            }]
+            return [...previous, { id: aiMsgId, role: 'assistant', content: accumulated, timestamp: Date.now() }]
           })
         },
         controller.signal
@@ -233,17 +339,18 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       onPetStateChange('idle')
       if (error instanceof Error && error.name === 'AbortError') return
       const message = error instanceof Error ? error.message : '未知错误'
-      const errorMsg: Message = {
+      const errorMessage: Message = {
         id: aiMsgId,
         role: 'assistant',
         content: `请求失败：${message}`,
         timestamp: Date.now(),
         responseStatus: 'error'
       }
-      setMessages((prev) => {
-        const existing = prev.find((item) => item.id === aiMsgId)
-        if (existing) return prev.map((item) => item.id === aiMsgId ? errorMsg : item)
-        return [...prev, errorMsg]
+      setMessages((previous) => {
+        const existing = previous.find((item) => item.id === aiMsgId)
+        return existing
+          ? previous.map((item) => item.id === aiMsgId ? errorMessage : item)
+          : [...previous, errorMessage]
       })
     } finally {
       if (abortRef.current === controller) abortRef.current = null
@@ -253,18 +360,19 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const handleStopGeneration = useCallback(() => {
     const responseId = activeResponseIdRef.current
     abortRef.current?.abort()
+    abortRef.current = null
     activeResponseIdRef.current = null
     setIsStreaming(false)
     onPetStateChange('idle')
     if (!responseId) return
-    setMessages((prev) => {
-      const existing = prev.find((message) => message.id === responseId)
+    setMessages((previous) => {
+      const existing = previous.find((message) => message.id === responseId)
       if (existing) {
-        return prev.map((message) => message.id === responseId
+        return previous.map((message) => message.id === responseId
           ? { ...message, responseStatus: 'stopped' }
           : message)
       }
-      return [...prev, {
+      return [...previous, {
         id: responseId,
         role: 'assistant',
         content: '已停止生成。',
@@ -287,23 +395,21 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       clearTimeout(happyTimerRef.current)
       happyTimerRef.current = null
     }
-    // Plugin command detection (before built-in commands)
+
     for (const plugin of plugins) {
       const prefix = `/${plugin.command} `
       if (content.startsWith(prefix) || content === `/${plugin.command}`) {
         const extractedContent = content.startsWith(prefix) ? content.slice(prefix.length) : ''
         const result: PluginMessageData = await window.electronAPI.plugin.execute(plugin.id, extractedContent)
-        const resultMsg: Message = {
+        const resultMessage: Message = {
           id: Date.now().toString(),
           role: 'assistant',
           content: result.message,
           timestamp: Date.now(),
           pluginData: result
         }
-        setMessages((prev) => [...prev, resultMsg])
-        setShowHistory(true)
+        setMessages((previous) => [...previous, resultMessage])
 
-        // If feedToPet is enabled (user setting), let the AI pet comment on the result
         const feedToPetSetting = await window.electronAPI.db.getState(`plugin:${plugin.id}:feedToPet`)
         if (feedToPetSetting === 'true' && result.ok) {
           const petPrompt = `用户刚通过 ${plugin.name} 插件执行了操作：\n输入：${extractedContent}\n结果：${result.message}\n\n请用你的性格简短评论一下（1-2句话）。`
@@ -328,12 +434,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 }
                 petAccumulated += chunk
                 onPetStateChange('talking')
-                setMessages((prev) => {
-                  const existing = prev.find((m) => m.id === petMsgId)
-                  if (existing) {
-                    return prev.map((m) => m.id === petMsgId ? { ...m, content: petAccumulated } : m)
-                  }
-                  return [...prev, { id: petMsgId, role: 'assistant', content: petAccumulated, timestamp: Date.now() }]
+                setMessages((previous) => {
+                  const existing = previous.find((message) => message.id === petMsgId)
+                  return existing
+                    ? previous.map((message) => message.id === petMsgId ? { ...message, content: petAccumulated } : message)
+                    : [...previous, { id: petMsgId, role: 'assistant', content: petAccumulated, timestamp: Date.now() }]
                 })
               },
               petAbort.signal
@@ -348,96 +453,82 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }
 
     if (content === '/clear') {
-      setMessages([])
-      clearMessages()
+      setConfirmClear(true)
+      return
+    }
+    if (content === '/new') {
+      await createSession()
       return
     }
     if (content === '/help') {
-      const helpMsg: Message = {
+      setMessages((previous) => [...previous, {
         id: Date.now().toString(),
         role: 'assistant',
-        content: '可用指令：\n- `/clear` 清空对话\n- `/settings` 打开设置\n- `/model` 切换模型\n- `/help` 查看帮助',
+        content: '可用指令：\n- `/new` 新建对话\n- `/clear` 清空当前对话\n- `/settings` 打开设置\n- `/model` 切换模型\n- `/help` 查看帮助',
         timestamp: Date.now()
-      }
-      setMessages((prev) => [...prev, helpMsg])
+      }])
       return
     }
     if (content === '/settings') {
+      setShowSessions(false)
       setShowSettings(true)
-      const screenH = window.innerHeight
-      const panelH = PANEL_SETTINGS_HEIGHT
-      if (position.y + panelH > screenH - 4) {
-        onPositionChange({ ...position, y: Math.max(4, screenH - panelH - 4) })
-      }
+      const panelX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_SETTINGS_WIDTH - 4))
+      const panelY = position.y + PANEL_SETTINGS_HEIGHT > window.innerHeight - 4
+        ? Math.max(4, window.innerHeight - PANEL_SETTINGS_HEIGHT - 4)
+        : position.y
+      if (panelX !== position.x || panelY !== position.y) onPositionChange({ x: panelX, y: panelY })
       return
     }
     if (content === '/model' || content.startsWith('/model ')) {
       const requestedModel = content.slice('/model'.length).trim()
       if (!requestedModel) {
-        const modelHelpMsg: Message = {
+        setMessages((previous) => [...previous, {
           id: Date.now().toString(),
           role: 'assistant',
           content: '请从输入框右下角的模型菜单中选择模型，或输入 `/model 模型名称`。',
           timestamp: Date.now()
-        }
-        setMessages((prev) => [...prev, modelHelpMsg])
-        setShowHistory(true)
+        }])
         return
       }
-
       try {
         const saved = await window.electronAPI.db.saveConfig({ model: requestedModel })
         setConfig(saved)
-        const modelChangedMsg: Message = {
+        setMessages((previous) => [...previous, {
           id: Date.now().toString(),
           role: 'assistant',
           content: `已切换到模型 \`${saved.model}\`。`,
           timestamp: Date.now()
-        }
-        setMessages((prev) => [...prev, modelChangedMsg])
-        setShowHistory(true)
+        }])
       } catch (error) {
         const message = error instanceof Error ? error.message : '模型切换失败'
-        setMessages((prev) => [...prev, {
+        setMessages((previous) => [...previous, {
           id: Date.now().toString(),
           role: 'assistant',
           content: `模型切换失败：${message}`,
           timestamp: Date.now()
         }])
-        setShowHistory(true)
       }
       return
     }
 
-    let msgContent = content
-    const imageAttachment = attachments?.find((a) => a.type === 'image')
-    const textAttachments = attachments?.filter((a) => a.type === 'text') || []
+    let messageContent = content
+    const imageAttachment = attachments?.find((attachment) => attachment.type === 'image')
+    const textAttachments = attachments?.filter((attachment) => attachment.type === 'text') || []
     if (textAttachments.length > 0) {
-      const textParts = textAttachments.map((a) => `[附件: ${a.name}]\n${a.data.slice(0, 2000)}`)
-      msgContent = content ? `${content}\n\n${textParts.join('\n\n')}` : textParts.join('\n\n')
+      const textParts = textAttachments.map((attachment) => `[附件: ${attachment.name}]\n${attachment.data.slice(0, 2000)}`)
+      messageContent = content ? `${content}\n\n${textParts.join('\n\n')}` : textParts.join('\n\n')
     }
 
-    const userMsg: Message = {
+    const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: msgContent,
+      content: messageContent,
       timestamp: Date.now(),
       imageUrl: imageAttachment?.data
     }
-    const newMessages = [...messages, userMsg]
-    setMessages(newMessages)
-    setShowHistory(true)
-    await generateAIResponse(newMessages)
-  }
-
-  const handleNewTopic = () => {
-    if (abortRef.current) abortRef.current.abort()
-    activeResponseIdRef.current = null
-    setMessages([])
-    clearMessages()
-    setShowHistory(false)
-    setIsStreaming(false)
-    onPetStateChange('idle')
+    const nextMessages = [...messages, userMessage]
+    setMessages(nextMessages)
+    await generateAIResponse(nextMessages)
   }
 
   const getStatusText = () => {
@@ -447,61 +538,120 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }
 
   const handleModelChange = useCallback((newModel: string) => {
-    setConfig((prev) => ({ ...prev, model: newModel }))
-    window.electronAPI.db.saveConfig({ model: newModel })
+    setConfig((previous) => ({ ...previous, model: newModel }))
+    void window.electronAPI.db.saveConfig({ model: newModel })
+  }, [])
+
+  const dismissOnboarding = useCallback(async () => {
+    setShowOnboarding(false)
+    await window.electronAPI.db.setState('onboarding-dismissed', 'true')
+  }, [])
+
+  const openAISettings = useCallback(() => {
+    setShowOnboarding(false)
+    setShowSessions(false)
+    setShowSettings(true)
   }, [])
 
   return (
     <div
       ref={panelRef}
       data-interactive
-      className={`chat-panel${showSettings ? ' chat-panel-settings' : ''}`}
+      className={`chat-panel${showSettings ? ' chat-panel-settings' : ''}${showSessions && !showSettings ? ' chat-panel-workspace' : ''}`}
       style={{ left: position.x, top: position.y, display: visible ? undefined : 'none' }}
     >
-      {showSettings ? (
-        <Settings
-          onClose={() => { setShowSettings(false); void refreshPlugins(); onSettingsClose?.() }}
-          dragHandleProps={{
-            onPointerDown: handleDragStart,
-            onPointerMove: handleDragMove,
-            onPointerUp: handleDragEnd,
-            onPointerCancel: handleDragEnd
-          }}
+      {showSessions && !showSettings && (
+        <ConversationSidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onClose={() => setShowSessions(false)}
+          onCreate={createSession}
+          onSelect={selectSession}
+          onRename={renameSession}
+          onDelete={deleteSession}
+          onExport={exportSession}
         />
-      ) : (
-        <>
-          <div
-            className="chat-panel-drag-handle"
-            onPointerDown={handleDragStart}
-            onPointerMove={handleDragMove}
-            onPointerUp={handleDragEnd}
-            onPointerCancel={handleDragEnd}
-          >
-            <TopBar
-              status={getStatusText()}
-              showHistory={showHistory}
-              onToggleHistory={() => setShowHistory((v) => !v)}
-              onSettings={() => {
-                setShowSettings(true)
-                const screenH = window.innerHeight
-                const panelH = PANEL_SETTINGS_HEIGHT
-                const panelX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_SETTINGS_WIDTH - 4))
-                const panelY = position.y + panelH > screenH - 4
-                  ? Math.max(4, screenH - panelH - 4)
-                  : position.y
-                if (panelX !== position.x || panelY !== position.y) {
-                  onPositionChange({ x: panelX, y: panelY })
-                }
-              }}
-              onNewTopic={handleNewTopic}
-              onHide={onHide}
-              onClose={onClose}
-            />
-          </div>
-          {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} onRetry={retryAssistantMessage} />}
-          <InputArea onSend={handleSend} onStop={handleStopGeneration} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} plugins={plugins} pluginCommands={pluginCommands} initialActivePlugin={activePluginForInput} onInitialPluginConsumed={() => setActivePluginForInput(null)} initialAttachment={pendingAttachment} onInitialAttachmentConsumed={onPendingAttachmentConsumed} />
-        </>
       )}
+
+      <div className="chat-panel-main">
+        {showSettings ? (
+          <Settings
+            onClose={() => { setShowSettings(false); void refreshPlugins(); onSettingsClose?.() }}
+            dragHandleProps={{
+              onPointerDown: handleDragStart,
+              onPointerMove: handleDragMove,
+              onPointerUp: handleDragEnd,
+              onPointerCancel: handleDragEnd
+            }}
+          />
+        ) : (
+          <>
+            <div
+              className="chat-panel-drag-handle"
+              onPointerDown={handleDragStart}
+              onPointerMove={handleDragMove}
+              onPointerUp={handleDragEnd}
+              onPointerCancel={handleDragEnd}
+            >
+              <TopBar
+                status={getStatusText()}
+                showSessions={showSessions}
+                onToggleSessions={() => setShowSessions((value) => !value)}
+                onSettings={() => {
+                  setShowSessions(false)
+                  setShowSettings(true)
+                  const panelX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_SETTINGS_WIDTH - 4))
+                  const panelY = position.y + PANEL_SETTINGS_HEIGHT > window.innerHeight - 4
+                    ? Math.max(4, window.innerHeight - PANEL_SETTINGS_HEIGHT - 4)
+                    : position.y
+                  if (panelX !== position.x || panelY !== position.y) onPositionChange({ x: panelX, y: panelY })
+                }}
+                onNewTopic={() => { void createSession() }}
+                onHide={onHide}
+                onClose={onClose}
+              />
+            </div>
+
+            {showOnboarding && (
+              <OnboardingCard onConfigure={openAISettings} onSkip={() => { void dismissOnboarding() }} />
+            )}
+            {workspaceLoaded && (
+              <MessageArea
+                messages={messages}
+                isStreaming={isStreaming}
+                onRetry={retryAssistantMessage}
+                contextLimit={MAX_HISTORY_MESSAGES}
+              />
+            )}
+            {confirmClear && (
+              <div className="clear-session-confirm" role="alertdialog" aria-labelledby="clear-session-title">
+                <div>
+                  <strong id="clear-session-title">清空当前对话？</strong>
+                  <span>消息将从这个会话中永久删除。</span>
+                </div>
+                <div className="clear-session-actions">
+                  <button type="button" autoFocus onClick={() => setConfirmClear(false)}>取消</button>
+                  <button type="button" className="danger" onClick={() => { void clearCurrentSession() }}>确认清空</button>
+                </div>
+              </div>
+            )}
+            <InputArea
+              onSend={handleSend}
+              onStop={handleStopGeneration}
+              disabled={isStreaming || !workspaceLoaded}
+              model={config.model}
+              onModelChange={handleModelChange}
+              onScreenshot={onScreenshot}
+              plugins={plugins}
+              pluginCommands={pluginCommands}
+              initialActivePlugin={activePluginForInput}
+              onInitialPluginConsumed={() => setActivePluginForInput(null)}
+              initialAttachment={pendingAttachment}
+              onInitialAttachmentConsumed={onPendingAttachmentConsumed}
+            />
+          </>
+        )}
+      </div>
     </div>
   )
 }

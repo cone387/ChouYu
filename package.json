@@ -1,6 +1,6 @@
 {
   "name": "chouyu",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Desktop AI pet assistant",
   "author": "cone387",
   "main": "./out/main/index.js",

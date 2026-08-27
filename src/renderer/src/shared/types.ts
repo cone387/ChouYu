@@ -92,6 +92,13 @@ export interface ElectronAPI {
     getMessages: () => Promise<Message[]>
     saveMessages: (msgs: Message[]) => Promise<void>
     clearMessages: () => Promise<void>
+    getSessionWorkspace: () => Promise<SessionWorkspace>
+    createSession: (title?: string) => Promise<SessionWorkspace>
+    selectSession: (id: string) => Promise<SessionWorkspace>
+    renameSession: (id: string, title: string) => Promise<ChatSessionSummary[]>
+    deleteSession: (id: string) => Promise<SessionWorkspace>
+    saveSessionMessages: (id: string, msgs: Message[]) => Promise<SessionWorkspace>
+    exportSession: (id: string) => Promise<{ ok: boolean; canceled: boolean; filePath?: string }>
     getState: (key: string) => Promise<string | null>
     setState: (key: string, value: string) => Promise<void>
   }
@@ -132,6 +139,23 @@ export interface Message {
 }
 
 export interface ChatSession {
+  id: string
+  title: string
   messages: Message[]
   createdAt: number
+  updatedAt: number
+}
+
+export interface ChatSessionSummary {
+  id: string
+  title: string
+  preview: string
+  messageCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface SessionWorkspace {
+  sessions: ChatSessionSummary[]
+  activeSession: ChatSession
 }

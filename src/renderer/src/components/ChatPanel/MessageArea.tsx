@@ -8,6 +8,7 @@ interface MessageAreaProps {
   messages: Message[]
   isStreaming: boolean
   onRetry?: (messageId: string) => void
+  contextLimit?: number
 }
 
 function formatTime(ts: number) {
@@ -63,7 +64,7 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ messages, isStreaming, onRetry }: MessageAreaProps) {
+export default function MessageArea({ messages, isStreaming, onRetry, contextLimit }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
 
@@ -78,6 +79,14 @@ export default function MessageArea({ messages, isStreaming, onRetry }: MessageA
 
   return (
     <div className="message-area" aria-live="polite" aria-busy={isStreaming}>
+      {contextLimit && messages.length > contextLimit && (
+        <div className="context-limit-notice" role="status">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 4.5v.5"/>
+          </svg>
+          会话已保存 {messages.length} 条消息；发送给模型时仅使用最近 {contextLimit} 条。
+        </div>
+      )}
       {messages.map((msg) => {
         const canRetry = !isStreaming && getConversationForRetry(messages, msg.id) !== null
         return (

@@ -31,7 +31,28 @@
   height: min(440px, calc(100vh - 8px));
 }
 
-.chat-panel > .message-area {
+.chat-panel-workspace {
+  width: min(672px, calc(100vw - 16px));
+  height: min(520px, calc(100vh - 8px));
+  max-height: min(520px, calc(100vh - 8px));
+  flex-direction: row;
+}
+
+.chat-panel-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  border-radius: inherit;
+  overflow: visible;
+}
+
+.chat-panel-workspace .chat-panel-main {
+  border-radius: 0 12px 12px 0;
+}
+
+.chat-panel-main > .message-area {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -264,6 +285,74 @@
   border-top: 1px solid var(--divider);
   border-radius: 0 0 12px 12px;
   overflow: visible;
+}
+
+.context-limit-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.context-limit-notice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.clear-session-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--error-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--error) 6%, var(--bg-panel));
+}
+
+.clear-session-confirm strong,
+.clear-session-confirm span {
+  display: block;
+}
+
+.clear-session-confirm strong {
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.clear-session-confirm span {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 9px;
+}
+
+.clear-session-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.clear-session-actions button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.clear-session-actions button.danger {
+  border-color: var(--error-border);
+  background: var(--error);
+  color: #fff;
 }
 
 .message-error .message-bubble {

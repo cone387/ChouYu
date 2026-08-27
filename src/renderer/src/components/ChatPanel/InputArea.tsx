@@ -151,7 +151,8 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
 
     if (showCommands) {
       const allCommands = pluginCommands ? [...[
-        { cmd: '/clear', desc: '清空对话，新话题' },
+        { cmd: '/new', desc: '新建对话' },
+        { cmd: '/clear', desc: '清空当前对话' },
         { cmd: '/settings', desc: '打开设置' },
         { cmd: '/model', desc: '切换模型' },
         { cmd: '/help', desc: '查看可用指令' }
@@ -204,6 +205,9 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
     setShowCommands(false)
     setValue('')
     switch (cmd) {
+      case '/new':
+        onSend('/new')
+        break
       case '/clear':
         onSend('/clear')
         break

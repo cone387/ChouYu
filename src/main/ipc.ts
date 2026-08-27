@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { sanitizeConfigPatch } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
+import { formatSessionMarkdown } from '../shared/sessions'
 import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { setClipboardWatcherEnabled } from './clipboard'
 import { initAutoUpdater } from './updater'
@@ -13,6 +14,13 @@ import {
   getMessages,
   saveMessages,
   clearMessages,
+  getSessionWorkspace,
+  getSession,
+  createChatSession,
+  selectChatSession,
+  renameChatSession,
+  deleteChatSession,
+  saveSessionMessages,
   getState,
   setState
 } from './database'
@@ -224,6 +232,41 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('db:get-messages', () => getMessages())
   ipcMain.handle('db:save-messages', (_event, messages) => saveMessages(messages))
   ipcMain.handle('db:clear-messages', () => clearMessages())
+  ipcMain.handle('db:get-session-workspace', () => getSessionWorkspace())
+  ipcMain.handle('db:create-session', (_event, title?: string) =>
+    createChatSession(typeof title === 'string' ? title.slice(0, 80) : undefined))
+  ipcMain.handle('db:select-session', (_event, id: string) => {
+    if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
+    return selectChatSession(id)
+  })
+  ipcMain.handle('db:rename-session', (_event, id: string, title: string) => {
+    if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
+    if (typeof title !== 'string') throw new Error('Invalid session title')
+    return renameChatSession(id, title.slice(0, 80))
+  })
+  ipcMain.handle('db:delete-session', (_event, id: string) => {
+    if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
+    return deleteChatSession(id)
+  })
+  ipcMain.handle('db:save-session-messages', (_event, id: string, messages) => {
+    if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
+    if (!Array.isArray(messages)) throw new Error('Invalid session messages')
+    return saveSessionMessages(id, messages)
+  })
+  ipcMain.handle('db:export-session', async (_event, id: string) => {
+    if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
+    const session = getSession(id)
+    if (!session) throw new Error('会话不存在或已被删除。')
+    const safeTitle = session.title.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').slice(0, 60) || 'ChouYu 对话'
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出对话',
+      defaultPath: `${safeTitle}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    })
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    await fs.promises.writeFile(result.filePath, formatSessionMarkdown(session), 'utf-8')
+    return { ok: true, canceled: false, filePath: result.filePath }
+  })
   ipcMain.handle('db:get-state', (_event, key) => {
     if (typeof key !== 'string' || key.length > 256) return null
     return getState(key)

@@ -1,14 +1,14 @@
 interface TopBarProps {
   status: string
-  showHistory: boolean
-  onToggleHistory: () => void
+  showSessions: boolean
+  onToggleSessions: () => void
   onNewTopic: () => void
   onSettings: () => void
   onHide: () => void
   onClose: () => void
 }
 
-export default function TopBar({ status, showHistory, onToggleHistory, onNewTopic, onSettings, onHide, onClose }: TopBarProps) {
+export default function TopBar({ status, showSessions, onToggleSessions, onNewTopic, onSettings, onHide, onClose }: TopBarProps) {
   return (
     <div className="chat-topbar">
       <div className="chat-topbar-left">
@@ -28,14 +28,14 @@ export default function TopBar({ status, showHistory, onToggleHistory, onNewTopi
       </div>
       <div className="chat-topbar-actions">
         <button
-          className={`topbar-btn${showHistory ? ' topbar-btn-active' : ''}`}
-          onClick={onToggleHistory}
-          title={showHistory ? '隐藏消息' : '显示消息'}
-          aria-label={showHistory ? '隐藏消息' : '显示消息'}
-          aria-pressed={showHistory}
+          className={`topbar-btn${showSessions ? ' topbar-btn-active' : ''}`}
+          onClick={onToggleSessions}
+          title={showSessions ? '隐藏对话列表' : '显示对话列表'}
+          aria-label={showSessions ? '隐藏对话列表' : '显示对话列表'}
+          aria-pressed={showSessions}
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <path d="M2 5h10M2 9h6"/>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M2.5 3h11v9h-7l-3 2v-2h-1zM5 6h6M5 9h4"/>
           </svg>
         </button>
         <button className="topbar-btn" onClick={onSettings} title="设置" aria-label="打开设置">
@@ -44,7 +44,7 @@ export default function TopBar({ status, showHistory, onToggleHistory, onNewTopi
             <circle cx="12" cy="12" r="3"/>
           </svg>
         </button>
-        <button className="topbar-btn" onClick={onNewTopic} title="清空对话，开始新话题" aria-label="清空对话，开始新话题">
+        <button className="topbar-btn" onClick={onNewTopic} title="新建对话" aria-label="新建对话">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <path d="M7 2v10M2 7h10"/>
           </svg>
@@ -54,7 +54,7 @@ export default function TopBar({ status, showHistory, onToggleHistory, onNewTopi
             <path d="M3 7h8"/>
           </svg>
         </button>
-        <button className="topbar-btn" onClick={onClose} title="关闭" aria-label="关闭并清空当前面板状态">
+        <button className="topbar-btn" onClick={onClose} title="关闭" aria-label="关闭面板">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <path d="M3 3l8 8M11 3l-8 8"/>
           </svg>
