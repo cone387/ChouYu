@@ -9,6 +9,13 @@ import { pluginRegistry } from './plugins/registry'
 import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 
 let mainWindow: BrowserWindow | null = null
+const isSmokeTest = process.env['CHOUYU_SMOKE_TEST'] === '1'
+const smokeUserDataDir = process.env['CHOUYU_SMOKE_USER_DATA']
+
+if (isSmokeTest) {
+  if (smokeUserDataDir) app.setPath('userData', smokeUserDataDir)
+  app.disableHardwareAcceleration()
+}
 
 function createWindow(): void {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
@@ -55,6 +62,21 @@ function createWindow(): void {
     }
   })
 
+  if (isSmokeTest) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
+      setTimeout(() => app.quit(), 150)
+    })
+    mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
+      console.error(`CHOUYU_SMOKE_FAILED code=${errorCode} message=${errorDescription}`)
+      app.exit(1)
+    })
+    mainWindow.webContents.once('render-process-gone', (_event, details) => {
+      console.error(`CHOUYU_SMOKE_FAILED renderer=${details.reason}`)
+      app.exit(1)
+    })
+  }
+
   mainWindow.setIgnoreMouseEvents(true, { forward: true })
 
   // Intercept keyboard shortcuts
@@ -78,7 +100,7 @@ function createWindow(): void {
 
   // Show window once renderer is ready to avoid blank frame
   mainWindow.once('ready-to-show', () => {
-    mainWindow!.show()
+    if (!isSmokeTest) mainWindow!.show()
   })
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
@@ -103,11 +125,13 @@ app.whenReady().then(async () => {
 
   // Async plugin init (network requests etc) - IPC handlers already available
   await pluginRegistry.initializePlugins()
-  setupTray(mainWindow!)
-  registerHotkey(mainWindow!)
-  setClipboardWatcherEnabled(mainWindow!, getConfig().clipboardWatch)
+  if (!isSmokeTest) {
+    setupTray(mainWindow!)
+    registerHotkey(mainWindow!)
+    setClipboardWatcherEnabled(mainWindow!, getConfig().clipboardWatch)
+  }
 
-  if (app.isPackaged) {
+  if (app.isPackaged && !isSmokeTest) {
     // Sync auto-start setting with system
     const config = getConfig()
     app.setLoginItemSettings({

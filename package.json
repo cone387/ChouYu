@@ -1,7 +1,8 @@
 {
   "name": "chouyu",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Desktop AI pet assistant",
+  "author": "cone387",
   "main": "./out/main/index.js",
   "repository": {
     "type": "git",
@@ -17,6 +18,9 @@
     "package:all": "electron-vite build && electron-builder --mac --win",
     "publish": "electron-vite build && electron-builder --mac --win --publish always",
     "test": "vitest --run",
+    "test:smoke": "npm run build && npm run test:smoke:built",
+    "test:smoke:built": "node scripts/smoke-electron.js",
+    "test:smoke:packaged": "node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web"
