@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_APP_CONFIG } from '../shared/config'
-import { streamAIChat } from './ai'
+import { fetchProviderModels, streamAIChat } from './ai'
 
 function streamResponse(lines: string): Response {
   return new Response(lines, {
@@ -63,5 +63,71 @@ describe('main-process AI provider routing', () => {
     expect((options?.headers as Record<string, string>)['anthropic-version']).toBe('2023-06-01')
     expect(JSON.parse(String(options?.body))).toMatchObject({ model: 'claude-test', system: 'system', stream: true })
     expect(chunks).toEqual(['收到'])
+  })
+})
+
+describe('provider model diagnostics', () => {
+  it('falls back to /v1/models and reports the corrected base URL', async () => {
+    const request = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input)
+      if (url.endsWith('/v1/models')) {
+        return Response.json({ data: [{ id: 'model-a' }, { id: 'model-b' }] })
+      }
+      return new Response('<html>home</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' }
+      })
+    }) as typeof fetch
+
+    const result = await fetchProviderModels({
+      ...DEFAULT_APP_CONFIG,
+      baseUrl: 'https://provider.example',
+      apiKey: 'key',
+      model: 'model-b'
+    }, request)
+
+    expect(result).toMatchObject({
+      ok: true,
+      models: ['model-a', 'model-b'],
+      baseUrl: 'https://provider.example/v1',
+      baseUrlAdjusted: true,
+      configuredModelValid: true
+    })
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  it('distinguishes authentication failures from an empty model list', async () => {
+    const request = vi.fn(async () => Response.json(
+      { error: { message: 'invalid key' } },
+      { status: 401 }
+    )) as typeof fetch
+
+    const result = await fetchProviderModels({
+      ...DEFAULT_APP_CONFIG,
+      baseUrl: 'https://provider.example/v1',
+      apiKey: 'bad-key'
+    }, request)
+
+    expect(result).toMatchObject({
+      ok: false,
+      errorCode: 'authentication',
+      httpStatus: 401,
+      models: []
+    })
+    expect(result.message).toContain('API Key')
+  })
+
+  it('reports when the configured model is not offered by the provider', async () => {
+    const request = vi.fn(async () => Response.json({ data: [{ id: 'available-model' }] })) as typeof fetch
+
+    const result = await fetchProviderModels({
+      ...DEFAULT_APP_CONFIG,
+      baseUrl: 'https://provider.example/v1',
+      apiKey: 'key',
+      model: 'missing-model'
+    }, request)
+
+    expect(result.ok).toBe(true)
+    expect(result.configuredModelValid).toBe(false)
   })
 })

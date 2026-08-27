@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import CommandMenu, { getFilteredCommands } from './CommandMenu'
+import ModelPicker from '../ModelPicker/ModelPicker'
 import { PluginInfo } from '../../shared/types'
 import {
   getAttachmentValidationError,
@@ -11,6 +12,7 @@ export type { PendingAttachment } from '../../core/attachments'
 
 interface InputAreaProps {
   onSend: (content: string, attachments?: PendingAttachment[]) => void
+  onStop?: () => void
   disabled: boolean
   autoFocus?: boolean
   model?: string
@@ -24,15 +26,15 @@ interface InputAreaProps {
   onInitialAttachmentConsumed?: () => void
 }
 
-export default function InputArea({ onSend, disabled, autoFocus, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed }: InputAreaProps) {
+export default function InputArea({ onSend, onStop, disabled, autoFocus, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
-  const [showModelSelector, setShowModelSelector] = useState(false)
+  const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
   const [showScreenshotMenu, setShowScreenshotMenu] = useState(false)
   const [hideWindowOnCapture, setHideWindowOnCapture] = useState(true)
   const [modelOptions, setModelOptions] = useState<string[]>([])
   const [modelListStatus, setModelListStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
-  const [modelSearch, setModelSearch] = useState('')
+  const [modelListMessage, setModelListMessage] = useState('')
   const [cmdIndex, setCmdIndex] = useState(0)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
@@ -76,18 +78,6 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
   }, [initialAttachment, onInitialAttachmentConsumed])
 
   useEffect(() => {
-    if (!showModelSelector) return
-    setModelSearch('')
-    const dismiss = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('.model-selector')) {
-        setShowModelSelector(false)
-      }
-    }
-    document.addEventListener('mousedown', dismiss)
-    return () => document.removeEventListener('mousedown', dismiss)
-  }, [showModelSelector])
-
-  useEffect(() => {
     if (!showScreenshotMenu) return
     const dismiss = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest('.screenshot-selector')) {
@@ -111,14 +101,16 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
 
   const refreshModels = useCallback(async () => {
     setModelListStatus('loading')
+    setModelListMessage('正在检测 Provider 连接…')
     try {
-      const models = await window.electronAPI.fetchModels()
-      const availableModels = Array.from(new Set(models.filter((item): item is string => Boolean(item && item.trim()))))
-      setModelOptions(availableModels)
-      setModelListStatus(availableModels.length > 0 ? 'ready' : 'unavailable')
+      const result = await window.electronAPI.fetchModels()
+      setModelOptions(result.models)
+      setModelListMessage(result.message)
+      setModelListStatus(result.ok ? 'ready' : 'unavailable')
     } catch {
       setModelOptions([])
       setModelListStatus('unavailable')
+      setModelListMessage('模型检测失败，请稍后重试。')
     }
   }, [])
 
@@ -222,7 +214,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
         onSend('/settings')
         break
       case '/model':
-        setShowModelSelector(true)
+        setModelPickerOpenRequest((previous) => previous + 1)
         break
       default: {
         // Find matching plugin for placeholder hint
@@ -310,9 +302,7 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
     setDragOver(false)
   }, [])
 
-  const filteredModels = modelSearch
-    ? modelOptions.filter((m) => m.toLowerCase().includes(modelSearch.toLowerCase()))
-    : modelOptions
+  const configuredModelInvalid = modelListStatus === 'ready' && Boolean(model) && !modelOptions.includes(model || '')
 
   return (
     <div className="input-area">
@@ -475,64 +465,33 @@ export default function InputArea({ onSend, disabled, autoFocus, model, onModelC
             )}
           </div>
           <div className="input-toolbar-right">
-            <div className="model-selector">
-              {showModelSelector && (
-                <div className="model-dropdown">
-                  <input
-                    className="model-search"
-                    placeholder="搜索模型..."
-                    value={modelSearch}
-                    onChange={(e) => setModelSearch(e.target.value)}
-                    autoFocus
-                    aria-label="搜索模型"
-                    onMouseDown={(e) => e.stopPropagation()}
-                  />
-                  <div className="model-list" role="listbox" aria-label="可用模型">
-                    {filteredModels.map((m) => (
-                      <button
-                        key={m}
-                        className={`model-option${m === model ? ' active' : ''}`}
-                        onClick={() => { onModelChange?.(m); setShowModelSelector(false) }}
-                        role="option"
-                        aria-selected={m === model}
-                      >{m}</button>
-                    ))}
-                    {filteredModels.length === 0 && modelListStatus === 'loading' && (
-                      <div className="model-empty">正在加载可用模型…</div>
-                    )}
-                    {filteredModels.length === 0 && modelListStatus === 'unavailable' && (
-                      <div className="model-empty">
-                        <span>暂无可用模型，请先配置 API Key 或检查供应商地址。</span>
-                        <button className="model-refresh-btn" onClick={() => { void refreshModels() }}>重新检查</button>
-                      </div>
-                    )}
-                    {filteredModels.length === 0 && modelListStatus === 'ready' && (
-                      <div className="model-empty">没有匹配的模型</div>
-                    )}
-                  </div>
-                </div>
-              )}
-              <div className="model-btn-group">
-                <button className="toolbar-btn model-btn" title="切换模型" aria-label={`当前模型 ${model || 'AI'}，点击切换`} aria-expanded={showModelSelector} onClick={() => setShowModelSelector((v) => !v)}>
-                  {model || 'AI'}
-                </button>
-                <button className="toolbar-btn model-arrow" title="选择模型" aria-label="打开模型列表" aria-expanded={showModelSelector} onClick={() => setShowModelSelector((v) => !v)}>
-                  <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                    <path d="M1 3l3 3 3-3"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
+            <ModelPicker
+              value={model}
+              models={modelOptions}
+              status={modelListStatus}
+              statusMessage={modelListMessage}
+              onChange={(nextModel) => onModelChange?.(nextModel)}
+              onRefresh={() => { void refreshModels() }}
+              invalid={configuredModelInvalid}
+              placement="top"
+              openRequest={modelPickerOpenRequest}
+            />
             <button
-              className="toolbar-btn send-btn"
-              onClick={handleSend}
-              disabled={disabled || (!value.trim() && attachments.length === 0)}
-              title="发送"
-              aria-label="发送消息"
+              className={`toolbar-btn send-btn${disabled ? ' stop-btn' : ''}`}
+              onClick={disabled ? onStop : handleSend}
+              disabled={!disabled && !value.trim() && attachments.length === 0}
+              title={disabled ? '停止生成' : '发送'}
+              aria-label={disabled ? '停止生成' : '发送消息'}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M2.5 2.5l11 5.5-11 5.5v-4l7-1.5-7-1.5v-4z"/>
-              </svg>
+              {disabled ? (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
+                  <rect x="3.5" y="3.5" width="7" height="7" rx="1"/>
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M2.5 2.5l11 5.5-11 5.5v-4l7-1.5-7-1.5v-4z"/>
+                </svg>
+              )}
             </button>
           </div>
         </div>

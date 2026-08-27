@@ -21,6 +21,26 @@ export interface AIStreamResult {
   error?: string
 }
 
+export type AIModelListErrorCode =
+  | 'missing-base-url'
+  | 'missing-api-key'
+  | 'invalid-url'
+  | 'authentication'
+  | 'endpoint-not-found'
+  | 'invalid-response'
+  | 'network'
+
+export interface AIModelListResult {
+  ok: boolean
+  models: string[]
+  baseUrl: string
+  baseUrlAdjusted: boolean
+  configuredModelValid: boolean
+  httpStatus?: number
+  errorCode?: AIModelListErrorCode
+  message: string
+}
+
 export interface ParsedStreamEvent {
   text: string
   done: boolean

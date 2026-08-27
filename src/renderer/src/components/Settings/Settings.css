@@ -273,9 +273,39 @@
   gap: 7px;
 }
 
-.settings-model-row input {
+.settings-model-row input,
+.settings-model-row .searchable-model-picker,
+.settings-model-manual {
   min-width: 0;
   flex: 1;
+}
+
+.settings-model-manual {
+  display: flex;
+  gap: 5px;
+}
+
+.settings-model-manual input {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-model-mode-btn {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.settings-model-mode-btn:hover {
+  border-color: var(--accent);
+  background: var(--hover-bg);
+  color: var(--text-primary);
 }
 
 .settings-fetch-btn {
@@ -308,6 +338,63 @@
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.4;
+}
+
+.settings-field input[aria-invalid="true"] {
+  border-color: var(--error-border);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 12%, transparent);
+}
+
+.settings-provider-check {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.settings-provider-check.success {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.settings-provider-check.warning {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.settings-provider-check.error {
+  border-color: var(--error-border);
+  background: color-mix(in srgb, var(--error) 7%, transparent);
+  color: var(--error);
+}
+
+.settings-provider-check-icon {
+  display: grid;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.settings-provider-check strong,
+.settings-provider-check > span:last-child > span {
+  display: block;
+}
+
+.settings-provider-check strong {
+  margin-bottom: 2px;
+  color: currentColor;
+  font-size: 12px;
 }
 
 .settings-save-status {

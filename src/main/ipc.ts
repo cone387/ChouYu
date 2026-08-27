@@ -2,11 +2,11 @@ import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app } from 'el
 import fs from 'fs'
 import path from 'path'
 import { sanitizeConfigPatch } from '../shared/config'
-import type { AIChatMessage, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
+import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { setClipboardWatcherEnabled } from './clipboard'
 import { initAutoUpdater } from './updater'
-import { streamAIChat } from './ai'
+import { fetchProviderModels, streamAIChat } from './ai'
 import {
   getConfig,
   saveConfig,
@@ -133,27 +133,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return { type: 'text', data: text, name: path.basename(filePath) }
   })
 
-  ipcMain.handle('fetch-models', async () => {
+  ipcMain.handle('fetch-models', async (): Promise<AIModelListResult> => {
     const config = getConfig()
-    if (!config.baseUrl || !config.apiKey) return []
-    try {
-      const baseUrl = new URL(config.baseUrl)
-      if (!['http:', 'https:'].includes(baseUrl.protocol)) return []
-      const url = config.baseUrl.replace(/\/+$/, '') + '/models'
-      const headers = config.provider === 'claude'
-        ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' }
-        : { 'Authorization': `Bearer ${config.apiKey}` }
-      const resp = await fetch(url, {
-        headers,
-        signal: AbortSignal.timeout(10_000)
-      })
-      if (!resp.ok) return []
-      const json = (await resp.json()) as { data?: { id?: string }[] }
-      const models = json.data || []
-      return models.map((m) => m.id).filter(Boolean)
-    } catch {
-      return []
+    const result = await fetchProviderModels(config)
+    if (result.ok && result.baseUrlAdjusted) {
+      saveConfig({ baseUrl: result.baseUrl })
+      mainWindow.webContents.send('config:changed', getConfig())
     }
+    return result
   })
 
   ipcMain.handle('ai:stream', async (event, rawRequest): Promise<AIStreamResult> => {

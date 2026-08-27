@@ -9,6 +9,7 @@ export interface Message {
   content: string
   timestamp: number
   imageUrl?: string
+  responseStatus?: 'error' | 'stopped'
   pluginData?: unknown
 }
 

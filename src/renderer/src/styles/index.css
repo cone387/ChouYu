@@ -22,6 +22,12 @@
   --focus-ring: rgba(108, 92, 231, 0.24);
   --error: #b42318;
   --error-border: rgba(180, 35, 24, 0.35);
+  --success: #18794e;
+  --success-border: rgba(24, 121, 78, 0.28);
+  --success-bg: rgba(24, 121, 78, 0.07);
+  --warning: #9a6700;
+  --warning-border: rgba(154, 103, 0, 0.3);
+  --warning-bg: rgba(154, 103, 0, 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -49,6 +55,12 @@
     --focus-ring: rgba(166, 153, 255, 0.35);
     --error: #ff8a80;
     --error-border: rgba(255, 138, 128, 0.45);
+    --success: #6ee7a8;
+    --success-border: rgba(110, 231, 168, 0.35);
+    --success-bg: rgba(110, 231, 168, 0.08);
+    --warning: #ffd166;
+    --warning-border: rgba(255, 209, 102, 0.38);
+    --warning-bg: rgba(255, 209, 102, 0.08);
   }
 }
 

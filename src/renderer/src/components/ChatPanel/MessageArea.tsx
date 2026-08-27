@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Message } from '../../shared/types'
 import PluginMessageCard from './PluginMessageCard'
+import { getConversationForRetry } from '../../core/conversation-actions'
 
 interface MessageAreaProps {
   messages: Message[]
   isStreaming: boolean
+  onRetry?: (messageId: string) => void
 }
 
 function formatTime(ts: number) {
@@ -61,7 +63,7 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ messages, isStreaming }: MessageAreaProps) {
+export default function MessageArea({ messages, isStreaming, onRetry }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
 
@@ -76,8 +78,10 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
 
   return (
     <div className="message-area" aria-live="polite" aria-busy={isStreaming}>
-      {messages.map((msg) => (
-        <div key={msg.id} className={`message message-${msg.role}`}>
+      {messages.map((msg) => {
+        const canRetry = !isStreaming && getConversationForRetry(messages, msg.id) !== null
+        return (
+        <div key={msg.id} className={`message message-${msg.role}${msg.responseStatus ? ` message-${msg.responseStatus}` : ''}`}>
           {msg.role === 'assistant' && (
             <div className="message-avatar" aria-hidden="true">
               <svg width="28" height="28" viewBox="0 0 80 80">
@@ -115,13 +119,27 @@ export default function MessageArea({ messages, isStreaming }: MessageAreaProps)
             </div>
             <div className="message-meta">
               <span className="message-time">{formatTime(msg.timestamp)}</span>
+              {msg.responseStatus === 'stopped' && <span className="message-state">已停止</span>}
               {msg.role === 'assistant' && msg.content && (
                 <CopyButton text={msg.content} />
+              )}
+              {canRetry && (
+                <button
+                  className="message-retry-btn"
+                  onClick={() => onRetry?.(msg.id)}
+                  aria-label={msg.responseStatus === 'error' ? '重试失败的回复' : '重新生成回复'}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M13 5V2l-2 2A5.5 5.5 0 1013.5 8"/>
+                  </svg>
+                  {msg.responseStatus === 'error' ? '重试' : '重新生成'}
+                </button>
               )}
             </div>
           </div>
         </div>
-      ))}
+        )
+      })}
       {isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
         <div className="message message-assistant">
           <div className="message-avatar" aria-hidden="true">

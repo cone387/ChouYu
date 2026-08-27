@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG, PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH } from '../
 import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
 import { loadMessages, saveMessages, clearMessages } from '../../core/memory'
+import { getConversationForRetry } from '../../core/conversation-actions'
 import './ChatPanel.css'
 
 interface ChatPanelProps {
@@ -38,6 +39,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [activePluginForInput, setActivePluginForInput] = useState<PluginInfo | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const activeResponseIdRef = useRef<string | null>(null)
   const happyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
@@ -182,6 +184,104 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   const pluginCommands = plugins.map((p) => ({ cmd: '/' + p.command, desc: p.description }))
 
+  const generateAIResponse = useCallback(async (conversation: Message[]) => {
+    const systemPrompt = buildSystemPrompt(config.soulMd)
+    const history = buildMessages(conversation)
+    const aiMsgId = `${Date.now()}-assistant`
+    let accumulated = ''
+    const controller = new AbortController()
+    abortRef.current = controller
+    activeResponseIdRef.current = aiMsgId
+    onPetStateChange('thinking')
+    setIsStreaming(true)
+
+    try {
+      await streamChat(
+        history,
+        systemPrompt,
+        config,
+        (chunk, done) => {
+          if (controller.signal.aborted) return
+          if (done) {
+            activeResponseIdRef.current = null
+            finishPetResponse()
+            setIsStreaming(false)
+            return
+          }
+          accumulated += chunk
+          onPetStateChange('talking')
+          setMessages((prev) => {
+            const existing = prev.find((message) => message.id === aiMsgId)
+            if (existing) {
+              return prev.map((message) => message.id === aiMsgId
+                ? { ...message, content: accumulated, responseStatus: undefined }
+                : message)
+            }
+            return [...prev, {
+              id: aiMsgId,
+              role: 'assistant',
+              content: accumulated,
+              timestamp: Date.now()
+            }]
+          })
+        },
+        controller.signal
+      )
+    } catch (error) {
+      activeResponseIdRef.current = null
+      setIsStreaming(false)
+      onPetStateChange('idle')
+      if (error instanceof Error && error.name === 'AbortError') return
+      const message = error instanceof Error ? error.message : '未知错误'
+      const errorMsg: Message = {
+        id: aiMsgId,
+        role: 'assistant',
+        content: `请求失败：${message}`,
+        timestamp: Date.now(),
+        responseStatus: 'error'
+      }
+      setMessages((prev) => {
+        const existing = prev.find((item) => item.id === aiMsgId)
+        if (existing) return prev.map((item) => item.id === aiMsgId ? errorMsg : item)
+        return [...prev, errorMsg]
+      })
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null
+    }
+  }, [config, finishPetResponse, onPetStateChange])
+
+  const handleStopGeneration = useCallback(() => {
+    const responseId = activeResponseIdRef.current
+    abortRef.current?.abort()
+    activeResponseIdRef.current = null
+    setIsStreaming(false)
+    onPetStateChange('idle')
+    if (!responseId) return
+    setMessages((prev) => {
+      const existing = prev.find((message) => message.id === responseId)
+      if (existing) {
+        return prev.map((message) => message.id === responseId
+          ? { ...message, responseStatus: 'stopped' }
+          : message)
+      }
+      return [...prev, {
+        id: responseId,
+        role: 'assistant',
+        content: '已停止生成。',
+        timestamp: Date.now(),
+        responseStatus: 'stopped'
+      }]
+    })
+  }, [onPetStateChange])
+
+  const retryAssistantMessage = useCallback((messageId: string) => {
+    if (isStreaming) return
+    const conversation = getConversationForRetry(messages, messageId)
+    if (!conversation) return
+    setMessages(conversation)
+    void generateAIResponse(conversation)
+  }, [messages, isStreaming, generateAIResponse])
+
   const handleSend = async (content: string, attachments?: PendingAttachment[]) => {
     if (happyTimerRef.current) {
       clearTimeout(happyTimerRef.current)
@@ -220,6 +320,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               systemPrompt,
               config,
               (chunk, done) => {
+                if (petAbort.signal.aborted) return
                 if (done) {
                   finishPetResponse()
                   setIsStreaming(false)
@@ -326,60 +427,12 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
     setShowHistory(true)
-    onPetStateChange('thinking')
-    setIsStreaming(true)
-
-    const systemPrompt = buildSystemPrompt(config.soulMd)
-    const history = buildMessages(newMessages)
-
-    const aiMsgId = (Date.now() + 1).toString()
-    let accumulated = ''
-
-    abortRef.current = new AbortController()
-
-    try {
-      await streamChat(
-        history,
-        systemPrompt,
-        config,
-        (chunk, done) => {
-          if (done) {
-            finishPetResponse()
-            setIsStreaming(false)
-            return
-          }
-          accumulated += chunk
-          onPetStateChange('talking')
-          setMessages((prev) => {
-            const existing = prev.find((m) => m.id === aiMsgId)
-            if (existing) {
-              return prev.map((m) => m.id === aiMsgId ? { ...m, content: accumulated } : m)
-            }
-            return [...prev, { id: aiMsgId, role: 'assistant', content: accumulated, timestamp: Date.now() }]
-          })
-        },
-        abortRef.current.signal
-      )
-    } catch (err: any) {
-      if (err.name === 'AbortError') return
-      const errorMsg: Message = {
-        id: aiMsgId,
-        role: 'assistant',
-        content: `出错了：${err.message}\n\n请在设置中检查 API Key 和 Base URL 配置。`,
-        timestamp: Date.now()
-      }
-      setMessages((prev) => {
-        const existing = prev.find((m) => m.id === aiMsgId)
-        if (existing) return prev.map((m) => m.id === aiMsgId ? errorMsg : m)
-        return [...prev, errorMsg]
-      })
-      onPetStateChange('idle')
-      setIsStreaming(false)
-    }
+    await generateAIResponse(newMessages)
   }
 
   const handleNewTopic = () => {
     if (abortRef.current) abortRef.current.abort()
+    activeResponseIdRef.current = null
     setMessages([])
     clearMessages()
     setShowHistory(false)
@@ -445,8 +498,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               onClose={onClose}
             />
           </div>
-          {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} />}
-          <InputArea onSend={handleSend} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} plugins={plugins} pluginCommands={pluginCommands} initialActivePlugin={activePluginForInput} onInitialPluginConsumed={() => setActivePluginForInput(null)} initialAttachment={pendingAttachment} onInitialAttachmentConsumed={onPendingAttachmentConsumed} />
+          {showHistory && <MessageArea messages={messages} isStreaming={isStreaming} onRetry={retryAssistantMessage} />}
+          <InputArea onSend={handleSend} onStop={handleStopGeneration} disabled={isStreaming} model={config.model} onModelChange={handleModelChange} onScreenshot={onScreenshot} plugins={plugins} pluginCommands={pluginCommands} initialActivePlugin={activePluginForInput} onInitialPluginConsumed={() => setActivePluginForInput(null)} initialAttachment={pendingAttachment} onInitialAttachmentConsumed={onPendingAttachmentConsumed} />
         </>
       )}
     </div>

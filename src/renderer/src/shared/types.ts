@@ -1,5 +1,5 @@
 import type { AppConfig } from '../../../shared/config'
-import type { AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
+import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -74,7 +74,7 @@ export interface ElectronAPI {
   log: (msg: string) => void
   takeScreenshot: (hideWindow?: boolean) => Promise<string | null>
   openFileDialog: () => Promise<{ type: 'image' | 'text'; data: string; name: string } | null>
-  fetchModels: () => Promise<string[]>
+  fetchModels: () => Promise<AIModelListResult>
   ai: {
     startStream: (request: AIStreamRequest) => Promise<AIStreamResult>
     cancelStream: (requestId: string) => void
@@ -126,6 +126,7 @@ export interface Message {
   content: string
   timestamp: number
   imageUrl?: string
+  responseStatus?: 'error' | 'stopped'
   /** Plugin result data - if present, render as plugin card instead of markdown */
   pluginData?: PluginMessageData
 }

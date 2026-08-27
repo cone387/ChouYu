@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { AppConfig, PluginInfo } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
 import { DEFAULT_SOUL_MD } from '../../../../shared/config'
+import type { AIModelListResult } from '../../../../shared/ai'
 import PluginSettingsTab from './PluginSettingsTab'
+import ModelPicker from '../ModelPicker/ModelPicker'
 import './Settings.css'
 
 interface SettingsProps {
@@ -29,6 +31,8 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
   const [saveStatus, setSaveStatus] = useState('')
   const [modelOptions, setModelOptions] = useState<string[]>([])
   const [modelFetchStatus, setModelFetchStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle')
+  const [providerCheck, setProviderCheck] = useState<AIModelListResult | null>(null)
+  const [manualModelEntry, setManualModelEntry] = useState(false)
 
   const fetchAvailableModels = useCallback(async () => {
     setModelFetchStatus('loading')
@@ -43,10 +47,15 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
       })
       setConfig(saved)
       setSaveStatus('配置已保存，将用于下一次对话。')
-      const models = await window.electronAPI.fetchModels()
-      const availableModels = Array.from(new Set(models.filter((item): item is string => Boolean(item && item.trim()))))
+      const result = await window.electronAPI.fetchModels()
+      setProviderCheck(result)
+      if (result.baseUrlAdjusted) {
+        setConfig((previous) => ({ ...previous, baseUrl: result.baseUrl }))
+      }
+      const availableModels = result.models
       setModelOptions(availableModels)
-      setModelFetchStatus(availableModels.length > 0 ? 'ready' : 'unavailable')
+      setModelFetchStatus(result.ok ? 'ready' : 'unavailable')
+      if (result.ok) setManualModelEntry(false)
     } catch (error) {
       setModelOptions([])
       setModelFetchStatus('unavailable')
@@ -100,6 +109,8 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
     if (patch.provider || patch.baseUrl !== undefined || patch.apiKey !== undefined) {
       setModelOptions([])
       setModelFetchStatus('idle')
+      setProviderCheck(null)
+      setManualModelEntry(false)
     }
     try {
       const saved = await window.electronAPI.db.saveConfig(patch)
@@ -114,6 +125,10 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
       setSaveError(error instanceof Error ? error.message : '设置保存失败')
     }
   }
+
+  const configuredModelValid = providerCheck?.ok
+    ? providerCheck.models.includes(config.model)
+    : null
 
   return (
     <div className="settings-panel">
@@ -195,33 +210,75 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
               <div className="settings-field">
                 <label htmlFor="settings-model">默认模型</label>
                 <div className="settings-model-row">
-                  <input
-                    id="settings-model"
-                    type="text"
-                    list="settings-model-options"
-                    value={config.model}
-                    onChange={(e) => { setConfig((prev) => ({ ...prev, model: e.target.value })); setSaveStatus('修改后移出输入框即可保存。') }}
-                    onBlur={() => { void save({ model: config.model }) }}
-                    placeholder="先获取模型，或手动输入模型名"
-                    aria-describedby="settings-model-help"
-                  />
+                  {modelOptions.length > 0 && !manualModelEntry ? (
+                    <ModelPicker
+                      id="settings-model"
+                      value={config.model}
+                      models={modelOptions}
+                      status={modelFetchStatus === 'idle' ? 'unavailable' : modelFetchStatus}
+                      statusMessage={providerCheck?.message}
+                      onChange={(model) => { void save({ model }) }}
+                      onRefresh={() => { void fetchAvailableModels() }}
+                      onManualRequest={() => setManualModelEntry(true)}
+                      variant="field"
+                      placement="top"
+                      invalid={configuredModelValid === false}
+                      describedBy="settings-model-help"
+                    />
+                  ) : (
+                    <div className="settings-model-manual">
+                      <input
+                        id="settings-model"
+                        type="text"
+                        autoFocus
+                        value={config.model}
+                        onChange={(e) => { setConfig((prev) => ({ ...prev, model: e.target.value })); setSaveStatus('修改后移出输入框即可保存。') }}
+                        onBlur={() => { void save({ model: config.model }) }}
+                        placeholder="手动输入模型名"
+                        aria-describedby="settings-model-help"
+                        aria-invalid={configuredModelValid === false}
+                      />
+                      {modelOptions.length > 0 && (
+                        <button
+                          type="button"
+                          className="settings-model-mode-btn"
+                          onClick={() => setManualModelEntry(false)}
+                        >返回列表</button>
+                      )}
+                    </div>
+                  )}
                   <button
                     type="button"
                     className="settings-fetch-btn"
                     onClick={() => { void fetchAvailableModels() }}
                     disabled={modelFetchStatus === 'loading'}
                   >
-                    {modelFetchStatus === 'loading' ? '获取中…' : '获取模型'}
+                    {modelFetchStatus === 'loading' ? '检测中…' : '测试连接'}
                   </button>
                 </div>
-                <datalist id="settings-model-options">
-                  {modelOptions.map((model) => <option key={model} value={model} />)}
-                </datalist>
                 <div id="settings-model-help" className="settings-model-status" role="status">
-                  {modelFetchStatus === 'idle' && '配置好 Provider、Base URL 和 API Key 后，点击获取模型。'}
+                  {modelFetchStatus === 'idle' && '配置好 Provider、Base URL 和 API Key 后，点击测试连接。'}
                   {modelFetchStatus === 'ready' && `已获取 ${modelOptions.length} 个可用模型。`}
-                  {modelFetchStatus === 'unavailable' && '未获取到模型，请检查配置或手动输入模型名。'}
+                  {modelFetchStatus === 'unavailable' && (providerCheck?.message || '未获取到模型，请检查配置。')}
                 </div>
+                {providerCheck && (
+                  <div
+                    className={`settings-provider-check ${providerCheck.ok ? (configuredModelValid ? 'success' : 'warning') : 'error'}`}
+                    role={providerCheck.ok ? 'status' : 'alert'}
+                    aria-live="polite"
+                  >
+                    <span className="settings-provider-check-icon" aria-hidden="true">
+                      {providerCheck.ok ? (configuredModelValid ? '✓' : '!') : '×'}
+                    </span>
+                    <span>
+                      <strong>{providerCheck.ok ? `服务连接正常 · ${providerCheck.models.length} 个模型` : '连接检测失败'}</strong>
+                      <span>{providerCheck.message}</span>
+                      {providerCheck.ok && configuredModelValid === false && (
+                        <span>当前模型“{config.model}”不可用，请从模型列表中选择一个有效模型。</span>
+                      )}
+                    </span>
+                  </div>
+                )}
                 <div className="settings-save-status" role="status" aria-live="polite">
                   {saveStatus || '设置会自动保存，并在下一次对话时生效。'}
                 </div>
