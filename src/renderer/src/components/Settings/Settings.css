@@ -310,6 +310,14 @@
   line-height: 1.4;
 }
 
+.settings-save-status {
+  min-height: 16px;
+  margin-top: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* Switch */
 .settings-switch {
   position: relative;

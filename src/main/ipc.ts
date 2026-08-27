@@ -2,9 +2,11 @@ import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app } from 'el
 import fs from 'fs'
 import path from 'path'
 import { sanitizeConfigPatch } from '../shared/config'
+import type { AIChatMessage, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { setClipboardWatcherEnabled } from './clipboard'
 import { initAutoUpdater } from './updater'
+import { streamAIChat } from './ai'
 import {
   getConfig,
   saveConfig,
@@ -15,6 +17,41 @@ import {
   setState
 } from './database'
 
+const activeAIRequests = new Map<string, AbortController>()
+
+function getAIRequestKey(senderId: number, requestId: string): string {
+  return `${senderId}:${requestId}`
+}
+
+function parseAIStreamRequest(value: unknown): AIStreamRequest | null {
+  if (!value || typeof value !== 'object') return null
+  const input = value as Record<string, unknown>
+  if (typeof input.requestId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.requestId)) return null
+  if (typeof input.systemPrompt !== 'string' || input.systemPrompt.length > 50_000) return null
+  if (!Array.isArray(input.messages) || input.messages.length > 30) return null
+
+  const messages: AIChatMessage[] = []
+  for (const item of input.messages) {
+    if (!item || typeof item !== 'object') return null
+    const message = item as Record<string, unknown>
+    if (!['user', 'assistant', 'system'].includes(String(message.role))) return null
+    if (typeof message.content !== 'string' || message.content.length > 200_000) return null
+    if (message.imageUrl !== undefined && (typeof message.imageUrl !== 'string' || message.imageUrl.length > 15_000_000)) return null
+    messages.push({
+      role: message.role as AIChatMessage['role'],
+      content: message.content,
+      imageUrl: message.imageUrl as string | undefined
+    })
+  }
+
+  return { requestId: input.requestId, systemPrompt: input.systemPrompt, messages }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message
+  return 'AI 请求失败，请检查 Provider 配置和网络后重试。'
+}
+
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.on('set-ignore-mouse-events', (_event, ignore: boolean) => {
     if (mainWindow) {
@@ -23,6 +60,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       } else {
         mainWindow.setIgnoreMouseEvents(false)
       }
+    }
+  })
+
+  ipcMain.on('set-window-always-on-top', (_event, alwaysOnTop: boolean) => {
+    if (typeof alwaysOnTop === 'boolean' && !mainWindow.isDestroyed()) {
+      mainWindow.setAlwaysOnTop(alwaysOnTop, 'floating')
     }
   })
 
@@ -111,6 +154,44 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     } catch {
       return []
     }
+  })
+
+  ipcMain.handle('ai:stream', async (event, rawRequest): Promise<AIStreamResult> => {
+    const request = parseAIStreamRequest(rawRequest)
+    if (!request) return { ok: false, error: 'AI 请求参数无效。' }
+
+    const requestKey = getAIRequestKey(event.sender.id, request.requestId)
+    activeAIRequests.get(requestKey)?.abort()
+    const controller = new AbortController()
+    activeAIRequests.set(requestKey, controller)
+    const abortWhenDestroyed = () => controller.abort()
+    event.sender.once('destroyed', abortWhenDestroyed)
+
+    try {
+      await streamAIChat(
+        request.messages,
+        request.systemPrompt,
+        getConfig(),
+        (chunk, done) => {
+          if (event.sender.isDestroyed()) return
+          const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk, done }
+          event.sender.send('ai:stream-event', streamEvent)
+        },
+        controller.signal
+      )
+      return { ok: true }
+    } catch (error) {
+      if (controller.signal.aborted) return { ok: false, error: 'AI 请求已取消。' }
+      return { ok: false, error: getErrorMessage(error) }
+    } finally {
+      event.sender.removeListener('destroyed', abortWhenDestroyed)
+      if (activeAIRequests.get(requestKey) === controller) activeAIRequests.delete(requestKey)
+    }
+  })
+
+  ipcMain.on('ai:cancel', (event, requestId: string) => {
+    if (typeof requestId !== 'string') return
+    activeAIRequests.get(getAIRequestKey(event.sender.id, requestId))?.abort()
   })
 
   ipcMain.handle('get-app-version', () => app.getVersion())

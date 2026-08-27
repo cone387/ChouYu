@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppConfig } from '../shared/config'
+import type { AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
@@ -9,12 +10,27 @@ const api = {
   setIgnoreMouseEvents: (ignore: boolean) => {
     ipcRenderer.send('set-ignore-mouse-events', ignore)
   },
+  setWindowAlwaysOnTop: (alwaysOnTop: boolean) => {
+    ipcRenderer.send('set-window-always-on-top', alwaysOnTop)
+  },
   log: (msg: string) => {
     ipcRenderer.send('renderer-log', msg)
   },
   takeScreenshot: (hideWindow?: boolean) => ipcRenderer.invoke('take-screenshot', hideWindow),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   fetchModels: () => ipcRenderer.invoke('fetch-models'),
+  ai: {
+    startStream: (request: AIStreamRequest) =>
+      ipcRenderer.invoke('ai:stream', request) as Promise<AIStreamResult>,
+    cancelStream: (requestId: string) => {
+      ipcRenderer.send('ai:cancel', requestId)
+    },
+    onStreamEvent: (callback: (event: AIStreamEvent) => void) => {
+      const handler = (_event: unknown, streamEvent: AIStreamEvent) => callback(streamEvent)
+      ipcRenderer.on('ai:stream-event', handler)
+      return () => { ipcRenderer.removeListener('ai:stream-event', handler) }
+    }
+  },
   onTogglePanel: (callback: () => void) => {
     ipcRenderer.on('toggle-panel', callback)
     return () => {

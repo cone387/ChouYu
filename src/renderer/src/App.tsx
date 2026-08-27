@@ -53,6 +53,12 @@ function App() {
 
   useEffect(() => window.electronAPI.onConfigChanged(setConfig), [])
 
+  // Keep only the desktop pet and the capture overlay floating above other apps.
+  // Expanded chat/settings behave like a normal window so they do not cover work unnecessarily.
+  useEffect(() => {
+    window.electronAPI.setWindowAlwaysOnTop(!panelVisible || screenshotImage !== null)
+  }, [panelVisible, screenshotImage])
+
   // Clipboard watcher - respect config
   useEffect(() => {
     if (!config.clipboardWatch) return

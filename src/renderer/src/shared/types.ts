@@ -1,4 +1,5 @@
 import type { AppConfig } from '../../../shared/config'
+import type { AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -69,10 +70,16 @@ export interface ElectronAPI {
   setAutoStart: (enabled: boolean) => Promise<void>
   checkForUpdates: () => Promise<void>
   setIgnoreMouseEvents: (ignore: boolean) => void
+  setWindowAlwaysOnTop: (alwaysOnTop: boolean) => void
   log: (msg: string) => void
   takeScreenshot: (hideWindow?: boolean) => Promise<string | null>
   openFileDialog: () => Promise<{ type: 'image' | 'text'; data: string; name: string } | null>
   fetchModels: () => Promise<string[]>
+  ai: {
+    startStream: (request: AIStreamRequest) => Promise<AIStreamResult>
+    cancelStream: (requestId: string) => void
+    onStreamEvent: (callback: (event: AIStreamEvent) => void) => () => void
+  }
   onTogglePanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
   onHidePanel: (callback: () => void) => () => void

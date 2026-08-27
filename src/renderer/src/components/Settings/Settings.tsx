@@ -26,21 +26,34 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
   const [updateStatus, setUpdateStatus] = useState<string>('')
   const [hotkeyDraft, setHotkeyDraft] = useState(DEFAULT_CONFIG.hotkey)
   const [saveError, setSaveError] = useState('')
+  const [saveStatus, setSaveStatus] = useState('')
   const [modelOptions, setModelOptions] = useState<string[]>([])
   const [modelFetchStatus, setModelFetchStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle')
 
   const fetchAvailableModels = useCallback(async () => {
     setModelFetchStatus('loading')
+    setSaveError('')
+    setSaveStatus('正在保存 AI 配置…')
     try {
+      const saved = await window.electronAPI.db.saveConfig({
+        provider: config.provider,
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        model: config.model
+      })
+      setConfig(saved)
+      setSaveStatus('配置已保存，将用于下一次对话。')
       const models = await window.electronAPI.fetchModels()
       const availableModels = Array.from(new Set(models.filter((item): item is string => Boolean(item && item.trim()))))
       setModelOptions(availableModels)
       setModelFetchStatus(availableModels.length > 0 ? 'ready' : 'unavailable')
-    } catch {
+    } catch (error) {
       setModelOptions([])
       setModelFetchStatus('unavailable')
+      setSaveStatus('')
+      setSaveError(error instanceof Error ? error.message : 'AI 配置保存失败')
     }
-  }, [])
+  }, [config.provider, config.baseUrl, config.apiKey, config.model])
 
   useEffect(() => {
     window.electronAPI.db.getConfig().then((loaded) => {
@@ -83,6 +96,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
     const updated = { ...config, ...patch }
     setConfig(updated)
     setSaveError('')
+    setSaveStatus('正在保存…')
     if (patch.provider || patch.baseUrl !== undefined || patch.apiKey !== undefined) {
       setModelOptions([])
       setModelFetchStatus('idle')
@@ -91,10 +105,12 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
       const saved = await window.electronAPI.db.saveConfig(patch)
       setConfig(saved)
       setHotkeyDraft(saved.hotkey)
+      setSaveStatus('配置已保存，将用于下一次对话。')
     } catch (error) {
       const current = await window.electronAPI.db.getConfig()
       setConfig(current)
       setHotkeyDraft(current.hotkey)
+      setSaveStatus('')
       setSaveError(error instanceof Error ? error.message : '设置保存失败')
     }
   }
@@ -155,7 +171,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                   id="settings-base-url"
                   type="text"
                   value={config.baseUrl}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                  onChange={(e) => { setConfig((prev) => ({ ...prev, baseUrl: e.target.value })); setSaveStatus('修改后移出输入框即可保存。') }}
                   onBlur={() => { void save({ baseUrl: config.baseUrl }) }}
                   placeholder="https://api.openai.com/v1"
                 />
@@ -167,7 +183,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                     id="settings-api-key"
                     type={showKey ? 'text' : 'password'}
                     value={config.apiKey}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
+                    onChange={(e) => { setConfig((prev) => ({ ...prev, apiKey: e.target.value })); setSaveStatus('修改后移出输入框即可保存。') }}
                     onBlur={() => { void save({ apiKey: config.apiKey }) }}
                     placeholder="sk-..."
                   />
@@ -184,7 +200,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                     type="text"
                     list="settings-model-options"
                     value={config.model}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, model: e.target.value }))}
+                    onChange={(e) => { setConfig((prev) => ({ ...prev, model: e.target.value })); setSaveStatus('修改后移出输入框即可保存。') }}
                     onBlur={() => { void save({ model: config.model }) }}
                     placeholder="先获取模型，或手动输入模型名"
                     aria-describedby="settings-model-help"
@@ -205,6 +221,9 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                   {modelFetchStatus === 'idle' && '配置好 Provider、Base URL 和 API Key 后，点击获取模型。'}
                   {modelFetchStatus === 'ready' && `已获取 ${modelOptions.length} 个可用模型。`}
                   {modelFetchStatus === 'unavailable' && '未获取到模型，请检查配置或手动输入模型名。'}
+                </div>
+                <div className="settings-save-status" role="status" aria-live="polite">
+                  {saveStatus || '设置会自动保存，并在下一次对话时生效。'}
                 </div>
               </div>
               </div>

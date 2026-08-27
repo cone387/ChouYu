@@ -6,6 +6,14 @@ let registeredPluginHotkeys: string[] = []
 let registeredMainHotkey = ''
 let currentWindow: BrowserWindow | null = null
 
+function focusWithoutChangingWindowMode(window: BrowserWindow): void {
+  if (window.isFocused()) return
+  const wasAlwaysOnTop = window.isAlwaysOnTop()
+  window.setAlwaysOnTop(true, 'screen-saver')
+  window.focus()
+  window.setAlwaysOnTop(wasAlwaysOnTop, 'floating')
+}
+
 export function registerHotkey(mainWindow: BrowserWindow): void {
   currentWindow = mainWindow
   const configuredHotkey = getConfig().hotkey
@@ -30,11 +38,7 @@ function registerMainHotkey(accelerator: string): boolean {
     // Focus the window so the textarea can receive keyboard input
     // On Windows, transparent windows need explicit focus
     if (!currentWindow || currentWindow.isDestroyed()) return
-    if (!currentWindow.isFocused()) {
-      currentWindow.setAlwaysOnTop(true, 'screen-saver')
-      currentWindow.focus()
-      currentWindow.setAlwaysOnTop(true, 'floating')
-    }
+    focusWithoutChangingWindowMode(currentWindow)
     currentWindow.webContents.send('toggle-panel')
   })
   if (registered) registeredMainHotkey = accelerator
@@ -73,11 +77,7 @@ function loadPluginHotkeys(mainWindow: BrowserWindow): string[] {
       if (!accelerator) continue
       try {
         const registered = globalShortcut.register(accelerator, () => {
-          if (!mainWindow.isFocused()) {
-            mainWindow.setAlwaysOnTop(true, 'screen-saver')
-            mainWindow.focus()
-            mainWindow.setAlwaysOnTop(true, 'floating')
-          }
+          focusWithoutChangingWindowMode(mainWindow)
           mainWindow.webContents.send('plugin-hotkey', pluginId)
         })
         if (registered) registeredPluginHotkeys.push(accelerator)
