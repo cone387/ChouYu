@@ -18,6 +18,7 @@ import { fetchProviderModels, streamAIChat } from './ai'
 import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
 import {
   type AIToolCall,
+  type ToolCatalogItem,
   type ToolApprovalRequest,
   type ToolExecutionEvent,
   parseToolArguments
@@ -77,6 +78,10 @@ function parseAIStreamRequest(value: unknown): AIStreamRequest | null {
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
   return 'AI 请求失败，请检查 Provider 配置和网络后重试。'
+}
+
+function isToolEnabled(name: string): boolean {
+  return getState(`tool:${name}:enabled`) !== 'false'
 }
 
 function sendToolEvent(
@@ -216,6 +221,18 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return result
   })
 
+  ipcMain.handle('tools:list', (): ToolCatalogItem[] =>
+    getToolDefinitions().map((tool) => ({ ...tool, enabled: isToolEnabled(tool.name) })))
+
+  ipcMain.handle('tools:set-enabled', (_event, name: string, enabled: boolean): ToolCatalogItem[] => {
+    if (typeof name !== 'string' || !/^[a-z][a-z0-9_]{1,63}$/.test(name) || typeof enabled !== 'boolean') {
+      throw new Error('Invalid tool setting')
+    }
+    if (!getRegisteredTool(name)) throw new Error('工具不存在。')
+    setState(`tool:${name}:enabled`, enabled ? 'true' : 'false')
+    return getToolDefinitions().map((tool) => ({ ...tool, enabled: isToolEnabled(tool.name) }))
+  })
+
   ipcMain.handle('get-capture-sources', async (): Promise<CaptureSourceInfo[]> => {
     try {
       const sources = await desktopCapturer.getSources({
@@ -281,10 +298,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         },
         controller.signal,
         config.aiToolsEnabled ? {
-          definitions: getToolDefinitions(),
+          definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)),
           execute: async (call) => {
             const definition = getRegisteredTool(call.name)
             if (!definition) return `工具不存在：${call.name}`
+            if (!isToolEnabled(call.name)) return `工具已被用户禁用：${call.name}`
             const arguments_ = parseToolArguments(call.arguments)
             sendToolEvent(event.sender, {
               requestId: request.requestId,

@@ -171,7 +171,8 @@ describe('provider tool-call stream parsing', () => {
           description: '获取时间',
           inputSchema: { type: 'object', properties: {}, additionalProperties: false },
           risk: 'safe',
-          requiresConfirmation: false
+          requiresConfirmation: false,
+          source: 'builtin'
         }],
         execute
       }

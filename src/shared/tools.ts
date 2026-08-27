@@ -1,4 +1,5 @@
 export type ToolRisk = 'safe' | 'read' | 'write'
+export type ToolSource = 'builtin' | 'plugin'
 export type ToolExecutionStatus = 'requested' | 'running' | 'completed' | 'denied' | 'error'
 
 export interface ToolJsonSchema {
@@ -19,6 +20,11 @@ export interface AIToolDefinition {
   inputSchema: ToolJsonSchema
   risk: ToolRisk
   requiresConfirmation: boolean
+  source: ToolSource
+}
+
+export interface ToolCatalogItem extends AIToolDefinition {
+  enabled: boolean
 }
 
 export interface AIToolCall {

@@ -36,6 +36,7 @@ const tools: RegisteredTool[] = [
     },
     risk: 'safe',
     requiresConfirmation: false,
+    source: 'builtin',
     execute(arguments_) {
       const requestedZone = typeof arguments_.timeZone === 'string' ? arguments_.timeZone.slice(0, 80) : undefined
       let timeZone = requestedZone
@@ -61,6 +62,7 @@ const tools: RegisteredTool[] = [
     inputSchema: emptySchema,
     risk: 'read',
     requiresConfirmation: true,
+    source: 'builtin',
     execute() {
       const text = clipboard.readText().slice(0, 50_000)
       return { content: text || '（剪贴板中没有文本）', summary: text ? `已读取 ${text.length} 个字符` : '剪贴板中没有文本' }
@@ -78,6 +80,7 @@ const tools: RegisteredTool[] = [
     },
     risk: 'write',
     requiresConfirmation: true,
+    source: 'builtin',
     execute(arguments_) {
       const text = typeof arguments_.text === 'string' ? arguments_.text.slice(0, 20_000) : ''
       if (!text) throw new Error('没有提供要写入的文本。')
@@ -92,6 +95,7 @@ const tools: RegisteredTool[] = [
     inputSchema: emptySchema,
     risk: 'read',
     requiresConfirmation: true,
+    source: 'builtin',
     async execute(_arguments, context) {
       const result = await dialog.showOpenDialog(context.mainWindow, {
         title: '选择要交给 ChouYu 的文本文件',
@@ -119,6 +123,7 @@ const tools: RegisteredTool[] = [
     inputSchema: emptySchema,
     risk: 'read',
     requiresConfirmation: true,
+    source: 'builtin',
     async execute() {
       const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 } })
       const names = Array.from(new Set(filterCaptureSources(sources, app.getName()).map((source) => source.name.trim()).filter(Boolean))).slice(0, 50)

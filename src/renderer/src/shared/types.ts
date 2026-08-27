@@ -1,7 +1,7 @@
 import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
 import type { CaptureSourceInfo } from '../../../shared/capture'
-import type { ToolActivityData, ToolApprovalRequest, ToolExecutionEvent } from '../../../shared/tools'
+import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -86,6 +86,10 @@ export interface ElectronAPI {
     onToolApprovalRequest: (callback: (request: ToolApprovalRequest) => void) => () => void
     onToolEvent: (callback: (event: ToolExecutionEvent) => void) => () => void
     onStreamEvent: (callback: (event: AIStreamEvent) => void) => () => void
+  }
+  tools: {
+    list: () => Promise<ToolCatalogItem[]>
+    setEnabled: (name: string, enabled: boolean) => Promise<ToolCatalogItem[]>
   }
   onTogglePanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void

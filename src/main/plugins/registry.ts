@@ -65,6 +65,12 @@ class PluginRegistry {
     }))
   }
 
+  async executeById(pluginId: string, content: string): Promise<PluginMessageData> {
+    const plugin = this.getPlugin(pluginId)
+    if (!plugin) throw new Error(`插件不存在：${pluginId}`)
+    return this.executePlugin(plugin, content)
+  }
+
   private checkCommandConflicts(): void {
     const commands = new Map<string, string>()
     for (const plugin of PLUGINS) {

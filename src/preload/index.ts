@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import type { CaptureSourceInfo } from '../shared/capture'
-import type { ToolApprovalRequest, ToolExecutionEvent } from '../shared/tools'
+import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
@@ -47,6 +47,10 @@ const api = {
       ipcRenderer.on('ai:stream-event', handler)
       return () => { ipcRenderer.removeListener('ai:stream-event', handler) }
     }
+  },
+  tools: {
+    list: () => ipcRenderer.invoke('tools:list') as Promise<ToolCatalogItem[]>,
+    setEnabled: (name: string, enabled: boolean) => ipcRenderer.invoke('tools:set-enabled', name, enabled) as Promise<ToolCatalogItem[]>
   },
   onTogglePanel: (callback: () => void) => {
     ipcRenderer.on('toggle-panel', callback)

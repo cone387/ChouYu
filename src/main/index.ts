@@ -6,6 +6,7 @@ import { registerHotkey } from './hotkey'
 import { initDatabase, getConfig, flushDatabase } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
+import { registerPluginTools } from './tools/plugin-tools'
 import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 
 let mainWindow: BrowserWindow | null = null
@@ -116,6 +117,7 @@ app.whenReady().then(async () => {
 
   // Register plugins and IPC channels synchronously (before window loads renderer)
   pluginRegistry.register()
+  registerPluginTools()
 
   // Create window
   createWindow()
