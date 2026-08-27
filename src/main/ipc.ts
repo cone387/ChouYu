@@ -4,6 +4,12 @@ import path from 'path'
 import { sanitizeConfigPatch } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
+import {
+  type CaptureSourceInfo,
+  filterCaptureSources,
+  getCaptureSourceKind,
+  isValidCaptureSourceId
+} from '../shared/capture'
 import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { setClipboardWatcherEnabled } from './clipboard'
 import { initAutoUpdater } from './updater'
@@ -149,6 +155,47 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       mainWindow.webContents.send('config:changed', getConfig())
     }
     return result
+  })
+
+  ipcMain.handle('get-capture-sources', async (): Promise<CaptureSourceInfo[]> => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['window', 'screen'],
+        thumbnailSize: { width: 320, height: 180 },
+        fetchWindowIcons: true
+      })
+      return filterCaptureSources(sources, app.getName())
+        .slice(0, 40)
+        .map((source) => ({
+          id: source.id,
+          name: source.name.slice(0, 200),
+          kind: getCaptureSourceKind(source.id),
+          thumbnail: source.thumbnail.toDataURL(),
+          appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.resize({ width: 24, height: 24 }).toDataURL() : undefined
+        }))
+    } catch (error) {
+      console.error('Failed to enumerate capture sources:', error)
+      return []
+    }
+  })
+
+  ipcMain.handle('capture-source', async (_event, sourceId: unknown, hideWindow?: boolean) => {
+    if (!isValidCaptureSourceId(sourceId)) throw new Error('Invalid capture source id')
+    const shouldHide = hideWindow !== false
+    if (shouldHide) mainWindow.hide()
+    await new Promise((resolve) => setTimeout(resolve, 160))
+    try {
+      const kind = getCaptureSourceKind(sourceId)
+      const sources = await desktopCapturer.getSources({
+        types: [kind],
+        thumbnailSize: { width: 2560, height: 1600 }
+      })
+      const source = sources.find((candidate) => candidate.id === sourceId)
+      if (!source || source.thumbnail.isEmpty()) throw new Error('捕获源已关闭或不可用。')
+      return source.thumbnail.toDataURL()
+    } finally {
+      if (shouldHide && !mainWindow.isDestroyed()) mainWindow.show()
+    }
   })
 
   ipcMain.handle('ai:stream', async (event, rawRequest): Promise<AIStreamResult> => {

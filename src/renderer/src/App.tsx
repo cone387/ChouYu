@@ -377,6 +377,7 @@ function App() {
           <div className="clipboard-bubble-actions">
             <button onClick={() => handleClipboardAction('translate')}>翻译</button>
             <button onClick={() => handleClipboardAction('summarize')}>总结</button>
+            <button onClick={() => handleClipboardAction('ask')}>询问</button>
             <button onClick={() => setClipboardText(null)} aria-label="关闭剪贴板提示">✕</button>
           </div>
         </div>

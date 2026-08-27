@@ -1,7 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import CommandMenu, { getFilteredCommands } from './CommandMenu'
 import ModelPicker from '../ModelPicker/ModelPicker'
+import WindowCapturePicker, { CaptureAction } from '../WindowCapturePicker/WindowCapturePicker'
 import { PluginInfo } from '../../shared/types'
+import type { CaptureSourceInfo, VisualQuickAction } from '../../../../shared/capture'
+import { VISUAL_ACTION_PROMPTS } from '../../../../shared/capture'
 import {
   getAttachmentValidationError,
   MAX_ATTACHMENT_COUNT,
@@ -41,6 +44,11 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
   const [activePlugin, setActivePlugin] = useState<PluginInfo | null>(null)
   const [showPluginOverflow, setShowPluginOverflow] = useState(false)
   const [attachmentError, setAttachmentError] = useState('')
+  const [showWindowCapture, setShowWindowCapture] = useState(false)
+  const [captureSources, setCaptureSources] = useState<CaptureSourceInfo[]>([])
+  const [captureSourcesLoading, setCaptureSourcesLoading] = useState(false)
+  const [captureSourcesError, setCaptureSourcesError] = useState('')
+  const [recentCaptures, setRecentCaptures] = useState<PendingAttachment[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const resizeTextarea = useCallback(() => {
@@ -242,11 +250,76 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
     setShowScreenshotMenu(false)
     const hide = hidePanel ?? hideWindowOnCapture
     onScreenshot?.(hide, (dataUrl) => {
-      setAttachments((prev) => prev.length < MAX_ATTACHMENT_COUNT
-        ? [...prev, { type: 'image', data: dataUrl, name: `截图${prev.length + 1}.png` }]
-        : prev)
+      const attachment: PendingAttachment = { type: 'image', data: dataUrl, name: `截图${Date.now()}.png` }
+      setAttachments((prev) => prev.length < MAX_ATTACHMENT_COUNT ? [...prev, attachment] : prev)
+      setRecentCaptures((prev) => [attachment, ...prev.filter((item) => item.data !== attachment.data)].slice(0, 5))
     })
   }, [attachments.length, onScreenshot, hideWindowOnCapture])
+
+  const doScreenshotAction = useCallback((action: VisualQuickAction) => {
+    if (disabled) return
+    setShowScreenshotMenu(false)
+    onScreenshot?.(hideWindowOnCapture, (dataUrl) => {
+      const attachment: PendingAttachment = { type: 'image', data: dataUrl, name: `截图${Date.now()}.png` }
+      setRecentCaptures((prev) => [attachment, ...prev.filter((item) => item.data !== attachment.data)].slice(0, 5))
+      onSend(VISUAL_ACTION_PROMPTS[action], [attachment])
+    })
+  }, [disabled, hideWindowOnCapture, onScreenshot, onSend])
+
+  const refreshCaptureSources = useCallback(async () => {
+    setCaptureSourcesLoading(true)
+    setCaptureSourcesError('')
+    try {
+      const sources = await window.electronAPI.getCaptureSources()
+      setCaptureSources(sources)
+      if (sources.length === 0) setCaptureSourcesError('没有读取到可捕获的窗口，请检查系统屏幕录制权限。')
+    } catch (error) {
+      setCaptureSources([])
+      setCaptureSourcesError(error instanceof Error ? error.message : '读取窗口列表失败。')
+    } finally {
+      setCaptureSourcesLoading(false)
+    }
+  }, [])
+
+  const openWindowCapture = useCallback(() => {
+    if (disabled) return
+    setShowScreenshotMenu(false)
+    setShowWindowCapture(true)
+    void refreshCaptureSources()
+  }, [disabled, refreshCaptureSources])
+
+  const captureWindowSource = useCallback(async (source: CaptureSourceInfo, action: CaptureAction) => {
+    if (attachments.length >= MAX_ATTACHMENT_COUNT && action === 'attach') {
+      setShowWindowCapture(false)
+      setAttachmentError(`最多添加 ${MAX_ATTACHMENT_COUNT} 个附件。`)
+      return
+    }
+    setCaptureSourcesLoading(true)
+    setCaptureSourcesError('')
+    try {
+      const dataUrl = await window.electronAPI.captureSource(source.id, true)
+      const safeName = source.name.replace(/[<>:"/\\|?*]/g, '_').slice(0, 60) || '窗口截图'
+      const attachment: PendingAttachment = { type: 'image', data: dataUrl, name: `${safeName}.png` }
+      setRecentCaptures((prev) => [attachment, ...prev.filter((item) => item.data !== attachment.data)].slice(0, 5))
+      setShowWindowCapture(false)
+      if (action === 'attach') {
+        setAttachments((prev) => [...prev, attachment])
+      } else {
+        onSend(VISUAL_ACTION_PROMPTS[action], [attachment])
+      }
+    } catch (error) {
+      setCaptureSourcesError(error instanceof Error ? error.message : '窗口截图失败，请重试。')
+    } finally {
+      setCaptureSourcesLoading(false)
+    }
+  }, [attachments.length, onSend])
+
+  const runVisualAttachmentAction = useCallback((action: VisualQuickAction) => {
+    if (disabled || !attachments.some((attachment) => attachment.type === 'image')) return
+    onSend(VISUAL_ACTION_PROMPTS[action], attachments)
+    setAttachments([])
+    setAttachmentError('')
+  }, [attachments, disabled, onSend])
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -327,21 +400,33 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
       >
         {attachmentError && <div className="attachment-error" role="alert">{attachmentError}</div>}
         {attachments.length > 0 && (
-          <div className="attachment-list">
-            {attachments.map((att, i) => (
-              <div key={i} className="attachment-item">
-                {att.type === 'image' ? (
-                  <img src={att.data} className="attachment-thumb" alt={att.name} onClick={() => setPreviewImage(att.data)} />
-                ) : (
-                  <div className="attachment-file">
-                    <span className="attachment-file-icon">📄</span>
-                    <span className="attachment-file-name">{att.name}</span>
-                  </div>
-                )}
-                <button className="attachment-remove" onClick={() => removeAttachment(i)} aria-label={`移除附件 ${att.name}`}>✕</button>
+          <>
+            <div className="attachment-list">
+              {attachments.map((att, i) => (
+                <div key={i} className="attachment-item">
+                  {att.type === 'image' ? (
+                    <img src={att.data} className="attachment-thumb" alt={att.name} onClick={() => setPreviewImage(att.data)} />
+                  ) : (
+                    <div className="attachment-file">
+                      <span className="attachment-file-icon" aria-hidden="true">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"><path d="M3 1.5h6l4 4v9H3zM9 1.5v4h4"/></svg>
+                      </span>
+                      <span className="attachment-file-name">{att.name}</span>
+                    </div>
+                  )}
+                  <button className="attachment-remove" onClick={() => removeAttachment(i)} aria-label={`移除附件 ${att.name}`}>✕</button>
+                </div>
+              ))}
+            </div>
+            {attachments.some((attachment) => attachment.type === 'image') && (
+              <div className="attachment-quick-actions" aria-label="图片快捷操作">
+                <span>用 AI 处理图片</span>
+                <button type="button" onClick={() => runVisualAttachmentAction('ocr')} disabled={disabled}>识别文字</button>
+                <button type="button" onClick={() => runVisualAttachmentAction('summarize')} disabled={disabled}>总结</button>
+                <button type="button" onClick={() => runVisualAttachmentAction('translate')} disabled={disabled}>翻译</button>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
         <textarea
           ref={textareaRef}
@@ -369,24 +454,51 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
                     <span className="screenshot-menu-label">截图</span>
                     <span className="screenshot-menu-shortcut">Ctrl+Shift+A</span>
                   </button>
-                  <button className="screenshot-menu-item disabled" disabled>
+                  <button className="screenshot-menu-item" onClick={() => doScreenshotAction('ocr')} disabled={disabled}>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                      <rect x="2" y="3" width="12" height="10" rx="1"/><path d="M5 8h6M8 5v6"/>
+                      <path d="M3 5V3h3M10 3h3v2M13 11v2h-3M6 13H3v-2M5 8h6M8 5.5v5"/>
                     </svg>
                     <span className="screenshot-menu-label">文字识别</span>
+                  </button>
+                  <button className="screenshot-menu-item" onClick={openWindowCapture} disabled={disabled}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <rect x="2" y="3" width="12" height="9" rx="1"/><path d="M5 14h6M8 12v2"/>
+                    </svg>
+                    <span className="screenshot-menu-label">窗口或屏幕</span>
                   </button>
                   <button className="screenshot-menu-item disabled" disabled>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                       <rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 10l4-4 3 3 5-5"/>
                     </svg>
-                    <span className="screenshot-menu-label">滚动截图</span>
+                    <span className="screenshot-menu-label">滚动截图（稍后支持）</span>
                   </button>
-                  <button className="screenshot-menu-item disabled" disabled>
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                      <circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="2" fill="currentColor"/>
-                    </svg>
-                    <span className="screenshot-menu-label">录屏</span>
-                  </button>
+                  {recentCaptures.length > 0 && (
+                    <>
+                      <div className="screenshot-menu-divider" />
+                      <div className="recent-captures-label">最近截图</div>
+                      <div className="recent-captures">
+                        {recentCaptures.map((capture, index) => (
+                          <button
+                            key={`${capture.name}-${index}`}
+                            type="button"
+                            onClick={() => {
+                              if (attachments.length >= MAX_ATTACHMENT_COUNT) {
+                                setAttachmentError(`最多添加 ${MAX_ATTACHMENT_COUNT} 个附件。`)
+                                setShowScreenshotMenu(false)
+                                return
+                              }
+                              setAttachments((prev) => [...prev, capture])
+                              setShowScreenshotMenu(false)
+                            }}
+                            aria-label={`再次添加 ${capture.name}`}
+                            title={capture.name}
+                          >
+                            <img src={capture.data} alt="" />
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   <div className="screenshot-menu-divider" />
                   <label className="screenshot-menu-item screenshot-menu-check">
                     <input
@@ -500,6 +612,16 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
           </div>
         </div>
       </div>
+      {showWindowCapture && (
+        <WindowCapturePicker
+          sources={captureSources}
+          loading={captureSourcesLoading}
+          error={captureSourcesError}
+          onClose={() => setShowWindowCapture(false)}
+          onRefresh={() => { void refreshCaptureSources() }}
+          onCapture={(source, action) => { void captureWindowSource(source, action) }}
+        />
+      )}
       {previewImage && (
         <div className="image-preview-overlay" onClick={() => setPreviewImage(null)} role="dialog" aria-modal="true" aria-label="附件图片预览">
           <img src={previewImage} className="image-preview-img" alt="待发送附件预览" onClick={(e) => e.stopPropagation()} />

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
+import type { CaptureSourceInfo } from '../shared/capture'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
@@ -17,6 +18,8 @@ const api = {
     ipcRenderer.send('renderer-log', msg)
   },
   takeScreenshot: (hideWindow?: boolean) => ipcRenderer.invoke('take-screenshot', hideWindow),
+  getCaptureSources: () => ipcRenderer.invoke('get-capture-sources') as Promise<CaptureSourceInfo[]>,
+  captureSource: (sourceId: string, hideWindow?: boolean) => ipcRenderer.invoke('capture-source', sourceId, hideWindow) as Promise<string>,
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   fetchModels: () => ipcRenderer.invoke('fetch-models') as Promise<AIModelListResult>,
   ai: {

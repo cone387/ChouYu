@@ -1,5 +1,6 @@
 import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
+import type { CaptureSourceInfo } from '../../../shared/capture'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -73,6 +74,8 @@ export interface ElectronAPI {
   setWindowAlwaysOnTop: (alwaysOnTop: boolean) => void
   log: (msg: string) => void
   takeScreenshot: (hideWindow?: boolean) => Promise<string | null>
+  getCaptureSources: () => Promise<CaptureSourceInfo[]>
+  captureSource: (sourceId: string, hideWindow?: boolean) => Promise<string>
   openFileDialog: () => Promise<{ type: 'image' | 'text'; data: string; name: string } | null>
   fetchModels: () => Promise<AIModelListResult>
   ai: {

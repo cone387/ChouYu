@@ -646,6 +646,34 @@
   padding: 8px 12px;
 }
 
+.attachment-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px 8px;
+}
+
+.attachment-quick-actions > span {
+  margin-right: 2px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.attachment-quick-actions button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: var(--hover-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.attachment-quick-actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .attachment-item {
   position: relative;
   display: inline-block;
@@ -769,9 +797,44 @@
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
   padding: 4px;
-  min-width: 180px;
+  min-width: 220px;
   animation: cmd-appear 120ms ease-out;
   z-index: 100;
+}
+
+.recent-captures-label {
+  padding: 3px 8px 5px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.recent-captures {
+  display: flex;
+  gap: 5px;
+  padding: 0 6px 5px;
+  overflow-x: auto;
+}
+
+.recent-captures button {
+  width: 44px;
+  height: 32px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0;
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+
+.recent-captures button:hover {
+  border-color: var(--accent);
+}
+
+.recent-captures img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .screenshot-menu-item {
@@ -794,7 +857,8 @@
   background: var(--hover-bg);
 }
 
-.screenshot-menu-item.disabled {
+.screenshot-menu-item.disabled,
+.screenshot-menu-item:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
