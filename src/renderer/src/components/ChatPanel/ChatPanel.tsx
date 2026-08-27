@@ -5,6 +5,8 @@ import InputArea, { PendingAttachment } from './InputArea'
 import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
 import OnboardingCard from '../Onboarding/OnboardingCard'
+import ToolApprovalDialog from '../ToolApproval/ToolApprovalDialog'
+import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
 import {
   Message,
   PetState,
@@ -60,8 +62,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [activePluginForInput, setActivePluginForInput] = useState<PluginInfo | null>(null)
+  const [toolApprovalRequest, setToolApprovalRequest] = useState<ToolApprovalRequest | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const activeResponseIdRef = useRef<string | null>(null)
+  const toolBoundaryRef = useRef(false)
   const happyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
@@ -94,6 +98,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     abortRef.current?.abort()
     abortRef.current = null
     activeResponseIdRef.current = null
+    setToolApprovalRequest(null)
     setIsStreaming(false)
     onPetStateChange('idle')
   }, [onPetStateChange])
@@ -124,6 +129,35 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     setConfig(nextConfig)
     if (nextConfig.apiKey) setShowOnboarding(false)
   }), [])
+
+  useEffect(() => {
+    const unsubscribeApproval = window.electronAPI.ai.onToolApprovalRequest(setToolApprovalRequest)
+    const unsubscribeEvents = window.electronAPI.ai.onToolEvent((event: ToolExecutionEvent) => {
+      if (['completed', 'denied', 'error'].includes(event.status)) {
+        toolBoundaryRef.current = true
+        setToolApprovalRequest((current) => current?.callId === event.callId ? null : current)
+      }
+      setMessages((previous) => {
+        const id = `tool-${event.callId}`
+        const toolData = {
+          callId: event.callId,
+          name: event.name,
+          displayName: event.displayName,
+          risk: event.risk,
+          status: event.status,
+          summary: event.summary
+        }
+        const existing = previous.find((message) => message.id === id)
+        return existing
+          ? previous.map((message) => message.id === id ? { ...message, toolData } : message)
+          : [...previous, { id, role: 'assistant', content: '', timestamp: Date.now(), toolData }]
+      })
+    })
+    return () => {
+      unsubscribeApproval()
+      unsubscribeEvents()
+    }
+  }, [])
 
   useEffect(() => {
     if (initialShowSettings) {
@@ -298,11 +332,15 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const generateAIResponse = useCallback(async (conversation: Message[]) => {
     const systemPrompt = buildSystemPrompt(config.soulMd)
     const history = buildMessages(conversation)
-    const aiMsgId = `${Date.now()}-assistant`
+    const responseBaseId = `${Date.now()}-assistant`
+    let segmentIndex = 0
+    let aiMsgId = responseBaseId
     let accumulated = ''
     const controller = new AbortController()
     abortRef.current = controller
     activeResponseIdRef.current = aiMsgId
+    toolBoundaryRef.current = false
+    setToolApprovalRequest(null)
     onPetStateChange('thinking')
     setIsStreaming(true)
 
@@ -318,6 +356,13 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             finishPetResponse()
             setIsStreaming(false)
             return
+          }
+          if (chunk && toolBoundaryRef.current) {
+            segmentIndex += 1
+            aiMsgId = `${responseBaseId}-${segmentIndex}`
+            accumulated = ''
+            activeResponseIdRef.current = aiMsgId
+            toolBoundaryRef.current = false
           }
           accumulated += chunk
           onPetStateChange('talking')
@@ -362,6 +407,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     abortRef.current?.abort()
     abortRef.current = null
     activeResponseIdRef.current = null
+    setToolApprovalRequest(null)
     setIsStreaming(false)
     onPetStateChange('idle')
     if (!responseId) return
@@ -553,6 +599,13 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     setShowSettings(true)
   }, [])
 
+  const resolveToolApproval = useCallback((approved: boolean) => {
+    const request = toolApprovalRequest
+    if (!request) return
+    window.electronAPI.ai.resolveToolRequest(request.approvalId, approved)
+    setToolApprovalRequest(null)
+  }, [toolApprovalRequest])
+
   return (
     <div
       ref={panelRef}
@@ -652,6 +705,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           </>
         )}
       </div>
+      {toolApprovalRequest && (
+        <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />
+      )}
     </div>
   )
 }

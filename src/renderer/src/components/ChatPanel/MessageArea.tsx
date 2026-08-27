@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Message } from '../../shared/types'
 import PluginMessageCard from './PluginMessageCard'
+import ToolActivityCard from './ToolActivityCard'
 import { getConversationForRetry } from '../../core/conversation-actions'
 
 interface MessageAreaProps {
@@ -108,7 +109,9 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
               {msg.imageUrl && (
                 <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
               )}
-              {msg.pluginData ? (
+              {msg.toolData ? (
+                <ToolActivityCard data={msg.toolData} />
+              ) : msg.pluginData ? (
                 <PluginMessageCard data={msg.pluginData} />
               ) : msg.role === 'assistant' ? (
                 <ReactMarkdown
@@ -129,7 +132,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
             <div className="message-meta">
               <span className="message-time">{formatTime(msg.timestamp)}</span>
               {msg.responseStatus === 'stopped' && <span className="message-state">已停止</span>}
-              {msg.role === 'assistant' && msg.content && (
+              {msg.role === 'assistant' && msg.content && !msg.toolData && (
                 <CopyButton text={msg.content} />
               )}
               {canRetry && (

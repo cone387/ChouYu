@@ -406,6 +406,18 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
                   <span className="settings-switch-slider" />
                 </label>
               </div>
+              <div className="settings-field settings-field-row">
+                <label>AI 工具调用</label>
+                <label className="settings-switch">
+                  <input
+                    type="checkbox"
+                    aria-label="AI 工具调用"
+                    checked={config.aiToolsEnabled}
+                    onChange={(e) => save({ aiToolsEnabled: e.target.checked })}
+                  />
+                  <span className="settings-switch-slider" />
+                </label>
+              </div>
               </div>
             </div>
           )}

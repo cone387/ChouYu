@@ -1,6 +1,7 @@
 import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
 import type { CaptureSourceInfo } from '../../../shared/capture'
+import type { ToolActivityData, ToolApprovalRequest, ToolExecutionEvent } from '../../../shared/tools'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -81,6 +82,9 @@ export interface ElectronAPI {
   ai: {
     startStream: (request: AIStreamRequest) => Promise<AIStreamResult>
     cancelStream: (requestId: string) => void
+    resolveToolRequest: (approvalId: string, approved: boolean) => void
+    onToolApprovalRequest: (callback: (request: ToolApprovalRequest) => void) => () => void
+    onToolEvent: (callback: (event: ToolExecutionEvent) => void) => () => void
     onStreamEvent: (callback: (event: AIStreamEvent) => void) => () => void
   }
   onTogglePanel: (callback: () => void) => () => void
@@ -137,6 +141,7 @@ export interface Message {
   timestamp: number
   imageUrl?: string
   responseStatus?: 'error' | 'stopped'
+  toolData?: ToolActivityData
   /** Plugin result data - if present, render as plugin card instead of markdown */
   pluginData?: PluginMessageData
 }

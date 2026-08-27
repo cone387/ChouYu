@@ -1,0 +1,129 @@
+.tool-approval-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border-radius: inherit;
+  background: rgba(9, 9, 16, 0.48);
+  backdrop-filter: blur(3px);
+  z-index: 500;
+}
+
+.tool-approval-dialog {
+  width: min(360px, 100%);
+  padding: 16px;
+  border: 1px solid var(--warning-border);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-lg);
+  animation: tool-approval-in 180ms ease-out;
+}
+
+@keyframes tool-approval-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.tool-approval-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.tool-approval-copy {
+  margin-top: 10px;
+}
+
+.tool-approval-kicker {
+  color: var(--warning);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.tool-approval-copy h2 {
+  margin: 3px 0 4px;
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.tool-approval-copy p,
+.tool-approval-help {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.tool-risk-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 11px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 9px;
+}
+
+.tool-risk-label span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.risk-write .tool-risk-label,
+.risk-write .tool-approval-icon {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  color: var(--error);
+}
+
+.tool-approval-arguments {
+  max-height: 120px;
+  margin: 10px 0 8px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 9px;
+  background: var(--code-bg);
+  color: var(--text-secondary);
+  font-family: 'Cascadia Code', monospace;
+  font-size: 9px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.tool-approval-actions button {
+  min-height: 32px;
+  border-radius: 8px;
+  padding: 6px 11px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.tool-approval-actions .secondary {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.tool-approval-actions .primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}

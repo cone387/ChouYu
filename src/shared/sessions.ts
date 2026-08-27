@@ -7,6 +7,7 @@ export interface SessionMessageLike {
   content: string
   timestamp?: number
   imageUrl?: string
+  toolData?: { displayName: string; status: string; summary?: string }
 }
 
 export interface SessionSummaryLike {
@@ -55,6 +56,10 @@ export function formatSessionMarkdown(
   ]
 
   for (const message of session.messages) {
+    if (message.toolData) {
+      lines.push(`> 工具：${message.toolData.displayName} · ${message.toolData.status}${message.toolData.summary ? ` · ${message.toolData.summary}` : ''}`, '')
+      continue
+    }
     const role = message.role === 'user' ? '用户' : message.role === 'assistant' ? 'ChouYu' : '系统'
     const timestamp = message.timestamp ? ` · ${new Date(message.timestamp).toLocaleString('zh-CN')}` : ''
     lines.push(`## ${role}${timestamp}`, '')

@@ -7,8 +7,14 @@ import {
   parseClaudeStreamLine,
   parseOpenAIStreamLine
 } from '../shared/ai'
+import type { AIToolCall, AIToolDefinition } from '../shared/tools'
 
 export type AIStreamCallback = (chunk: string, done: boolean) => void
+
+export interface AIToolRuntime {
+  definitions: AIToolDefinition[]
+  execute: (call: AIToolCall) => Promise<string>
+}
 
 const REQUEST_TIMEOUT_MS = 60_000
 const MODEL_LIST_TIMEOUT_MS = 10_000
@@ -189,7 +195,8 @@ export async function streamAIChat(
   systemPrompt: string,
   config: AppConfig,
   onChunk: AIStreamCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  toolRuntime?: AIToolRuntime
 ): Promise<void> {
   if (!config.apiKey.trim()) {
     throw new Error('尚未配置 API Key，请先打开设置完成配置。')
@@ -200,9 +207,9 @@ export async function streamAIChat(
 
   console.log(`[AI] provider=${config.provider} model=${config.model} baseUrl=${config.baseUrl}`)
   if (config.provider === 'claude') {
-    await streamClaude(messages, systemPrompt, config, onChunk, signal)
+    await streamClaude(messages, systemPrompt, config, onChunk, signal, toolRuntime)
   } else {
-    await streamOpenAI(messages, systemPrompt, config, onChunk, signal)
+    await streamOpenAI(messages, systemPrompt, config, onChunk, signal, toolRuntime)
   }
 }
 
@@ -223,32 +230,119 @@ async function streamOpenAI(
   systemPrompt: string,
   config: AppConfig,
   onChunk: AIStreamCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  toolRuntime?: AIToolRuntime
 ): Promise<void> {
-  const apiMessages = [
+  const apiMessages: Array<Record<string, unknown>> = [
     { role: 'system', content: systemPrompt },
     ...messages.map((message) => ({ role: message.role, content: buildOpenAIContent(message) }))
   ]
-  const guard = createRequestGuard(signal)
+  const tools = toolRuntime?.definitions.map((tool) => ({
+    type: 'function',
+    function: { name: tool.name, description: tool.description, parameters: tool.inputSchema }
+  }))
 
+  for (let round = 0; round < 4; round++) {
+    const result = await streamOpenAIRound(apiMessages, config, onChunk, signal, tools)
+    if (result.toolCalls.length === 0 || !toolRuntime) {
+      onChunk('', true)
+      return
+    }
+
+    apiMessages.push({
+      role: 'assistant',
+      content: result.text || null,
+      tool_calls: result.toolCalls.map((call) => ({
+        id: call.id,
+        type: 'function',
+        function: { name: call.name, arguments: call.arguments }
+      }))
+    })
+    for (const call of result.toolCalls) {
+      const content = await toolRuntime.execute(call)
+      apiMessages.push({ role: 'tool', tool_call_id: call.id, content })
+    }
+  }
+  throw new Error('工具调用次数超过安全上限。')
+}
+
+interface OpenAIToolAccumulator {
+  id: string
+  name: string
+  arguments: string
+}
+
+export function accumulateOpenAIToolCalls(
+  payload: unknown,
+  accumulators: Map<number, OpenAIToolAccumulator>
+): { text: string } {
+  const record = payload && typeof payload === 'object' ? payload as Record<string, any> : {}
+  const delta = record.choices?.[0]?.delta || {}
+  const toolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : []
+  for (const item of toolCalls) {
+    const index = Number.isInteger(item?.index) ? item.index : 0
+    const current = accumulators.get(index) || { id: '', name: '', arguments: '' }
+    if (typeof item?.id === 'string') current.id += item.id
+    if (typeof item?.function?.name === 'string') current.name += item.function.name
+    if (typeof item?.function?.arguments === 'string') current.arguments = (current.arguments + item.function.arguments).slice(0, 50_000)
+    accumulators.set(index, current)
+  }
+  return { text: typeof delta.content === 'string' ? delta.content : '' }
+}
+
+async function streamOpenAIRound(
+  apiMessages: Array<Record<string, unknown>>,
+  config: AppConfig,
+  onChunk: AIStreamCallback,
+  signal?: AbortSignal,
+  tools?: Array<Record<string, unknown>>
+): Promise<{ text: string; toolCalls: AIToolCall[] }> {
+  const guard = createRequestGuard(signal)
   try {
-    const response = await fetch(joinApiUrl(config.baseUrl, 'chat/completions'), {
+    const requestBody: Record<string, unknown> = { model: config.model, messages: apiMessages, stream: true }
+    if (tools?.length) {
+      requestBody.tools = tools
+      requestBody.tool_choice = 'auto'
+    }
+    let response = await fetch(joinApiUrl(config.baseUrl, 'chat/completions'), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify({ model: config.model, messages: apiMessages, stream: true }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify(requestBody),
       signal: guard.signal
     })
-
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 2000)
-      throw new Error(`API error ${response.status}: ${detail}`)
+    if (!response.ok && tools?.length && [400, 404, 422].includes(response.status)) {
+      console.warn(`[AI] ${config.model} rejected tool definitions; retrying without tools`)
+      await response.text().catch(() => '')
+      delete requestBody.tools
+      delete requestBody.tool_choice
+      response = await fetch(joinApiUrl(config.baseUrl, 'chat/completions'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+        body: JSON.stringify(requestBody),
+        signal: guard.signal
+      })
     }
+    if (!response.ok) throw new Error(`API error ${response.status}: ${(await response.text()).slice(0, 2000)}`)
     if (!response.body) throw new Error('API 返回了空响应，请稍后重试。')
 
-    await consumeStream(response.body, parseOpenAIStreamLine, onChunk)
+    const accumulators = new Map<number, OpenAIToolAccumulator>()
+    let text = ''
+    await readSseStream(response.body, (payload) => {
+      const delta = accumulateOpenAIToolCalls(payload, accumulators)
+      if (delta.text) {
+        text += delta.text
+        onChunk(delta.text, false)
+      }
+    })
+    const toolCalls = [...accumulators.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([index, call]) => ({
+        id: call.id || `tool_${Date.now()}_${index}`,
+        name: call.name,
+        arguments: call.arguments || '{}'
+      }))
+      .filter((call) => Boolean(call.name))
+    return { text, toolCalls }
   } catch (error) {
     rethrowRequestError(error, guard)
   } finally {
@@ -280,41 +374,136 @@ async function streamClaude(
   systemPrompt: string,
   config: AppConfig,
   onChunk: AIStreamCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  toolRuntime?: AIToolRuntime
 ): Promise<void> {
-  const apiMessages = messages
+  const apiMessages: Array<Record<string, unknown>> = messages
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .map((message) => ({
       role: message.role as 'user' | 'assistant',
       content: buildClaudeContent(message)
     }))
-  const guard = createRequestGuard(signal)
+  const tools = toolRuntime?.definitions.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.inputSchema
+  }))
 
+  for (let round = 0; round < 4; round++) {
+    const result = await streamClaudeRound(apiMessages, systemPrompt, config, onChunk, signal, tools)
+    if (result.toolCalls.length === 0 || !toolRuntime) {
+      onChunk('', true)
+      return
+    }
+    apiMessages.push({
+      role: 'assistant',
+      content: [
+        ...(result.text ? [{ type: 'text', text: result.text }] : []),
+        ...result.toolCalls.map((call) => ({
+          type: 'tool_use', id: call.id, name: call.name, input: safeParseJson(call.arguments)
+        }))
+      ]
+    })
+    const toolResults = []
+    for (const call of result.toolCalls) {
+      toolResults.push({ type: 'tool_result', tool_use_id: call.id, content: await toolRuntime.execute(call) })
+    }
+    apiMessages.push({ role: 'user', content: toolResults })
+  }
+  throw new Error('工具调用次数超过安全上限。')
+}
+
+interface ClaudeToolAccumulator {
+  id: string
+  name: string
+  arguments: string
+}
+
+export function accumulateClaudeToolCalls(
+  payload: unknown,
+  accumulators: Map<number, ClaudeToolAccumulator>
+): { text: string } {
+  const event = payload && typeof payload === 'object' ? payload as Record<string, any> : {}
+  const index = Number.isInteger(event.index) ? event.index : 0
+  if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+    accumulators.set(index, {
+      id: String(event.content_block.id || ''),
+      name: String(event.content_block.name || ''),
+      arguments: event.content_block.input && Object.keys(event.content_block.input).length
+        ? JSON.stringify(event.content_block.input)
+        : ''
+    })
+  }
+  if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
+    const current = accumulators.get(index) || { id: '', name: '', arguments: '' }
+    current.arguments = (current.arguments + String(event.delta.partial_json || '')).slice(0, 50_000)
+    accumulators.set(index, current)
+  }
+  return {
+    text: event.type === 'content_block_delta' && (event.delta?.type === 'text_delta' || typeof event.delta?.text === 'string')
+      ? String(event.delta.text || '')
+      : ''
+  }
+}
+
+async function streamClaudeRound(
+  apiMessages: Array<Record<string, unknown>>,
+  systemPrompt: string,
+  config: AppConfig,
+  onChunk: AIStreamCallback,
+  signal?: AbortSignal,
+  tools?: Array<Record<string, unknown>>
+): Promise<{ text: string; toolCalls: AIToolCall[] }> {
+  const guard = createRequestGuard(signal)
   try {
-    const response = await fetch(joinApiUrl(config.baseUrl, 'messages'), {
+    const requestBody: Record<string, unknown> = {
+      model: config.model,
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: apiMessages,
+      stream: true
+    }
+    if (tools?.length) requestBody.tools = tools
+    let response = await fetch(joinApiUrl(config.baseUrl, 'messages'), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': config.apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: config.model,
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: apiMessages,
-        stream: true
-      }),
+      headers: { 'Content-Type': 'application/json', 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify(requestBody),
       signal: guard.signal
     })
-
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 2000)
-      throw new Error(`API error ${response.status}: ${detail}`)
+    if (!response.ok && tools?.length && [400, 404, 422].includes(response.status)) {
+      console.warn(`[AI] ${config.model} rejected tool definitions; retrying without tools`)
+      await response.text().catch(() => '')
+      delete requestBody.tools
+      response = await fetch(joinApiUrl(config.baseUrl, 'messages'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify(requestBody),
+        signal: guard.signal
+      })
     }
+    if (!response.ok) throw new Error(`API error ${response.status}: ${(await response.text()).slice(0, 2000)}`)
     if (!response.body) throw new Error('API 返回了空响应，请稍后重试。')
 
-    await consumeStream(response.body, parseClaudeStreamLine, onChunk)
+    const accumulators = new Map<number, ClaudeToolAccumulator>()
+    let text = ''
+    await readSseStream(response.body, (payload) => {
+      const delta = accumulateClaudeToolCalls(payload, accumulators)
+      if (delta.text) {
+        text += delta.text
+        onChunk(delta.text, false)
+      }
+    })
+    return {
+      text,
+      toolCalls: [...accumulators.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([index, call]) => ({
+          id: call.id || `tool_${Date.now()}_${index}`,
+          name: call.name,
+          arguments: call.arguments || '{}'
+        }))
+        .filter((call) => Boolean(call.name))
+    }
   } catch (error) {
     rethrowRequestError(error, guard)
   } finally {
@@ -322,26 +511,25 @@ async function streamClaude(
   }
 }
 
-async function consumeStream(
-  body: ReadableStream<Uint8Array>,
-  parseLine: (line: string) => { text: string; done: boolean } | null,
-  onChunk: AIStreamCallback
-): Promise<void> {
+function safeParseJson(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+async function readSseStream(body: ReadableStream<Uint8Array>, onPayload: (payload: unknown) => void): Promise<void> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let completed = false
-
-  const finish = () => {
-    if (completed) return
-    completed = true
-    onChunk('', true)
-  }
   const consumeLine = (line: string) => {
-    const event = parseLine(line)
-    if (!event) return
-    if (event.text) onChunk(event.text, false)
-    if (event.done) finish()
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('data:')) return
+    const data = trimmed.slice(5).trimStart()
+    if (!data || data === '[DONE]') return
+    try { onPayload(JSON.parse(data)) } catch {}
   }
 
   while (true) {
@@ -355,5 +543,4 @@ async function consumeStream(
 
   buffer += decoder.decode()
   if (buffer) buffer.split('\n').forEach(consumeLine)
-  finish()
 }

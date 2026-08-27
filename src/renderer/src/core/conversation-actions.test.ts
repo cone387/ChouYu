@@ -33,4 +33,13 @@ describe('conversation retry actions', () => {
     ]
     expect(getConversationForRetry(messages, 'plugin')).toBeNull()
   })
+
+  it('retries the full turn when tool activity sits between user and final answer', () => {
+    const messages: Message[] = [
+      message('u1', 'user'),
+      { ...message('tool', 'assistant'), toolData: { callId: 'c1', name: 'get_current_time', displayName: '获取当前时间', risk: 'safe', status: 'completed' } },
+      message('a1', 'assistant')
+    ]
+    expect(getConversationForRetry(messages, 'a1')).toEqual([messages[0]])
+  })
 })

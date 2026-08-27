@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app } from 'electron'
+import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { sanitizeConfigPatch } from '../shared/config'
@@ -14,6 +15,13 @@ import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { setClipboardWatcherEnabled } from './clipboard'
 import { initAutoUpdater } from './updater'
 import { fetchProviderModels, streamAIChat } from './ai'
+import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
+import {
+  type AIToolCall,
+  type ToolApprovalRequest,
+  type ToolExecutionEvent,
+  parseToolArguments
+} from '../shared/tools'
 import {
   getConfig,
   saveConfig,
@@ -32,6 +40,11 @@ import {
 } from './database'
 
 const activeAIRequests = new Map<string, AbortController>()
+const pendingToolApprovals = new Map<string, {
+  senderId: number
+  resolve: (approved: boolean) => void
+  timeout: ReturnType<typeof setTimeout>
+}>()
 
 function getAIRequestKey(senderId: number, requestId: string): string {
   return `${senderId}:${requestId}`
@@ -64,6 +77,52 @@ function parseAIStreamRequest(value: unknown): AIStreamRequest | null {
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
   return 'AI 请求失败，请检查 Provider 配置和网络后重试。'
+}
+
+function sendToolEvent(
+  sender: Electron.WebContents,
+  event: ToolExecutionEvent
+): void {
+  if (!sender.isDestroyed()) sender.send('ai:tool-event', event)
+}
+
+function requestToolApproval(
+  sender: Electron.WebContents,
+  requestId: string,
+  call: AIToolCall,
+  signal: AbortSignal
+): Promise<boolean> {
+  const definition = getRegisteredTool(call.name)
+  if (!definition || sender.isDestroyed()) return Promise.resolve(false)
+  const approvalId = randomUUID()
+  const approvalRequest: ToolApprovalRequest = {
+    requestId,
+    approvalId,
+    callId: call.id,
+    name: definition.name,
+    displayName: definition.displayName,
+    description: definition.description,
+    risk: definition.risk,
+    arguments: parseToolArguments(call.arguments)
+  }
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (approved: boolean) => {
+      if (settled) return
+      settled = true
+      const pending = pendingToolApprovals.get(approvalId)
+      if (pending) clearTimeout(pending.timeout)
+      pendingToolApprovals.delete(approvalId)
+      signal.removeEventListener('abort', abort)
+      resolve(approved)
+    }
+    const abort = () => finish(false)
+    const timeout = setTimeout(() => finish(false), 60_000)
+    pendingToolApprovals.set(approvalId, { senderId: sender.id, resolve: finish, timeout })
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    else sender.send('ai:tool-approval-request', approvalRequest)
+  })
 }
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
@@ -205,6 +264,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const requestKey = getAIRequestKey(event.sender.id, request.requestId)
     activeAIRequests.get(requestKey)?.abort()
     const controller = new AbortController()
+    const config = getConfig()
     activeAIRequests.set(requestKey, controller)
     const abortWhenDestroyed = () => controller.abort()
     event.sender.once('destroyed', abortWhenDestroyed)
@@ -213,13 +273,79 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       await streamAIChat(
         request.messages,
         request.systemPrompt,
-        getConfig(),
+        config,
         (chunk, done) => {
           if (event.sender.isDestroyed()) return
           const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk, done }
           event.sender.send('ai:stream-event', streamEvent)
         },
-        controller.signal
+        controller.signal,
+        config.aiToolsEnabled ? {
+          definitions: getToolDefinitions(),
+          execute: async (call) => {
+            const definition = getRegisteredTool(call.name)
+            if (!definition) return `工具不存在：${call.name}`
+            const arguments_ = parseToolArguments(call.arguments)
+            sendToolEvent(event.sender, {
+              requestId: request.requestId,
+              callId: call.id,
+              name: definition.name,
+              displayName: definition.displayName,
+              risk: definition.risk,
+              status: definition.requiresConfirmation ? 'requested' : 'running',
+              summary: definition.requiresConfirmation ? '等待用户确认' : '正在执行'
+            })
+            if (definition.requiresConfirmation) {
+              const approved = await requestToolApproval(event.sender, request.requestId, call, controller.signal)
+              if (!approved) {
+                sendToolEvent(event.sender, {
+                  requestId: request.requestId,
+                  callId: call.id,
+                  name: definition.name,
+                  displayName: definition.displayName,
+                  risk: definition.risk,
+                  status: 'denied',
+                  summary: '用户拒绝了此操作'
+                })
+                return '用户拒绝了此工具调用。'
+              }
+              sendToolEvent(event.sender, {
+                requestId: request.requestId,
+                callId: call.id,
+                name: definition.name,
+                displayName: definition.displayName,
+                risk: definition.risk,
+                status: 'running',
+                summary: '已授权，正在执行'
+              })
+            }
+            try {
+              const result = await executeRegisteredTool(call.name, arguments_, mainWindow)
+              sendToolEvent(event.sender, {
+                requestId: request.requestId,
+                callId: call.id,
+                name: definition.name,
+                displayName: definition.displayName,
+                risk: definition.risk,
+                status: 'completed',
+                summary: result.summary.slice(0, 500)
+              })
+              return result.content.slice(0, 50_000)
+            } catch (error) {
+              const message = getErrorMessage(error)
+              sendToolEvent(event.sender, {
+                requestId: request.requestId,
+                callId: call.id,
+                name: definition.name,
+                displayName: definition.displayName,
+                risk: definition.risk,
+                status: 'error',
+                summary: message.slice(0, 500)
+              })
+              return `工具执行失败：${message}`
+            }
+          }
+        } : undefined
       )
       return { ok: true }
     } catch (error) {
@@ -234,6 +360,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.on('ai:cancel', (event, requestId: string) => {
     if (typeof requestId !== 'string') return
     activeAIRequests.get(getAIRequestKey(event.sender.id, requestId))?.abort()
+  })
+
+  ipcMain.on('ai:resolve-tool-request', (event, approvalId: string, approved: boolean) => {
+    if (typeof approvalId !== 'string' || typeof approved !== 'boolean') return
+    const pending = pendingToolApprovals.get(approvalId)
+    if (!pending || pending.senderId !== event.sender.id) return
+    pending.resolve(approved)
   })
 
   ipcMain.handle('get-app-version', () => app.getVersion())

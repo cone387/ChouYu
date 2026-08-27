@@ -10,6 +10,7 @@ import {
   deriveSessionTitle,
   normalizeSessionTitle
 } from '../shared/sessions'
+import type { ToolActivityData } from '../shared/tools'
 
 export interface Message {
   id: string
@@ -18,6 +19,7 @@ export interface Message {
   timestamp: number
   imageUrl?: string
   responseStatus?: 'error' | 'stopped'
+  toolData?: ToolActivityData
   pluginData?: unknown
 }
 
@@ -84,6 +86,26 @@ function isSecretStateKey(key: string): boolean {
   return normalized.includes('token') || normalized.includes('password') || normalized.includes('api_key')
 }
 
+function sanitizeToolData(value: unknown): ToolActivityData | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const input = value as Partial<ToolActivityData>
+  if (typeof input.callId !== 'string' || typeof input.name !== 'string' || typeof input.displayName !== 'string') return undefined
+  if (!['safe', 'read', 'write'].includes(String(input.risk))) return undefined
+  if (!['requested', 'running', 'completed', 'denied', 'error'].includes(String(input.status))) return undefined
+  const status = input.status as ToolActivityData['status']
+  const interrupted = status === 'requested' || status === 'running'
+  return {
+    callId: input.callId.slice(0, 128),
+    name: input.name.slice(0, 64),
+    displayName: input.displayName.slice(0, 100),
+    risk: input.risk as ToolActivityData['risk'],
+    status: interrupted ? 'error' : status,
+    summary: interrupted
+      ? '上次工具执行已中断'
+      : typeof input.summary === 'string' ? input.summary.slice(0, 500) : undefined
+  }
+}
+
 function sanitizeMessages(value: unknown): Message[] {
   if (!Array.isArray(value)) return []
   return value
@@ -99,6 +121,7 @@ function sanitizeMessages(value: unknown): Message[] {
       responseStatus: message.responseStatus === 'error' || message.responseStatus === 'stopped'
         ? message.responseStatus
         : undefined,
+      toolData: sanitizeToolData(message.toolData),
       // Screenshots can be several MB. Keep them in the active runtime session but
       // do not embed base64 image data in the durable JSON conversation store.
       imageUrl: typeof message.imageUrl === 'string' && !message.imageUrl.startsWith('data:')

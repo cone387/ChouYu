@@ -9,5 +9,5 @@ export function buildMessages(
   history: Message[],
   maxMessages: number = 30
 ): Message[] {
-  return history.slice(-maxMessages)
+  return history.filter((message) => !message.toolData).slice(-maxMessages)
 }

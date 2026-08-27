@@ -22,4 +22,19 @@ describe('prompt builder', () => {
     expect(result[0].content).toBe('5')
     expect(result.at(-1)?.content).toBe('34')
   })
+
+  it('does not send UI-only tool timeline cards back as chat history', () => {
+    const messages: Message[] = [
+      { id: 'u', role: 'user', content: '现在几点？', timestamp: 1 },
+      {
+        id: 'tool',
+        role: 'assistant',
+        content: '',
+        timestamp: 2,
+        toolData: { callId: 'c', name: 'get_current_time', displayName: '获取当前时间', risk: 'safe', status: 'completed' }
+      },
+      { id: 'a', role: 'assistant', content: '现在是下午三点。', timestamp: 3 }
+    ]
+    expect(buildMessages(messages)).toEqual([messages[0], messages[2]])
+  })
 })
