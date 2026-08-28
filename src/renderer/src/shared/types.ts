@@ -2,7 +2,7 @@ import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
 import type { CaptureSourceInfo } from '../../../shared/capture'
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
-import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemoryType } from '../../../shared/memory'
+import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemoryType } from '../../../shared/memory'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -106,6 +106,7 @@ export interface ElectronAPI {
     restoreRevision: (memoryId: string, revisionId: string) => Promise<MemoryRecord>
     maintenance: () => Promise<MemoryMaintenanceResult>
     cleanupPreview: (limit?: number) => Promise<MemoryCleanupSuggestion[]>
+    clusters: () => Promise<MemoryCluster[]>
     archiveMany: (ids: string[]) => Promise<string[]>
     reactivate: (memoryId: string) => Promise<MemoryRecord>
     feedback: (memoryId: string, contextId: string, value: MemoryFeedbackValue) => Promise<MemoryFeedbackResult>
@@ -171,7 +172,7 @@ export interface Message {
   imageUrl?: string
   responseStatus?: 'error' | 'stopped'
   toolData?: ToolActivityData
-  memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue }>
+  memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>
   /** Plugin result data - if present, render as plugin card instead of markdown */
   pluginData?: PluginMessageData
 }

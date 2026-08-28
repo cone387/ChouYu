@@ -21,7 +21,7 @@ export interface Message {
   imageUrl?: string
   responseStatus?: 'error' | 'stopped'
   toolData?: ToolActivityData
-  memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue }>
+  memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>
   pluginData?: unknown
 }
 
@@ -118,7 +118,10 @@ function sanitizeMemoryRefs(value: unknown): Message['memoryRefs'] {
       id: ref.id.slice(0, 128),
       content: ref.content.slice(0, 500),
       type: ref.type.slice(0, 40),
-      feedback: ref.feedback === 'helpful' || ref.feedback === 'unhelpful' ? ref.feedback : undefined
+      feedback: ref.feedback === 'helpful' || ref.feedback === 'unhelpful' ? ref.feedback : undefined,
+      sourceIds: Array.isArray(ref.sourceIds) ? ref.sourceIds.filter((id): id is string => typeof id === 'string').slice(0, 12).map((id) => id.slice(0, 128)) : undefined,
+      clusterId: typeof ref.clusterId === 'string' ? ref.clusterId.slice(0, 128) : undefined,
+      compressedCount: typeof ref.compressedCount === 'number' && Number.isFinite(ref.compressedCount) ? Math.min(12, Math.max(2, Math.round(ref.compressedCount))) : undefined
     }]
   })
 }

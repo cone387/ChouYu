@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   containsSecret,
+  buildMemoryClusters,
+  compressMemoryResults,
   extractMemoryCandidates,
   extractMemoryKeywords,
   detectMemoryRelation,
@@ -66,6 +68,38 @@ describe('memory foundation', () => {
     const valuable = { ...lowValue, importance: 0.95, updatedAt: now, accessCount: 20, helpfulCount: 5, unhelpfulCount: 0 }
     expect(getMemoryCleanupReasons(lowValue, now)).toEqual(expect.arrayContaining(['重要度较低', '负面反馈较多']))
     expect(scoreMemoryLifecycle(valuable, now)).toBeGreaterThan(scoreMemoryLifecycle(lowValue, now))
+  })
+
+  it('clusters related memories and compresses them with full provenance', () => {
+    const create = (id: string, content: string, score: number) => ({
+      id,
+      type: 'project' as const,
+      content,
+      normalizedKey: content,
+      keywords: extractMemoryKeywords(content),
+      importance: 0.7,
+      confidence: 1,
+      sensitivity: 'normal' as const,
+      status: 'active' as const,
+      createdAt: 1,
+      updatedAt: Number(id.slice(1)) || 1,
+      accessCount: 0,
+      helpfulCount: 0,
+      unhelpfulCount: 0,
+      score
+    })
+    const related = [
+      create('m1', 'ChouYu 项目使用 SQLite', 0.8),
+      create('m2', 'ChouYu 项目使用 SQLite 和向量检索', 0.9),
+      create('m3', '天气应用使用 React', 0.7)
+    ]
+    const clusters = buildMemoryClusters(related)
+    expect(clusters).toHaveLength(1)
+    expect(clusters[0].memoryIds).toEqual(expect.arrayContaining(['m1', 'm2']))
+    const compressed = compressMemoryResults(related, 3)
+    expect(compressed).toHaveLength(2)
+    expect(compressed[0]).toMatchObject({ compressedCount: 2, sourceMemoryIds: expect.arrayContaining(['m1', 'm2']) })
+    expect(formatMemoryContext(compressed)).toContain('[memory:m1|m2]')
   })
 
   it('detects contradictory facts and preferences', () => {

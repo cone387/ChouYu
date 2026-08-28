@@ -346,7 +346,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         relevantMemories = []
       }
     }
-    const memoryRefs = relevantMemories.map((memory) => ({ id: memory.id, content: memory.content, type: memory.type }))
+    const memoryRefs = relevantMemories.map((memory) => ({
+      id: memory.id,
+      content: memory.content,
+      type: memory.type,
+      sourceIds: memory.sourceMemoryIds,
+      clusterId: memory.clusterId,
+      compressedCount: memory.compressedCount
+    }))
     const systemPrompt = buildSystemPrompt(config.soulMd, formatMemoryContext(relevantMemories))
     const history = buildMessages(conversation)
     const responseBaseId = `${Date.now()}-assistant`
@@ -661,8 +668,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }
   }, [memoryCandidates])
 
-  const submitMemoryFeedback = useCallback(async (messageId: string, memoryId: string, value: MemoryFeedbackValue) => {
-    await window.electronAPI.memory.feedback(memoryId, messageId, value)
+  const submitMemoryFeedback = useCallback(async (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => {
+    await Promise.all((sourceIds?.length ? sourceIds : [memoryId]).map((sourceId) => window.electronAPI.memory.feedback(sourceId, messageId, value)))
     setMessages((previous) => previous.map((message) => message.id === messageId
       ? { ...message, memoryRefs: message.memoryRefs?.map((memory) => memory.id === memoryId ? { ...memory, feedback: value } : memory) }
       : message))

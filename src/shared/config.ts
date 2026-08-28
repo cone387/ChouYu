@@ -35,6 +35,7 @@ export interface AppConfig {
   memoryEnabled: boolean
   memoryMaxItems: number
   memoryDefaultTtlDays: number
+  memoryCompressionEnabled: boolean
   embeddingEnabled: boolean
   embeddingBaseUrl: string
   embeddingApiKey: string
@@ -57,6 +58,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   memoryEnabled: true,
   memoryMaxItems: 500,
   memoryDefaultTtlDays: 0,
+  memoryCompressionEnabled: true,
   embeddingEnabled: false,
   embeddingBaseUrl: '',
   embeddingApiKey: '',
@@ -92,6 +94,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     memoryDefaultTtlDays: typeof source.memoryDefaultTtlDays === 'number' && Number.isFinite(source.memoryDefaultTtlDays)
       ? Math.min(3650, Math.max(0, Math.round(source.memoryDefaultTtlDays)))
       : DEFAULT_APP_CONFIG.memoryDefaultTtlDays,
+    memoryCompressionEnabled: source.memoryCompressionEnabled !== false,
     embeddingEnabled: source.embeddingEnabled === true,
     embeddingBaseUrl: typeof source.embeddingBaseUrl === 'string' ? source.embeddingBaseUrl.trim() : '',
     embeddingApiKey: typeof source.embeddingApiKey === 'string' ? source.embeddingApiKey : '',
@@ -119,6 +122,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.memoryEnabled === 'boolean') patch.memoryEnabled = input.memoryEnabled
   if (typeof input.memoryMaxItems === 'number' && Number.isFinite(input.memoryMaxItems)) patch.memoryMaxItems = Math.min(2000, Math.max(50, Math.round(input.memoryMaxItems)))
   if (typeof input.memoryDefaultTtlDays === 'number' && Number.isFinite(input.memoryDefaultTtlDays)) patch.memoryDefaultTtlDays = Math.min(3650, Math.max(0, Math.round(input.memoryDefaultTtlDays)))
+  if (typeof input.memoryCompressionEnabled === 'boolean') patch.memoryCompressionEnabled = input.memoryCompressionEnabled
   if (typeof input.embeddingEnabled === 'boolean') patch.embeddingEnabled = input.embeddingEnabled
   if (typeof input.embeddingBaseUrl === 'string') patch.embeddingBaseUrl = input.embeddingBaseUrl.trim().slice(0, 2048)
   if (typeof input.embeddingApiKey === 'string') patch.embeddingApiKey = input.embeddingApiKey.slice(0, 8192)

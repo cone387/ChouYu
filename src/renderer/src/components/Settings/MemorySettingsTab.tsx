@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { MemoryCleanupSuggestion, MemoryConflictAction, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
+import type { MemoryCleanupSuggestion, MemoryCluster, MemoryConflictAction, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
 import type { AppConfig } from '../../shared/types'
 import './MemorySettingsTab.css'
 
@@ -60,6 +60,11 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [confirmCleanup, setConfirmCleanup] = useState(false)
   const [lifecycleBusy, setLifecycleBusy] = useState(false)
   const [lifecycleStatus, setLifecycleStatus] = useState('')
+  const [clusters, setClusters] = useState<MemoryCluster[]>([])
+  const [showClusters, setShowClusters] = useState(false)
+  const [expandedClusterIds, setExpandedClusterIds] = useState<Set<string>>(new Set())
+  const [clusterBusy, setClusterBusy] = useState(false)
+  const [clusterStatus, setClusterStatus] = useState('')
 
   const refresh = useCallback(async () => {
     setError('')
@@ -254,6 +259,42 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     }
   }
 
+  const loadClusters = async () => {
+    if (showClusters) {
+      setShowClusters(false)
+      return
+    }
+    setClusterBusy(true)
+    setClusterStatus('正在分析记忆主题…')
+    try {
+      const nextClusters = await window.electronAPI.memory.clusters()
+      setClusters(nextClusters)
+      setShowClusters(true)
+      setExpandedClusterIds(new Set())
+      setClusterStatus(nextClusters.length > 0 ? `已识别 ${nextClusters.length} 个主题。` : '当前还没有可聚合的相似记忆。')
+    } catch (reason) {
+      setClusterStatus(reason instanceof Error ? reason.message : '记忆主题加载失败。')
+    } finally {
+      setClusterBusy(false)
+    }
+  }
+
+  const toggleCompression = async (enabled: boolean) => {
+    setClusterBusy(true)
+    setClusterStatus('正在保存摘要压缩设置…')
+    try {
+      await onSaveConfig({ memoryCompressionEnabled: enabled })
+      setClusterStatus(enabled ? '检索时会把同主题记忆压缩为一个可追溯摘要。' : '已关闭摘要压缩，检索将使用原始记忆条目。')
+    } catch (reason) {
+      setClusterStatus(reason instanceof Error ? reason.message : '摘要压缩设置保存失败。')
+    } finally {
+      setClusterBusy(false)
+    }
+  }
+
+  const clusteredMemoryCount = clusters.reduce((total, cluster) => total + cluster.memoryIds.length, 0)
+  const clusterSavedCharacters = clusters.reduce((total, cluster) => total + cluster.savedCharacters, 0)
+
   return (
     <div className="settings-pane memory-settings-pane">
       <div className="settings-pane-heading memory-heading">
@@ -317,6 +358,40 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
             <div className="memory-cleanup-actions">
               {confirmCleanup ? <><span>确认归档选中的 {cleanupSelected.size} 条记忆？</span><button type="button" onClick={() => setConfirmCleanup(false)}>取消</button><button type="button" className="warning" onClick={() => { void archiveCleanupSelection() }} disabled={lifecycleBusy}>确认归档</button></> : <button type="button" className="warning" onClick={() => setConfirmCleanup(true)} disabled={cleanupSelected.size === 0 || lifecycleBusy}>归档选中项</button>}
             </div>
+          </div>
+        )}
+      </section>
+
+      <section className="memory-cluster-card">
+        <div className="memory-cluster-header">
+          <div>
+            <strong>主题聚类与摘要压缩</strong>
+            <span>本地归纳相似记忆，原始内容和来源始终保留。</span>
+          </div>
+          <div>
+            <label className="settings-switch">
+              <input type="checkbox" checked={config.memoryCompressionEnabled} disabled={clusterBusy} onChange={(event) => { void toggleCompression(event.target.checked) }} aria-label="启用记忆摘要压缩" />
+              <span className="settings-switch-slider" />
+            </label>
+            <button type="button" onClick={() => { void loadClusters() }} disabled={clusterBusy} aria-expanded={showClusters}>{clusterBusy ? '分析中…' : showClusters ? '收起主题' : '查看主题'}</button>
+          </div>
+        </div>
+        {clusterStatus && <div className="memory-cluster-status" role="status">{clusterStatus}</div>}
+        {showClusters && (
+          <div className="memory-cluster-view">
+            {clusters.length > 0 && <div className="memory-cluster-summary"><span><strong>{clusters.length}</strong> 个主题</span><span><strong>{clusteredMemoryCount}</strong> 条原始记忆</span><span><strong>{clusterSavedCharacters}</strong> 字符可压缩</span></div>}
+            {clusters.map((cluster) => {
+              const expanded = expandedClusterIds.has(cluster.id)
+              return <article className="memory-topic" key={cluster.id}>
+                <div className="memory-topic-heading">
+                  <div><span>{TYPE_LABELS[cluster.type]}</span><strong>{cluster.label}</strong><small>{cluster.memoryIds.length} 条 · 节省 {cluster.savedCharacters} 字符</small></div>
+                  <button type="button" onClick={() => setExpandedClusterIds((previous) => { const next = new Set(previous); if (expanded) next.delete(cluster.id); else next.add(cluster.id); return next })} aria-expanded={expanded}>{expanded ? '收起来源' : '查看来源'}</button>
+                </div>
+                <p>{cluster.summary}</p>
+                {expanded && <ul>{cluster.memories.map((memory) => <li key={memory.id}><time>{new Date(memory.updatedAt).toLocaleDateString('zh-CN')}</time><span>{memory.content}</span></li>)}</ul>}
+              </article>
+            })}
+            {clusters.length === 0 && <div className="memory-cluster-empty">至少需要两条同类型且主题相近的已确认记忆，才会形成主题。</div>}
           </div>
         )}
       </section>

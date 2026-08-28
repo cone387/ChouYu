@@ -14,6 +14,7 @@ describe('config', () => {
     expect(config.memoryEnabled).toBe(true)
     expect(config.memoryMaxItems).toBe(500)
     expect(config.memoryDefaultTtlDays).toBe(0)
+    expect(config.memoryCompressionEnabled).toBe(true)
     expect(config.embeddingEnabled).toBe(false)
     expect(config.soulMd).toBe(DEFAULT_APP_CONFIG.soulMd)
   })
@@ -33,11 +34,12 @@ describe('config', () => {
       petSize: 96,
       aiToolsEnabled: false,
       memoryEnabled: false,
+      memoryCompressionEnabled: false,
       embeddingEnabled: true,
       unknown: 'ignored',
       model: 123
     })
 
-    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, memoryEnabled: false, embeddingEnabled: true })
+    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, memoryEnabled: false, memoryCompressionEnabled: false, embeddingEnabled: true })
   })
 })

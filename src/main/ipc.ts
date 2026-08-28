@@ -29,6 +29,7 @@ import {
   getMemoryProvider,
   createMemory,
   indexMemory,
+  listMemoryClusters,
   proposeMemoryCandidate,
   reactivateMemory,
   rebuildEmbeddings,
@@ -339,6 +340,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('memory:cleanup-preview', (_event, limit?: number) =>
     getMemoryProvider().cleanupCandidates(typeof limit === 'number' ? Math.min(100, Math.max(1, limit)) : 30))
+
+  ipcMain.handle('memory:clusters', () => listMemoryClusters())
 
   ipcMain.handle('memory:archive-many', (_event, rawIds: unknown) => {
     if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 500) throw new Error('Invalid memory ids')

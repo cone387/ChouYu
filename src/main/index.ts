@@ -7,7 +7,7 @@ import { initDatabase, getConfig, flushDatabase } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
-import { closeMemory, getMemoryProvider, initializeMemory, proposeMemoryCandidate } from './memory/service'
+import { closeMemory, getMemoryProvider, initializeMemory, listMemoryClusters, proposeMemoryCandidate, searchMemories } from './memory/service'
 import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 
 let mainWindow: BrowserWindow | null = null
@@ -67,7 +67,7 @@ function createWindow(): void {
   if (isSmokeTest) {
     mainWindow.webContents.once('did-finish-load', () => {
       console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
-      setTimeout(() => app.quit(), 150)
+      setTimeout(() => app.quit(), 300)
     })
     mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
       console.error(`CHOUYU_SMOKE_FAILED code=${errorCode} message=${errorDescription}`)
@@ -178,6 +178,10 @@ app.whenReady().then(async () => {
       memoryProvider.createActive({ type: 'fact', content: `容量 smoke 记忆 ${index}`, importance: 0.5, confidence: 1, sensitivity: 'normal' })
     }
     if (memoryProvider.enforceCapacity(50).length !== 1 || memoryProvider.stats().active !== 50) throw new Error('Memory capacity smoke test failed')
+    const smokeClusters = listMemoryClusters()
+    const compressedMemories = await searchMemories('容量 smoke', 6)
+    if (!smokeClusters.some((cluster) => cluster.memoryIds.length > 2)) throw new Error('Memory clustering smoke test failed')
+    if (!compressedMemories.some((memory) => (memory.compressedCount || 0) > 2 && (memory.sourceMemoryIds?.length || 0) > 2)) throw new Error('Memory compression smoke test failed')
   }
 
   // Register plugins and IPC channels synchronously (before window loads renderer)

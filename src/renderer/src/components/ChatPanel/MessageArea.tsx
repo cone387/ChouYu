@@ -11,7 +11,7 @@ interface MessageAreaProps {
   isStreaming: boolean
   onRetry?: (messageId: string) => void
   contextLimit?: number
-  onMemoryFeedback?: (messageId: string, memoryId: string, value: MemoryFeedbackValue) => Promise<void>
+  onMemoryFeedback?: (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => Promise<void>
 }
 
 function formatTime(ts: number) {
@@ -73,13 +73,13 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
   const [feedbackBusy, setFeedbackBusy] = useState('')
   const [feedbackError, setFeedbackError] = useState('')
 
-  const submitMemoryFeedback = async (messageId: string, memoryId: string, value: MemoryFeedbackValue) => {
+  const submitMemoryFeedback = async (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => {
     if (!onMemoryFeedback) return
     const key = `${messageId}:${memoryId}`
     setFeedbackBusy(key)
     setFeedbackError('')
     try {
-      await onMemoryFeedback(messageId, memoryId, value)
+      await onMemoryFeedback(messageId, memoryId, sourceIds, value)
     } catch (error) {
       setFeedbackError(error instanceof Error ? error.message : '记忆反馈保存失败。')
     } finally {
@@ -108,6 +108,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
       )}
       {messages.map((msg) => {
         const canRetry = !isStreaming && getConversationForRetry(messages, msg.id) !== null
+        const memorySourceCount = msg.memoryRefs?.reduce((total, memory) => total + (memory.compressedCount || 1), 0) || 0
         return (
         <div key={msg.id} className={`message message-${msg.role}${msg.responseStatus ? ` message-${msg.responseStatus}` : ''}`}>
           {msg.role === 'assistant' && (
@@ -168,18 +169,18 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
             </div>
             {msg.role === 'assistant' && msg.memoryRefs && msg.memoryRefs.length > 0 && (
               <details className="message-memory-refs">
-                <summary>使用了 {msg.memoryRefs.length} 条长期记忆</summary>
+                <summary>使用了 {memorySourceCount} 条长期记忆{memorySourceCount > msg.memoryRefs.length ? ` · 压缩为 ${msg.memoryRefs.length} 个主题` : ''}</summary>
                 <ul>
                   {msg.memoryRefs.map((memory) => {
                     const key = `${msg.id}:${memory.id}`
                     return <li key={memory.id}>
-                      <div><span>{memory.type}</span><p>{memory.content}</p></div>
+                      <div><span>{memory.type}</span><p>{memory.content}</p>{memory.compressedCount && <em>合并 {memory.compressedCount} 条</em>}</div>
                       <div className="memory-ref-feedback" aria-label="评价这条记忆来源">
-                        <button type="button" className={memory.feedback === 'helpful' ? 'selected' : ''} disabled={feedbackBusy === key || memory.feedback === 'helpful'} onClick={() => { void submitMemoryFeedback(msg.id, memory.id, 'helpful') }} aria-label="这条记忆有帮助" title="有帮助">
+                        <button type="button" className={memory.feedback === 'helpful' ? 'selected' : ''} disabled={feedbackBusy === key || memory.feedback === 'helpful'} onClick={() => { void submitMemoryFeedback(msg.id, memory.id, memory.sourceIds, 'helpful') }} aria-label="这条记忆有帮助" title="有帮助">
                           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5.5 7L8 2.5c.5-.8 1.7-.4 1.6.6L9.3 6h3.1a1.4 1.4 0 011.3 1.8l-1.4 4.3a1.5 1.5 0 01-1.4 1H5.5M2 6.5h3.5v7H2z"/></svg>
                           有帮助
                         </button>
-                        <button type="button" className={memory.feedback === 'unhelpful' ? 'selected negative' : ''} disabled={feedbackBusy === key || memory.feedback === 'unhelpful'} onClick={() => { void submitMemoryFeedback(msg.id, memory.id, 'unhelpful') }} aria-label="这条记忆不准确" title="不准确">
+                        <button type="button" className={memory.feedback === 'unhelpful' ? 'selected negative' : ''} disabled={feedbackBusy === key || memory.feedback === 'unhelpful'} onClick={() => { void submitMemoryFeedback(msg.id, memory.id, memory.sourceIds, 'unhelpful') }} aria-label="这条记忆不准确" title="不准确">
                           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5.5 9L8 13.5c.5.8 1.7.4 1.6-.6L9.3 10h3.1a1.4 1.4 0 001.3-1.8l-1.4-4.3a1.5 1.5 0 00-1.4-1H5.5M2 2.5h3.5v7H2z"/></svg>
                           不准确
                         </button>

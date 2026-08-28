@@ -7,11 +7,12 @@ import type {
   EmbeddingStatus,
   MemoryCandidateInput,
   MemoryConflictAction,
+  MemoryCluster,
   MemoryMaintenanceResult,
   MemoryRecord,
   MemorySearchResult
 } from '../../shared/memory'
-import { detectMemoryRelation, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
+import { buildMemoryClusters, compressMemoryResults, detectMemoryRelation, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
 import { getConfig } from '../database'
 import { OpenAIEmbeddingClient, cosineSimilarity } from './embedding-client'
 
@@ -108,6 +109,11 @@ export function runMemoryMaintenance(): MemoryMaintenanceResult {
   }
 }
 
+export function listMemoryClusters(): MemoryCluster[] {
+  runMemoryMaintenance()
+  return buildMemoryClusters(getMemoryProvider().list({ status: 'active', limit: 2000 }))
+}
+
 function embeddingClient(): { client: OpenAIEmbeddingClient; model: string } {
   const config = getConfig()
   const baseUrl = config.embeddingBaseUrl || config.baseUrl
@@ -157,7 +163,10 @@ export async function searchMemories(query: string, limit = 6): Promise<MemorySe
   runMemoryMaintenance()
   const lexical = getMemoryProvider().search(query, Math.max(limit * 3, 12))
   const config = getConfig()
-  if (!config.embeddingEnabled) return lexical.slice(0, limit)
+  const finalize = (results: MemorySearchResult[]) => config.memoryCompressionEnabled
+    ? compressMemoryResults(results, limit)
+    : results.slice(0, limit)
+  if (!config.embeddingEnabled) return finalize(lexical)
   try {
     const { client, model } = embeddingClient()
     const queryVector = (await client.embed([query]))[0]
@@ -167,9 +176,9 @@ export async function searchMemories(query: string, limit = 6): Promise<MemorySe
       .sort((a, b) => b.semanticScore - a.semanticScore)
       .slice(0, Math.max(limit * 3, 12))
 
-    return mergeHybridMemoryResults(lexical, semantic, limit)
+    return finalize(mergeHybridMemoryResults(lexical, semantic, Math.max(limit * 3, 12)))
   } catch (error) {
     console.warn('[Memory] Embedding search failed, falling back to lexical retrieval:', error)
-    return lexical.slice(0, limit)
+    return finalize(lexical)
   }
 }
