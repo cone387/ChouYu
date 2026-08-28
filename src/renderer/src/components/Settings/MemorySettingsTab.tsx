@@ -80,6 +80,15 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [importBusy, setImportBusy] = useState(false)
   const [importStatus, setImportStatus] = useState('')
   const [confirmImport, setConfirmImport] = useState(false)
+  const [showSyncKey, setShowSyncKey] = useState(false)
+  const [syncDraft, setSyncDraft] = useState({
+    memorySyncBaseUrl: config.memorySyncBaseUrl,
+    memorySyncApiKey: config.memorySyncApiKey,
+    memorySyncUserId: config.memorySyncUserId
+  })
+  const [syncBusy, setSyncBusy] = useState<'test' | 'pull' | 'push' | ''>('')
+  const [syncStatus, setSyncStatus] = useState('')
+  const [confirmSyncPush, setConfirmSyncPush] = useState(false)
 
   const refresh = useCallback(async () => {
     setError('')
@@ -119,6 +128,10 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   useEffect(() => {
     setLifecycleDraft({ memoryMaxItems: config.memoryMaxItems, memoryDefaultTtlDays: config.memoryDefaultTtlDays })
   }, [config.memoryDefaultTtlDays, config.memoryMaxItems])
+
+  useEffect(() => {
+    setSyncDraft({ memorySyncBaseUrl: config.memorySyncBaseUrl, memorySyncApiKey: config.memorySyncApiKey, memorySyncUserId: config.memorySyncUserId })
+  }, [config.memorySyncApiKey, config.memorySyncBaseUrl, config.memorySyncUserId])
 
   const run = async (id: string, action: () => Promise<unknown>): Promise<boolean> => {
     setBusyId(id)
@@ -392,6 +405,56 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     }
   }
 
+  const saveSyncDraft = async () => {
+    await onSaveConfig(syncDraft)
+  }
+
+  const testSyncConnection = async () => {
+    setSyncBusy('test')
+    setSyncStatus('正在连接 Mem0…')
+    try {
+      await saveSyncDraft()
+      const result = await window.electronAPI.memory.syncTest()
+      setSyncStatus(result.message)
+    } catch (reason) {
+      setSyncStatus(reason instanceof Error ? reason.message : 'Mem0 连接测试失败。')
+    } finally {
+      setSyncBusy('')
+    }
+  }
+
+  const pullSyncPreview = async () => {
+    setSyncBusy('pull')
+    setSyncStatus('正在从 Mem0 拉取并检查冲突…')
+    try {
+      await saveSyncDraft()
+      const preview = await window.electronAPI.memory.syncPullPreview()
+      setImportPreview(preview)
+      setImportActions(Object.fromEntries(preview.items.map((item) => [item.id, item.suggestedAction])))
+      setConfirmImport(false)
+      setSyncStatus(`已从 Mem0 读取 ${preview.remoteCount} 条记忆；其中 ${preview.items.length} 条可进入导入预览。`)
+    } catch (reason) {
+      setSyncStatus(reason instanceof Error ? reason.message : 'Mem0 拉取失败。')
+    } finally {
+      setSyncBusy('')
+    }
+  }
+
+  const pushToSync = async () => {
+    setSyncBusy('push')
+    setSyncStatus('正在向 Mem0 上传已确认记忆…')
+    try {
+      await saveSyncDraft()
+      const result = await window.electronAPI.memory.syncPush()
+      setSyncStatus(`上传完成：成功 ${result.succeeded}，已存在 ${result.skipped}，失败 ${result.failed}，共检查 ${result.attempted} 条。`)
+      setConfirmSyncPush(false)
+    } catch (reason) {
+      setSyncStatus(reason instanceof Error ? reason.message : 'Mem0 上传失败。')
+    } finally {
+      setSyncBusy('')
+    }
+  }
+
   const clusteredMemoryCount = clusters.reduce((total, cluster) => total + cluster.memoryIds.length, 0)
   const clusterSavedCharacters = clusters.reduce((total, cluster) => total + cluster.savedCharacters, 0)
   const maxTypeCount = Math.max(1, ...insights.byType.map((item) => item.count))
@@ -585,6 +648,30 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
             {embeddingStatus && <div className="memory-embedding-status" role="status">{embeddingStatus}</div>}
           </div>
         )}
+      </section>
+
+      <section className="memory-sync-card">
+        <div className="memory-sync-header">
+          <div><strong>远程记忆适配器</strong><span>SQLite 始终保留为本地主数据源；远程同步默认关闭。</span></div>
+          <select value={config.memorySyncProvider} disabled={Boolean(syncBusy)} onChange={(event) => { const provider = event.target.value as 'none' | 'mem0'; void onSaveConfig({ memorySyncProvider: provider }); setSyncStatus(provider === 'mem0' ? '已选择 Mem0，请完成连接配置。' : '远程同步已关闭。'); setConfirmSyncPush(false) }} aria-label="远程记忆适配器"><option value="none">关闭</option><option value="mem0">Mem0</option></select>
+        </div>
+        {config.memorySyncProvider === 'mem0' && <div className="memory-sync-content">
+          <div className="memory-sync-privacy" role="note">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>
+            <span>只有点击“确认上传”才会把已确认记忆发送到 Mem0。拉取内容会先进入本地冲突预览，不会直接覆盖。</span>
+          </div>
+          <div className="memory-sync-fields">
+            <label><span>Base URL</span><input value={syncDraft.memorySyncBaseUrl} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="https://api.mem0.ai/v1" /></label>
+            <label><span>User ID</span><input value={syncDraft.memorySyncUserId} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncUserId: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="用于隔离你的远程记忆" /></label>
+            <label className="memory-sync-key-field"><span>API Key</span><div><input type={showSyncKey ? 'text' : 'password'} value={syncDraft.memorySyncApiKey} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncApiKey: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="Mem0 API Key" /><button type="button" onClick={() => setShowSyncKey((value) => !value)}>{showSyncKey ? '隐藏' : '显示'}</button></div><small>使用系统 safeStorage 加密后保存在本机。</small></label>
+          </div>
+          <div className="memory-sync-actions">
+            <button type="button" onClick={() => { void testSyncConnection() }} disabled={Boolean(syncBusy)}>{syncBusy === 'test' ? '测试中…' : '测试连接'}</button>
+            <button type="button" onClick={() => { void pullSyncPreview() }} disabled={Boolean(syncBusy)}>{syncBusy === 'pull' ? '拉取中…' : '拉取并预览'}</button>
+            {confirmSyncPush ? <div className="memory-sync-confirm"><span>确认把全部已确认记忆发送到 Mem0？敏感候选也可能包含个人信息。</span><button type="button" onClick={() => setConfirmSyncPush(false)}>取消</button><button type="button" className="warning" onClick={() => { void pushToSync() }} disabled={Boolean(syncBusy)}>确认上传</button></div> : <button type="button" className="warning" onClick={() => setConfirmSyncPush(true)} disabled={Boolean(syncBusy)}>上传本地记忆</button>}
+          </div>
+          {syncStatus && <div className="memory-sync-status" role="status">{syncStatus}</div>}
+        </div>}
       </section>
 
       {showAdd && (

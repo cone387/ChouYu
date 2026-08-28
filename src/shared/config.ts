@@ -36,6 +36,10 @@ export interface AppConfig {
   memoryMaxItems: number
   memoryDefaultTtlDays: number
   memoryCompressionEnabled: boolean
+  memorySyncProvider: 'none' | 'mem0'
+  memorySyncBaseUrl: string
+  memorySyncApiKey: string
+  memorySyncUserId: string
   embeddingEnabled: boolean
   embeddingBaseUrl: string
   embeddingApiKey: string
@@ -59,6 +63,10 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   memoryMaxItems: 500,
   memoryDefaultTtlDays: 0,
   memoryCompressionEnabled: true,
+  memorySyncProvider: 'none',
+  memorySyncBaseUrl: 'https://api.mem0.ai/v1',
+  memorySyncApiKey: '',
+  memorySyncUserId: '',
   embeddingEnabled: false,
   embeddingBaseUrl: '',
   embeddingApiKey: '',
@@ -95,6 +103,10 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
       ? Math.min(3650, Math.max(0, Math.round(source.memoryDefaultTtlDays)))
       : DEFAULT_APP_CONFIG.memoryDefaultTtlDays,
     memoryCompressionEnabled: source.memoryCompressionEnabled !== false,
+    memorySyncProvider: source.memorySyncProvider === 'mem0' ? 'mem0' : 'none',
+    memorySyncBaseUrl: typeof source.memorySyncBaseUrl === 'string' && source.memorySyncBaseUrl.trim() ? source.memorySyncBaseUrl.trim() : 'https://api.mem0.ai/v1',
+    memorySyncApiKey: typeof source.memorySyncApiKey === 'string' ? source.memorySyncApiKey : '',
+    memorySyncUserId: typeof source.memorySyncUserId === 'string' ? source.memorySyncUserId.trim().slice(0, 256) : '',
     embeddingEnabled: source.embeddingEnabled === true,
     embeddingBaseUrl: typeof source.embeddingBaseUrl === 'string' ? source.embeddingBaseUrl.trim() : '',
     embeddingApiKey: typeof source.embeddingApiKey === 'string' ? source.embeddingApiKey : '',
@@ -123,6 +135,10 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.memoryMaxItems === 'number' && Number.isFinite(input.memoryMaxItems)) patch.memoryMaxItems = Math.min(2000, Math.max(50, Math.round(input.memoryMaxItems)))
   if (typeof input.memoryDefaultTtlDays === 'number' && Number.isFinite(input.memoryDefaultTtlDays)) patch.memoryDefaultTtlDays = Math.min(3650, Math.max(0, Math.round(input.memoryDefaultTtlDays)))
   if (typeof input.memoryCompressionEnabled === 'boolean') patch.memoryCompressionEnabled = input.memoryCompressionEnabled
+  if (input.memorySyncProvider === 'none' || input.memorySyncProvider === 'mem0') patch.memorySyncProvider = input.memorySyncProvider
+  if (typeof input.memorySyncBaseUrl === 'string') patch.memorySyncBaseUrl = input.memorySyncBaseUrl.trim().slice(0, 2048)
+  if (typeof input.memorySyncApiKey === 'string') patch.memorySyncApiKey = input.memorySyncApiKey.slice(0, 8192)
+  if (typeof input.memorySyncUserId === 'string') patch.memorySyncUserId = input.memorySyncUserId.trim().slice(0, 256)
   if (typeof input.embeddingEnabled === 'boolean') patch.embeddingEnabled = input.embeddingEnabled
   if (typeof input.embeddingBaseUrl === 'string') patch.embeddingBaseUrl = input.embeddingBaseUrl.trim().slice(0, 2048)
   if (typeof input.embeddingApiKey === 'string') patch.embeddingApiKey = input.embeddingApiKey.slice(0, 8192)

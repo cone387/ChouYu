@@ -17,11 +17,15 @@ import type {
   MemoryMaintenanceResult,
   MemoryRecord,
   MemorySearchResult,
+  MemorySyncPullPreview,
+  MemorySyncPushResult,
+  MemorySyncStatus,
   MemoryType
 } from '../../shared/memory'
 import { buildMemoryClusters, compressMemoryResults, containsSecret, detectMemoryRelation, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
 import { getConfig } from '../database'
 import { OpenAIEmbeddingClient, cosineSimilarity } from './embedding-client'
+import { createMemorySyncAdapter } from './sync/factory'
 
 let provider: MemoryProvider | null = null
 let maintenanceTimer: ReturnType<typeof setInterval> | null = null
@@ -254,6 +258,44 @@ export function importMemories(decisions: MemoryImportDecision[]): MemoryImportR
   }
   runMemoryMaintenance()
   return result
+}
+
+export async function testMemorySync(): Promise<MemorySyncStatus> {
+  try {
+    const adapter = createMemorySyncAdapter(getConfig())
+    const result = await adapter.test()
+    return { ok: true, provider: adapter.provider, remoteCount: result.remoteCount, message: `连接成功，Mem0 中有 ${result.remoteCount} 条记忆。` }
+  } catch (error) {
+    return { ok: false, provider: 'mem0', message: error instanceof Error ? error.message : 'Mem0 连接失败。' }
+  }
+}
+
+export async function previewMemorySyncPull(): Promise<MemorySyncPullPreview> {
+  const adapter = createMemorySyncAdapter(getConfig())
+  const remote = await adapter.list()
+  const input = remote.map((memory) => {
+    const metadata = memory.metadata
+    const type = ['fact', 'preference', 'person', 'project', 'workflow'].includes(String(metadata.chouyu_type))
+      ? metadata.chouyu_type
+      : ['fact', 'preference', 'person', 'project', 'workflow'].includes(String(metadata.type)) ? metadata.type : 'fact'
+    return {
+      type,
+      content: memory.content,
+      importance: typeof metadata.chouyu_importance === 'number' ? metadata.chouyu_importance : 0.6,
+      confidence: 0.8,
+      sensitivity: 'normal',
+      expiresAt: typeof metadata.chouyu_expires_at === 'number' ? metadata.chouyu_expires_at : undefined
+    }
+  })
+  return { canceled: false, fileName: 'Mem0', provider: adapter.provider, remoteCount: remote.length, ...previewMemoryImport(input) }
+}
+
+export async function pushMemoriesToSync(): Promise<MemorySyncPushResult> {
+  runMemoryMaintenance()
+  const adapter = createMemorySyncAdapter(getConfig())
+  const active = getMemoryProvider().list({ status: 'active', limit: 2000 })
+  const result = await adapter.push(active)
+  return { provider: adapter.provider, ...result }
 }
 
 function embeddingClient(): { client: OpenAIEmbeddingClient; model: string } {

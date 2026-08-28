@@ -1,0 +1,146 @@
+import { joinApiUrl } from '../../../shared/ai'
+import type { MemoryRecord } from '../../../shared/memory'
+import type { MemorySyncAdapter, RemoteMemoryRecord } from './adapter'
+
+export interface Mem0AdapterConfig {
+  baseUrl: string
+  apiKey: string
+  userId: string
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function resultRows(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  const record = asRecord(value)
+  if (Array.isArray(record.results)) return record.results
+  if (Array.isArray(record.memories)) return record.memories
+  if (Array.isArray(record.output)) return record.output
+  if (Array.isArray(record.data)) return record.data
+  const data = asRecord(record.data)
+  if (Array.isArray(data.results)) return data.results
+  if (Array.isArray(data.memories)) return data.memories
+  return []
+}
+
+export function parseMem0Memories(value: unknown): RemoteMemoryRecord[] {
+  return resultRows(value).flatMap((row, index) => {
+    const record = asRecord(row)
+    const content = typeof record.memory === 'string' ? record.memory : typeof record.content === 'string' ? record.content : ''
+    if (!content.trim()) return []
+    const created = typeof record.created_at === 'string' || typeof record.created_at === 'number' ? new Date(record.created_at).getTime() : undefined
+    return [{
+      id: typeof record.id === 'string' ? record.id.slice(0, 256) : `remote-${index}`,
+      content: content.trim().slice(0, 500),
+      metadata: asRecord(record.metadata),
+      createdAt: created && Number.isFinite(created) ? created : undefined
+    }]
+  })
+}
+
+export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
+  readonly provider = 'mem0' as const
+
+  constructor(private readonly config: Mem0AdapterConfig, private readonly request: typeof fetch = fetch) {}
+
+  private validate(): void {
+    if (!this.config.baseUrl.trim()) throw new Error('尚未配置 Mem0 Base URL。')
+    if (!this.config.apiKey.trim()) throw new Error('尚未配置 Mem0 API Key。')
+    if (!this.config.userId.trim()) throw new Error('尚未配置 Mem0 User ID。')
+    let parsed: URL
+    try {
+      parsed = new URL(this.config.baseUrl)
+    } catch {
+      throw new Error('Mem0 Base URL 格式无效。')
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Mem0 Base URL 必须是有效的 HTTP(S) 地址。')
+  }
+
+  private endpoint(): string {
+    this.validate()
+    return joinApiUrl(this.config.baseUrl, 'memories/')
+  }
+
+  private headers(): Record<string, string> {
+    return { 'Content-Type': 'application/json', Authorization: `Token ${this.config.apiKey}` }
+  }
+
+  private async responseJson(response: Response): Promise<unknown> {
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 1000)
+      if (response.status === 401 || response.status === 403) throw new Error('Mem0 认证失败，请检查 API Key。')
+      throw new Error(`Mem0 API error ${response.status}${detail ? `: ${detail}` : ''}`)
+    }
+    try {
+      return await response.json()
+    } catch {
+      throw new Error('Mem0 返回了无法解析的响应。')
+    }
+  }
+
+  async list(signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
+    const endpoint = new URL(this.endpoint())
+    endpoint.searchParams.set('user_id', this.config.userId)
+    endpoint.searchParams.set('page_size', '1000')
+    const response = await this.request(endpoint, {
+      method: 'GET',
+      headers: this.headers(),
+      signal: signal || AbortSignal.timeout(30_000)
+    })
+    return parseMem0Memories(await this.responseJson(response))
+  }
+
+  async test(signal?: AbortSignal): Promise<{ remoteCount: number }> {
+    return { remoteCount: (await this.list(signal)).length }
+  }
+
+  async push(memories: readonly MemoryRecord[], signal?: AbortSignal): Promise<{ attempted: number; succeeded: number; skipped: number; failed: number }> {
+    this.validate()
+    const remote = await this.list(signal)
+    const remoteLocalIds = new Set(remote.map((memory) => memory.metadata.chouyu_id).filter((id): id is string => typeof id === 'string'))
+    const remoteContents = new Set(remote.map((memory) => memory.content.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '')))
+    let succeeded = 0
+    let skipped = 0
+    let failed = 0
+    let lastError: Error | null = null
+    const batch = memories.slice(0, 2000)
+    const pending = batch.filter((memory) => {
+      if (remoteLocalIds.has(memory.id) || remoteContents.has(memory.normalizedKey)) {
+        skipped += 1
+        return false
+      }
+      return true
+    })
+    for (let start = 0; start < pending.length; start += 5) {
+      await Promise.all(pending.slice(start, start + 5).map(async (memory) => {
+        try {
+          const response = await this.request(this.endpoint(), {
+            method: 'POST',
+            headers: this.headers(),
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: memory.content }],
+              user_id: this.config.userId,
+              metadata: {
+                chouyu_id: memory.id,
+                chouyu_type: memory.type,
+                chouyu_importance: memory.importance,
+                chouyu_updated_at: memory.updatedAt,
+                chouyu_expires_at: memory.expiresAt || null
+              }
+            }),
+            signal: signal || AbortSignal.timeout(30_000)
+          })
+          await this.responseJson(response)
+          succeeded += 1
+        } catch (error) {
+          failed += 1
+          lastError = error instanceof Error ? error : new Error('Mem0 上传失败。')
+        }
+      }))
+    }
+    if (failed > 0 && succeeded === 0 && skipped === 0 && lastError) throw lastError
+    return { attempted: batch.length, succeeded, skipped, failed }
+  }
+}

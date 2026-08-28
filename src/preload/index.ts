@@ -3,7 +3,7 @@ import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import type { CaptureSourceInfo } from '../shared/capture'
 import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
-import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats } from '../shared/memory'
+import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncPullPreview, MemorySyncPushResult, MemorySyncStatus } from '../shared/memory'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
@@ -73,6 +73,9 @@ const api = {
     insights: () => ipcRenderer.invoke('memory:insights') as Promise<MemoryInsights>,
     importPreview: () => ipcRenderer.invoke('memory:import-preview') as Promise<MemoryImportPreview>,
     importCommit: (decisions: MemoryImportDecision[]) => ipcRenderer.invoke('memory:import-commit', decisions) as Promise<MemoryImportResult>,
+    syncTest: () => ipcRenderer.invoke('memory:sync-test') as Promise<MemorySyncStatus>,
+    syncPullPreview: () => ipcRenderer.invoke('memory:sync-pull-preview') as Promise<MemorySyncPullPreview>,
+    syncPush: () => ipcRenderer.invoke('memory:sync-push') as Promise<MemorySyncPushResult>,
     archiveMany: (ids: string[]) => ipcRenderer.invoke('memory:archive-many', ids) as Promise<string[]>,
     reactivate: (memoryId: string) => ipcRenderer.invoke('memory:reactivate', memoryId) as Promise<MemoryRecord>,
     feedback: (memoryId: string, contextId: string, value: MemoryFeedbackValue) => ipcRenderer.invoke('memory:feedback', memoryId, contextId, value) as Promise<MemoryFeedbackResult>,

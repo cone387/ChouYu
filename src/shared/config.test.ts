@@ -15,6 +15,8 @@ describe('config', () => {
     expect(config.memoryMaxItems).toBe(500)
     expect(config.memoryDefaultTtlDays).toBe(0)
     expect(config.memoryCompressionEnabled).toBe(true)
+    expect(config.memorySyncProvider).toBe('none')
+    expect(config.memorySyncBaseUrl).toBe('https://api.mem0.ai/v1')
     expect(config.embeddingEnabled).toBe(false)
     expect(config.soulMd).toBe(DEFAULT_APP_CONFIG.soulMd)
   })
@@ -35,11 +37,15 @@ describe('config', () => {
       aiToolsEnabled: false,
       memoryEnabled: false,
       memoryCompressionEnabled: false,
+      memorySyncProvider: 'mem0',
+      memorySyncBaseUrl: ' https://mem0.example/v1 ',
+      memorySyncApiKey: 'secret',
+      memorySyncUserId: ' user-1 ',
       embeddingEnabled: true,
       unknown: 'ignored',
       model: 123
     })
 
-    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, memoryEnabled: false, memoryCompressionEnabled: false, embeddingEnabled: true })
+    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, memoryEnabled: false, memoryCompressionEnabled: false, memorySyncProvider: 'mem0', memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true })
   })
 })

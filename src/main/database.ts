@@ -235,7 +235,8 @@ function load(): StoreData {
         config: normalizeConfig({
           ...persistedConfig,
           apiKey: unprotect(persistedConfig.apiKey),
-          embeddingApiKey: unprotect(persistedConfig.embeddingApiKey)
+          embeddingApiKey: unprotect(persistedConfig.embeddingApiKey),
+          memorySyncApiKey: unprotect(persistedConfig.memorySyncApiKey)
         }),
         sessions,
         activeSessionId,
@@ -264,7 +265,8 @@ function serializeStore(): StoreData {
     config: {
       ...store.config,
       apiKey: protect(store.config.apiKey),
-      embeddingApiKey: protect(store.config.embeddingApiKey)
+      embeddingApiKey: protect(store.config.embeddingApiKey),
+      memorySyncApiKey: protect(store.config.memorySyncApiKey)
     },
     sessions: store.sessions,
     activeSessionId: store.activeSessionId,
