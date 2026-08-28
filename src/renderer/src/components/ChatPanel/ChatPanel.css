@@ -10,6 +10,7 @@
   flex-direction: column;
   animation: panel-open 200ms ease-out;
   z-index: 9998;
+  overflow-x: hidden;
   /* Position is committed after transform-based dragging; a top transition here
      would briefly reveal the old layout position and look like a jump. */
   transition: none;
@@ -44,8 +45,9 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  overflow-x: hidden;
   border-radius: inherit;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .chat-panel-workspace .chat-panel-main {
@@ -56,6 +58,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 @keyframes panel-open {
@@ -134,6 +137,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .message {
@@ -141,6 +147,7 @@
   display: flex;
   gap: 8px;
   animation: msg-appear 200ms ease-out;
+  min-width: 0;
 }
 
 .message-avatar {
@@ -156,6 +163,8 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .message-time {
@@ -192,6 +201,9 @@
   padding: 8px 14px;
   font-size: 14px;
   line-height: 1.5;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -206,7 +218,11 @@
   padding: 8px 14px;
   font-size: 14px;
   line-height: 1.6;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  overflow-x: hidden;
 }
 
 .message-assistant .message-bubble p {
@@ -230,7 +246,11 @@
   border-radius: 8px;
   padding: 10px 12px;
   margin: 8px 0;
-  overflow-x: auto;
+  max-width: 100%;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .message-assistant .message-bubble pre code {
@@ -414,6 +434,11 @@
   padding: 7px 10px 9px;
   border-top: 1px solid var(--divider);
   background: transparent;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .input-toolbar-left,
@@ -421,7 +446,13 @@
   display: flex;
   gap: 2px;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
 }
+
+.input-toolbar-left { flex: 1 1 auto; }
+.input-toolbar-right { flex: 0 1 auto; }
 
 .toolbar-btn {
   border: none;
@@ -486,6 +517,8 @@
   padding: 4px;
   margin-bottom: 8px;
   animation: cmd-appear 120ms ease-out;
+  max-width: calc(100% - 16px);
+  overflow-x: hidden;
 }
 
 @keyframes cmd-appear {
@@ -511,11 +544,16 @@
   background: var(--hover-bg);
 }
 
+.command-item { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+
 .command-name {
   font-weight: 600;
   font-size: 13px;
   color: var(--text-primary);
   min-width: 80px;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .command-desc {
@@ -540,6 +578,9 @@
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--code-bg);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .code-block-header {
@@ -554,13 +595,19 @@
 .code-block-lang {
   font-size: 11px;
   color: var(--text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: 'Cascadia Code', 'Fira Code', monospace;
 }
 
 .code-block pre {
   margin: 0;
   padding: 10px 12px;
-  overflow-x: auto;
+  max-width: 100%;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   background: none;
   border: none;
   border-radius: 0;
@@ -716,6 +763,7 @@
 
 .attachment-quick-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 5px;
   padding: 0 12px 8px;
@@ -865,7 +913,10 @@
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
   padding: 4px;
-  min-width: 220px;
+  width: min(220px, calc(100vw - 32px));
+  min-width: 0;
+  max-width: calc(100% - 8px);
+  overflow-x: hidden;
   animation: cmd-appear 120ms ease-out;
   z-index: 100;
 }
@@ -878,9 +929,11 @@
 
 .recent-captures {
   display: flex;
+  flex-wrap: wrap;
   gap: 5px;
   padding: 0 6px 5px;
-  overflow-x: auto;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .recent-captures button {
@@ -993,6 +1046,81 @@
   border-radius: 2px;
 }
 
+/* Horizontal overflow guard: chat content must wrap instead of creating a second axis. */
+.chat-panel,
+.chat-panel-main,
+.message-area,
+.message-body,
+.message-bubble,
+.input-container {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.message-bubble * {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.message-bubble pre,
+.message-bubble pre code,
+.message-bubble code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message-bubble table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+  overflow: hidden;
+}
+
+.message-bubble th,
+.message-bubble td {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message-bubble a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.screenshot-menu-item {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.screenshot-menu-label,
+.screenshot-menu-shortcut {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.screenshot-dropdown {
+  width: min(220px, calc(100vw - 32px));
+  min-width: 0;
+  max-width: calc(100% - 8px);
+  overflow-x: hidden;
+}
+
+.tool-activity-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-panel * { scroll-behavior: auto !important; }
+}
+
 /* Drag Over */
 .input-container.drag-over {
   outline: 2px dashed var(--accent);
@@ -1024,6 +1152,9 @@
   margin: 0 8px 6px;
   color: var(--error, #b42318);
   font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   line-height: 1.4;
 }
 
@@ -1168,12 +1299,16 @@
   max-width: 88px;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   white-space: nowrap;
 }
 
 .tool-activity-card {
   display: flex;
-  min-width: 240px;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;

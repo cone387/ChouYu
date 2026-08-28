@@ -88,7 +88,8 @@
 .model-picker-popover {
   position: absolute;
   right: 0;
-  width: max(100%, 240px);
+  width: min(240px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -101,7 +102,8 @@
 .searchable-model-picker-field .model-picker-popover {
   left: 0;
   right: auto;
-  width: max(100%, 280px);
+  width: min(280px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
 }
 
 .model-picker-popover.placement-top {
@@ -235,6 +237,15 @@
 
 .model-picker-option svg {
   flex: 0 0 auto;
+}
+
+/* Keep the menu inside the viewport on compact chat panels. */
+.model-picker-popover,
+.searchable-model-picker-field .model-picker-popover {
+  width: min(280px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .model-picker-empty {
