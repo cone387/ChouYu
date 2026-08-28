@@ -7,6 +7,7 @@ import type {
   EmbeddingStatus,
   MemoryCandidateInput,
   MemoryConflictAction,
+  MemoryMaintenanceResult,
   MemoryRecord,
   MemorySearchResult
 } from '../../shared/memory'
@@ -15,11 +16,20 @@ import { getConfig } from '../database'
 import { OpenAIEmbeddingClient, cosineSimilarity } from './embedding-client'
 
 let provider: MemoryProvider | null = null
+let maintenanceTimer: ReturnType<typeof setInterval> | null = null
 
 export function initializeMemory(): void {
   if (provider) return
   provider = new SQLiteMemoryProvider(path.join(app.getPath('userData'), 'chouyu-memory.db'))
   provider.initialize()
+  runMemoryMaintenance()
+  maintenanceTimer = setInterval(() => {
+    try {
+      runMemoryMaintenance()
+    } catch (error) {
+      console.warn('[Memory] Scheduled maintenance failed:', error)
+    }
+  }, 15 * 60_000)
 }
 
 export function getMemoryProvider(): MemoryProvider {
@@ -28,17 +38,23 @@ export function getMemoryProvider(): MemoryProvider {
 }
 
 export function closeMemory(): void {
+  if (maintenanceTimer) clearInterval(maintenanceTimer)
+  maintenanceTimer = null
   provider?.close()
   provider = null
 }
 
 export function proposeMemoryCandidate(candidate: MemoryCandidateInput): MemoryRecord | null {
   const memoryProvider = getMemoryProvider()
-  const candidateMemory = memoryProvider.createCandidate(candidate)
+  const config = getConfig()
+  const candidateWithLifecycle: MemoryCandidateInput = candidate.expiresAt === undefined && config.memoryDefaultTtlDays > 0
+    ? { ...candidate, expiresAt: Date.now() + config.memoryDefaultTtlDays * 86_400_000 }
+    : candidate
+  const candidateMemory = memoryProvider.createCandidate(candidateWithLifecycle)
   if (!candidateMemory) return null
   const activeMemories = memoryProvider.list({ status: 'active', limit: 2000 })
   activeMemories.forEach((existing) => {
-    const relation = detectMemoryRelation(candidate, existing)
+    const relation = detectMemoryRelation(candidateWithLifecycle, existing)
     if (relation) memoryProvider.createConflict(candidateMemory.id, existing.id, relation.kind, relation.reason)
   })
   const conflicts = memoryProvider.listConflicts(candidateMemory.id)
@@ -56,12 +72,14 @@ export function createMemory(candidate: MemoryCandidateInput): MemoryRecord {
   if (proposed.conflicts?.some((conflict) => conflict.status === 'pending')) return proposed
   const memory = memoryProvider.approve(proposed.id)
   void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index new memory:', error))
+  runMemoryMaintenance()
   return memory
 }
 
 export function resolveMemoryConflict(candidateId: string, action: MemoryConflictAction): MemoryRecord | null {
   const memory = getMemoryProvider().resolveConflict(candidateId, action)
   if (memory) void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index resolved memory:', error))
+  runMemoryMaintenance()
   return memory
 }
 
@@ -69,6 +87,25 @@ export function restoreMemoryRevision(memoryId: string, revisionId: string): Mem
   const memory = getMemoryProvider().restoreRevision(memoryId, revisionId)
   void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index restored memory:', error))
   return memory
+}
+
+export function reactivateMemory(memoryId: string): MemoryRecord {
+  const memoryProvider = getMemoryProvider()
+  if (memoryProvider.stats().active >= getConfig().memoryMaxItems) throw new Error('当前记忆容量已满，请先提高容量上限或归档其他记忆。')
+  const memory = memoryProvider.reactivate(memoryId)
+  void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index reactivated memory:', error))
+  return memory
+}
+
+export function runMemoryMaintenance(): MemoryMaintenanceResult {
+  const memoryProvider = getMemoryProvider()
+  const expiredIds = memoryProvider.expireDue()
+  const capacityIds = memoryProvider.enforceCapacity(getConfig().memoryMaxItems)
+  return {
+    expired: expiredIds.length,
+    capacityArchived: capacityIds.length,
+    archivedIds: [...expiredIds, ...capacityIds]
+  }
 }
 
 function embeddingClient(): { client: OpenAIEmbeddingClient; model: string } {
@@ -117,6 +154,7 @@ export async function rebuildEmbeddings(): Promise<EmbeddingRebuildResult> {
 }
 
 export async function searchMemories(query: string, limit = 6): Promise<MemorySearchResult[]> {
+  runMemoryMaintenance()
   const lexical = getMemoryProvider().search(query, Math.max(limit * 3, 12))
   const config = getConfig()
   if (!config.embeddingEnabled) return lexical.slice(0, limit)

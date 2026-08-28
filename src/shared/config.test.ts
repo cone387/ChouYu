@@ -12,6 +12,8 @@ describe('config', () => {
     expect(config.clipboardWatch).toBe(false)
     expect(config.aiToolsEnabled).toBe(true)
     expect(config.memoryEnabled).toBe(true)
+    expect(config.memoryMaxItems).toBe(500)
+    expect(config.memoryDefaultTtlDays).toBe(0)
     expect(config.embeddingEnabled).toBe(false)
     expect(config.soulMd).toBe(DEFAULT_APP_CONFIG.soulMd)
   })
@@ -20,6 +22,8 @@ describe('config', () => {
     expect(normalizeConfig({ petSize: 13 }).petSize).toBe(40)
     expect(normalizeConfig({ petSize: 167 }).petSize).toBe(160)
     expect(normalizeConfig({ petSize: 83 }).petSize).toBe(80)
+    expect(normalizeConfig({ memoryMaxItems: 12 }).memoryMaxItems).toBe(50)
+    expect(normalizeConfig({ memoryDefaultTtlDays: 9999 }).memoryDefaultTtlDays).toBe(3650)
   })
 
   it('accepts only known patch fields and valid primitive types', () => {

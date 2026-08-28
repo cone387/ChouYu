@@ -3,7 +3,7 @@ import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import type { CaptureSourceInfo } from '../shared/capture'
 import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
-import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryConflict, MemoryConflictAction, MemoryListOptions, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats } from '../shared/memory'
+import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats } from '../shared/memory'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
@@ -65,6 +65,11 @@ const api = {
     resolveConflict: (candidateId: string, action: MemoryConflictAction) => ipcRenderer.invoke('memory:resolve-conflict', candidateId, action) as Promise<MemoryRecord | null>,
     history: (memoryId: string) => ipcRenderer.invoke('memory:history', memoryId) as Promise<MemoryRevision[]>,
     restoreRevision: (memoryId: string, revisionId: string) => ipcRenderer.invoke('memory:restore-revision', memoryId, revisionId) as Promise<MemoryRecord>,
+    maintenance: () => ipcRenderer.invoke('memory:maintenance') as Promise<MemoryMaintenanceResult>,
+    cleanupPreview: (limit?: number) => ipcRenderer.invoke('memory:cleanup-preview', limit) as Promise<MemoryCleanupSuggestion[]>,
+    archiveMany: (ids: string[]) => ipcRenderer.invoke('memory:archive-many', ids) as Promise<string[]>,
+    reactivate: (memoryId: string) => ipcRenderer.invoke('memory:reactivate', memoryId) as Promise<MemoryRecord>,
+    feedback: (memoryId: string, contextId: string, value: MemoryFeedbackValue) => ipcRenderer.invoke('memory:feedback', memoryId, contextId, value) as Promise<MemoryFeedbackResult>,
     update: (id: string, patch: { content?: string; type?: string; importance?: number; expiresAt?: number | null }) => ipcRenderer.invoke('memory:update', id, patch) as Promise<MemoryRecord>,
     delete: (id: string) => ipcRenderer.invoke('memory:delete', id) as Promise<void>,
     clear: () => ipcRenderer.invoke('memory:clear') as Promise<void>,

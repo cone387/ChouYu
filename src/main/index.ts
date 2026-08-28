@@ -157,6 +157,27 @@ app.whenReady().then(async () => {
     memoryProvider.update(replacement.id, { content: '我的显示器是 6K' })
     const revision = memoryProvider.listRevisions(replacement.id)[0]
     if (!revision || memoryProvider.restoreRevision(replacement.id, revision.id).content !== '我的显示器是 5K') throw new Error('Memory revision restore smoke test failed')
+
+    const helpful = memoryProvider.recordFeedback(replacement.id, 'smoke-answer', 'helpful')
+    const duplicateHelpful = memoryProvider.recordFeedback(replacement.id, 'smoke-answer', 'helpful')
+    const correctedFeedback = memoryProvider.recordFeedback(replacement.id, 'smoke-answer', 'unhelpful')
+    if (helpful.helpfulCount !== 1 || duplicateHelpful.helpfulCount !== 1 || correctedFeedback.helpfulCount !== 0 || correctedFeedback.unhelpfulCount !== 1) throw new Error('Memory feedback smoke test failed')
+
+    const expiring = memoryProvider.createActive({
+      type: 'fact', content: '临时 smoke 记忆', importance: 0.4, confidence: 1, sensitivity: 'normal', expiresAt: Date.now() - 1
+    })
+    if (!memoryProvider.expireDue().includes(expiring.id) || memoryProvider.list({ status: 'archived' }).find((memory) => memory.id === expiring.id)?.archivedReason !== 'expired') throw new Error('Memory expiration smoke test failed')
+
+    const cleanup = memoryProvider.createActive({
+      type: 'fact', content: '低价值 smoke 记忆', importance: 0.1, confidence: 1, sensitivity: 'normal'
+    })
+    if (!memoryProvider.cleanupCandidates().some((memory) => memory.id === cleanup.id)) throw new Error('Memory cleanup preview smoke test failed')
+    if (!memoryProvider.archiveMany([cleanup.id], 'cleanup').includes(cleanup.id)) throw new Error('Memory bulk archive smoke test failed')
+
+    for (let index = 0; index < 49; index += 1) {
+      memoryProvider.createActive({ type: 'fact', content: `容量 smoke 记忆 ${index}`, importance: 0.5, confidence: 1, sensitivity: 'normal' })
+    }
+    if (memoryProvider.enforceCapacity(50).length !== 1 || memoryProvider.stats().active !== 50) throw new Error('Memory capacity smoke test failed')
   }
 
   // Register plugins and IPC channels synchronously (before window loads renderer)

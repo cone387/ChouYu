@@ -1,8 +1,10 @@
 export type MemoryType = 'fact' | 'preference' | 'person' | 'project' | 'workflow'
 export type MemorySensitivity = 'normal' | 'sensitive'
 export type MemoryStatus = 'pending' | 'active' | 'archived'
+export type MemoryArchiveReason = 'expired' | 'capacity' | 'cleanup' | 'manual' | 'replace'
 export type MemoryConflictKind = 'contradiction' | 'update'
 export type MemoryConflictAction = 'replace' | 'keep' | 'reject'
+export type MemoryFeedbackValue = 'helpful' | 'unhelpful'
 
 export interface MemoryRecord {
   id: string
@@ -21,6 +23,9 @@ export interface MemoryRecord {
   lastAccessedAt?: number
   accessCount: number
   expiresAt?: number
+  helpfulCount: number
+  unhelpfulCount: number
+  archivedReason?: MemoryArchiveReason
   conflicts?: MemoryConflict[]
 }
 
@@ -61,6 +66,7 @@ export interface MemoryCandidateInput {
   sensitivity: MemorySensitivity
   sourceSessionId?: string
   sourceMessageId?: string
+  expiresAt?: number
 }
 
 export interface MemorySearchResult extends MemoryRecord {
@@ -77,6 +83,26 @@ export interface MemoryStats {
   archived: number
   databaseSize: number
   embeddings: number
+  expiringSoon: number
+}
+
+export interface MemoryCleanupSuggestion extends MemoryRecord {
+  cleanupScore: number
+  reasons: string[]
+}
+
+export interface MemoryMaintenanceResult {
+  expired: number
+  capacityArchived: number
+  archivedIds: string[]
+}
+
+export interface MemoryFeedbackResult {
+  memoryId: string
+  contextId: string
+  value: MemoryFeedbackValue
+  helpfulCount: number
+  unhelpfulCount: number
 }
 
 export interface EmbeddingStatus {
@@ -177,7 +203,7 @@ export function extractMemoryCandidates(
 }
 
 export function scoreMemory(
-  memory: Pick<MemoryRecord, 'content' | 'keywords' | 'importance' | 'updatedAt' | 'accessCount'>,
+  memory: Pick<MemoryRecord, 'content' | 'keywords' | 'importance' | 'updatedAt' | 'accessCount'> & Partial<Pick<MemoryRecord, 'helpfulCount' | 'unhelpfulCount'>>,
   query: string,
   now = Date.now()
 ): number {
@@ -190,7 +216,36 @@ export function scoreMemory(
   const ageDays = Math.max(0, now - memory.updatedAt) / 86_400_000
   const recency = Math.exp(-ageDays / 90)
   const usage = Math.min(1, Math.log2(memory.accessCount + 1) / 5)
-  return exact * 0.3 + overlap * 0.35 + memory.importance * 0.2 + recency * 0.1 + usage * 0.05
+  const helpful = memory.helpfulCount || 0
+  const unhelpful = memory.unhelpfulCount || 0
+  const feedback = (helpful - unhelpful) / (helpful + unhelpful + 2)
+  return exact * 0.28 + overlap * 0.32 + memory.importance * 0.2 + recency * 0.1 + usage * 0.05 + feedback * 0.05
+}
+
+export function scoreMemoryLifecycle(
+  memory: Pick<MemoryRecord, 'importance' | 'updatedAt' | 'lastAccessedAt' | 'accessCount' | 'helpfulCount' | 'unhelpfulCount'>,
+  now = Date.now()
+): number {
+  const referenceTime = memory.lastAccessedAt || memory.updatedAt
+  const ageDays = Math.max(0, now - referenceTime) / 86_400_000
+  const recency = Math.exp(-ageDays / 120)
+  const usage = Math.min(1, Math.log2(memory.accessCount + 1) / 6)
+  const feedback = (memory.helpfulCount - memory.unhelpfulCount) / (memory.helpfulCount + memory.unhelpfulCount + 2)
+  return Math.max(0, Math.min(1, memory.importance * 0.5 + recency * 0.25 + usage * 0.15 + (feedback + 1) * 0.05))
+}
+
+export function getMemoryCleanupReasons(
+  memory: Pick<MemoryRecord, 'importance' | 'updatedAt' | 'lastAccessedAt' | 'accessCount' | 'helpfulCount' | 'unhelpfulCount'>,
+  now = Date.now()
+): string[] {
+  const reasons: string[] = []
+  const referenceTime = memory.lastAccessedAt || memory.updatedAt
+  const ageDays = Math.floor(Math.max(0, now - referenceTime) / 86_400_000)
+  if (memory.importance < 0.45) reasons.push('重要度较低')
+  if (memory.accessCount === 0 && ageDays >= 30) reasons.push(`${ageDays} 天未使用`)
+  else if (ageDays >= 90) reasons.push(`${ageDays} 天未使用`)
+  if (memory.unhelpfulCount > memory.helpfulCount) reasons.push('负面反馈较多')
+  return reasons
 }
 
 export function formatMemoryContext(memories: readonly MemorySearchResult[]): string {
@@ -211,7 +266,7 @@ export function mergeHybridMemoryResults(
     const semanticContribution = Math.max(0, memory.semanticScore) * 0.45
     merged.set(memory.id, existing
       ? { ...existing, score: existing.score + semanticContribution }
-      : { ...memory, score: semanticContribution })
+      : { ...memory, score: semanticContribution + ((memory.helpfulCount || 0) - (memory.unhelpfulCount || 0)) / ((memory.helpfulCount || 0) + (memory.unhelpfulCount || 0) + 2) * 0.05 })
   })
   return [...merged.values()].sort((a, b) => b.score - a.score).slice(0, Math.max(1, limit))
 }

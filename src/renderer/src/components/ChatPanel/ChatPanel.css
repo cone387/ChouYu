@@ -662,17 +662,37 @@
 }
 
 .message-memory-refs li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
   color: var(--text-secondary);
   line-height: 1.4;
 }
 
-.message-memory-refs li span {
+.message-memory-refs li > div:first-child { display: flex; min-width: 0; align-items: baseline; }
+.message-memory-refs li p { margin: 0; overflow-wrap: anywhere; }
+
+.message-memory-refs li > div:first-child span {
   margin-right: 5px;
   padding: 1px 4px;
   border-radius: 4px;
   background: var(--hover-bg);
   color: var(--text-muted);
   font-size: 8px;
+}
+
+.memory-ref-feedback { display: flex; flex: 0 0 auto; gap: 3px; }
+.memory-ref-feedback button { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--border); border-radius: 5px; padding: 3px 5px; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 8px; transition: background 160ms ease-out,color 160ms ease-out,border-color 160ms ease-out; }
+.memory-ref-feedback button:hover { border-color: var(--accent); color: var(--text-primary); }
+.memory-ref-feedback button.selected { border-color: var(--success); background: var(--success-bg); color: var(--success); }
+.memory-ref-feedback button.selected.negative { border-color: var(--warning); background: var(--warning-bg); color: var(--warning); }
+.memory-ref-feedback button:disabled { cursor: default; opacity: .7; }
+.memory-ref-feedback button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.memory-ref-feedback-error { margin-top: 5px; color: var(--error); font-size: 8px; }
+
+@media (max-width: 520px) {
+  .message-memory-refs li { align-items: flex-start; flex-direction: column; }
 }
 
 /* Topbar Avatar */

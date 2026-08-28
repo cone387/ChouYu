@@ -332,7 +332,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
               enabled={config.memoryEnabled}
               onEnabledChange={(enabled) => { void save({ memoryEnabled: enabled }) }}
               config={config}
-              onSaveEmbedding={save}
+              onSaveConfig={save}
             />
           )}
 

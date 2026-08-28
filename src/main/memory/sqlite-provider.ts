@@ -3,9 +3,13 @@ import { randomUUID } from 'crypto'
 import fs from 'fs'
 import type {
   MemoryCandidateInput,
+  MemoryArchiveReason,
+  MemoryCleanupSuggestion,
   MemoryConflict,
   MemoryConflictAction,
   MemoryConflictKind,
+  MemoryFeedbackResult,
+  MemoryFeedbackValue,
   MemoryListOptions,
   MemoryRecord,
   MemoryRevision,
@@ -15,7 +19,9 @@ import type {
 } from '../../shared/memory'
 import {
   extractMemoryKeywords,
+  getMemoryCleanupReasons,
   normalizeMemoryKey,
+  scoreMemoryLifecycle,
   scoreMemory
 } from '../../shared/memory'
 import type { MemoryEmbeddingRecord, MemoryProvider, MemoryUpdate } from './provider'
@@ -37,6 +43,9 @@ interface MemoryRow {
   last_accessed_at: number | null
   access_count: number
   expires_at: number | null
+  helpful_count: number
+  unhelpful_count: number
+  archived_reason: string | null
 }
 
 interface MemoryConflictRow {
@@ -90,7 +99,10 @@ export class SQLiteMemoryProvider implements MemoryProvider {
         updated_at INTEGER NOT NULL,
         last_accessed_at INTEGER,
         access_count INTEGER NOT NULL DEFAULT 0,
-        expires_at INTEGER
+        expires_at INTEGER,
+        helpful_count INTEGER NOT NULL DEFAULT 0,
+        unhelpful_count INTEGER NOT NULL DEFAULT 0,
+        archived_reason TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_memories_status_updated ON memories(status, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_memories_normalized_key ON memories(normalized_key);
@@ -131,7 +143,20 @@ export class SQLiteMemoryProvider implements MemoryProvider {
         FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_memory_revisions_memory ON memory_revisions(memory_id, created_at DESC);
+      CREATE TABLE IF NOT EXISTS memory_feedback (
+        memory_id TEXT NOT NULL,
+        context_id TEXT NOT NULL,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (memory_id, context_id),
+        FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_memory_feedback_context ON memory_feedback(context_id);
     `)
+    const memoryColumns = new Set((this.database.pragma('table_info(memories)') as Array<{ name: string }>).map((column) => column.name))
+    if (!memoryColumns.has('helpful_count')) this.database.exec('ALTER TABLE memories ADD COLUMN helpful_count INTEGER NOT NULL DEFAULT 0')
+    if (!memoryColumns.has('unhelpful_count')) this.database.exec('ALTER TABLE memories ADD COLUMN unhelpful_count INTEGER NOT NULL DEFAULT 0')
+    if (!memoryColumns.has('archived_reason')) this.database.exec('ALTER TABLE memories ADD COLUMN archived_reason TEXT')
   }
 
   close(): void {
@@ -161,7 +186,10 @@ export class SQLiteMemoryProvider implements MemoryProvider {
       updatedAt: row.updated_at,
       lastAccessedAt: row.last_accessed_at || undefined,
       accessCount: row.access_count,
-      expiresAt: row.expires_at || undefined
+      expiresAt: row.expires_at || undefined,
+      helpfulCount: row.helpful_count || 0,
+      unhelpfulCount: row.unhelpful_count || 0,
+      archivedReason: row.archived_reason as MemoryArchiveReason | undefined
     }
   }
 
@@ -210,17 +238,20 @@ export class SQLiteMemoryProvider implements MemoryProvider {
       sourceMessageId: candidate.sourceMessageId,
       createdAt: now,
       updatedAt: now,
-      accessCount: 0
+      accessCount: 0,
+      expiresAt: candidate.expiresAt,
+      helpfulCount: 0,
+      unhelpfulCount: 0
     }
     this.db().prepare(`
       INSERT INTO memories (
         id, type, content, normalized_key, keywords, importance, confidence, sensitivity, status,
-        source_session_id, source_message_id, created_at, updated_at, access_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        source_session_id, source_message_id, created_at, updated_at, access_count, expires_at, helpful_count, unhelpful_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, 0)
     `).run(
       record.id, record.type, record.content, record.normalizedKey, JSON.stringify(record.keywords),
       record.importance, record.confidence, record.sensitivity, record.status,
-      record.sourceSessionId || null, record.sourceMessageId || null, now, now
+      record.sourceSessionId || null, record.sourceMessageId || null, now, now, record.expiresAt || null
     )
     return record
   }
@@ -238,9 +269,88 @@ export class SQLiteMemoryProvider implements MemoryProvider {
     this.db().prepare("DELETE FROM memories WHERE id = ? AND status = 'pending'").run(id)
   }
 
-  archive(id: string, _reason?: string): void {
-    const result = this.db().prepare("UPDATE memories SET status = 'archived', updated_at = ? WHERE id = ? AND status = 'active'").run(Date.now(), id)
-    if (result.changes) this.db().prepare('DELETE FROM memory_embeddings WHERE memory_id = ?').run(id)
+  archive(id: string, reason: MemoryArchiveReason = 'manual'): void {
+    const result = this.db().prepare("UPDATE memories SET status = 'archived', archived_reason = ?, updated_at = ? WHERE id = ? AND status = 'active'").run(reason, Date.now(), id)
+    if (result.changes) {
+      this.db().prepare('DELETE FROM memory_embeddings WHERE memory_id = ?').run(id)
+      if (reason !== 'replace') this.db().prepare("DELETE FROM memory_conflicts WHERE existing_memory_id = ? AND status = 'pending'").run(id)
+    }
+  }
+
+  archiveMany(ids: string[], reason: MemoryArchiveReason): string[] {
+    const uniqueIds = [...new Set(ids)].slice(0, 500)
+    return this.db().transaction(() => {
+      const archived: string[] = []
+      uniqueIds.forEach((id) => {
+        const result = this.db().prepare("UPDATE memories SET status = 'archived', archived_reason = ?, updated_at = ? WHERE id = ? AND status = 'active'").run(reason, Date.now(), id)
+        if (result.changes) {
+          this.db().prepare('DELETE FROM memory_embeddings WHERE memory_id = ?').run(id)
+          if (reason !== 'replace') this.db().prepare("DELETE FROM memory_conflicts WHERE existing_memory_id = ? AND status = 'pending'").run(id)
+          archived.push(id)
+        }
+      })
+      return archived
+    })()
+  }
+
+  reactivate(id: string): MemoryRecord {
+    const result = this.db().prepare("UPDATE memories SET status = 'active', archived_reason = NULL, expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'archived'").run(Date.now(), id)
+    if (!result.changes) throw new Error('归档记忆不存在或已经恢复。')
+    return this.getRequired(id)
+  }
+
+  expireDue(now = Date.now()): string[] {
+    const rows = this.db().prepare("SELECT id FROM memories WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?").all(now) as Array<{ id: string }>
+    return this.archiveMany(rows.map((row) => row.id), 'expired')
+  }
+
+  enforceCapacity(maxItems: number): string[] {
+    const limit = Math.min(2000, Math.max(50, Math.round(maxItems)))
+    const rows = this.db().prepare("SELECT * FROM memories WHERE status = 'active'").all() as MemoryRow[]
+    if (rows.length <= limit) return []
+    const overflow = rows.length - limit
+    const candidates = rows.map((row) => this.mapRow(row))
+      .sort((left, right) => scoreMemoryLifecycle(left) - scoreMemoryLifecycle(right))
+      .slice(0, overflow)
+    return this.archiveMany(candidates.map((memory) => memory.id), 'capacity')
+  }
+
+  cleanupCandidates(limit = 30): MemoryCleanupSuggestion[] {
+    const now = Date.now()
+    const rows = this.db().prepare("SELECT * FROM memories WHERE status = 'active'").all() as MemoryRow[]
+    return rows.map((row) => this.mapRow(row)).map((memory) => ({
+      ...memory,
+      cleanupScore: scoreMemoryLifecycle(memory, now),
+      reasons: getMemoryCleanupReasons(memory, now)
+    })).filter((memory) => memory.reasons.length > 0)
+      .sort((left, right) => left.cleanupScore - right.cleanupScore)
+      .slice(0, Math.min(100, Math.max(1, limit)))
+  }
+
+  recordFeedback(memoryId: string, contextId: string, value: MemoryFeedbackValue): MemoryFeedbackResult {
+    return this.db().transaction(() => {
+      const memory = this.getRequired(memoryId)
+      const previous = this.db().prepare('SELECT value FROM memory_feedback WHERE memory_id = ? AND context_id = ?').get(memoryId, contextId) as { value: MemoryFeedbackValue } | undefined
+      if (previous?.value !== value) {
+        if (previous?.value === 'helpful') this.db().prepare('UPDATE memories SET helpful_count = MAX(0, helpful_count - 1) WHERE id = ?').run(memoryId)
+        if (previous?.value === 'unhelpful') this.db().prepare('UPDATE memories SET unhelpful_count = MAX(0, unhelpful_count - 1) WHERE id = ?').run(memoryId)
+        this.db().prepare(`
+          INSERT INTO memory_feedback (memory_id, context_id, value, updated_at) VALUES (?, ?, ?, ?)
+          ON CONFLICT(memory_id, context_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        `).run(memoryId, contextId, value, Date.now())
+        this.db().prepare(value === 'helpful'
+          ? 'UPDATE memories SET helpful_count = helpful_count + 1 WHERE id = ?'
+          : 'UPDATE memories SET unhelpful_count = unhelpful_count + 1 WHERE id = ?').run(memoryId)
+      }
+      const updated = previous?.value === value ? memory : this.getRequired(memoryId)
+      return {
+        memoryId,
+        contextId,
+        value,
+        helpfulCount: updated.helpfulCount,
+        unhelpfulCount: updated.unhelpfulCount
+      }
+    })()
   }
 
   update(id: string, patch: MemoryUpdate): MemoryRecord {
@@ -299,7 +409,8 @@ export class SQLiteMemoryProvider implements MemoryProvider {
       pending: byStatus.pending || 0,
       archived: byStatus.archived || 0,
       databaseSize: fs.existsSync(this.filePath) ? fs.statSync(this.filePath).size : 0,
-      embeddings: Number((this.db().prepare('SELECT COUNT(*) AS count FROM memory_embeddings').get() as { count: number }).count || 0)
+      embeddings: Number((this.db().prepare('SELECT COUNT(*) AS count FROM memory_embeddings').get() as { count: number }).count || 0),
+      expiringSoon: Number((this.db().prepare("SELECT COUNT(*) AS count FROM memories WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ?").get(Date.now(), Date.now() + 7 * 86_400_000) as { count: number }).count || 0)
     }
   }
 

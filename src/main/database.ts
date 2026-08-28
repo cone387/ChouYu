@@ -11,6 +11,7 @@ import {
   normalizeSessionTitle
 } from '../shared/sessions'
 import type { ToolActivityData } from '../shared/tools'
+import type { MemoryFeedbackValue } from '../shared/memory'
 
 export interface Message {
   id: string
@@ -20,7 +21,7 @@ export interface Message {
   imageUrl?: string
   responseStatus?: 'error' | 'stopped'
   toolData?: ToolActivityData
-  memoryRefs?: Array<{ id: string; content: string; type: string }>
+  memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue }>
   pluginData?: unknown
 }
 
@@ -113,7 +114,12 @@ function sanitizeMemoryRefs(value: unknown): Message['memoryRefs'] {
     if (!item || typeof item !== 'object') return []
     const ref = item as Record<string, unknown>
     if (typeof ref.id !== 'string' || typeof ref.content !== 'string' || typeof ref.type !== 'string') return []
-    return [{ id: ref.id.slice(0, 128), content: ref.content.slice(0, 500), type: ref.type.slice(0, 40) }]
+    return [{
+      id: ref.id.slice(0, 128),
+      content: ref.content.slice(0, 500),
+      type: ref.type.slice(0, 40),
+      feedback: ref.feedback === 'helpful' || ref.feedback === 'unhelpful' ? ref.feedback : undefined
+    }]
   })
 }
 

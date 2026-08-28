@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { MemoryConflictAction, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
+import type { MemoryCleanupSuggestion, MemoryConflictAction, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
 import type { AppConfig } from '../../shared/types'
 import './MemorySettingsTab.css'
 
@@ -7,7 +7,7 @@ interface MemorySettingsTabProps {
   enabled: boolean
   onEnabledChange: (enabled: boolean) => void
   config: AppConfig
-  onSaveEmbedding: (patch: Partial<AppConfig>) => Promise<void>
+  onSaveConfig: (patch: Partial<AppConfig>) => Promise<void>
 }
 
 const TYPE_LABELS: Record<MemoryType, string> = {
@@ -18,9 +18,17 @@ const TYPE_LABELS: Record<MemoryType, string> = {
   workflow: '工作方式'
 }
 
-export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveEmbedding }: MemorySettingsTabProps) {
+const ARCHIVE_LABELS: Record<string, string> = {
+  expired: '到期归档',
+  capacity: '容量整理',
+  cleanup: '手动整理',
+  manual: '手动归档',
+  replace: '被新记忆替换'
+}
+
+export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveConfig }: MemorySettingsTabProps) {
   const [memories, setMemories] = useState<MemoryRecord[]>([])
-  const [stats, setStats] = useState<MemoryStats>({ active: 0, pending: 0, archived: 0, databaseSize: 0, embeddings: 0 })
+  const [stats, setStats] = useState<MemoryStats>({ active: 0, pending: 0, archived: 0, databaseSize: 0, embeddings: 0, expiringSoon: 0 })
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'all' | 'active' | 'pending' | 'archived'>('all')
   const [type, setType] = useState<'all' | MemoryType>('all')
@@ -45,6 +53,13 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   })
   const [embeddingBusy, setEmbeddingBusy] = useState<'test' | 'rebuild' | ''>('')
   const [embeddingStatus, setEmbeddingStatus] = useState('')
+  const [lifecycleDraft, setLifecycleDraft] = useState({ memoryMaxItems: config.memoryMaxItems, memoryDefaultTtlDays: config.memoryDefaultTtlDays })
+  const [cleanupSuggestions, setCleanupSuggestions] = useState<MemoryCleanupSuggestion[]>([])
+  const [cleanupSelected, setCleanupSelected] = useState<Set<string>>(new Set())
+  const [showCleanup, setShowCleanup] = useState(false)
+  const [confirmCleanup, setConfirmCleanup] = useState(false)
+  const [lifecycleBusy, setLifecycleBusy] = useState(false)
+  const [lifecycleStatus, setLifecycleStatus] = useState('')
 
   const refresh = useCallback(async () => {
     setError('')
@@ -72,6 +87,10 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       embeddingModel: config.embeddingModel
     })
   }, [config.embeddingApiKey, config.embeddingBaseUrl, config.embeddingModel])
+
+  useEffect(() => {
+    setLifecycleDraft({ memoryMaxItems: config.memoryMaxItems, memoryDefaultTtlDays: config.memoryDefaultTtlDays })
+  }, [config.memoryDefaultTtlDays, config.memoryMaxItems])
 
   const run = async (id: string, action: () => Promise<unknown>): Promise<boolean> => {
     setBusyId(id)
@@ -141,7 +160,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   }
 
   const saveEmbeddingDraft = async () => {
-    await onSaveEmbedding(embeddingDraft)
+    await onSaveConfig(embeddingDraft)
   }
 
   const testEmbeddingConnection = async () => {
@@ -173,6 +192,68 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     }
   }
 
+  const saveLifecyclePolicy = async () => {
+    setLifecycleBusy(true)
+    setLifecycleStatus('正在保存生命周期策略…')
+    try {
+      await onSaveConfig(lifecycleDraft)
+      const result = await window.electronAPI.memory.maintenance()
+      setLifecycleStatus(`策略已保存。本次归档：过期 ${result.expired} 条，超出容量 ${result.capacityArchived} 条。`)
+      await refresh()
+    } catch (reason) {
+      setLifecycleStatus(reason instanceof Error ? reason.message : '生命周期策略保存失败。')
+    } finally {
+      setLifecycleBusy(false)
+    }
+  }
+
+  const saveDefaultTtl = async (value: number) => {
+    setLifecycleDraft((previous) => ({ ...previous, memoryDefaultTtlDays: value }))
+    setLifecycleBusy(true)
+    setLifecycleStatus('正在保存默认有效期…')
+    try {
+      await onSaveConfig({ memoryDefaultTtlDays: value })
+      setLifecycleStatus(value > 0 ? `之后创建的记忆默认保留 ${value} 天。` : '之后创建的记忆将默认永久保留。')
+    } catch (reason) {
+      setLifecycleStatus(reason instanceof Error ? reason.message : '默认有效期保存失败。')
+    } finally {
+      setLifecycleBusy(false)
+    }
+  }
+
+  const loadCleanupSuggestions = async () => {
+    setLifecycleBusy(true)
+    setLifecycleStatus('正在分析低价值记忆…')
+    try {
+      const suggestions = await window.electronAPI.memory.cleanupPreview(50)
+      setCleanupSuggestions(suggestions)
+      setCleanupSelected(new Set(suggestions.map((memory) => memory.id)))
+      setShowCleanup(true)
+      setConfirmCleanup(false)
+      setLifecycleStatus(suggestions.length > 0 ? `找到 ${suggestions.length} 条整理建议。` : '暂时没有需要整理的低价值记忆。')
+    } catch (reason) {
+      setLifecycleStatus(reason instanceof Error ? reason.message : '整理建议加载失败。')
+    } finally {
+      setLifecycleBusy(false)
+    }
+  }
+
+  const archiveCleanupSelection = async () => {
+    setLifecycleBusy(true)
+    try {
+      const archived = await window.electronAPI.memory.archiveMany([...cleanupSelected])
+      setLifecycleStatus(`已归档 ${archived.length} 条记忆，可在“已归档”筛选中查看。`)
+      setCleanupSuggestions((previous) => previous.filter((memory) => !archived.includes(memory.id)))
+      setCleanupSelected(new Set())
+      setConfirmCleanup(false)
+      await refresh()
+    } catch (reason) {
+      setLifecycleStatus(reason instanceof Error ? reason.message : '批量归档失败。')
+    } finally {
+      setLifecycleBusy(false)
+    }
+  }
+
   return (
     <div className="settings-pane memory-settings-pane">
       <div className="settings-pane-heading memory-heading">
@@ -199,9 +280,46 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       <div className="memory-stats" aria-label="记忆统计">
         <div><strong>{stats.active}</strong><span>已确认</span></div>
         <div><strong>{stats.pending}</strong><span>待确认</span></div>
+        <div><strong>{stats.expiringSoon}</strong><span>7 天内过期</span></div>
         <div><strong>{(stats.databaseSize / 1024).toFixed(1)} KB</strong><span>本地数据库</span></div>
         <div><strong>{stats.embeddings}</strong><span>向量索引</span></div>
       </div>
+
+      <section className="memory-lifecycle-card">
+        <div className="memory-lifecycle-heading">
+          <div><strong>记忆生命周期</strong><span>过期和超出容量的记忆只会归档，不会永久删除。</span></div>
+          <div className="memory-capacity-meter" aria-label={`已使用 ${stats.active} / ${config.memoryMaxItems} 条`}>
+            <span>{stats.active} / {config.memoryMaxItems}</span>
+            <i><b style={{ width: `${Math.min(100, stats.active / Math.max(1, config.memoryMaxItems) * 100)}%` }} /></i>
+          </div>
+        </div>
+        <div className="memory-lifecycle-fields">
+          <label><span>容量上限</span><input type="number" min="50" max="2000" step="50" value={lifecycleDraft.memoryMaxItems} disabled={lifecycleBusy} onChange={(event) => setLifecycleDraft((previous) => ({ ...previous, memoryMaxItems: Number(event.target.value) }))} onBlur={() => { void saveLifecyclePolicy() }} /><small>50–2000 条，超出后优先归档低价值记忆。</small></label>
+          <label><span>新记忆默认有效期</span><select value={lifecycleDraft.memoryDefaultTtlDays} disabled={lifecycleBusy} onChange={(event) => { void saveDefaultTtl(Number(event.target.value)) }}><option value="0">永久保留</option><option value="30">30 天</option><option value="90">90 天</option><option value="180">180 天</option><option value="365">1 年</option></select><small>只影响之后创建的记忆。</small></label>
+        </div>
+        <div className="memory-lifecycle-actions">
+          <button type="button" onClick={() => { void saveLifecyclePolicy() }} disabled={lifecycleBusy}>{lifecycleBusy ? '处理中…' : '立即维护'}</button>
+          <button type="button" className="primary" onClick={() => { void loadCleanupSuggestions() }} disabled={lifecycleBusy}>{showCleanup ? '重新分析' : '查看整理建议'}</button>
+        </div>
+        {lifecycleStatus && <div className="memory-lifecycle-status" role="status">{lifecycleStatus}</div>}
+        {showCleanup && cleanupSuggestions.length > 0 && (
+          <div className="memory-cleanup-panel">
+            <div className="memory-cleanup-toolbar">
+              <div><strong>低价值记忆建议</strong><span>根据重要度、使用时间和来源反馈生成。</span></div>
+              <label><input type="checkbox" checked={cleanupSelected.size === cleanupSuggestions.length} onChange={(event) => setCleanupSelected(event.target.checked ? new Set(cleanupSuggestions.map((memory) => memory.id)) : new Set())} />全选</label>
+            </div>
+            <div className="memory-cleanup-list">
+              {cleanupSuggestions.map((memory) => <label key={memory.id}>
+                <input type="checkbox" checked={cleanupSelected.has(memory.id)} onChange={(event) => setCleanupSelected((previous) => { const next = new Set(previous); if (event.target.checked) next.add(memory.id); else next.delete(memory.id); return next })} />
+                <span><strong>{memory.content}</strong><small>{memory.reasons.join(' · ')} · 保留分 {Math.round(memory.cleanupScore * 100)}</small></span>
+              </label>)}
+            </div>
+            <div className="memory-cleanup-actions">
+              {confirmCleanup ? <><span>确认归档选中的 {cleanupSelected.size} 条记忆？</span><button type="button" onClick={() => setConfirmCleanup(false)}>取消</button><button type="button" className="warning" onClick={() => { void archiveCleanupSelection() }} disabled={lifecycleBusy}>确认归档</button></> : <button type="button" className="warning" onClick={() => setConfirmCleanup(true)} disabled={cleanupSelected.size === 0 || lifecycleBusy}>归档选中项</button>}
+            </div>
+          </div>
+        )}
+      </section>
 
       <section className="memory-embedding-card">
         <div className="memory-embedding-header">
@@ -216,7 +334,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
                 checked={config.embeddingEnabled}
                 onChange={(event) => {
                   setShowEmbedding(event.target.checked)
-                  void onSaveEmbedding({ embeddingEnabled: event.target.checked })
+                  void onSaveConfig({ embeddingEnabled: event.target.checked })
                 }}
                 aria-label="启用语义向量检索"
               />
@@ -303,6 +421,8 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
                 <span className={`memory-status status-${memory.status}`}>{memory.status === 'pending' ? '待确认' : memory.status === 'active' ? '已确认' : '已归档'}</span>
                 {conflicts.length > 0 && <span className="memory-conflict-badge">{conflicts.length} 个冲突</span>}
                 {memory.sensitivity === 'sensitive' && <span className="memory-sensitive">敏感</span>}
+                {memory.status === 'archived' && memory.archivedReason && <span className="memory-archive-reason">{ARCHIVE_LABELS[memory.archivedReason] || memory.archivedReason}</span>}
+                {memory.status === 'active' && memory.expiresAt && <span className="memory-expiry">{memory.expiresAt <= Date.now() + 7 * 86_400_000 ? '即将过期' : `${Math.ceil((memory.expiresAt - Date.now()) / 86_400_000)} 天后过期`}</span>}
               </div>
               <time>{new Date(memory.updatedAt).toLocaleDateString('zh-CN')}</time>
             </div>
@@ -341,6 +461,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
               <span>重要度 {Math.round(memory.importance * 100)}%</span>
               <span>可信度 {Math.round(memory.confidence * 100)}%</span>
               <span>使用 {memory.accessCount} 次</span>
+              <span>反馈 +{memory.helpfulCount} / -{memory.unhelpfulCount}</span>
             </div>
             <div className="memory-card-actions">
               {memory.status === 'pending' && conflicts.length === 0 && <>
@@ -351,6 +472,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
                 <button type="button" onClick={() => setEditingId('')}>取消</button>
                 <button type="button" className="primary" onClick={() => { void saveEdit(memory) }}>保存</button>
               </> : memory.status !== 'archived' && <button type="button" onClick={() => { setEditingId(memory.id); setEditingContent(memory.content) }} disabled={Boolean(busyId)}>编辑</button>}
+              {memory.status === 'archived' && <button type="button" className="primary" onClick={() => { void run(memory.id, () => window.electronAPI.memory.reactivate(memory.id)) }} disabled={Boolean(busyId)}>恢复使用</button>}
               {memory.status !== 'pending' && <button type="button" onClick={() => { void toggleHistory(memory.id) }} disabled={Boolean(busyId)} aria-expanded={historyId === memory.id}>{historyId === memory.id ? '收起历史' : '版本历史'}</button>}
               {deleteConfirmId === memory.id ? <>
                 <span className="memory-delete-label">确认永久删除？</span>

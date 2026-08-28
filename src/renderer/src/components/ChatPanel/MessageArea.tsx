@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Message } from '../../shared/types'
+import type { MemoryFeedbackValue } from '../../../../shared/memory'
 import PluginMessageCard from './PluginMessageCard'
 import ToolActivityCard from './ToolActivityCard'
 import { getConversationForRetry } from '../../core/conversation-actions'
@@ -10,6 +11,7 @@ interface MessageAreaProps {
   isStreaming: boolean
   onRetry?: (messageId: string) => void
   contextLimit?: number
+  onMemoryFeedback?: (messageId: string, memoryId: string, value: MemoryFeedbackValue) => Promise<void>
 }
 
 function formatTime(ts: number) {
@@ -65,9 +67,25 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ messages, isStreaming, onRetry, contextLimit }: MessageAreaProps) {
+export default function MessageArea({ messages, isStreaming, onRetry, contextLimit, onMemoryFeedback }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [feedbackBusy, setFeedbackBusy] = useState('')
+  const [feedbackError, setFeedbackError] = useState('')
+
+  const submitMemoryFeedback = async (messageId: string, memoryId: string, value: MemoryFeedbackValue) => {
+    if (!onMemoryFeedback) return
+    const key = `${messageId}:${memoryId}`
+    setFeedbackBusy(key)
+    setFeedbackError('')
+    try {
+      await onMemoryFeedback(messageId, memoryId, value)
+    } catch (error) {
+      setFeedbackError(error instanceof Error ? error.message : '记忆反馈保存失败。')
+    } finally {
+      setFeedbackBusy('')
+    }
+  }
 
   useEffect(() => {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -152,8 +170,24 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
               <details className="message-memory-refs">
                 <summary>使用了 {msg.memoryRefs.length} 条长期记忆</summary>
                 <ul>
-                  {msg.memoryRefs.map((memory) => <li key={memory.id}><span>{memory.type}</span>{memory.content}</li>)}
+                  {msg.memoryRefs.map((memory) => {
+                    const key = `${msg.id}:${memory.id}`
+                    return <li key={memory.id}>
+                      <div><span>{memory.type}</span><p>{memory.content}</p></div>
+                      <div className="memory-ref-feedback" aria-label="评价这条记忆来源">
+                        <button type="button" className={memory.feedback === 'helpful' ? 'selected' : ''} disabled={feedbackBusy === key || memory.feedback === 'helpful'} onClick={() => { void submitMemoryFeedback(msg.id, memory.id, 'helpful') }} aria-label="这条记忆有帮助" title="有帮助">
+                          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5.5 7L8 2.5c.5-.8 1.7-.4 1.6.6L9.3 6h3.1a1.4 1.4 0 011.3 1.8l-1.4 4.3a1.5 1.5 0 01-1.4 1H5.5M2 6.5h3.5v7H2z"/></svg>
+                          有帮助
+                        </button>
+                        <button type="button" className={memory.feedback === 'unhelpful' ? 'selected negative' : ''} disabled={feedbackBusy === key || memory.feedback === 'unhelpful'} onClick={() => { void submitMemoryFeedback(msg.id, memory.id, 'unhelpful') }} aria-label="这条记忆不准确" title="不准确">
+                          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5.5 9L8 13.5c.5.8 1.7.4 1.6-.6L9.3 10h3.1a1.4 1.4 0 001.3-1.8l-1.4-4.3a1.5 1.5 0 00-1.4-1H5.5M2 2.5h3.5v7H2z"/></svg>
+                          不准确
+                        </button>
+                      </div>
+                    </li>
+                  })}
                 </ul>
+                {feedbackError && <div className="memory-ref-feedback-error" role="alert">{feedbackError}</div>}
               </details>
             )}
           </div>

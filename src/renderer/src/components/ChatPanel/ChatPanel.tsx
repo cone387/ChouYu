@@ -8,7 +8,7 @@ import OnboardingCard from '../Onboarding/OnboardingCard'
 import ToolApprovalDialog from '../ToolApproval/ToolApprovalDialog'
 import MemoryCandidateCard from '../Memory/MemoryCandidateCard'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
-import type { MemoryConflictAction, MemoryRecord } from '../../../../shared/memory'
+import type { MemoryConflictAction, MemoryFeedbackValue, MemoryRecord } from '../../../../shared/memory'
 import { formatMemoryContext } from '../../../../shared/memory'
 import {
   Message,
@@ -661,6 +661,13 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }
   }, [memoryCandidates])
 
+  const submitMemoryFeedback = useCallback(async (messageId: string, memoryId: string, value: MemoryFeedbackValue) => {
+    await window.electronAPI.memory.feedback(memoryId, messageId, value)
+    setMessages((previous) => previous.map((message) => message.id === messageId
+      ? { ...message, memoryRefs: message.memoryRefs?.map((memory) => memory.id === memoryId ? { ...memory, feedback: value } : memory) }
+      : message))
+  }, [])
+
   return (
     <div
       ref={panelRef}
@@ -729,6 +736,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 isStreaming={isStreaming}
                 onRetry={retryAssistantMessage}
                 contextLimit={MAX_HISTORY_MESSAGES}
+                onMemoryFeedback={submitMemoryFeedback}
               />
             )}
             {confirmClear && (

@@ -1,8 +1,12 @@
 import type {
   MemoryCandidateInput,
+  MemoryArchiveReason,
+  MemoryCleanupSuggestion,
   MemoryConflict,
   MemoryConflictAction,
   MemoryConflictKind,
+  MemoryFeedbackResult,
+  MemoryFeedbackValue,
   MemoryListOptions,
   MemoryRecord,
   MemoryRevision,
@@ -31,7 +35,13 @@ export interface MemoryProvider {
   createActive(candidate: MemoryCandidateInput): MemoryRecord
   approve(id: string): MemoryRecord
   reject(id: string): void
-  archive(id: string, reason?: string): void
+  archive(id: string, reason?: MemoryArchiveReason): void
+  archiveMany(ids: string[], reason: MemoryArchiveReason): string[]
+  reactivate(id: string): MemoryRecord
+  expireDue(now?: number): string[]
+  enforceCapacity(maxItems: number): string[]
+  cleanupCandidates(limit?: number): MemoryCleanupSuggestion[]
+  recordFeedback(memoryId: string, contextId: string, value: MemoryFeedbackValue): MemoryFeedbackResult
   update(id: string, patch: MemoryUpdate): MemoryRecord
   delete(id: string): void
   clear(): void

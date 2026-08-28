@@ -8,6 +8,7 @@ import { formatSessionMarkdown } from '../shared/sessions'
 import {
   type MemoryCandidateInput,
   type MemoryConflictAction,
+  type MemoryFeedbackValue,
   type MemoryListOptions,
   type MemoryType,
   containsSecret,
@@ -29,7 +30,9 @@ import {
   createMemory,
   indexMemory,
   proposeMemoryCandidate,
+  reactivateMemory,
   rebuildEmbeddings,
+  runMemoryMaintenance,
   resolveMemoryConflict,
   restoreMemoryRevision,
   searchMemories,
@@ -253,6 +256,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   ipcMain.handle('memory:list', (_event, rawOptions?: MemoryListOptions) => {
+    runMemoryMaintenance()
     const options: MemoryListOptions = rawOptions && typeof rawOptions === 'object' ? {
       query: typeof rawOptions.query === 'string' ? rawOptions.query.slice(0, 500) : undefined,
       status: ['pending', 'active', 'archived', 'all'].includes(String(rawOptions.status)) ? rawOptions.status : 'all',
@@ -262,7 +266,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getMemoryProvider().list(options)
   })
 
-  ipcMain.handle('memory:stats', () => getMemoryProvider().stats())
+  ipcMain.handle('memory:stats', () => {
+    runMemoryMaintenance()
+    return getMemoryProvider().stats()
+  })
 
   ipcMain.handle('memory:search', (_event, query: string, limit?: number) => {
     if (typeof query !== 'string' || !query.trim()) return []
@@ -297,6 +304,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid memory id')
     const memory = getMemoryProvider().approve(id)
     void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index approved memory:', error))
+    runMemoryMaintenance()
     return memory
   })
 
@@ -325,6 +333,32 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (typeof memoryId !== 'string' || !memoryId || memoryId.length > 128) throw new Error('Invalid memory id')
     if (typeof revisionId !== 'string' || !revisionId || revisionId.length > 128) throw new Error('Invalid revision id')
     return restoreMemoryRevision(memoryId, revisionId)
+  })
+
+  ipcMain.handle('memory:maintenance', () => runMemoryMaintenance())
+
+  ipcMain.handle('memory:cleanup-preview', (_event, limit?: number) =>
+    getMemoryProvider().cleanupCandidates(typeof limit === 'number' ? Math.min(100, Math.max(1, limit)) : 30))
+
+  ipcMain.handle('memory:archive-many', (_event, rawIds: unknown) => {
+    if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 500) throw new Error('Invalid memory ids')
+    const ids = rawIds.map((id) => {
+      if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid memory id')
+      return id
+    })
+    return getMemoryProvider().archiveMany(ids, 'cleanup')
+  })
+
+  ipcMain.handle('memory:reactivate', (_event, memoryId: string) => {
+    if (typeof memoryId !== 'string' || !memoryId || memoryId.length > 128) throw new Error('Invalid memory id')
+    return reactivateMemory(memoryId)
+  })
+
+  ipcMain.handle('memory:feedback', (_event, memoryId: string, contextId: string, value: MemoryFeedbackValue) => {
+    if (typeof memoryId !== 'string' || !memoryId || memoryId.length > 128) throw new Error('Invalid memory id')
+    if (typeof contextId !== 'string' || !contextId || contextId.length > 128) throw new Error('Invalid feedback context')
+    if (!['helpful', 'unhelpful'].includes(value)) throw new Error('Invalid memory feedback')
+    return getMemoryProvider().recordFeedback(memoryId, contextId, value)
   })
 
   ipcMain.handle('memory:update', (_event, id: string, patch: { content?: string; type?: string; importance?: number; expiresAt?: number | null }) => {
@@ -546,6 +580,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     saveConfig(patch)
     const updated = getConfig()
+    if (patch.memoryMaxItems !== undefined || patch.memoryDefaultTtlDays !== undefined) runMemoryMaintenance()
     if (typeof patch.autoStart === 'boolean') {
       app.setLoginItemSettings({ openAtLogin: patch.autoStart, openAsHidden: true })
     }
