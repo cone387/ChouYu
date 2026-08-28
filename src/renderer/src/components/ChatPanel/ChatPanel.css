@@ -10,7 +10,6 @@
   flex-direction: column;
   animation: panel-open 200ms ease-out;
   z-index: 9998;
-  overflow-x: hidden;
   /* Position is committed after transform-based dragging; a top transition here
      would briefly reveal the old layout position and look like a jump. */
   transition: none;
@@ -45,9 +44,8 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  overflow-x: hidden;
   border-radius: inherit;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .chat-panel-workspace .chat-panel-main {
@@ -436,9 +434,7 @@
   background: transparent;
   min-width: 0;
   max-width: 100%;
-  overflow-x: hidden;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .input-toolbar-left,
@@ -448,7 +444,6 @@
   align-items: center;
   min-width: 0;
   max-width: 100%;
-  flex-wrap: wrap;
 }
 
 .input-toolbar-left { flex: 1 1 auto; }
@@ -1047,12 +1042,9 @@
 }
 
 /* Horizontal overflow guard: chat content must wrap instead of creating a second axis. */
-.chat-panel,
-.chat-panel-main,
 .message-area,
 .message-body,
-.message-bubble,
-.input-container {
+.message-bubble {
   min-width: 0;
   max-width: 100%;
   overflow-x: hidden;
@@ -1094,21 +1086,21 @@
 .screenshot-menu-item {
   min-width: 0;
   max-width: 100%;
-  white-space: normal;
+  white-space: nowrap;
   overflow-wrap: anywhere;
 }
 
 .screenshot-menu-label,
 .screenshot-menu-shortcut {
   min-width: 0;
-  white-space: normal;
+  white-space: nowrap;
   overflow-wrap: anywhere;
 }
 
 .screenshot-dropdown {
   width: min(220px, calc(100vw - 32px));
   min-width: 0;
-  max-width: calc(100% - 8px);
+  max-width: calc(100vw - 32px);
   overflow-x: hidden;
 }
 
