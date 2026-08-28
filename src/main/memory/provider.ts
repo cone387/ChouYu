@@ -12,6 +12,7 @@ import type {
   MemoryRevision,
   MemorySearchResult,
   MemoryStats,
+  MemoryTopic,
   MemoryType
 } from '../../shared/memory'
 
@@ -56,4 +57,9 @@ export interface MemoryProvider {
   resolveConflict(candidateId: string, action: MemoryConflictAction): MemoryRecord | null
   listRevisions(memoryId: string): MemoryRevision[]
   restoreRevision(memoryId: string, revisionId: string): MemoryRecord
+  listTopics(): MemoryTopic[]
+  createTopic(label: string, memoryIds: string[]): MemoryTopic
+  splitTopic(topicId: string): string[]
+  excludeFromClusters(memoryIds: string[]): string[]
+  listClusterExcludedIds(): string[]
 }

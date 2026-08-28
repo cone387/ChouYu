@@ -120,6 +120,62 @@ export interface MemoryCluster {
   totalCharacters: number
   summaryCharacters: number
   savedCharacters: number
+  manual?: boolean
+}
+
+export interface MemoryTopic {
+  id: string
+  label: string
+  type: MemoryType
+  memoryIds: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export type MemoryImportStatus = 'new' | 'duplicate' | 'conflict'
+export type MemoryImportAction = 'add' | 'keep' | 'replace' | 'skip'
+
+export interface MemoryImportItem {
+  id: string
+  candidate: MemoryCandidateInput
+  status: MemoryImportStatus
+  suggestedAction: MemoryImportAction
+  existingMemoryId?: string
+  existingContent?: string
+  conflictKind?: MemoryConflictKind
+  reason?: string
+}
+
+export interface MemoryImportPreview {
+  canceled: boolean
+  fileName?: string
+  items: MemoryImportItem[]
+  invalid: number
+  blockedSecrets: number
+}
+
+export interface MemoryImportDecision {
+  item: MemoryImportItem
+  action: MemoryImportAction
+}
+
+export interface MemoryImportResult {
+  added: number
+  kept: number
+  replaced: number
+  skipped: number
+  failed: number
+}
+
+export interface MemoryInsights {
+  byType: Array<{ type: MemoryType; count: number }>
+  createdByWeek: Array<{ label: string; count: number }>
+  archiveReasons: Array<{ reason: MemoryArchiveReason; count: number }>
+  helpful: number
+  unhelpful: number
+  clustered: number
+  clusters: number
+  savedCharacters: number
 }
 
 export interface EmbeddingStatus {
@@ -305,8 +361,36 @@ function summarizeCluster(memories: readonly MemoryRecord[]): string {
   return parts.join('；')
 }
 
-export function buildMemoryClusters(memories: readonly MemoryRecord[]): MemoryCluster[] {
-  const active = memories.filter((memory) => memory.status === 'active')
+export function buildMemoryClusters(
+  memories: readonly MemoryRecord[],
+  manualTopics: readonly MemoryTopic[] = [],
+  excludedIds: readonly string[] = []
+): MemoryCluster[] {
+  const allActive = memories.filter((memory) => memory.status === 'active')
+  const byId = new Map(allActive.map((memory) => [memory.id, memory]))
+  const manualClusters = manualTopics.flatMap((topic): MemoryCluster[] => {
+    const group = topic.memoryIds.map((id) => byId.get(id)).filter((memory): memory is MemoryRecord => Boolean(memory))
+    if (group.length < 2 || group.some((memory) => memory.type !== topic.type)) return []
+    const summary = summarizeCluster(group)
+    const totalCharacters = group.reduce((total, memory) => total + memory.content.length, 0)
+    return [{
+      id: topic.id,
+      type: topic.type,
+      label: topic.label,
+      summary,
+      keywords: [...new Set(group.flatMap(clusterKeywords))].slice(0, 5),
+      memoryIds: group.map((memory) => memory.id),
+      memories: [...group].sort((left, right) => right.updatedAt - left.updatedAt),
+      updatedAt: topic.updatedAt,
+      totalCharacters,
+      summaryCharacters: summary.length,
+      savedCharacters: Math.max(0, totalCharacters - summary.length),
+      manual: true
+    }]
+  })
+  const manuallyGrouped = new Set(manualClusters.flatMap((cluster) => cluster.memoryIds))
+  const excluded = new Set(excludedIds)
+  const active = allActive.filter((memory) => !manuallyGrouped.has(memory.id) && !excluded.has(memory.id))
   const parents = active.map((_, index) => index)
   const find = (index: number): number => {
     let current = index
@@ -347,7 +431,7 @@ export function buildMemoryClusters(memories: readonly MemoryRecord[]): MemoryCl
 
   const groups = new Map<number, MemoryRecord[]>()
   active.forEach((memory, index) => groups.set(find(index), [...(groups.get(find(index)) || []), memory]))
-  return [...groups.values()].filter((group) => group.length >= 2).map((group) => {
+  const automatic = [...groups.values()].filter((group) => group.length >= 2).map((group) => {
     const frequency = new Map<string, number>()
     group.forEach((memory) => clusterKeywords(memory).forEach((keyword) => frequency.set(keyword, (frequency.get(keyword) || 0) + 1)))
     const topKeywords = [...frequency.entries()].sort((left, right) => right[1] - left[1] || right[0].length - left[0].length).slice(0, 5).map(([keyword]) => keyword)
@@ -367,11 +451,12 @@ export function buildMemoryClusters(memories: readonly MemoryRecord[]): MemoryCl
       summaryCharacters: summary.length,
       savedCharacters: Math.max(0, totalCharacters - summary.length)
     }
-  }).sort((left, right) => right.updatedAt - left.updatedAt)
+  })
+  return [...manualClusters, ...automatic].sort((left, right) => right.updatedAt - left.updatedAt)
 }
 
-export function compressMemoryResults(memories: readonly MemorySearchResult[], limit: number): MemorySearchResult[] {
-  const clusters = buildMemoryClusters(memories)
+export function compressMemoryResults(memories: readonly MemorySearchResult[], limit: number, knownClusters?: readonly MemoryCluster[]): MemorySearchResult[] {
+  const clusters = knownClusters || buildMemoryClusters(memories)
   const clusterByMemory = new Map<string, MemoryCluster>()
   clusters.forEach((cluster) => cluster.memoryIds.forEach((id) => clusterByMemory.set(id, cluster)))
   const emitted = new Set<string>()
@@ -392,8 +477,8 @@ export function compressMemoryResults(memories: readonly MemorySearchResult[], l
       keywords: cluster.keywords,
       score: Math.max(...members.map((item) => item.score)) + Math.min(0.03, members.length * 0.005),
       clusterId: cluster.id,
-      sourceMemoryIds: members.map((item) => item.id),
-      compressedCount: members.length
+      sourceMemoryIds: cluster.memoryIds,
+      compressedCount: cluster.memoryIds.length
     })
   })
   return compressed.sort((left, right) => right.score - left.score).slice(0, Math.max(1, limit))

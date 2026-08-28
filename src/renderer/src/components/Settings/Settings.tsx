@@ -12,6 +12,8 @@ import './Settings.css'
 interface SettingsProps {
   onClose: () => void
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
+  initialNav?: string
+  focusMemoryId?: string
 }
 
 const NAV_ITEMS = [
@@ -23,10 +25,10 @@ const NAV_ITEMS = [
   { key: 'about', label: '关于', icon: 'M7 4v3M7 9.5v.5' }
 ]
 
-export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
+export default function Settings({ onClose, dragHandleProps, initialNav, focusMemoryId }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showKey, setShowKey] = useState(false)
-  const [activeNav, setActiveNav] = useState<string>('ai')
+  const [activeNav, setActiveNav] = useState<string>(initialNav || 'ai')
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [appVersion, setAppVersion] = useState<string>('')
   const [updateStatus, setUpdateStatus] = useState<string>('')
@@ -333,6 +335,7 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
               onEnabledChange={(enabled) => { void save({ memoryEnabled: enabled }) }}
               config={config}
               onSaveConfig={save}
+              focusMemoryId={focusMemoryId}
             />
           )}
 

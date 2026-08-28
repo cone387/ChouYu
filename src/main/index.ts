@@ -7,7 +7,7 @@ import { initDatabase, getConfig, flushDatabase } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
-import { closeMemory, getMemoryProvider, initializeMemory, listMemoryClusters, proposeMemoryCandidate, searchMemories } from './memory/service'
+import { closeMemory, createMemoryTopic, getMemoryInsights, getMemoryProvider, importMemories, initializeMemory, listMemoryClusters, previewMemoryImport, proposeMemoryCandidate, searchMemories, splitMemoryCluster } from './memory/service'
 import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 
 let mainWindow: BrowserWindow | null = null
@@ -182,6 +182,24 @@ app.whenReady().then(async () => {
     const compressedMemories = await searchMemories('容量 smoke', 6)
     if (!smokeClusters.some((cluster) => cluster.memoryIds.length > 2)) throw new Error('Memory clustering smoke test failed')
     if (!compressedMemories.some((memory) => (memory.compressedCount || 0) > 2 && (memory.sourceMemoryIds?.length || 0) > 2)) throw new Error('Memory compression smoke test failed')
+
+    const manualLeft = memoryProvider.createActive({ type: 'project', content: '人工主题来源 Alpha', importance: 0.7, confidence: 1, sensitivity: 'normal' })
+    const manualRight = memoryProvider.createActive({ type: 'project', content: '人工主题来源 Beta', importance: 0.7, confidence: 1, sensitivity: 'normal' })
+    const manualTopic = createMemoryTopic('Smoke 人工主题', [manualLeft.id, manualRight.id])
+    if (!manualTopic.manual || manualTopic.memoryIds.length !== 2) throw new Error('Manual memory topic smoke test failed')
+    splitMemoryCluster(manualTopic.id, manualTopic.memoryIds, true)
+    if (listMemoryClusters().some((cluster) => cluster.id === manualTopic.id)) throw new Error('Memory topic split smoke test failed')
+
+    const importPreview = previewMemoryImport({ memories: [
+      { type: 'fact', content: '导入 smoke 事实', importance: 0.7, confidence: 1 },
+      { type: 'fact', content: '我的显示器是 5K', importance: 0.7, confidence: 1 },
+      { type: 'fact', content: '我的显示器是 8K', importance: 0.7, confidence: 1 }
+    ] })
+    if (!importPreview.items.some((item) => item.status === 'new') || !importPreview.items.some((item) => item.status === 'duplicate') || !importPreview.items.some((item) => item.status === 'conflict')) throw new Error('Memory import preview smoke test failed')
+    const importResult = importMemories(importPreview.items.map((item) => ({ item, action: item.status === 'new' ? 'add' : item.status === 'conflict' ? 'replace' : 'skip' })))
+    if (importResult.added !== 1 || importResult.replaced !== 1 || importResult.skipped !== 1) throw new Error('Memory import commit smoke test failed')
+    const insights = getMemoryInsights()
+    if (insights.byType.length !== 5 || insights.createdByWeek.length !== 8) throw new Error('Memory insights smoke test failed')
   }
 
   // Register plugins and IPC channels synchronously (before window loads renderer)

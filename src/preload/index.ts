@@ -3,7 +3,7 @@ import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import type { CaptureSourceInfo } from '../shared/capture'
 import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
-import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats } from '../shared/memory'
+import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats } from '../shared/memory'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
@@ -68,6 +68,11 @@ const api = {
     maintenance: () => ipcRenderer.invoke('memory:maintenance') as Promise<MemoryMaintenanceResult>,
     cleanupPreview: (limit?: number) => ipcRenderer.invoke('memory:cleanup-preview', limit) as Promise<MemoryCleanupSuggestion[]>,
     clusters: () => ipcRenderer.invoke('memory:clusters') as Promise<MemoryCluster[]>,
+    createTopic: (label: string, memoryIds: string[]) => ipcRenderer.invoke('memory:create-topic', label, memoryIds) as Promise<MemoryCluster>,
+    splitCluster: (clusterId: string, memoryIds: string[], manual: boolean) => ipcRenderer.invoke('memory:split-cluster', clusterId, memoryIds, manual) as Promise<string[]>,
+    insights: () => ipcRenderer.invoke('memory:insights') as Promise<MemoryInsights>,
+    importPreview: () => ipcRenderer.invoke('memory:import-preview') as Promise<MemoryImportPreview>,
+    importCommit: (decisions: MemoryImportDecision[]) => ipcRenderer.invoke('memory:import-commit', decisions) as Promise<MemoryImportResult>,
     archiveMany: (ids: string[]) => ipcRenderer.invoke('memory:archive-many', ids) as Promise<string[]>,
     reactivate: (memoryId: string) => ipcRenderer.invoke('memory:reactivate', memoryId) as Promise<MemoryRecord>,
     feedback: (memoryId: string, contextId: string, value: MemoryFeedbackValue) => ipcRenderer.invoke('memory:feedback', memoryId, contextId, value) as Promise<MemoryFeedbackResult>,

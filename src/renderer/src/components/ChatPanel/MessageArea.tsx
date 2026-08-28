@@ -12,6 +12,7 @@ interface MessageAreaProps {
   onRetry?: (messageId: string) => void
   contextLimit?: number
   onMemoryFeedback?: (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => Promise<void>
+  onCorrectMemory?: (memoryId: string) => void
 }
 
 function formatTime(ts: number) {
@@ -67,7 +68,7 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ messages, isStreaming, onRetry, contextLimit, onMemoryFeedback }: MessageAreaProps) {
+export default function MessageArea({ messages, isStreaming, onRetry, contextLimit, onMemoryFeedback, onCorrectMemory }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [feedbackBusy, setFeedbackBusy] = useState('')
@@ -184,6 +185,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
                           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5.5 9L8 13.5c.5.8 1.7.4 1.6-.6L9.3 10h3.1a1.4 1.4 0 001.3-1.8l-1.4-4.3a1.5 1.5 0 00-1.4-1H5.5M2 2.5h3.5v7H2z"/></svg>
                           不准确
                         </button>
+                        {memory.feedback === 'unhelpful' && <button type="button" className="correct" onClick={() => onCorrectMemory?.(memory.sourceIds?.[0] || memory.id)}>去修正</button>}
                       </div>
                     </li>
                   })}

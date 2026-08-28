@@ -9,6 +9,7 @@ import {
   type MemoryCandidateInput,
   type MemoryConflictAction,
   type MemoryFeedbackValue,
+  type MemoryImportDecision,
   type MemoryListOptions,
   type MemoryType,
   containsSecret,
@@ -28,8 +29,12 @@ import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './
 import {
   getMemoryProvider,
   createMemory,
+  createMemoryTopic,
+  getMemoryInsights,
+  importMemories,
   indexMemory,
   listMemoryClusters,
+  previewMemoryImport,
   proposeMemoryCandidate,
   reactivateMemory,
   rebuildEmbeddings,
@@ -37,6 +42,7 @@ import {
   resolveMemoryConflict,
   restoreMemoryRevision,
   searchMemories,
+  splitMemoryCluster,
   testEmbedding
 } from './memory/service'
 import {
@@ -342,6 +348,52 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     getMemoryProvider().cleanupCandidates(typeof limit === 'number' ? Math.min(100, Math.max(1, limit)) : 30))
 
   ipcMain.handle('memory:clusters', () => listMemoryClusters())
+
+  ipcMain.handle('memory:create-topic', (_event, label: string, rawIds: unknown) => {
+    if (typeof label !== 'string' || !label.trim() || label.length > 60) throw new Error('Invalid topic label')
+    if (!Array.isArray(rawIds) || rawIds.length < 2 || rawIds.length > 100) throw new Error('Invalid topic memories')
+    const ids = rawIds.map((id) => {
+      if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid memory id')
+      return id
+    })
+    return createMemoryTopic(label, ids)
+  })
+
+  ipcMain.handle('memory:split-cluster', (_event, clusterId: string, rawIds: unknown, manual: boolean) => {
+    if (typeof clusterId !== 'string' || !clusterId || clusterId.length > 128 || typeof manual !== 'boolean') throw new Error('Invalid memory cluster')
+    if (!Array.isArray(rawIds) || rawIds.length < 2 || rawIds.length > 100) throw new Error('Invalid cluster memories')
+    const ids = rawIds.map((id) => {
+      if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid memory id')
+      return id
+    })
+    return splitMemoryCluster(clusterId, ids, manual)
+  })
+
+  ipcMain.handle('memory:insights', () => getMemoryInsights())
+
+  ipcMain.handle('memory:import-preview', async () => {
+    const selection = await dialog.showOpenDialog(mainWindow, {
+      title: '导入 ChouYu 记忆',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (selection.canceled || !selection.filePaths[0]) return { canceled: true, items: [], invalid: 0, blockedSecrets: 0 }
+    const filePath = selection.filePaths[0]
+    const stat = await fs.promises.stat(filePath)
+    if (stat.size > 5 * 1024 * 1024) throw new Error('记忆导入文件不能超过 5 MB。')
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(await fs.promises.readFile(filePath, 'utf8'))
+    } catch {
+      throw new Error('无法解析 JSON 文件，请确认文件格式正确。')
+    }
+    return { canceled: false, fileName: path.basename(filePath), ...previewMemoryImport(parsed) }
+  })
+
+  ipcMain.handle('memory:import-commit', (_event, decisions: MemoryImportDecision[]) => {
+    if (!Array.isArray(decisions) || decisions.length > 2000) throw new Error('Invalid memory import')
+    return importMemories(decisions)
+  })
 
   ipcMain.handle('memory:archive-many', (_event, rawIds: unknown) => {
     if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 500) throw new Error('Invalid memory ids')

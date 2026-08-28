@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { randomUUID } from 'crypto'
 import path from 'path'
 import { SQLiteMemoryProvider } from './sqlite-provider'
 import type { MemoryProvider } from './provider'
@@ -8,11 +9,17 @@ import type {
   MemoryCandidateInput,
   MemoryConflictAction,
   MemoryCluster,
+  MemoryImportDecision,
+  MemoryImportItem,
+  MemoryImportPreview,
+  MemoryImportResult,
+  MemoryInsights,
   MemoryMaintenanceResult,
   MemoryRecord,
-  MemorySearchResult
+  MemorySearchResult,
+  MemoryType
 } from '../../shared/memory'
-import { buildMemoryClusters, compressMemoryResults, detectMemoryRelation, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
+import { buildMemoryClusters, compressMemoryResults, containsSecret, detectMemoryRelation, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
 import { getConfig } from '../database'
 import { OpenAIEmbeddingClient, cosineSimilarity } from './embedding-client'
 
@@ -111,7 +118,142 @@ export function runMemoryMaintenance(): MemoryMaintenanceResult {
 
 export function listMemoryClusters(): MemoryCluster[] {
   runMemoryMaintenance()
-  return buildMemoryClusters(getMemoryProvider().list({ status: 'active', limit: 2000 }))
+  const memoryProvider = getMemoryProvider()
+  return buildMemoryClusters(
+    memoryProvider.list({ status: 'active', limit: 2000 }),
+    memoryProvider.listTopics(),
+    memoryProvider.listClusterExcludedIds()
+  )
+}
+
+export function createMemoryTopic(label: string, memoryIds: string[]): MemoryCluster {
+  const topic = getMemoryProvider().createTopic(label, memoryIds)
+  const cluster = listMemoryClusters().find((item) => item.id === topic.id)
+  if (!cluster) throw new Error('创建人工主题失败。')
+  return cluster
+}
+
+export function splitMemoryCluster(clusterId: string, memoryIds: string[], manual: boolean): string[] {
+  return manual
+    ? getMemoryProvider().splitTopic(clusterId)
+    : getMemoryProvider().excludeFromClusters(memoryIds)
+}
+
+export function getMemoryInsights(): MemoryInsights {
+  runMemoryMaintenance()
+  const all = getMemoryProvider().list({ status: 'all', limit: 2000 })
+  const clusters = listMemoryClusters()
+  const types: MemoryType[] = ['fact', 'preference', 'person', 'project', 'workflow']
+  const archiveReasons = ['expired', 'capacity', 'cleanup', 'manual', 'replace'] as const
+  const now = new Date()
+  const createdByWeek = Array.from({ length: 8 }, (_, reverseIndex) => {
+    const index = 7 - reverseIndex
+    const end = new Date(now)
+    end.setHours(23, 59, 59, 999)
+    end.setDate(end.getDate() - index * 7)
+    const start = new Date(end)
+    start.setDate(start.getDate() - 6)
+    start.setHours(0, 0, 0, 0)
+    return {
+      label: `${start.getMonth() + 1}/${start.getDate()}`,
+      count: all.filter((memory) => memory.createdAt >= start.getTime() && memory.createdAt <= end.getTime()).length
+    }
+  })
+  return {
+    byType: types.map((type) => ({ type, count: all.filter((memory) => memory.status === 'active' && memory.type === type).length })),
+    createdByWeek,
+    archiveReasons: archiveReasons.map((reason) => ({ reason, count: all.filter((memory) => memory.status === 'archived' && memory.archivedReason === reason).length })),
+    helpful: all.reduce((total, memory) => total + memory.helpfulCount, 0),
+    unhelpful: all.reduce((total, memory) => total + memory.unhelpfulCount, 0),
+    clustered: clusters.reduce((total, cluster) => total + cluster.memoryIds.length, 0),
+    clusters: clusters.length,
+    savedCharacters: clusters.reduce((total, cluster) => total + cluster.savedCharacters, 0)
+  }
+}
+
+function importCandidate(value: unknown): MemoryCandidateInput | null {
+  if (!value || typeof value !== 'object') return null
+  const input = value as Record<string, unknown>
+  if (!['fact', 'preference', 'person', 'project', 'workflow'].includes(String(input.type))) return null
+  if (typeof input.content !== 'string' || !input.content.trim() || input.content.length > 500) return null
+  return {
+    type: input.type as MemoryType,
+    content: input.content.trim(),
+    importance: typeof input.importance === 'number' && Number.isFinite(input.importance) ? Math.min(1, Math.max(0, input.importance)) : 0.6,
+    confidence: typeof input.confidence === 'number' && Number.isFinite(input.confidence) ? Math.min(1, Math.max(0, input.confidence)) : 1,
+    sensitivity: input.sensitivity === 'sensitive' ? 'sensitive' : 'normal',
+    expiresAt: typeof input.expiresAt === 'number' && Number.isFinite(input.expiresAt) && input.expiresAt > Date.now() ? input.expiresAt : undefined
+  }
+}
+
+export function previewMemoryImport(value: unknown): Omit<MemoryImportPreview, 'canceled' | 'fileName'> {
+  const source = Array.isArray(value) ? value : value && typeof value === 'object' && Array.isArray((value as { memories?: unknown }).memories)
+    ? (value as { memories: unknown[] }).memories
+    : []
+  const active = getMemoryProvider().list({ status: 'active', limit: 2000 })
+  const items: MemoryImportItem[] = []
+  let invalid = 0
+  let blockedSecrets = 0
+  source.slice(0, 2000).forEach((raw) => {
+    const candidate = importCandidate(raw)
+    if (!candidate) {
+      invalid += 1
+      return
+    }
+    if (containsSecret(candidate.content)) {
+      blockedSecrets += 1
+      return
+    }
+    const duplicate = active.find((memory) => memory.normalizedKey === normalizeMemoryKey(candidate.content))
+    if (duplicate) {
+      items.push({ id: randomUUID(), candidate, status: 'duplicate', suggestedAction: 'skip', existingMemoryId: duplicate.id, existingContent: duplicate.content, reason: '与已有记忆内容相同' })
+      return
+    }
+    const related = active.map((memory) => ({ memory, relation: detectMemoryRelation(candidate, memory) })).find((item) => item.relation)
+    if (related?.relation) {
+      items.push({ id: randomUUID(), candidate, status: 'conflict', suggestedAction: 'keep', existingMemoryId: related.memory.id, existingContent: related.memory.content, conflictKind: related.relation.kind, reason: related.relation.reason })
+      return
+    }
+    items.push({ id: randomUUID(), candidate, status: 'new', suggestedAction: 'add' })
+  })
+  return { items, invalid, blockedSecrets }
+}
+
+export function importMemories(decisions: MemoryImportDecision[]): MemoryImportResult {
+  const result: MemoryImportResult = { added: 0, kept: 0, replaced: 0, skipped: 0, failed: 0 }
+  for (const decision of decisions.slice(0, 2000)) {
+    const candidate = importCandidate(decision.item?.candidate)
+    if (!candidate || containsSecret(candidate.content) || !['add', 'keep', 'replace', 'skip'].includes(decision.action)) {
+      result.failed += 1
+      continue
+    }
+    if (decision.action === 'skip') {
+      result.skipped += 1
+      continue
+    }
+    try {
+      const proposed = proposeMemoryCandidate(candidate)
+      if (!proposed) {
+        result.skipped += 1
+        continue
+      }
+      const hasConflict = proposed.conflicts?.some((conflict) => conflict.status === 'pending')
+      if (hasConflict) {
+        if (decision.action === 'add') throw new Error('导入期间检测到新的冲突。')
+        resolveMemoryConflict(proposed.id, decision.action)
+        if (decision.action === 'keep') result.kept += 1
+        else result.replaced += 1
+      } else {
+        const memory = getMemoryProvider().approve(proposed.id)
+        void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index imported memory:', error))
+        result.added += 1
+      }
+    } catch {
+      result.failed += 1
+    }
+  }
+  runMemoryMaintenance()
+  return result
 }
 
 function embeddingClient(): { client: OpenAIEmbeddingClient; model: string } {
@@ -164,7 +306,7 @@ export async function searchMemories(query: string, limit = 6): Promise<MemorySe
   const lexical = getMemoryProvider().search(query, Math.max(limit * 3, 12))
   const config = getConfig()
   const finalize = (results: MemorySearchResult[]) => config.memoryCompressionEnabled
-    ? compressMemoryResults(results, limit)
+    ? compressMemoryResults(results, limit, listMemoryClusters())
     : results.slice(0, limit)
   if (!config.embeddingEnabled) return finalize(lexical)
   try {

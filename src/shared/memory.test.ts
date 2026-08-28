@@ -102,6 +102,18 @@ describe('memory foundation', () => {
     expect(formatMemoryContext(compressed)).toContain('[memory:m1|m2]')
   })
 
+  it('prioritizes manual topics and respects split exclusions', () => {
+    const create = (id: string, content: string) => ({
+      id, type: 'project' as const, content, normalizedKey: content, keywords: extractMemoryKeywords(content), importance: 0.7,
+      confidence: 1, sensitivity: 'normal' as const, status: 'active' as const, createdAt: 1, updatedAt: 1,
+      accessCount: 0, helpfulCount: 0, unhelpfulCount: 0
+    })
+    const memories = [create('a', 'ChouYu 使用 SQLite'), create('b', 'ChouYu 使用向量检索'), create('c', '天气应用使用 React')]
+    const manual = buildMemoryClusters(memories, [{ id: 'topic-1', label: '人工主题', type: 'project', memoryIds: ['a', 'c'], createdAt: 1, updatedAt: 2 }])
+    expect(manual[0]).toMatchObject({ id: 'topic-1', label: '人工主题', manual: true, memoryIds: ['a', 'c'] })
+    expect(buildMemoryClusters([create('a', 'ChouYu 项目使用 SQLite'), create('b', 'ChouYu 项目使用 SQLite 和向量检索')], [], ['a'])).toHaveLength(0)
+  })
+
   it('detects contradictory facts and preferences', () => {
     expect(detectMemoryRelation(
       { type: 'fact', content: '我的显示器是 5K' },

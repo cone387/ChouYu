@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { MemoryCleanupSuggestion, MemoryCluster, MemoryConflictAction, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
+import type { MemoryCleanupSuggestion, MemoryCluster, MemoryConflictAction, MemoryImportAction, MemoryImportPreview, MemoryInsights, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
 import type { AppConfig } from '../../shared/types'
 import './MemorySettingsTab.css'
 
@@ -8,6 +8,7 @@ interface MemorySettingsTabProps {
   onEnabledChange: (enabled: boolean) => void
   config: AppConfig
   onSaveConfig: (patch: Partial<AppConfig>) => Promise<void>
+  focusMemoryId?: string
 }
 
 const TYPE_LABELS: Record<MemoryType, string> = {
@@ -26,7 +27,9 @@ const ARCHIVE_LABELS: Record<string, string> = {
   replace: '被新记忆替换'
 }
 
-export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveConfig }: MemorySettingsTabProps) {
+const EMPTY_INSIGHTS: MemoryInsights = { byType: [], createdByWeek: [], archiveReasons: [], helpful: 0, unhelpful: 0, clustered: 0, clusters: 0, savedCharacters: 0 }
+
+export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveConfig, focusMemoryId }: MemorySettingsTabProps) {
   const [memories, setMemories] = useState<MemoryRecord[]>([])
   const [stats, setStats] = useState<MemoryStats>({ active: 0, pending: 0, archived: 0, databaseSize: 0, embeddings: 0, expiringSoon: 0 })
   const [query, setQuery] = useState('')
@@ -65,16 +68,30 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [expandedClusterIds, setExpandedClusterIds] = useState<Set<string>>(new Set())
   const [clusterBusy, setClusterBusy] = useState(false)
   const [clusterStatus, setClusterStatus] = useState('')
+  const [insights, setInsights] = useState<MemoryInsights>(EMPTY_INSIGHTS)
+  const [expiryEditingId, setExpiryEditingId] = useState('')
+  const [expiryDays, setExpiryDays] = useState(0)
+  const [topicMergeMode, setTopicMergeMode] = useState(false)
+  const [topicSelection, setTopicSelection] = useState<Set<string>>(new Set())
+  const [topicLabel, setTopicLabel] = useState('')
+  const [splitConfirmId, setSplitConfirmId] = useState('')
+  const [importPreview, setImportPreview] = useState<MemoryImportPreview | null>(null)
+  const [importActions, setImportActions] = useState<Record<string, MemoryImportAction>>({})
+  const [importBusy, setImportBusy] = useState(false)
+  const [importStatus, setImportStatus] = useState('')
+  const [confirmImport, setConfirmImport] = useState(false)
 
   const refresh = useCallback(async () => {
     setError('')
     try {
-      const [items, nextStats] = await Promise.all([
+      const [items, nextStats, nextInsights] = await Promise.all([
         window.electronAPI.memory.list({ query, status, type, limit: 500 }),
-        window.electronAPI.memory.stats()
+        window.electronAPI.memory.stats(),
+        window.electronAPI.memory.insights()
       ])
       setMemories(items)
       setStats(nextStats)
+      setInsights(nextInsights)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '记忆中心加载失败。')
     }
@@ -84,6 +101,12 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     const timer = setTimeout(() => { void refresh() }, 180)
     return () => clearTimeout(timer)
   }, [refresh])
+
+  useEffect(() => {
+    if (!focusMemoryId || memories.length === 0) return
+    const element = document.querySelector(`[data-memory-id="${CSS.escape(focusMemoryId)}"]`)
+    element?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' })
+  }, [focusMemoryId, memories])
 
   useEffect(() => {
     setEmbeddingDraft({
@@ -292,8 +315,88 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     }
   }
 
+  const saveExpiry = async (memory: MemoryRecord) => {
+    const expiresAt = expiryDays > 0 ? Date.now() + expiryDays * 86_400_000 : null
+    if (await run(memory.id, () => window.electronAPI.memory.update(memory.id, { expiresAt }))) setExpiryEditingId('')
+  }
+
+  const createManualTopic = async () => {
+    if (topicSelection.size < 2 || !topicLabel.trim()) return
+    setClusterBusy(true)
+    setClusterStatus('正在创建人工主题…')
+    try {
+      await window.electronAPI.memory.createTopic(topicLabel, [...topicSelection])
+      setClusters(await window.electronAPI.memory.clusters())
+      setTopicMergeMode(false)
+      setTopicSelection(new Set())
+      setTopicLabel('')
+      setShowClusters(true)
+      setClusterStatus('人工主题已创建，摘要压缩会优先使用这个分组。')
+    } catch (reason) {
+      setClusterStatus(reason instanceof Error ? reason.message : '人工主题创建失败。')
+    } finally {
+      setClusterBusy(false)
+    }
+  }
+
+  const splitCluster = async (cluster: MemoryCluster) => {
+    setClusterBusy(true)
+    setClusterStatus('正在拆分主题…')
+    try {
+      await window.electronAPI.memory.splitCluster(cluster.id, cluster.memoryIds, cluster.manual === true)
+      setClusters(await window.electronAPI.memory.clusters())
+      setSplitConfirmId('')
+      setClusterStatus('主题已拆分；这些记忆将保持为独立条目，直到你重新人工合并。')
+    } catch (reason) {
+      setClusterStatus(reason instanceof Error ? reason.message : '主题拆分失败。')
+    } finally {
+      setClusterBusy(false)
+    }
+  }
+
+  const previewImport = async () => {
+    setImportBusy(true)
+    setImportStatus('正在读取并检查导入文件…')
+    try {
+      const preview = await window.electronAPI.memory.importPreview()
+      if (preview.canceled) {
+        setImportStatus('已取消导入。')
+        return
+      }
+      setImportPreview(preview)
+      setImportActions(Object.fromEntries(preview.items.map((item) => [item.id, item.suggestedAction])))
+      setConfirmImport(false)
+      setImportStatus(`已检查 ${preview.items.length} 条可导入记忆；忽略无效 ${preview.invalid} 条，阻止敏感内容 ${preview.blockedSecrets} 条。`)
+    } catch (reason) {
+      setImportStatus(reason instanceof Error ? reason.message : '记忆导入预览失败。')
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
+  const commitImport = async () => {
+    if (!importPreview) return
+    setImportBusy(true)
+    setImportStatus('正在导入记忆…')
+    try {
+      const result = await window.electronAPI.memory.importCommit(importPreview.items.map((item) => ({ item, action: importActions[item.id] || 'skip' })))
+      setImportStatus(`导入完成：新增 ${result.added}，并存 ${result.kept}，替换 ${result.replaced}，跳过 ${result.skipped}，失败 ${result.failed}。`)
+      setImportPreview(null)
+      setImportActions({})
+      setConfirmImport(false)
+      await refresh()
+    } catch (reason) {
+      setImportStatus(reason instanceof Error ? reason.message : '记忆导入失败。')
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
   const clusteredMemoryCount = clusters.reduce((total, cluster) => total + cluster.memoryIds.length, 0)
   const clusterSavedCharacters = clusters.reduce((total, cluster) => total + cluster.savedCharacters, 0)
+  const maxTypeCount = Math.max(1, ...insights.byType.map((item) => item.count))
+  const maxWeeklyCount = Math.max(1, ...insights.createdByWeek.map((item) => item.count))
+  const selectedTopicType = memories.find((memory) => topicSelection.has(memory.id))?.type
 
   return (
     <div className="settings-pane memory-settings-pane">
@@ -325,6 +428,20 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         <div><strong>{(stats.databaseSize / 1024).toFixed(1)} KB</strong><span>本地数据库</span></div>
         <div><strong>{stats.embeddings}</strong><span>向量索引</span></div>
       </div>
+
+      <details className="memory-insights-card">
+        <summary>记忆统计概览</summary>
+        <div className="memory-insights-content">
+          <div className="memory-insight-kpis">
+            <span><strong>{insights.clusters}</strong>主题</span><span><strong>{insights.clustered}</strong>已聚类</span><span><strong>{insights.savedCharacters}</strong>可压缩字符</span><span><strong>+{insights.helpful} / -{insights.unhelpful}</strong>来源反馈</span>
+          </div>
+          <div className="memory-insight-grid">
+            <div><strong>类型分布</strong><ul>{insights.byType.map((item) => <li key={item.type}><span>{TYPE_LABELS[item.type]}</span><i><b style={{ width: `${item.count / maxTypeCount * 100}%` }} /></i><em>{item.count}</em></li>)}</ul></div>
+            <div><strong>近 8 周新增</strong><div className="memory-week-chart" role="img" aria-label={`近 8 周新增记忆：${insights.createdByWeek.map((item) => `${item.label} ${item.count} 条`).join('，')}`}>{insights.createdByWeek.map((item) => <span key={item.label}><i style={{ height: `${Math.max(4, item.count / maxWeeklyCount * 100)}%` }} /><small>{item.label}</small><em>{item.count}</em></span>)}</div></div>
+          </div>
+          <div className="memory-archive-breakdown"><strong>归档构成</strong>{insights.archiveReasons.filter((item) => item.count > 0).map((item) => <span key={item.reason}>{ARCHIVE_LABELS[item.reason] || item.reason} {item.count}</span>)}{insights.archiveReasons.every((item) => item.count === 0) && <span>暂无归档记忆</span>}</div>
+        </div>
+      </details>
 
       <section className="memory-lifecycle-card">
         <div className="memory-lifecycle-heading">
@@ -374,8 +491,15 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
               <span className="settings-switch-slider" />
             </label>
             <button type="button" onClick={() => { void loadClusters() }} disabled={clusterBusy} aria-expanded={showClusters}>{clusterBusy ? '分析中…' : showClusters ? '收起主题' : '查看主题'}</button>
+            <button type="button" onClick={() => { setTopicMergeMode((value) => !value); setTopicSelection(new Set()); setTopicLabel('') }} disabled={clusterBusy} aria-pressed={topicMergeMode}>{topicMergeMode ? '取消合并' : '人工合并'}</button>
           </div>
         </div>
+        {topicMergeMode && <div className="memory-topic-builder">
+          <div><strong>创建人工主题</strong><span>请在下方记忆列表中勾选至少两条同类型的已确认记忆。</span></div>
+          <input value={topicLabel} maxLength={60} onChange={(event) => setTopicLabel(event.target.value)} placeholder="主题名称" aria-label="人工主题名称" />
+          <span>已选 {topicSelection.size} 条</span>
+          <button type="button" className="primary" onClick={() => { void createManualTopic() }} disabled={clusterBusy || topicSelection.size < 2 || !topicLabel.trim()}>创建主题</button>
+        </div>}
         {clusterStatus && <div className="memory-cluster-status" role="status">{clusterStatus}</div>}
         {showClusters && (
           <div className="memory-cluster-view">
@@ -384,11 +508,12 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
               const expanded = expandedClusterIds.has(cluster.id)
               return <article className="memory-topic" key={cluster.id}>
                 <div className="memory-topic-heading">
-                  <div><span>{TYPE_LABELS[cluster.type]}</span><strong>{cluster.label}</strong><small>{cluster.memoryIds.length} 条 · 节省 {cluster.savedCharacters} 字符</small></div>
-                  <button type="button" onClick={() => setExpandedClusterIds((previous) => { const next = new Set(previous); if (expanded) next.delete(cluster.id); else next.add(cluster.id); return next })} aria-expanded={expanded}>{expanded ? '收起来源' : '查看来源'}</button>
+                  <div><span>{TYPE_LABELS[cluster.type]}</span><strong>{cluster.label}</strong><small>{cluster.memoryIds.length} 条 · 节省 {cluster.savedCharacters} 字符 · {cluster.manual ? '人工主题' : '自动主题'}</small></div>
+                  <div><button type="button" onClick={() => setExpandedClusterIds((previous) => { const next = new Set(previous); if (expanded) next.delete(cluster.id); else next.add(cluster.id); return next })} aria-expanded={expanded}>{expanded ? '收起来源' : '查看来源'}</button><button type="button" className="warning" onClick={() => setSplitConfirmId(cluster.id)} disabled={clusterBusy}>拆分主题</button></div>
                 </div>
                 <p>{cluster.summary}</p>
                 {expanded && <ul>{cluster.memories.map((memory) => <li key={memory.id}><time>{new Date(memory.updatedAt).toLocaleDateString('zh-CN')}</time><span>{memory.content}</span></li>)}</ul>}
+                {splitConfirmId === cluster.id && <div className="memory-topic-split-confirm"><span>拆分后这些记忆会保持独立，直到人工重新合并。</span><button type="button" onClick={() => setSplitConfirmId('')}>取消</button><button type="button" className="warning" onClick={() => { void splitCluster(cluster) }}>确认拆分</button></div>}
               </article>
             })}
             {clusters.length === 0 && <div className="memory-cluster-empty">至少需要两条同类型且主题相近的已确认记忆，才会形成主题。</div>}
@@ -489,9 +614,10 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       <div className="memory-list">
         {memories.map((memory) => {
           const conflicts = memory.conflicts?.filter((conflict) => conflict.status === 'pending') || []
-          return <article key={memory.id} className={`memory-card status-${memory.status}${conflicts.length ? ' has-conflict' : ''}`}>
+          return <article key={memory.id} data-memory-id={memory.id} className={`memory-card status-${memory.status}${conflicts.length ? ' has-conflict' : ''}${focusMemoryId === memory.id ? ' is-focused' : ''}`}>
             <div className="memory-card-header">
               <div>
+                {topicMergeMode && memory.status === 'active' && <label className="memory-topic-select"><input type="checkbox" checked={topicSelection.has(memory.id)} disabled={Boolean(selectedTopicType && selectedTopicType !== memory.type)} onChange={(event) => setTopicSelection((previous) => { const next = new Set(previous); if (event.target.checked) next.add(memory.id); else next.delete(memory.id); return next })} aria-label={`选择记忆：${memory.content}`} /></label>}
                 <span className="memory-type">{TYPE_LABELS[memory.type]}</span>
                 <span className={`memory-status status-${memory.status}`}>{memory.status === 'pending' ? '待确认' : memory.status === 'active' ? '已确认' : '已归档'}</span>
                 {conflicts.length > 0 && <span className="memory-conflict-badge">{conflicts.length} 个冲突</span>}
@@ -548,6 +674,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
                 <button type="button" className="primary" onClick={() => { void saveEdit(memory) }}>保存</button>
               </> : memory.status !== 'archived' && <button type="button" onClick={() => { setEditingId(memory.id); setEditingContent(memory.content) }} disabled={Boolean(busyId)}>编辑</button>}
               {memory.status === 'archived' && <button type="button" className="primary" onClick={() => { void run(memory.id, () => window.electronAPI.memory.reactivate(memory.id)) }} disabled={Boolean(busyId)}>恢复使用</button>}
+              {memory.status === 'active' && <button type="button" onClick={() => { setExpiryEditingId(expiryEditingId === memory.id ? '' : memory.id); setExpiryDays(memory.expiresAt ? Math.max(1, Math.ceil((memory.expiresAt - Date.now()) / 86_400_000)) : 0) }} disabled={Boolean(busyId)} aria-expanded={expiryEditingId === memory.id}>有效期</button>}
               {memory.status !== 'pending' && <button type="button" onClick={() => { void toggleHistory(memory.id) }} disabled={Boolean(busyId)} aria-expanded={historyId === memory.id}>{historyId === memory.id ? '收起历史' : '版本历史'}</button>}
               {deleteConfirmId === memory.id ? <>
                 <span className="memory-delete-label">确认永久删除？</span>
@@ -555,6 +682,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
                 <button type="button" className="danger solid" onClick={() => { void run(memory.id, () => window.electronAPI.memory.delete(memory.id)).then((deleted) => { if (deleted) setDeleteConfirmId('') }) }} disabled={busyId === memory.id}>确认删除</button>
               </> : <button type="button" className="danger" onClick={() => setDeleteConfirmId(memory.id)} disabled={Boolean(busyId)}>删除</button>}
             </div>
+            {expiryEditingId === memory.id && <div className="memory-expiry-editor"><label><span>这条记忆保留</span><select value={expiryDays} onChange={(event) => setExpiryDays(Number(event.target.value))}><option value="0">永久</option><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option><option value="180">180 天</option><option value="365">1 年</option></select></label><span>{memory.expiresAt ? `当前到期：${new Date(memory.expiresAt).toLocaleDateString('zh-CN')}` : '当前永久保留'}</span><button type="button" onClick={() => setExpiryEditingId('')}>取消</button><button type="button" className="primary" onClick={() => { void saveExpiry(memory) }} disabled={busyId === memory.id}>保存</button></div>}
             {historyId === memory.id && (
               <div className="memory-history" aria-label="记忆版本历史">
                 <div className="memory-history-title"><strong>版本历史</strong><span>恢复前会自动保存当前版本</span></div>
@@ -576,10 +704,24 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         {memories.length === 0 && <div className="memory-empty">没有匹配的记忆。明确说“请记住……”可以创建候选。</div>}
       </div>
 
+      {importPreview && <section className="memory-import-panel" aria-label="记忆导入预览">
+        <div className="memory-import-heading"><div><strong>导入预览 · {importPreview.fileName}</strong><span>逐条确认处理方式，提交前不会写入数据库。</span></div><button type="button" onClick={() => { setImportPreview(null); setConfirmImport(false) }}>关闭</button></div>
+        <div className="memory-import-list">
+          {importPreview.items.map((item) => <article key={item.id} className={`status-${item.status}`}>
+            <div><span>{item.status === 'new' ? '新增' : item.status === 'duplicate' ? '重复' : item.conflictKind === 'contradiction' ? '冲突' : '更新'}</span><strong>{TYPE_LABELS[item.candidate.type]}</strong><select value={importActions[item.id] || item.suggestedAction} disabled={item.status === 'duplicate'} onChange={(event) => setImportActions((previous) => ({ ...previous, [item.id]: event.target.value as MemoryImportAction }))} aria-label={`“${item.candidate.content}”的导入方式`}>{item.status === 'new' && <option value="add">新增</option>}{item.status === 'conflict' && <><option value="keep">与已有记忆并存</option><option value="replace">替换已有记忆</option></>}<option value="skip">跳过</option></select></div>
+            <p>{item.candidate.content}</p>
+            {item.existingContent && <div className="memory-import-existing"><span>已有</span><p>{item.existingContent}</p><small>{item.reason}</small></div>}
+          </article>)}
+        </div>
+        <div className="memory-import-actions">{confirmImport ? <><span>确认按当前选择导入？替换操作会归档旧记忆。</span><button type="button" onClick={() => setConfirmImport(false)}>取消</button><button type="button" className="primary" onClick={() => { void commitImport() }} disabled={importBusy}>确认导入</button></> : <button type="button" className="primary" onClick={() => setConfirmImport(true)} disabled={importBusy || importPreview.items.length === 0}>提交导入</button>}</div>
+      </section>}
+
       <div className="memory-footer-actions">
+        <button type="button" onClick={() => { void previewImport() }} disabled={importBusy}>{importBusy ? '处理中…' : '导入 JSON'}</button>
         <button type="button" onClick={() => { void run('export', () => window.electronAPI.memory.export()) }}>导出 JSON</button>
         <button type="button" className="danger" onClick={() => setConfirmClear(true)}>忘记全部</button>
       </div>
+      {importStatus && <div className="memory-import-status" role="status">{importStatus}</div>}
 
       {confirmClear && (
         <div className="memory-clear-confirm" role="alertdialog" aria-modal="true" aria-labelledby="memory-clear-title">

@@ -688,6 +688,7 @@
 .memory-ref-feedback button:hover { border-color: var(--accent); color: var(--text-primary); }
 .memory-ref-feedback button.selected { border-color: var(--success); background: var(--success-bg); color: var(--success); }
 .memory-ref-feedback button.selected.negative { border-color: var(--warning); background: var(--warning-bg); color: var(--warning); }
+.memory-ref-feedback button.correct { border-color:var(--accent); color:var(--accent); }
 .memory-ref-feedback button:disabled { cursor: default; opacity: .7; }
 .memory-ref-feedback button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .memory-ref-feedback-error { margin-top: 5px; color: var(--error); font-size: 8px; }

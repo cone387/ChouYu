@@ -69,6 +69,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [memoryCandidates, setMemoryCandidates] = useState<MemoryRecord[]>([])
   const [memoryCandidateBusy, setMemoryCandidateBusy] = useState(false)
   const [memoryCandidateError, setMemoryCandidateError] = useState('')
+  const [memoryCorrectionId, setMemoryCorrectionId] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const activeResponseIdRef = useRef<string | null>(null)
   const toolBoundaryRef = useRef(false)
@@ -675,6 +676,15 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       : message))
   }, [])
 
+  const correctMemory = useCallback((memoryId: string) => {
+    setMemoryCorrectionId(memoryId)
+    setShowSessions(false)
+    setShowSettings(true)
+    const panelX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_SETTINGS_WIDTH - 4))
+    const panelY = position.y + PANEL_SETTINGS_HEIGHT > window.innerHeight - 4 ? Math.max(4, window.innerHeight - PANEL_SETTINGS_HEIGHT - 4) : position.y
+    if (panelX !== position.x || panelY !== position.y) onPositionChange({ x: panelX, y: panelY })
+  }, [onPositionChange, position])
+
   return (
     <div
       ref={panelRef}
@@ -698,7 +708,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       <div className="chat-panel-main">
         {showSettings ? (
           <Settings
-            onClose={() => { setShowSettings(false); void refreshPlugins(); onSettingsClose?.() }}
+            onClose={() => { setShowSettings(false); setMemoryCorrectionId(''); void refreshPlugins(); onSettingsClose?.() }}
+            initialNav={memoryCorrectionId ? 'memory' : undefined}
+            focusMemoryId={memoryCorrectionId || undefined}
             dragHandleProps={{
               onPointerDown: handleDragStart,
               onPointerMove: handleDragMove,
@@ -744,6 +756,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 onRetry={retryAssistantMessage}
                 contextLimit={MAX_HISTORY_MESSAGES}
                 onMemoryFeedback={submitMemoryFeedback}
+                onCorrectMemory={correctMemory}
               />
             )}
             {confirmClear && (

@@ -15,6 +15,7 @@ import type {
   MemoryRevision,
   MemorySearchResult,
   MemoryStats,
+  MemoryTopic,
   MemoryType
 } from '../../shared/memory'
 import {
@@ -152,6 +153,25 @@ export class SQLiteMemoryProvider implements MemoryProvider {
         FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_memory_feedback_context ON memory_feedback(context_id);
+      CREATE TABLE IF NOT EXISTS memory_topics (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        type TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS memory_topic_members (
+        topic_id TEXT NOT NULL,
+        memory_id TEXT NOT NULL UNIQUE,
+        PRIMARY KEY (topic_id, memory_id),
+        FOREIGN KEY (topic_id) REFERENCES memory_topics(id) ON DELETE CASCADE,
+        FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS memory_cluster_exclusions (
+        memory_id TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+      );
     `)
     const memoryColumns = new Set((this.database.pragma('table_info(memories)') as Array<{ name: string }>).map((column) => column.name))
     if (!memoryColumns.has('helpful_count')) this.database.exec('ALTER TABLE memories ADD COLUMN helpful_count INTEGER NOT NULL DEFAULT 0')
@@ -557,6 +577,72 @@ export class SQLiteMemoryProvider implements MemoryProvider {
       )
       return this.getRequired(memoryId)
     })()
+  }
+
+  listTopics(): MemoryTopic[] {
+    const rows = this.db().prepare(`
+      SELECT t.id, t.label, t.type, t.created_at, t.updated_at,
+        GROUP_CONCAT(tm.memory_id, '|') AS memory_ids
+      FROM memory_topics t
+      LEFT JOIN memory_topic_members tm ON tm.topic_id = t.id
+      GROUP BY t.id ORDER BY t.updated_at DESC
+    `).all() as Array<{ id: string; label: string; type: string; created_at: number; updated_at: number; memory_ids: string | null }>
+    return rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      type: row.type as MemoryType,
+      memoryIds: row.memory_ids ? row.memory_ids.split('|') : [],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    })).filter((topic) => topic.memoryIds.length >= 2)
+  }
+
+  createTopic(label: string, memoryIds: string[]): MemoryTopic {
+    const uniqueIds = [...new Set(memoryIds)].slice(0, 100)
+    if (uniqueIds.length < 2) throw new Error('人工主题至少需要两条记忆。')
+    const memories = uniqueIds.map((id) => this.getRequired(id))
+    if (memories.some((memory) => memory.status !== 'active')) throw new Error('只能合并已确认的记忆。')
+    if (new Set(memories.map((memory) => memory.type)).size !== 1) throw new Error('人工主题中的记忆类型必须相同。')
+    const cleanLabel = label.trim().slice(0, 60)
+    if (!cleanLabel) throw new Error('主题名称不能为空。')
+    const id = randomUUID()
+    const now = Date.now()
+    this.db().transaction(() => {
+      const placeholders = uniqueIds.map(() => '?').join(',')
+      this.db().prepare(`DELETE FROM memory_topic_members WHERE memory_id IN (${placeholders})`).run(...uniqueIds)
+      this.db().prepare('DELETE FROM memory_topics WHERE id NOT IN (SELECT DISTINCT topic_id FROM memory_topic_members)').run()
+      this.db().prepare('INSERT INTO memory_topics (id, label, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(id, cleanLabel, memories[0].type, now, now)
+      const insert = this.db().prepare('INSERT INTO memory_topic_members (topic_id, memory_id) VALUES (?, ?)')
+      uniqueIds.forEach((memoryId) => insert.run(id, memoryId))
+      this.db().prepare(`DELETE FROM memory_cluster_exclusions WHERE memory_id IN (${placeholders})`).run(...uniqueIds)
+    })()
+    return { id, label: cleanLabel, type: memories[0].type, memoryIds: uniqueIds, createdAt: now, updatedAt: now }
+  }
+
+  splitTopic(topicId: string): string[] {
+    return this.db().transaction(() => {
+      const topic = this.listTopics().find((item) => item.id === topicId)
+      if (!topic) throw new Error('人工主题不存在。')
+      this.excludeFromClusters(topic.memoryIds)
+      this.db().prepare('DELETE FROM memory_topics WHERE id = ?').run(topicId)
+      return topic.memoryIds
+    })()
+  }
+
+  excludeFromClusters(memoryIds: string[]): string[] {
+    const uniqueIds = [...new Set(memoryIds)].slice(0, 100)
+    return this.db().transaction(() => {
+      const insert = this.db().prepare('INSERT OR REPLACE INTO memory_cluster_exclusions (memory_id, created_at) VALUES (?, ?)')
+      uniqueIds.forEach((id) => {
+        this.getRequired(id)
+        insert.run(id, Date.now())
+      })
+      return uniqueIds
+    })()
+  }
+
+  listClusterExcludedIds(): string[] {
+    return (this.db().prepare('SELECT memory_id FROM memory_cluster_exclusions').all() as Array<{ memory_id: string }>).map((row) => row.memory_id)
   }
 
   private insertRevision(memory: MemoryRecord, reason: MemoryRevision['reason']): void {
