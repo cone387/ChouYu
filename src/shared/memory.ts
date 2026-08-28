@@ -1,6 +1,8 @@
 export type MemoryType = 'fact' | 'preference' | 'person' | 'project' | 'workflow'
 export type MemorySensitivity = 'normal' | 'sensitive'
 export type MemoryStatus = 'pending' | 'active' | 'archived'
+export type MemoryConflictKind = 'contradiction' | 'update'
+export type MemoryConflictAction = 'replace' | 'keep' | 'reject'
 
 export interface MemoryRecord {
   id: string
@@ -19,6 +21,36 @@ export interface MemoryRecord {
   lastAccessedAt?: number
   accessCount: number
   expiresAt?: number
+  conflicts?: MemoryConflict[]
+}
+
+export interface MemoryConflict {
+  id: string
+  candidateId: string
+  existingMemoryId: string
+  existingContent: string
+  kind: MemoryConflictKind
+  reason: string
+  status: 'pending' | 'resolved'
+  resolution?: MemoryConflictAction
+  createdAt: number
+  resolvedAt?: number
+}
+
+export interface MemoryRevision {
+  id: string
+  memoryId: string
+  content: string
+  type: MemoryType
+  importance: number
+  reason: 'edit' | 'replace' | 'restore'
+  createdAt: number
+}
+
+export interface MemoryRelation {
+  kind: MemoryConflictKind
+  reason: string
+  similarity: number
 }
 
 export interface MemoryCandidateInput {
@@ -127,7 +159,9 @@ export function extractMemoryCandidates(
 
   for (const rule of rules) {
     const match = trimmed.match(rule.pattern)
-    const content = cleanCandidateContent(match?.[1] || (match ? trimmed : ''))
+    let content = cleanCandidateContent(match?.[1] || (match ? trimmed : ''))
+    if (match && rule.type === 'preference') content = cleanCandidateContent(trimmed)
+    if (match && rule.type === 'person') content = `我的名字是 ${content}`
     if (!match || content.length < 2 || containsSecret(content)) continue
     return [{
       type: rule.type,
@@ -180,4 +214,64 @@ export function mergeHybridMemoryResults(
       : { ...memory, score: semanticContribution })
   })
   return [...merged.values()].sort((a, b) => b.score - a.score).slice(0, Math.max(1, limit))
+}
+
+function keywordSimilarity(left: readonly string[], right: readonly string[]): number {
+  const leftSet = new Set(left)
+  const rightSet = new Set(right)
+  const union = new Set([...leftSet, ...rightSet])
+  if (union.size === 0) return 0
+  let intersection = 0
+  leftSet.forEach((value) => { if (rightSet.has(value)) intersection += 1 })
+  return intersection / union.size
+}
+
+function factParts(content: string): { subject: string; value: string } | null {
+  const normalized = content.trim().replace(/^我(?:的)?/, '')
+  const match = normalized.match(/^(.{1,24}?)(?:是|为|叫|使用|采用)(.+)$/)
+  if (!match) return null
+  let subject = normalizeMemoryKey(match[1])
+  if (['叫', '名字', '姓名'].includes(subject)) subject = '名字'
+  return { subject, value: normalizeMemoryKey(match[2]) }
+}
+
+function preferenceParts(content: string): { topic: string; negative: boolean } | null {
+  const match = content.match(/^(?:我)?(不喜欢|不偏好|讨厌|喜欢|偏好|习惯)(.+)$/)
+  if (match) return { topic: normalizeMemoryKey(match[2]), negative: /不|讨厌/.test(match[1]) }
+  const english = content.match(/^(?:i\s+)?(don't like|do not like|dislike|like|prefer)\s+(.+)$/i)
+  if (!english) return null
+  return { topic: normalizeMemoryKey(english[2]), negative: /don't|do not|dislike/i.test(english[1]) }
+}
+
+export function detectMemoryRelation(
+  candidate: Pick<MemoryCandidateInput, 'type' | 'content'>,
+  existing: Pick<MemoryRecord, 'type' | 'content' | 'keywords'>
+): MemoryRelation | null {
+  if (candidate.type !== existing.type || normalizeMemoryKey(candidate.content) === normalizeMemoryKey(existing.content)) return null
+
+  if (candidate.type === 'preference') {
+    const next = preferenceParts(candidate.content)
+    const previous = preferenceParts(existing.content) || { topic: normalizeMemoryKey(existing.content), negative: false }
+    if (next && previous && next.topic === previous.topic) {
+      return next.negative !== previous.negative
+        ? { kind: 'contradiction', reason: '对同一偏好的态度相反', similarity: 1 }
+        : { kind: 'update', reason: '对同一偏好的新描述', similarity: 0.9 }
+    }
+  }
+
+  if (['fact', 'person'].includes(candidate.type)) {
+    const next = factParts(candidate.content)
+    const previous = factParts(existing.content) || (candidate.type === 'person'
+      ? { subject: '名字', value: normalizeMemoryKey(existing.content) }
+      : null)
+    if (next && previous && next.subject === previous.subject && next.value !== previous.value) {
+      return { kind: 'contradiction', reason: `“${next.subject}”对应的信息发生变化`, similarity: 1 }
+    }
+  }
+
+  const similarity = keywordSimilarity(extractMemoryKeywords(candidate.content), existing.keywords)
+  if (similarity >= 0.6 || (['project', 'workflow'].includes(candidate.type) && similarity >= 0.35)) {
+    return { kind: 'update', reason: '与已有记忆描述高度相似，可能是更新', similarity }
+  }
+  return null
 }

@@ -7,6 +7,7 @@ import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, 
 import { formatSessionMarkdown } from '../shared/sessions'
 import {
   type MemoryCandidateInput,
+  type MemoryConflictAction,
   type MemoryListOptions,
   type MemoryType,
   containsSecret,
@@ -25,8 +26,12 @@ import { fetchProviderModels, streamAIChat } from './ai'
 import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
 import {
   getMemoryProvider,
+  createMemory,
   indexMemory,
+  proposeMemoryCandidate,
   rebuildEmbeddings,
+  resolveMemoryConflict,
+  restoreMemoryRevision,
   searchMemories,
   testEmbedding
 } from './memory/service'
@@ -270,7 +275,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       sessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined,
       messageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined
     })
-    return candidates.map((candidate) => getMemoryProvider().createCandidate(candidate)).filter(Boolean)
+    return candidates.map((candidate) => proposeMemoryCandidate(candidate)).filter(Boolean)
   })
 
   ipcMain.handle('memory:create', (_event, rawCandidate: MemoryCandidateInput) => {
@@ -285,9 +290,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       sourceSessionId: typeof rawCandidate.sourceSessionId === 'string' ? rawCandidate.sourceSessionId.slice(0, 128) : undefined,
       sourceMessageId: typeof rawCandidate.sourceMessageId === 'string' ? rawCandidate.sourceMessageId.slice(0, 128) : undefined
     }
-    const memory = getMemoryProvider().createActive(candidate)
-    void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index new memory:', error))
-    return memory
+    return createMemory(candidate)
   })
 
   ipcMain.handle('memory:approve', (_event, id: string) => {
@@ -300,6 +303,28 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('memory:reject', (_event, id: string) => {
     if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid memory id')
     getMemoryProvider().reject(id)
+  })
+
+  ipcMain.handle('memory:conflicts', (_event, candidateId?: string) => {
+    if (candidateId !== undefined && (typeof candidateId !== 'string' || !candidateId || candidateId.length > 128)) throw new Error('Invalid memory id')
+    return getMemoryProvider().listConflicts(candidateId)
+  })
+
+  ipcMain.handle('memory:resolve-conflict', (_event, candidateId: string, action: MemoryConflictAction) => {
+    if (typeof candidateId !== 'string' || !candidateId || candidateId.length > 128) throw new Error('Invalid memory id')
+    if (!['replace', 'keep', 'reject'].includes(action)) throw new Error('Invalid conflict action')
+    return resolveMemoryConflict(candidateId, action)
+  })
+
+  ipcMain.handle('memory:history', (_event, memoryId: string) => {
+    if (typeof memoryId !== 'string' || !memoryId || memoryId.length > 128) throw new Error('Invalid memory id')
+    return getMemoryProvider().listRevisions(memoryId)
+  })
+
+  ipcMain.handle('memory:restore-revision', (_event, memoryId: string, revisionId: string) => {
+    if (typeof memoryId !== 'string' || !memoryId || memoryId.length > 128) throw new Error('Invalid memory id')
+    if (typeof revisionId !== 'string' || !revisionId || revisionId.length > 128) throw new Error('Invalid revision id')
+    return restoreMemoryRevision(memoryId, revisionId)
   })
 
   ipcMain.handle('memory:update', (_event, id: string, patch: { content?: string; type?: string; importance?: number; expiresAt?: number | null }) => {

@@ -7,7 +7,7 @@ import { initDatabase, getConfig, flushDatabase } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
-import { closeMemory, getMemoryProvider, initializeMemory } from './memory/service'
+import { closeMemory, getMemoryProvider, initializeMemory, proposeMemoryCandidate } from './memory/service'
 import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 
 let mainWindow: BrowserWindow | null = null
@@ -117,7 +117,8 @@ app.whenReady().then(async () => {
   initDatabase()
   initializeMemory()
   if (isSmokeTest) {
-    getMemoryProvider().createActive({
+    const memoryProvider = getMemoryProvider()
+    memoryProvider.createActive({
       type: 'preference',
       content: '用户偏好简短回答',
       importance: 0.8,
@@ -125,7 +126,37 @@ app.whenReady().then(async () => {
       sensitivity: 'normal',
       sourceSessionId: 'smoke-session'
     })
-    if (getMemoryProvider().search('回答风格', 3).length === 0) throw new Error('Memory smoke test failed')
+    if (memoryProvider.search('回答风格', 3).length === 0) throw new Error('Memory smoke test failed')
+
+    const oldMemory = memoryProvider.createActive({
+      type: 'fact',
+      content: '我的显示器是 4K',
+      importance: 0.8,
+      confidence: 1,
+      sensitivity: 'normal'
+    })
+    const candidate = proposeMemoryCandidate({
+      type: 'fact',
+      content: '我的显示器是 5K',
+      importance: 0.8,
+      confidence: 1,
+      sensitivity: 'normal'
+    })
+    if (!candidate?.conflicts?.length) throw new Error('Memory conflict smoke test failed')
+    let approvalBlocked = false
+    try {
+      memoryProvider.approve(candidate.id)
+    } catch {
+      approvalBlocked = true
+    }
+    if (!approvalBlocked) throw new Error('Conflicting memory was approved without a decision')
+    const replacement = memoryProvider.resolveConflict(candidate.id, 'replace')
+    if (!replacement || replacement.status !== 'active') throw new Error('Memory replacement smoke test failed')
+    if (memoryProvider.list({ status: 'archived' }).every((memory) => memory.id !== oldMemory.id)) throw new Error('Replaced memory was not archived')
+    if (memoryProvider.listRevisions(oldMemory.id)[0]?.reason !== 'replace') throw new Error('Replacement revision was not saved')
+    memoryProvider.update(replacement.id, { content: '我的显示器是 6K' })
+    const revision = memoryProvider.listRevisions(replacement.id)[0]
+    if (!revision || memoryProvider.restoreRevision(replacement.id, revision.id).content !== '我的显示器是 5K') throw new Error('Memory revision restore smoke test failed')
   }
 
   // Register plugins and IPC channels synchronously (before window loads renderer)

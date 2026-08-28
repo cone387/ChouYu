@@ -2,8 +2,15 @@ import { app } from 'electron'
 import path from 'path'
 import { SQLiteMemoryProvider } from './sqlite-provider'
 import type { MemoryProvider } from './provider'
-import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryRecord, MemorySearchResult } from '../../shared/memory'
-import { mergeHybridMemoryResults } from '../../shared/memory'
+import type {
+  EmbeddingRebuildResult,
+  EmbeddingStatus,
+  MemoryCandidateInput,
+  MemoryConflictAction,
+  MemoryRecord,
+  MemorySearchResult
+} from '../../shared/memory'
+import { detectMemoryRelation, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
 import { getConfig } from '../database'
 import { OpenAIEmbeddingClient, cosineSimilarity } from './embedding-client'
 
@@ -23,6 +30,45 @@ export function getMemoryProvider(): MemoryProvider {
 export function closeMemory(): void {
   provider?.close()
   provider = null
+}
+
+export function proposeMemoryCandidate(candidate: MemoryCandidateInput): MemoryRecord | null {
+  const memoryProvider = getMemoryProvider()
+  const candidateMemory = memoryProvider.createCandidate(candidate)
+  if (!candidateMemory) return null
+  const activeMemories = memoryProvider.list({ status: 'active', limit: 2000 })
+  activeMemories.forEach((existing) => {
+    const relation = detectMemoryRelation(candidate, existing)
+    if (relation) memoryProvider.createConflict(candidateMemory.id, existing.id, relation.kind, relation.reason)
+  })
+  const conflicts = memoryProvider.listConflicts(candidateMemory.id)
+  return conflicts.length > 0 ? { ...candidateMemory, conflicts } : candidateMemory
+}
+
+export function createMemory(candidate: MemoryCandidateInput): MemoryRecord {
+  const memoryProvider = getMemoryProvider()
+  const proposed = proposeMemoryCandidate(candidate)
+  if (!proposed) {
+    const normalizedKey = normalizeMemoryKey(candidate.content)
+    const existing = memoryProvider.list({ status: 'all', limit: 2000 }).find((memory) => memory.normalizedKey === normalizedKey && memory.status !== 'archived')
+    return existing || memoryProvider.createActive(candidate)
+  }
+  if (proposed.conflicts?.some((conflict) => conflict.status === 'pending')) return proposed
+  const memory = memoryProvider.approve(proposed.id)
+  void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index new memory:', error))
+  return memory
+}
+
+export function resolveMemoryConflict(candidateId: string, action: MemoryConflictAction): MemoryRecord | null {
+  const memory = getMemoryProvider().resolveConflict(candidateId, action)
+  if (memory) void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index resolved memory:', error))
+  return memory
+}
+
+export function restoreMemoryRevision(memoryId: string, revisionId: string): MemoryRecord {
+  const memory = getMemoryProvider().restoreRevision(memoryId, revisionId)
+  void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index restored memory:', error))
+  return memory
 }
 
 function embeddingClient(): { client: OpenAIEmbeddingClient; model: string } {

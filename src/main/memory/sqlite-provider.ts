@@ -3,8 +3,12 @@ import { randomUUID } from 'crypto'
 import fs from 'fs'
 import type {
   MemoryCandidateInput,
+  MemoryConflict,
+  MemoryConflictAction,
+  MemoryConflictKind,
   MemoryListOptions,
   MemoryRecord,
+  MemoryRevision,
   MemorySearchResult,
   MemoryStats,
   MemoryType
@@ -33,6 +37,29 @@ interface MemoryRow {
   last_accessed_at: number | null
   access_count: number
   expires_at: number | null
+}
+
+interface MemoryConflictRow {
+  id: string
+  candidate_id: string
+  existing_memory_id: string
+  existing_content: string
+  kind: string
+  reason: string
+  status: string
+  resolution: string | null
+  created_at: number
+  resolved_at: number | null
+}
+
+interface MemoryRevisionRow {
+  id: string
+  memory_id: string
+  content: string
+  type: string
+  importance: number
+  reason: string
+  created_at: number
 }
 
 export class SQLiteMemoryProvider implements MemoryProvider {
@@ -78,6 +105,32 @@ export class SQLiteMemoryProvider implements MemoryProvider {
         FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model ON memory_embeddings(model);
+      CREATE TABLE IF NOT EXISTS memory_conflicts (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        existing_memory_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        resolution TEXT,
+        created_at INTEGER NOT NULL,
+        resolved_at INTEGER,
+        UNIQUE(candidate_id, existing_memory_id),
+        FOREIGN KEY (candidate_id) REFERENCES memories(id) ON DELETE CASCADE,
+        FOREIGN KEY (existing_memory_id) REFERENCES memories(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_memory_conflicts_candidate ON memory_conflicts(candidate_id, status);
+      CREATE TABLE IF NOT EXISTS memory_revisions (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        type TEXT NOT NULL,
+        importance REAL NOT NULL,
+        reason TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_memory_revisions_memory ON memory_revisions(memory_id, created_at DESC);
     `)
   }
 
@@ -115,7 +168,10 @@ export class SQLiteMemoryProvider implements MemoryProvider {
   list(options: MemoryListOptions = {}): MemoryRecord[] {
     const rows = this.db().prepare('SELECT * FROM memories ORDER BY updated_at DESC LIMIT ?').all(Math.min(2000, Math.max(1, options.limit || 500))) as MemoryRow[]
     const normalizedQuery = options.query?.trim().toLowerCase() || ''
-    return rows.map((row) => this.mapRow(row)).filter((memory) => {
+    const conflicts = this.listConflicts()
+    const conflictsByCandidate = new Map<string, MemoryConflict[]>()
+    conflicts.forEach((conflict) => conflictsByCandidate.set(conflict.candidateId, [...(conflictsByCandidate.get(conflict.candidateId) || []), conflict]))
+    return rows.map((row) => ({ ...this.mapRow(row), conflicts: conflictsByCandidate.get(row.id) })).filter((memory) => {
       if (options.status && options.status !== 'all' && memory.status !== options.status) return false
       if (options.type && options.type !== 'all' && memory.type !== options.type) return false
       if (normalizedQuery && !memory.content.toLowerCase().includes(normalizedQuery) && !memory.keywords.some((keyword) => keyword.includes(normalizedQuery))) return false
@@ -170,6 +226,8 @@ export class SQLiteMemoryProvider implements MemoryProvider {
   }
 
   approve(id: string): MemoryRecord {
+    const unresolved = this.db().prepare("SELECT COUNT(*) AS count FROM memory_conflicts WHERE candidate_id = ? AND status = 'pending'").get(id) as { count: number }
+    if (unresolved.count > 0) throw new Error('该候选与已有记忆冲突，请先选择替换、并存或拒绝。')
     const now = Date.now()
     const result = this.db().prepare("UPDATE memories SET status = 'active', updated_at = ? WHERE id = ? AND status = 'pending'").run(now, id)
     if (!result.changes) throw new Error('记忆候选不存在或已处理。')
@@ -180,6 +238,11 @@ export class SQLiteMemoryProvider implements MemoryProvider {
     this.db().prepare("DELETE FROM memories WHERE id = ? AND status = 'pending'").run(id)
   }
 
+  archive(id: string, _reason?: string): void {
+    const result = this.db().prepare("UPDATE memories SET status = 'archived', updated_at = ? WHERE id = ? AND status = 'active'").run(Date.now(), id)
+    if (result.changes) this.db().prepare('DELETE FROM memory_embeddings WHERE memory_id = ?').run(id)
+  }
+
   update(id: string, patch: MemoryUpdate): MemoryRecord {
     const current = this.getRequired(id)
     const content = (patch.content ?? current.content).trim().slice(0, 500)
@@ -187,6 +250,9 @@ export class SQLiteMemoryProvider implements MemoryProvider {
     const type = (patch.type ?? current.type) as MemoryType
     const importance = patch.importance === undefined ? current.importance : Math.min(1, Math.max(0, patch.importance))
     const expiresAt = patch.expiresAt === undefined ? current.expiresAt : patch.expiresAt || undefined
+    if (current.status === 'active' && (content !== current.content || type !== current.type || importance !== current.importance)) {
+      this.insertRevision(current, 'edit')
+    }
     this.db().prepare(`
       UPDATE memories SET type = ?, content = ?, normalized_key = ?, keywords = ?, importance = ?, expires_at = ?, updated_at = ? WHERE id = ?
     `).run(type, content, normalizeMemoryKey(content), JSON.stringify(extractMemoryKeywords(content)), importance, expiresAt || null, Date.now(), id)
@@ -272,6 +338,121 @@ export class SQLiteMemoryProvider implements MemoryProvider {
   clearEmbeddings(model?: string): void {
     if (model) this.db().prepare('DELETE FROM memory_embeddings WHERE model = ?').run(model)
     else this.db().prepare('DELETE FROM memory_embeddings').run()
+  }
+
+  createConflict(candidateId: string, existingMemoryId: string, kind: MemoryConflictKind, reason: string): MemoryConflict {
+    const candidate = this.getRequired(candidateId)
+    const existing = this.getRequired(existingMemoryId)
+    if (candidate.status !== 'pending' || existing.status !== 'active') throw new Error('冲突记忆状态无效。')
+    const id = randomUUID()
+    const now = Date.now()
+    this.db().prepare(`
+      INSERT OR IGNORE INTO memory_conflicts (
+        id, candidate_id, existing_memory_id, kind, reason, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?)
+    `).run(id, candidateId, existingMemoryId, kind, reason.slice(0, 500), now)
+    const conflict = this.listConflicts(candidateId).find((item) => item.existingMemoryId === existingMemoryId)
+    if (!conflict) throw new Error('创建记忆冲突失败。')
+    return conflict
+  }
+
+  listConflicts(candidateId?: string): MemoryConflict[] {
+    const where = candidateId ? 'WHERE c.candidate_id = ?' : ''
+    const statement = this.db().prepare(`
+      SELECT c.*, m.content AS existing_content
+      FROM memory_conflicts c
+      JOIN memories m ON m.id = c.existing_memory_id
+      ${where}
+      ORDER BY c.created_at ASC
+    `)
+    const rows = (candidateId ? statement.all(candidateId) : statement.all()) as MemoryConflictRow[]
+    return rows.map((row) => ({
+      id: row.id,
+      candidateId: row.candidate_id,
+      existingMemoryId: row.existing_memory_id,
+      existingContent: row.existing_content,
+      kind: row.kind as MemoryConflictKind,
+      reason: row.reason,
+      status: row.status as MemoryConflict['status'],
+      resolution: row.resolution as MemoryConflictAction | undefined,
+      createdAt: row.created_at,
+      resolvedAt: row.resolved_at || undefined
+    }))
+  }
+
+  resolveConflict(candidateId: string, action: MemoryConflictAction): MemoryRecord | null {
+    return this.db().transaction(() => {
+      const candidate = this.getRequired(candidateId)
+      if (candidate.status !== 'pending') throw new Error('记忆候选不存在或已处理。')
+      const conflicts = this.listConflicts(candidateId).filter((conflict) => conflict.status === 'pending')
+      if (conflicts.length === 0) throw new Error('该候选没有待处理冲突。')
+      if (action === 'reject') {
+        this.reject(candidateId)
+        return null
+      }
+      if (action === 'replace') {
+        const archived = new Set<string>()
+        conflicts.forEach((conflict) => {
+          if (archived.has(conflict.existingMemoryId)) return
+          const existing = this.getRequired(conflict.existingMemoryId)
+          if (existing.status === 'active') {
+            this.insertRevision(existing, 'replace')
+            this.archive(existing.id, 'replace')
+          }
+          archived.add(existing.id)
+        })
+      }
+      const now = Date.now()
+      this.db().prepare("UPDATE memories SET status = 'active', updated_at = ? WHERE id = ? AND status = 'pending'").run(now, candidateId)
+      this.db().prepare(`
+        UPDATE memory_conflicts SET status = 'resolved', resolution = ?, resolved_at = ?
+        WHERE candidate_id = ? AND status = 'pending'
+      `).run(action, now, candidateId)
+      return this.getRequired(candidateId)
+    })()
+  }
+
+  listRevisions(memoryId: string): MemoryRevision[] {
+    this.getRequired(memoryId)
+    const rows = this.db().prepare('SELECT * FROM memory_revisions WHERE memory_id = ? ORDER BY created_at DESC').all(memoryId) as MemoryRevisionRow[]
+    return rows.map((row) => ({
+      id: row.id,
+      memoryId: row.memory_id,
+      content: row.content,
+      type: row.type as MemoryType,
+      importance: row.importance,
+      reason: row.reason as MemoryRevision['reason'],
+      createdAt: row.created_at
+    }))
+  }
+
+  restoreRevision(memoryId: string, revisionId: string): MemoryRecord {
+    return this.db().transaction(() => {
+      const current = this.getRequired(memoryId)
+      if (current.status !== 'active') throw new Error('只能恢复已启用记忆的历史版本。')
+      const revision = this.db().prepare('SELECT * FROM memory_revisions WHERE id = ? AND memory_id = ?').get(revisionId, memoryId) as MemoryRevisionRow | undefined
+      if (!revision) throw new Error('记忆版本不存在。')
+      this.insertRevision(current, 'restore')
+      this.db().prepare(`
+        UPDATE memories SET type = ?, content = ?, normalized_key = ?, keywords = ?, importance = ?, updated_at = ? WHERE id = ?
+      `).run(
+        revision.type,
+        revision.content,
+        normalizeMemoryKey(revision.content),
+        JSON.stringify(extractMemoryKeywords(revision.content)),
+        revision.importance,
+        Date.now(),
+        memoryId
+      )
+      return this.getRequired(memoryId)
+    })()
+  }
+
+  private insertRevision(memory: MemoryRecord, reason: MemoryRevision['reason']): void {
+    this.db().prepare(`
+      INSERT INTO memory_revisions (id, memory_id, content, type, importance, reason, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(randomUUID(), memory.id, memory.content, memory.type, memory.importance, reason, Date.now())
   }
 
   private getRequired(id: string): MemoryRecord {

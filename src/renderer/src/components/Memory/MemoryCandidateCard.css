@@ -11,6 +11,12 @@
   animation: memory-candidate-in 180ms ease-out;
 }
 
+.memory-candidate-card.has-conflict {
+  grid-template-columns: auto minmax(0, 1fr);
+  border-color: var(--warning-border);
+  background: color-mix(in srgb, var(--warning-bg) 74%, var(--bg-panel));
+}
+
 @keyframes memory-candidate-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -66,10 +72,37 @@
   font-size: 8px;
 }
 
+.memory-candidate-conflict {
+  margin: 7px 0 5px;
+  padding: 7px;
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+}
+
+.memory-candidate-conflict-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.memory-candidate-conflict-title strong { color: var(--warning); font-size: 9px; }
+.memory-candidate-conflict-title span { padding: 0; background: transparent; color: var(--text-secondary); font-size: 8px; }
+.memory-candidate-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.memory-candidate-compare > div { min-width: 0; padding: 5px 6px; border-radius: 6px; background: var(--bg-secondary); }
+.memory-candidate-compare span { padding: 0; background: transparent; color: var(--text-muted); font-size: 8px; }
+.memory-candidate-compare p { margin: 3px 0 0; color: var(--text-primary); font-size: 9px; overflow-wrap: anywhere; }
+
 .memory-candidate-actions {
   display: flex;
   align-self: center;
   gap: 5px;
+}
+
+.memory-candidate-card.has-conflict .memory-candidate-actions {
+  grid-column: 2;
+  justify-self: end;
 }
 
 .memory-candidate-actions button {
@@ -86,6 +119,30 @@
   border-color: var(--accent);
   background: var(--accent);
   color: var(--on-accent);
+}
+
+.memory-candidate-actions button.replace {
+  border-color: var(--warning);
+  background: var(--warning);
+  color: var(--bg-panel);
+}
+
+.memory-candidate-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .memory-candidate-card,
+  .memory-candidate-card.has-conflict { grid-template-columns: auto minmax(0, 1fr); }
+  .memory-candidate-actions,
+  .memory-candidate-card.has-conflict .memory-candidate-actions { grid-column: 1 / -1; justify-self: stretch; flex-wrap: wrap; }
+  .memory-candidate-actions button { flex: 1; }
+  .memory-candidate-compare { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memory-candidate-card { animation: none; }
 }
 
 .memory-candidate-actions button:disabled {

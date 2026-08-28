@@ -2,7 +2,7 @@ import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
 import type { CaptureSourceInfo } from '../../../shared/capture'
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
-import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryListOptions, MemoryRecord, MemorySearchResult, MemoryStats, MemoryType } from '../../../shared/memory'
+import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryConflict, MemoryConflictAction, MemoryListOptions, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemoryType } from '../../../shared/memory'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -100,6 +100,10 @@ export interface ElectronAPI {
     create: (candidate: MemoryCandidateInput) => Promise<MemoryRecord>
     approve: (id: string) => Promise<MemoryRecord>
     reject: (id: string) => Promise<void>
+    conflicts: (candidateId?: string) => Promise<MemoryConflict[]>
+    resolveConflict: (candidateId: string, action: MemoryConflictAction) => Promise<MemoryRecord | null>
+    history: (memoryId: string) => Promise<MemoryRevision[]>
+    restoreRevision: (memoryId: string, revisionId: string) => Promise<MemoryRecord>
     update: (id: string, patch: { content?: string; type?: MemoryType; importance?: number; expiresAt?: number | null }) => Promise<MemoryRecord>
     delete: (id: string) => Promise<void>
     clear: () => Promise<void>

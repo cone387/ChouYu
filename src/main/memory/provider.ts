@@ -1,7 +1,11 @@
 import type {
   MemoryCandidateInput,
+  MemoryConflict,
+  MemoryConflictAction,
+  MemoryConflictKind,
   MemoryListOptions,
   MemoryRecord,
+  MemoryRevision,
   MemorySearchResult,
   MemoryStats,
   MemoryType
@@ -27,6 +31,7 @@ export interface MemoryProvider {
   createActive(candidate: MemoryCandidateInput): MemoryRecord
   approve(id: string): MemoryRecord
   reject(id: string): void
+  archive(id: string, reason?: string): void
   update(id: string, patch: MemoryUpdate): MemoryRecord
   delete(id: string): void
   clear(): void
@@ -36,4 +41,9 @@ export interface MemoryProvider {
   upsertEmbedding(memoryId: string, model: string, vector: number[]): void
   getEmbeddings(model: string): MemoryEmbeddingRecord[]
   clearEmbeddings(model?: string): void
+  createConflict(candidateId: string, existingMemoryId: string, kind: MemoryConflictKind, reason: string): MemoryConflict
+  listConflicts(candidateId?: string): MemoryConflict[]
+  resolveConflict(candidateId: string, action: MemoryConflictAction): MemoryRecord | null
+  listRevisions(memoryId: string): MemoryRevision[]
+  restoreRevision(memoryId: string, revisionId: string): MemoryRecord
 }

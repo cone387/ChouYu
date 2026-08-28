@@ -3,6 +3,7 @@ import {
   containsSecret,
   extractMemoryCandidates,
   extractMemoryKeywords,
+  detectMemoryRelation,
   formatMemoryContext,
   mergeHybridMemoryResults,
   scoreMemory
@@ -11,7 +12,8 @@ import {
 describe('memory foundation', () => {
   it('extracts explicit and preference candidates', () => {
     expect(extractMemoryCandidates('请记住：我的显示器是 4K')[0]).toMatchObject({ type: 'fact', content: '我的显示器是 4K' })
-    expect(extractMemoryCandidates('我偏好简洁的回答')[0]).toMatchObject({ type: 'preference' })
+    expect(extractMemoryCandidates('我偏好简洁的回答')[0]).toMatchObject({ type: 'preference', content: '我偏好简洁的回答' })
+    expect(extractMemoryCandidates('我叫小鱼')[0]).toMatchObject({ type: 'person', content: '我的名字是 小鱼' })
   })
 
   it('blocks secrets from becoming memories', () => {
@@ -48,5 +50,31 @@ describe('memory foundation', () => {
     )
     expect(merged[0].id).toBe('same')
     expect(merged).toHaveLength(3)
+  })
+
+  it('detects contradictory facts and preferences', () => {
+    expect(detectMemoryRelation(
+      { type: 'fact', content: '我的显示器是 5K' },
+      { type: 'fact', content: '我的显示器是 4K', keywords: extractMemoryKeywords('我的显示器是 4K') }
+    )?.kind).toBe('contradiction')
+    expect(detectMemoryRelation(
+      { type: 'preference', content: '我不喜欢详细回答' },
+      { type: 'preference', content: '我喜欢详细回答', keywords: extractMemoryKeywords('我喜欢详细回答') }
+    )?.kind).toBe('contradiction')
+    expect(detectMemoryRelation(
+      extractMemoryCandidates('我不喜欢详细回答')[0],
+      { type: 'preference', content: '详细回答', keywords: extractMemoryKeywords('详细回答') }
+    )?.kind).toBe('contradiction')
+  })
+
+  it('detects likely project updates without marking unrelated memories', () => {
+    expect(detectMemoryRelation(
+      { type: 'project', content: 'ChouYu 项目使用 SQLite 和向量检索' },
+      { type: 'project', content: 'ChouYu 项目使用 SQLite', keywords: extractMemoryKeywords('ChouYu 项目使用 SQLite') }
+    )?.kind).toBe('update')
+    expect(detectMemoryRelation(
+      { type: 'project', content: '天气应用' },
+      { type: 'project', content: '桌面助手', keywords: extractMemoryKeywords('桌面助手') }
+    )).toBeNull()
   })
 })

@@ -8,7 +8,7 @@ import OnboardingCard from '../Onboarding/OnboardingCard'
 import ToolApprovalDialog from '../ToolApproval/ToolApprovalDialog'
 import MemoryCandidateCard from '../Memory/MemoryCandidateCard'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
-import type { MemoryRecord } from '../../../../shared/memory'
+import type { MemoryConflictAction, MemoryRecord } from '../../../../shared/memory'
 import { formatMemoryContext } from '../../../../shared/memory'
 import {
   Message,
@@ -644,13 +644,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     setToolApprovalRequest(null)
   }, [toolApprovalRequest])
 
-  const resolveMemoryCandidate = useCallback(async (approved: boolean) => {
+  const resolveMemoryCandidate = useCallback(async (action: MemoryConflictAction | 'approve') => {
     const candidate = memoryCandidates[0]
     if (!candidate) return
     setMemoryCandidateBusy(true)
     setMemoryCandidateError('')
     try {
-      if (approved) await window.electronAPI.memory.approve(candidate.id)
+      if (action === 'approve') await window.electronAPI.memory.approve(candidate.id)
+      else if (candidate.conflicts?.some((conflict) => conflict.status === 'pending')) await window.electronAPI.memory.resolveConflict(candidate.id, action)
       else await window.electronAPI.memory.reject(candidate.id)
       setMemoryCandidates((previous) => previous.filter((item) => item.id !== candidate.id))
     } catch (error) {
@@ -747,8 +748,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 candidate={memoryCandidates[0]}
                 remaining={memoryCandidates.length}
                 busy={memoryCandidateBusy}
-                onApprove={() => { void resolveMemoryCandidate(true) }}
-                onReject={() => { void resolveMemoryCandidate(false) }}
+                onResolve={(action) => { void resolveMemoryCandidate(action) }}
               />
             )}
             {memoryCandidateError && <div className="memory-candidate-error" role="alert">{memoryCandidateError}</div>}
