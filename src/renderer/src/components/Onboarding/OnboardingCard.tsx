@@ -2,10 +2,9 @@ import './OnboardingCard.css'
 
 interface OnboardingCardProps {
   onConfigure: () => void
-  onSkip: () => void
 }
 
-export default function OnboardingCard({ onConfigure, onSkip }: OnboardingCardProps) {
+export default function OnboardingCard({ onConfigure }: OnboardingCardProps) {
   return (
     <section className="onboarding-card" aria-labelledby="onboarding-title">
       <div className="onboarding-mark" aria-hidden="true">
@@ -14,9 +13,9 @@ export default function OnboardingCard({ onConfigure, onSkip }: OnboardingCardPr
         </svg>
       </div>
       <div className="onboarding-copy">
-        <span className="onboarding-kicker">首次使用</span>
+        <span className="onboarding-kicker">需要配置</span>
         <h2 id="onboarding-title">连接你的 AI 服务</h2>
-        <p>配置 Provider、API Key 和默认模型后，就可以开始对话。连接检测会自动识别常见的 `/v1` 地址问题。</p>
+        <p>ChouYu 不预设任何 AI 服务。必须配置 Provider、Base URL、API Key 和默认模型后才能开始对话。</p>
       </div>
       <ol className="onboarding-steps" aria-label="配置步骤">
         <li><span>1</span>填写服务</li>
@@ -24,7 +23,6 @@ export default function OnboardingCard({ onConfigure, onSkip }: OnboardingCardPr
         <li><span>3</span>选择模型</li>
       </ol>
       <div className="onboarding-actions">
-        <button type="button" className="onboarding-skip" onClick={onSkip}>暂时跳过</button>
         <button type="button" className="onboarding-primary" onClick={onConfigure}>
           打开 AI 设置
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

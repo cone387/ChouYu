@@ -6,6 +6,7 @@ export interface Mem0AdapterConfig {
   baseUrl: string
   apiKey: string
   userId: string
+  mode?: 'platform' | 'self-hosted'
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -47,7 +48,7 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
 
   private validate(): void {
     if (!this.config.baseUrl.trim()) throw new Error('尚未配置 Mem0 Base URL。')
-    if (!this.config.apiKey.trim()) throw new Error('尚未配置 Mem0 API Key。')
+    if ((this.config.mode || 'platform') === 'platform' && !this.config.apiKey.trim()) throw new Error('尚未配置 Mem0 API Key。')
     if (!this.config.userId.trim()) throw new Error('尚未配置 Mem0 User ID。')
     let parsed: URL
     try {
@@ -60,11 +61,16 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
 
   private endpoint(): string {
     this.validate()
-    return joinApiUrl(this.config.baseUrl, 'memories/')
+    return joinApiUrl(this.config.baseUrl, 'memories')
   }
 
   private headers(): Record<string, string> {
-    return { 'Content-Type': 'application/json', Authorization: `Token ${this.config.apiKey}` }
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (this.config.apiKey.trim()) {
+      if ((this.config.mode || 'platform') === 'self-hosted') headers['X-API-Key'] = this.config.apiKey
+      else headers.Authorization = `Token ${this.config.apiKey}`
+    }
+    return headers
   }
 
   private async responseJson(response: Response): Promise<unknown> {

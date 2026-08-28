@@ -149,6 +149,10 @@
   background: color-mix(in srgb, var(--bg-secondary) 58%, transparent);
 }
 
+.settings-required-notice { display:flex; flex-direction:column; gap:3px; margin-bottom:12px; padding:9px 10px; border:1px solid var(--warning-border); border-radius:8px; background:var(--warning-bg); color:var(--warning); }
+.settings-required-notice strong { font-size:10px; }
+.settings-required-notice span { font-size:9px; line-height:1.45; }
+
 @keyframes settings-fade {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }

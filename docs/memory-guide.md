@@ -83,7 +83,7 @@
 
 ## 远程适配器与 Mem0
 
-`1.1.6` 增加了独立的 `MemorySyncAdapter` 协议。它负责远程列出、连接检查和上传，但不替换本地 `MemoryProvider`：SQLite 仍是默认主数据源，关闭远程适配器后所有本地能力保持可用。
+`1.1.6` 增加了独立的 `MemorySyncAdapter` 协议；`1.1.7` 将它迁入服务能力插件注册表。同步插件负责远程列出、连接检查和上传，但不替换本地 `MemoryProvider`：SQLite 仍是默认主数据源，关闭同步插件后所有本地能力保持可用。
 
 首个实现为 Mem0：
 
@@ -97,6 +97,13 @@
 - 上传元数据包含本地 ID、类型、重要度、更新时间和有效期，便于后续增量同步。
 
 当前版本不会自动同步、删除远程记忆或传播本地删除；这些行为需要更完整的双向状态模型后再开放。
+
+Mem0 目前拆成两个可选同步能力：
+
+- `mem0-platform`：托管平台，使用 `Authorization: Token`。
+- `mem0-self-hosted`：源码自托管 Server，默认 `http://localhost:8888`，使用根路径 `/memories` 和 `X-API-Key`；仅在本地开发明确设置 `AUTH_DISABLED=true` 时允许空 Key。
+
+Embedding 也作为独立能力选择：不启用时使用关键词检索；选择 `openai-compatible` 后才会调用向量接口并发送记忆文本。服务能力架构详见 [服务能力插件指南](capability-plugin-guide.md)。
 
 ## 检索
 

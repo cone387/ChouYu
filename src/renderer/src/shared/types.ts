@@ -2,6 +2,7 @@ import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
 import type { CaptureSourceInfo } from '../../../shared/capture'
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
+import type { CapabilityInfo } from '../../../shared/capabilities'
 import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncPullPreview, MemorySyncPushResult, MemorySyncStatus, MemoryType } from '../../../shared/memory'
 export type { AppConfig } from '../../../shared/config'
 
@@ -91,6 +92,9 @@ export interface ElectronAPI {
   tools: {
     list: () => Promise<ToolCatalogItem[]>
     setEnabled: (name: string, enabled: boolean) => Promise<ToolCatalogItem[]>
+  }
+  capabilities: {
+    list: () => Promise<CapabilityInfo[]>
   }
   memory: {
     list: (options?: MemoryListOptions) => Promise<MemoryRecord[]>

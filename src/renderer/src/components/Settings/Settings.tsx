@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AppConfig, PluginInfo } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
-import { DEFAULT_SOUL_MD } from '../../../../shared/config'
+import { DEFAULT_SOUL_MD, isAIConfigured } from '../../../../shared/config'
 import type { AIModelListResult } from '../../../../shared/ai'
 import PluginSettingsTab from './PluginSettingsTab'
 import ModelPicker from '../ModelPicker/ModelPicker'
@@ -135,6 +135,7 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
   const configuredModelValid = providerCheck?.ok
     ? providerCheck.models.includes(config.model)
     : null
+  const aiConfigured = isAIConfigured(config)
 
   return (
     <div className="settings-panel">
@@ -177,6 +178,7 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
                 <p>配置用于对话的服务地址、凭据和默认模型。</p>
               </div>
               <div className="settings-card">
+                {!aiConfigured && <div className="settings-required-notice" role="alert"><strong>需要完成 AI 配置</strong><span>ChouYu 不提供默认服务。Base URL、API Key 和模型全部填写后才能使用对话。</span></div>}
                 <div className="settings-field">
                 <label htmlFor="settings-provider">服务类型</label>
                 <select
@@ -189,7 +191,7 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
                 </select>
               </div>
               <div className="settings-field">
-                <label htmlFor="settings-base-url">Base URL</label>
+                <label htmlFor="settings-base-url">Base URL（必填）</label>
                 <input
                   id="settings-base-url"
                   type="text"
@@ -200,7 +202,7 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
                 />
               </div>
               <div className="settings-field">
-                <label htmlFor="settings-api-key">API Key</label>
+                <label htmlFor="settings-api-key">API Key（必填）</label>
                 <div className="settings-key-row">
                   <input
                     id="settings-api-key"
@@ -216,7 +218,7 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
                 </div>
               </div>
               <div className="settings-field">
-                <label htmlFor="settings-model">默认模型</label>
+                <label htmlFor="settings-model">默认模型（必填）</label>
                 <div className="settings-model-row">
                   {modelOptions.length > 0 && !manualModelEntry ? (
                     <ModelPicker

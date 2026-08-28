@@ -198,6 +198,9 @@ export async function streamAIChat(
   signal?: AbortSignal,
   toolRuntime?: AIToolRuntime
 ): Promise<void> {
+  if (!config.baseUrl.trim()) {
+    throw new Error('尚未配置 Base URL，请先打开设置完成配置。')
+  }
   if (!config.apiKey.trim()) {
     throw new Error('尚未配置 API Key，请先打开设置完成配置。')
   }

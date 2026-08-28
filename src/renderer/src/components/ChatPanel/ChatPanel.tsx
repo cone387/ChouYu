@@ -10,6 +10,7 @@ import MemoryCandidateCard from '../Memory/MemoryCandidateCard'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
 import type { MemoryConflictAction, MemoryFeedbackValue, MemoryRecord } from '../../../../shared/memory'
 import { formatMemoryContext } from '../../../../shared/memory'
+import { isAIConfigured } from '../../../../shared/config'
 import {
   Message,
   PetState,
@@ -121,12 +122,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   useEffect(() => {
     Promise.all([
       loadSessionWorkspace(),
-      window.electronAPI.db.getConfig(),
-      window.electronAPI.db.getState('onboarding-dismissed')
-    ]).then(([workspace, loadedConfig, onboardingDismissed]) => {
+      window.electronAPI.db.getConfig()
+    ]).then(([workspace, loadedConfig]) => {
       applyWorkspace(workspace)
       setConfig(loadedConfig)
-      setShowOnboarding(!loadedConfig.apiKey && onboardingDismissed !== 'true')
+      setShowOnboarding(!isAIConfigured(loadedConfig))
       initializedRef.current = true
       setWorkspaceLoaded(true)
     })
@@ -135,7 +135,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   useEffect(() => window.electronAPI.onConfigChanged((nextConfig) => {
     setConfig(nextConfig)
-    if (nextConfig.apiKey) setShowOnboarding(false)
+    setShowOnboarding(!isAIConfigured(nextConfig))
   }), [])
 
   useEffect(() => {
@@ -596,6 +596,12 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       return
     }
 
+    if (!isAIConfigured(config)) {
+      setShowOnboarding(true)
+      setMessages((previous) => [...previous, { id: Date.now().toString(), role: 'assistant', content: '尚未完成 AI Provider 配置。请填写 Base URL、API Key 和模型并通过连接检测后再开始对话。', timestamp: Date.now() }])
+      return
+    }
+
     let messageContent = content
     const imageAttachment = attachments?.find((attachment) => attachment.type === 'image')
     const textAttachments = attachments?.filter((attachment) => attachment.type === 'text') || []
@@ -632,11 +638,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const handleModelChange = useCallback((newModel: string) => {
     setConfig((previous) => ({ ...previous, model: newModel }))
     void window.electronAPI.db.saveConfig({ model: newModel })
-  }, [])
-
-  const dismissOnboarding = useCallback(async () => {
-    setShowOnboarding(false)
-    await window.electronAPI.db.setState('onboarding-dismissed', 'true')
   }, [])
 
   const openAISettings = useCallback(() => {
@@ -708,7 +709,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       <div className="chat-panel-main">
         {showSettings ? (
           <Settings
-            onClose={() => { setShowSettings(false); setMemoryCorrectionId(''); void refreshPlugins(); onSettingsClose?.() }}
+            onClose={() => { setShowSettings(false); setShowOnboarding(!isAIConfigured(config)); setMemoryCorrectionId(''); void refreshPlugins(); onSettingsClose?.() }}
             initialNav={memoryCorrectionId ? 'memory' : undefined}
             focusMemoryId={memoryCorrectionId || undefined}
             dragHandleProps={{
@@ -746,9 +747,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               />
             </div>
 
-            {showOnboarding && (
-              <OnboardingCard onConfigure={openAISettings} onSkip={() => { void dismissOnboarding() }} />
-            )}
+            {showOnboarding && <OnboardingCard onConfigure={openAISettings} />}
             {workspaceLoaded && (
               <MessageArea
                 messages={messages}

@@ -1,7 +1,5 @@
 import { app } from 'electron'
 import { randomUUID } from 'crypto'
-import path from 'path'
-import { SQLiteMemoryProvider } from './sqlite-provider'
 import type { MemoryProvider } from './provider'
 import type {
   EmbeddingRebuildResult,
@@ -23,16 +21,23 @@ import type {
   MemoryType
 } from '../../shared/memory'
 import { buildMemoryClusters, compressMemoryResults, containsSecret, detectMemoryRelation, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
-import { getConfig } from '../database'
-import { OpenAIEmbeddingClient, cosineSimilarity } from './embedding-client'
-import { createMemorySyncAdapter } from './sync/factory'
+import { getConfig, saveConfig } from '../database'
+import { cosineSimilarity } from './embedding-client'
+import { capabilityRegistry } from '../capabilities/registry'
 
 let provider: MemoryProvider | null = null
 let maintenanceTimer: ReturnType<typeof setInterval> | null = null
 
 export function initializeMemory(): void {
   if (provider) return
-  provider = new SQLiteMemoryProvider(path.join(app.getPath('userData'), 'chouyu-memory.db'))
+  const config = getConfig()
+  try {
+    provider = capabilityRegistry.createMemoryEngine(config.memoryEngineProvider, { userDataPath: app.getPath('userData') })
+  } catch (error) {
+    console.warn(`[Memory] Failed to load engine ${config.memoryEngineProvider}; falling back to chouyu-sqlite:`, error)
+    provider = capabilityRegistry.createMemoryEngine('chouyu-sqlite', { userDataPath: app.getPath('userData') })
+    saveConfig({ memoryEngineProvider: 'chouyu-sqlite' })
+  }
   provider.initialize()
   runMemoryMaintenance()
   maintenanceTimer = setInterval(() => {
@@ -262,7 +267,8 @@ export function importMemories(decisions: MemoryImportDecision[]): MemoryImportR
 
 export async function testMemorySync(): Promise<MemorySyncStatus> {
   try {
-    const adapter = createMemorySyncAdapter(getConfig())
+    const config = getConfig()
+    const adapter = capabilityRegistry.createMemorySync(config.memorySyncProvider, config)
     const result = await adapter.test()
     return { ok: true, provider: adapter.provider, remoteCount: result.remoteCount, message: `连接成功，Mem0 中有 ${result.remoteCount} 条记忆。` }
   } catch (error) {
@@ -271,7 +277,8 @@ export async function testMemorySync(): Promise<MemorySyncStatus> {
 }
 
 export async function previewMemorySyncPull(): Promise<MemorySyncPullPreview> {
-  const adapter = createMemorySyncAdapter(getConfig())
+  const config = getConfig()
+  const adapter = capabilityRegistry.createMemorySync(config.memorySyncProvider, config)
   const remote = await adapter.list()
   const input = remote.map((memory) => {
     const metadata = memory.metadata
@@ -292,18 +299,17 @@ export async function previewMemorySyncPull(): Promise<MemorySyncPullPreview> {
 
 export async function pushMemoriesToSync(): Promise<MemorySyncPushResult> {
   runMemoryMaintenance()
-  const adapter = createMemorySyncAdapter(getConfig())
+  const config = getConfig()
+  const adapter = capabilityRegistry.createMemorySync(config.memorySyncProvider, config)
   const active = getMemoryProvider().list({ status: 'active', limit: 2000 })
   const result = await adapter.push(active)
   return { provider: adapter.provider, ...result }
 }
 
-function embeddingClient(): { client: OpenAIEmbeddingClient; model: string } {
+function embeddingClient(): { client: ReturnType<typeof capabilityRegistry.createEmbedding>; model: string } {
   const config = getConfig()
-  const baseUrl = config.embeddingBaseUrl || config.baseUrl
-  const apiKey = config.embeddingApiKey || config.apiKey
   const model = config.embeddingModel.trim()
-  return { client: new OpenAIEmbeddingClient({ baseUrl, apiKey, model }), model }
+  return { client: capabilityRegistry.createEmbedding(config.embeddingProvider, config), model }
 }
 
 export async function testEmbedding(): Promise<EmbeddingStatus> {
@@ -318,7 +324,7 @@ export async function testEmbedding(): Promise<EmbeddingStatus> {
 
 export async function indexMemory(memory: MemoryRecord): Promise<void> {
   const config = getConfig()
-  if (!config.embeddingEnabled || memory.status !== 'active') return
+  if (!config.embeddingEnabled || config.embeddingProvider === 'none' || memory.status !== 'active') return
   const { client, model } = embeddingClient()
   const vector = (await client.embed([memory.content]))[0]
   getMemoryProvider().upsertEmbedding(memory.id, model, vector)
@@ -350,7 +356,7 @@ export async function searchMemories(query: string, limit = 6): Promise<MemorySe
   const finalize = (results: MemorySearchResult[]) => config.memoryCompressionEnabled
     ? compressMemoryResults(results, limit, listMemoryClusters())
     : results.slice(0, limit)
-  if (!config.embeddingEnabled) return finalize(lexical)
+  if (!config.embeddingEnabled || config.embeddingProvider === 'none') return finalize(lexical)
   try {
     const { client, model } = embeddingClient()
     const queryVector = (await client.embed([query]))[0]

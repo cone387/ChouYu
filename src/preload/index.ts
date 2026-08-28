@@ -3,6 +3,7 @@ import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import type { CaptureSourceInfo } from '../shared/capture'
 import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
+import type { CapabilityInfo } from '../shared/capabilities'
 import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncPullPreview, MemorySyncPushResult, MemorySyncStatus } from '../shared/memory'
 
 const api = {
@@ -52,6 +53,9 @@ const api = {
   tools: {
     list: () => ipcRenderer.invoke('tools:list') as Promise<ToolCatalogItem[]>,
     setEnabled: (name: string, enabled: boolean) => ipcRenderer.invoke('tools:set-enabled', name, enabled) as Promise<ToolCatalogItem[]>
+  },
+  capabilities: {
+    list: () => ipcRenderer.invoke('capabilities:list') as Promise<CapabilityInfo[]>
   },
   memory: {
     list: (options?: MemoryListOptions) => ipcRenderer.invoke('memory:list', options) as Promise<MemoryRecord[]>,

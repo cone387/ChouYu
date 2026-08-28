@@ -9,6 +9,8 @@ import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
 import { closeMemory, createMemoryTopic, getMemoryInsights, getMemoryProvider, importMemories, initializeMemory, listMemoryClusters, previewMemoryImport, proposeMemoryCandidate, searchMemories, splitMemoryCluster } from './memory/service'
 import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
+import { registerBuiltInCapabilities } from './capabilities/builtins'
+import { capabilityRegistry } from './capabilities/registry'
 
 let mainWindow: BrowserWindow | null = null
 const isSmokeTest = process.env['CHOUYU_SMOKE_TEST'] === '1'
@@ -115,8 +117,11 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   // Init database first (needed by plugins and IPC handlers)
   initDatabase()
+  registerBuiltInCapabilities()
   initializeMemory()
   if (isSmokeTest) {
+    const capabilityCatalog = capabilityRegistry.list(getConfig())
+    if (capabilityCatalog.length !== 4 || !capabilityCatalog.some((item) => item.id === 'chouyu-sqlite' && item.active)) throw new Error('Capability registry smoke test failed')
     const memoryProvider = getMemoryProvider()
     memoryProvider.createActive({
       type: 'preference',

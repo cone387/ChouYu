@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { MemoryRecord } from '../../../shared/memory'
 import { Mem0MemorySyncAdapter, parseMem0Memories } from './mem0-adapter'
 
-const config = { baseUrl: 'https://api.mem0.test/v1', apiKey: 'secret', userId: 'user-1' }
+const config = { baseUrl: 'https://api.mem0.test/v1', apiKey: 'secret', userId: 'user-1', mode: 'platform' as const }
 
 describe('Mem0 memory sync adapter', () => {
   it('parses common Mem0 list response shapes', () => {
@@ -37,5 +37,13 @@ describe('Mem0 memory sync adapter', () => {
     expect(result).toEqual({ attempted: 2, succeeded: 1, skipped: 1, failed: 0 })
     expect(request).toHaveBeenCalledTimes(2)
     expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toMatchObject({ user_id: 'user-1', metadata: { chouyu_id: 'local-2' } })
+  })
+
+  it('supports self-hosted root paths and X-API-Key authentication', async () => {
+    const request = vi.fn(async (_input: Parameters<typeof fetch>[0], _init?: RequestInit) => Response.json({ results: [] }))
+    await new Mem0MemorySyncAdapter({ baseUrl: 'http://localhost:8888', apiKey: 'local-key', userId: 'local-user', mode: 'self-hosted' }, request as typeof fetch).list()
+    expect(String(request.mock.calls[0][0])).toContain('http://localhost:8888/memories?')
+    expect((request.mock.calls[0][1]?.headers as Record<string, string>)['X-API-Key']).toBe('local-key')
+    expect((request.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBeUndefined()
   })
 })

@@ -20,6 +20,7 @@
 - 🧩 主题聚类与可追溯摘要压缩，减少 Prompt 占用
 - 🧭 人工主题校正、冲突导入预览、单条有效期和本地统计概览
 - ☁️ 可选 Mem0 远程适配器，显式上传、拉取预览且本地 SQLite 始终可用
+- 🧱 服务能力插件，可独立选择记忆引擎、Embedding 和同步实现
 - 🎨 在设置中直接编辑 SOUL.md 角色人格
 
 ## 快速开始
@@ -105,6 +106,7 @@ src/
 - [插件开发指南](docs/plugin-guide.md)
 - [工具系统指南](docs/tool-guide.md)
 - [记忆系统指南](docs/memory-guide.md)
+- [服务能力插件指南](docs/capability-plugin-guide.md)
 
 ## 开发
 

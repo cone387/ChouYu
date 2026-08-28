@@ -33,14 +33,16 @@ export interface AppConfig {
   clipboardWatch: boolean
   aiToolsEnabled: boolean
   memoryEnabled: boolean
+  memoryEngineProvider: string
   memoryMaxItems: number
   memoryDefaultTtlDays: number
   memoryCompressionEnabled: boolean
-  memorySyncProvider: 'none' | 'mem0'
+  memorySyncProvider: string
   memorySyncBaseUrl: string
   memorySyncApiKey: string
   memorySyncUserId: string
   embeddingEnabled: boolean
+  embeddingProvider: string
   embeddingBaseUrl: string
   embeddingApiKey: string
   embeddingModel: string
@@ -49,9 +51,9 @@ export interface AppConfig {
 
 export const DEFAULT_APP_CONFIG: AppConfig = {
   provider: 'openai',
-  baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  baseUrl: '',
   apiKey: '',
-  model: 'qwen-plus',
+  model: '',
   hotkey: 'Alt+Space',
   autoStart: false,
   petSize: 80,
@@ -60,6 +62,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   clipboardWatch: false,
   aiToolsEnabled: true,
   memoryEnabled: true,
+  memoryEngineProvider: 'chouyu-sqlite',
   memoryMaxItems: 500,
   memoryDefaultTtlDays: 0,
   memoryCompressionEnabled: true,
@@ -68,10 +71,15 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   memorySyncApiKey: '',
   memorySyncUserId: '',
   embeddingEnabled: false,
+  embeddingProvider: 'none',
   embeddingBaseUrl: '',
   embeddingApiKey: '',
   embeddingModel: 'text-embedding-v3',
   soulMd: DEFAULT_SOUL_MD
+}
+
+export function isAIConfigured(config: Pick<AppConfig, 'baseUrl' | 'apiKey' | 'model'>): boolean {
+  return Boolean(config.baseUrl.trim() && config.apiKey.trim() && config.model.trim())
 }
 
 export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
@@ -88,7 +96,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     petSize,
     baseUrl: typeof source.baseUrl === 'string' ? source.baseUrl.trim() : DEFAULT_APP_CONFIG.baseUrl,
     apiKey: typeof source.apiKey === 'string' ? source.apiKey : '',
-    model: typeof source.model === 'string' && source.model.trim() ? source.model.trim() : DEFAULT_APP_CONFIG.model,
+    model: typeof source.model === 'string' ? source.model.trim() : '',
     hotkey: typeof source.hotkey === 'string' && source.hotkey.trim() ? source.hotkey.trim() : DEFAULT_APP_CONFIG.hotkey,
     autoStart: source.autoStart === true,
     proactiveGreeting: source.proactiveGreeting !== false,
@@ -96,6 +104,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     clipboardWatch: source.clipboardWatch === true,
     aiToolsEnabled: source.aiToolsEnabled !== false,
     memoryEnabled: source.memoryEnabled !== false,
+    memoryEngineProvider: typeof source.memoryEngineProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(source.memoryEngineProvider) ? source.memoryEngineProvider : 'chouyu-sqlite',
     memoryMaxItems: typeof source.memoryMaxItems === 'number' && Number.isFinite(source.memoryMaxItems)
       ? Math.min(2000, Math.max(50, Math.round(source.memoryMaxItems)))
       : DEFAULT_APP_CONFIG.memoryMaxItems,
@@ -103,11 +112,15 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
       ? Math.min(3650, Math.max(0, Math.round(source.memoryDefaultTtlDays)))
       : DEFAULT_APP_CONFIG.memoryDefaultTtlDays,
     memoryCompressionEnabled: source.memoryCompressionEnabled !== false,
-    memorySyncProvider: source.memorySyncProvider === 'mem0' ? 'mem0' : 'none',
+    memorySyncProvider: source.memorySyncProvider === 'mem0' ? 'mem0-platform'
+      : typeof source.memorySyncProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(source.memorySyncProvider) ? source.memorySyncProvider : 'none',
     memorySyncBaseUrl: typeof source.memorySyncBaseUrl === 'string' && source.memorySyncBaseUrl.trim() ? source.memorySyncBaseUrl.trim() : 'https://api.mem0.ai/v1',
     memorySyncApiKey: typeof source.memorySyncApiKey === 'string' ? source.memorySyncApiKey : '',
     memorySyncUserId: typeof source.memorySyncUserId === 'string' ? source.memorySyncUserId.trim().slice(0, 256) : '',
-    embeddingEnabled: source.embeddingEnabled === true,
+    embeddingEnabled: typeof source.embeddingProvider === 'string' ? source.embeddingProvider !== 'none' : source.embeddingEnabled === true,
+    embeddingProvider: typeof source.embeddingProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(source.embeddingProvider)
+      ? source.embeddingProvider
+      : source.embeddingEnabled === true ? 'openai-compatible' : 'none',
     embeddingBaseUrl: typeof source.embeddingBaseUrl === 'string' ? source.embeddingBaseUrl.trim() : '',
     embeddingApiKey: typeof source.embeddingApiKey === 'string' ? source.embeddingApiKey : '',
     embeddingModel: typeof source.embeddingModel === 'string' && source.embeddingModel.trim() ? source.embeddingModel.trim() : 'text-embedding-v3',
@@ -132,14 +145,16 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.clipboardWatch === 'boolean') patch.clipboardWatch = input.clipboardWatch
   if (typeof input.aiToolsEnabled === 'boolean') patch.aiToolsEnabled = input.aiToolsEnabled
   if (typeof input.memoryEnabled === 'boolean') patch.memoryEnabled = input.memoryEnabled
+  if (typeof input.memoryEngineProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(input.memoryEngineProvider)) patch.memoryEngineProvider = input.memoryEngineProvider
   if (typeof input.memoryMaxItems === 'number' && Number.isFinite(input.memoryMaxItems)) patch.memoryMaxItems = Math.min(2000, Math.max(50, Math.round(input.memoryMaxItems)))
   if (typeof input.memoryDefaultTtlDays === 'number' && Number.isFinite(input.memoryDefaultTtlDays)) patch.memoryDefaultTtlDays = Math.min(3650, Math.max(0, Math.round(input.memoryDefaultTtlDays)))
   if (typeof input.memoryCompressionEnabled === 'boolean') patch.memoryCompressionEnabled = input.memoryCompressionEnabled
-  if (input.memorySyncProvider === 'none' || input.memorySyncProvider === 'mem0') patch.memorySyncProvider = input.memorySyncProvider
+  if (typeof input.memorySyncProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(input.memorySyncProvider)) patch.memorySyncProvider = input.memorySyncProvider
   if (typeof input.memorySyncBaseUrl === 'string') patch.memorySyncBaseUrl = input.memorySyncBaseUrl.trim().slice(0, 2048)
   if (typeof input.memorySyncApiKey === 'string') patch.memorySyncApiKey = input.memorySyncApiKey.slice(0, 8192)
   if (typeof input.memorySyncUserId === 'string') patch.memorySyncUserId = input.memorySyncUserId.trim().slice(0, 256)
   if (typeof input.embeddingEnabled === 'boolean') patch.embeddingEnabled = input.embeddingEnabled
+  if (typeof input.embeddingProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(input.embeddingProvider)) patch.embeddingProvider = input.embeddingProvider
   if (typeof input.embeddingBaseUrl === 'string') patch.embeddingBaseUrl = input.embeddingBaseUrl.trim().slice(0, 2048)
   if (typeof input.embeddingApiKey === 'string') patch.embeddingApiKey = input.embeddingApiKey.slice(0, 8192)
   if (typeof input.embeddingModel === 'string') patch.embeddingModel = input.embeddingModel.trim().slice(0, 256)

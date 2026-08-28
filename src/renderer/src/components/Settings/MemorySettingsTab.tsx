@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { MemoryCleanupSuggestion, MemoryCluster, MemoryConflictAction, MemoryImportAction, MemoryImportPreview, MemoryInsights, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
 import type { AppConfig } from '../../shared/types'
+import type { CapabilityInfo } from '../../../../shared/capabilities'
 import './MemorySettingsTab.css'
 
 interface MemorySettingsTabProps {
@@ -89,6 +90,8 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [syncBusy, setSyncBusy] = useState<'test' | 'pull' | 'push' | ''>('')
   const [syncStatus, setSyncStatus] = useState('')
   const [confirmSyncPush, setConfirmSyncPush] = useState(false)
+  const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([])
+  const [capabilityStatus, setCapabilityStatus] = useState('')
 
   const refresh = useCallback(async () => {
     setError('')
@@ -132,6 +135,10 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   useEffect(() => {
     setSyncDraft({ memorySyncBaseUrl: config.memorySyncBaseUrl, memorySyncApiKey: config.memorySyncApiKey, memorySyncUserId: config.memorySyncUserId })
   }, [config.memorySyncApiKey, config.memorySyncBaseUrl, config.memorySyncUserId])
+
+  useEffect(() => {
+    void window.electronAPI.capabilities.list().then(setCapabilities).catch(() => setCapabilityStatus('能力插件目录加载失败。'))
+  }, [config.embeddingProvider, config.memoryEngineProvider, config.memorySyncProvider])
 
   const run = async (id: string, action: () => Promise<unknown>): Promise<boolean> => {
     setBusyId(id)
@@ -460,6 +467,9 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const maxTypeCount = Math.max(1, ...insights.byType.map((item) => item.count))
   const maxWeeklyCount = Math.max(1, ...insights.createdByWeek.map((item) => item.count))
   const selectedTopicType = memories.find((memory) => topicSelection.has(memory.id))?.type
+  const memoryEngineCapabilities = capabilities.filter((item) => item.kind === 'memory-engine')
+  const embeddingCapabilities = capabilities.filter((item) => item.kind === 'embedding')
+  const syncCapabilities = capabilities.filter((item) => item.kind === 'memory-sync')
 
   return (
     <div className="settings-pane memory-settings-pane">
@@ -483,6 +493,13 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           <span className="settings-switch-slider" />
         </label>
       </div>
+
+      <section className="memory-capability-card">
+        <div><strong>记忆引擎插件</strong><span>负责本地记忆的存储、检索、冲突和历史。切换引擎需要重启应用。</span></div>
+        <select value={config.memoryEngineProvider} onChange={(event) => { void onSaveConfig({ memoryEngineProvider: event.target.value }); setCapabilityStatus('记忆引擎选择已保存，重启 ChouYu 后生效。') }} aria-label="记忆引擎插件">{memoryEngineCapabilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <div className="memory-capability-meta">{memoryEngineCapabilities.filter((item) => item.id === config.memoryEngineProvider).map((item) => <span key={item.id}><b>已安装</b>{item.networkAccess ? '需要网络' : '完全本地'} · {item.description}</span>)}</div>
+        {capabilityStatus && <div className="memory-capability-status" role="status">{capabilityStatus}</div>}
+      </section>
 
       <div className="memory-stats" aria-label="记忆统计">
         <div><strong>{stats.active}</strong><span>已确认</span></div>
@@ -591,18 +608,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
             <span>可选功能。失败时自动退回关键词检索。</span>
           </div>
           <div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={config.embeddingEnabled}
-                onChange={(event) => {
-                  setShowEmbedding(event.target.checked)
-                  void onSaveConfig({ embeddingEnabled: event.target.checked })
-                }}
-                aria-label="启用语义向量检索"
-              />
-              <span className="settings-switch-slider" />
-            </label>
+            <select value={config.embeddingEnabled ? config.embeddingProvider : 'none'} onChange={(event) => { const provider = event.target.value; const enabled = provider !== 'none'; setShowEmbedding(enabled); void onSaveConfig({ embeddingProvider: provider, embeddingEnabled: enabled }) }} aria-label="Embedding 能力插件"><option value="none">不启用 · 关键词检索</option>{embeddingCapabilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
             <button type="button" className="memory-embedding-expand" onClick={() => setShowEmbedding((value) => !value)} aria-expanded={showEmbedding}>
               {showEmbedding ? '收起' : '配置'}
             </button>
@@ -610,6 +616,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         </div>
         {showEmbedding && (
           <div className="memory-embedding-fields">
+            <div className="memory-embedding-privacy" role="note">当前插件会把记忆文本和搜索查询发送到配置的 Embedding 服务。留空 Base URL 或 API Key 时复用当前 AI Provider，但只有它实现 `/embeddings` 才能使用。</div>
             <label>
               <span>Base URL</span>
               <input
@@ -652,18 +659,18 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
 
       <section className="memory-sync-card">
         <div className="memory-sync-header">
-          <div><strong>远程记忆适配器</strong><span>SQLite 始终保留为本地主数据源；远程同步默认关闭。</span></div>
-          <select value={config.memorySyncProvider} disabled={Boolean(syncBusy)} onChange={(event) => { const provider = event.target.value as 'none' | 'mem0'; void onSaveConfig({ memorySyncProvider: provider }); setSyncStatus(provider === 'mem0' ? '已选择 Mem0，请完成连接配置。' : '远程同步已关闭。'); setConfirmSyncPush(false) }} aria-label="远程记忆适配器"><option value="none">关闭</option><option value="mem0">Mem0</option></select>
+          <div><strong>记忆同步插件</strong><span>本地记忆引擎始终保留为主数据源；同步默认关闭。</span></div>
+          <select value={config.memorySyncProvider} disabled={Boolean(syncBusy)} onChange={(event) => { const provider = event.target.value; const defaultBaseUrl = provider === 'mem0-self-hosted' ? 'http://localhost:8888' : provider === 'mem0-platform' ? 'https://api.mem0.ai/v1' : syncDraft.memorySyncBaseUrl; setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: defaultBaseUrl })); void onSaveConfig({ memorySyncProvider: provider, memorySyncBaseUrl: defaultBaseUrl }); setSyncStatus(provider !== 'none' ? '同步插件已选择，请完成连接配置。' : '远程同步已关闭。'); setConfirmSyncPush(false) }} aria-label="记忆同步插件"><option value="none">不启用</option>{syncCapabilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         </div>
-        {config.memorySyncProvider === 'mem0' && <div className="memory-sync-content">
+        {config.memorySyncProvider !== 'none' && <div className="memory-sync-content">
           <div className="memory-sync-privacy" role="note">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>
             <span>只有点击“确认上传”才会把已确认记忆发送到 Mem0。拉取内容会先进入本地冲突预览，不会直接覆盖。</span>
           </div>
           <div className="memory-sync-fields">
-            <label><span>Base URL</span><input value={syncDraft.memorySyncBaseUrl} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="https://api.mem0.ai/v1" /></label>
-            <label><span>User ID</span><input value={syncDraft.memorySyncUserId} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncUserId: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="用于隔离你的远程记忆" /></label>
-            <label className="memory-sync-key-field"><span>API Key</span><div><input type={showSyncKey ? 'text' : 'password'} value={syncDraft.memorySyncApiKey} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncApiKey: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="Mem0 API Key" /><button type="button" onClick={() => setShowSyncKey((value) => !value)}>{showSyncKey ? '隐藏' : '显示'}</button></div><small>使用系统 safeStorage 加密后保存在本机。</small></label>
+            <label><span>Base URL（必填）</span><input value={syncDraft.memorySyncBaseUrl} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder={config.memorySyncProvider === 'mem0-self-hosted' ? 'http://localhost:8888' : 'https://api.mem0.ai/v1'} /></label>
+            <label><span>User ID（必填）</span><input value={syncDraft.memorySyncUserId} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncUserId: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="用于隔离你的远程记忆" /></label>
+            <label className="memory-sync-key-field"><span>API Key{config.memorySyncProvider === 'mem0-platform' ? '（必填）' : '（自托管关闭鉴权时可留空）'}</span><div><input type={showSyncKey ? 'text' : 'password'} value={syncDraft.memorySyncApiKey} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncApiKey: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="Mem0 API Key" /><button type="button" onClick={() => setShowSyncKey((value) => !value)}>{showSyncKey ? '隐藏' : '显示'}</button></div><small>使用系统 safeStorage 加密后保存在本机。</small></label>
           </div>
           <div className="memory-sync-actions">
             <button type="button" onClick={() => { void testSyncConnection() }} disabled={Boolean(syncBusy)}>{syncBusy === 'test' ? '测试中…' : '测试连接'}</button>

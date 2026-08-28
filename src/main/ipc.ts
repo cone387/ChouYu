@@ -22,6 +22,7 @@ import {
   isValidCaptureSourceId
 } from '../shared/capture'
 import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
+import { capabilityRegistry } from './capabilities/registry'
 import { setClipboardWatcherEnabled } from './clipboard'
 import { initAutoUpdater } from './updater'
 import { fetchProviderModels, streamAIChat } from './ai'
@@ -264,6 +265,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     setState(`tool:${name}:enabled`, enabled ? 'true' : 'false')
     return getToolDefinitions().map((tool) => ({ ...tool, enabled: isToolEnabled(tool.name) }))
   })
+
+  ipcMain.handle('capabilities:list', () => capabilityRegistry.list(getConfig()))
 
   ipcMain.handle('memory:list', (_event, rawOptions?: MemoryListOptions) => {
     runMemoryMaintenance()
