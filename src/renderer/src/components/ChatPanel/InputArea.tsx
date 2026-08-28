@@ -161,6 +161,7 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
       const allCommands = pluginCommands ? [...[
         { cmd: '/new', desc: '新建对话' },
         { cmd: '/clear', desc: '清空当前对话' },
+        { cmd: '/remember', desc: '创建长期记忆候选' },
         { cmd: '/settings', desc: '打开设置' },
         { cmd: '/model', desc: '切换模型' },
         { cmd: '/help', desc: '查看可用指令' }
@@ -218,6 +219,10 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
         break
       case '/clear':
         onSend('/clear')
+        break
+      case '/remember':
+        setValue('/remember ')
+        textareaRef.current?.focus()
         break
       case '/help':
         onSend('/help')

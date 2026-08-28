@@ -6,6 +6,13 @@ import { sanitizeConfigPatch } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
 import {
+  type MemoryCandidateInput,
+  type MemoryListOptions,
+  type MemoryType,
+  containsSecret,
+  extractMemoryCandidates
+} from '../shared/memory'
+import {
   type CaptureSourceInfo,
   filterCaptureSources,
   getCaptureSourceKind,
@@ -16,6 +23,7 @@ import { setClipboardWatcherEnabled } from './clipboard'
 import { initAutoUpdater } from './updater'
 import { fetchProviderModels, streamAIChat } from './ai'
 import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
+import { getMemoryProvider } from './memory/service'
 import {
   type AIToolCall,
   type ToolCatalogItem,
@@ -231,6 +239,86 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!getRegisteredTool(name)) throw new Error('工具不存在。')
     setState(`tool:${name}:enabled`, enabled ? 'true' : 'false')
     return getToolDefinitions().map((tool) => ({ ...tool, enabled: isToolEnabled(tool.name) }))
+  })
+
+  ipcMain.handle('memory:list', (_event, rawOptions?: MemoryListOptions) => {
+    const options: MemoryListOptions = rawOptions && typeof rawOptions === 'object' ? {
+      query: typeof rawOptions.query === 'string' ? rawOptions.query.slice(0, 500) : undefined,
+      status: ['pending', 'active', 'archived', 'all'].includes(String(rawOptions.status)) ? rawOptions.status : 'all',
+      type: ['fact', 'preference', 'person', 'project', 'workflow', 'all'].includes(String(rawOptions.type)) ? rawOptions.type : 'all',
+      limit: typeof rawOptions.limit === 'number' ? Math.min(1000, Math.max(1, rawOptions.limit)) : 500
+    } : { status: 'all', limit: 500 }
+    return getMemoryProvider().list(options)
+  })
+
+  ipcMain.handle('memory:stats', () => getMemoryProvider().stats())
+
+  ipcMain.handle('memory:search', (_event, query: string, limit?: number) => {
+    if (typeof query !== 'string' || !query.trim()) return []
+    return getMemoryProvider().search(query.slice(0, 4000), typeof limit === 'number' ? limit : 6)
+  })
+
+  ipcMain.handle('memory:propose', (_event, text: string, sessionId?: string, messageId?: string) => {
+    if (typeof text !== 'string' || text.length > 4000) return []
+    const candidates = extractMemoryCandidates(text, {
+      sessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined,
+      messageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined
+    })
+    return candidates.map((candidate) => getMemoryProvider().createCandidate(candidate)).filter(Boolean)
+  })
+
+  ipcMain.handle('memory:create', (_event, rawCandidate: MemoryCandidateInput) => {
+    if (!rawCandidate || typeof rawCandidate !== 'object' || typeof rawCandidate.content !== 'string') throw new Error('Invalid memory')
+    if (containsSecret(rawCandidate.content)) throw new Error('检测到密码、Token 或密钥，已阻止保存。')
+    const candidate: MemoryCandidateInput = {
+      type: ['fact', 'preference', 'person', 'project', 'workflow'].includes(rawCandidate.type) ? rawCandidate.type : 'fact',
+      content: rawCandidate.content.slice(0, 500),
+      importance: Number.isFinite(rawCandidate.importance) ? rawCandidate.importance : 0.6,
+      confidence: Number.isFinite(rawCandidate.confidence) ? rawCandidate.confidence : 1,
+      sensitivity: rawCandidate.sensitivity === 'sensitive' ? 'sensitive' : 'normal',
+      sourceSessionId: typeof rawCandidate.sourceSessionId === 'string' ? rawCandidate.sourceSessionId.slice(0, 128) : undefined,
+      sourceMessageId: typeof rawCandidate.sourceMessageId === 'string' ? rawCandidate.sourceMessageId.slice(0, 128) : undefined
+    }
+    return getMemoryProvider().createActive(candidate)
+  })
+
+  ipcMain.handle('memory:approve', (_event, id: string) => {
+    if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid memory id')
+    return getMemoryProvider().approve(id)
+  })
+
+  ipcMain.handle('memory:reject', (_event, id: string) => {
+    if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid memory id')
+    getMemoryProvider().reject(id)
+  })
+
+  ipcMain.handle('memory:update', (_event, id: string, patch: { content?: string; type?: string; importance?: number; expiresAt?: number | null }) => {
+    if (typeof id !== 'string' || id.length > 128 || !patch || typeof patch !== 'object') throw new Error('Invalid memory update')
+    if (typeof patch.content === 'string' && containsSecret(patch.content)) throw new Error('检测到密码、Token 或密钥，已阻止保存。')
+    return getMemoryProvider().update(id, {
+      content: typeof patch.content === 'string' ? patch.content.slice(0, 500) : undefined,
+      type: ['fact', 'preference', 'person', 'project', 'workflow'].includes(String(patch.type)) ? patch.type as MemoryType : undefined,
+      importance: typeof patch.importance === 'number' ? patch.importance : undefined,
+      expiresAt: patch.expiresAt === null || typeof patch.expiresAt === 'number' ? patch.expiresAt : undefined
+    })
+  })
+
+  ipcMain.handle('memory:delete', (_event, id: string) => {
+    if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid memory id')
+    getMemoryProvider().delete(id)
+  })
+
+  ipcMain.handle('memory:clear', () => getMemoryProvider().clear())
+
+  ipcMain.handle('memory:export', async () => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出 ChouYu 记忆',
+      defaultPath: `ChouYu-memory-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    await fs.promises.writeFile(result.filePath, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), memories: getMemoryProvider().exportAll() }, null, 2), 'utf8')
+    return { ok: true, canceled: false, filePath: result.filePath }
   })
 
   ipcMain.handle('get-capture-sources', async (): Promise<CaptureSourceInfo[]> => {

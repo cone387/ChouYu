@@ -7,6 +7,7 @@ describe('prompt builder', () => {
   it('uses the default soul for empty input and trims a custom soul', () => {
     expect(buildSystemPrompt('')).toBe(DEFAULT_SOUL_MD)
     expect(buildSystemPrompt('  自定义人格  ')).toBe('自定义人格')
+    expect(buildSystemPrompt('人格', '长期记忆')).toBe('人格\n\n长期记忆')
   })
 
   it('keeps only the newest configured number of messages', () => {

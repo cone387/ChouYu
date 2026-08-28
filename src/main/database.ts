@@ -20,6 +20,7 @@ export interface Message {
   imageUrl?: string
   responseStatus?: 'error' | 'stopped'
   toolData?: ToolActivityData
+  memoryRefs?: Array<{ id: string; content: string; type: string }>
   pluginData?: unknown
 }
 
@@ -106,6 +107,16 @@ function sanitizeToolData(value: unknown): ToolActivityData | undefined {
   }
 }
 
+function sanitizeMemoryRefs(value: unknown): Message['memoryRefs'] {
+  if (!Array.isArray(value)) return undefined
+  return value.slice(0, 12).flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const ref = item as Record<string, unknown>
+    if (typeof ref.id !== 'string' || typeof ref.content !== 'string' || typeof ref.type !== 'string') return []
+    return [{ id: ref.id.slice(0, 128), content: ref.content.slice(0, 500), type: ref.type.slice(0, 40) }]
+  })
+}
+
 function sanitizeMessages(value: unknown): Message[] {
   if (!Array.isArray(value)) return []
   return value
@@ -122,6 +133,7 @@ function sanitizeMessages(value: unknown): Message[] {
         ? message.responseStatus
         : undefined,
       toolData: sanitizeToolData(message.toolData),
+      memoryRefs: sanitizeMemoryRefs(message.memoryRefs),
       // Screenshots can be several MB. Keep them in the active runtime session but
       // do not embed base64 image data in the durable JSON conversation store.
       imageUrl: typeof message.imageUrl === 'string' && !message.imageUrl.startsWith('data:')

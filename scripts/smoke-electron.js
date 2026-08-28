@@ -11,6 +11,7 @@ const executable = packagedExecutable || require('electron')
 const args = packagedExecutable ? ['--disable-gpu'] : ['--disable-gpu', '.']
 const smokeUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'chouyu-smoke-'))
 const legacyStorePath = path.join(smokeUserData, 'chouyu-data.json')
+const memoryDatabasePath = path.join(smokeUserData, 'chouyu-memory.db')
 fs.writeFileSync(legacyStorePath, JSON.stringify({
   version: 2,
   config: { model: 'smoke-model' },
@@ -62,6 +63,9 @@ const verifyMigration = () => {
   if (!active) throw new Error('Migrated active session is missing')
   if (active.messages?.length !== 2) throw new Error(`Expected 2 migrated messages, received ${active.messages?.length}`)
   if (active.title !== '迁移测试对话') throw new Error(`Unexpected migrated title: ${active.title}`)
+  if (!fs.existsSync(memoryDatabasePath) || fs.statSync(memoryDatabasePath).size === 0) {
+    throw new Error('SQLite memory database was not created')
+  }
 }
 
 const finish = (code, message) => {

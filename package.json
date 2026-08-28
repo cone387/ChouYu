@@ -1,6 +1,6 @@
 {
   "name": "chouyu",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Desktop AI pet assistant",
   "author": "cone387",
   "main": "./out/main/index.js",
@@ -17,6 +17,7 @@
     "package:mac": "electron-vite build && electron-builder --mac",
     "package:all": "electron-vite build && electron-builder --mac --win",
     "publish": "electron-vite build && electron-builder --mac --win --publish always",
+    "postinstall": "electron-builder install-app-deps",
     "test": "vitest --run",
     "test:smoke": "npm run build && npm run test:smoke:built",
     "test:smoke:built": "node scripts/smoke-electron.js",
@@ -26,12 +27,14 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web"
   },
   "dependencies": {
-    "electron-updater": "^6.8.3",
+    "better-sqlite3": "^11.8.1",
+    "electron-updater": "^6.8.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
@@ -42,5 +45,8 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
+  },
+  "overrides": {
+    "js-yaml": "^4.3.1"
   }
 }

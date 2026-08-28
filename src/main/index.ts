@@ -7,6 +7,7 @@ import { initDatabase, getConfig, flushDatabase } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
+import { closeMemory, getMemoryProvider, initializeMemory } from './memory/service'
 import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 
 let mainWindow: BrowserWindow | null = null
@@ -114,6 +115,18 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   // Init database first (needed by plugins and IPC handlers)
   initDatabase()
+  initializeMemory()
+  if (isSmokeTest) {
+    getMemoryProvider().createActive({
+      type: 'preference',
+      content: '用户偏好简短回答',
+      importance: 0.8,
+      confidence: 1,
+      sensitivity: 'normal',
+      sourceSessionId: 'smoke-session'
+    })
+    if (getMemoryProvider().search('回答风格', 3).length === 0) throw new Error('Memory smoke test failed')
+  }
 
   // Register plugins and IPC channels synchronously (before window loads renderer)
   pluginRegistry.register()
@@ -153,6 +166,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   stopClipboardWatcher()
   flushDatabase()
+  closeMemory()
   globalShortcut.unregisterAll()
 })
 

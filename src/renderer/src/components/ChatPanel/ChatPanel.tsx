@@ -6,7 +6,10 @@ import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
 import OnboardingCard from '../Onboarding/OnboardingCard'
 import ToolApprovalDialog from '../ToolApproval/ToolApprovalDialog'
+import MemoryCandidateCard from '../Memory/MemoryCandidateCard'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
+import type { MemoryRecord } from '../../../../shared/memory'
+import { formatMemoryContext } from '../../../../shared/memory'
 import {
   Message,
   PetState,
@@ -63,6 +66,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [activePluginForInput, setActivePluginForInput] = useState<PluginInfo | null>(null)
   const [toolApprovalRequest, setToolApprovalRequest] = useState<ToolApprovalRequest | null>(null)
+  const [memoryCandidates, setMemoryCandidates] = useState<MemoryRecord[]>([])
+  const [memoryCandidateBusy, setMemoryCandidateBusy] = useState(false)
+  const [memoryCandidateError, setMemoryCandidateError] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const activeResponseIdRef = useRef<string | null>(null)
   const toolBoundaryRef = useRef(false)
@@ -83,6 +89,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     setActiveSessionId(workspace.activeSession.id)
     setMessages(workspace.activeSession.messages)
     setSessions(workspace.sessions)
+    setMemoryCandidates([])
   }, [])
 
   const finishPetResponse = useCallback(() => {
@@ -330,7 +337,17 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const pluginCommands = plugins.map((plugin) => ({ cmd: '/' + plugin.command, desc: plugin.description }))
 
   const generateAIResponse = useCallback(async (conversation: Message[]) => {
-    const systemPrompt = buildSystemPrompt(config.soulMd)
+    const latestUserMessage = [...conversation].reverse().find((message) => message.role === 'user' && !message.toolData)
+    let relevantMemories: Awaited<ReturnType<typeof window.electronAPI.memory.search>> = []
+    if (config.memoryEnabled && latestUserMessage?.content) {
+      try {
+        relevantMemories = await window.electronAPI.memory.search(latestUserMessage.content, 6)
+      } catch {
+        relevantMemories = []
+      }
+    }
+    const memoryRefs = relevantMemories.map((memory) => ({ id: memory.id, content: memory.content, type: memory.type }))
+    const systemPrompt = buildSystemPrompt(config.soulMd, formatMemoryContext(relevantMemories))
     const history = buildMessages(conversation)
     const responseBaseId = `${Date.now()}-assistant`
     let segmentIndex = 0
@@ -370,10 +387,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             const existing = previous.find((message) => message.id === aiMsgId)
             if (existing) {
               return previous.map((message) => message.id === aiMsgId
-                ? { ...message, content: accumulated, responseStatus: undefined }
+                ? { ...message, content: accumulated, responseStatus: undefined, memoryRefs }
                 : message)
             }
-            return [...previous, { id: aiMsgId, role: 'assistant', content: accumulated, timestamp: Date.now() }]
+            return [...previous, { id: aiMsgId, role: 'assistant', content: accumulated, timestamp: Date.now(), memoryRefs }]
           })
         },
         controller.signal
@@ -510,9 +527,23 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       setMessages((previous) => [...previous, {
         id: Date.now().toString(),
         role: 'assistant',
-        content: '可用指令：\n- `/new` 新建对话\n- `/clear` 清空当前对话\n- `/settings` 打开设置\n- `/model` 切换模型\n- `/help` 查看帮助',
+        content: '可用指令：\n- `/new` 新建对话\n- `/clear` 清空当前对话\n- `/remember 内容` 创建记忆候选\n- `/settings` 打开设置\n- `/model` 切换模型\n- `/help` 查看帮助',
         timestamp: Date.now()
       }])
+      return
+    }
+    if (content === '/remember' || content.startsWith('/remember ')) {
+      const memoryText = content.slice('/remember'.length).trim()
+      if (!memoryText) {
+        setMessages((previous) => [...previous, { id: Date.now().toString(), role: 'assistant', content: '用法：`/remember 需要记住的内容`。', timestamp: Date.now() }])
+        return
+      }
+      if (!config.memoryEnabled) {
+        setMessages((previous) => [...previous, { id: Date.now().toString(), role: 'assistant', content: '长期记忆已在设置中关闭。', timestamp: Date.now() }])
+        return
+      }
+      const candidates = await window.electronAPI.memory.propose(`请记住：${memoryText}`, activeSessionIdRef.current)
+      setMemoryCandidates((previous) => [...previous, ...candidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
       return
     }
     if (content === '/settings') {
@@ -574,6 +605,13 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }
     const nextMessages = [...messages, userMessage]
     setMessages(nextMessages)
+    if (config.memoryEnabled && content.trim()) {
+      void window.electronAPI.memory.propose(content, activeSessionIdRef.current, userMessage.id).then((candidates) => {
+        if (candidates.length > 0) {
+          setMemoryCandidates((previous) => [...previous, ...candidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
+        }
+      }).catch(() => {})
+    }
     await generateAIResponse(nextMessages)
   }
 
@@ -605,6 +643,22 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     window.electronAPI.ai.resolveToolRequest(request.approvalId, approved)
     setToolApprovalRequest(null)
   }, [toolApprovalRequest])
+
+  const resolveMemoryCandidate = useCallback(async (approved: boolean) => {
+    const candidate = memoryCandidates[0]
+    if (!candidate) return
+    setMemoryCandidateBusy(true)
+    setMemoryCandidateError('')
+    try {
+      if (approved) await window.electronAPI.memory.approve(candidate.id)
+      else await window.electronAPI.memory.reject(candidate.id)
+      setMemoryCandidates((previous) => previous.filter((item) => item.id !== candidate.id))
+    } catch (error) {
+      setMemoryCandidateError(error instanceof Error ? error.message : '记忆操作失败。')
+    } finally {
+      setMemoryCandidateBusy(false)
+    }
+  }, [memoryCandidates])
 
   return (
     <div
@@ -688,6 +742,16 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 </div>
               </div>
             )}
+            {memoryCandidates[0] && (
+              <MemoryCandidateCard
+                candidate={memoryCandidates[0]}
+                remaining={memoryCandidates.length}
+                busy={memoryCandidateBusy}
+                onApprove={() => { void resolveMemoryCandidate(true) }}
+                onReject={() => { void resolveMemoryCandidate(false) }}
+              />
+            )}
+            {memoryCandidateError && <div className="memory-candidate-error" role="alert">{memoryCandidateError}</div>}
             <InputArea
               onSend={handleSend}
               onStop={handleStopGeneration}

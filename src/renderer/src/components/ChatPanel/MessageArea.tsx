@@ -148,6 +148,14 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
                 </button>
               )}
             </div>
+            {msg.role === 'assistant' && msg.memoryRefs && msg.memoryRefs.length > 0 && (
+              <details className="message-memory-refs">
+                <summary>使用了 {msg.memoryRefs.length} 条长期记忆</summary>
+                <ul>
+                  {msg.memoryRefs.map((memory) => <li key={memory.id}><span>{memory.type}</span>{memory.content}</li>)}
+                </ul>
+              </details>
+            )}
           </div>
         </div>
         )

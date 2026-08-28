@@ -355,6 +355,12 @@
   color: #fff;
 }
 
+.memory-candidate-error {
+  margin: 6px 10px 0;
+  color: var(--error);
+  font-size: 9px;
+}
+
 .message-error .message-bubble {
   border-color: var(--error-border);
   background: color-mix(in srgb, var(--error) 6%, transparent);
@@ -627,6 +633,46 @@
 .message-retry-btn:hover {
   background: var(--hover-bg);
   color: var(--text-primary);
+}
+
+.message-memory-refs {
+  margin: 2px 4px 0;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.message-memory-refs summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.message-memory-refs[open] summary {
+  color: var(--accent);
+}
+
+.message-memory-refs ul {
+  display: grid;
+  gap: 4px;
+  margin: 5px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+  list-style: none;
+}
+
+.message-memory-refs li {
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.message-memory-refs li span {
+  margin-right: 5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--hover-bg);
+  color: var(--text-muted);
+  font-size: 8px;
 }
 
 /* Topbar Avatar */

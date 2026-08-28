@@ -32,6 +32,7 @@ export interface AppConfig {
   proactiveRestReminder: boolean
   clipboardWatch: boolean
   aiToolsEnabled: boolean
+  memoryEnabled: boolean
   soulMd: string
 }
 
@@ -47,6 +48,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   proactiveRestReminder: true,
   clipboardWatch: false,
   aiToolsEnabled: true,
+  memoryEnabled: true,
   soulMd: DEFAULT_SOUL_MD
 }
 
@@ -71,6 +73,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     proactiveRestReminder: source.proactiveRestReminder !== false,
     clipboardWatch: source.clipboardWatch === true,
     aiToolsEnabled: source.aiToolsEnabled !== false,
+    memoryEnabled: source.memoryEnabled !== false,
     soulMd: typeof source.soulMd === 'string' && source.soulMd.trim() ? source.soulMd : DEFAULT_SOUL_MD
   }
 }
@@ -91,6 +94,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.proactiveRestReminder === 'boolean') patch.proactiveRestReminder = input.proactiveRestReminder
   if (typeof input.clipboardWatch === 'boolean') patch.clipboardWatch = input.clipboardWatch
   if (typeof input.aiToolsEnabled === 'boolean') patch.aiToolsEnabled = input.aiToolsEnabled
+  if (typeof input.memoryEnabled === 'boolean') patch.memoryEnabled = input.memoryEnabled
   if (typeof input.soulMd === 'string') patch.soulMd = input.soulMd.slice(0, 50_000)
 
   return patch

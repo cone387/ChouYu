@@ -11,6 +11,7 @@ describe('config', () => {
     expect(config.proactiveRestReminder).toBe(true)
     expect(config.clipboardWatch).toBe(false)
     expect(config.aiToolsEnabled).toBe(true)
+    expect(config.memoryEnabled).toBe(true)
     expect(config.soulMd).toBe(DEFAULT_APP_CONFIG.soulMd)
   })
 
@@ -26,10 +27,11 @@ describe('config', () => {
       autoStart: true,
       petSize: 96,
       aiToolsEnabled: false,
+      memoryEnabled: false,
       unknown: 'ignored',
       model: 123
     })
 
-    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false })
+    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, memoryEnabled: false })
   })
 })

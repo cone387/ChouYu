@@ -3,6 +3,7 @@ import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import type { CaptureSourceInfo } from '../shared/capture'
 import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
+import type { MemoryCandidateInput, MemoryListOptions, MemoryRecord, MemorySearchResult, MemoryStats } from '../shared/memory'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
@@ -51,6 +52,19 @@ const api = {
   tools: {
     list: () => ipcRenderer.invoke('tools:list') as Promise<ToolCatalogItem[]>,
     setEnabled: (name: string, enabled: boolean) => ipcRenderer.invoke('tools:set-enabled', name, enabled) as Promise<ToolCatalogItem[]>
+  },
+  memory: {
+    list: (options?: MemoryListOptions) => ipcRenderer.invoke('memory:list', options) as Promise<MemoryRecord[]>,
+    stats: () => ipcRenderer.invoke('memory:stats') as Promise<MemoryStats>,
+    search: (query: string, limit?: number) => ipcRenderer.invoke('memory:search', query, limit) as Promise<MemorySearchResult[]>,
+    propose: (text: string, sessionId?: string, messageId?: string) => ipcRenderer.invoke('memory:propose', text, sessionId, messageId) as Promise<MemoryRecord[]>,
+    create: (candidate: MemoryCandidateInput) => ipcRenderer.invoke('memory:create', candidate) as Promise<MemoryRecord>,
+    approve: (id: string) => ipcRenderer.invoke('memory:approve', id) as Promise<MemoryRecord>,
+    reject: (id: string) => ipcRenderer.invoke('memory:reject', id) as Promise<void>,
+    update: (id: string, patch: { content?: string; type?: string; importance?: number; expiresAt?: number | null }) => ipcRenderer.invoke('memory:update', id, patch) as Promise<MemoryRecord>,
+    delete: (id: string) => ipcRenderer.invoke('memory:delete', id) as Promise<void>,
+    clear: () => ipcRenderer.invoke('memory:clear') as Promise<void>,
+    export: () => ipcRenderer.invoke('memory:export') as Promise<{ ok: boolean; canceled: boolean; filePath?: string }>
   },
   onTogglePanel: (callback: () => void) => {
     ipcRenderer.on('toggle-panel', callback)

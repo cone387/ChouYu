@@ -2,6 +2,7 @@ import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
 import type { CaptureSourceInfo } from '../../../shared/capture'
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
+import type { MemoryCandidateInput, MemoryListOptions, MemoryRecord, MemorySearchResult, MemoryStats, MemoryType } from '../../../shared/memory'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -91,6 +92,19 @@ export interface ElectronAPI {
     list: () => Promise<ToolCatalogItem[]>
     setEnabled: (name: string, enabled: boolean) => Promise<ToolCatalogItem[]>
   }
+  memory: {
+    list: (options?: MemoryListOptions) => Promise<MemoryRecord[]>
+    stats: () => Promise<MemoryStats>
+    search: (query: string, limit?: number) => Promise<MemorySearchResult[]>
+    propose: (text: string, sessionId?: string, messageId?: string) => Promise<MemoryRecord[]>
+    create: (candidate: MemoryCandidateInput) => Promise<MemoryRecord>
+    approve: (id: string) => Promise<MemoryRecord>
+    reject: (id: string) => Promise<void>
+    update: (id: string, patch: { content?: string; type?: MemoryType; importance?: number; expiresAt?: number | null }) => Promise<MemoryRecord>
+    delete: (id: string) => Promise<void>
+    clear: () => Promise<void>
+    export: () => Promise<{ ok: boolean; canceled: boolean; filePath?: string }>
+  }
   onTogglePanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
   onHidePanel: (callback: () => void) => () => void
@@ -146,6 +160,7 @@ export interface Message {
   imageUrl?: string
   responseStatus?: 'error' | 'stopped'
   toolData?: ToolActivityData
+  memoryRefs?: Array<{ id: string; content: string; type: string }>
   /** Plugin result data - if present, render as plugin card instead of markdown */
   pluginData?: PluginMessageData
 }
