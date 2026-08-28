@@ -331,6 +331,8 @@ export default function Settings({ onClose, dragHandleProps }: SettingsProps) {
             <MemorySettingsTab
               enabled={config.memoryEnabled}
               onEnabledChange={(enabled) => { void save({ memoryEnabled: enabled }) }}
+              config={config}
+              onSaveEmbedding={save}
             />
           )}
 

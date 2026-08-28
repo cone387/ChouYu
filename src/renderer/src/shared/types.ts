@@ -2,7 +2,7 @@ import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
 import type { CaptureSourceInfo } from '../../../shared/capture'
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
-import type { MemoryCandidateInput, MemoryListOptions, MemoryRecord, MemorySearchResult, MemoryStats, MemoryType } from '../../../shared/memory'
+import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryListOptions, MemoryRecord, MemorySearchResult, MemoryStats, MemoryType } from '../../../shared/memory'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -104,6 +104,8 @@ export interface ElectronAPI {
     delete: (id: string) => Promise<void>
     clear: () => Promise<void>
     export: () => Promise<{ ok: boolean; canceled: boolean; filePath?: string }>
+    testEmbedding: () => Promise<EmbeddingStatus>
+    rebuildEmbeddings: () => Promise<EmbeddingRebuildResult>
   }
   onTogglePanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void

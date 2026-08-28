@@ -14,7 +14,7 @@ import {
   normalizeMemoryKey,
   scoreMemory
 } from '../../shared/memory'
-import type { MemoryProvider, MemoryUpdate } from './provider'
+import type { MemoryEmbeddingRecord, MemoryProvider, MemoryUpdate } from './provider'
 
 interface MemoryRow {
   id: string
@@ -45,6 +45,7 @@ export class SQLiteMemoryProvider implements MemoryProvider {
     this.database = new Database(this.filePath)
     this.database.pragma('journal_mode = WAL')
     this.database.pragma('synchronous = NORMAL')
+    this.database.pragma('foreign_keys = ON')
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         id TEXT PRIMARY KEY,
@@ -67,6 +68,16 @@ export class SQLiteMemoryProvider implements MemoryProvider {
       CREATE INDEX IF NOT EXISTS idx_memories_status_updated ON memories(status, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_memories_normalized_key ON memories(normalized_key);
       CREATE INDEX IF NOT EXISTS idx_memories_source_session ON memories(source_session_id);
+      CREATE TABLE IF NOT EXISTS memory_embeddings (
+        memory_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        dimensions INTEGER NOT NULL,
+        vector BLOB NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (memory_id, model),
+        FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model ON memory_embeddings(model);
     `)
   }
 
@@ -221,12 +232,46 @@ export class SQLiteMemoryProvider implements MemoryProvider {
       active: byStatus.active || 0,
       pending: byStatus.pending || 0,
       archived: byStatus.archived || 0,
-      databaseSize: fs.existsSync(this.filePath) ? fs.statSync(this.filePath).size : 0
+      databaseSize: fs.existsSync(this.filePath) ? fs.statSync(this.filePath).size : 0,
+      embeddings: Number((this.db().prepare('SELECT COUNT(*) AS count FROM memory_embeddings').get() as { count: number }).count || 0)
     }
   }
 
   exportAll(): MemoryRecord[] {
     return this.list({ status: 'all', limit: 2000 })
+  }
+
+  upsertEmbedding(memoryId: string, model: string, vector: number[]): void {
+    if (!vector.length || vector.length > 8192 || vector.some((item) => !Number.isFinite(item))) throw new Error('Embedding 向量无效。')
+    this.getRequired(memoryId)
+    const floatVector = new Float32Array(vector)
+    const buffer = Buffer.from(floatVector.buffer, floatVector.byteOffset, floatVector.byteLength)
+    this.db().prepare(`
+      INSERT INTO memory_embeddings (memory_id, model, dimensions, vector, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(memory_id, model) DO UPDATE SET dimensions = excluded.dimensions, vector = excluded.vector, updated_at = excluded.updated_at
+    `).run(memoryId, model.slice(0, 256), vector.length, buffer, Date.now())
+  }
+
+  getEmbeddings(model: string): MemoryEmbeddingRecord[] {
+    const rows = this.db().prepare(`
+      SELECT m.*, e.dimensions AS embedding_dimensions, e.vector AS embedding_vector
+      FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id
+      WHERE e.model = ? AND m.status = 'active' AND (m.expires_at IS NULL OR m.expires_at > ?)
+    `).all(model, Date.now()) as Array<MemoryRow & { embedding_dimensions: number; embedding_vector: Buffer }>
+    return rows.flatMap((row) => {
+      const bytes = row.embedding_vector
+      if (!Buffer.isBuffer(bytes) || bytes.byteLength !== row.embedding_dimensions * 4) return []
+      const copy = Buffer.from(bytes)
+      const arrayBuffer = copy.buffer.slice(copy.byteOffset, copy.byteOffset + copy.byteLength)
+      const vector = Array.from(new Float32Array(arrayBuffer))
+      return [{ memory: this.mapRow(row), vector }]
+    })
+  }
+
+  clearEmbeddings(model?: string): void {
+    if (model) this.db().prepare('DELETE FROM memory_embeddings WHERE model = ?').run(model)
+    else this.db().prepare('DELETE FROM memory_embeddings').run()
   }
 
   private getRequired(id: string): MemoryRecord {

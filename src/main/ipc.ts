@@ -23,7 +23,13 @@ import { setClipboardWatcherEnabled } from './clipboard'
 import { initAutoUpdater } from './updater'
 import { fetchProviderModels, streamAIChat } from './ai'
 import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
-import { getMemoryProvider } from './memory/service'
+import {
+  getMemoryProvider,
+  indexMemory,
+  rebuildEmbeddings,
+  searchMemories,
+  testEmbedding
+} from './memory/service'
 import {
   type AIToolCall,
   type ToolCatalogItem,
@@ -255,7 +261,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('memory:search', (_event, query: string, limit?: number) => {
     if (typeof query !== 'string' || !query.trim()) return []
-    return getMemoryProvider().search(query.slice(0, 4000), typeof limit === 'number' ? limit : 6)
+    return searchMemories(query.slice(0, 4000), typeof limit === 'number' ? limit : 6)
   })
 
   ipcMain.handle('memory:propose', (_event, text: string, sessionId?: string, messageId?: string) => {
@@ -279,12 +285,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       sourceSessionId: typeof rawCandidate.sourceSessionId === 'string' ? rawCandidate.sourceSessionId.slice(0, 128) : undefined,
       sourceMessageId: typeof rawCandidate.sourceMessageId === 'string' ? rawCandidate.sourceMessageId.slice(0, 128) : undefined
     }
-    return getMemoryProvider().createActive(candidate)
+    const memory = getMemoryProvider().createActive(candidate)
+    void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index new memory:', error))
+    return memory
   })
 
   ipcMain.handle('memory:approve', (_event, id: string) => {
     if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid memory id')
-    return getMemoryProvider().approve(id)
+    const memory = getMemoryProvider().approve(id)
+    void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index approved memory:', error))
+    return memory
   })
 
   ipcMain.handle('memory:reject', (_event, id: string) => {
@@ -295,12 +305,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('memory:update', (_event, id: string, patch: { content?: string; type?: string; importance?: number; expiresAt?: number | null }) => {
     if (typeof id !== 'string' || id.length > 128 || !patch || typeof patch !== 'object') throw new Error('Invalid memory update')
     if (typeof patch.content === 'string' && containsSecret(patch.content)) throw new Error('检测到密码、Token 或密钥，已阻止保存。')
-    return getMemoryProvider().update(id, {
+    const memory = getMemoryProvider().update(id, {
       content: typeof patch.content === 'string' ? patch.content.slice(0, 500) : undefined,
       type: ['fact', 'preference', 'person', 'project', 'workflow'].includes(String(patch.type)) ? patch.type as MemoryType : undefined,
       importance: typeof patch.importance === 'number' ? patch.importance : undefined,
       expiresAt: patch.expiresAt === null || typeof patch.expiresAt === 'number' ? patch.expiresAt : undefined
     })
+    void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to reindex memory:', error))
+    return memory
   })
 
   ipcMain.handle('memory:delete', (_event, id: string) => {
@@ -320,6 +332,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     await fs.promises.writeFile(result.filePath, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), memories: getMemoryProvider().exportAll() }, null, 2), 'utf8')
     return { ok: true, canceled: false, filePath: result.filePath }
   })
+
+  ipcMain.handle('memory:test-embedding', () => testEmbedding())
+  ipcMain.handle('memory:rebuild-embeddings', () => rebuildEmbeddings())
 
   ipcMain.handle('get-capture-sources', async (): Promise<CaptureSourceInfo[]> => {
     try {

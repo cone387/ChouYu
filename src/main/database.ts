@@ -223,7 +223,11 @@ function load(): StoreData {
 
       return {
         version: STORE_VERSION,
-        config: normalizeConfig({ ...persistedConfig, apiKey: unprotect(persistedConfig.apiKey) }),
+        config: normalizeConfig({
+          ...persistedConfig,
+          apiKey: unprotect(persistedConfig.apiKey),
+          embeddingApiKey: unprotect(persistedConfig.embeddingApiKey)
+        }),
         sessions,
         activeSessionId,
         state: Object.fromEntries(
@@ -248,7 +252,11 @@ function load(): StoreData {
 function serializeStore(): StoreData {
   return {
     version: STORE_VERSION,
-    config: { ...store.config, apiKey: protect(store.config.apiKey) },
+    config: {
+      ...store.config,
+      apiKey: protect(store.config.apiKey),
+      embeddingApiKey: protect(store.config.embeddingApiKey)
+    },
     sessions: store.sessions,
     activeSessionId: store.activeSessionId,
     state: Object.fromEntries(

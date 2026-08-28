@@ -33,6 +33,10 @@ export interface AppConfig {
   clipboardWatch: boolean
   aiToolsEnabled: boolean
   memoryEnabled: boolean
+  embeddingEnabled: boolean
+  embeddingBaseUrl: string
+  embeddingApiKey: string
+  embeddingModel: string
   soulMd: string
 }
 
@@ -49,6 +53,10 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   clipboardWatch: false,
   aiToolsEnabled: true,
   memoryEnabled: true,
+  embeddingEnabled: false,
+  embeddingBaseUrl: '',
+  embeddingApiKey: '',
+  embeddingModel: 'text-embedding-v3',
   soulMd: DEFAULT_SOUL_MD
 }
 
@@ -74,6 +82,10 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     clipboardWatch: source.clipboardWatch === true,
     aiToolsEnabled: source.aiToolsEnabled !== false,
     memoryEnabled: source.memoryEnabled !== false,
+    embeddingEnabled: source.embeddingEnabled === true,
+    embeddingBaseUrl: typeof source.embeddingBaseUrl === 'string' ? source.embeddingBaseUrl.trim() : '',
+    embeddingApiKey: typeof source.embeddingApiKey === 'string' ? source.embeddingApiKey : '',
+    embeddingModel: typeof source.embeddingModel === 'string' && source.embeddingModel.trim() ? source.embeddingModel.trim() : 'text-embedding-v3',
     soulMd: typeof source.soulMd === 'string' && source.soulMd.trim() ? source.soulMd : DEFAULT_SOUL_MD
   }
 }
@@ -95,6 +107,10 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.clipboardWatch === 'boolean') patch.clipboardWatch = input.clipboardWatch
   if (typeof input.aiToolsEnabled === 'boolean') patch.aiToolsEnabled = input.aiToolsEnabled
   if (typeof input.memoryEnabled === 'boolean') patch.memoryEnabled = input.memoryEnabled
+  if (typeof input.embeddingEnabled === 'boolean') patch.embeddingEnabled = input.embeddingEnabled
+  if (typeof input.embeddingBaseUrl === 'string') patch.embeddingBaseUrl = input.embeddingBaseUrl.trim().slice(0, 2048)
+  if (typeof input.embeddingApiKey === 'string') patch.embeddingApiKey = input.embeddingApiKey.slice(0, 8192)
+  if (typeof input.embeddingModel === 'string') patch.embeddingModel = input.embeddingModel.trim().slice(0, 256)
   if (typeof input.soulMd === 'string') patch.soulMd = input.soulMd.slice(0, 50_000)
 
   return patch

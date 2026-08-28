@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { MemoryRecord, MemoryStats, MemoryType } from '../../../../shared/memory'
+import type { AppConfig } from '../../shared/types'
 import './MemorySettingsTab.css'
 
 interface MemorySettingsTabProps {
   enabled: boolean
   onEnabledChange: (enabled: boolean) => void
+  config: AppConfig
+  onSaveEmbedding: (patch: Partial<AppConfig>) => Promise<void>
 }
 
 const TYPE_LABELS: Record<MemoryType, string> = {
@@ -15,9 +18,9 @@ const TYPE_LABELS: Record<MemoryType, string> = {
   workflow: '工作方式'
 }
 
-export default function MemorySettingsTab({ enabled, onEnabledChange }: MemorySettingsTabProps) {
+export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveEmbedding }: MemorySettingsTabProps) {
   const [memories, setMemories] = useState<MemoryRecord[]>([])
-  const [stats, setStats] = useState<MemoryStats>({ active: 0, pending: 0, archived: 0, databaseSize: 0 })
+  const [stats, setStats] = useState<MemoryStats>({ active: 0, pending: 0, archived: 0, databaseSize: 0, embeddings: 0 })
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'all' | 'active' | 'pending'>('all')
   const [type, setType] = useState<'all' | MemoryType>('all')
@@ -29,6 +32,15 @@ export default function MemorySettingsTab({ enabled, onEnabledChange }: MemorySe
   const [confirmClear, setConfirmClear] = useState(false)
   const [busyId, setBusyId] = useState('')
   const [error, setError] = useState('')
+  const [showEmbedding, setShowEmbedding] = useState(config.embeddingEnabled)
+  const [showEmbeddingKey, setShowEmbeddingKey] = useState(false)
+  const [embeddingDraft, setEmbeddingDraft] = useState({
+    embeddingBaseUrl: config.embeddingBaseUrl,
+    embeddingApiKey: config.embeddingApiKey,
+    embeddingModel: config.embeddingModel
+  })
+  const [embeddingBusy, setEmbeddingBusy] = useState<'test' | 'rebuild' | ''>('')
+  const [embeddingStatus, setEmbeddingStatus] = useState('')
 
   const refresh = useCallback(async () => {
     setError('')
@@ -48,6 +60,14 @@ export default function MemorySettingsTab({ enabled, onEnabledChange }: MemorySe
     const timer = setTimeout(() => { void refresh() }, 180)
     return () => clearTimeout(timer)
   }, [refresh])
+
+  useEffect(() => {
+    setEmbeddingDraft({
+      embeddingBaseUrl: config.embeddingBaseUrl,
+      embeddingApiKey: config.embeddingApiKey,
+      embeddingModel: config.embeddingModel
+    })
+  }, [config.embeddingApiKey, config.embeddingBaseUrl, config.embeddingModel])
 
   const run = async (id: string, action: () => Promise<unknown>): Promise<boolean> => {
     setBusyId(id)
@@ -84,6 +104,39 @@ export default function MemorySettingsTab({ enabled, onEnabledChange }: MemorySe
     }
   }
 
+  const saveEmbeddingDraft = async () => {
+    await onSaveEmbedding(embeddingDraft)
+  }
+
+  const testEmbeddingConnection = async () => {
+    setEmbeddingBusy('test')
+    setEmbeddingStatus('正在测试 Embedding 连接…')
+    try {
+      await saveEmbeddingDraft()
+      const result = await window.electronAPI.memory.testEmbedding()
+      setEmbeddingStatus(result.message)
+    } catch (reason) {
+      setEmbeddingStatus(reason instanceof Error ? reason.message : 'Embedding 测试失败。')
+    } finally {
+      setEmbeddingBusy('')
+    }
+  }
+
+  const rebuildEmbeddingIndex = async () => {
+    setEmbeddingBusy('rebuild')
+    setEmbeddingStatus('正在重建向量索引…')
+    try {
+      await saveEmbeddingDraft()
+      const result = await window.electronAPI.memory.rebuildEmbeddings()
+      setEmbeddingStatus(`索引完成：成功 ${result.indexed} 条，失败 ${result.failed} 条，模型 ${result.model}。`)
+      await refresh()
+    } catch (reason) {
+      setEmbeddingStatus(reason instanceof Error ? reason.message : '向量索引重建失败。')
+    } finally {
+      setEmbeddingBusy('')
+    }
+  }
+
   return (
     <div className="settings-pane memory-settings-pane">
       <div className="settings-pane-heading memory-heading">
@@ -111,7 +164,74 @@ export default function MemorySettingsTab({ enabled, onEnabledChange }: MemorySe
         <div><strong>{stats.active}</strong><span>已确认</span></div>
         <div><strong>{stats.pending}</strong><span>待确认</span></div>
         <div><strong>{(stats.databaseSize / 1024).toFixed(1)} KB</strong><span>本地数据库</span></div>
+        <div><strong>{stats.embeddings}</strong><span>向量索引</span></div>
       </div>
+
+      <section className="memory-embedding-card">
+        <div className="memory-embedding-header">
+          <div>
+            <strong>语义向量检索</strong>
+            <span>可选功能。失败时自动退回关键词检索。</span>
+          </div>
+          <div>
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={config.embeddingEnabled}
+                onChange={(event) => {
+                  setShowEmbedding(event.target.checked)
+                  void onSaveEmbedding({ embeddingEnabled: event.target.checked })
+                }}
+                aria-label="启用语义向量检索"
+              />
+              <span className="settings-switch-slider" />
+            </label>
+            <button type="button" className="memory-embedding-expand" onClick={() => setShowEmbedding((value) => !value)} aria-expanded={showEmbedding}>
+              {showEmbedding ? '收起' : '配置'}
+            </button>
+          </div>
+        </div>
+        {showEmbedding && (
+          <div className="memory-embedding-fields">
+            <label>
+              <span>Base URL</span>
+              <input
+                value={embeddingDraft.embeddingBaseUrl}
+                onChange={(event) => setEmbeddingDraft((previous) => ({ ...previous, embeddingBaseUrl: event.target.value }))}
+                onBlur={() => { void saveEmbeddingDraft() }}
+                placeholder={`留空则使用 ${config.baseUrl || 'AI Provider Base URL'}`}
+              />
+            </label>
+            <label>
+              <span>API Key</span>
+              <div className="memory-embedding-key">
+                <input
+                  type={showEmbeddingKey ? 'text' : 'password'}
+                  value={embeddingDraft.embeddingApiKey}
+                  onChange={(event) => setEmbeddingDraft((previous) => ({ ...previous, embeddingApiKey: event.target.value }))}
+                  onBlur={() => { void saveEmbeddingDraft() }}
+                  placeholder="留空则使用 AI Provider API Key"
+                />
+                <button type="button" onClick={() => setShowEmbeddingKey((value) => !value)}>{showEmbeddingKey ? '隐藏' : '显示'}</button>
+              </div>
+            </label>
+            <label>
+              <span>Embedding 模型</span>
+              <input
+                value={embeddingDraft.embeddingModel}
+                onChange={(event) => setEmbeddingDraft((previous) => ({ ...previous, embeddingModel: event.target.value }))}
+                onBlur={() => { void saveEmbeddingDraft() }}
+                placeholder="text-embedding-v3"
+              />
+            </label>
+            <div className="memory-embedding-actions">
+              <button type="button" onClick={() => { void testEmbeddingConnection() }} disabled={Boolean(embeddingBusy)}>{embeddingBusy === 'test' ? '测试中…' : '测试连接'}</button>
+              <button type="button" className="primary" onClick={() => { void rebuildEmbeddingIndex() }} disabled={Boolean(embeddingBusy)}>{embeddingBusy === 'rebuild' ? '重建中…' : '重建全部索引'}</button>
+            </div>
+            {embeddingStatus && <div className="memory-embedding-status" role="status">{embeddingStatus}</div>}
+          </div>
+        )}
+      </section>
 
       {showAdd && (
         <div className="memory-add-form">

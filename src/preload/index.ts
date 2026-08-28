@@ -3,7 +3,7 @@ import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import type { CaptureSourceInfo } from '../shared/capture'
 import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
-import type { MemoryCandidateInput, MemoryListOptions, MemoryRecord, MemorySearchResult, MemoryStats } from '../shared/memory'
+import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryListOptions, MemoryRecord, MemorySearchResult, MemoryStats } from '../shared/memory'
 
 const api = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
@@ -64,7 +64,9 @@ const api = {
     update: (id: string, patch: { content?: string; type?: string; importance?: number; expiresAt?: number | null }) => ipcRenderer.invoke('memory:update', id, patch) as Promise<MemoryRecord>,
     delete: (id: string) => ipcRenderer.invoke('memory:delete', id) as Promise<void>,
     clear: () => ipcRenderer.invoke('memory:clear') as Promise<void>,
-    export: () => ipcRenderer.invoke('memory:export') as Promise<{ ok: boolean; canceled: boolean; filePath?: string }>
+    export: () => ipcRenderer.invoke('memory:export') as Promise<{ ok: boolean; canceled: boolean; filePath?: string }>,
+    testEmbedding: () => ipcRenderer.invoke('memory:test-embedding') as Promise<EmbeddingStatus>,
+    rebuildEmbeddings: () => ipcRenderer.invoke('memory:rebuild-embeddings') as Promise<EmbeddingRebuildResult>
   },
   onTogglePanel: (callback: () => void) => {
     ipcRenderer.on('toggle-panel', callback)

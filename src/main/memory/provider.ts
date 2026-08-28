@@ -14,6 +14,11 @@ export interface MemoryUpdate {
   expiresAt?: number | null
 }
 
+export interface MemoryEmbeddingRecord {
+  memory: MemoryRecord
+  vector: number[]
+}
+
 export interface MemoryProvider {
   initialize(): void
   close(): void
@@ -28,4 +33,7 @@ export interface MemoryProvider {
   search(query: string, limit?: number): MemorySearchResult[]
   stats(): MemoryStats
   exportAll(): MemoryRecord[]
+  upsertEmbedding(memoryId: string, model: string, vector: number[]): void
+  getEmbeddings(model: string): MemoryEmbeddingRecord[]
+  clearEmbeddings(model?: string): void
 }

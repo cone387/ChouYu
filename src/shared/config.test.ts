@@ -12,6 +12,7 @@ describe('config', () => {
     expect(config.clipboardWatch).toBe(false)
     expect(config.aiToolsEnabled).toBe(true)
     expect(config.memoryEnabled).toBe(true)
+    expect(config.embeddingEnabled).toBe(false)
     expect(config.soulMd).toBe(DEFAULT_APP_CONFIG.soulMd)
   })
 
@@ -28,10 +29,11 @@ describe('config', () => {
       petSize: 96,
       aiToolsEnabled: false,
       memoryEnabled: false,
+      embeddingEnabled: true,
       unknown: 'ignored',
       model: 123
     })
 
-    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, memoryEnabled: false })
+    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, memoryEnabled: false, embeddingEnabled: true })
   })
 })

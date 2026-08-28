@@ -5,7 +5,7 @@
 .memory-master-card strong,.memory-master-card span { display:block; }
 .memory-master-card strong { color:var(--text-primary); font-size:11px; }
 .memory-master-card span { margin-top:3px; color:var(--text-secondary); font-size:9px; line-height:1.4; }
-.memory-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:8px 0; }
+.memory-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin:8px 0; }
 .memory-stats > div { padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-secondary); text-align:center; }
 .memory-stats strong,.memory-stats span { display:block; }
 .memory-stats strong { color:var(--text-primary); font-size:12px; }
@@ -45,3 +45,25 @@
 .memory-clear-confirm button { border:1px solid var(--border); border-radius:7px; padding:6px 9px; background:transparent; color:var(--text-secondary); cursor:pointer; font-size:9px; }
 .memory-clear-confirm button.danger { border-color:var(--error); background:var(--error); color:#fff; }
 .memory-settings-error { margin-top:8px; padding:7px 9px; border:1px solid var(--error-border); border-radius:7px; color:var(--error); font-size:9px; }
+
+.memory-embedding-card { margin-bottom:8px; border:1px solid var(--border); border-radius:10px; background:var(--bg-secondary); overflow:hidden; }
+.memory-embedding-header { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; }
+.memory-embedding-header strong,.memory-embedding-header span { display:block; }
+.memory-embedding-header strong { color:var(--text-primary); font-size:10px; }
+.memory-embedding-header span { margin-top:2px; color:var(--text-muted); font-size:8px; }
+.memory-embedding-header > div:last-child { display:flex; align-items:center; gap:7px; }
+.memory-embedding-expand { border:1px solid var(--border); border-radius:6px; padding:4px 7px; background:transparent; color:var(--text-secondary); cursor:pointer; font-size:8px; }
+.memory-embedding-fields { display:grid; grid-template-columns:1fr 1fr; gap:7px; padding:9px 10px 10px; border-top:1px solid var(--divider); background:var(--bg-panel); }
+.memory-embedding-fields > label { min-width:0; }
+.memory-embedding-fields > label > span { display:block; margin-bottom:4px; color:var(--text-secondary); font-size:8px; }
+.memory-embedding-fields > label:first-child { grid-column:1 / -1; }
+.memory-embedding-fields input { width:100%; min-height:31px; border:1px solid var(--input-border); border-radius:7px; padding:6px 8px; background:var(--input-bg); color:var(--text-primary); font-size:9px; outline:0; }
+.memory-embedding-fields input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--focus-ring); }
+.memory-embedding-key { display:flex; gap:4px; }
+.memory-embedding-key input { min-width:0; flex:1; }
+.memory-embedding-key button { flex:0 0 auto; border:1px solid var(--input-border); border-radius:7px; padding:5px 7px; background:var(--input-bg); color:var(--text-secondary); cursor:pointer; font-size:8px; }
+.memory-embedding-actions { display:flex; align-items:flex-end; justify-content:flex-end; gap:5px; }
+.memory-embedding-actions button { min-height:30px; border:1px solid var(--border); border-radius:7px; padding:5px 8px; background:transparent; color:var(--text-secondary); cursor:pointer; font-size:8px; }
+.memory-embedding-actions button.primary { border-color:var(--accent); background:var(--accent); color:var(--on-accent); }
+.memory-embedding-actions button:disabled { cursor:wait; opacity:.55; }
+.memory-embedding-status { grid-column:1 / -1; padding:6px 8px; border-radius:7px; background:var(--hover-bg); color:var(--text-secondary); font-size:8px; line-height:1.45; }
