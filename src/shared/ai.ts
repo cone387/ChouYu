@@ -41,6 +41,23 @@ export interface AIModelListResult {
   message: string
 }
 
+export type ProviderDiagnosticState = 'ready' | 'unconfigured' | 'error' | 'disabled'
+
+export interface EmbeddingDiagnostics {
+  state: ProviderDiagnosticState
+  provider: string
+  model: string
+  dimensions?: number
+  message: string
+}
+
+export interface ProviderDiagnostics {
+  state: ProviderDiagnosticState
+  message: string
+  modelList: AIModelListResult
+  embedding: EmbeddingDiagnostics
+}
+
 export interface ParsedStreamEvent {
   text: string
   done: boolean

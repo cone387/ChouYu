@@ -25,7 +25,7 @@ import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { capabilityRegistry } from './capabilities/registry'
 import { setClipboardWatcherEnabled } from './clipboard'
 import { initAutoUpdater } from './updater'
-import { fetchProviderModels, streamAIChat } from './ai'
+import { diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
 import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
 import {
   getMemoryProvider,
@@ -253,6 +253,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     return result
   })
+
+  ipcMain.handle('diagnose-provider', async () => diagnoseProvider(getConfig()))
 
   ipcMain.handle('tools:list', (): ToolCatalogItem[] =>
     getToolDefinitions().map((tool) => ({ ...tool, enabled: isToolEnabled(tool.name) })))

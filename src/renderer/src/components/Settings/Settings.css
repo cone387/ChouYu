@@ -153,6 +153,21 @@
 .settings-required-notice strong { font-size:10px; }
 .settings-required-notice span { font-size:9px; line-height:1.45; }
 
+.settings-diagnostics { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:10px; }
+.settings-diagnostic-item { display:flex; min-width:0; flex-direction:column; gap:3px; padding:8px; border:1px solid var(--divider); border-radius:8px; background:var(--bg-secondary); }
+.settings-diagnostic-item > span { color:var(--text-muted); font-size:9px; }
+.settings-diagnostic-item > strong { color:var(--text-primary); font-size:10px; }
+.settings-diagnostic-item > small { color:var(--text-secondary); font-size:8px; line-height:1.4; overflow-wrap:anywhere; }
+.settings-diagnostic-item.ready { border-color:var(--success-border); background:var(--success-bg); }
+.settings-diagnostic-item.ready > strong { color:var(--success); }
+.settings-diagnostic-item.unconfigured,.settings-diagnostic-item.error { border-color:var(--warning-border); background:var(--warning-bg); }
+.settings-diagnostic-item.unconfigured > strong,.settings-diagnostic-item.error > strong { color:var(--warning); }
+.settings-diagnostic-item.disabled { border-color:var(--divider); }
+
+@media (max-width: 520px) {
+  .settings-diagnostics { grid-template-columns:1fr; }
+}
+
 @keyframes settings-fade {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }

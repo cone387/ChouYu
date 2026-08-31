@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_APP_CONFIG } from '../shared/config'
-import { accumulateClaudeToolCalls, accumulateOpenAIToolCalls, fetchProviderModels, streamAIChat } from './ai'
+import { accumulateClaudeToolCalls, accumulateOpenAIToolCalls, diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
 
 function streamResponse(lines: string): Response {
   return new Response(lines, {
@@ -67,6 +67,32 @@ describe('main-process AI provider routing', () => {
 })
 
 describe('provider model diagnostics', () => {
+  it('reports missing provider fields without attempting a network request', async () => {
+    const request = vi.fn() as typeof fetch
+    const result = await diagnoseProvider({ ...DEFAULT_APP_CONFIG }, request)
+    expect(result.state).toBe('unconfigured')
+    expect(result.modelList.errorCode).toBe('missing-base-url')
+    expect(result.embedding.state).toBe('disabled')
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('probes embedding support separately from model listing', async () => {
+    const request = vi.fn(async (input: Parameters<typeof fetch>[0]) => String(input).endsWith('/models')
+      ? Response.json({ data: [{ id: 'chat-model' }] })
+      : Response.json({ data: [{ index: 0, embedding: [0.1, 0.2, 0.3] }] })) as typeof fetch
+    const result = await diagnoseProvider({
+      ...DEFAULT_APP_CONFIG,
+      baseUrl: 'https://provider.example/v1',
+      apiKey: 'key',
+      model: 'chat-model',
+      embeddingEnabled: true,
+      embeddingProvider: 'openai-compatible',
+      embeddingModel: 'embed-model'
+    }, request)
+    expect(result.state).toBe('ready')
+    expect(result.embedding).toMatchObject({ state: 'ready', dimensions: 3 })
+    expect(request).toHaveBeenCalledTimes(2)
+  })
   it('falls back to /v1/models and reports the corrected base URL', async () => {
     const request = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input)

@@ -1,4 +1,5 @@
 import type { AppConfig } from '../shared/config'
+import { isAIConfigured } from '../shared/config'
 import {
   type AIChatMessage,
   type AIModelListErrorCode,
@@ -8,6 +9,8 @@ import {
   parseOpenAIStreamLine
 } from '../shared/ai'
 import type { AIToolCall, AIToolDefinition } from '../shared/tools'
+import { OpenAIEmbeddingClient } from './memory/embedding-client'
+import type { ProviderDiagnostics } from '../shared/ai'
 
 export type AIStreamCallback = (chunk: string, done: boolean) => void
 
@@ -188,6 +191,42 @@ export async function fetchProviderModels(
     ?? failures.find((failure) => failure.errorCode === 'network')
     ?? failures[failures.length - 1]
     ?? modelListFailure(config, 'invalid-response', '未获取到可用模型。')
+}
+
+export async function diagnoseProvider(
+  config: AppConfig,
+  request: typeof fetch = fetch
+): Promise<ProviderDiagnostics> {
+  const modelList = await fetchProviderModels(config, request)
+  const configured = isAIConfigured(config)
+  let embedding: ProviderDiagnostics['embedding']
+  if (!config.embeddingEnabled || config.embeddingProvider === 'none') {
+    embedding = { state: 'disabled', provider: 'none', model: config.embeddingModel, message: '未启用 Embedding；记忆检索使用关键词模式。' }
+  } else if (config.embeddingProvider !== 'openai-compatible') {
+    embedding = { state: 'error', provider: config.embeddingProvider, model: config.embeddingModel, message: '当前 Embedding 能力插件未安装。' }
+  } else if (!config.embeddingModel.trim()) {
+    embedding = { state: 'unconfigured', provider: config.embeddingProvider, model: '', message: '尚未配置 Embedding 模型。' }
+  } else {
+    const baseUrl = config.embeddingBaseUrl || config.baseUrl
+    const apiKey = config.embeddingApiKey || config.apiKey
+    if (!baseUrl.trim() || !apiKey.trim()) {
+      embedding = { state: 'unconfigured', provider: config.embeddingProvider, model: config.embeddingModel, message: 'Embedding 复用当前 Provider，需要先完成 AI 配置。' }
+    } else {
+      try {
+        const vectors = await new OpenAIEmbeddingClient({ baseUrl, apiKey, model: config.embeddingModel }, request).embed(['ChouYu embedding capability probe'])
+        embedding = { state: 'ready', provider: config.embeddingProvider, model: config.embeddingModel, dimensions: vectors[0]?.length, message: `Embedding 可用，向量维度 ${vectors[0]?.length || 0}。` }
+      } catch (error) {
+        embedding = { state: 'error', provider: config.embeddingProvider, model: config.embeddingModel, message: error instanceof Error ? error.message : 'Embedding 接口不可用。' }
+      }
+    }
+  }
+  const state: ProviderDiagnostics['state'] = !configured ? 'unconfigured' : modelList.ok && modelList.configuredModelValid ? 'ready' : modelList.ok ? 'error' : 'error'
+  const message = state === 'unconfigured'
+    ? 'AI Provider 尚未完成配置。'
+    : state === 'ready'
+      ? 'AI Provider 和当前模型可用。'
+      : modelList.message
+  return { state, message, modelList, embedding }
 }
 
 export async function streamAIChat(

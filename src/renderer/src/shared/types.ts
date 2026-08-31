@@ -1,5 +1,5 @@
 import type { AppConfig } from '../../../shared/config'
-import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../../../shared/ai'
+import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../../../shared/ai'
 import type { CaptureSourceInfo } from '../../../shared/capture'
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
 import type { CapabilityInfo } from '../../../shared/capabilities'
@@ -81,6 +81,7 @@ export interface ElectronAPI {
   captureSource: (sourceId: string, hideWindow?: boolean) => Promise<string>
   openFileDialog: () => Promise<{ type: 'image' | 'text'; data: string; name: string } | null>
   fetchModels: () => Promise<AIModelListResult>
+  diagnoseProvider: () => Promise<ProviderDiagnostics>
   ai: {
     startStream: (request: AIStreamRequest) => Promise<AIStreamResult>
     cancelStream: (requestId: string) => void

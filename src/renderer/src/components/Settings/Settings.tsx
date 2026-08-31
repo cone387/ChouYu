@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { AppConfig, PluginInfo } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
 import { DEFAULT_SOUL_MD, isAIConfigured } from '../../../../shared/config'
-import type { AIModelListResult } from '../../../../shared/ai'
+import type { AIModelListResult, ProviderDiagnostics } from '../../../../shared/ai'
 import PluginSettingsTab from './PluginSettingsTab'
 import ModelPicker from '../ModelPicker/ModelPicker'
 import ToolsSettingsTab from './ToolsSettingsTab'
@@ -39,6 +39,7 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
   const [modelFetchStatus, setModelFetchStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle')
   const [providerCheck, setProviderCheck] = useState<AIModelListResult | null>(null)
   const [manualModelEntry, setManualModelEntry] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<ProviderDiagnostics | null>(null)
 
   const fetchAvailableModels = useCallback(async () => {
     setModelFetchStatus('loading')
@@ -53,15 +54,16 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
       })
       setConfig(saved)
       setSaveStatus('配置已保存，将用于下一次对话。')
-      const result = await window.electronAPI.fetchModels()
-      setProviderCheck(result)
-      if (result.baseUrlAdjusted) {
-        setConfig((previous) => ({ ...previous, baseUrl: result.baseUrl }))
+      const result = await window.electronAPI.diagnoseProvider()
+      setDiagnostics(result)
+      setProviderCheck(result.modelList)
+      if (result.modelList.baseUrlAdjusted) {
+        setConfig((previous) => ({ ...previous, baseUrl: result.modelList.baseUrl }))
       }
-      const availableModels = result.models
+      const availableModels = result.modelList.models
       setModelOptions(availableModels)
-      setModelFetchStatus(result.ok ? 'ready' : 'unavailable')
-      if (result.ok) setManualModelEntry(false)
+      setModelFetchStatus(result.modelList.ok ? 'ready' : 'unavailable')
+      if (result.modelList.ok) setManualModelEntry(false)
     } catch (error) {
       setModelOptions([])
       setModelFetchStatus('unavailable')
@@ -116,6 +118,7 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
       setModelOptions([])
       setModelFetchStatus('idle')
       setProviderCheck(null)
+      setDiagnostics(null)
       setManualModelEntry(false)
     }
     try {
@@ -287,6 +290,12 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
                         <span>当前模型“{config.model}”不可用，请从模型列表中选择一个有效模型。</span>
                       )}
                     </span>
+                  </div>
+                )}
+                {diagnostics && (
+                  <div className="settings-diagnostics" aria-label="Provider 能力诊断">
+                    <div className={`settings-diagnostic-item ${diagnostics.state}`}><span>对话 Provider</span><strong>{diagnostics.state === 'ready' ? '可用' : diagnostics.state === 'unconfigured' ? '待配置' : '需检查'}</strong><small>{diagnostics.message}</small></div>
+                    <div className={`settings-diagnostic-item ${diagnostics.embedding.state}`}><span>Embedding 能力</span><strong>{diagnostics.embedding.state === 'ready' ? '可用' : diagnostics.embedding.state === 'disabled' ? '未启用' : diagnostics.embedding.state === 'unconfigured' ? '待配置' : '不可用'}</strong><small>{diagnostics.embedding.message}</small></div>
                   </div>
                 )}
                 <div className="settings-save-status" role="status" aria-live="polite">

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppConfig } from '../shared/config'
-import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
+import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../shared/ai'
 import type { CaptureSourceInfo } from '../shared/capture'
 import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
 import type { CapabilityInfo } from '../shared/capabilities'
@@ -25,6 +25,7 @@ const api = {
   captureSource: (sourceId: string, hideWindow?: boolean) => ipcRenderer.invoke('capture-source', sourceId, hideWindow) as Promise<string>,
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   fetchModels: () => ipcRenderer.invoke('fetch-models') as Promise<AIModelListResult>,
+  diagnoseProvider: () => ipcRenderer.invoke('diagnose-provider') as Promise<ProviderDiagnostics>,
   ai: {
     startStream: (request: AIStreamRequest) =>
       ipcRenderer.invoke('ai:stream', request) as Promise<AIStreamResult>,
