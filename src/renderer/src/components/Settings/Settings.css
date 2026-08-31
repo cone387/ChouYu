@@ -4,6 +4,7 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  border-radius: inherit;
 }
 
 .settings-header {
@@ -43,6 +44,7 @@
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  border-radius: 0 0 12px 12px;
 }
 
 /* Left Nav */
@@ -55,6 +57,7 @@
   flex-direction: column;
   gap: 2px;
   background: var(--bg-secondary);
+  border-radius: 0 0 0 12px;
 }
 
 .settings-nav-search {
@@ -173,6 +176,7 @@
   min-width: 0;
   position: relative;
   scrollbar-gutter: stable;
+  border-radius: 0 0 12px 0;
 }
 
 .settings-content::-webkit-scrollbar {

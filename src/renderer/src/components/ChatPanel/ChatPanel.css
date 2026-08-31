@@ -67,6 +67,36 @@
   margin-top: auto;
 }
 
+.workspace-resize-handle {
+  position: absolute;
+  right: 10px;
+  bottom: 3px;
+  width: 48px;
+  height: 12px;
+  border-radius: 999px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.workspace-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--border);
+  opacity: .8;
+  transition: background 150ms, opacity 150ms;
+}
+
+.workspace-resize-handle:hover::after,
+.workspace-resize-handle:active::after {
+  background: var(--accent);
+  opacity: 1;
+}
+
 @keyframes panel-open {
   from {
     opacity: 0;

@@ -65,4 +65,10 @@ describe('settings layout guardrails', () => {
     expect(settingsSource).toContain('160px')
     expect(stylesheet).toMatch(/linear-gradient\(to right, var\(--accent\)/)
   })
+
+  it('clips settings content with rounded lower corners', () => {
+    expect(stylesheet).toMatch(/\.settings-panel\s*\{[\s\S]*border-radius:\s*inherit/)
+    expect(stylesheet).toMatch(/\.settings-body\s*\{[\s\S]*border-radius:\s*0 0 12px 12px/)
+    expect(stylesheet).toMatch(/\.settings-nav\s*\{[\s\S]*border-radius:\s*0 0 0 12px/)
+  })
 })
