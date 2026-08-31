@@ -6,9 +6,11 @@ import './ToolsSettingsTab.css'
 interface ToolsSettingsTabProps {
   globalEnabled: boolean
   onGlobalChange: (enabled: boolean) => void
+  permissionMode: 'confirm' | 'auto' | 'full'
+  onPermissionModeChange: (mode: 'confirm' | 'auto' | 'full') => void
 }
 
-export default function ToolsSettingsTab({ globalEnabled, onGlobalChange }: ToolsSettingsTabProps) {
+export default function ToolsSettingsTab({ globalEnabled, onGlobalChange, permissionMode, onPermissionModeChange }: ToolsSettingsTabProps) {
   const [tools, setTools] = useState<ToolCatalogItem[]>([])
   const [loading, setLoading] = useState(true)
   const [busyName, setBusyName] = useState('')
@@ -55,6 +57,28 @@ export default function ToolsSettingsTab({ globalEnabled, onGlobalChange }: Tool
         </label>
       </div>
 
+      <div className="tool-permission-card">
+        <div>
+          <strong>操作权限</strong>
+          <span>
+            {permissionMode === 'confirm'
+              ? '读取和写入类工具执行前都会请求确认。'
+              : permissionMode === 'auto'
+                ? '安全和读取类工具自动执行，写入类工具仍需确认。'
+                : '所有已启用工具直接执行，请仅在可信环境使用。'}
+          </span>
+        </div>
+        <select
+          value={permissionMode}
+          aria-label="AI 工具操作权限"
+          onChange={(event) => onPermissionModeChange(event.target.value as ToolsSettingsTabProps['permissionMode'])}
+        >
+          <option value="confirm">手动确认</option>
+          <option value="auto">自动审核</option>
+          <option value="full">完全访问</option>
+        </select>
+      </div>
+
       {!globalEnabled && (
         <div className="tool-global-notice" role="status">总开关已关闭，Provider 请求不会携带任何工具定义。</div>
       )}
@@ -80,7 +104,13 @@ export default function ToolsSettingsTab({ globalEnabled, onGlobalChange }: Tool
                   <div className="tool-catalog-meta">
                     <code>{tool.name}</code>
                     <span>{tool.source === 'plugin' ? '插件' : '内置'}</span>
-                    <span>{tool.requiresConfirmation ? '逐次确认' : '自动执行'}</span>
+                    <span>
+                      {permissionMode === 'full'
+                        ? '直接执行'
+                        : permissionMode === 'auto'
+                          ? tool.risk === 'write' ? '写入需确认' : '自动执行'
+                          : tool.requiresConfirmation ? '逐次确认' : '自动执行'}
+                    </span>
                   </div>
                 </div>
                 <label className="settings-switch tool-toggle">

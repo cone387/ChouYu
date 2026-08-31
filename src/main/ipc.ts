@@ -54,7 +54,8 @@ import {
   type ToolCatalogItem,
   type ToolApprovalRequest,
   type ToolExecutionEvent,
-  parseToolArguments
+  parseToolArguments,
+  shouldConfirmTool
 } from '../shared/tools'
 import {
   getConfig,
@@ -293,11 +294,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('memory:propose', (_event, text: string, sessionId?: string, messageId?: string) => {
     if (typeof text !== 'string' || text.length > 4000) return []
+    const { memoryEnabled, memoryWriteMode } = getConfig()
+    if (!memoryEnabled || memoryWriteMode === 'off') return []
     const candidates = extractMemoryCandidates(text, {
       sessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined,
       messageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined
     })
-    return candidates.map((candidate) => proposeMemoryCandidate(candidate)).filter(Boolean)
+    return candidates.map((candidate) => memoryWriteMode === 'auto' ? createMemory(candidate) : proposeMemoryCandidate(candidate)).filter(Boolean)
   })
 
   ipcMain.handle('memory:create', (_event, rawCandidate: MemoryCandidateInput) => {
@@ -533,16 +536,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             if (!definition) return `工具不存在：${call.name}`
             if (!isToolEnabled(call.name)) return `工具已被用户禁用：${call.name}`
             const arguments_ = parseToolArguments(call.arguments)
+            const needsApproval = shouldConfirmTool(definition, config.toolPermissionMode)
             sendToolEvent(event.sender, {
               requestId: request.requestId,
               callId: call.id,
               name: definition.name,
               displayName: definition.displayName,
               risk: definition.risk,
-              status: definition.requiresConfirmation ? 'requested' : 'running',
-              summary: definition.requiresConfirmation ? '等待用户确认' : '正在执行'
+              status: needsApproval ? 'requested' : 'running',
+              summary: needsApproval ? '等待用户确认' : '正在执行'
             })
-            if (definition.requiresConfirmation) {
+            if (needsApproval) {
               const approved = await requestToolApproval(event.sender, request.requestId, call, controller.signal)
               if (!approved) {
                 sendToolEvent(event.sender, {

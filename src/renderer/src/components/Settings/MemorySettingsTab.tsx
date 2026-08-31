@@ -501,6 +501,28 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         </label>
       </div>
 
+      <section className="memory-write-mode-card" aria-labelledby="memory-write-mode-title">
+        <div>
+          <strong id="memory-write-mode-title">记忆写入方式</strong>
+          <span>
+            {config.memoryWriteMode === 'auto'
+              ? '自动保存明确表达的偏好和事实；检测到冲突时仍会请求确认。'
+              : config.memoryWriteMode === 'confirm'
+                ? '每条候选记忆都先等待确认，再写入本地数据库。'
+                : '不从聊天内容提取新记忆，但已有记忆仍可检索。'}
+          </span>
+        </div>
+        <select
+          value={config.memoryWriteMode}
+          aria-label="记忆写入方式"
+          onChange={(event) => { void onSaveConfig({ memoryWriteMode: event.target.value as AppConfig['memoryWriteMode'] }) }}
+        >
+          <option value="auto">自动写入（推荐）</option>
+          <option value="confirm">每次确认</option>
+          <option value="off">关闭写入</option>
+        </select>
+      </section>
+
       <section className="memory-capability-card">
         <div><strong>记忆引擎插件</strong><span>负责本地记忆的存储、检索、冲突和历史。切换引擎需要重启应用。</span></div>
         <select value={config.memoryEngineProvider} onChange={(event) => { void onSaveConfig({ memoryEngineProvider: event.target.value }); setCapabilityStatus('记忆引擎选择已保存，重启 ChouYu 后生效。') }} aria-label="记忆引擎插件">{memoryEngineCapabilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>

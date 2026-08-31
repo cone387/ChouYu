@@ -23,10 +23,8 @@ import {
 import {
   DEFAULT_CONFIG,
   MAX_HISTORY_MESSAGES,
-  PANEL_HEIGHT,
   PANEL_SETTINGS_HEIGHT,
   PANEL_SETTINGS_WIDTH,
-  PANEL_WORKSPACE_WIDTH
 } from '../../shared/constants'
 import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
@@ -198,10 +196,15 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   useEffect(() => {
     if (!showSessions) return
-    const nextX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_WORKSPACE_WIDTH - 4))
-    const nextY = Math.min(Math.max(4, position.y), Math.max(4, window.innerHeight - PANEL_HEIGHT - 4))
-    if (nextX !== position.x || nextY !== position.y) onPositionChange({ x: nextX, y: nextY })
-  }, [showSessions])
+    const panelEl = panelRef.current
+    if (!panelEl) return
+    requestAnimationFrame(() => {
+      const rect = panelEl.getBoundingClientRect()
+      const nextX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - rect.width - 4))
+      const nextY = Math.min(Math.max(4, position.y), Math.max(4, window.innerHeight - rect.height - 4))
+      if (nextX !== position.x || nextY !== position.y) onPositionChange({ x: nextX, y: nextY })
+    })
+  }, [showSessions, position, onPositionChange])
 
   const handleDragStart = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return
@@ -551,7 +554,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         return
       }
       const candidates = await window.electronAPI.memory.propose(`请记住：${memoryText}`, activeSessionIdRef.current)
-      setMemoryCandidates((previous) => [...previous, ...candidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
+      const pendingCandidates = candidates.filter((candidate) => candidate.status === 'pending')
+      setMemoryCandidates((previous) => [...previous, ...pendingCandidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
       return
     }
     if (content === '/settings') {
@@ -621,8 +625,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     setMessages(nextMessages)
     if (config.memoryEnabled && content.trim()) {
       void window.electronAPI.memory.propose(content, activeSessionIdRef.current, userMessage.id).then((candidates) => {
-        if (candidates.length > 0) {
-          setMemoryCandidates((previous) => [...previous, ...candidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
+        const pendingCandidates = candidates.filter((candidate) => candidate.status === 'pending')
+        if (pendingCandidates.length > 0) {
+          setMemoryCandidates((previous) => [...previous, ...pendingCandidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
         }
       }).catch(() => {})
     }
@@ -697,7 +702,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         <ConversationSidebar
           sessions={sessions}
           activeSessionId={activeSessionId}
-          onClose={() => setShowSessions(false)}
           onCreate={createSession}
           onSelect={selectSession}
           onRename={renameSession}

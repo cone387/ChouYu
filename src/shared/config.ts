@@ -32,7 +32,9 @@ export interface AppConfig {
   proactiveRestReminder: boolean
   clipboardWatch: boolean
   aiToolsEnabled: boolean
+  toolPermissionMode: 'confirm' | 'auto' | 'full'
   memoryEnabled: boolean
+  memoryWriteMode: 'auto' | 'confirm' | 'off'
   memoryEngineProvider: string
   memoryMaxItems: number
   memoryDefaultTtlDays: number
@@ -61,7 +63,9 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   proactiveRestReminder: true,
   clipboardWatch: false,
   aiToolsEnabled: true,
+  toolPermissionMode: 'confirm',
   memoryEnabled: true,
+  memoryWriteMode: 'auto',
   memoryEngineProvider: 'chouyu-sqlite',
   memoryMaxItems: 500,
   memoryDefaultTtlDays: 0,
@@ -103,7 +107,9 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     proactiveRestReminder: source.proactiveRestReminder !== false,
     clipboardWatch: source.clipboardWatch === true,
     aiToolsEnabled: source.aiToolsEnabled !== false,
+    toolPermissionMode: source.toolPermissionMode === 'auto' || source.toolPermissionMode === 'full' ? source.toolPermissionMode : 'confirm',
     memoryEnabled: source.memoryEnabled !== false,
+    memoryWriteMode: source.memoryWriteMode === 'confirm' || source.memoryWriteMode === 'off' ? source.memoryWriteMode : 'auto',
     memoryEngineProvider: typeof source.memoryEngineProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(source.memoryEngineProvider) ? source.memoryEngineProvider : 'chouyu-sqlite',
     memoryMaxItems: typeof source.memoryMaxItems === 'number' && Number.isFinite(source.memoryMaxItems)
       ? Math.min(2000, Math.max(50, Math.round(source.memoryMaxItems)))
@@ -144,7 +150,9 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.proactiveRestReminder === 'boolean') patch.proactiveRestReminder = input.proactiveRestReminder
   if (typeof input.clipboardWatch === 'boolean') patch.clipboardWatch = input.clipboardWatch
   if (typeof input.aiToolsEnabled === 'boolean') patch.aiToolsEnabled = input.aiToolsEnabled
+  if (input.toolPermissionMode === 'confirm' || input.toolPermissionMode === 'auto' || input.toolPermissionMode === 'full') patch.toolPermissionMode = input.toolPermissionMode
   if (typeof input.memoryEnabled === 'boolean') patch.memoryEnabled = input.memoryEnabled
+  if (input.memoryWriteMode === 'auto' || input.memoryWriteMode === 'confirm' || input.memoryWriteMode === 'off') patch.memoryWriteMode = input.memoryWriteMode
   if (typeof input.memoryEngineProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(input.memoryEngineProvider)) patch.memoryEngineProvider = input.memoryEngineProvider
   if (typeof input.memoryMaxItems === 'number' && Number.isFinite(input.memoryMaxItems)) patch.memoryMaxItems = Math.min(2000, Math.max(50, Math.round(input.memoryMaxItems)))
   if (typeof input.memoryDefaultTtlDays === 'number' && Number.isFinite(input.memoryDefaultTtlDays)) patch.memoryDefaultTtlDays = Math.min(3650, Math.max(0, Math.round(input.memoryDefaultTtlDays)))

@@ -6,7 +6,6 @@ import './ConversationSidebar.css'
 interface ConversationSidebarProps {
   sessions: ChatSessionSummary[]
   activeSessionId: string
-  onClose: () => void
   onCreate: () => Promise<void>
   onSelect: (id: string) => Promise<void>
   onRename: (id: string, title: string) => Promise<void>
@@ -26,7 +25,6 @@ function formatSessionTime(timestamp: number): string {
 export default function ConversationSidebar({
   sessions,
   activeSessionId,
-  onClose,
   onCreate,
   onSelect,
   onRename,
@@ -111,11 +109,6 @@ export default function ConversationSidebar({
           >
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
               <path d="M8 3v10M3 8h10"/>
-            </svg>
-          </button>
-          <button type="button" className="conversation-icon-btn" onClick={onClose} aria-label="关闭对话列表" title="关闭">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-              <path d="M3 3l8 8M11 3l-8 8"/>
             </svg>
           </button>
         </div>

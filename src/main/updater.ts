@@ -6,6 +6,21 @@ autoUpdater.autoInstallOnAppQuit = true
 
 let initialized = false
 
+function formatUpdateError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || '')
+  const message = raw.toLowerCase()
+  if (message.includes('401') || message.includes('403') || message.includes('bad credentials') || message.includes('token')) {
+    return '更新检查失败：发布源需要有效权限，或当前版本尚未发布。'
+  }
+  if (message.includes('404') || message.includes('latest.yml') || message.includes('not found')) {
+    return '暂无可用的更新信息，请先发布对应版本后再检查。'
+  }
+  if (message.includes('network') || message.includes('enotfound') || message.includes('timeout') || message.includes('econn')) {
+    return '更新检查失败：无法连接更新服务器，请检查网络后重试。'
+  }
+  return '更新检查失败，请稍后重试。'
+}
+
 export function initAutoUpdater(mainWindow: BrowserWindow): void {
   if (initialized) {
     void autoUpdater.checkForUpdates()
@@ -68,7 +83,8 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
   })
 
   autoUpdater.on('error', (err) => {
-    mainWindow.webContents.send('update:error', err.message)
+    console.warn('[Updater] Update check failed:', err)
+    mainWindow.webContents.send('update:error', formatUpdateError(err))
   })
 
   void autoUpdater.checkForUpdates()

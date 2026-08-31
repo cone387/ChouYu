@@ -34,7 +34,8 @@
 
 .chat-panel-workspace {
   width: min(672px, calc(100vw - 16px));
-  height: min(520px, calc(100vh - 8px));
+  height: auto;
+  min-height: 0;
   max-height: min(520px, calc(100vh - 8px));
   flex-direction: row;
 }
@@ -58,6 +59,12 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* Keep the composer anchored to the bottom when a session has no messages;
+   otherwise the empty message area leaves a distracting void below it. */
+.chat-panel-main > .input-area {
+  margin-top: auto;
 }
 
 @keyframes panel-open {

@@ -12,7 +12,9 @@ describe('config', () => {
     expect(config.proactiveRestReminder).toBe(true)
     expect(config.clipboardWatch).toBe(false)
     expect(config.aiToolsEnabled).toBe(true)
+    expect(config.toolPermissionMode).toBe('confirm')
     expect(config.memoryEnabled).toBe(true)
+    expect(config.memoryWriteMode).toBe('auto')
     expect(config.memoryEngineProvider).toBe('chouyu-sqlite')
     expect(config.memoryMaxItems).toBe(500)
     expect(config.memoryDefaultTtlDays).toBe(0)
@@ -41,7 +43,9 @@ describe('config', () => {
       autoStart: true,
       petSize: 96,
       aiToolsEnabled: false,
+      toolPermissionMode: 'full',
       memoryEnabled: false,
+      memoryWriteMode: 'confirm',
       memoryEngineProvider: 'chouyu-sqlite',
       memoryCompressionEnabled: false,
       memorySyncProvider: 'mem0-self-hosted',
@@ -54,6 +58,6 @@ describe('config', () => {
       model: 123
     })
 
-    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, memoryEnabled: false, memoryEngineProvider: 'chouyu-sqlite', memoryCompressionEnabled: false, memorySyncProvider: 'mem0-self-hosted', memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true, embeddingProvider: 'openai-compatible' })
+    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, toolPermissionMode: 'full', memoryEnabled: false, memoryWriteMode: 'confirm', memoryEngineProvider: 'chouyu-sqlite', memoryCompressionEnabled: false, memorySyncProvider: 'mem0-self-hosted', memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true, embeddingProvider: 'openai-compatible' })
   })
 })

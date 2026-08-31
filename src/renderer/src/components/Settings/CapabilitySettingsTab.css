@@ -32,3 +32,31 @@
   .capability-badges { justify-content:flex-start; }
   .capability-card button { width:100%; min-height:30px; }
 }
+
+/* The capability catalog contains privacy and state explanations; keep those
+   labels readable when the panel is compact or display scaling is enabled. */
+.capability-settings-pane p,
+.capability-settings-pane button,
+.capability-settings-pane input,
+.capability-settings-pane select,
+.capability-settings-pane [class*="capability-"] {
+  font-size: 12px;
+}
+
+.capability-settings-pane small { font-size: 11px; }
+
+.capability-settings-pane p,
+.capability-settings-pane small,
+.capability-settings-pane [class*="capability-"] {
+  line-height: 1.45;
+}
+
+.capability-settings-pane button,
+.capability-settings-pane input,
+.capability-settings-pane select {
+  min-height: 34px;
+}
+
+.capability-settings-pane .capability-group-heading strong {
+  font-size: 12px !important;
+}

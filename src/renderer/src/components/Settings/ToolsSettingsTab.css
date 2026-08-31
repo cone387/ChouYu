@@ -41,6 +41,27 @@
   font-size: 10px;
 }
 
+.tool-permission-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.tool-permission-card strong,
+.tool-permission-card span {
+  display: block;
+}
+
+.tool-permission-card strong { color: var(--text-primary); font-size: 11px; }
+.tool-permission-card span { margin-top: 3px; color: var(--text-secondary); font-size: 9px; line-height: 1.45; }
+.tool-permission-card select { min-width: 112px; min-height: 34px; border: 1px solid var(--input-border); border-radius: 7px; padding: 6px 8px; background: var(--input-bg); color: var(--text-primary); font-size: 10px; }
+
 .tool-settings-error {
   border-color: var(--error-border);
   background: color-mix(in srgb, var(--error) 7%, transparent);
@@ -171,4 +192,40 @@
   place-items: center;
   color: var(--text-muted);
   font-size: 10px;
+}
+
+/* Keep catalog descriptions and controls readable alongside the compact
+   settings shell. */
+.tool-settings-pane p,
+.tool-settings-pane button,
+.tool-settings-pane input,
+.tool-settings-pane select,
+.tool-settings-pane [class*="tool-"] {
+  font-size: 12px;
+}
+
+.tool-settings-pane small { font-size: 11px; }
+
+.tool-settings-pane p,
+.tool-settings-pane small,
+.tool-settings-pane [class*="tool-"] {
+  line-height: 1.45;
+}
+
+.tool-settings-pane button,
+.tool-settings-pane input,
+.tool-settings-pane select {
+  min-height: 34px;
+}
+
+.tool-settings-pane .tool-catalog-title strong {
+  font-size: 12px !important;
+}
+
+.tool-settings-pane .tool-permission-card strong { font-size: 12px !important; }
+.tool-settings-pane .tool-permission-card span { font-size: 11px !important; }
+
+@media (max-width: 520px) {
+  .tool-permission-card { align-items: stretch; flex-direction: column; }
+  .tool-permission-card select { width: 100%; }
 }

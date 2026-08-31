@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { AppConfig, PluginInfo } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
 import { DEFAULT_SOUL_MD, isAIConfigured } from '../../../../shared/config'
@@ -42,6 +42,8 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
   const [providerCheck, setProviderCheck] = useState<AIModelListResult | null>(null)
   const [manualModelEntry, setManualModelEntry] = useState(false)
   const [diagnostics, setDiagnostics] = useState<ProviderDiagnostics | null>(null)
+  const [navQuery, setNavQuery] = useState('')
+  const settingsNavRef = useRef<HTMLElement>(null)
 
   const fetchAvailableModels = useCallback(async () => {
     setModelFetchStatus('loading')
@@ -110,6 +112,35 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
     ...pluginNavItems,
     ...NAV_ITEMS.filter(item => item.key === 'about')
   ]
+  const filteredNavItems = useMemo(() => {
+    const query = navQuery.trim().toLocaleLowerCase()
+    if (!query) return allNavItems
+    return allNavItems.filter((item) => item.label.toLocaleLowerCase().includes(query))
+  }, [allNavItems, navQuery])
+
+  const handleNavKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const buttons = Array.from(settingsNavRef.current?.querySelectorAll<HTMLButtonElement>('[data-settings-nav]') || [])
+    const currentIndex = buttons.indexOf(event.currentTarget)
+    if (currentIndex < 0 || buttons.length === 0) return
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? buttons.length - 1
+        : event.key === 'ArrowDown'
+          ? (currentIndex + 1) % buttons.length
+          : (currentIndex - 1 + buttons.length) % buttons.length
+    buttons[nextIndex]?.focus()
+  }
+
+  const handleNavSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Escape') return
+    if (!navQuery) return
+    event.preventDefault()
+    event.stopPropagation()
+    setNavQuery('')
+  }
 
   const save = async (patch: Partial<AppConfig>) => {
     const updated = { ...config, ...patch }
@@ -150,18 +181,36 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
       </div>
 
       <div className="settings-body">
-        <nav className="settings-nav" aria-label="设置分类">
-          {allNavItems.map((item) => (
+        <nav ref={settingsNavRef} className="settings-nav" aria-label="设置分类">
+          <label className="settings-nav-search">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+            </svg>
+            <input
+              value={navQuery}
+              onChange={(event) => setNavQuery(event.target.value)}
+              onKeyDown={handleNavSearchKeyDown}
+              placeholder="搜索"
+              aria-label="搜索设置"
+            />
+          </label>
+          {filteredNavItems.map((item) => (
             <button
               key={item.key}
+              type="button"
+              data-settings-nav
               className={`settings-nav-item${activeNav === item.key ? ' active' : ''}`}
               onClick={() => setActiveNav(item.key)}
+              onKeyDown={handleNavKeyDown}
               aria-current={activeNav === item.key ? 'page' : undefined}
             >
               {item.key.startsWith('plugin-') ? (
-                <span className="settings-nav-icon-emoji">{item.icon}</span>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M6 2.5v2M10 2.5v2M3.5 6h9M4.5 6v6.5h7V6M6 12.5v1M10 12.5v1" />
+                  <path d="M5 4.5h6a2 2 0 012 2v1H3v-1a2 2 0 012-2z" />
+                </svg>
               ) : (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   {item.key === 'ai' && <><rect x="2" y="3" width="10" height="9" rx="2"/><circle cx="5" cy="7.5" r="1"/><circle cx="9" cy="7.5" r="1"/><path d="M5 3V1.5M9 3V1.5"/></>}
                   {item.key === 'tools' && <><path d="M3 3.5h8v7H3z"/><path d="M5 1.5v2M9 1.5v2M5 10.5v2M9 10.5v2M1.5 5h1.5M11 5h1.5M1.5 9h1.5M11 9h1.5"/></>}
                   {item.key === 'memory' && <><path d="M4 3.5a3 3 0 016 0v7a3 3 0 01-6 0z"/><path d="M5.5 6h3M5.5 8.5h3"/></>}
@@ -174,6 +223,7 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
               <span>{item.label}</span>
             </button>
           ))}
+          {filteredNavItems.length === 0 && <span className="settings-nav-empty">没有匹配项</span>}
         </nav>
 
         <div className="settings-content">
@@ -318,6 +368,11 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
               <div className="settings-card settings-persona-card">
                 <div className="settings-field">
                 <label htmlFor="settings-soul">SOUL.md 人格设定</label>
+                <div id="settings-soul-help" className="settings-help">保存后会立即应用到下一次 AI 对话。</div>
+                <button
+                  className="settings-secondary-btn"
+                  onClick={() => { setConfig((prev) => ({ ...prev, soulMd: DEFAULT_SOUL_MD })); void save({ soulMd: DEFAULT_SOUL_MD }) }}
+                >恢复默认人格</button>
                 <textarea
                   id="settings-soul"
                   className="settings-soul-editor"
@@ -326,11 +381,6 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
                   onBlur={() => { void save({ soulMd: config.soulMd }) }}
                   aria-describedby="settings-soul-help"
                 />
-                <div id="settings-soul-help" className="settings-help">保存后会立即应用到下一次 AI 对话。</div>
-                <button
-                  className="settings-secondary-btn"
-                  onClick={() => { setConfig((prev) => ({ ...prev, soulMd: DEFAULT_SOUL_MD })); void save({ soulMd: DEFAULT_SOUL_MD }) }}
-                >恢复默认人格</button>
               </div>
               </div>
             </div>
@@ -340,6 +390,8 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
             <ToolsSettingsTab
               globalEnabled={config.aiToolsEnabled}
               onGlobalChange={(enabled) => { void save({ aiToolsEnabled: enabled }) }}
+              permissionMode={config.toolPermissionMode}
+              onPermissionModeChange={(mode) => { void save({ toolPermissionMode: mode }) }}
             />
           )}
 
@@ -385,18 +437,23 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
               </div>
               <div className="settings-field">
                 <label htmlFor="settings-pet-size">宠物大小 <span className="settings-field-value">{config.petSize}px</span></label>
-                <input
-                  id="settings-pet-size"
-                  type="range"
-                  min="40"
-                  max="160"
-                  step="8"
-                  value={config.petSize}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, petSize: Number(e.target.value) }))}
-                  onPointerUp={() => { void save({ petSize: config.petSize }) }}
-                  onKeyUp={() => { void save({ petSize: config.petSize }) }}
-                  onBlur={() => { void save({ petSize: config.petSize }) }}
-                />
+                <div className="settings-pet-size-control">
+                  <input
+                    id="settings-pet-size"
+                    type="range"
+                    min="40"
+                    max="160"
+                    step="8"
+                    value={config.petSize}
+                    style={{ '--range-progress': `${((config.petSize - 40) / 120) * 100}%` } as React.CSSProperties}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, petSize: Number(e.target.value) }))}
+                    onPointerUp={() => { void save({ petSize: config.petSize }) }}
+                    onKeyUp={() => { void save({ petSize: config.petSize }) }}
+                    onBlur={() => { void save({ petSize: config.petSize }) }}
+                    aria-valuetext={`${config.petSize} 像素`}
+                  />
+                  <div className="settings-pet-size-scale" aria-hidden="true"><span>40px</span><span>160px</span></div>
+                </div>
               </div>
               <div className="settings-field settings-field-row">
                 <label htmlFor="settings-hotkey">唤出面板</label>

@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { getToolRiskLabel, parseToolArguments, validateToolArguments } from './tools'
+import { getToolRiskLabel, parseToolArguments, shouldConfirmTool, validateToolArguments } from './tools'
 
 describe('tool protocol helpers', () => {
+  it('respects confirm, auto-review, and full-access permission modes', () => {
+    const readTool = { risk: 'read' as const, requiresConfirmation: true }
+    const writeTool = { risk: 'write' as const, requiresConfirmation: true }
+    const safeTool = { risk: 'safe' as const, requiresConfirmation: false }
+
+    expect(shouldConfirmTool(readTool, 'confirm')).toBe(true)
+    expect(shouldConfirmTool(readTool, 'auto')).toBe(false)
+    expect(shouldConfirmTool(writeTool, 'auto')).toBe(true)
+    expect(shouldConfirmTool(writeTool, 'full')).toBe(false)
+    expect(shouldConfirmTool(safeTool, 'confirm')).toBe(false)
+  })
+
   it('parses object arguments and rejects non-object JSON', () => {
     expect(parseToolArguments('{"text":"hello"}')).toEqual({ text: 'hello' })
     expect(parseToolArguments('[1,2]')).toEqual({})
