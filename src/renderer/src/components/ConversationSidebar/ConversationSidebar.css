@@ -161,7 +161,7 @@
   align-items: flex-start;
   border: 0;
   border-radius: 8px;
-  padding: 8px 9px 30px;
+  padding: 8px 42px 7px 9px;
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
@@ -196,41 +196,78 @@
   font-size: 9px;
 }
 
-.conversation-item-actions {
+.conversation-item-menu {
   position: absolute;
   right: 9px;
-  bottom: 6px;
-  display: flex;
-  gap: 1px;
-  opacity: 0;
-  transition: opacity 150ms;
+  top: 6px;
+  z-index: 5;
 }
 
-.conversation-item:hover .conversation-item-actions,
-.conversation-item:focus-within .conversation-item-actions,
-.conversation-item.active .conversation-item-actions {
+.conversation-menu-trigger {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms, background 150ms, color 150ms;
+}
+
+.conversation-item:hover .conversation-menu-trigger,
+.conversation-item:focus-within .conversation-menu-trigger,
+.conversation-item.active .conversation-menu-trigger,
+.conversation-menu-trigger[aria-expanded="true"] {
   opacity: 1;
 }
 
-.conversation-item-actions button {
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border: 0;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.conversation-item-actions button:hover {
-  background: var(--bg-panel);
+.conversation-menu-trigger:hover,
+.conversation-menu-trigger[aria-expanded="true"] {
+  background: var(--hover-bg);
   color: var(--text-primary);
 }
 
-.conversation-item-actions button.danger:hover {
+.conversation-item-menu-popover {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  display: grid;
+  min-width: 132px;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.conversation-item-menu-popover button {
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+
+.conversation-item-menu-popover button:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.conversation-item-menu-popover button.danger:hover {
   color: var(--error);
+}
+
+/* Keep the menu popover from being clipped by the individual card. */
+.conversation-item {
+  overflow: visible;
 }
 
 .conversation-rename-row {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react'
 import type { ChatSessionSummary } from '../../shared/types'
 import { filterSessionSummaries } from '../../../../shared/sessions'
 import './ConversationSidebar.css'
@@ -6,6 +6,7 @@ import './ConversationSidebar.css'
 interface ConversationSidebarProps {
   sessions: ChatSessionSummary[]
   activeSessionId: string
+  dragHandleProps?: HTMLAttributes<HTMLDivElement>
   onCreate: () => Promise<void>
   onSelect: (id: string) => Promise<void>
   onRename: (id: string, title: string) => Promise<void>
@@ -25,6 +26,7 @@ function formatSessionTime(timestamp: number): string {
 export default function ConversationSidebar({
   sessions,
   activeSessionId,
+  dragHandleProps,
   onCreate,
   onSelect,
   onRename,
@@ -38,6 +40,7 @@ export default function ConversationSidebar({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState('')
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('error')
+  const [menuId, setMenuId] = useState<string | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const cancelRenameRef = useRef(false)
   const filteredSessions = useMemo(() => filterSessionSummaries(sessions, query), [sessions, query])
@@ -54,6 +57,25 @@ export default function ConversationSidebar({
     window.addEventListener('keydown', cancelDelete, true)
     return () => window.removeEventListener('keydown', cancelDelete, true)
   }, [deletingId])
+
+  useEffect(() => {
+    if (!menuId) return
+    const closeMenu = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement).closest('.conversation-item-menu')) setMenuId(null)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopImmediatePropagation()
+        setMenuId(null)
+      }
+    }
+    document.addEventListener('mousedown', closeMenu)
+    window.addEventListener('keydown', closeOnEscape, true)
+    return () => {
+      document.removeEventListener('mousedown', closeMenu)
+      window.removeEventListener('keydown', closeOnEscape, true)
+    }
+  }, [menuId])
 
   const run = async (id: string, action: () => Promise<void>) => {
     setBusyId(id)
@@ -93,7 +115,7 @@ export default function ConversationSidebar({
 
   return (
     <aside className="conversation-sidebar" aria-label="对话历史">
-      <div className="conversation-sidebar-header">
+      <div className="conversation-sidebar-header chat-panel-drag-handle" {...dragHandleProps}>
         <div>
           <h2>对话</h2>
           <span>{sessions.length} 个会话</span>
@@ -172,29 +194,35 @@ export default function ConversationSidebar({
               )}
 
               {!editing && (
-                <div className="conversation-item-actions">
-                  <button type="button" onClick={() => startRename(session)} aria-label={`重命名 ${session.title}`} title="重命名">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M3 13l1-4L11.5 1.5a1.4 1.4 0 012 2L6 11l-3 2z"/>
+                <div className="conversation-item-menu">
+                  <button
+                    type="button"
+                    className="conversation-menu-trigger"
+                    onClick={(event) => { event.stopPropagation(); setMenuId((current) => current === session.id ? null : session.id) }}
+                    aria-label={`操作 ${session.title}`}
+                    aria-expanded={menuId === session.id}
+                    aria-haspopup="menu"
+                    title="会话操作"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                      <circle cx="3" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="13" cy="8" r="1.2"/>
                     </svg>
                   </button>
-                  <button type="button" onClick={() => {
-                    void run(session.id, async () => {
-                      if (await onExport(session.id)) {
-                        setFeedbackType('success')
-                        setFeedback('已导出为 Markdown。')
-                      }
-                    })
-                  }} aria-label={`导出 ${session.title}`} title="导出 Markdown">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M8 2v8M5 7l3 3 3-3M3 13h10"/>
-                    </svg>
-                  </button>
-                  <button type="button" className="danger" onClick={() => setDeletingId(session.id)} aria-label={`删除 ${session.title}`} title="删除">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M3 4h10M6 4V2.5h4V4M5 6.5v6M8 6.5v6M11 6.5v6M4 4l.7 10h6.6L12 4"/>
-                    </svg>
-                  </button>
+                  {menuId === session.id && (
+                    <div className="conversation-item-menu-popover" role="menu" aria-label={`${session.title} 操作`}>
+                      <button type="button" role="menuitem" onClick={() => { setMenuId(null); startRename(session) }}>重命名</button>
+                      <button type="button" role="menuitem" onClick={() => {
+                        setMenuId(null)
+                        void run(session.id, async () => {
+                          if (await onExport(session.id)) {
+                            setFeedbackType('success')
+                            setFeedback('已导出为 Markdown。')
+                          }
+                        })
+                      }}>导出 Markdown</button>
+                      <button type="button" role="menuitem" className="danger" onClick={() => { setMenuId(null); setDeletingId(session.id) }}>删除</button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

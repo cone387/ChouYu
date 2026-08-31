@@ -25,8 +25,7 @@ import {
   MAX_HISTORY_MESSAGES,
   PANEL_SETTINGS_HEIGHT,
   PANEL_SETTINGS_WIDTH,
-  PANEL_WORKSPACE_DEFAULT_HEIGHT,
-  PANEL_WORKSPACE_MIN_HEIGHT,
+  PANEL_MIN_HEIGHT,
 } from '../../shared/constants'
 import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
@@ -53,6 +52,11 @@ interface ChatPanelProps {
   onPendingMessageConsumed?: () => void
 }
 
+function getDefaultPanelHeight(): number {
+  const viewportHeight = window.innerHeight
+  return Math.min(720, Math.max(PANEL_MIN_HEIGHT, Math.round(viewportHeight * 0.58)))
+}
+
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
@@ -61,7 +65,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
   const [showSessions, setShowSessions] = useState(false)
-  const [workspaceHeight, setWorkspaceHeight] = useState(PANEL_WORKSPACE_DEFAULT_HEIGHT)
+  const [panelHeight, setPanelHeight] = useState(getDefaultPanelHeight)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
@@ -78,7 +82,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const happyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
-  const workspaceResizeRef = useRef({ resizing: false, startY: 0, startHeight: PANEL_WORKSPACE_DEFAULT_HEIGHT })
+  const panelResizeRef = useRef({ resizing: false, edge: 'bottom' as 'top' | 'bottom', startY: 0, startHeight: 0, startTop: 0 })
   const initializedRef = useRef(false)
   const latestMessagesRef = useRef<Message[]>([])
   const activeSessionIdRef = useRef('')
@@ -199,7 +203,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [visible, showSettings, showSessions])
 
   useEffect(() => {
-    if (!showSessions) return
+    if (!visible || showSettings) return
     const panelEl = panelRef.current
     if (!panelEl) return
     requestAnimationFrame(() => {
@@ -208,7 +212,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       const nextY = Math.min(Math.max(4, position.y), Math.max(4, window.innerHeight - rect.height - 4))
       if (nextX !== position.x || nextY !== position.y) onPositionChange({ x: nextX, y: nextY })
     })
-  }, [showSessions, position, onPositionChange])
+  }, [visible, showSettings, showSessions, panelHeight, position, onPositionChange])
 
   const handleDragStart = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return
@@ -249,25 +253,33 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     onPositionChange(nextPosition)
   }, [onPositionChange])
 
-  const handleWorkspaceResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  const handlePanelResizeStart = useCallback((edge: 'top' | 'bottom', event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
-    workspaceResizeRef.current = { resizing: true, startY: event.screenY, startHeight: workspaceHeight }
+    panelResizeRef.current = { resizing: true, edge, startY: event.screenY, startHeight: panelHeight, startTop: position.y }
     event.currentTarget.setPointerCapture(event.pointerId)
-  }, [workspaceHeight])
+  }, [panelHeight, position.y])
 
-  const handleWorkspaceResizeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!workspaceResizeRef.current.resizing) return
-    const { startY, startHeight } = workspaceResizeRef.current
-    const maxHeight = Math.min(520, Math.max(PANEL_WORKSPACE_MIN_HEIGHT, window.innerHeight - position.y - 8))
-    const nextHeight = Math.min(maxHeight, Math.max(PANEL_WORKSPACE_MIN_HEIGHT, startHeight + event.screenY - startY))
-    setWorkspaceHeight(nextHeight)
-  }, [position.y])
+  const handlePanelResizeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!panelResizeRef.current.resizing) return
+    const { edge, startY, startHeight, startTop } = panelResizeRef.current
+    const delta = event.screenY - startY
+    const maxHeight = edge === 'top'
+      ? Math.max(PANEL_MIN_HEIGHT, startHeight + startTop - 4)
+      : Math.max(PANEL_MIN_HEIGHT, window.innerHeight - startTop - 4)
+    const requestedHeight = edge === 'top' ? startHeight - delta : startHeight + delta
+    const nextHeight = Math.min(maxHeight, Math.max(PANEL_MIN_HEIGHT, requestedHeight))
+    setPanelHeight(nextHeight)
+    if (edge === 'top') {
+      const nextTop = startTop + startHeight - nextHeight
+      onPositionChange({ x: position.x, y: nextTop })
+    }
+  }, [onPositionChange, position.x])
 
-  const handleWorkspaceResizeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!workspaceResizeRef.current.resizing) return
-    workspaceResizeRef.current.resizing = false
+  const handlePanelResizeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!panelResizeRef.current.resizing) return
+    panelResizeRef.current.resizing = false
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }, [])
 
@@ -722,12 +734,18 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       ref={panelRef}
       data-interactive
       className={`chat-panel${showSettings ? ' chat-panel-settings' : ''}${showSessions && !showSettings ? ' chat-panel-workspace' : ''}`}
-      style={{ left: position.x, top: position.y, height: showSessions && !showSettings ? workspaceHeight : undefined, display: visible ? undefined : 'none' }}
+      style={{ left: position.x, top: position.y, height: !showSettings ? panelHeight : undefined, display: visible ? undefined : 'none' }}
     >
       {showSessions && !showSettings && (
         <ConversationSidebar
           sessions={sessions}
           activeSessionId={activeSessionId}
+          dragHandleProps={{
+            onPointerDown: handleDragStart,
+            onPointerMove: handleDragMove,
+            onPointerUp: handleDragEnd,
+            onPointerCancel: handleDragEnd
+          }}
           onCreate={createSession}
           onSelect={selectSession}
           onRename={renameSession}
@@ -826,19 +844,20 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           </>
         )}
       </div>
-      {showSessions && !showSettings && (
+      {!showSettings && (['top', 'bottom'] as const).map((edge) => (
         <div
-          className="workspace-resize-handle"
+          key={edge}
+          className={`panel-resize-edge panel-resize-edge-${edge}`}
           data-interactive
           role="separator"
-          aria-label="调整会话工作区高度"
+          aria-label={`从${edge === 'top' ? '顶部' : '底部'}调整聊天面板高度`}
           aria-orientation="horizontal"
-          onPointerDown={handleWorkspaceResizeStart}
-          onPointerMove={handleWorkspaceResizeMove}
-          onPointerUp={handleWorkspaceResizeEnd}
-          onPointerCancel={handleWorkspaceResizeEnd}
+          onPointerDown={(event) => handlePanelResizeStart(edge, event)}
+          onPointerMove={handlePanelResizeMove}
+          onPointerUp={handlePanelResizeEnd}
+          onPointerCancel={handlePanelResizeEnd}
         />
-      )}
+      ))}
       {toolApprovalRequest && (
         <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />
       )}

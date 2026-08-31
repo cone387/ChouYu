@@ -1,7 +1,8 @@
 .chat-panel {
   position: absolute;
   width: min(420px, calc(100vw - 16px));
-  max-height: min(520px, calc(100vh - 8px));
+  min-height: min(280px, calc(100vh - 8px));
+  max-height: calc(100vh - 8px);
   background: var(--bg-panel);
   border-radius: 12px;
   border: 1px solid var(--border);
@@ -36,7 +37,7 @@
   width: min(672px, calc(100vw - 16px));
   height: auto;
   min-height: 0;
-  max-height: min(520px, calc(100vh - 8px));
+  max-height: calc(100vh - 8px);
   flex-direction: row;
 }
 
@@ -67,34 +68,21 @@
   margin-top: auto;
 }
 
-.workspace-resize-handle {
+.panel-resize-edge {
   position: absolute;
-  right: 10px;
-  bottom: 3px;
-  width: 48px;
-  height: 12px;
-  border-radius: 999px;
+  right: 12px;
+  left: 12px;
+  height: 8px;
+  z-index: 12;
   cursor: ns-resize;
   touch-action: none;
 }
 
-.workspace-resize-handle::after {
-  content: '';
-  position: absolute;
-  top: 5px;
-  right: 0;
-  left: 0;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--border);
-  opacity: .8;
-  transition: background 150ms, opacity 150ms;
-}
+.panel-resize-edge-top { top: -4px; }
+.panel-resize-edge-bottom { bottom: -4px; }
 
-.workspace-resize-handle:hover::after,
-.workspace-resize-handle:active::after {
-  background: var(--accent);
-  opacity: 1;
+.panel-resize-edge:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 
 @keyframes panel-open {
