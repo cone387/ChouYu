@@ -41,6 +41,7 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -104,9 +105,12 @@
 .settings-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 18px;
   min-width: 0;
   position: relative;
+  scrollbar-gutter: stable;
 }
 
 .settings-content::-webkit-scrollbar {
@@ -165,7 +169,17 @@
 .settings-diagnostic-item.disabled { border-color:var(--divider); }
 
 @media (max-width: 520px) {
+  .settings-nav { width: 96px; padding: 8px 6px; }
+  .settings-nav-item { gap: 6px; padding: 7px 6px; font-size: 11px; }
+  .settings-content { padding: 12px; }
   .settings-diagnostics { grid-template-columns:1fr; }
+}
+
+@media (max-height: 620px) {
+  .settings-content { padding-top: 12px; padding-bottom: 12px; }
+  .settings-pane-heading { margin-bottom: 10px; }
+  .settings-card { margin-bottom: 10px; padding: 12px; }
+  .settings-field { margin-bottom: 10px; }
 }
 
 @keyframes settings-fade {
