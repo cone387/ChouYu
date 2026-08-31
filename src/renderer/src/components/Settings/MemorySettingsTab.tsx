@@ -36,6 +36,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'all' | 'active' | 'pending' | 'archived'>('all')
   const [type, setType] = useState<'all' | MemoryType>('all')
+  const [sortBy, setSortBy] = useState<'updated' | 'importance' | 'usage'>('updated')
   const [editingId, setEditingId] = useState('')
   const [editingContent, setEditingContent] = useState('')
   const [newContent, setNewContent] = useState('')
@@ -467,6 +468,12 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const maxTypeCount = Math.max(1, ...insights.byType.map((item) => item.count))
   const maxWeeklyCount = Math.max(1, ...insights.createdByWeek.map((item) => item.count))
   const selectedTopicType = memories.find((memory) => topicSelection.has(memory.id))?.type
+  const orderedMemories = [...memories].sort((left, right) => sortBy === 'importance'
+    ? right.importance - left.importance || right.updatedAt - left.updatedAt
+    : sortBy === 'usage'
+      ? right.accessCount - left.accessCount || right.updatedAt - left.updatedAt
+      : right.updatedAt - left.updatedAt)
+  const memoryTypeCounts = Object.fromEntries((Object.keys(TYPE_LABELS) as MemoryType[]).map((memoryType) => [memoryType, memories.filter((memory) => memory.type === memoryType).length])) as Record<MemoryType, number>
   const memoryEngineCapabilities = capabilities.filter((item) => item.kind === 'memory-engine')
   const embeddingCapabilities = capabilities.filter((item) => item.kind === 'embedding')
   const syncCapabilities = capabilities.filter((item) => item.kind === 'memory-sync')
@@ -703,10 +710,13 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           <option value="all">全部类型</option>
           {Object.entries(TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
+        <select value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)} aria-label="记忆排序"><option value="updated">最近更新</option><option value="importance">重要度</option><option value="usage">使用次数</option></select>
       </div>
 
+      <div className="memory-library-summary"><span>显示 <strong>{orderedMemories.length}</strong> 条记忆</span><div className="memory-type-chips"><button type="button" className={type === 'all' ? 'active' : ''} onClick={() => setType('all')}>全部</button>{(Object.keys(TYPE_LABELS) as MemoryType[]).map((memoryType) => <button type="button" key={memoryType} className={type === memoryType ? 'active' : ''} onClick={() => setType(memoryType)}>{TYPE_LABELS[memoryType]} <b>{memoryTypeCounts[memoryType] || 0}</b></button>)}</div></div>
+
       <div className="memory-list">
-        {memories.map((memory) => {
+        {orderedMemories.map((memory) => {
           const conflicts = memory.conflicts?.filter((conflict) => conflict.status === 'pending') || []
           return <article key={memory.id} data-memory-id={memory.id} className={`memory-card status-${memory.status}${conflicts.length ? ' has-conflict' : ''}${focusMemoryId === memory.id ? ' is-focused' : ''}`}>
             <div className="memory-card-header">
