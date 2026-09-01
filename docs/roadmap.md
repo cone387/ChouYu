@@ -21,7 +21,7 @@
 ### 工程门禁
 
 - TypeScript 类型检查通过
-- Vitest 单元测试通过（当前 99 项）
+- Vitest 单元测试通过（当前 100 项）
 - Electron 生产构建通过
 - Electron 启动冒烟测试通过
 

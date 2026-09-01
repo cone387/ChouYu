@@ -57,6 +57,12 @@ describe('chat layout guardrails', () => {
     expect(panelSource).toContain('db.setState(SESSION_SIDEBAR_STATE_KEY')
     expect(panelSource).toContain('SESSION_SIDEBAR_WIDTH_STATE_KEY')
     expect(panelSource).toContain('aria-label="调整会话列表宽度"')
+    expect(panelSource).toContain('style={{ left: sessionSidebarWidth - 4 }}')
+    expect(panelSource).toContain('SESSION_SIDEBAR_WIDTH_STATE_KEY')
+    expect(panelSource).toContain('CHAT_CONTENT_WIDTH_STATE_KEY')
+    expect(panelSource).toContain('aria-label="调整聊天内容区宽度"')
+    expect(stylesheet).toMatch(/\.chat-content-resize-edge\s*\{[\s\S]*cursor:\s*ew-resize/)
+    expect(stylesheet).toMatch(/\.chat-content-resize-edge:hover,[\s\S]*box-shadow:\s*none/)
   })
 
   it('focuses the composer only on explicit chat-entry transitions', () => {

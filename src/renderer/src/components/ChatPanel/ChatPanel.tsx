@@ -26,7 +26,8 @@ import {
   PANEL_SETTINGS_HEIGHT,
   PANEL_SETTINGS_WIDTH,
   PANEL_MIN_HEIGHT,
-  PANEL_WIDTH,
+  CHAT_CONTENT_MAX_WIDTH,
+  CHAT_CONTENT_MIN_WIDTH,
   SESSION_SIDEBAR_MAX_WIDTH,
   SESSION_SIDEBAR_MIN_WIDTH,
 } from '../../shared/constants'
@@ -38,11 +39,13 @@ import { mergeSessionsInCurrentOrder } from '../../core/session-order'
 import {
   getDefaultPanelHeight,
   normalizePanelHeight,
+  normalizeChatContentWidth,
   normalizeSessionSidebarWidth,
   PANEL_HEIGHT_STATE_KEY,
   parseStoredSidebarVisibility,
   SESSION_SIDEBAR_STATE_KEY,
-  SESSION_SIDEBAR_WIDTH_STATE_KEY
+  SESSION_SIDEBAR_WIDTH_STATE_KEY,
+  CHAT_CONTENT_WIDTH_STATE_KEY
 } from '../../core/panel-state'
 import './ChatPanel.css'
 
@@ -82,6 +85,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [showSessions, setShowSessions] = useState(false)
   const [panelHeight, setPanelHeight] = useState(() => getDefaultPanelHeight(window.innerHeight))
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(() => normalizeSessionSidebarWidth(undefined))
+  const [chatContentWidth, setChatContentWidth] = useState(() => normalizeChatContentWidth(undefined))
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
@@ -101,6 +105,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
   const panelResizeRef = useRef({ resizing: false, edge: 'bottom' as 'top' | 'bottom', startY: 0, startHeight: 0, startTop: 0, currentHeight: 0 })
   const sidebarResizeRef = useRef({ resizing: false, startX: 0, startWidth: 0, currentWidth: 0 })
+  const contentResizeRef = useRef({ resizing: false, startX: 0, startWidth: 0, currentWidth: 0 })
   const initializedRef = useRef(false)
   const latestMessagesRef = useRef<Message[]>([])
   const activeSessionIdRef = useRef('')
@@ -209,14 +214,19 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     Promise.all([
       window.electronAPI.db.getState(PANEL_HEIGHT_STATE_KEY),
       window.electronAPI.db.getState(SESSION_SIDEBAR_STATE_KEY),
-      window.electronAPI.db.getState(SESSION_SIDEBAR_WIDTH_STATE_KEY)
-    ]).then(([storedHeight, storedSidebar, storedSidebarWidth]) => {
+      window.electronAPI.db.getState(SESSION_SIDEBAR_WIDTH_STATE_KEY),
+      window.electronAPI.db.getState(CHAT_CONTENT_WIDTH_STATE_KEY)
+    ]).then(([storedHeight, storedSidebar, storedSidebarWidth, storedContentWidth]) => {
       setPanelHeight(normalizePanelHeight(storedHeight, window.innerHeight))
       setShowSessions(parseStoredSidebarVisibility(storedSidebar))
       setSessionSidebarWidth(normalizeSessionSidebarWidth(storedSidebarWidth))
+      setChatContentWidth(normalizeChatContentWidth(storedContentWidth, window.innerWidth, normalizeSessionSidebarWidth(storedSidebarWidth)))
     }).catch(() => {})
 
-    const clampToViewport = () => setPanelHeight((current) => normalizePanelHeight(current, window.innerHeight))
+    const clampToViewport = () => {
+      setPanelHeight((current) => normalizePanelHeight(current, window.innerHeight))
+      setChatContentWidth((current) => normalizeChatContentWidth(current, window.innerWidth, sessionSidebarWidth))
+    }
     window.addEventListener('resize', clampToViewport)
     return () => window.removeEventListener('resize', clampToViewport)
   }, [])
@@ -379,17 +389,40 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const handleSidebarResizeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!sidebarResizeRef.current.resizing) return
     const requested = sidebarResizeRef.current.startWidth + event.screenX - sidebarResizeRef.current.startX
-    const viewportMaximum = Math.max(SESSION_SIDEBAR_MIN_WIDTH, window.innerWidth - position.x - 328)
+    const viewportMaximum = Math.max(SESSION_SIDEBAR_MIN_WIDTH, window.innerWidth - position.x - chatContentWidth - 16)
     const nextWidth = Math.min(SESSION_SIDEBAR_MAX_WIDTH, viewportMaximum, Math.max(SESSION_SIDEBAR_MIN_WIDTH, requested))
     sidebarResizeRef.current.currentWidth = nextWidth
     setSessionSidebarWidth(nextWidth)
-  }, [position.x])
+  }, [chatContentWidth, position.x])
 
   const handleSidebarResizeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!sidebarResizeRef.current.resizing) return
     sidebarResizeRef.current.resizing = false
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     void window.electronAPI.db.setState(SESSION_SIDEBAR_WIDTH_STATE_KEY, String(sidebarResizeRef.current.currentWidth))
+  }, [])
+
+  const handleContentResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    contentResizeRef.current = { resizing: true, startX: event.screenX, startWidth: chatContentWidth, currentWidth: chatContentWidth }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }, [chatContentWidth])
+
+  const handleContentResizeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!contentResizeRef.current.resizing) return
+    const requested = contentResizeRef.current.startWidth + event.screenX - contentResizeRef.current.startX
+    const nextWidth = normalizeChatContentWidth(requested, window.innerWidth - position.x, showSessions && !showSettings ? sessionSidebarWidth : 0)
+    contentResizeRef.current.currentWidth = nextWidth
+    setChatContentWidth(nextWidth)
+  }, [position.x, sessionSidebarWidth, showSessions, showSettings])
+
+  const handleContentResizeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!contentResizeRef.current.resizing) return
+    contentResizeRef.current.resizing = false
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    void window.electronAPI.db.setState(CHAT_CONTENT_WIDTH_STATE_KEY, String(contentResizeRef.current.currentWidth))
   }, [])
 
   const toggleSessionSidebar = useCallback(() => {
@@ -842,7 +875,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       style={{
         left: position.x,
         top: position.y,
-        width: showSessions && !showSettings ? Math.min(PANEL_WIDTH + sessionSidebarWidth, window.innerWidth - 16) : undefined,
+        width: showSettings ? undefined : Math.min(chatContentWidth + (showSessions ? sessionSidebarWidth : 0), window.innerWidth - 16),
         height: !showSettings ? panelHeight : undefined,
         display: visible ? undefined : 'none'
       }}
@@ -864,6 +897,20 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           onRename={renameSession}
           onDelete={deleteSession}
           onExport={exportSession}
+        />
+      )}
+      {!showSettings && (
+        <div
+          className="chat-content-resize-edge"
+          style={{ left: (showSessions ? sessionSidebarWidth : 0) + chatContentWidth - 4 }}
+          data-interactive
+          role="separator"
+          aria-label="调整聊天内容区宽度"
+          aria-orientation="vertical"
+          onPointerDown={handleContentResizeStart}
+          onPointerMove={handleContentResizeMove}
+          onPointerUp={handleContentResizeEnd}
+          onPointerCancel={handleContentResizeEnd}
         />
       )}
       {showSessions && !showSettings && (
