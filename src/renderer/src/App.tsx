@@ -3,9 +3,11 @@ import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
 import { AppConfig, PetState } from './shared/types'
-import { DEFAULT_CONFIG, PANEL_COMPACT_HEIGHT, PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH, PANEL_WIDTH } from './shared/constants'
+import { DEFAULT_CONFIG, PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH, PANEL_WIDTH } from './shared/constants'
 import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
+import { clampPanelPosition, getCenteredPanelPosition } from './core/panel-position'
+import { getDefaultPanelHeight } from './core/panel-state'
 
 function App() {
   const [petPosition, setPetPosition] = useState({ x: window.innerWidth - 180, y: window.innerHeight - 180 })
@@ -44,11 +46,24 @@ function App() {
 
   useEffect(() => {
     window.electronAPI.db.getConfig().then(setConfig)
-    window.electronAPI.db.getState('pet-position').then((val) => {
-      if (val) {
-        try { setPetPosition(JSON.parse(val)) } catch {}
+    Promise.all([
+      window.electronAPI.db.getState('pet-position'),
+      window.electronAPI.db.getState('panel-position')
+    ]).then(([petValue, panelValue]) => {
+      if (petValue) {
+        try { setPetPosition(JSON.parse(petValue)) } catch {}
       }
-    }).catch(() => {}).finally(() => setPositionLoaded(true))
+      if (panelValue) {
+        try {
+          const parsed = JSON.parse(panelValue)
+          if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) {
+            setPanelPosition(clampPanelPosition({ x: parsed.x, y: parsed.y }, { width: PANEL_WIDTH, height: getDefaultPanelHeight(window.innerHeight) }, { width: window.innerWidth, height: window.innerHeight }))
+          }
+        } catch {}
+      }
+    }).catch(() => {}).finally(() => {
+      setPositionLoaded(true)
+    })
   }, [])
 
   useEffect(() => window.electronAPI.onConfigChanged(setConfig), [])
@@ -175,35 +190,23 @@ function App() {
     }
   }, [])
 
-  const calcPanelPosition = useCallback((petPos: { x: number; y: number }, panelH = PANEL_COMPACT_HEIGHT, panelW = PANEL_WIDTH) => {
-    const screenW = window.innerWidth
-    const screenH = window.innerHeight
-    const petCenterX = petPos.x + config.petSize / 2
-    const petCenterY = petPos.y + config.petSize / 2
-    const isLeft = petCenterX <= screenW / 2
-    const isTop = petCenterY < screenH / 3
+  const getDefaultPanelPosition = useCallback((panelH = getDefaultPanelHeight(window.innerHeight), panelW = PANEL_WIDTH) => {
+    return getCenteredPanelPosition(
+      { width: panelW, height: panelH },
+      { width: window.innerWidth, height: window.innerHeight }
+    )
+  }, [])
 
-    const gap = 4
+  const handlePanelPositionChange = useCallback((position: { x: number; y: number }) => {
+    setPanelPosition(position)
+    void window.electronAPI.db.setState('panel-position', JSON.stringify(position))
+  }, [])
 
-    let x = isLeft
-      ? petPos.x + config.petSize + gap
-      : petPos.x - panelW - gap
-
-    let y: number
-    if (isTop) {
-      y = petPos.y + config.petSize + gap
-    } else {
-      y = petPos.y - panelH - gap
-    }
-
-    // Clamp to screen
-    if (x < 4) x = 4
-    if (x + panelW > screenW - 4) x = screenW - panelW - 4
-    if (y < 4) y = 4
-    if (y + panelH > screenH - 4) y = screenH - panelH - 4
-
-    return { x, y }
-  }, [config.petSize])
+  const ensurePanelPosition = useCallback((panelH?: number, panelW?: number) => {
+    setPanelPosition((current) => current
+      ? clampPanelPosition(current, { width: panelW || PANEL_WIDTH, height: panelH || getDefaultPanelHeight(window.innerHeight) }, { width: window.innerWidth, height: window.innerHeight })
+      : getDefaultPanelPosition(panelH, panelW))
+  }, [getDefaultPanelPosition])
 
   const togglePanel = useCallback(() => {
     proactiveEngine.userActivity()
@@ -211,12 +214,12 @@ function App() {
     setPanelVisible((v) => {
       if (!v) {
         if (!panelInitialized) setPanelInitialized(true)
-        setPanelPosition(calcPanelPosition(petPosition))
+        ensurePanelPosition()
         window.focus()
       }
       return !v
     })
-  }, [petPosition, calcPanelPosition, panelInitialized])
+  }, [ensurePanelPosition, panelInitialized])
 
   const restoreClickThrough = useCallback(() => {
     ignoreRef.current = true
@@ -236,11 +239,11 @@ function App() {
   }, [restoreClickThrough])
 
   const openSettings = useCallback(() => {
-    setPanelPosition(calcPanelPosition(petPosition, PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH))
+    ensurePanelPosition(PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH)
     setPanelVisible(true)
     setPanelInitialized(true)
     setShowSettings(true)
-  }, [petPosition, calcPanelPosition])
+  }, [ensurePanelPosition])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onTogglePanel(togglePanel)
@@ -262,13 +265,13 @@ function App() {
   useEffect(() => {
     const cleanup = window.electronAPI.onPluginHotkey((pluginId) => {
       if (!panelInitialized) setPanelInitialized(true)
-      setPanelPosition(calcPanelPosition(petPosition))
+      ensurePanelPosition()
       setPanelVisible(true)
       setActivePluginId(pluginId)
       window.focus()
     })
     return cleanup
-  }, [petPosition, calcPanelPosition, panelInitialized])
+  }, [ensurePanelPosition, panelInitialized])
 
   const startScreenshot = useCallback((hidePanel: boolean, callback: (dataUrl: string) => void) => {
     screenshotCallbackRef.current = callback
@@ -308,10 +311,10 @@ function App() {
     setPendingDrop(file)
     // Open panel with the file attached
     if (!panelInitialized) setPanelInitialized(true)
-    setPanelPosition(calcPanelPosition(petPosition))
+    ensurePanelPosition()
     setPanelVisible(true)
     window.focus()
-  }, [petPosition, calcPanelPosition, panelInitialized])
+  }, [ensurePanelPosition, panelInitialized])
 
   const handleClipboardAction = useCallback((action: 'translate' | 'summarize' | 'ask') => {
     const text = clipboardText
@@ -326,10 +329,10 @@ function App() {
 
     setPendingClipboardMsg(msg)
     if (!panelInitialized) setPanelInitialized(true)
-    setPanelPosition(calcPanelPosition(petPosition))
+    ensurePanelPosition()
     setPanelVisible(true)
     window.focus()
-  }, [clipboardText, petPosition, calcPanelPosition, panelInitialized])
+  }, [clipboardText, ensurePanelPosition, panelInitialized])
 
   useEffect(() => {
     if (positionLoaded) {
@@ -397,7 +400,7 @@ function App() {
         <ChatPanel
           visible={panelVisible}
           position={panelPosition}
-          onPositionChange={setPanelPosition}
+          onPositionChange={handlePanelPositionChange}
           petState={petState}
           onPetStateChange={(state) => stateMachine.transition(state)}
           onHide={hidePanel}
