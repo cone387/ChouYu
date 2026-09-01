@@ -5,7 +5,8 @@ import { DEFAULT_APP_CONFIG, isAIConfigured, normalizeConfig, sanitizeConfigPatc
 
 describe('config', () => {
   it('keeps the bundled SOUL.md aligned with the default persona', () => {
-    expect(readFileSync(resolve(process.cwd(), 'data/SOUL.md'), 'utf8').trim()).toBe(DEFAULT_APP_CONFIG.soulMd.trim())
+    const normalizeNewlines = (value: string) => value.replace(/\r\n/g, '\n').trim()
+    expect(normalizeNewlines(readFileSync(resolve(process.cwd(), 'data/SOUL.md'), 'utf8'))).toBe(normalizeNewlines(DEFAULT_APP_CONFIG.soulMd))
   })
 
   it('upgrades the previous built-in persona while preserving custom personas', () => {
