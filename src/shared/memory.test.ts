@@ -4,6 +4,8 @@ import {
   buildMemoryClusters,
   compressMemoryResults,
   extractMemoryCandidates,
+  extractPersonName,
+  getPersonIdentityKey,
   extractMemoryKeywords,
   detectMemoryRelation,
   formatMemoryContext,
@@ -16,6 +18,13 @@ import {
 } from './memory'
 
 describe('memory foundation', () => {
+  it('normalizes identity memories to one profile key', () => {
+    expect(extractPersonName('\u6211\u53eb\u5c0f\u9c7c')).toBe('\u5c0f\u9c7c')
+    expect(extractPersonName('\u6211\u7684\u540d\u5b57\u662f\u5c0f\u9c7c\u3002')).toBe('\u5c0f\u9c7c')
+    expect(extractPersonName('\u6211\u7684\u540d\u5b57\u662f\u4ec0\u4e48')).toBeNull()
+    expect(getPersonIdentityKey('\u6211\u53eb\u5c0f\u9c7c')).toBe(getPersonIdentityKey('\u6211\u7684\u540d\u5b57\u662f\u5c0f\u9c7c'))
+  })
+
   it('extracts explicit and preference candidates', () => {
     expect(extractMemoryCandidates('请记住：我的显示器是 4K')[0]).toMatchObject({ type: 'fact', content: '我的显示器是 4K' })
     expect(extractMemoryCandidates('我偏好简洁的回答')[0]).toMatchObject({ type: 'preference', content: '我偏好简洁的回答' })

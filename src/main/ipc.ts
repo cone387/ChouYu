@@ -13,7 +13,6 @@ import {
   type MemoryListOptions,
   type MemoryType,
   containsSecret,
-  extractMemoryCandidates,
   shouldAutoWriteMemory
 } from '../shared/memory'
 import {
@@ -32,6 +31,7 @@ import {
   getMemoryProvider,
   createMemory,
   createMemoryTopic,
+  getIdentityProfile,
   getMemoryInsights,
   importMemories,
   indexMemory,
@@ -50,6 +50,7 @@ import {
   testMemorySync,
   testEmbedding
 } from './memory/service'
+import { extractMemoriesWithLLM } from './memory/llm-extractor'
 import {
   type AIToolCall,
   type ToolCatalogItem,
@@ -288,22 +289,27 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getMemoryProvider().stats()
   })
 
+  ipcMain.handle('memory:identity', () => getIdentityProfile())
+
   ipcMain.handle('memory:search', (_event, query: string, limit?: number) => {
     if (typeof query !== 'string' || !query.trim()) return []
     return searchMemories(query.slice(0, 4000), typeof limit === 'number' ? limit : 6)
   })
 
-  ipcMain.handle('memory:propose', (_event, text: string, sessionId?: string, messageId?: string) => {
+  ipcMain.handle('memory:propose', async (_event, text: string, sessionId?: string, messageId?: string) => {
     if (typeof text !== 'string' || text.length > 4000) return []
     const { memoryEnabled, memoryWriteMode, memoryAutoWriteConfidence } = getConfig()
     if (!memoryEnabled || memoryWriteMode === 'off') return []
-    const candidates = extractMemoryCandidates(text, {
-      sessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined,
-      messageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined
-    })
+    let candidates: Awaited<ReturnType<typeof extractMemoriesWithLLM>>
+    try {
+      candidates = await extractMemoriesWithLLM(text, getConfig())
+    } catch (error) {
+      console.warn('[Memory] LLM extraction failed; no memory written:', error)
+      return []
+    }
     return candidates.map((candidate) => memoryWriteMode === 'auto' && shouldAutoWriteMemory(candidate, memoryAutoWriteConfidence)
-      ? createMemory(candidate)
-      : proposeMemoryCandidate(candidate)).filter(Boolean)
+      ? createMemory({ ...candidate, sourceSessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined, sourceMessageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined })
+      : proposeMemoryCandidate({ ...candidate, sourceSessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined, sourceMessageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined })).filter(Boolean)
   })
 
   ipcMain.handle('memory:create', (_event, rawCandidate: MemoryCandidateInput) => {

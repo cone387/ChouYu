@@ -20,7 +20,7 @@ import type {
   MemorySyncStatus,
   MemoryType
 } from '../../shared/memory'
-import { buildMemoryClusters, compressMemoryResults, containsSecret, detectMemoryRelation, inferMemoryQueryTypes, isLikelyPersonName, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
+import { buildMemoryClusters, compressMemoryResults, containsSecret, detectMemoryRelation, extractPersonName, getPersonIdentityKey, inferMemoryQueryTypes, isLikelyPersonName, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
 import { getConfig, saveConfig } from '../database'
 import { cosineSimilarity } from './embedding-client'
 import { capabilityRegistry } from '../capabilities/registry'
@@ -86,6 +86,13 @@ export function createMemory(candidate: MemoryCandidateInput): MemoryRecord {
     const existing = memoryProvider.list({ status: 'all', limit: 2000 }).find((memory) => memory.normalizedKey === normalizedKey && memory.status !== 'archived')
     return existing || memoryProvider.createActive(candidate)
   }
+  // A direct, high-confidence name statement is the user's profile update.
+  // Replace the previous identity automatically instead of leaving a hidden
+  // pending conflict in the default automatic-write mode.
+  if (candidate.type === 'person' && extractPersonName(candidate.content) && proposed.conflicts?.some((conflict) => conflict.status === 'pending')) {
+    const replaced = resolveMemoryConflict(proposed.id, 'replace')
+    if (replaced) return replaced
+  }
   if (proposed.conflicts?.some((conflict) => conflict.status === 'pending')) return proposed
   const memory = memoryProvider.approve(proposed.id)
   void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index new memory:', error))
@@ -122,7 +129,21 @@ export function runMemoryMaintenance(): MemoryMaintenanceResult {
       return Boolean(match && !isLikelyPersonName(match[1]))
     })
     .map((memory) => memory.id)
-  const invalidArchivedIds = memoryProvider.archiveMany(invalidIdentityIds, 'cleanup')
+  const identityMemories = memoryProvider.list({ status: 'active', type: 'person', limit: 2000 })
+  const duplicateIdentityIds: string[] = []
+  const identityGroups = new Map<string, MemoryRecord[]>()
+  identityMemories
+    .filter((memory) => !invalidIdentityIds.includes(memory.id))
+    .forEach((memory) => {
+      const key = getPersonIdentityKey(memory.content)
+      if (!key) return
+      identityGroups.set(key, [...(identityGroups.get(key) || []), memory])
+    })
+  identityGroups.forEach((group) => {
+    group.sort((left, right) => right.confidence - left.confidence || right.updatedAt - left.updatedAt)
+    duplicateIdentityIds.push(...group.slice(1).map((memory) => memory.id))
+  })
+  const invalidArchivedIds = memoryProvider.archiveMany([...invalidIdentityIds, ...duplicateIdentityIds], 'cleanup')
   const expiredIds = memoryProvider.expireDue()
   const capacityIds = memoryProvider.enforceCapacity(getConfig().memoryMaxItems)
   return {
@@ -130,6 +151,14 @@ export function runMemoryMaintenance(): MemoryMaintenanceResult {
     capacityArchived: capacityIds.length,
     archivedIds: [...invalidArchivedIds, ...expiredIds, ...capacityIds]
   }
+}
+
+export function getIdentityProfile(): MemoryRecord | null {
+  runMemoryMaintenance()
+  const people = getMemoryProvider().list({ status: 'active', type: 'person', limit: 2000 })
+    .filter((memory) => Boolean(extractPersonName(memory.content)))
+    .sort((left, right) => right.confidence - left.confidence || right.updatedAt - left.updatedAt)
+  return people[0] || null
 }
 
 export function listMemoryClusters(): MemoryCluster[] {

@@ -53,6 +53,14 @@ describe('settings layout guardrails', () => {
     expect(toolsSource).toContain('完全访问')
   })
 
+  it('surfaces a dedicated identity profile backed by person memories', () => {
+    expect(memorySource).toContain('memory.identity()')
+    expect(memorySource).toContain('memory-identity-card')
+    expect(memorySource).toContain("querySelector('.memory-library')")
+    expect(memorySource).toContain('void refresh()')
+    expect(memoryStylesheet).toContain('.memory-identity-card')
+  })
+
   it('keeps the persona editor large with a thin, neutral scrollbar', () => {
     expect(stylesheet).toMatch(/\.settings-persona-pane\s*\{[\s\S]*display:\s*flex/)
     expect(stylesheet).toMatch(/\.settings-persona-card\s*\{[\s\S]*flex:\s*1/)

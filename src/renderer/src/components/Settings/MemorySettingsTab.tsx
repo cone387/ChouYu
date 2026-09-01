@@ -32,6 +32,7 @@ const EMPTY_INSIGHTS: MemoryInsights = { byType: [], createdByWeek: [], archiveR
 
 export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveConfig, focusMemoryId }: MemorySettingsTabProps) {
   const [memories, setMemories] = useState<MemoryRecord[]>([])
+  const [identity, setIdentity] = useState<MemoryRecord | null>(null)
   const [stats, setStats] = useState<MemoryStats>({ active: 0, pending: 0, archived: 0, databaseSize: 0, embeddings: 0, expiringSoon: 0 })
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'all' | 'active' | 'pending' | 'archived'>('active')
@@ -97,14 +98,16 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const refresh = useCallback(async () => {
     setError('')
     try {
-      const [items, nextStats, nextInsights] = await Promise.all([
+      const [items, nextStats, nextInsights, nextIdentity] = await Promise.all([
         window.electronAPI.memory.list({ query, status, type, limit: 500 }),
         window.electronAPI.memory.stats(),
-        window.electronAPI.memory.insights()
+        window.electronAPI.memory.insights(),
+        window.electronAPI.memory.identity()
       ])
       setMemories(items)
       setStats(nextStats)
       setInsights(nextInsights)
+      setIdentity(nextIdentity)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '记忆中心加载失败。')
     }
@@ -501,6 +504,22 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         </label>
       </div>
 
+      <section className="memory-identity-card" aria-labelledby="memory-identity-title">
+        <div className="memory-identity-copy">
+          <strong id="memory-identity-title">你的身份档案</strong>
+          <span>{identity ? identity.content : '还没有可靠的姓名记录。可以在聊天中说“我叫……”来建立身份档案。'}</span>
+        </div>
+        <button type="button" className="settings-secondary-btn" onClick={() => {
+          setType('person')
+          setStatus('active')
+          setQuery('')
+          void refresh()
+          requestAnimationFrame(() => document.querySelector('.memory-library')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+        }}>
+          {identity ? '在记忆列表中编辑' : '查看人物记忆'}
+        </button>
+      </section>
+
       <section className="memory-write-mode-card" aria-labelledby="memory-write-mode-title">
         <div>
           <strong id="memory-write-mode-title">记忆写入方式</strong>
@@ -736,7 +755,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         </div>
       )}
 
-      <div className="memory-toolbar">
+      <div className="memory-toolbar memory-library">
         <label>
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索记忆…" aria-label="搜索记忆" />

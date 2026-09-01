@@ -5,6 +5,11 @@
 .memory-master-card strong,.memory-master-card span { display:block; }
 .memory-master-card strong { color:var(--text-primary); font-size:11px; }
 .memory-master-card span { margin-top:3px; color:var(--text-secondary); font-size:9px; line-height:1.4; }
+.memory-identity-card { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:8px; padding:12px 14px; border:1px solid color-mix(in srgb, var(--accent) 22%, var(--border)); border-radius:10px; background:color-mix(in srgb, var(--accent) 8%, var(--bg-panel)); }
+.memory-identity-copy { display:grid; gap:4px; min-width:0; }
+.memory-identity-copy strong { color:var(--text-primary); font-size:11px; }
+.memory-identity-copy span { color:var(--text-muted); font-size:9px; line-height:1.4; overflow-wrap:anywhere; }
+@media (max-width:560px) { .memory-identity-card { align-items:flex-start; flex-direction:column; } }
 .memory-write-mode-card { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; padding:9px 10px; border:1px solid var(--border); border-radius:10px; background:var(--bg-secondary); }
 .memory-write-mode-card strong,.memory-write-mode-card span { display:block; }
 .memory-write-mode-card strong { color:var(--text-primary); font-size:10px; }

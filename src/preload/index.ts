@@ -60,6 +60,7 @@ const api = {
   },
   memory: {
     list: (options?: MemoryListOptions) => ipcRenderer.invoke('memory:list', options) as Promise<MemoryRecord[]>,
+    identity: () => ipcRenderer.invoke('memory:identity') as Promise<MemoryRecord | null>,
     stats: () => ipcRenderer.invoke('memory:stats') as Promise<MemoryStats>,
     search: (query: string, limit?: number) => ipcRenderer.invoke('memory:search', query, limit) as Promise<MemorySearchResult[]>,
     propose: (text: string, sessionId?: string, messageId?: string) => ipcRenderer.invoke('memory:propose', text, sessionId, messageId) as Promise<MemoryRecord[]>,

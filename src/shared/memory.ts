@@ -282,6 +282,21 @@ export function isLikelyPersonName(value: string): boolean {
   return !/^(?:不上|不出|不来|不知道|不记得|不确定|想不起来|忘了|什么|啥|谁|没有)(?:\s|$)/i.test(normalized)
 }
 
+/** Returns the user's canonical name when a memory is an identity statement. */
+export function extractPersonName(value: string): string | null {
+  const normalized = value.trim().replace(/[\u3002\uff01\uff1f!?\uff0c,\uff1b;\uff1a:]+$/u, '').trim()
+  const match = normalized.match(/^(?:\u6211\u7684\u540d\u5b57\u662f|\u6211\u53eb|\u4f60\u53ef\u4ee5\u53eb\u6211|my name is)\s*(.+)$/iu)
+  if (!match) return null
+  const name = match[1].replace(/^[\uff1a:\uff0c,\s]+|[\u3002\uff01\uff1f!?\uff0c,\uff1b;\uff1a:]+$/gu, '').trim()
+  if (!name || /^(?:\u4ec0\u4e48|\u4ec0\u4e48\u540d\u5b57|\u8c01|\u4e0d\u77e5\u9053|\u5fd8\u4e86|what|who|unknown)$/iu.test(name)) return null
+  return isLikelyPersonName(name) ? name : null
+}
+
+export function getPersonIdentityKey(value: string): string {
+  const name = extractPersonName(value)
+  return name ? normalizeMemoryKey(name) : ''
+}
+
 export function extractMemoryCandidates(
   text: string,
   source?: { sessionId?: string; messageId?: string }

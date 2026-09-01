@@ -99,6 +99,7 @@ export interface ElectronAPI {
   }
   memory: {
     list: (options?: MemoryListOptions) => Promise<MemoryRecord[]>
+    identity: () => Promise<MemoryRecord | null>
     stats: () => Promise<MemoryStats>
     search: (query: string, limit?: number) => Promise<MemorySearchResult[]>
     propose: (text: string, sessionId?: string, messageId?: string) => Promise<MemoryRecord[]>
