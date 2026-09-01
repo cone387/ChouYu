@@ -168,17 +168,40 @@
   text-align: left;
 }
 
-.conversation-item-title,
+.conversation-item-title-row,
 .conversation-item-preview {
   width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   padding-right: 34px;
 }
 
+.conversation-item-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.conversation-item-title,
+.conversation-item-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .conversation-item-title {
+  min-width: 0;
+  flex: 1;
   font-size: 12px;
+  font-weight: 600;
+}
+
+.conversation-item-streaming {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  color: var(--accent);
+  font-size: 8px;
   font-weight: 600;
 }
 

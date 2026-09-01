@@ -18,6 +18,7 @@ interface InputAreaProps {
   onStop?: () => void
   disabled: boolean
   autoFocus?: boolean
+  focusRequest?: number
   model?: string
   onModelChange?: (model: string) => void
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
@@ -29,7 +30,7 @@ interface InputAreaProps {
   onInitialAttachmentConsumed?: () => void
 }
 
-export default function InputArea({ onSend, onStop, disabled, autoFocus, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed }: InputAreaProps) {
+export default function InputArea({ onSend, onStop, disabled, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
@@ -50,6 +51,7 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
   const [captureSourcesError, setCaptureSourcesError] = useState('')
   const [recentCaptures, setRecentCaptures] = useState<PendingAttachment[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const initialFocusDoneRef = useRef(false)
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current
@@ -63,13 +65,17 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, model, 
   }, [value, resizeTextarea])
 
   useEffect(() => {
-    if (autoFocus === false) return
-    const tryFocus = () => textareaRef.current?.focus()
-    tryFocus()
-    const t1 = setTimeout(tryFocus, 100)
-    const t2 = setTimeout(tryFocus, 300)
-    return () => { clearTimeout(t1); clearTimeout(t2) }
-  }, [])
+    if (autoFocus === false || disabled || initialFocusDoneRef.current) return
+    initialFocusDoneRef.current = true
+    const frame = requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(frame)
+  }, [autoFocus, disabled])
+
+  useEffect(() => {
+    if (focusRequest <= 0 || disabled) return
+    const frame = requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(frame)
+  }, [focusRequest])
 
   useEffect(() => {
     if (initialActivePlugin) {

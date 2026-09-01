@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getDefaultPanelHeight, normalizePanelHeight, parseStoredSidebarVisibility } from './panel-state'
+import { getDefaultPanelHeight, normalizePanelHeight, normalizeSessionSidebarWidth, parseStoredSidebarVisibility } from './panel-state'
 
 describe('panel UI state', () => {
   it('derives a responsive default with safe bounds', () => {
@@ -19,5 +19,12 @@ describe('panel UI state', () => {
     expect(parseStoredSidebarVisibility('true')).toBe(true)
     expect(parseStoredSidebarVisibility('false')).toBe(false)
     expect(parseStoredSidebarVisibility(null)).toBe(false)
+  })
+
+  it('restores sidebar width within its supported range', () => {
+    expect(normalizeSessionSidebarWidth('300')).toBe(300)
+    expect(normalizeSessionSidebarWidth('100')).toBe(220)
+    expect(normalizeSessionSidebarWidth('600')).toBe(380)
+    expect(normalizeSessionSidebarWidth('invalid')).toBe(252)
   })
 })

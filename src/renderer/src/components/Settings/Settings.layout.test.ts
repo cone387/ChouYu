@@ -45,6 +45,8 @@ describe('settings layout guardrails', () => {
     expect(memorySource).toContain('记忆写入方式')
     expect(memorySource).toContain('自动写入（推荐）')
     expect(memorySource).toContain('每次确认')
+    expect(memorySource).toContain('自动写入严格度')
+    expect(memorySource).toContain('平衡（推荐）')
     expect(toolsSource).toContain('操作权限')
     expect(toolsSource).toContain('手动确认')
     expect(toolsSource).toContain('自动审核')

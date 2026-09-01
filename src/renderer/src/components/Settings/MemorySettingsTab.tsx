@@ -34,7 +34,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [memories, setMemories] = useState<MemoryRecord[]>([])
   const [stats, setStats] = useState<MemoryStats>({ active: 0, pending: 0, archived: 0, databaseSize: 0, embeddings: 0, expiringSoon: 0 })
   const [query, setQuery] = useState('')
-  const [status, setStatus] = useState<'all' | 'active' | 'pending' | 'archived'>('all')
+  const [status, setStatus] = useState<'all' | 'active' | 'pending' | 'archived'>('active')
   const [type, setType] = useState<'all' | MemoryType>('all')
   const [sortBy, setSortBy] = useState<'updated' | 'importance' | 'usage'>('updated')
   const [editingId, setEditingId] = useState('')
@@ -512,15 +512,31 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
                 : '不从聊天内容提取新记忆，但已有记忆仍可检索。'}
           </span>
         </div>
-        <select
-          value={config.memoryWriteMode}
-          aria-label="记忆写入方式"
-          onChange={(event) => { void onSaveConfig({ memoryWriteMode: event.target.value as AppConfig['memoryWriteMode'] }) }}
-        >
-          <option value="auto">自动写入（推荐）</option>
-          <option value="confirm">每次确认</option>
-          <option value="off">关闭写入</option>
-        </select>
+        <div className="memory-write-mode-controls">
+          <select
+            value={config.memoryWriteMode}
+            aria-label="记忆写入方式"
+            onChange={(event) => { void onSaveConfig({ memoryWriteMode: event.target.value as AppConfig['memoryWriteMode'] }) }}
+          >
+            <option value="auto">自动写入（推荐）</option>
+            <option value="confirm">每次确认</option>
+            <option value="off">关闭写入</option>
+          </select>
+          {config.memoryWriteMode === 'auto' && (
+            <label>
+              <span>自动写入严格度</span>
+              <select
+                value={config.memoryAutoWriteConfidence}
+                aria-label="自动写入严格度"
+                onChange={(event) => { void onSaveConfig({ memoryAutoWriteConfidence: Number(event.target.value) }) }}
+              >
+                <option value="0.95">谨慎</option>
+                <option value="0.85">平衡（推荐）</option>
+                <option value="0.8">宽松</option>
+              </select>
+            </label>
+          )}
+        </div>
       </section>
 
       <section className="memory-capability-card">

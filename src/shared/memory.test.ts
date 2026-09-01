@@ -8,9 +8,11 @@ import {
   detectMemoryRelation,
   formatMemoryContext,
   getMemoryCleanupReasons,
+  inferMemoryQueryTypes,
   mergeHybridMemoryResults,
   scoreMemory,
-  scoreMemoryLifecycle
+  scoreMemoryLifecycle,
+  shouldAutoWriteMemory
 } from './memory'
 
 describe('memory foundation', () => {
@@ -20,9 +22,43 @@ describe('memory foundation', () => {
     expect(extractMemoryCandidates('我叫小鱼')[0]).toMatchObject({ type: 'person', content: '我的名字是 小鱼' })
   })
 
+  it('uses confidence thresholds to separate automatic writes from review', () => {
+    const explicit = extractMemoryCandidates('请记住：我的显示器是 4K')[0]
+    const name = extractMemoryCandidates('我叫小鱼')[0]
+    const preference = extractMemoryCandidates('我偏好简洁的回答')[0]
+
+    expect(shouldAutoWriteMemory(explicit, 0.95)).toBe(true)
+    expect(shouldAutoWriteMemory(name, 0.85)).toBe(true)
+    expect(shouldAutoWriteMemory(preference, 0.85)).toBe(false)
+    expect(shouldAutoWriteMemory(preference, 0.8)).toBe(true)
+  })
+
+  it('routes identity and preference questions to the matching global memory types', () => {
+    expect(inferMemoryQueryTypes('我是谁？')).toEqual(['person'])
+    expect(inferMemoryQueryTypes('你还记得我叫什么吗')).toEqual(['person'])
+    expect(inferMemoryQueryTypes('我喜欢什么？')).toEqual(['preference'])
+    expect(inferMemoryQueryTypes('普通聊天')).toEqual([])
+  })
+
   it('blocks secrets from becoming memories', () => {
     expect(containsSecret('api_key: sk-abcdefghijklmnopqrstuvwxyz')).toBe(true)
     expect(extractMemoryCandidates('请记住：密码是 hunter2')).toEqual([])
+  })
+
+  it('rejects questions, jokes, hypotheticals, quoted claims, and invalid names', () => {
+    expect(extractMemoryCandidates('我喜欢什么？')).toEqual([])
+    expect(extractMemoryCandidates('我喜欢红色，开玩笑的')).toEqual([])
+    expect(extractMemoryCandidates('如果我喜欢红色，就买这个')).toEqual([])
+    expect(extractMemoryCandidates('小明说我喜欢红色')).toEqual([])
+    expect(extractMemoryCandidates('我叫不上')).toEqual([])
+    expect(extractMemoryCandidates('我叫不上 亲')).toEqual([])
+    expect(extractMemoryCandidates('我的名字是什么')).toEqual([])
+  })
+
+  it('downgrades uncertain statements so they require review', () => {
+    const candidate = extractMemoryCandidates('我可能不喜欢太长的回答')[0]
+    expect(candidate).toMatchObject({ type: 'preference', confidence: 0.65 })
+    expect(shouldAutoWriteMemory(candidate, 0.8)).toBe(false)
   })
 
   it('extracts Chinese bigrams and ranks relevant memories higher', () => {

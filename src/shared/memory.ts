@@ -260,39 +260,82 @@ function detectSensitivity(value: string): MemorySensitivity {
   return /(?:邮箱|邮件|电话|手机号|住址|地址|身份证|生日|email|phone|address)/i.test(value) ? 'sensitive' : 'normal'
 }
 
+function isExplicitRememberStatement(value: string): boolean {
+  return /^(?:(?:请)?记住|remember(?: that)?)[：,:\s]/i.test(value)
+}
+
+function shouldIgnoreImplicitMemory(value: string): boolean {
+  if (/[?？]\s*$/.test(value)) return true
+  if (/^(?:如果|假如|要是|假设|假定|if\b)/i.test(value)) return true
+  return /(?:开玩笑|逗你的|随便说说|当我没说|不是认真的|我瞎说的|just kidding)/i.test(value)
+}
+
+function adjustImplicitConfidence(value: string, confidence: number): number {
+  return /(?:可能|也许|大概|或许|不确定|我猜|maybe|probably|perhaps)/i.test(value)
+    ? Math.min(confidence, 0.65)
+    : confidence
+}
+
+export function isLikelyPersonName(value: string): boolean {
+  const normalized = value.replace(/[。.!！?？].*$/, '').trim()
+  if (!normalized || normalized.length > 40) return false
+  return !/^(?:不上|不出|不来|不知道|不记得|不确定|想不起来|忘了|什么|啥|谁|没有)(?:\s|$)/i.test(normalized)
+}
+
 export function extractMemoryCandidates(
   text: string,
   source?: { sessionId?: string; messageId?: string }
 ): MemoryCandidateInput[] {
   const trimmed = text.trim()
   if (!trimmed || trimmed.length > 4000 || containsSecret(trimmed)) return []
+  const explicitRemember = isExplicitRememberStatement(trimmed)
+  if (!explicitRemember && shouldIgnoreImplicitMemory(trimmed)) return []
 
   const rules: Array<{ pattern: RegExp; type: MemoryType; importance: number; confidence: number }> = [
     { pattern: /^(?:请)?记住[：,:\s]*(.+)$/i, type: 'fact', importance: 0.9, confidence: 0.96 },
     { pattern: /^remember(?: that)?[：,:\s]*(.+)$/i, type: 'fact', importance: 0.9, confidence: 0.96 },
-    { pattern: /(?:我喜欢|我偏好|我习惯|我不喜欢|I (?:like|prefer|dislike))\s*(.+)/i, type: 'preference', importance: 0.72, confidence: 0.82 },
-    { pattern: /(?:我叫|我的名字是|你可以叫我|my name is)\s*(.+)/i, type: 'person', importance: 0.82, confidence: 0.9 },
-    { pattern: /(?:我的项目|我正在做|我在开发|my project|I'm working on)\s*(.+)/i, type: 'project', importance: 0.75, confidence: 0.8 },
-    { pattern: /(?:以后请|下次请|每次都|always|from now on)\s*(.+)/i, type: 'workflow', importance: 0.8, confidence: 0.82 }
+    { pattern: /^(?:(?:其实|目前|现在|最近)\s*)?(?:我(?:可能|也许|大概|或许)?(?:喜欢|偏好|习惯|不喜欢)|I (?:like|prefer|dislike))\s*(.+)/i, type: 'preference', importance: 0.72, confidence: 0.82 },
+    { pattern: /^(?:(?:其实|目前|现在)\s*)?(?:我叫|我的名字是|你可以叫我|my name is)\s*(.+)/i, type: 'person', importance: 0.82, confidence: 0.9 },
+    { pattern: /^(?:(?:目前|现在|最近)\s*)?(?:我的项目|我正在做|我在开发|my project|I'm working on)\s*(.+)/i, type: 'project', importance: 0.75, confidence: 0.8 },
+    { pattern: /^(?:以后请|下次请|每次都|always|from now on)\s*(.+)/i, type: 'workflow', importance: 0.8, confidence: 0.82 }
   ]
 
   for (const rule of rules) {
     const match = trimmed.match(rule.pattern)
     let content = cleanCandidateContent(match?.[1] || (match ? trimmed : ''))
     if (match && rule.type === 'preference') content = cleanCandidateContent(trimmed)
+    if (match && rule.type === 'person' && !isLikelyPersonName(content)) continue
     if (match && rule.type === 'person') content = `我的名字是 ${content}`
     if (!match || content.length < 2 || containsSecret(content)) continue
     return [{
       type: rule.type,
       content,
       importance: rule.importance,
-      confidence: rule.confidence,
+      confidence: explicitRemember ? rule.confidence : adjustImplicitConfidence(trimmed, rule.confidence),
       sensitivity: detectSensitivity(content),
       sourceSessionId: source?.sessionId,
       sourceMessageId: source?.messageId
     }]
   }
   return []
+}
+
+export function shouldAutoWriteMemory(
+  candidate: Pick<MemoryCandidateInput, 'confidence'>,
+  confidenceThreshold: number
+): boolean {
+  const threshold = Math.min(0.95, Math.max(0.8, confidenceThreshold))
+  return candidate.confidence >= threshold
+}
+
+export function inferMemoryQueryTypes(query: string): MemoryType[] {
+  const normalized = query.trim().toLowerCase()
+  const types: MemoryType[] = []
+  if (/(?:我是谁|我叫什么|我的名字|你(?:还)?记得我(?:是谁|叫什么)?|who am i|what(?:'s| is) my name)/i.test(normalized)) types.push('person')
+  if (/(?:我喜欢什么|我不喜欢什么|我的偏好|我的习惯|what do i (?:like|prefer))/i.test(normalized)) types.push('preference')
+  if (/(?:我在做什么|我的项目|我在开发什么|what am i working on)/i.test(normalized)) types.push('project')
+  if (/(?:我的工作方式|我习惯怎么|以后应该怎么|my workflow)/i.test(normalized)) types.push('workflow')
+  return types
 }
 
 export function scoreMemory(

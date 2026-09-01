@@ -37,4 +37,30 @@ describe('AI stream parsers', () => {
       '尚未配置 API Key'
     )
   })
+
+  it('exposes the request id before streaming so events can be routed by session', async () => {
+    let streamListener: ((event: { requestId: string; chunk: string; done: boolean }) => void) | undefined
+    const onRequestStart = vi.fn()
+    const onChunk = vi.fn()
+    vi.stubGlobal('window', {
+      electronAPI: {
+        ai: {
+          onStreamEvent(callback: typeof streamListener) { streamListener = callback; return () => {} },
+          cancelStream: vi.fn(),
+          async startStream(request: { requestId: string }) {
+            streamListener?.({ requestId: request.requestId, chunk: '好', done: false })
+            streamListener?.({ requestId: request.requestId, chunk: '', done: true })
+            return { ok: true }
+          }
+        }
+      }
+    })
+
+    await streamChat([], '', { ...DEFAULT_APP_CONFIG, apiKey: 'key', model: 'model' }, onChunk, undefined, onRequestStart)
+
+    expect(onRequestStart).toHaveBeenCalledOnce()
+    expect(onChunk).toHaveBeenCalledWith('好', false)
+    expect(onChunk).toHaveBeenCalledWith('', true)
+    vi.unstubAllGlobals()
+  })
 })

@@ -13,7 +13,8 @@ import {
   type MemoryListOptions,
   type MemoryType,
   containsSecret,
-  extractMemoryCandidates
+  extractMemoryCandidates,
+  shouldAutoWriteMemory
 } from '../shared/memory'
 import {
   type CaptureSourceInfo,
@@ -294,13 +295,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('memory:propose', (_event, text: string, sessionId?: string, messageId?: string) => {
     if (typeof text !== 'string' || text.length > 4000) return []
-    const { memoryEnabled, memoryWriteMode } = getConfig()
+    const { memoryEnabled, memoryWriteMode, memoryAutoWriteConfidence } = getConfig()
     if (!memoryEnabled || memoryWriteMode === 'off') return []
     const candidates = extractMemoryCandidates(text, {
       sessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined,
       messageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined
     })
-    return candidates.map((candidate) => memoryWriteMode === 'auto' ? createMemory(candidate) : proposeMemoryCandidate(candidate)).filter(Boolean)
+    return candidates.map((candidate) => memoryWriteMode === 'auto' && shouldAutoWriteMemory(candidate, memoryAutoWriteConfidence)
+      ? createMemory(candidate)
+      : proposeMemoryCandidate(candidate)).filter(Boolean)
   })
 
   ipcMain.handle('memory:create', (_event, rawCandidate: MemoryCandidateInput) => {

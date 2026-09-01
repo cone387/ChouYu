@@ -13,10 +13,11 @@ interface MemoryCandidateCardProps {
   candidate: MemoryRecord
   remaining: number
   busy?: boolean
+  reviewReason?: string
   onResolve: (action: MemoryConflictAction | 'approve') => void
 }
 
-export default function MemoryCandidateCard({ candidate, remaining, busy, onResolve }: MemoryCandidateCardProps) {
+export default function MemoryCandidateCard({ candidate, remaining, busy, reviewReason, onResolve }: MemoryCandidateCardProps) {
   const conflicts = candidate.conflicts?.filter((conflict) => conflict.status === 'pending') || []
   const conflict = conflicts[0]
   return (
@@ -33,6 +34,14 @@ export default function MemoryCandidateCard({ candidate, remaining, busy, onReso
           {candidate.sensitivity === 'sensitive' && <span className="sensitive">敏感信息</span>}
         </div>
         <p>{candidate.content}</p>
+        {reviewReason && !conflict && (
+          <div className="memory-candidate-review-note" role="note">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+              <circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 4.5v.5"/>
+            </svg>
+            <span>{reviewReason}</span>
+          </div>
+        )}
         {conflict && (
           <div className="memory-candidate-conflict">
             <div className="memory-candidate-conflict-title">

@@ -72,6 +72,20 @@
   font-size: 8px;
 }
 
+.memory-candidate-review-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 6px 0 4px;
+  padding: 6px 7px;
+  border-radius: 7px;
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.memory-candidate-review-note svg { flex: 0 0 auto; margin-top: 1px; }
+.memory-candidate-review-note span { padding: 0; background: transparent; color: inherit; font-size: 9px; line-height: 1.4; }
+
 .memory-candidate-conflict {
   margin: 7px 0 5px;
   padding: 7px;

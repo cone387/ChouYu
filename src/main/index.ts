@@ -7,7 +7,7 @@ import { initDatabase, getConfig, flushDatabase } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
-import { closeMemory, createMemoryTopic, getMemoryInsights, getMemoryProvider, importMemories, initializeMemory, listMemoryClusters, previewMemoryImport, proposeMemoryCandidate, searchMemories, splitMemoryCluster } from './memory/service'
+import { closeMemory, createMemoryTopic, getMemoryInsights, getMemoryProvider, importMemories, initializeMemory, listMemoryClusters, previewMemoryImport, proposeMemoryCandidate, runMemoryMaintenance, searchMemories, splitMemoryCluster } from './memory/service'
 import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 import { registerBuiltInCapabilities } from './capabilities/builtins'
 import { capabilityRegistry } from './capabilities/registry'
@@ -132,6 +132,17 @@ app.whenReady().then(async () => {
       sourceSessionId: 'smoke-session'
     })
     if (memoryProvider.search('回答风格', 3).length === 0) throw new Error('Memory smoke test failed')
+
+    const identityMemory = memoryProvider.createActive({
+      type: 'person', content: '我的名字是 Smoke User', importance: 0.9, confidence: 1, sensitivity: 'normal'
+    })
+    const identityResults = await searchMemories('我是谁', 3)
+    if (!identityResults.some((memory) => memory.id === identityMemory.id)) throw new Error('Cross-session identity retrieval smoke test failed')
+    memoryProvider.delete(identityMemory.id)
+    const invalidIdentity = memoryProvider.createActive({
+      type: 'person', content: '我的名字是什么', importance: 0.8, confidence: 0.9, sensitivity: 'normal'
+    })
+    if (!runMemoryMaintenance().archivedIds.includes(invalidIdentity.id)) throw new Error('Invalid identity cleanup smoke test failed')
 
     const oldMemory = memoryProvider.createActive({
       type: 'fact',

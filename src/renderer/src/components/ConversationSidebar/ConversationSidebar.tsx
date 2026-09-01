@@ -6,6 +6,8 @@ import './ConversationSidebar.css'
 interface ConversationSidebarProps {
   sessions: ChatSessionSummary[]
   activeSessionId: string
+  width: number
+  streamingSessionIds: Set<string>
   dragHandleProps?: HTMLAttributes<HTMLDivElement>
   onCreate: () => Promise<void>
   onSelect: (id: string) => Promise<void>
@@ -26,6 +28,8 @@ function formatSessionTime(timestamp: number): string {
 export default function ConversationSidebar({
   sessions,
   activeSessionId,
+  width,
+  streamingSessionIds,
   dragHandleProps,
   onCreate,
   onSelect,
@@ -114,7 +118,7 @@ export default function ConversationSidebar({
   }
 
   return (
-    <aside className="conversation-sidebar" aria-label="对话历史">
+    <aside className="conversation-sidebar" aria-label="对话历史" style={{ width, minWidth: width }}>
       <div className="conversation-sidebar-header chat-panel-drag-handle" {...dragHandleProps}>
         <div>
           <h2>对话</h2>
@@ -184,7 +188,10 @@ export default function ConversationSidebar({
                   aria-selected={active}
                   disabled={busyId === session.id}
                 >
-                  <span className="conversation-item-title">{session.title}</span>
+                  <span className="conversation-item-title-row">
+                    <span className="conversation-item-title">{session.title}</span>
+                    {streamingSessionIds.has(session.id) && <span className="conversation-item-streaming" role="status">回复中</span>}
+                  </span>
                   <span className="conversation-item-preview">{session.preview}</span>
                   <span className="conversation-item-meta">
                     <span>{session.messageCount} 条</span>

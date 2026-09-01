@@ -80,6 +80,7 @@ export interface AppConfig {
   toolPermissionMode: 'confirm' | 'auto' | 'full'
   memoryEnabled: boolean
   memoryWriteMode: 'auto' | 'confirm' | 'off'
+  memoryAutoWriteConfidence: number
   memoryEngineProvider: string
   memoryMaxItems: number
   memoryDefaultTtlDays: number
@@ -111,6 +112,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   toolPermissionMode: 'confirm',
   memoryEnabled: true,
   memoryWriteMode: 'auto',
+  memoryAutoWriteConfidence: 0.85,
   memoryEngineProvider: 'chouyu-sqlite',
   memoryMaxItems: 500,
   memoryDefaultTtlDays: 0,
@@ -159,6 +161,9 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     toolPermissionMode: source.toolPermissionMode === 'auto' || source.toolPermissionMode === 'full' ? source.toolPermissionMode : 'confirm',
     memoryEnabled: source.memoryEnabled !== false,
     memoryWriteMode: source.memoryWriteMode === 'confirm' || source.memoryWriteMode === 'off' ? source.memoryWriteMode : 'auto',
+    memoryAutoWriteConfidence: typeof source.memoryAutoWriteConfidence === 'number' && Number.isFinite(source.memoryAutoWriteConfidence)
+      ? Math.min(0.95, Math.max(0.8, source.memoryAutoWriteConfidence))
+      : DEFAULT_APP_CONFIG.memoryAutoWriteConfidence,
     memoryEngineProvider: typeof source.memoryEngineProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(source.memoryEngineProvider) ? source.memoryEngineProvider : 'chouyu-sqlite',
     memoryMaxItems: typeof source.memoryMaxItems === 'number' && Number.isFinite(source.memoryMaxItems)
       ? Math.min(2000, Math.max(50, Math.round(source.memoryMaxItems)))
@@ -202,6 +207,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (input.toolPermissionMode === 'confirm' || input.toolPermissionMode === 'auto' || input.toolPermissionMode === 'full') patch.toolPermissionMode = input.toolPermissionMode
   if (typeof input.memoryEnabled === 'boolean') patch.memoryEnabled = input.memoryEnabled
   if (input.memoryWriteMode === 'auto' || input.memoryWriteMode === 'confirm' || input.memoryWriteMode === 'off') patch.memoryWriteMode = input.memoryWriteMode
+  if (typeof input.memoryAutoWriteConfidence === 'number' && Number.isFinite(input.memoryAutoWriteConfidence)) patch.memoryAutoWriteConfidence = Math.min(0.95, Math.max(0.8, input.memoryAutoWriteConfidence))
   if (typeof input.memoryEngineProvider === 'string' && /^[a-z0-9.-]{2,80}$/.test(input.memoryEngineProvider)) patch.memoryEngineProvider = input.memoryEngineProvider
   if (typeof input.memoryMaxItems === 'number' && Number.isFinite(input.memoryMaxItems)) patch.memoryMaxItems = Math.min(2000, Math.max(50, Math.round(input.memoryMaxItems)))
   if (typeof input.memoryDefaultTtlDays === 'number' && Number.isFinite(input.memoryDefaultTtlDays)) patch.memoryDefaultTtlDays = Math.min(3650, Math.max(0, Math.round(input.memoryDefaultTtlDays)))

@@ -27,7 +27,8 @@ export async function streamChat(
   systemPrompt: string,
   config: AppConfig,
   onChunk: StreamCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onRequestStart?: (requestId: string) => void
 ): Promise<void> {
   if (!config.apiKey.trim()) {
     throw new Error('尚未配置 API Key，请先打开设置完成配置。')
@@ -38,6 +39,7 @@ export async function streamChat(
   if (signal?.aborted) throw createAbortError()
 
   const requestId = createRequestId()
+  onRequestStart?.(requestId)
   const request: AIStreamRequest = {
     requestId,
     systemPrompt,

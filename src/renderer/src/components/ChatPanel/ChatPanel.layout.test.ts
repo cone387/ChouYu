@@ -6,6 +6,7 @@ const stylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/compone
 const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.tsx'), 'utf8')
 const sidebarSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.tsx'), 'utf8')
 const sidebarStylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.css'), 'utf8')
+const inputSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/InputArea.tsx'), 'utf8')
 
 describe('chat layout guardrails', () => {
   it('keeps the composer on one row and never enables horizontal scrolling', () => {
@@ -40,7 +41,7 @@ describe('chat layout guardrails', () => {
     expect(sidebarSource).toContain('aria-haspopup="menu"')
     expect(sidebarSource).toContain('role="menuitem"')
     expect(sidebarStylesheet).toMatch(/\.conversation-item-main\s*\{[\s\S]*padding:\s*8px 9px 7px/)
-    expect(sidebarStylesheet).toMatch(/\.conversation-item-title,[\s\S]*padding-right:\s*34px/)
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-title-row,[\s\S]*padding-right:\s*34px/)
   })
 
   it('preserves visible session order while switching the active card', () => {
@@ -54,5 +55,23 @@ describe('chat layout guardrails', () => {
     expect(panelSource).toContain('SESSION_SIDEBAR_STATE_KEY')
     expect(panelSource).toContain('db.setState(PANEL_HEIGHT_STATE_KEY')
     expect(panelSource).toContain('db.setState(SESSION_SIDEBAR_STATE_KEY')
+    expect(panelSource).toContain('SESSION_SIDEBAR_WIDTH_STATE_KEY')
+    expect(panelSource).toContain('aria-label="调整会话列表宽度"')
+  })
+
+  it('focuses the composer only on explicit chat-entry transitions', () => {
+    expect(inputSource).toContain('focusRequest?: number')
+    expect(inputSource).toContain('focus({ preventScroll: true })')
+    expect(inputSource).not.toContain('setTimeout(tryFocus')
+    expect(panelSource).toContain('requestComposerFocus()')
+    expect(panelSource).toContain('focusRequest={composerFocusRequest}')
+  })
+
+  it('keeps AI generations isolated by session while navigating', () => {
+    expect(panelSource).toContain('sessionGenerationsRef')
+    expect(panelSource).toContain('requestSessionRef')
+    expect(panelSource).toContain('sessionMessagesRef')
+    expect(panelSource).not.toContain('stopActiveResponse()')
+    expect(sidebarSource).toContain('streamingSessionIds.has(session.id)')
   })
 })

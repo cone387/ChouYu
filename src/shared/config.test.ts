@@ -49,6 +49,7 @@ describe('config', () => {
     expect(config.toolPermissionMode).toBe('confirm')
     expect(config.memoryEnabled).toBe(true)
     expect(config.memoryWriteMode).toBe('auto')
+    expect(config.memoryAutoWriteConfidence).toBe(0.85)
     expect(config.memoryEngineProvider).toBe('chouyu-sqlite')
     expect(config.memoryMaxItems).toBe(500)
     expect(config.memoryDefaultTtlDays).toBe(0)
@@ -69,6 +70,8 @@ describe('config', () => {
     expect(normalizeConfig({ petSize: 83 }).petSize).toBe(80)
     expect(normalizeConfig({ memoryMaxItems: 12 }).memoryMaxItems).toBe(50)
     expect(normalizeConfig({ memoryDefaultTtlDays: 9999 }).memoryDefaultTtlDays).toBe(3650)
+    expect(normalizeConfig({ memoryAutoWriteConfidence: 0.2 }).memoryAutoWriteConfidence).toBe(0.8)
+    expect(normalizeConfig({ memoryAutoWriteConfidence: 1 }).memoryAutoWriteConfidence).toBe(0.95)
   })
 
   it('accepts only known patch fields and valid primitive types', () => {
@@ -80,6 +83,7 @@ describe('config', () => {
       toolPermissionMode: 'full',
       memoryEnabled: false,
       memoryWriteMode: 'confirm',
+      memoryAutoWriteConfidence: 0.9,
       memoryEngineProvider: 'chouyu-sqlite',
       memoryCompressionEnabled: false,
       memorySyncProvider: 'mem0-self-hosted',
@@ -92,6 +96,6 @@ describe('config', () => {
       model: 123
     })
 
-    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, toolPermissionMode: 'full', memoryEnabled: false, memoryWriteMode: 'confirm', memoryEngineProvider: 'chouyu-sqlite', memoryCompressionEnabled: false, memorySyncProvider: 'mem0-self-hosted', memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true, embeddingProvider: 'openai-compatible' })
+    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, toolPermissionMode: 'full', memoryEnabled: false, memoryWriteMode: 'confirm', memoryAutoWriteConfidence: 0.9, memoryEngineProvider: 'chouyu-sqlite', memoryCompressionEnabled: false, memorySyncProvider: 'mem0-self-hosted', memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true, embeddingProvider: 'openai-compatible' })
   })
 })

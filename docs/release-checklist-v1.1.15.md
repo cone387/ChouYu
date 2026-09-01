@@ -2,7 +2,7 @@
 
 检查日期：2026-09-01
 
-状态：本地发布候选。Windows x64 安装包、更新元数据和 packaged 启动验证已完成；尚未创建 Git Tag 或 GitHub Release。
+状态：已于 2026-09-01 正式发布，GitHub Actions 的质量、Windows 和 macOS 构建全部通过。
 
 ## 已自动验证
 
@@ -36,7 +36,7 @@ Windows UI 控制服务当前不可用，以下项目需要人工确认：
 
 ## 发布动作
 
-- [ ] 提交并推送 `1.1.15` 发布候选改动
-- [ ] 创建 `v1.1.15` Git Tag
-- [ ] 推送 Tag 并检查 GitHub Release 资产
+- [x] 提交并推送 `1.1.15` 发布候选改动
+- [x] 创建 `v1.1.15` Git Tag
+- [x] 推送 Tag 并检查 GitHub Release 的 10 个资产
 - [ ] 使用已发布的 `latest.yml` 验证应用内更新

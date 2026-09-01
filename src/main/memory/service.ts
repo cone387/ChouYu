@@ -20,7 +20,7 @@ import type {
   MemorySyncStatus,
   MemoryType
 } from '../../shared/memory'
-import { buildMemoryClusters, compressMemoryResults, containsSecret, detectMemoryRelation, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
+import { buildMemoryClusters, compressMemoryResults, containsSecret, detectMemoryRelation, inferMemoryQueryTypes, isLikelyPersonName, mergeHybridMemoryResults, normalizeMemoryKey } from '../../shared/memory'
 import { getConfig, saveConfig } from '../database'
 import { cosineSimilarity } from './embedding-client'
 import { capabilityRegistry } from '../capabilities/registry'
@@ -116,12 +116,19 @@ export function reactivateMemory(memoryId: string): MemoryRecord {
 
 export function runMemoryMaintenance(): MemoryMaintenanceResult {
   const memoryProvider = getMemoryProvider()
+  const invalidIdentityIds = memoryProvider.list({ status: 'active', type: 'person', limit: 2000 })
+    .filter((memory) => {
+      const match = memory.content.match(/^我的名字是\s*(.+)$/i)
+      return Boolean(match && !isLikelyPersonName(match[1]))
+    })
+    .map((memory) => memory.id)
+  const invalidArchivedIds = memoryProvider.archiveMany(invalidIdentityIds, 'cleanup')
   const expiredIds = memoryProvider.expireDue()
   const capacityIds = memoryProvider.enforceCapacity(getConfig().memoryMaxItems)
   return {
     expired: expiredIds.length,
     capacityArchived: capacityIds.length,
-    archivedIds: [...expiredIds, ...capacityIds]
+    archivedIds: [...invalidArchivedIds, ...expiredIds, ...capacityIds]
   }
 }
 
@@ -351,7 +358,20 @@ export async function rebuildEmbeddings(): Promise<EmbeddingRebuildResult> {
 
 export async function searchMemories(query: string, limit = 6): Promise<MemorySearchResult[]> {
   runMemoryMaintenance()
-  const lexical = getMemoryProvider().search(query, Math.max(limit * 3, 12))
+  const provider = getMemoryProvider()
+  const targeted = inferMemoryQueryTypes(query)
+    .flatMap((type) => provider.list({ status: 'active', type, limit: Math.max(limit, 6) }))
+    .sort((left, right) => {
+      const leftName = left.type === 'person' && /名字|name/i.test(left.content) ? 1 : 0
+      const rightName = right.type === 'person' && /名字|name/i.test(right.content) ? 1 : 0
+      return rightName - leftName || right.updatedAt - left.updatedAt
+    })
+    .map((memory, index) => ({ ...memory, score: Math.max(0.9, 1 - index * 0.01) }))
+  const targetedIds = new Set(targeted.map((memory) => memory.id))
+  const lexical = [
+    ...targeted,
+    ...provider.search(query, Math.max(limit * 3, 12)).filter((memory) => !targetedIds.has(memory.id))
+  ]
   const config = getConfig()
   const finalize = (results: MemorySearchResult[]) => config.memoryCompressionEnabled
     ? compressMemoryResults(results, limit, listMemoryClusters())
