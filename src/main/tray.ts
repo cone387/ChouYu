@@ -1,13 +1,11 @@
 import { Tray, Menu, BrowserWindow, app, nativeImage } from 'electron'
-import { join } from 'path'
+import { PET_ICON_PNG_BASE64 } from '../shared/pet-icon'
 
 let tray: Tray | null = null
 
 export function setupTray(mainWindow: BrowserWindow): void {
-  const iconPath = app.isPackaged
-    ? join(process.resourcesPath, 'icon.png')
-    : join(__dirname, '../../resources/icon.png')
-  const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+  const icon = nativeImage.createFromBuffer(Buffer.from(PET_ICON_PNG_BASE64, 'base64')).resize({ width: 16, height: 16, quality: 'best' })
+  if (icon.isEmpty()) throw new Error('Tray icon failed to render')
   tray = new Tray(icon)
 
   const contextMenu = Menu.buildFromTemplate([

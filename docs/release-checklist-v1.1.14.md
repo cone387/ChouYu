@@ -7,7 +7,7 @@
 ## 已自动验证
 
 - [x] `npm run typecheck`
-- [x] 19 个 Vitest 测试文件、77 项测试
+- [x] 21 个 Vitest 测试文件、89 项测试
 - [x] `npm run build`
 - [x] 开发产物 Electron 启动冒烟测试
 - [x] Windows x64 unpacked 产物生成

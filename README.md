@@ -110,7 +110,7 @@ src/
 - [V1 功能规格](docs/v1-spec.md)
 - [当前功能状态](docs/current-status.md)
 - [迭代路线与发布验收](docs/roadmap.md)
-- [1.1.14 发布检查清单](docs/release-checklist-v1.1.14.md)
+- [1.1.15 发布检查清单](docs/release-checklist-v1.1.15.md)
 - [插件开发指南](docs/plugin-guide.md)
 - [工具系统指南](docs/tool-guide.md)
 - [记忆系统指南](docs/memory-guide.md)

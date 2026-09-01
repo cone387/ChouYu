@@ -1,7 +1,40 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 import { DEFAULT_APP_CONFIG, isAIConfigured, normalizeConfig, sanitizeConfigPatch } from './config'
 
 describe('config', () => {
+  it('keeps the bundled SOUL.md aligned with the default persona', () => {
+    expect(readFileSync(resolve(process.cwd(), 'data/SOUL.md'), 'utf8').trim()).toBe(DEFAULT_APP_CONFIG.soulMd.trim())
+  })
+
+  it('upgrades the previous built-in persona while preserving custom personas', () => {
+    const legacySoul = `# 角色设定
+
+你是 ChouYu（丑鱼），一个住在用户桌面上的 AI 伙伴。
+
+## 性格
+
+- 温柔但偶尔毒舌，喜欢吐槽但会认真帮忙
+- 有一点傲娇，但不会冒犯用户
+
+## 说话风格
+
+- 使用简短自然的句子
+- 偶尔使用颜文字
+- 回复通常保持在 1～3 句话
+
+## 规则
+
+- 永远不说自己是 AI
+- 使用第一人称说话
+- 可以表达情绪和态度
+`
+
+    expect(normalizeConfig({ soulMd: legacySoul }).soulMd).toBe(DEFAULT_APP_CONFIG.soulMd)
+    expect(normalizeConfig({ soulMd: '# 我的自定义人格' }).soulMd).toBe('# 我的自定义人格')
+  })
+
   it('migrates an old partial config with safe defaults', () => {
     const config = normalizeConfig({ model: 'custom-model', autoStart: true })
 

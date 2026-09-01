@@ -23,7 +23,7 @@ describe('chat layout guardrails', () => {
     expect(stylesheet).toMatch(/\.chat-panel-main > \.input-area\s*\{\s*margin-top:\s*auto/)
     expect(stylesheet).toMatch(/\.panel-resize-edge\s*\{[\s\S]*cursor:\s*ns-resize/)
     expect(panelSource).toContain('const rect = panelEl.getBoundingClientRect()')
-    expect(panelSource).toContain('viewportHeight * 0.58')
+    expect(panelSource).toContain('getDefaultPanelHeight(window.innerHeight)')
     expect(panelSource).toContain("height: !showSettings ? panelHeight : undefined")
     expect(panelSource).toContain("(['top', 'bottom'] as const)")
   })
@@ -39,5 +39,20 @@ describe('chat layout guardrails', () => {
     expect(sidebarStylesheet).toMatch(/\.conversation-menu-trigger\s*\{[\s\S]*width:\s*28px[\s\S]*height:\s*28px/)
     expect(sidebarSource).toContain('aria-haspopup="menu"')
     expect(sidebarSource).toContain('role="menuitem"')
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-main\s*\{[\s\S]*padding:\s*8px 9px 7px/)
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-title,[\s\S]*padding-right:\s*34px/)
+  })
+
+  it('preserves visible session order while switching the active card', () => {
+    expect(panelSource).toContain('mergeSessionsInCurrentOrder')
+    expect(panelSource).toContain('await persistCurrentSession(true)')
+    expect(panelSource).toContain('db.selectSession(id), true')
+  })
+
+  it('persists panel height and explicit sidebar visibility changes', () => {
+    expect(panelSource).toContain('PANEL_HEIGHT_STATE_KEY')
+    expect(panelSource).toContain('SESSION_SIDEBAR_STATE_KEY')
+    expect(panelSource).toContain('db.setState(PANEL_HEIGHT_STATE_KEY')
+    expect(panelSource).toContain('db.setState(SESSION_SIDEBAR_STATE_KEY')
   })
 })

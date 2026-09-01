@@ -31,6 +31,14 @@ import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
 import { loadSessionWorkspace, saveActiveSessionMessages } from '../../core/memory'
 import { getConversationForRetry } from '../../core/conversation-actions'
+import { mergeSessionsInCurrentOrder } from '../../core/session-order'
+import {
+  getDefaultPanelHeight,
+  normalizePanelHeight,
+  PANEL_HEIGHT_STATE_KEY,
+  parseStoredSidebarVisibility,
+  SESSION_SIDEBAR_STATE_KEY
+} from '../../core/panel-state'
 import './ChatPanel.css'
 
 interface ChatPanelProps {
@@ -52,11 +60,6 @@ interface ChatPanelProps {
   onPendingMessageConsumed?: () => void
 }
 
-function getDefaultPanelHeight(): number {
-  const viewportHeight = window.innerHeight
-  return Math.min(720, Math.max(PANEL_MIN_HEIGHT, Math.round(viewportHeight * 0.58)))
-}
-
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
@@ -65,7 +68,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
   const [showSessions, setShowSessions] = useState(false)
-  const [panelHeight, setPanelHeight] = useState(getDefaultPanelHeight)
+  const [panelHeight, setPanelHeight] = useState(() => getDefaultPanelHeight(window.innerHeight))
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
@@ -82,7 +85,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const happyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
-  const panelResizeRef = useRef({ resizing: false, edge: 'bottom' as 'top' | 'bottom', startY: 0, startHeight: 0, startTop: 0 })
+  const panelResizeRef = useRef({ resizing: false, edge: 'bottom' as 'top' | 'bottom', startY: 0, startHeight: 0, startTop: 0, currentHeight: 0 })
   const initializedRef = useRef(false)
   const latestMessagesRef = useRef<Message[]>([])
   const activeSessionIdRef = useRef('')
@@ -91,12 +94,15 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     setPlugins(await window.electronAPI.plugin.getPlugins())
   }, [])
 
-  const applyWorkspace = useCallback((workspace: SessionWorkspace) => {
+  const applyWorkspace = useCallback((workspace: SessionWorkspace, preserveSessionOrder = false) => {
     activeSessionIdRef.current = workspace.activeSession.id
     latestMessagesRef.current = workspace.activeSession.messages
     setActiveSessionId(workspace.activeSession.id)
     setMessages(workspace.activeSession.messages)
-    setSessions(workspace.sessions)
+    setSessions((previous) => {
+      if (!preserveSessionOrder || previous.length === 0) return workspace.sessions
+      return mergeSessionsInCurrentOrder(previous, workspace.sessions)
+    })
     setMemoryCandidates([])
   }, [])
 
@@ -118,11 +124,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     onPetStateChange('idle')
   }, [onPetStateChange])
 
-  const persistCurrentSession = useCallback(async () => {
+  const persistCurrentSession = useCallback(async (preserveSessionOrder = false) => {
     const id = activeSessionIdRef.current
     if (!id || !initializedRef.current) return
     const workspace = await saveActiveSessionMessages(id, latestMessagesRef.current)
-    setSessions(workspace.sessions)
+    setSessions((previous) => preserveSessionOrder ? mergeSessionsInCurrentOrder(previous, workspace.sessions) : workspace.sessions)
   }, [])
 
   useEffect(() => {
@@ -143,6 +149,20 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     setConfig(nextConfig)
     setShowOnboarding(!isAIConfigured(nextConfig))
   }), [])
+
+  useEffect(() => {
+    Promise.all([
+      window.electronAPI.db.getState(PANEL_HEIGHT_STATE_KEY),
+      window.electronAPI.db.getState(SESSION_SIDEBAR_STATE_KEY)
+    ]).then(([storedHeight, storedSidebar]) => {
+      setPanelHeight(normalizePanelHeight(storedHeight, window.innerHeight))
+      setShowSessions(parseStoredSidebarVisibility(storedSidebar))
+    }).catch(() => {})
+
+    const clampToViewport = () => setPanelHeight((current) => normalizePanelHeight(current, window.innerHeight))
+    window.addEventListener('resize', clampToViewport)
+    return () => window.removeEventListener('resize', clampToViewport)
+  }, [])
 
   useEffect(() => {
     const unsubscribeApproval = window.electronAPI.ai.onToolApprovalRequest(setToolApprovalRequest)
@@ -175,7 +195,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   useEffect(() => {
     if (initialShowSettings) {
-      setShowSessions(false)
       setShowSettings(true)
     }
   }, [initialShowSettings])
@@ -257,7 +276,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
-    panelResizeRef.current = { resizing: true, edge, startY: event.screenY, startHeight: panelHeight, startTop: position.y }
+    panelResizeRef.current = { resizing: true, edge, startY: event.screenY, startHeight: panelHeight, startTop: position.y, currentHeight: panelHeight }
     event.currentTarget.setPointerCapture(event.pointerId)
   }, [panelHeight, position.y])
 
@@ -270,6 +289,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       : Math.max(PANEL_MIN_HEIGHT, window.innerHeight - startTop - 4)
     const requestedHeight = edge === 'top' ? startHeight - delta : startHeight + delta
     const nextHeight = Math.min(maxHeight, Math.max(PANEL_MIN_HEIGHT, requestedHeight))
+    panelResizeRef.current.currentHeight = nextHeight
     setPanelHeight(nextHeight)
     if (edge === 'top') {
       const nextTop = startTop + startHeight - nextHeight
@@ -281,6 +301,15 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (!panelResizeRef.current.resizing) return
     panelResizeRef.current.resizing = false
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    void window.electronAPI.db.setState(PANEL_HEIGHT_STATE_KEY, String(panelResizeRef.current.currentHeight))
+  }, [])
+
+  const toggleSessionSidebar = useCallback(() => {
+    setShowSessions((current) => {
+      const next = !current
+      void window.electronAPI.db.setState(SESSION_SIDEBAR_STATE_KEY, String(next))
+      return next
+    })
   }, [])
 
   useEffect(() => {
@@ -289,7 +318,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     const sessionId = activeSessionId
     const timer = setTimeout(() => {
       void saveActiveSessionMessages(sessionId, messages).then((workspace) => {
-        if (activeSessionIdRef.current === sessionId) setSessions(workspace.sessions)
+        if (activeSessionIdRef.current === sessionId) {
+          setSessions((previous) => mergeSessionsInCurrentOrder(previous, workspace.sessions))
+        }
       })
     }, 450)
     return () => clearTimeout(timer)
@@ -323,20 +354,20 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         setConfirmClear(false)
         return
       }
-      if (showSessions) {
-        setShowSessions(false)
-        return
-      }
       if (showSettings) {
         setShowSettings(false)
         onSettingsClose?.()
+        return
+      }
+      if (showSessions) {
+        toggleSessionSidebar()
         return
       }
       onClose()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [confirmClear, onClose, onSettingsClose, showSessions, showSettings, visible])
+  }, [confirmClear, onClose, onSettingsClose, showSessions, showSettings, toggleSessionSidebar, visible])
 
   const createSession = useCallback(async () => {
     stopActiveResponse()
@@ -348,21 +379,22 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const selectSession = useCallback(async (id: string) => {
     if (id === activeSessionIdRef.current) return
     stopActiveResponse()
-    await persistCurrentSession()
-    applyWorkspace(await window.electronAPI.db.selectSession(id))
+    await persistCurrentSession(true)
+    applyWorkspace(await window.electronAPI.db.selectSession(id), true)
   }, [applyWorkspace, persistCurrentSession, stopActiveResponse])
 
   const renameSession = useCallback(async (id: string, title: string) => {
-    setSessions(await window.electronAPI.db.renameSession(id, title))
+    const updated = await window.electronAPI.db.renameSession(id, title)
+    setSessions((previous) => mergeSessionsInCurrentOrder(previous, updated))
   }, [])
 
   const deleteSession = useCallback(async (id: string) => {
     if (id === activeSessionIdRef.current) stopActiveResponse()
-    applyWorkspace(await window.electronAPI.db.deleteSession(id))
+    applyWorkspace(await window.electronAPI.db.deleteSession(id), true)
   }, [applyWorkspace, stopActiveResponse])
 
   const exportSession = useCallback(async (id: string) => {
-    await persistCurrentSession()
+    await persistCurrentSession(true)
     const result = await window.electronAPI.db.exportSession(id)
     return result.ok
   }, [persistCurrentSession])
@@ -373,7 +405,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     setConfirmClear(false)
     if (!activeSessionIdRef.current) return
     const workspace = await window.electronAPI.db.saveSessionMessages(activeSessionIdRef.current, [])
-    setSessions(workspace.sessions)
+    setSessions((previous) => mergeSessionsInCurrentOrder(previous, workspace.sessions))
   }, [stopActiveResponse])
 
   const pluginCommands = plugins.map((plugin) => ({ cmd: '/' + plugin.command, desc: plugin.description }))
@@ -597,7 +629,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       return
     }
     if (content === '/settings') {
-      setShowSessions(false)
       setShowSettings(true)
       const panelX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_SETTINGS_WIDTH - 4))
       const panelY = position.y + PANEL_SETTINGS_HEIGHT > window.innerHeight - 4
@@ -685,7 +716,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   const openAISettings = useCallback(() => {
     setShowOnboarding(false)
-    setShowSessions(false)
     setShowSettings(true)
   }, [])
 
@@ -722,7 +752,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   const correctMemory = useCallback((memoryId: string) => {
     setMemoryCorrectionId(memoryId)
-    setShowSessions(false)
     setShowSettings(true)
     const panelX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_SETTINGS_WIDTH - 4))
     const panelY = position.y + PANEL_SETTINGS_HEIGHT > window.innerHeight - 4 ? Math.max(4, window.innerHeight - PANEL_SETTINGS_HEIGHT - 4) : position.y
@@ -779,9 +808,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               <TopBar
                 status={getStatusText()}
                 showSessions={showSessions}
-                onToggleSessions={() => setShowSessions((value) => !value)}
+                onToggleSessions={toggleSessionSidebar}
                 onSettings={() => {
-                  setShowSessions(false)
                   setShowSettings(true)
                   const panelX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - PANEL_SETTINGS_WIDTH - 4))
                   const panelY = position.y + PANEL_SETTINGS_HEIGHT > window.innerHeight - 4

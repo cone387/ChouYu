@@ -20,6 +20,8 @@ export default function TopBar({ status, showSessions, onToggleSessions, onNewTo
             <circle cx="30" cy="39" r="2.5" fill="#2d2d2d"/>
             <circle cx="50" cy="39" r="2.5" fill="#2d2d2d"/>
             <path d="M 32 52 Q 40 58 48 52" stroke="#2d2d2d" fill="none" strokeWidth="2" strokeLinecap="round"/>
+            <circle cx="24" cy="48" r="4" fill="rgba(255,100,100,0.3)"/>
+            <circle cx="56" cy="48" r="4" fill="rgba(255,100,100,0.3)"/>
           </svg>
         </div>
         <span className="chat-topbar-name">ChouYu</span>
