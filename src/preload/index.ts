@@ -80,6 +80,7 @@ const api = {
     importPreview: () => ipcRenderer.invoke('memory:import-preview') as Promise<MemoryImportPreview>,
     importCommit: (decisions: MemoryImportDecision[]) => ipcRenderer.invoke('memory:import-commit', decisions) as Promise<MemoryImportResult>,
     syncTest: () => ipcRenderer.invoke('memory:sync-test') as Promise<MemorySyncStatus>,
+    engineTest: () => ipcRenderer.invoke('memory:engine-test') as Promise<MemorySyncStatus>,
     syncPullPreview: () => ipcRenderer.invoke('memory:sync-pull-preview') as Promise<MemorySyncPullPreview>,
     syncPush: () => ipcRenderer.invoke('memory:sync-push') as Promise<MemorySyncPushResult>,
     archiveMany: (ids: string[]) => ipcRenderer.invoke('memory:archive-many', ids) as Promise<string[]>,
@@ -119,6 +120,14 @@ const api = {
     const handler = (_e: unknown, text: string) => callback(text)
     ipcRenderer.on('clipboard:changed', handler)
     return () => { ipcRenderer.removeListener('clipboard:changed', handler) }
+  },
+  onSetPetVisible: (callback: (visible: boolean) => void) => {
+    const handler = (_e: unknown, visible: boolean) => callback(visible)
+    ipcRenderer.on('set-pet-visible', handler)
+    return () => { ipcRenderer.removeListener('set-pet-visible', handler) }
+  },
+  notifyPetVisible: (visible: boolean) => {
+    ipcRenderer.send('pet-visibility-changed', visible)
   },
   onOpenChatPanel: (callback: () => void) => {
     ipcRenderer.on('open-chat-panel', callback)

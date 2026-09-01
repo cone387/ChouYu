@@ -39,6 +39,7 @@ import {
   previewMemoryImport,
   previewMemorySyncPull,
   proposeMemoryCandidate,
+  rememberRawMemory,
   reactivateMemory,
   rebuildEmbeddings,
   runMemoryMaintenance,
@@ -48,6 +49,7 @@ import {
   splitMemoryCluster,
   pushMemoriesToSync,
   testMemorySync,
+  testMemoryEngine,
   testEmbedding
 } from './memory/service'
 import { extractMemoriesWithLLM } from './memory/llm-extractor'
@@ -300,6 +302,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (typeof text !== 'string' || text.length > 4000) return []
     const { memoryEnabled, memoryWriteMode, memoryAutoWriteConfidence } = getConfig()
     if (!memoryEnabled || memoryWriteMode === 'off') return []
+    const currentConfig = getConfig()
+    if (currentConfig.memoryEngineProvider === 'mem0-self-hosted-engine' || currentConfig.memoryEngineProvider === 'mem0-platform-engine') {
+      try {
+        return await rememberRawMemory(text)
+      } catch (error) {
+        console.warn('[Memory] Mem0 primary extraction failed:', error)
+        return []
+      }
+    }
     let candidates: Awaited<ReturnType<typeof extractMemoriesWithLLM>>
     try {
       candidates = await extractMemoriesWithLLM(text, getConfig())
@@ -416,6 +427,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   ipcMain.handle('memory:sync-test', () => testMemorySync())
+  ipcMain.handle('memory:engine-test', () => testMemoryEngine())
   ipcMain.handle('memory:sync-pull-preview', () => previewMemorySyncPull())
   ipcMain.handle('memory:sync-push', () => pushMemoriesToSync())
 

@@ -51,6 +51,10 @@ describe('settings layout guardrails', () => {
     expect(toolsSource).toContain('手动确认')
     expect(toolsSource).toContain('自动审核')
     expect(toolsSource).toContain('完全访问')
+    expect(memorySource).toContain('记忆备份与迁移')
+    expect(memorySource).toContain('memory-engine-connection-card')
+    expect(memorySource).toContain('engineTest()')
+    expect(memorySource).toContain('remote && syncDraft.memorySyncBaseUrl.trim()')
   })
 
   it('surfaces a dedicated identity profile backed by person memories', () => {
@@ -58,6 +62,8 @@ describe('settings layout guardrails', () => {
     expect(memorySource).toContain('memory-identity-card')
     expect(memorySource).toContain("querySelector('.memory-library')")
     expect(memorySource).toContain('void refresh()')
+    expect(memorySource).toContain('编辑身份档案')
+    expect(memorySource).toContain('saveIdentity')
     expect(memoryStylesheet).toContain('.memory-identity-card')
   })
 
@@ -67,6 +73,16 @@ describe('settings layout guardrails', () => {
     expect(stylesheet).toMatch(/\.settings-soul-editor\s*\{[\s\S]*min-height:\s*340px/)
     expect(stylesheet).toMatch(/\.settings-soul-editor::-webkit-scrollbar\s*\{\s*width:\s*5px/)
     expect(stylesheet).toMatch(/\.settings-soul-editor:focus\s*\{[\s\S]*box-shadow:\s*none/)
+  })
+
+  it('provides local SOUL.md version history and line diffs', () => {
+    expect(settingsSource).toContain("SOUL_HISTORY_STATE_KEY = 'soul-history'")
+    expect(settingsSource).toContain('saveSoulVersion')
+    expect(settingsSource).toContain('buildSoulDiff')
+    expect(settingsSource).toContain('settings-soul-diff')
+    expect(settingsSource).toContain('SOUL.md 版本历史')
+    expect(settingsSource).not.toContain('隐藏版本历史')
+    expect(stylesheet).toContain('.settings-soul-history-panel')
   })
 
   it('renders a filled pet-size slider with visible bounds', () => {

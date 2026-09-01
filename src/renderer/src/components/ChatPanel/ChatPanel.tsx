@@ -57,6 +57,8 @@ interface ChatPanelProps {
   onPetStateChange: (state: PetState) => void
   onHide: () => void
   onClose: () => void
+  petVisible: boolean
+  onPetVisibleChange: (visible: boolean) => void
   initialShowSettings?: boolean
   onSettingsClose?: () => void
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
@@ -75,7 +77,7 @@ interface SessionGeneration {
   requestId?: string
 }
 
-export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
+export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [activeSessionId, setActiveSessionId] = useState('')
@@ -96,12 +98,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [memoryCandidates, setMemoryCandidates] = useState<MemoryRecord[]>([])
   const [memoryCandidateBusy, setMemoryCandidateBusy] = useState(false)
   const [memoryCandidateError, setMemoryCandidateError] = useState('')
+  const [memoryWriteNotice, setMemoryWriteNotice] = useState('')
   const [memoryCorrectionId, setMemoryCorrectionId] = useState('')
   const sessionGenerationsRef = useRef<Map<string, SessionGeneration>>(new Map())
   const pendingGenerationsRef = useRef<Set<string>>(new Set())
   const requestSessionRef = useRef<Map<string, string>>(new Map())
   const sessionMessagesRef = useRef<Map<string, Message[]>>(new Map())
   const happyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const memoryNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
   const panelResizeRef = useRef({ resizing: false, edge: 'bottom' as 'top' | 'bottom', startY: 0, startHeight: 0, startTop: 0, currentHeight: 0 })
@@ -112,6 +116,19 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const activeSessionIdRef = useRef('')
   const isStreaming = activeSessionId ? streamingSessionIds.has(activeSessionId) : false
   const toolApprovalRequest = toolApprovalRequests[0] || null
+
+  const showMemoryWriteNotice = useCallback((message: string) => {
+    if (memoryNoticeTimerRef.current) clearTimeout(memoryNoticeTimerRef.current)
+    setMemoryWriteNotice(message)
+    memoryNoticeTimerRef.current = setTimeout(() => {
+      setMemoryWriteNotice('')
+      memoryNoticeTimerRef.current = null
+    }, 5000)
+  }, [])
+
+  useEffect(() => () => {
+    if (memoryNoticeTimerRef.current) clearTimeout(memoryNoticeTimerRef.current)
+  }, [])
 
   const requestComposerFocus = useCallback(() => {
     setComposerFocusRequest((current) => current + 1)
@@ -574,7 +591,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       clusterId: memory.clusterId,
       compressedCount: memory.compressedCount
     }))
-    const systemPrompt = buildSystemPrompt(config.soulMd, formatMemoryContext(relevantMemories))
+    const memoryContext = formatMemoryContext(relevantMemories)
+    const memoryConversationPolicy = '记忆写入由系统单独分析并反馈。除非相关记忆明确出现在上下文中，否则不要声称已经记住用户信息；像“我叫不上”这类歧义表达应先询问确认，不要直接当作姓名。'
+    const systemPrompt = buildSystemPrompt(config.soulMd, [memoryContext, memoryConversationPolicy].filter(Boolean).join('\n\n'))
     const history = buildMessages(conversation)
 
     const finishGeneration = () => {
@@ -817,12 +836,19 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     const nextMessages = [...currentMessages, userMessage]
     updateSessionMessages(sessionId, () => nextMessages)
     if (config.memoryEnabled && content.trim()) {
+      showMemoryWriteNotice('正在分析这条消息是否需要记住…')
       void window.electronAPI.memory.propose(content, sessionId, userMessage.id).then((candidates) => {
         const pendingCandidates = candidates.filter((candidate) => candidate.status === 'pending')
         if (pendingCandidates.length > 0) {
           setMemoryCandidates((previous) => [...previous, ...pendingCandidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
+          showMemoryWriteNotice(`发现 ${pendingCandidates.length} 条记忆候选，等待确认`)
+          return
         }
-      }).catch(() => {})
+        const activeCandidates = candidates.filter((candidate) => candidate.status === 'active')
+        if (activeCandidates.some((candidate) => candidate.type === 'person')) showMemoryWriteNotice('身份档案已更新')
+        else if (activeCandidates.length > 0) showMemoryWriteNotice(`已自动保存 ${activeCandidates.length} 条记忆`)
+        else showMemoryWriteNotice('这条消息未识别为需要保存的用户信息')
+      }).catch(() => showMemoryWriteNotice('记忆分析失败，可稍后重试'))
     }
     await generateAIResponse(nextMessages, sessionId)
   }
@@ -952,6 +978,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             onClose={() => { setShowSettings(false); setShowOnboarding(!isAIConfigured(config)); setMemoryCorrectionId(''); void refreshPlugins(); onSettingsClose?.() }}
             initialNav={memoryCorrectionId ? 'memory' : undefined}
             focusMemoryId={memoryCorrectionId || undefined}
+            petVisible={petVisible}
+            onPetVisibleChange={onPetVisibleChange}
             dragHandleProps={{
               onPointerDown: handleDragStart,
               onPointerMove: handleDragMove,
@@ -1023,6 +1051,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               />
             )}
             {memoryCandidateError && <div className="memory-candidate-error" role="alert">{memoryCandidateError}</div>}
+            {memoryWriteNotice && <div className="memory-write-notice" role="status">{memoryWriteNotice}</div>}
             <InputArea
               onSend={handleSend}
               onStop={handleStopGeneration}

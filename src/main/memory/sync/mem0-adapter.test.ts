@@ -37,6 +37,7 @@ describe('Mem0 memory sync adapter', () => {
     expect(result).toEqual({ attempted: 2, succeeded: 1, skipped: 1, failed: 0 })
     expect(request).toHaveBeenCalledTimes(2)
     expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toMatchObject({ user_id: 'user-1', metadata: { chouyu_id: 'local-2' } })
+    expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toMatchObject({ infer: false })
   })
 
   it('supports self-hosted root paths and X-API-Key authentication', async () => {
@@ -45,5 +46,12 @@ describe('Mem0 memory sync adapter', () => {
     expect(String(request.mock.calls[0][0])).toContain('http://localhost:8888/memories?')
     expect((request.mock.calls[0][1]?.headers as Record<string, string>)['X-API-Key']).toBe('local-key')
     expect((request.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBeUndefined()
+  })
+
+  it('delegates raw message extraction to Mem0 when requested', async () => {
+    const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => Response.json({ results: [{ id: 'r1', memory: '提取出的记忆' }] }))
+    const adapter = new Mem0MemorySyncAdapter(config, request as typeof fetch)
+    await adapter.rememberRaw('我喜欢简洁的回答')
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({ infer: true, messages: [{ content: '我喜欢简洁的回答' }] })
   })
 })

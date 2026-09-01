@@ -3,6 +3,7 @@ import { capabilityRegistry } from './registry'
 import { SQLiteMemoryProvider } from '../memory/sqlite-provider'
 import { OpenAIEmbeddingClient } from '../memory/embedding-client'
 import { Mem0MemorySyncAdapter } from '../memory/sync/mem0-adapter'
+import { Mem0MemoryProvider } from '../memory/mem0-provider'
 
 let registered = false
 
@@ -18,6 +19,32 @@ export function registerBuiltInCapabilities(): void {
     sendsMemoryData: false,
     requiresConfiguration: false,
     create: ({ userDataPath }) => new SQLiteMemoryProvider(path.join(userDataPath, 'chouyu-memory.db'))
+  })
+  capabilityRegistry.register({
+    id: 'mem0-platform-engine',
+    kind: 'memory-engine',
+    name: 'Mem0 Platform',
+    description: '作为唯一主记忆引擎使用 Mem0 Platform；本地 SQLite 仅作缓存。',
+    networkAccess: true,
+    sendsMemoryData: true,
+    requiresConfiguration: true,
+    create: ({ userDataPath, config }) => {
+      if (!config) throw new Error('Mem0 主记忆引擎缺少配置')
+      return new Mem0MemoryProvider(path.join(userDataPath, 'chouyu-memory.db'), config, 'platform')
+    }
+  })
+  capabilityRegistry.register({
+    id: 'mem0-self-hosted-engine',
+    kind: 'memory-engine',
+    name: 'Mem0 Self-hosted',
+    description: '作为唯一主记忆引擎使用自托管 Mem0；本地 SQLite 仅作缓存。',
+    networkAccess: true,
+    sendsMemoryData: true,
+    requiresConfiguration: true,
+    create: ({ userDataPath, config }) => {
+      if (!config) throw new Error('Mem0 主记忆引擎缺少配置')
+      return new Mem0MemoryProvider(path.join(userDataPath, 'chouyu-memory.db'), config, 'self-hosted')
+    }
   })
   capabilityRegistry.register({
     id: 'openai-compatible',

@@ -19,7 +19,7 @@ interface CapabilityBase {
 
 export interface MemoryEngineCapability extends CapabilityBase {
   kind: 'memory-engine'
-  create(context: { userDataPath: string }): MemoryProvider
+  create(context: { userDataPath: string; config?: AppConfig }): MemoryProvider
 }
 
 export interface EmbeddingCapability extends CapabilityBase {
@@ -59,7 +59,7 @@ class CapabilityRegistry {
     }))
   }
 
-  createMemoryEngine(id: string, context: { userDataPath: string }): MemoryProvider {
+  createMemoryEngine(id: string, context: { userDataPath: string; config?: AppConfig }): MemoryProvider {
     const definition = this.definitions.get(id)
     if (!definition || definition.kind !== 'memory-engine') throw new Error(`记忆引擎能力未安装：${id}`)
     return definition.create(context)

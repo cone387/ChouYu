@@ -13,7 +13,7 @@ const MEMORY_SYSTEM_PROMPT = `你是 ChouYu 的记忆分析器。你的唯一任
 
 严格规则：
 1. 只提取用户明确表达、且确实指向用户本人的信息；第三方、引用、假设、玩笑、问题、否定、猜测和模型回复都不要提取。
-2. “我叫不上”“我不知道”“我可能叫……”不是可靠姓名。不要把句子片段当成姓名。
+2. “我不知道”“我可能叫……”不是可靠姓名。像“我叫不上”这种既可能是短语、也可能被用户当作昵称的表达，返回一个 certainty=uncertain、confidence<=0.79 的 person 候选，交给用户确认；不要自动保存，也不要直接丢弃。
 3. 记忆类型只能是 fact、preference、person、project、workflow。
 4. person 的 content 必须是规范形式“我的名字是 <姓名>”；其他类型用简洁、完整的中文事实句。
 5. action 只能为 remember 或 ignore。只有 action=remember 且 subject=self 才能进入候选。

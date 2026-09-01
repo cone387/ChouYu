@@ -781,7 +781,17 @@
 .settings-persona-card .settings-secondary-btn {
   align-self: flex-start;
   margin-bottom: 8px;
+  order: 1;
 }
+
+.settings-soul-history { order: 2; }
+.settings-soul-editor { order: 3; }
+
+.settings-soul-history { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+.settings-soul-history-panel { display:grid; gap:8px; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-secondary); }
+.settings-soul-history-panel label { display:flex; align-items:center; gap:8px; color:var(--text-muted); font-size:10px; }
+.settings-soul-history-panel select { min-width:180px; border:1px solid var(--input-border); border-radius:6px; padding:5px 7px; background:var(--input-bg); color:var(--text-primary); font-size:10px; }
+.settings-soul-diff { max-height:220px; margin:0; padding:8px; overflow:auto; border:1px solid var(--border); border-radius:6px; background:var(--code-bg); color:var(--text-secondary); font:11px/1.5 'Cascadia Code','Fira Code',monospace; white-space:pre-wrap; }
 
 .settings-pet-size-control {
   display: grid;

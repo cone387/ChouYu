@@ -121,7 +121,8 @@ app.whenReady().then(async () => {
   initializeMemory()
   if (isSmokeTest) {
     const capabilityCatalog = capabilityRegistry.list(getConfig())
-    if (capabilityCatalog.length !== 4 || !capabilityCatalog.some((item) => item.id === 'chouyu-sqlite' && item.active)) throw new Error('Capability registry smoke test failed')
+    const activeMemoryEngines = capabilityCatalog.filter((item) => item.kind === 'memory-engine' && item.active)
+    if (activeMemoryEngines.length !== 1 || !activeMemoryEngines.some((item) => item.id === 'chouyu-sqlite')) throw new Error('Capability registry smoke test failed')
     const memoryProvider = getMemoryProvider()
     memoryProvider.createActive({
       type: 'preference',

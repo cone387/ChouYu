@@ -10,8 +10,49 @@ import MemorySettingsTab from './MemorySettingsTab'
 import CapabilitySettingsTab from './CapabilitySettingsTab'
 import './Settings.css'
 
+const SOUL_HISTORY_STATE_KEY = 'soul-history'
+const MAX_SOUL_VERSIONS = 30
+
+interface SoulVersion {
+  id: string
+  content: string
+  createdAt: number
+}
+
+function parseSoulHistory(value: string | null): SoulVersion[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is SoulVersion => item && typeof item === 'object' && typeof item.id === 'string' && typeof item.content === 'string' && typeof item.createdAt === 'number').slice(0, MAX_SOUL_VERSIONS)
+  } catch {
+    return []
+  }
+}
+
+function formatVersionTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString()
+}
+
+function buildSoulDiff(before: string, after: string): string[] {
+  const left = before.split('\n')
+  const right = after.split('\n')
+  const lines: string[] = []
+  const total = Math.max(left.length, right.length)
+  for (let index = 0; index < total; index += 1) {
+    if (left[index] === right[index]) lines.push(`  ${left[index] ?? ''}`)
+    else {
+      if (left[index] !== undefined) lines.push(`- ${left[index]}`)
+      if (right[index] !== undefined) lines.push(`+ ${right[index]}`)
+    }
+  }
+  return lines
+}
+
 interface SettingsProps {
   onClose: () => void
+  petVisible: boolean
+  onPetVisibleChange: (visible: boolean) => void
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
   initialNav?: string
   focusMemoryId?: string
@@ -27,7 +68,7 @@ const NAV_ITEMS = [
   { key: 'about', label: '关于', icon: 'M7 4v3M7 9.5v.5' }
 ]
 
-export default function Settings({ onClose, dragHandleProps, initialNav, focusMemoryId }: SettingsProps) {
+export default function Settings({ onClose, petVisible, onPetVisibleChange, dragHandleProps, initialNav, focusMemoryId }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showKey, setShowKey] = useState(false)
   const [activeNav, setActiveNav] = useState<string>(initialNav || 'ai')
@@ -43,6 +84,8 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
   const [manualModelEntry, setManualModelEntry] = useState(false)
   const [diagnostics, setDiagnostics] = useState<ProviderDiagnostics | null>(null)
   const [navQuery, setNavQuery] = useState('')
+  const [soulHistory, setSoulHistory] = useState<SoulVersion[]>([])
+  const [selectedSoulVersionId, setSelectedSoulVersionId] = useState('')
   const settingsNavRef = useRef<HTMLElement>(null)
 
   const fetchAvailableModels = useCallback(async () => {
@@ -80,6 +123,18 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
     window.electronAPI.db.getConfig().then((loaded) => {
       setConfig(loaded)
       setHotkeyDraft(loaded.hotkey)
+      window.electronAPI.db.getState(SOUL_HISTORY_STATE_KEY).then((value) => {
+        const history = parseSoulHistory(value)
+        if (history.length > 0) {
+          setSoulHistory(history)
+          setSelectedSoulVersionId((current) => current || history[Math.min(1, history.length - 1)].id)
+          return
+        }
+        const initial: SoulVersion = { id: `${Date.now()}`, content: loaded.soulMd, createdAt: Date.now() }
+        setSoulHistory([initial])
+        setSelectedSoulVersionId(initial.id)
+        void window.electronAPI.db.setState(SOUL_HISTORY_STATE_KEY, JSON.stringify([initial]))
+      }).catch(() => {})
     })
     window.electronAPI.plugin.getPlugins().then(setPlugins)
     window.electronAPI.getAppVersion().then(setAppVersion)
@@ -168,10 +223,25 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
     }
   }
 
+  const saveSoulVersion = useCallback(async (content: string) => {
+    const trimmed = content
+    const latest = soulHistory[0]
+    if (latest?.content === trimmed) {
+      await save({ soulMd: trimmed })
+      return
+    }
+    const next: SoulVersion[] = [{ id: `${Date.now()}`, content: trimmed, createdAt: Date.now() }, ...soulHistory].slice(0, MAX_SOUL_VERSIONS)
+    setSoulHistory(next)
+    await window.electronAPI.db.setState(SOUL_HISTORY_STATE_KEY, JSON.stringify(next))
+    await save({ soulMd: trimmed })
+  }, [save, soulHistory])
+
   const configuredModelValid = providerCheck?.ok
     ? providerCheck.models.includes(config.model)
     : null
   const aiConfigured = isAIConfigured(config)
+  const selectedSoulVersion = soulHistory.find((version) => version.id === selectedSoulVersionId) || null
+  const soulDiff = selectedSoulVersion ? buildSoulDiff(selectedSoulVersion.content, config.soulMd) : []
 
   return (
     <div className="settings-panel">
@@ -371,16 +441,32 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
                 <div id="settings-soul-help" className="settings-help">保存后会立即应用到下一次 AI 对话。</div>
                 <button
                   className="settings-secondary-btn"
-                  onClick={() => { setConfig((prev) => ({ ...prev, soulMd: DEFAULT_SOUL_MD })); void save({ soulMd: DEFAULT_SOUL_MD }) }}
+                  onClick={() => { setConfig((prev) => ({ ...prev, soulMd: DEFAULT_SOUL_MD })); void saveSoulVersion(DEFAULT_SOUL_MD) }}
                 >恢复默认人格</button>
                 <textarea
                   id="settings-soul"
                   className="settings-soul-editor"
                   value={config.soulMd}
                   onChange={(e) => setConfig((prev) => ({ ...prev, soulMd: e.target.value }))}
-                  onBlur={() => { void save({ soulMd: config.soulMd }) }}
+                  onBlur={() => { void saveSoulVersion(config.soulMd) }}
                   aria-describedby="settings-soul-help"
                 />
+                <div className="settings-soul-history">
+                  <strong>SOUL.md 版本历史（{soulHistory.length}）</strong>
+                  <div className="settings-soul-history-panel">
+                    <label>
+                      对比版本
+                      <select value={selectedSoulVersionId} onChange={(event) => setSelectedSoulVersionId(event.target.value)}>
+                        {soulHistory.map((version) => <option key={version.id} value={version.id}>{formatVersionTime(version.createdAt)}</option>)}
+                      </select>
+                    </label>
+                    {selectedSoulVersion && (
+                      <pre className="settings-soul-diff" aria-label="SOUL.md 版本差异">
+                        {soulDiff.length > 0 ? soulDiff.join('\n') : '当前版本与所选版本没有差异。'}
+                      </pre>
+                    )}
+                  </div>
+                </div>
               </div>
               </div>
             </div>
@@ -420,6 +506,22 @@ export default function Settings({ onClose, dragHandleProps, initialNav, focusMe
                 <p>调整启动行为、宠物显示和常用快捷键。</p>
               </div>
               <div className="settings-card">
+              <div className="settings-field settings-field-row">
+                <div>
+                  <label htmlFor="settings-pet-visible">显示桌面悬浮宠物</label>
+                  <div className="settings-help">关闭后仍可通过托盘菜单打开聊天窗口。</div>
+                </div>
+                <label className="settings-switch">
+                  <input
+                    id="settings-pet-visible"
+                    type="checkbox"
+                    aria-label="显示桌面悬浮宠物"
+                    checked={petVisible}
+                    onChange={(event) => onPetVisibleChange(event.target.checked)}
+                  />
+                  <span className="settings-switch-slider" />
+                </label>
+              </div>
               <div className="settings-field settings-field-row">
                 <label>开机自启</label>
                 <label className="settings-switch">

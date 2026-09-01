@@ -92,4 +92,15 @@ describe('chat layout guardrails', () => {
     expect(panelSource).toContain('if (sessionGenerationsRef.current.has(sessionId))')
     expect(panelSource).toContain('pendingGenerationsRef')
   })
+
+  it('shows memory extraction status without blocking the composer', () => {
+    expect(panelSource).toContain('正在分析这条消息是否需要记住')
+    expect(panelSource).toContain('memory-write-notice')
+    expect(panelSource).toContain('记忆分析失败，可稍后重试')
+  })
+
+  it('keeps ambiguous identity statements out of assistant claims', () => {
+    expect(panelSource).toContain('像“我叫不上”这类歧义表达应先询问确认')
+    expect(panelSource).toContain('记忆写入由系统单独分析并反馈')
+  })
 })

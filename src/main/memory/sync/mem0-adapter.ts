@@ -102,6 +102,21 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
     return { remoteCount: (await this.list(signal)).length }
   }
 
+  async rememberRaw(text: string, signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
+    this.validate()
+    const response = await this.request(this.endpoint(), {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: text.slice(0, 4000) }],
+        user_id: this.config.userId,
+        infer: true
+      }),
+      signal: signal || AbortSignal.timeout(30_000)
+    })
+    return parseMem0Memories(await this.responseJson(response))
+  }
+
   async push(memories: readonly MemoryRecord[], signal?: AbortSignal): Promise<{ attempted: number; succeeded: number; skipped: number; failed: number }> {
     this.validate()
     const remote = await this.list(signal)
@@ -128,6 +143,10 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
             body: JSON.stringify({
               messages: [{ role: 'user', content: memory.content }],
               user_id: this.config.userId,
+              // ChouYu has already extracted and validated this memory with
+              // its own LLM. Do not make the self-hosted server call another
+              // upstream provider while persisting it.
+              infer: false,
               metadata: {
                 chouyu_id: memory.id,
                 chouyu_type: memory.type,

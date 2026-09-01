@@ -11,6 +11,7 @@ import { getDefaultPanelHeight } from './core/panel-state'
 
 function App() {
   const [petPosition, setPetPosition] = useState({ x: window.innerWidth - 180, y: window.innerHeight - 180 })
+  const [petVisible, setPetVisible] = useState(true)
   const [positionLoaded, setPositionLoaded] = useState(false)
   const [panelVisible, setPanelVisible] = useState(false)
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
@@ -48,8 +49,9 @@ function App() {
     window.electronAPI.db.getConfig().then(setConfig)
     Promise.all([
       window.electronAPI.db.getState('pet-position'),
-      window.electronAPI.db.getState('panel-position')
-    ]).then(([petValue, panelValue]) => {
+      window.electronAPI.db.getState('panel-position'),
+      window.electronAPI.db.getState('pet-visible')
+    ]).then(([petValue, panelValue, petVisibleValue]) => {
       if (petValue) {
         try { setPetPosition(JSON.parse(petValue)) } catch {}
       }
@@ -61,12 +63,25 @@ function App() {
           }
         } catch {}
       }
+      if (petVisibleValue !== null) {
+        const visible = petVisibleValue !== 'false'
+        setPetVisible(visible)
+        window.electronAPI.notifyPetVisible(visible)
+      }
     }).catch(() => {}).finally(() => {
       setPositionLoaded(true)
     })
   }, [])
 
   useEffect(() => window.electronAPI.onConfigChanged(setConfig), [])
+
+  const updatePetVisibility = useCallback((visible: boolean) => {
+    setPetVisible(visible)
+    void window.electronAPI.db.setState('pet-visible', String(visible))
+    window.electronAPI.notifyPetVisible(visible)
+  }, [])
+
+  useEffect(() => window.electronAPI.onSetPetVisible(updatePetVisibility), [updatePetVisibility])
 
   // Keep only the desktop pet and the capture overlay floating above other apps.
   // Expanded chat/settings behave like a normal window so they do not cover work unnecessarily.
@@ -357,16 +372,18 @@ function App() {
 
   return (
     <div className="app-container">
-      <Pet
-        position={petPosition}
-        onPositionChange={setPetPosition}
-        onClick={togglePanel}
-        onOpenSettings={openSettings}
-        state={petState}
-        size={config.petSize}
-        onFileDrop={handleFileDrop}
-        onFileDropError={setFileDropError}
-      />
+      {petVisible && (
+        <Pet
+          position={petPosition}
+          onPositionChange={setPetPosition}
+          onClick={togglePanel}
+          onOpenSettings={openSettings}
+          state={petState}
+          size={config.petSize}
+          onFileDrop={handleFileDrop}
+          onFileDropError={setFileDropError}
+        />
+      )}
       {/* Proactive message bubble */}
       {proactiveMsg && (
         <div
@@ -420,6 +437,8 @@ function App() {
           onPetStateChange={(state) => stateMachine.transition(state)}
           onHide={hidePanel}
           onClose={closePanel}
+          petVisible={petVisible}
+          onPetVisibleChange={updatePetVisibility}
           initialShowSettings={showSettings}
           onSettingsClose={() => setShowSettings(false)}
           onScreenshot={startScreenshot}

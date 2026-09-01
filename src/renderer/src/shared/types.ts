@@ -119,6 +119,7 @@ export interface ElectronAPI {
     importPreview: () => Promise<MemoryImportPreview>
     importCommit: (decisions: MemoryImportDecision[]) => Promise<MemoryImportResult>
     syncTest: () => Promise<MemorySyncStatus>
+    engineTest: () => Promise<MemorySyncStatus>
     syncPullPreview: () => Promise<MemorySyncPullPreview>
     syncPush: () => Promise<MemorySyncPushResult>
     archiveMany: (ids: string[]) => Promise<string[]>
@@ -132,6 +133,8 @@ export interface ElectronAPI {
     rebuildEmbeddings: () => Promise<EmbeddingRebuildResult>
   }
   onTogglePanel: (callback: () => void) => () => void
+  onSetPetVisible: (callback: (visible: boolean) => void) => () => void
+  notifyPetVisible: (visible: boolean) => void
   onOpenChatPanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
   onHidePanel: (callback: () => void) => () => void

@@ -1,7 +1,12 @@
-import { Tray, Menu, BrowserWindow, app, nativeImage } from 'electron'
+import { Tray, Menu, BrowserWindow, MenuItem, app, nativeImage, ipcMain } from 'electron'
 import { PET_ICON_PNG_BASE64 } from '../shared/pet-icon'
 
 let tray: Tray | null = null
+let petVisibilityItem: MenuItem | null = null
+
+export function setTrayPetVisible(visible: boolean): void {
+  if (petVisibilityItem) petVisibilityItem.checked = visible
+}
 
 export function setupTray(mainWindow: BrowserWindow): void {
   const icon = nativeImage.createFromBuffer(Buffer.from(PET_ICON_PNG_BASE64, 'base64')).resize({ width: 16, height: 16, quality: 'best' })
@@ -21,6 +26,14 @@ export function setupTray(mainWindow: BrowserWindow): void {
       label: '打开聊天',
       click: openChatPanel
     },
+    {
+      label: '显示桌面宠物',
+      type: 'checkbox',
+      checked: true,
+      click: (item) => {
+        mainWindow.webContents.send('set-pet-visible', item.checked)
+      }
+    },
     { type: 'separator' },
     {
       label: '设置',
@@ -38,6 +51,11 @@ export function setupTray(mainWindow: BrowserWindow): void {
       }
     }
   ])
+  petVisibilityItem = contextMenu.items.find((item) => item.type === 'checkbox') || null
+  ipcMain.removeAllListeners('pet-visibility-changed')
+  ipcMain.on('pet-visibility-changed', (_event, visible: boolean) => {
+    if (typeof visible === 'boolean') setTrayPetVisible(visible)
+  })
 
   tray.setToolTip('ChouYu')
   tray.setContextMenu(contextMenu)

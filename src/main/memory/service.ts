@@ -24,6 +24,7 @@ import { buildMemoryClusters, compressMemoryResults, containsSecret, detectMemor
 import { getConfig, saveConfig } from '../database'
 import { cosineSimilarity } from './embedding-client'
 import { capabilityRegistry } from '../capabilities/registry'
+import { Mem0MemorySyncAdapter } from './sync/mem0-adapter'
 
 let provider: MemoryProvider | null = null
 let maintenanceTimer: ReturnType<typeof setInterval> | null = null
@@ -32,10 +33,10 @@ export function initializeMemory(): void {
   if (provider) return
   const config = getConfig()
   try {
-    provider = capabilityRegistry.createMemoryEngine(config.memoryEngineProvider, { userDataPath: app.getPath('userData') })
+    provider = capabilityRegistry.createMemoryEngine(config.memoryEngineProvider, { userDataPath: app.getPath('userData'), config })
   } catch (error) {
     console.warn(`[Memory] Failed to load engine ${config.memoryEngineProvider}; falling back to chouyu-sqlite:`, error)
-    provider = capabilityRegistry.createMemoryEngine('chouyu-sqlite', { userDataPath: app.getPath('userData') })
+    provider = capabilityRegistry.createMemoryEngine('chouyu-sqlite', { userDataPath: app.getPath('userData'), config })
     saveConfig({ memoryEngineProvider: 'chouyu-sqlite' })
   }
   provider.initialize()
@@ -76,6 +77,12 @@ export function proposeMemoryCandidate(candidate: MemoryCandidateInput): MemoryR
   })
   const conflicts = memoryProvider.listConflicts(candidateMemory.id)
   return conflicts.length > 0 ? { ...candidateMemory, conflicts } : candidateMemory
+}
+
+export async function rememberRawMemory(text: string): Promise<MemoryRecord[]> {
+  const active = getMemoryProvider() as MemoryProvider & { rememberRaw?: (value: string) => Promise<MemoryRecord[]> }
+  if (!active.rememberRaw) return []
+  return active.rememberRaw(text)
 }
 
 export function createMemory(candidate: MemoryCandidateInput): MemoryRecord {
@@ -312,6 +319,19 @@ export async function testMemorySync(): Promise<MemorySyncStatus> {
   }
 }
 
+export async function testMemoryEngine(): Promise<MemorySyncStatus> {
+  const config = getConfig()
+  const mode = config.memoryEngineProvider === 'mem0-self-hosted-engine' ? 'self-hosted' : config.memoryEngineProvider === 'mem0-platform-engine' ? 'platform' : null
+  if (!mode) return { ok: true, provider: 'mem0', message: '当前使用本地 ChouYu SQLite 主记忆引擎。' }
+  try {
+    const adapter = new Mem0MemorySyncAdapter({ baseUrl: config.memorySyncBaseUrl, apiKey: config.memorySyncApiKey, userId: config.memorySyncUserId, mode })
+    const result = await adapter.test()
+    return { ok: true, provider: 'mem0', remoteCount: result.remoteCount, message: `Mem0 主记忆引擎连接成功，已有 ${result.remoteCount} 条记忆。` }
+  } catch (error) {
+    return { ok: false, provider: 'mem0', message: error instanceof Error ? error.message : 'Mem0 主记忆引擎连接失败。' }
+  }
+}
+
 export async function previewMemorySyncPull(): Promise<MemorySyncPullPreview> {
   const config = getConfig()
   const adapter = capabilityRegistry.createMemorySync(config.memorySyncProvider, config)
@@ -386,8 +406,10 @@ export async function rebuildEmbeddings(): Promise<EmbeddingRebuildResult> {
 }
 
 export async function searchMemories(query: string, limit = 6): Promise<MemorySearchResult[]> {
+  const remoteProvider = getMemoryProvider() as MemoryProvider & { refreshRemote?: () => Promise<void> }
+  await remoteProvider.refreshRemote?.()
   runMemoryMaintenance()
-  const provider = getMemoryProvider()
+  const provider = remoteProvider
   const targeted = inferMemoryQueryTypes(query)
     .flatMap((type) => provider.list({ status: 'active', type, limit: Math.max(limit, 6) }))
     .sort((left, right) => {
