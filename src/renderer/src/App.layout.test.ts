@@ -9,6 +9,7 @@ describe('panel opening placement', () => {
     expect(source).toContain('getCenteredPanelPosition')
     expect(source).toContain("getState('panel-position')")
     expect(source).toContain("setState('panel-position'")
+    expect(source).toContain('onOpenChatPanel(openChatPanel)')
     expect(source).toContain('getDefaultPanelHeight(window.innerHeight)')
     expect(source).not.toContain('const isTop = petCenterY < screenH / 3')
   })

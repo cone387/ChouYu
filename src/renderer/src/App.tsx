@@ -221,6 +221,16 @@ function App() {
     })
   }, [ensurePanelPosition, panelInitialized])
 
+  const openChatPanel = useCallback(() => {
+    proactiveEngine.userActivity()
+    stateMachine.userActivity()
+    if (!panelInitialized) setPanelInitialized(true)
+    ensurePanelPosition()
+    setShowSettings(false)
+    setPanelVisible(true)
+    window.focus()
+  }, [ensurePanelPosition, panelInitialized])
+
   const restoreClickThrough = useCallback(() => {
     ignoreRef.current = true
     window.electronAPI.setIgnoreMouseEvents(true)
@@ -249,6 +259,11 @@ function App() {
     const cleanup = window.electronAPI.onTogglePanel(togglePanel)
     return cleanup
   }, [togglePanel])
+
+  useEffect(() => {
+    const cleanup = window.electronAPI.onOpenChatPanel(openChatPanel)
+    return cleanup
+  }, [openChatPanel])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onHidePanel(() => {

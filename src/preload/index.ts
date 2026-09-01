@@ -119,6 +119,10 @@ const api = {
     ipcRenderer.on('clipboard:changed', handler)
     return () => { ipcRenderer.removeListener('clipboard:changed', handler) }
   },
+  onOpenChatPanel: (callback: () => void) => {
+    ipcRenderer.on('open-chat-panel', callback)
+    return () => { ipcRenderer.removeListener('open-chat-panel', callback) }
+  },
   onConfigChanged: (callback: (config: AppConfig) => void) => {
     const handler = (_e: unknown, config: AppConfig) => callback(config)
     ipcRenderer.on('config:changed', handler)

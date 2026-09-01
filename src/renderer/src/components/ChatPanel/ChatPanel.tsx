@@ -98,6 +98,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [memoryCandidateError, setMemoryCandidateError] = useState('')
   const [memoryCorrectionId, setMemoryCorrectionId] = useState('')
   const sessionGenerationsRef = useRef<Map<string, SessionGeneration>>(new Map())
+  const pendingGenerationsRef = useRef<Set<string>>(new Set())
   const requestSessionRef = useRef<Map<string, string>>(new Map())
   const sessionMessagesRef = useRef<Map<string, Message[]>>(new Map())
   const happyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -174,6 +175,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [onPetStateChange])
 
   const stopSessionResponse = useCallback((sessionId: string) => {
+    pendingGenerationsRef.current.delete(sessionId)
     const generation = sessionGenerationsRef.current.get(sessionId)
     if (!generation) return
     generation.controller.abort()
@@ -536,7 +538,25 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const pluginCommands = plugins.map((plugin) => ({ cmd: '/' + plugin.command, desc: plugin.description }))
 
   const generateAIResponse = useCallback(async (conversation: Message[], sessionId = activeSessionIdRef.current) => {
-    if (!sessionId || sessionGenerationsRef.current.has(sessionId)) return
+    if (!sessionId) return
+    if (sessionGenerationsRef.current.has(sessionId)) {
+      // Start another response as soon as the current one completes. Read the
+      // session's latest messages at that point so the completed answer is in
+      // the next request's context.
+      pendingGenerationsRef.current.add(sessionId)
+      return
+    }
+    const responseBaseId = `${Date.now()}-assistant`
+    let segmentIndex = 0
+    let aiMsgId = responseBaseId
+    let accumulated = ''
+    const controller = new AbortController()
+    const generation: SessionGeneration = { controller, responseId: aiMsgId, toolBoundary: false }
+    // Mark the session busy before memory lookup so a fast second send is queued.
+    sessionGenerationsRef.current.set(sessionId, generation)
+    if (activeSessionIdRef.current === sessionId) onPetStateChange('thinking')
+    setSessionStreaming(sessionId, true)
+
     const latestUserMessage = [...conversation].reverse().find((message) => message.role === 'user' && !message.toolData)
     let relevantMemories: Awaited<ReturnType<typeof window.electronAPI.memory.search>> = []
     if (config.memoryEnabled && latestUserMessage?.content) {
@@ -556,20 +576,17 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }))
     const systemPrompt = buildSystemPrompt(config.soulMd, formatMemoryContext(relevantMemories))
     const history = buildMessages(conversation)
-    const responseBaseId = `${Date.now()}-assistant`
-    let segmentIndex = 0
-    let aiMsgId = responseBaseId
-    let accumulated = ''
-    const controller = new AbortController()
-    const generation: SessionGeneration = { controller, responseId: aiMsgId, toolBoundary: false }
-    sessionGenerationsRef.current.set(sessionId, generation)
-    if (activeSessionIdRef.current === sessionId) onPetStateChange('thinking')
-    setSessionStreaming(sessionId, true)
 
     const finishGeneration = () => {
       if (sessionGenerationsRef.current.get(sessionId) !== generation) return
       sessionGenerationsRef.current.delete(sessionId)
       if (generation.requestId) requestSessionRef.current.delete(generation.requestId)
+      if (pendingGenerationsRef.current.has(sessionId)) {
+        pendingGenerationsRef.current.delete(sessionId)
+        const queuedConversation = sessionMessagesRef.current.get(sessionId) || []
+        void generateAIResponse(queuedConversation, sessionId)
+        return
+      }
       setSessionStreaming(sessionId, false)
       const storedMessages = sessionMessagesRef.current.get(sessionId) || []
       persistSessionMessages(sessionId, storedMessages)
@@ -637,6 +654,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     const sessionId = activeSessionIdRef.current
     const generation = sessionGenerationsRef.current.get(sessionId)
     if (!generation) return
+    pendingGenerationsRef.current.delete(sessionId)
     const responseId = generation.responseId
     stopSessionResponse(sessionId)
     const nextMessages = updateSessionMessages(sessionId, (previous) => {
@@ -1008,7 +1026,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             <InputArea
               onSend={handleSend}
               onStop={handleStopGeneration}
-              disabled={isStreaming || !workspaceLoaded}
+              disabled={!workspaceLoaded}
+              isStreaming={isStreaming}
               focusRequest={composerFocusRequest}
               model={config.model}
               onModelChange={handleModelChange}

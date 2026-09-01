@@ -8,16 +8,18 @@ export function setupTray(mainWindow: BrowserWindow): void {
   if (icon.isEmpty()) throw new Error('Tray icon failed to render')
   tray = new Tray(icon)
 
+  const openChatPanel = () => {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+    mainWindow.moveTop()
+    mainWindow.webContents.send('open-chat-panel')
+  }
+
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: '显示/隐藏',
-      click: () => {
-        if (mainWindow.isVisible()) {
-          mainWindow.hide()
-        } else {
-          mainWindow.show()
-        }
-      }
+      label: '打开聊天',
+      click: openChatPanel
     },
     { type: 'separator' },
     {
@@ -39,11 +41,6 @@ export function setupTray(mainWindow: BrowserWindow): void {
 
   tray.setToolTip('ChouYu')
   tray.setContextMenu(contextMenu)
-  tray.on('double-click', () => {
-    if (mainWindow.isVisible()) {
-      mainWindow.hide()
-    } else {
-      mainWindow.show()
-    }
-  })
+  tray.on('click', openChatPanel)
+  tray.on('double-click', openChatPanel)
 }

@@ -17,6 +17,7 @@ interface InputAreaProps {
   onSend: (content: string, attachments?: PendingAttachment[]) => void
   onStop?: () => void
   disabled: boolean
+  isStreaming?: boolean
   autoFocus?: boolean
   focusRequest?: number
   model?: string
@@ -30,7 +31,7 @@ interface InputAreaProps {
   onInitialAttachmentConsumed?: () => void
 }
 
-export default function InputArea({ onSend, onStop, disabled, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed }: InputAreaProps) {
+export default function InputArea({ onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
@@ -52,6 +53,14 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, focusRe
   const [recentCaptures, setRecentCaptures] = useState<PendingAttachment[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const initialFocusDoneRef = useRef(false)
+  const focusAfterSendRef = useRef(false)
+
+  const focusComposer = useCallback(() => {
+    const textarea = textareaRef.current
+    if (!textarea || textarea.disabled) return false
+    textarea.focus({ preventScroll: true })
+    return document.activeElement === textarea
+  }, [])
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current
@@ -135,6 +144,22 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, focusRe
     })
   }, [refreshModels])
 
+  const restoreComposerFocus = useCallback(() => {
+    focusAfterSendRef.current = true
+    requestAnimationFrame(() => {
+      // Restore focus after React commits the cleared composer value.
+      if (focusComposer()) focusAfterSendRef.current = false
+    })
+  }, [focusComposer])
+
+  useEffect(() => {
+    if (disabled || !focusAfterSendRef.current) return
+    const frame = requestAnimationFrame(() => {
+      if (focusComposer()) focusAfterSendRef.current = false
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [disabled, focusComposer])
+
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
     if ((!trimmed && attachments.length === 0) || disabled) return
@@ -144,8 +169,7 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, focusRe
       setAttachments([])
       setShowCommands(false)
       setActivePlugin(null)
-      // Keep focus on textarea after plugin execution
-      setTimeout(() => textareaRef.current?.focus(), 50)
+      restoreComposerFocus()
       return
     }
     onSend(trimmed, attachments.length > 0 ? attachments : undefined)
@@ -153,7 +177,8 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, focusRe
     setAttachments([])
     setAttachmentError('')
     setShowCommands(false)
-  }, [value, disabled, onSend, attachments, activePlugin])
+    restoreComposerFocus()
+  }, [value, disabled, onSend, attachments, activePlugin, restoreComposerFocus])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape' && activePlugin) {
@@ -603,22 +628,30 @@ export default function InputArea({ onSend, onStop, disabled, autoFocus, focusRe
               placement="top"
               openRequest={modelPickerOpenRequest}
             />
-            <button
-              className={`toolbar-btn send-btn${disabled ? ' stop-btn' : ''}`}
-              onClick={disabled ? onStop : handleSend}
-              disabled={!disabled && !value.trim() && attachments.length === 0}
-              title={disabled ? '停止生成' : '发送'}
-              aria-label={disabled ? '停止生成' : '发送消息'}
-            >
-              {disabled ? (
+            {isStreaming && onStop && (
+              <button
+                className="toolbar-btn send-btn stop-btn"
+                onClick={onStop}
+                title="停止生成"
+                aria-label="停止生成"
+              >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
                   <rect x="3.5" y="3.5" width="7" height="7" rx="1"/>
                 </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              </button>
+            )}
+            <button
+              className="toolbar-btn send-btn"
+              onClick={handleSend}
+              disabled={disabled || (!value.trim() && attachments.length === 0)}
+              title="发送"
+              aria-label="发送消息"
+            >
+              {
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
                   <path d="M2.5 2.5l11 5.5-11 5.5v-4l7-1.5-7-1.5v-4z"/>
                 </svg>
-              )}
+              }
             </button>
           </div>
         </div>

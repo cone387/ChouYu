@@ -67,7 +67,11 @@ describe('chat layout guardrails', () => {
 
   it('focuses the composer only on explicit chat-entry transitions', () => {
     expect(inputSource).toContain('focusRequest?: number')
+    expect(inputSource).toContain('isStreaming?: boolean')
     expect(inputSource).toContain('focus({ preventScroll: true })')
+    expect(inputSource).toContain('restoreComposerFocus()')
+    expect(inputSource).toContain('textarea.disabled) return false')
+    expect(inputSource).toContain('if (focusComposer()) focusAfterSendRef.current = false')
     expect(inputSource).not.toContain('setTimeout(tryFocus')
     expect(panelSource).toContain('requestComposerFocus()')
     expect(panelSource).toContain('focusRequest={composerFocusRequest}')
@@ -79,5 +83,13 @@ describe('chat layout guardrails', () => {
     expect(panelSource).toContain('sessionMessagesRef')
     expect(panelSource).not.toContain('stopActiveResponse()')
     expect(sidebarSource).toContain('streamingSessionIds.has(session.id)')
+  })
+
+  it('keeps the composer enabled while a response is streaming and queues follow-up sends', () => {
+    expect(panelSource).toContain('disabled={!workspaceLoaded}')
+    expect(panelSource).toContain('isStreaming={isStreaming}')
+    expect(inputSource).toContain('isStreaming?: boolean')
+    expect(panelSource).toContain('if (sessionGenerationsRef.current.has(sessionId))')
+    expect(panelSource).toContain('pendingGenerationsRef')
   })
 })

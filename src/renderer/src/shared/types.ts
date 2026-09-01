@@ -131,6 +131,7 @@ export interface ElectronAPI {
     rebuildEmbeddings: () => Promise<EmbeddingRebuildResult>
   }
   onTogglePanel: (callback: () => void) => () => void
+  onOpenChatPanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
   onHidePanel: (callback: () => void) => () => void
   onPluginHotkey: (callback: (pluginId: string) => void) => () => void
