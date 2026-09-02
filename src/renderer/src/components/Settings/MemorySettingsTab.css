@@ -11,6 +11,9 @@
 .memory-review-intro { display:flex; align-items:baseline; gap:8px; margin:-4px 0 10px; padding:9px 11px; border-left:3px solid var(--warning); border-radius:0 8px 8px 0; background:var(--warning-bg); }
 .memory-review-intro strong { flex:0 0 auto; color:var(--warning); font-size:12px; }
 .memory-review-intro span { min-width:0; color:var(--text-secondary); font-size:11px; line-height:1.45; }
+.memory-sync-outbox-status { display:grid; gap:3px; margin-bottom:8px; padding:9px 10px; border:1px solid var(--warning-border); border-radius:8px; background:var(--warning-bg); }
+.memory-sync-outbox-status strong { color:var(--warning); font-size:11px; }
+.memory-sync-outbox-status span,.memory-sync-outbox-status small { color:var(--text-secondary); font-size:10px; line-height:1.4; }
 .memory-loading-state { display:grid; gap:8px; padding:16px 0; color:var(--text-muted); font-size:11px; }
 .memory-loading-state i { display:block; height:54px; overflow:hidden; border-radius:10px; background:linear-gradient(100deg,var(--bg-secondary) 30%,var(--hover-bg) 50%,var(--bg-secondary) 70%); background-size:220% 100%; animation:memory-loading 1.2s ease-in-out infinite; }
 .memory-loading-state i:nth-of-type(2) { height:78px; animation-delay:80ms; }

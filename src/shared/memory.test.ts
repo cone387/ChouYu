@@ -15,7 +15,8 @@ import {
   scoreMemory,
   scoreMemoryLifecycle,
   shouldAutoWriteMemory,
-  shouldUseRemoteMemoryExtraction
+  shouldUseRemoteMemoryExtraction,
+  memorySyncRetryDelay
 } from './memory'
 
 describe('memory foundation', () => {
@@ -48,6 +49,12 @@ describe('memory foundation', () => {
     expect(shouldUseRemoteMemoryExtraction('confirm', 'mem0-platform-engine')).toBe(false)
     expect(shouldUseRemoteMemoryExtraction('off', 'mem0-self-hosted-engine')).toBe(false)
     expect(shouldUseRemoteMemoryExtraction('auto', 'chouyu-sqlite')).toBe(false)
+  })
+
+  it('uses bounded exponential retry delays for remote memory writes', () => {
+    expect(memorySyncRetryDelay(1)).toBe(1_000)
+    expect(memorySyncRetryDelay(3)).toBe(4_000)
+    expect(memorySyncRetryDelay(99)).toBe(30 * 60_000)
   })
 
   it('routes identity and preference questions to the matching global memory types', () => {

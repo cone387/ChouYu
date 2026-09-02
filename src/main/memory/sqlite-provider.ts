@@ -172,6 +172,16 @@ export class SQLiteMemoryProvider implements MemoryProvider {
         created_at INTEGER NOT NULL,
         FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
       );
+      CREATE TABLE IF NOT EXISTS memory_sync_outbox (
+        memory_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER NOT NULL,
+        last_error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_memory_sync_outbox_next_attempt ON memory_sync_outbox(next_attempt_at);
     `)
     const memoryColumns = new Set((this.database.pragma('table_info(memories)') as Array<{ name: string }>).map((column) => column.name))
     if (!memoryColumns.has('helpful_count')) this.database.exec('ALTER TABLE memories ADD COLUMN helpful_count INTEGER NOT NULL DEFAULT 0')
@@ -184,7 +194,7 @@ export class SQLiteMemoryProvider implements MemoryProvider {
     this.database = null
   }
 
-  private db(): Database.Database {
+  protected db(): Database.Database {
     if (!this.database) throw new Error('Memory provider is not initialized')
     return this.database
   }

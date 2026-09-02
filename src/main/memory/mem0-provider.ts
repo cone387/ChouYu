@@ -1,5 +1,6 @@
 import type { AppConfig } from '../../shared/config'
-import type { MemoryCandidateInput, MemoryRecord, MemoryType } from '../../shared/memory'
+import type { MemoryCandidateInput, MemoryRecord, MemorySyncOutboxStatus, MemoryType } from '../../shared/memory'
+import { memorySyncRetryDelay } from '../../shared/memory'
 import { getConfig } from '../database'
 import { SQLiteMemoryProvider } from './sqlite-provider'
 import { Mem0MemorySyncAdapter } from './sync/mem0-adapter'
@@ -12,6 +13,9 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
   private remote: Mem0MemorySyncAdapter
   private remoteConfigSignature: string
   private refreshPromise: Promise<void> | null = null
+  private flushPromise: Promise<void> | null = null
+  private syncTimer: ReturnType<typeof setInterval> | null = null
+  private closed = false
 
   constructor(filePath: string, config: AppConfig, mode: 'platform' | 'self-hosted') {
     super(filePath)
@@ -44,7 +48,19 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
 
   override initialize(): void {
     super.initialize()
+    this.closed = false
+    this.syncTimer = setInterval(() => { void this.flushOutbox() }, 30_000)
     void this.refreshRemote()
+    void this.flushOutbox()
+  }
+
+  override close(): void {
+    this.closed = true
+    if (this.syncTimer) clearInterval(this.syncTimer)
+    this.syncTimer = null
+    this.refreshPromise = null
+    this.flushPromise = null
+    super.close()
   }
 
   async refreshRemote(): Promise<void> {
@@ -104,7 +120,74 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
 
   private enqueueRemote(memory: MemoryRecord): void {
     this.refreshRemoteConfig()
-    void this.remote.push([memory]).catch((error) => console.warn('[Memory] Mem0 primary write failed:', error))
+    const now = Date.now()
+    try {
+      this.db().prepare(`
+        INSERT INTO memory_sync_outbox (memory_id, payload, attempts, next_attempt_at, last_error, created_at, updated_at)
+        VALUES (?, ?, 0, ?, NULL, ?, ?)
+        ON CONFLICT(memory_id) DO UPDATE SET payload = excluded.payload, next_attempt_at = MIN(memory_sync_outbox.next_attempt_at, excluded.next_attempt_at), updated_at = excluded.updated_at
+      `).run(memory.id, JSON.stringify(memory), now, now, now)
+    } catch (error) {
+      console.warn('[Memory] Failed to enqueue Mem0 primary write:', error)
+      return
+    }
+    void this.flushOutbox()
+  }
+
+  private async flushOutbox(): Promise<void> {
+    if (this.closed || this.flushPromise) return this.flushPromise || Promise.resolve()
+    this.refreshRemoteConfig()
+    this.flushPromise = (async () => {
+      try {
+        const rows = this.db().prepare(`
+          SELECT memory_id, payload, attempts FROM memory_sync_outbox
+          WHERE next_attempt_at <= ? ORDER BY created_at ASC LIMIT 20
+        `).all(Date.now()) as Array<{ memory_id: string; payload: string; attempts: number }>
+        for (const row of rows) {
+          if (this.closed) break
+          try {
+            const memory = JSON.parse(row.payload) as MemoryRecord
+            const result = await this.remote.push([memory])
+            if (result.failed > 0 && result.succeeded === 0 && result.skipped === 0) {
+              throw new Error('Mem0 上传失败。')
+            }
+            this.db().prepare('DELETE FROM memory_sync_outbox WHERE memory_id = ?').run(row.memory_id)
+          } catch (error) {
+            const attempts = row.attempts + 1
+            const message = error instanceof Error ? error.message : 'Mem0 上传失败。'
+            this.db().prepare(`
+              UPDATE memory_sync_outbox
+              SET attempts = ?, next_attempt_at = ?, last_error = ?, updated_at = ?
+              WHERE memory_id = ?
+            `).run(attempts, Date.now() + memorySyncRetryDelay(attempts), message.slice(0, 500), Date.now(), row.memory_id)
+          }
+        }
+      } catch (error) {
+        console.warn('[Memory] Mem0 outbox flush failed:', error)
+      } finally {
+        this.flushPromise = null
+      }
+    })()
+    return this.flushPromise
+  }
+
+  getSyncOutboxStatus(): MemorySyncOutboxStatus {
+    const summary = this.db().prepare(`
+      SELECT COUNT(*) AS pending,
+        SUM(CASE WHEN attempts > 0 THEN 1 ELSE 0 END) AS failed,
+        MAX(CASE WHEN attempts > 0 THEN updated_at ELSE NULL END) AS last_attempt_at
+      FROM memory_sync_outbox
+    `).get() as { pending: number; failed: number; last_attempt_at: number | null }
+    const lastError = this.db().prepare(`
+      SELECT last_error FROM memory_sync_outbox
+      WHERE last_error IS NOT NULL ORDER BY updated_at DESC LIMIT 1
+    `).get() as { last_error: string } | undefined
+    return {
+      pending: Number(summary.pending || 0),
+      failed: Number(summary.failed || 0),
+      lastError: lastError?.last_error,
+      lastAttemptAt: summary.last_attempt_at || undefined
+    }
   }
 
   override createActive(candidate: MemoryCandidateInput): MemoryRecord {

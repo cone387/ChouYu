@@ -3,7 +3,7 @@ import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult,
 import type { CaptureSourceInfo } from '../../../shared/capture'
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
 import type { CapabilityInfo } from '../../../shared/capabilities'
-import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncPullPreview, MemorySyncPushResult, MemorySyncStatus, MemoryType } from '../../../shared/memory'
+import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncOutboxStatus, MemorySyncPullPreview, MemorySyncPushResult, MemorySyncStatus, MemoryType } from '../../../shared/memory'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -119,6 +119,7 @@ export interface ElectronAPI {
     importPreview: () => Promise<MemoryImportPreview>
     importCommit: (decisions: MemoryImportDecision[]) => Promise<MemoryImportResult>
     syncTest: () => Promise<MemorySyncStatus>
+    syncOutboxStatus: () => Promise<MemorySyncOutboxStatus | null>
     engineTest: () => Promise<MemorySyncStatus>
     syncPullPreview: () => Promise<MemorySyncPullPreview>
     syncPush: () => Promise<MemorySyncPushResult>

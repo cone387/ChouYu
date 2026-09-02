@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { extractPersonName } from '../../../../shared/memory'
-import type { MemoryCleanupSuggestion, MemoryCluster, MemoryConflictAction, MemoryImportAction, MemoryImportPreview, MemoryInsights, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
+import type { MemoryCleanupSuggestion, MemoryCluster, MemoryConflictAction, MemoryImportAction, MemoryImportPreview, MemoryInsights, MemoryRecord, MemoryRevision, MemoryStats, MemorySyncOutboxStatus, MemoryType } from '../../../../shared/memory'
 import type { AppConfig } from '../../shared/types'
 import type { CapabilityInfo } from '../../../../shared/capabilities'
 import './MemorySettingsTab.css'
@@ -100,6 +100,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   })
   const [syncBusy, setSyncBusy] = useState<'test' | 'pull' | 'push' | ''>('')
   const [syncStatus, setSyncStatus] = useState('')
+  const [syncOutboxStatus, setSyncOutboxStatus] = useState<MemorySyncOutboxStatus | null>(null)
   const [confirmSyncPush, setConfirmSyncPush] = useState(false)
   const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([])
   const [capabilityStatus, setCapabilityStatus] = useState('')
@@ -201,6 +202,19 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   useEffect(() => {
     setSyncDraft({ memorySyncBaseUrl: config.memorySyncBaseUrl, memorySyncApiKey: config.memorySyncApiKey, memorySyncUserId: config.memorySyncUserId })
   }, [config.memorySyncApiKey, config.memorySyncBaseUrl, config.memorySyncUserId])
+
+  useEffect(() => {
+    if (activeView !== 'connections') return
+    let mounted = true
+    const refreshSyncOutbox = () => {
+      void window.electronAPI.memory.syncOutboxStatus().then((status) => {
+        if (mounted) setSyncOutboxStatus(status)
+      }).catch(() => {})
+    }
+    refreshSyncOutbox()
+    const timer = setInterval(refreshSyncOutbox, 5_000)
+    return () => { mounted = false; clearInterval(timer) }
+  }, [activeView])
 
   useEffect(() => {
     void window.electronAPI.capabilities.list().then(setCapabilities).catch(() => setCapabilityStatus('能力插件目录加载失败。'))
@@ -698,6 +712,11 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       </div>}
 
       {!loading && activeView === 'connections' && <div className="memory-view memory-connections-view">
+      {syncOutboxStatus && (syncOutboxStatus.pending > 0 || syncOutboxStatus.failed > 0) && <div className="memory-sync-outbox-status" role="status">
+        <strong>远程同步队列</strong>
+        <span>待发送 {syncOutboxStatus.pending} 条 · 失败重试 {syncOutboxStatus.failed} 条</span>
+        {syncOutboxStatus.lastError && <small>最近错误：{syncOutboxStatus.lastError}（后台会自动重试）</small>}
+      </div>}
       <section className="memory-capability-card">
         <div><strong>记忆引擎插件</strong><span>负责本地记忆的存储、检索、冲突和历史。切换引擎需要重启应用。</span></div>
         <select value={config.memoryEngineProvider} onChange={(event) => {

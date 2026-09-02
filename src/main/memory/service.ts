@@ -17,6 +17,7 @@ import type {
   MemorySearchResult,
   MemorySyncPullPreview,
   MemorySyncPushResult,
+  MemorySyncOutboxStatus,
   MemorySyncStatus,
   MemoryType
 } from '../../shared/memory'
@@ -53,6 +54,11 @@ export function initializeMemory(): void {
 export function getMemoryProvider(): MemoryProvider {
   if (!provider) throw new Error('Memory service is not initialized')
   return provider
+}
+
+export function getMemorySyncOutboxStatus(): MemorySyncOutboxStatus | null {
+  const memoryProvider = getMemoryProvider()
+  return memoryProvider.getSyncOutboxStatus?.() || null
 }
 
 export function closeMemory(): void {
