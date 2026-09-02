@@ -101,6 +101,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [syncBusy, setSyncBusy] = useState<'test' | 'pull' | 'push' | ''>('')
   const [syncStatus, setSyncStatus] = useState('')
   const [syncOutboxStatus, setSyncOutboxStatus] = useState<MemorySyncOutboxStatus | null>(null)
+  const [syncRetryBusy, setSyncRetryBusy] = useState(false)
   const [confirmSyncPush, setConfirmSyncPush] = useState(false)
   const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([])
   const [capabilityStatus, setCapabilityStatus] = useState('')
@@ -520,6 +521,19 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     }
   }
 
+  const retrySyncOutbox = async () => {
+    setSyncRetryBusy(true)
+    try {
+      const status = await window.electronAPI.memory.retrySyncOutbox()
+      setSyncOutboxStatus(status)
+      setSyncStatus(status ? `同步重试完成：待发送 ${status.pending} 条。` : '当前主记忆引擎不需要远程同步队列。')
+    } catch (reason) {
+      setSyncStatus(reason instanceof Error ? reason.message : '同步重试失败。')
+    } finally {
+      setSyncRetryBusy(false)
+    }
+  }
+
   const testMemoryEngineConnection = async () => {
     setSyncBusy('test')
     setSyncStatus('正在连接主记忆引擎…')
@@ -716,6 +730,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         <strong>远程同步队列</strong>
         <span>待发送 {syncOutboxStatus.pending} 条 · 失败重试 {syncOutboxStatus.failed} 条</span>
         {syncOutboxStatus.lastError && <small>最近错误：{syncOutboxStatus.lastError}（后台会自动重试）</small>}
+        <button type="button" onClick={() => { void retrySyncOutbox() }} disabled={syncRetryBusy}>{syncRetryBusy ? '重试中…' : '立即重试'}</button>
       </div>}
       <section className="memory-capability-card">
         <div><strong>记忆引擎插件</strong><span>负责本地记忆的存储、检索、冲突和历史。切换引擎需要重启应用。</span></div>

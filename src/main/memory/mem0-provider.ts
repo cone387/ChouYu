@@ -11,20 +11,22 @@ import { Mem0MemorySyncAdapter } from './sync/mem0-adapter'
  */
 export class Mem0MemoryProvider extends SQLiteMemoryProvider {
   private remote: Mem0MemorySyncAdapter
+  private readonly request: typeof fetch
   private remoteConfigSignature: string
   private refreshPromise: Promise<void> | null = null
   private flushPromise: Promise<void> | null = null
   private syncTimer: ReturnType<typeof setInterval> | null = null
   private closed = false
 
-  constructor(filePath: string, config: AppConfig, mode: 'platform' | 'self-hosted') {
+  constructor(filePath: string, config: AppConfig, mode: 'platform' | 'self-hosted', request: typeof fetch = fetch) {
     super(filePath)
+    this.request = request
     this.remote = new Mem0MemorySyncAdapter({
       baseUrl: config.memorySyncBaseUrl,
       apiKey: config.memorySyncApiKey,
       userId: config.memorySyncUserId,
       mode
-    })
+    }, request)
     this.remoteConfigSignature = this.signature(config, mode)
   }
 
@@ -42,7 +44,7 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
       apiKey: config.memorySyncApiKey,
       userId: config.memorySyncUserId,
       mode
-    })
+    }, this.request)
     this.remoteConfigSignature = signature
   }
 
@@ -188,6 +190,12 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
       lastError: lastError?.last_error,
       lastAttemptAt: summary.last_attempt_at || undefined
     }
+  }
+
+  async retrySyncOutbox(): Promise<MemorySyncOutboxStatus> {
+    this.db().prepare('UPDATE memory_sync_outbox SET next_attempt_at = ? WHERE attempts > 0').run(Date.now())
+    await this.flushOutbox()
+    return this.getSyncOutboxStatus()
   }
 
   override createActive(candidate: MemoryCandidateInput): MemoryRecord {

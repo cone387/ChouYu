@@ -31,6 +31,7 @@ import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './
 import {
   getMemoryProvider,
   getMemorySyncOutboxStatus,
+  retryMemorySyncOutbox,
   createMemory,
   createMemoryTopic,
   getIdentityProfile,
@@ -433,6 +434,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('memory:sync-test', () => testMemorySync())
   ipcMain.handle('memory:sync-outbox-status', () => getMemorySyncOutboxStatus())
+  ipcMain.handle('memory:sync-outbox-retry', () => retryMemorySyncOutbox())
   ipcMain.handle('memory:engine-test', () => testMemoryEngine())
   ipcMain.handle('memory:sync-pull-preview', () => previewMemorySyncPull())
   ipcMain.handle('memory:sync-push', () => pushMemoriesToSync())

@@ -81,6 +81,7 @@ const api = {
     importCommit: (decisions: MemoryImportDecision[]) => ipcRenderer.invoke('memory:import-commit', decisions) as Promise<MemoryImportResult>,
     syncTest: () => ipcRenderer.invoke('memory:sync-test') as Promise<MemorySyncStatus>,
     syncOutboxStatus: () => ipcRenderer.invoke('memory:sync-outbox-status'),
+    retrySyncOutbox: () => ipcRenderer.invoke('memory:sync-outbox-retry'),
     engineTest: () => ipcRenderer.invoke('memory:engine-test') as Promise<MemorySyncStatus>,
     syncPullPreview: () => ipcRenderer.invoke('memory:sync-pull-preview') as Promise<MemorySyncPullPreview>,
     syncPush: () => ipcRenderer.invoke('memory:sync-push') as Promise<MemorySyncPushResult>,

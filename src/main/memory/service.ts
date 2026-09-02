@@ -61,6 +61,11 @@ export function getMemorySyncOutboxStatus(): MemorySyncOutboxStatus | null {
   return memoryProvider.getSyncOutboxStatus?.() || null
 }
 
+export async function retryMemorySyncOutbox(): Promise<MemorySyncOutboxStatus | null> {
+  const memoryProvider = getMemoryProvider()
+  return memoryProvider.retrySyncOutbox ? memoryProvider.retrySyncOutbox() : null
+}
+
 export function closeMemory(): void {
   if (maintenanceTimer) clearInterval(maintenanceTimer)
   maintenanceTimer = null

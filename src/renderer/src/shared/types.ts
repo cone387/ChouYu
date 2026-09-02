@@ -120,6 +120,7 @@ export interface ElectronAPI {
     importCommit: (decisions: MemoryImportDecision[]) => Promise<MemoryImportResult>
     syncTest: () => Promise<MemorySyncStatus>
     syncOutboxStatus: () => Promise<MemorySyncOutboxStatus | null>
+    retrySyncOutbox: () => Promise<MemorySyncOutboxStatus | null>
     engineTest: () => Promise<MemorySyncStatus>
     syncPullPreview: () => Promise<MemorySyncPullPreview>
     syncPush: () => Promise<MemorySyncPushResult>

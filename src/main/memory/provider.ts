@@ -64,4 +64,5 @@ export interface MemoryProvider {
   excludeFromClusters(memoryIds: string[]): string[]
   listClusterExcludedIds(): string[]
   getSyncOutboxStatus?: () => MemorySyncOutboxStatus
+  retrySyncOutbox?: () => Promise<MemorySyncOutboxStatus>
 }
