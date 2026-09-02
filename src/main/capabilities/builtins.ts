@@ -2,7 +2,6 @@ import path from 'path'
 import { capabilityRegistry } from './registry'
 import { SQLiteMemoryProvider } from '../memory/sqlite-provider'
 import { OpenAIEmbeddingClient } from '../memory/embedding-client'
-import { Mem0MemorySyncAdapter } from '../memory/sync/mem0-adapter'
 import { Mem0MemoryProvider } from '../memory/mem0-provider'
 
 let registered = false
@@ -59,25 +58,5 @@ export function registerBuiltInCapabilities(): void {
       apiKey: config.embeddingApiKey || config.apiKey,
       model: config.embeddingModel
     })
-  })
-  capabilityRegistry.register({
-    id: 'mem0-platform',
-    kind: 'memory-sync',
-    name: 'Mem0 Platform',
-    description: '显式上传或预览拉取 Mem0 托管平台中的记忆。',
-    networkAccess: true,
-    sendsMemoryData: true,
-    requiresConfiguration: true,
-    create: (config) => new Mem0MemorySyncAdapter({ baseUrl: config.memorySyncBaseUrl, apiKey: config.memorySyncApiKey, userId: config.memorySyncUserId, mode: 'platform' })
-  })
-  capabilityRegistry.register({
-    id: 'mem0-self-hosted',
-    kind: 'memory-sync',
-    name: 'Mem0 Self-hosted',
-    description: '连接本机或自托管 Mem0 Server，使用 X-API-Key；允许本地开发关闭鉴权。',
-    networkAccess: true,
-    sendsMemoryData: true,
-    requiresConfiguration: true,
-    create: (config) => new Mem0MemorySyncAdapter({ baseUrl: config.memorySyncBaseUrl, apiKey: config.memorySyncApiKey, userId: config.memorySyncUserId, mode: 'self-hosted' })
   })
 }

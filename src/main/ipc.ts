@@ -38,7 +38,6 @@ import {
   indexMemory,
   listMemoryClusters,
   previewMemoryImport,
-  previewMemorySyncPull,
   proposeMemoryCandidate,
   rememberRawMemory,
   reactivateMemory,
@@ -48,8 +47,6 @@ import {
   restoreMemoryRevision,
   searchMemories,
   splitMemoryCluster,
-  pushMemoriesToSync,
-  testMemorySync,
   testMemoryEngine,
   testEmbedding
 } from './memory/service'
@@ -430,10 +427,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return importMemories(decisions)
   })
 
-  ipcMain.handle('memory:sync-test', () => testMemorySync())
   ipcMain.handle('memory:engine-test', () => testMemoryEngine())
-  ipcMain.handle('memory:sync-pull-preview', () => previewMemorySyncPull())
-  ipcMain.handle('memory:sync-push', () => pushMemoriesToSync())
 
   ipcMain.handle('memory:archive-many', (_event, rawIds: unknown) => {
     if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 500) throw new Error('Invalid memory ids')

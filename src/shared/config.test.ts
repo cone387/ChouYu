@@ -54,14 +54,12 @@ describe('config', () => {
     expect(config.memoryMaxItems).toBe(500)
     expect(config.memoryDefaultTtlDays).toBe(0)
     expect(config.memoryCompressionEnabled).toBe(true)
-    expect(config.memorySyncProvider).toBe('none')
     expect(config.memorySyncBaseUrl).toBe('https://api.mem0.ai/v1')
     expect(config.embeddingEnabled).toBe(false)
     expect(config.embeddingProvider).toBe('none')
     expect(config.soulMd).toBe(DEFAULT_APP_CONFIG.soulMd)
     expect(isAIConfigured(config)).toBe(false)
     expect(isAIConfigured({ baseUrl: 'https://example.com/v1', apiKey: 'key', model: 'model' })).toBe(true)
-    expect(normalizeConfig({ memorySyncProvider: 'mem0' }).memorySyncProvider).toBe('mem0-platform')
   })
 
   it('clamps and aligns pet size to the supported range', () => {
@@ -86,7 +84,6 @@ describe('config', () => {
       memoryAutoWriteConfidence: 0.9,
       memoryEngineProvider: 'chouyu-sqlite',
       memoryCompressionEnabled: false,
-      memorySyncProvider: 'mem0-self-hosted',
       memorySyncBaseUrl: ' https://mem0.example/v1 ',
       memorySyncApiKey: 'secret',
       memorySyncUserId: ' user-1 ',
@@ -96,6 +93,6 @@ describe('config', () => {
       model: 123
     })
 
-    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, toolPermissionMode: 'full', memoryEnabled: false, memoryWriteMode: 'confirm', memoryAutoWriteConfidence: 0.9, memoryEngineProvider: 'chouyu-sqlite', memoryCompressionEnabled: false, memorySyncProvider: 'mem0-self-hosted', memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true, embeddingProvider: 'openai-compatible' })
+    expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, toolPermissionMode: 'full', memoryEnabled: false, memoryWriteMode: 'confirm', memoryAutoWriteConfidence: 0.9, memoryEngineProvider: 'chouyu-sqlite', memoryCompressionEnabled: false, memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true, embeddingProvider: 'openai-compatible' })
   })
 })

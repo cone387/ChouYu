@@ -185,19 +185,6 @@ export interface MemorySyncStatus {
   remoteCount?: number
 }
 
-export interface MemorySyncPushResult {
-  provider: 'mem0'
-  attempted: number
-  succeeded: number
-  skipped: number
-  failed: number
-}
-
-export interface MemorySyncPullPreview extends MemoryImportPreview {
-  provider: 'mem0'
-  remoteCount: number
-}
-
 export interface EmbeddingStatus {
   ok: boolean
   model: string

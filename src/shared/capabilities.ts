@@ -1,4 +1,4 @@
-export type CapabilityKind = 'memory-engine' | 'embedding' | 'memory-sync'
+export type CapabilityKind = 'memory-engine' | 'embedding'
 
 export interface CapabilityInfo {
   id: string

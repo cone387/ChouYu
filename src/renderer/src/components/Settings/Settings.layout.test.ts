@@ -51,7 +51,6 @@ describe('settings layout guardrails', () => {
     expect(toolsSource).toContain('手动确认')
     expect(toolsSource).toContain('自动审核')
     expect(toolsSource).toContain('完全访问')
-    expect(memorySource).toContain('记忆备份与迁移')
     expect(memorySource).toContain('memory-engine-connection-card')
     expect(memorySource).toContain('engineTest()')
     expect(memorySource).toContain('remote && syncDraft.memorySyncBaseUrl.trim()')

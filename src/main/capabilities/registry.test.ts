@@ -14,7 +14,7 @@ describe('capability registry', () => {
   })
 
   it('rejects duplicate ids and missing capabilities', () => {
-    const definition = { id: 'test-sync', kind: 'memory-sync' as const, name: 'Test', description: 'test', networkAccess: true, sendsMemoryData: true, requiresConfiguration: true, create: () => ({ provider: 'mem0' as const, test: async () => ({ remoteCount: 0 }), list: async () => [], push: async () => ({ attempted: 0, succeeded: 0, skipped: 0, failed: 0 }) }) }
+    const definition = { id: 'test-embedding', kind: 'embedding' as const, name: 'Test', description: 'test', networkAccess: false, sendsMemoryData: false, requiresConfiguration: false, create: () => ({ embed: async () => [[1]] }) }
     capabilityRegistry.register(definition)
     expect(() => capabilityRegistry.register(definition)).toThrow(/already registered/)
     expect(() => capabilityRegistry.createEmbedding('missing', DEFAULT_APP_CONFIG)).toThrow(/未安装/)

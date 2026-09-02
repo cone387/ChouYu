@@ -1,7 +1,6 @@
 import type { AppConfig } from '../../shared/config'
 import type { CapabilityInfo, CapabilityKind } from '../../shared/capabilities'
 import type { MemoryProvider } from '../memory/provider'
-import type { MemorySyncAdapter } from '../memory/sync/adapter'
 
 export interface EmbeddingRuntime {
   embed(texts: string[], signal?: AbortSignal): Promise<number[][]>
@@ -27,12 +26,7 @@ export interface EmbeddingCapability extends CapabilityBase {
   create(config: AppConfig): EmbeddingRuntime
 }
 
-export interface MemorySyncCapability extends CapabilityBase {
-  kind: 'memory-sync'
-  create(config: AppConfig): MemorySyncAdapter
-}
-
-type CapabilityDefinition = MemoryEngineCapability | EmbeddingCapability | MemorySyncCapability
+type CapabilityDefinition = MemoryEngineCapability | EmbeddingCapability
 
 class CapabilityRegistry {
   private readonly definitions = new Map<string, CapabilityDefinition>()
@@ -52,7 +46,7 @@ class CapabilityRegistry {
       installed: true,
       active: definition.kind === 'memory-engine' ? config.memoryEngineProvider === definition.id
         : definition.kind === 'embedding' ? config.embeddingEnabled && config.embeddingProvider === definition.id
-          : config.memorySyncProvider === definition.id,
+          : false,
       networkAccess: definition.networkAccess,
       sendsMemoryData: definition.sendsMemoryData,
       requiresConfiguration: definition.requiresConfiguration
@@ -68,12 +62,6 @@ class CapabilityRegistry {
   createEmbedding(id: string, config: AppConfig): EmbeddingRuntime {
     const definition = this.definitions.get(id)
     if (!definition || definition.kind !== 'embedding') throw new Error(`Embedding 能力未安装：${id}`)
-    return definition.create(config)
-  }
-
-  createMemorySync(id: string, config: AppConfig): MemorySyncAdapter {
-    const definition = this.definitions.get(id)
-    if (!definition || definition.kind !== 'memory-sync') throw new Error(`记忆同步能力未安装：${id}`)
     return definition.create(config)
   }
 

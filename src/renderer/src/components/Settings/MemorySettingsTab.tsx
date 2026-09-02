@@ -100,7 +100,6 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   })
   const [syncBusy, setSyncBusy] = useState<'test' | 'pull' | 'push' | ''>('')
   const [syncStatus, setSyncStatus] = useState('')
-  const [confirmSyncPush, setConfirmSyncPush] = useState(false)
   const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([])
   const [capabilityStatus, setCapabilityStatus] = useState('')
   const [activeView, setActiveView] = useState<MemoryWorkspaceView>(focusMemoryId ? 'library' : 'overview')
@@ -205,7 +204,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
 
   useEffect(() => {
     void window.electronAPI.capabilities.list().then(setCapabilities).catch(() => setCapabilityStatus('能力插件目录加载失败。'))
-  }, [config.embeddingProvider, config.memoryEngineProvider, config.memorySyncProvider])
+  }, [config.embeddingProvider, config.memoryEngineProvider])
 
   const run = async (id: string, action: () => Promise<unknown>): Promise<boolean> => {
     setBusyId(id)
@@ -493,21 +492,6 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     await onSaveConfig(syncDraft)
   }
 
-  const testSyncConnection = async () => {
-    setSyncBusy('test')
-    setSyncStatus('正在连接 Mem0…')
-    try {
-      await saveSyncDraft()
-      const result = await window.electronAPI.memory.syncTest()
-      setSyncStatus(result.message)
-    } catch (reason) {
-      setSyncStatus(reason instanceof Error ? reason.message : 'Mem0 连接测试失败。')
-    } finally {
-      setSyncBusy('')
-    }
-  }
-
-
   const testMemoryEngineConnection = async () => {
     setSyncBusy('test')
     setSyncStatus('正在连接主记忆引擎…')
@@ -522,37 +506,6 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     }
   }
 
-  const pullSyncPreview = async () => {
-    setSyncBusy('pull')
-    setSyncStatus('正在从 Mem0 拉取并检查冲突…')
-    try {
-      await saveSyncDraft()
-      const preview = await window.electronAPI.memory.syncPullPreview()
-      setImportPreview(preview)
-      setImportActions(Object.fromEntries(preview.items.map((item) => [item.id, item.suggestedAction])))
-      setConfirmImport(false)
-      setSyncStatus(`已从 Mem0 读取 ${preview.remoteCount} 条记忆；其中 ${preview.items.length} 条可进入导入预览。`)
-    } catch (reason) {
-      setSyncStatus(reason instanceof Error ? reason.message : 'Mem0 拉取失败。')
-    } finally {
-      setSyncBusy('')
-    }
-  }
-
-  const pushToSync = async () => {
-    setSyncBusy('push')
-    setSyncStatus('正在向 Mem0 上传已确认记忆…')
-    try {
-      await saveSyncDraft()
-      const result = await window.electronAPI.memory.syncPush()
-      setSyncStatus(`上传完成：成功 ${result.succeeded}，已存在 ${result.skipped}，失败 ${result.failed}，共检查 ${result.attempted} 条。`)
-      setConfirmSyncPush(false)
-    } catch (reason) {
-      setSyncStatus(reason instanceof Error ? reason.message : 'Mem0 上传失败。')
-    } finally {
-      setSyncBusy('')
-    }
-  }
 
   const clusteredMemoryCount = clusters.reduce((total, cluster) => total + cluster.memoryIds.length, 0)
   const clusterSavedCharacters = clusters.reduce((total, cluster) => total + cluster.savedCharacters, 0)
@@ -567,7 +520,6 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const memoryTypeCounts = Object.fromEntries((Object.keys(TYPE_LABELS) as MemoryType[]).map((memoryType) => [memoryType, memories.filter((memory) => memory.type === memoryType).length])) as Record<MemoryType, number>
   const memoryEngineCapabilities = capabilities.filter((item) => item.kind === 'memory-engine')
   const embeddingCapabilities = capabilities.filter((item) => item.kind === 'embedding')
-  const syncCapabilities = capabilities.filter((item) => item.kind === 'memory-sync')
   const mem0EngineSelected = config.memoryEngineProvider === 'mem0-platform-engine' || config.memoryEngineProvider === 'mem0-self-hosted-engine'
 
   return (
@@ -708,7 +660,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           const suggestedBaseUrl = engine === 'mem0-self-hosted-engine' ? 'http://localhost:8888/api' : engine === 'mem0-platform-engine' ? 'https://api.mem0.ai/v1' : syncDraft.memorySyncBaseUrl
           const defaultBaseUrl = remote && syncDraft.memorySyncBaseUrl.trim() ? syncDraft.memorySyncBaseUrl : suggestedBaseUrl
           setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: defaultBaseUrl }))
-          void onSaveConfig({ memoryEngineProvider: engine, ...(remote ? { memorySyncProvider: 'none', memorySyncBaseUrl: defaultBaseUrl } : {}) })
+          void onSaveConfig({ memoryEngineProvider: engine, ...(remote ? { memorySyncBaseUrl: defaultBaseUrl } : {}) })
           setCapabilityStatus('主记忆引擎选择已保存，重启 ChouYu 后生效。')
         }} aria-label="主记忆引擎">{memoryEngineCapabilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <div className="memory-capability-meta">{memoryEngineCapabilities.filter((item) => item.id === config.memoryEngineProvider).map((item) => <span key={item.id}><b>当前主引擎</b>{item.networkAccess ? '需要网络' : '完全本地'} · {item.description}</span>)}</div>
@@ -716,13 +668,13 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         {mem0EngineSelected && (
           <div className="memory-engine-connection-card" aria-labelledby="memory-engine-connection-title">
             <div><strong id="memory-engine-connection-title">Mem0 主记忆引擎连接</strong><span>当前主记忆引擎为 Mem0，SQLite 仅作缓存。</span></div>
-            <div className="memory-sync-fields">
+            <div className="memory-engine-fields">
               <label><span>Base URL（必填）</span><input value={syncDraft.memorySyncBaseUrl} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder={config.memoryEngineProvider === 'mem0-self-hosted-engine' ? 'http://localhost:8888/api' : 'https://api.mem0.ai/v1'} /></label>
               <label><span>User ID（必填）</span><input value={syncDraft.memorySyncUserId} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncUserId: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="用于隔离远程记忆" /></label>
-              <label className="memory-sync-key-field"><span>API Key</span><div><input type={showSyncKey ? 'text' : 'password'} value={syncDraft.memorySyncApiKey} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncApiKey: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="Mem0 API Key" /><button type="button" onClick={() => setShowSyncKey((value) => !value)}>{showSyncKey ? '隐藏' : '显示'}</button></div></label>
+              <label className="memory-engine-key-field"><span>API Key</span><div><input type={showSyncKey ? 'text' : 'password'} value={syncDraft.memorySyncApiKey} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncApiKey: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="Mem0 API Key" /><button type="button" onClick={() => setShowSyncKey((value) => !value)}>{showSyncKey ? '隐藏' : '显示'}</button></div></label>
             </div>
-            <div className="memory-sync-actions"><button type="button" onClick={() => { void testMemoryEngineConnection() }} disabled={Boolean(syncBusy)}>{syncBusy === 'test' ? '测试中…' : '测试主记忆引擎'}</button></div>
-            {syncStatus && <div className="memory-sync-status" role="status">{syncStatus}</div>}
+            <div className="memory-engine-actions"><button type="button" onClick={() => { void testMemoryEngineConnection() }} disabled={Boolean(syncBusy)}>{syncBusy === 'test' ? '测试中…' : '测试主记忆引擎'}</button></div>
+            {syncStatus && <div className="memory-engine-status" role="status">{syncStatus}</div>}
           </div>
         )}
       </section>
@@ -899,31 +851,6 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         )}
       </section>
 
-      {!mem0EngineSelected && <section className="memory-sync-card">
-        <div className="memory-sync-header">
-          <div><strong>记忆备份与迁移</strong><span>主记忆引擎始终只有一个；这里仅用于显式备份或迁移，不参与日常记忆读写。</span></div>
-          <select value={config.memorySyncProvider} disabled={Boolean(syncBusy) || mem0EngineSelected} onChange={(event) => { const provider = event.target.value; const defaultBaseUrl = provider === 'mem0-self-hosted' ? 'http://localhost:8888/api' : provider === 'mem0-platform' ? 'https://api.mem0.ai/v1' : syncDraft.memorySyncBaseUrl; setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: defaultBaseUrl })); void onSaveConfig({ memorySyncProvider: provider, memorySyncBaseUrl: defaultBaseUrl }); setSyncStatus(provider !== 'none' ? '备份迁移能力已选择，请完成连接配置。' : '远程备份已关闭。'); setConfirmSyncPush(false) }} aria-label="记忆备份与迁移"><option value="none">不启用备份</option>{syncCapabilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        </div>
-        {config.memorySyncProvider !== 'none' && !mem0EngineSelected && <div className="memory-sync-content">
-          <div className="memory-sync-privacy" role="note">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>
-            <span>{mem0EngineSelected ? '当前 Mem0 作为唯一主记忆引擎，SQLite 仅作为本地缓存。' : '只有点击“确认上传”才会把已确认记忆发送到 Mem0。拉取内容会先进入本地冲突预览，不会直接覆盖。'}</span>
-          </div>
-          <div className="memory-sync-fields">
-            <label><span>Base URL（必填）</span><input value={syncDraft.memorySyncBaseUrl} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder={config.memorySyncProvider === 'mem0-self-hosted' ? 'http://localhost:8888' : 'https://api.mem0.ai/v1'} /></label>
-            <label><span>User ID（必填）</span><input value={syncDraft.memorySyncUserId} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncUserId: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="用于隔离你的远程记忆" /></label>
-            <label className="memory-sync-key-field"><span>API Key{config.memorySyncProvider === 'mem0-platform' ? '（必填）' : '（自托管关闭鉴权时可留空）'}</span><div><input type={showSyncKey ? 'text' : 'password'} value={syncDraft.memorySyncApiKey} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncApiKey: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="Mem0 API Key" /><button type="button" onClick={() => setShowSyncKey((value) => !value)}>{showSyncKey ? '隐藏' : '显示'}</button></div><small>使用系统 safeStorage 加密后保存在本机。</small></label>
-          </div>
-          <div className="memory-sync-actions">
-            {mem0EngineSelected ? <button type="button" onClick={() => { void testSyncConnection() }} disabled={Boolean(syncBusy)}>{syncBusy === 'test' ? '测试中…' : '测试 Mem0 主引擎'}</button> : <>
-            <button type="button" onClick={() => { void testSyncConnection() }} disabled={Boolean(syncBusy)}>{syncBusy === 'test' ? '测试中…' : '测试连接'}</button>
-            <button type="button" onClick={() => { void pullSyncPreview() }} disabled={Boolean(syncBusy)}>{syncBusy === 'pull' ? '拉取中…' : '拉取并预览'}</button>
-            {confirmSyncPush ? <div className="memory-sync-confirm"><span>确认把全部已确认记忆发送到 Mem0？敏感候选也可能包含个人信息。</span><button type="button" onClick={() => setConfirmSyncPush(false)}>取消</button><button type="button" className="warning" onClick={() => { void pushToSync() }} disabled={Boolean(syncBusy)}>确认上传</button></div> : <button type="button" className="warning" onClick={() => setConfirmSyncPush(true)} disabled={Boolean(syncBusy)}>上传本地记忆</button>}
-            </>}
-          </div>
-          {syncStatus && <div className="memory-sync-status" role="status">{syncStatus}</div>}
-        </div>}
-      </section>}
       </div>}
 
       {!loading && (activeView === 'review' || activeView === 'library') && <div className={`memory-view memory-library-view${activeView === 'review' ? ' is-review' : ''}`}>
@@ -1028,9 +955,9 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
                     ? '来自较明确的用户表达，当前置信度较高。'
                     : '当前置信度较低，建议结合原始对话内容复核。'}</p>
                 <span>远程边界</span>
-                <p>{config.memorySyncProvider === 'none' && !mem0EngineSelected
-                  ? '未启用远程同步，仅保存在本机。'
-                  : '不会在后台自动上传；只有显式同步或选择远程主记忆引擎时才会发送。'}</p>
+                <p>{mem0EngineSelected
+                  ? '当前使用 Mem0 作为唯一主记忆引擎，内容会发送到所配置的 Mem0 服务。'
+                  : '当前使用 SQLite 作为唯一主记忆引擎，内容仅保存在本机。'}</p>
               </div>
             </details>
             <div className="memory-card-actions">
