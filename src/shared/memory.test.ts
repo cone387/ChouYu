@@ -14,7 +14,8 @@ import {
   mergeHybridMemoryResults,
   scoreMemory,
   scoreMemoryLifecycle,
-  shouldAutoWriteMemory
+  shouldAutoWriteMemory,
+  shouldUseRemoteMemoryExtraction
 } from './memory'
 
 describe('memory foundation', () => {
@@ -40,6 +41,13 @@ describe('memory foundation', () => {
     expect(shouldAutoWriteMemory(name, 0.85)).toBe(true)
     expect(shouldAutoWriteMemory(preference, 0.85)).toBe(false)
     expect(shouldAutoWriteMemory(preference, 0.8)).toBe(true)
+  })
+
+  it('only allows remote Mem0 extraction in automatic write mode', () => {
+    expect(shouldUseRemoteMemoryExtraction('auto', 'mem0-platform-engine')).toBe(true)
+    expect(shouldUseRemoteMemoryExtraction('confirm', 'mem0-platform-engine')).toBe(false)
+    expect(shouldUseRemoteMemoryExtraction('off', 'mem0-self-hosted-engine')).toBe(false)
+    expect(shouldUseRemoteMemoryExtraction('auto', 'chouyu-sqlite')).toBe(false)
   })
 
   it('routes identity and preference questions to the matching global memory types', () => {

@@ -218,6 +218,11 @@ export interface MemoryListOptions {
   limit?: number
 }
 
+/** Remote Mem0 inference writes immediately; only automatic mode may use it. */
+export function shouldUseRemoteMemoryExtraction(memoryWriteMode: string, memoryEngineProvider: string): boolean {
+  return memoryWriteMode === 'auto' && (memoryEngineProvider === 'mem0-self-hosted-engine' || memoryEngineProvider === 'mem0-platform-engine')
+}
+
 const SECRET_PATTERNS = [
   /\bsk-[a-z0-9_-]{12,}\b/i,
   /\b(?:api[_\s-]?key|access[_\s-]?token|refresh[_\s-]?token|password|passwd)\b\s*[:=：]\s*\S+/i,

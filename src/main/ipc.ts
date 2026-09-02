@@ -13,7 +13,8 @@ import {
   type MemoryListOptions,
   type MemoryType,
   containsSecret,
-  shouldAutoWriteMemory
+  shouldAutoWriteMemory,
+  shouldUseRemoteMemoryExtraction
 } from '../shared/memory'
 import {
   type CaptureSourceInfo,
@@ -303,9 +304,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const { memoryEnabled, memoryWriteMode, memoryAutoWriteConfidence } = getConfig()
     if (!memoryEnabled || memoryWriteMode === 'off') return []
     const currentConfig = getConfig()
-    if (currentConfig.memoryEngineProvider === 'mem0-self-hosted-engine' || currentConfig.memoryEngineProvider === 'mem0-platform-engine') {
+    if (shouldUseRemoteMemoryExtraction(memoryWriteMode, currentConfig.memoryEngineProvider)) {
       try {
-        return await rememberRawMemory(text)
+        return await rememberRawMemory(text, {
+          sessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined,
+          messageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined
+        })
       } catch (error) {
         console.warn('[Memory] Mem0 primary extraction failed:', error)
         return []

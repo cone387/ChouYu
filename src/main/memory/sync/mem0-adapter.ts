@@ -150,9 +150,12 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
               metadata: {
                 chouyu_id: memory.id,
                 chouyu_type: memory.type,
+                chouyu_sensitivity: memory.sensitivity,
                 chouyu_importance: memory.importance,
                 chouyu_updated_at: memory.updatedAt,
-                chouyu_expires_at: memory.expiresAt || null
+                chouyu_expires_at: memory.expiresAt || null,
+                chouyu_source_session_id: memory.sourceSessionId || null,
+                chouyu_source_message_id: memory.sourceMessageId || null
               }
             }),
             signal: signal || AbortSignal.timeout(30_000)

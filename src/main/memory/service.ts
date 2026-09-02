@@ -79,10 +79,10 @@ export function proposeMemoryCandidate(candidate: MemoryCandidateInput): MemoryR
   return conflicts.length > 0 ? { ...candidateMemory, conflicts } : candidateMemory
 }
 
-export async function rememberRawMemory(text: string): Promise<MemoryRecord[]> {
+export async function rememberRawMemory(text: string, source?: { sessionId?: string; messageId?: string }): Promise<MemoryRecord[]> {
   const active = getMemoryProvider() as MemoryProvider & { rememberRaw?: (value: string) => Promise<MemoryRecord[]> }
   if (!active.rememberRaw) return []
-  return active.rememberRaw(text)
+  return (active.rememberRaw as (value: string, source?: { sessionId?: string; messageId?: string }) => Promise<MemoryRecord[]>)(text, source)
 }
 
 export function createMemory(candidate: MemoryCandidateInput): MemoryRecord {

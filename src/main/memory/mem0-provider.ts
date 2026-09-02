@@ -1,5 +1,6 @@
 import type { AppConfig } from '../../shared/config'
 import type { MemoryCandidateInput, MemoryRecord, MemoryType } from '../../shared/memory'
+import { getConfig } from '../database'
 import { SQLiteMemoryProvider } from './sqlite-provider'
 import { Mem0MemorySyncAdapter } from './sync/mem0-adapter'
 
@@ -8,7 +9,8 @@ import { Mem0MemorySyncAdapter } from './sync/mem0-adapter'
  * remote persistence is written through the selected Mem0 endpoint.
  */
 export class Mem0MemoryProvider extends SQLiteMemoryProvider {
-  private readonly remote: Mem0MemorySyncAdapter
+  private remote: Mem0MemorySyncAdapter
+  private remoteConfigSignature: string
   private refreshPromise: Promise<void> | null = null
 
   constructor(filePath: string, config: AppConfig, mode: 'platform' | 'self-hosted') {
@@ -19,6 +21,25 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
       userId: config.memorySyncUserId,
       mode
     })
+    this.remoteConfigSignature = this.signature(config, mode)
+  }
+
+  private signature(config: AppConfig, mode: 'platform' | 'self-hosted'): string {
+    return [mode, config.memorySyncBaseUrl, config.memorySyncApiKey, config.memorySyncUserId].join('\u0000')
+  }
+
+  private refreshRemoteConfig(): void {
+    const config = getConfig()
+    const mode = config.memoryEngineProvider === 'mem0-self-hosted-engine' ? 'self-hosted' : 'platform'
+    const signature = this.signature(config, mode)
+    if (signature === this.remoteConfigSignature) return
+    this.remote = new Mem0MemorySyncAdapter({
+      baseUrl: config.memorySyncBaseUrl,
+      apiKey: config.memorySyncApiKey,
+      userId: config.memorySyncUserId,
+      mode
+    })
+    this.remoteConfigSignature = signature
   }
 
   override initialize(): void {
@@ -27,6 +48,7 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
   }
 
   async refreshRemote(): Promise<void> {
+    this.refreshRemoteConfig()
     if (this.refreshPromise) return this.refreshPromise
     this.refreshPromise = this.loadRemote().finally(() => { this.refreshPromise = null })
     return this.refreshPromise
@@ -51,7 +73,10 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
   }
 
   private cacheRemoteMemory(content: string, metadata: Record<string, unknown>): MemoryRecord {
-    const existing = this.list({ status: 'all', limit: 2000 }).find((item) => item.content === content)
+    const remoteLocalId = typeof metadata.chouyu_id === 'string' ? metadata.chouyu_id : ''
+    const existing = this.list({ status: 'all', limit: 2000 }).find((item) =>
+      (remoteLocalId && item.id === remoteLocalId) || item.content === content
+    )
     if (existing) return existing
     const type = ['fact', 'preference', 'person', 'project', 'workflow'].includes(String(metadata.chouyu_type))
       ? String(metadata.chouyu_type) as MemoryType
@@ -61,16 +86,24 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
       content,
       importance: typeof metadata.chouyu_importance === 'number' ? metadata.chouyu_importance : 0.6,
       confidence: 1,
-      sensitivity: 'normal'
+      sensitivity: metadata.chouyu_sensitivity === 'sensitive' ? 'sensitive' : 'normal',
+      sourceSessionId: typeof metadata.chouyu_source_session_id === 'string' ? metadata.chouyu_source_session_id : undefined,
+      sourceMessageId: typeof metadata.chouyu_source_message_id === 'string' ? metadata.chouyu_source_message_id : undefined
     })
   }
 
-  async rememberRaw(text: string): Promise<MemoryRecord[]> {
+  async rememberRaw(text: string, source?: { sessionId?: string; messageId?: string }): Promise<MemoryRecord[]> {
+    this.refreshRemoteConfig()
     const remoteMemories = await this.remote.rememberRaw(text)
-    return remoteMemories.map((memory) => this.cacheRemoteMemory(memory.content, memory.metadata))
+    return remoteMemories.map((memory) => this.cacheRemoteMemory(memory.content, {
+      ...memory.metadata,
+      chouyu_source_session_id: source?.sessionId,
+      chouyu_source_message_id: source?.messageId
+    }))
   }
 
   private enqueueRemote(memory: MemoryRecord): void {
+    this.refreshRemoteConfig()
     void this.remote.push([memory]).catch((error) => console.warn('[Memory] Mem0 primary write failed:', error))
   }
 

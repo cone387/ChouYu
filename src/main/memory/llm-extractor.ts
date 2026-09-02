@@ -9,6 +9,7 @@ export interface ExtractedMemory extends MemoryCandidateInput {
 }
 
 const MEMORY_TYPES = new Set<MemoryType>(['fact', 'preference', 'person', 'project', 'workflow'])
+const SENSITIVE_MEMORY_PATTERN = /(?:邮箱|邮件|电话|手机号|住址|地址|身份证|生日|email|phone|address)/i
 const MEMORY_SYSTEM_PROMPT = `你是 ChouYu 的记忆分析器。你的唯一任务是分析用户刚刚发送的消息，提取值得长期记住的、关于用户本人的稳定信息。
 
 严格规则：
@@ -67,10 +68,11 @@ function normalizeCandidate(value: unknown): ExtractedMemory | null {
   const importance = typeof item.importance === 'number' && Number.isFinite(item.importance) ? Math.min(1, Math.max(0, item.importance)) : 0.6
   const confidenceValue = typeof item.confidence === 'number' && Number.isFinite(item.confidence) ? Math.min(1, Math.max(0, item.confidence)) : 0.5
   const confidence = certainty === 'explicit' ? confidenceValue : Math.min(confidenceValue, 0.79)
+  const sensitivity = item.sensitivity === 'sensitive' || SENSITIVE_MEMORY_PATTERN.test(content) ? 'sensitive' : 'normal'
   if (type === 'person' && !normalizeMemoryKey(content).startsWith(normalizeMemoryKey('我的名字是'))) {
-    return { type, content: `我的名字是 ${content}`, importance, confidence, certainty, subject, sensitivity: item.sensitivity === 'sensitive' ? 'sensitive' : 'normal' }
+    return { type, content: `我的名字是 ${content}`, importance, confidence, certainty, subject, sensitivity }
   }
-  return { type, content, importance, confidence, certainty, subject, sensitivity: item.sensitivity === 'sensitive' ? 'sensitive' : 'normal' }
+  return { type, content, importance, confidence, certainty, subject, sensitivity }
 }
 
 export async function extractMemoriesWithLLM(text: string, config: AppConfig, request: typeof fetch = fetch): Promise<ExtractedMemory[]> {

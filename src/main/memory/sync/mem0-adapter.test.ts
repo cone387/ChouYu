@@ -36,7 +36,7 @@ describe('Mem0 memory sync adapter', () => {
     const result = await new Mem0MemorySyncAdapter(config, request as typeof fetch).push(memories)
     expect(result).toEqual({ attempted: 2, succeeded: 1, skipped: 1, failed: 0 })
     expect(request).toHaveBeenCalledTimes(2)
-    expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toMatchObject({ user_id: 'user-1', metadata: { chouyu_id: 'local-2' } })
+    expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toMatchObject({ user_id: 'user-1', metadata: { chouyu_id: 'local-2', chouyu_sensitivity: 'normal', chouyu_source_session_id: null, chouyu_source_message_id: null } })
     expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toMatchObject({ infer: false })
   })
 

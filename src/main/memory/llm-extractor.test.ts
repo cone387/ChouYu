@@ -26,6 +26,14 @@ describe('LLM memory extraction', () => {
     expect(result[0].confidence).toBeLessThan(0.8)
   })
 
+  it('marks contact details as sensitive even when the model omits the label', async () => {
+    const request = vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({ memories: [
+      { action: 'remember', subject: 'self', certainty: 'explicit', type: 'fact', content: '我的邮箱是 user@example.com', confidence: 0.99, importance: 0.7 }
+    ] }) } }] })) as typeof fetch
+    const result = await extractMemoriesWithLLM('我的邮箱是 user@example.com', config, request)
+    expect(result[0].sensitivity).toBe('sensitive')
+  })
+
   it('supports Claude response envelopes', async () => {
     const request = vi.fn(async () => Response.json({ content: [{ type: 'text', text: '{"memories":[]}' }] })) as typeof fetch
     const result = await extractMemoriesWithLLM('随便聊聊', { ...config, provider: 'claude' }, request)
