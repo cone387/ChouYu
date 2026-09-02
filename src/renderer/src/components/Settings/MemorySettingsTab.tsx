@@ -1012,6 +1012,25 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
               <span>使用 {memory.accessCount} 次</span>
               <span>反馈 +{memory.helpfulCount} / -{memory.unhelpfulCount}</span>
             </div>
+            <details className="memory-source-details">
+              <summary>来源与依据</summary>
+              <div className="memory-source-grid">
+                <span>来源</span>
+                <strong>{memory.sourceSessionId ? '从对话中提取' : '手动添加或导入'}</strong>
+                {memory.sourceSessionId && <code title={memory.sourceSessionId}>会话 {memory.sourceSessionId.slice(0, 12)}…</code>}
+                {memory.sourceMessageId && <code title={memory.sourceMessageId}>消息 {memory.sourceMessageId.slice(0, 12)}…</code>}
+                <span>保存依据</span>
+                <p>{memory.status === 'pending'
+                  ? '这是一条等待确认的候选记忆，确认后才会参与后续对话。'
+                  : memory.confidence >= 0.85
+                    ? '来自较明确的用户表达，当前置信度较高。'
+                    : '当前置信度较低，建议结合原始对话内容复核。'}</p>
+                <span>远程边界</span>
+                <p>{config.memorySyncProvider === 'none' && !mem0EngineSelected
+                  ? '未启用远程同步，仅保存在本机。'
+                  : '不会在后台自动上传；只有显式同步或选择远程主记忆引擎时才会发送。'}</p>
+              </div>
+            </details>
             <div className="memory-card-actions">
               {memory.status === 'pending' && conflicts.length === 0 && <>
                 <button type="button" onClick={() => { void run(memory.id, () => window.electronAPI.memory.reject(memory.id)) }} disabled={busyId === memory.id}>拒绝</button>

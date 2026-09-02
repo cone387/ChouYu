@@ -119,6 +119,15 @@
 .memory-card p { margin:6px 0; color:var(--text-secondary); font-size:10px; line-height:1.5; }
 .memory-card > textarea { width:100%; min-height:58px; margin:6px 0; border:1px solid var(--accent); border-radius:7px; padding:7px; background:var(--input-bg); color:var(--text-primary); font-size:10px; resize:vertical; }
 .memory-card-meta { display:flex; flex-wrap:wrap; gap:6px 10px; color:var(--text-muted); font-size:8px; }
+.memory-source-details { margin-top:8px; border-top:1px solid var(--divider); }
+.memory-source-details summary { display:inline-flex; min-height:30px; align-items:center; color:var(--text-muted); cursor:pointer; font-size:10px; }
+.memory-source-details summary:hover { color:var(--text-primary); }
+.memory-source-details summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+.memory-source-grid { display:grid; grid-template-columns:auto minmax(0,1fr); gap:5px 9px; padding:8px 9px 9px; border-radius:7px; background:var(--bg-secondary); }
+.memory-source-grid > span { color:var(--text-muted); font-size:10px; }
+.memory-source-grid > strong { color:var(--text-primary); font-size:10px; }
+.memory-source-grid > code { grid-column:2; overflow:hidden; color:var(--text-muted); font:10px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace; text-overflow:ellipsis; white-space:nowrap; }
+.memory-source-grid > p { grid-column:2; margin:0; color:var(--text-secondary); font-size:10px; line-height:1.45; }
 .memory-card-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; margin-top:7px; }
 .memory-card-actions button,.memory-footer-actions button { border:1px solid var(--border); border-radius:6px; padding:4px 7px; background:transparent; color:var(--text-secondary); cursor:pointer; font-size:8px; }
 .memory-card-actions button.primary { border-color:var(--accent); background:var(--accent); color:var(--on-accent); }
@@ -367,6 +376,8 @@
   .memory-capability-meta,.memory-capability-status { grid-column:auto; }
   .memory-add-form,.memory-toolbar,.memory-embedding-fields,.memory-conflict-compare,.memory-lifecycle-fields { grid-template-columns:1fr; }
   .memory-library-summary { align-items:flex-start; flex-direction:column; }
+  .memory-source-grid { grid-template-columns:1fr; }
+  .memory-source-grid > code,.memory-source-grid > p { grid-column:auto; }
   .memory-type-chips { justify-content:flex-start; }
   .memory-lifecycle-heading { align-items:flex-start; }
   .memory-cluster-header { align-items:flex-start; }
