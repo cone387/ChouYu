@@ -8,6 +8,7 @@ export const PANEL_HEIGHT = 520
 export const PANEL_COMPACT_HEIGHT = 200
 export const PANEL_SETTINGS_HEIGHT = 640
 export const PANEL_SETTINGS_WIDTH = 760
+export const PANEL_MEMORY_WIDTH = 920
 export const PANEL_WORKSPACE_WIDTH = 672
 export const PANEL_MIN_HEIGHT = 280
 export const SESSION_SIDEBAR_MIN_WIDTH = 220

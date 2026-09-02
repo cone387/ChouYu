@@ -10,6 +10,7 @@ const BUILTIN_COMMANDS = [
   { cmd: '/new', desc: '新建对话' },
   { cmd: '/clear', desc: '清空当前对话' },
   { cmd: '/remember', desc: '创建长期记忆候选' },
+  { cmd: '/memory', desc: '打开记忆工作区' },
   { cmd: '/settings', desc: '打开设置' },
   { cmd: '/model', desc: '切换模型' },
   { cmd: '/help', desc: '查看可用指令' }

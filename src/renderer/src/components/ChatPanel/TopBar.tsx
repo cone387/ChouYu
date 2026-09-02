@@ -3,12 +3,13 @@ interface TopBarProps {
   showSessions: boolean
   onToggleSessions: () => void
   onNewTopic: () => void
+  onMemory: () => void
   onSettings: () => void
   onHide: () => void
   onClose: () => void
 }
 
-export default function TopBar({ status, showSessions, onToggleSessions, onNewTopic, onSettings, onHide, onClose }: TopBarProps) {
+export default function TopBar({ status, showSessions, onToggleSessions, onNewTopic, onMemory, onSettings, onHide, onClose }: TopBarProps) {
   return (
     <div className="chat-topbar">
       <div className="chat-topbar-left">
@@ -38,6 +39,12 @@ export default function TopBar({ status, showSessions, onToggleSessions, onNewTo
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M2.5 3h11v9h-7l-3 2v-2h-1zM5 6h6M5 9h4"/>
+          </svg>
+        </button>
+        <button className="topbar-btn" onClick={onMemory} title="记忆中心" aria-label="打开记忆中心">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5.2 3.2A2.8 2.8 0 018 1.8a2.8 2.8 0 012.8 1.4A2.8 2.8 0 0113 6c0 1-.5 1.9-1.2 2.4.3.5.5 1.1.5 1.7a2.6 2.6 0 01-4.3 2 2.6 2.6 0 01-4.3-2c0-.6.2-1.2.5-1.7A3 3 0 013 6a2.8 2.8 0 012.2-2.8z"/>
+            <path d="M8 2v10M5.3 5.2c.6.1 1.1.5 1.4 1M10.7 8.8c-.6.1-1.1.5-1.4 1"/>
           </svg>
         </button>
         <button className="topbar-btn" onClick={onSettings} title="设置" aria-label="打开设置">

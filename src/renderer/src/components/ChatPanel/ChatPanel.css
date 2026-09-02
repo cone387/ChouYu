@@ -41,6 +41,90 @@
   flex-direction: row;
 }
 
+.chat-panel-memory {
+  width: min(920px, calc(100vw - 16px));
+  min-height: min(420px, calc(100vh - 16px));
+  height: min(700px, calc(100vh - 16px));
+  max-height: calc(100vh - 16px);
+}
+
+.memory-workspace-shell {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.memory-workspace-header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--divider);
+  background: color-mix(in srgb, var(--bg-secondary) 64%, transparent);
+  flex: 0 0 auto;
+}
+
+.memory-workspace-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.memory-workspace-header strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.memory-workspace-header span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.memory-workspace-back,
+.memory-workspace-close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.memory-workspace-back:hover,
+.memory-workspace-close:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.memory-workspace-close { font-size: 19px; }
+
+.memory-workspace-content {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 18px 20px 22px;
+  scrollbar-gutter: stable;
+}
+
+.memory-workspace-content::-webkit-scrollbar { width: 5px; }
+.memory-workspace-content::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--border); }
+
+@media (max-width: 640px) {
+  .memory-workspace-content { padding: 12px; }
+}
+
 .chat-panel-main {
   display: flex;
   min-width: 0;

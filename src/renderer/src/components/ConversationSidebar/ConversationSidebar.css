@@ -24,7 +24,17 @@
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px 6px 12px;
+  /* Keep the idle cursor consistent with the chat top bar. The shared
+     drag handler still makes this region draggable; only the pressed state
+     communicates that the drag has started. */
+  cursor: default;
 }
+
+/* ChatPanel.css also defines .chat-panel-drag-handle. Keep this more specific
+   rule so the sidebar header matches the chat top bar even when CSS injection
+   order changes. */
+.conversation-sidebar-header.chat-panel-drag-handle { cursor: default !important; }
+.conversation-sidebar-header.chat-panel-drag-handle:active { cursor: grabbing !important; }
 
 .conversation-sidebar-header h2 {
   margin: 0;

@@ -25,8 +25,25 @@ describe('chat layout guardrails', () => {
     expect(stylesheet).toMatch(/\.panel-resize-edge\s*\{[\s\S]*cursor:\s*ns-resize/)
     expect(panelSource).toContain('const rect = panelEl.getBoundingClientRect()')
     expect(panelSource).toContain('getDefaultPanelHeight(window.innerHeight)')
-    expect(panelSource).toContain("height: !showSettings ? panelHeight : undefined")
+    expect(panelSource).toContain("height: !showSettings && !showMemoryWorkspace ? panelHeight : undefined")
     expect(panelSource).toContain("(['top', 'bottom'] as const)")
+  })
+
+  it('keeps the conversation header cursor consistent with the chat top bar', () => {
+    expect(sidebarStylesheet).toMatch(/\.conversation-sidebar-header\.chat-panel-drag-handle\s*\{[\s\S]*cursor:\s*default !important/)
+    expect(sidebarStylesheet).toContain('.conversation-sidebar-header.chat-panel-drag-handle:active { cursor: grabbing !important; }')
+    expect(sidebarSource).toContain('chat-panel-drag-handle')
+  })
+
+  it('opens memory as a dedicated workspace without chat resize controls', () => {
+    expect(panelSource).toContain("const [showMemoryWorkspace, setShowMemoryWorkspace]")
+    expect(panelSource).toContain('className="memory-workspace-shell"')
+    expect(panelSource).toContain('<MemorySettingsTab')
+    expect(panelSource).toContain('workspace')
+    expect(panelSource).toContain('onMemory={() => openMemoryWorkspace()}')
+    expect(panelSource).toContain("!showSettings && !showMemoryWorkspace && (['top', 'bottom'] as const)")
+    expect(panelSource).toContain("memoryReturnTarget === 'settings'")
+    expect(panelSource).toContain('aria-label={memoryReturnTarget === \'settings\' ? \'返回设置\' : \'返回聊天\'}')
   })
 
   it('uses the top-bar session toggle as the only close control', () => {

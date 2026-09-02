@@ -56,6 +56,7 @@ interface SettingsProps {
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
   initialNav?: string
   focusMemoryId?: string
+  onOpenMemoryWorkspace?: () => void
 }
 
 const NAV_ITEMS = [
@@ -68,7 +69,7 @@ const NAV_ITEMS = [
   { key: 'about', label: '关于', icon: 'M7 4v3M7 9.5v.5' }
 ]
 
-export default function Settings({ onClose, petVisible, onPetVisibleChange, dragHandleProps, initialNav, focusMemoryId }: SettingsProps) {
+export default function Settings({ onClose, petVisible, onPetVisibleChange, dragHandleProps, initialNav, focusMemoryId, onOpenMemoryWorkspace }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showKey, setShowKey] = useState(false)
   const [activeNav, setActiveNav] = useState<string>(initialNav || 'ai')
@@ -270,7 +271,10 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               type="button"
               data-settings-nav
               className={`settings-nav-item${activeNav === item.key ? ' active' : ''}`}
-              onClick={() => setActiveNav(item.key)}
+              onClick={() => {
+                if (item.key === 'memory' && onOpenMemoryWorkspace) onOpenMemoryWorkspace()
+                else setActiveNav(item.key)
+              }}
               onKeyDown={handleNavKeyDown}
               aria-current={activeNav === item.key ? 'page' : undefined}
             >

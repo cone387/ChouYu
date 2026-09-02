@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { extractPersonName } from '../../../../shared/memory'
 import type { MemoryCleanupSuggestion, MemoryCluster, MemoryConflictAction, MemoryImportAction, MemoryImportPreview, MemoryInsights, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
 import type { AppConfig } from '../../shared/types'
@@ -11,7 +11,12 @@ interface MemorySettingsTabProps {
   config: AppConfig
   onSaveConfig: (patch: Partial<AppConfig>) => Promise<void>
   focusMemoryId?: string
+  workspace?: boolean
 }
+
+type MemoryWorkspaceView = 'overview' | 'review' | 'library' | 'organize' | 'connections'
+type MemoryReviewScope = 'pending' | 'all'
+const MEMORY_REVIEW_SCOPE_STATE_KEY = 'memory-review-scope'
 
 const TYPE_LABELS: Record<MemoryType, string> = {
   fact: '事实',
@@ -31,8 +36,9 @@ const ARCHIVE_LABELS: Record<string, string> = {
 
 const EMPTY_INSIGHTS: MemoryInsights = { byType: [], createdByWeek: [], archiveReasons: [], helpful: 0, unhelpful: 0, clustered: 0, clusters: 0, savedCharacters: 0 }
 
-export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveConfig, focusMemoryId }: MemorySettingsTabProps) {
+export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveConfig, focusMemoryId, workspace = false }: MemorySettingsTabProps) {
   const [memories, setMemories] = useState<MemoryRecord[]>([])
+  const [loading, setLoading] = useState(true)
   const [identity, setIdentity] = useState<MemoryRecord | null>(null)
   const [identityEditing, setIdentityEditing] = useState(false)
   const [identityDraft, setIdentityDraft] = useState('')
@@ -97,6 +103,55 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [confirmSyncPush, setConfirmSyncPush] = useState(false)
   const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([])
   const [capabilityStatus, setCapabilityStatus] = useState('')
+  const [activeView, setActiveView] = useState<MemoryWorkspaceView>(focusMemoryId ? 'library' : 'overview')
+  const [reviewScope, setReviewScope] = useState<MemoryReviewScope>('pending')
+  const workspaceNavRef = useRef<HTMLElement>(null)
+
+  const selectView = useCallback((view: MemoryWorkspaceView) => {
+    setActiveView(view)
+    setQuery('')
+    setType('all')
+    if (view === 'review') setStatus(reviewScope === 'pending' ? 'pending' : 'all')
+    else if (view === 'library') setStatus((current) => current === 'pending' ? 'active' : current)
+  }, [reviewScope])
+
+  const handleWorkspaceNavKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const buttons = Array.from(workspaceNavRef.current?.querySelectorAll<HTMLButtonElement>('button') || [])
+    const currentIndex = buttons.indexOf(event.currentTarget)
+    if (currentIndex < 0 || buttons.length === 0) return
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? buttons.length - 1
+        : event.key === 'ArrowRight'
+          ? (currentIndex + 1) % buttons.length
+          : (currentIndex - 1 + buttons.length) % buttons.length
+    buttons[nextIndex]?.focus()
+    buttons[nextIndex]?.click()
+  }
+
+  useEffect(() => {
+    window.electronAPI.db.getState(MEMORY_REVIEW_SCOPE_STATE_KEY).then((value) => {
+      if (value === 'all' || value === 'pending') {
+        setReviewScope(value)
+        if (activeView === 'review') setStatus(value === 'pending' ? 'pending' : 'all')
+      }
+    }).catch(() => {})
+  }, [activeView])
+
+  const handleReviewScopeChange = useCallback((scope: MemoryReviewScope) => {
+    setReviewScope(scope)
+    setStatus(scope === 'pending' ? 'pending' : 'all')
+    void window.electronAPI.db.setState(MEMORY_REVIEW_SCOPE_STATE_KEY, scope)
+  }, [])
+
+  useEffect(() => {
+    if (!workspace) return
+    const frame = requestAnimationFrame(() => workspaceNavRef.current?.querySelector<HTMLButtonElement>('button.active')?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(frame)
+  }, [activeView, workspace])
 
   const refresh = useCallback(async () => {
     setError('')
@@ -114,6 +169,8 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       if (!identityEditing) setIdentityDraft(nextIdentity ? (extractPersonName(nextIdentity.content) || nextIdentity.content) : '')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '记忆中心加载失败。')
+    } finally {
+      setLoading(false)
     }
   }, [identityEditing, query, status, type])
 
@@ -124,6 +181,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
 
   useEffect(() => {
     if (!focusMemoryId || memories.length === 0) return
+    setActiveView('library')
     const element = document.querySelector(`[data-memory-id="${CSS.escape(focusMemoryId)}"]`)
     element?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' })
   }, [focusMemoryId, memories])
@@ -368,6 +426,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       setTopicSelection(new Set())
       setTopicLabel('')
       setShowClusters(true)
+      setActiveView('organize')
       setClusterStatus('人工主题已创建，摘要压缩会优先使用这个分组。')
     } catch (reason) {
       setClusterStatus(reason instanceof Error ? reason.message : '人工主题创建失败。')
@@ -510,16 +569,51 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const mem0EngineSelected = config.memoryEngineProvider === 'mem0-platform-engine' || config.memoryEngineProvider === 'mem0-self-hosted-engine'
 
   return (
-    <div className="settings-pane memory-settings-pane">
+    <div className={`settings-pane memory-settings-pane${workspace ? ' memory-workspace-pane' : ''}`}>
       <div className="settings-pane-heading memory-heading">
         <div>
-          <h2>记忆中心</h2>
-          <p>查看和控制 ChouYu 可以长期使用的信息。</p>
+          <h2>{workspace ? '记忆工作区' : '记忆中心'}</h2>
+          <p>查看、校正并控制 ChouYu 可以长期使用的信息。</p>
         </div>
-        <button type="button" className="memory-add-btn" onClick={() => setShowAdd((value) => !value)}>
+        {activeView === 'library' && <button type="button" className="memory-add-btn" onClick={() => setShowAdd((value) => !value)}>
           {showAdd ? '取消添加' : '添加记忆'}
-        </button>
+        </button>}
       </div>
+
+      <nav ref={workspaceNavRef} className="memory-workspace-nav" aria-label="记忆工作区">
+        <button type="button" className={activeView === 'overview' ? 'active' : ''} aria-current={activeView === 'overview' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('overview')}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+          <span>总览</span>
+        </button>
+        <button type="button" className={activeView === 'review' ? 'active' : ''} aria-current={activeView === 'review' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('review')}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M8 2.2a5.8 5.8 0 105.8 5.8"/><path d="M8 4.5V8l2.3 1.4"/></svg>
+          <span>待处理</span>{stats.pending > 0 && <b>{stats.pending}</b>}
+        </button>
+        <button type="button" className={activeView === 'library' ? 'active' : ''} aria-current={activeView === 'library' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('library')}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M3 2.5h8.5A1.5 1.5 0 0113 4v9.5H4.5A1.5 1.5 0 013 12z"/><path d="M3 12a1.5 1.5 0 011.5-1.5H13M6 5h4"/></svg>
+          <span>记忆库</span>
+        </button>
+        <button type="button" className={activeView === 'organize' ? 'active' : ''} aria-current={activeView === 'organize' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('organize')}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M3 4h10M5 8h8M7 12h6"/><circle cx="3" cy="8" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          <span>整理</span>
+        </button>
+        <button type="button" className={activeView === 'connections' ? 'active' : ''} aria-current={activeView === 'connections' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('connections')}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M6 5V3M10 5V3M4 6h8v3a4 4 0 01-4 4 4 4 0 01-4-4zM8 13v1"/></svg>
+          <span>连接</span>
+        </button>
+      </nav>
+
+      {!loading && activeView === 'review' && <div className="memory-review-intro" role="note">
+        <strong>待处理记忆</strong>
+        <span>{reviewScope === 'pending' ? '默认只显示需要你确认或解决冲突的记忆；处理完成后会自动移出。' : '当前显示全部记忆；可在此查看和处理任意状态的记录。'}</span>
+      </div>}
+
+      {loading && <div className="memory-loading-state" role="status" aria-live="polite">
+        <span>正在加载记忆工作区…</span>
+        <i /><i /><i />
+      </div>}
+
+      {!loading && activeView === 'overview' && <div className="memory-view memory-overview-view">
 
       <div className="memory-master-card">
         <div>
@@ -550,6 +644,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
             </div>
             <button type="button" className="settings-secondary-btn" onClick={() => {
               if (identity) setIdentityEditing(true)
+              else selectView('library')
               setType('person')
               setStatus('active')
               setQuery('')
@@ -600,6 +695,9 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         </div>
       </section>
 
+      </div>}
+
+      {!loading && activeView === 'connections' && <div className="memory-view memory-connections-view">
       <section className="memory-capability-card">
         <div><strong>记忆引擎插件</strong><span>负责本地记忆的存储、检索、冲突和历史。切换引擎需要重启应用。</span></div>
         <select value={config.memoryEngineProvider} onChange={(event) => {
@@ -626,7 +724,9 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           </div>
         )}
       </section>
+      </div>}
 
+      {!loading && activeView === 'overview' && <div className="memory-view memory-overview-stats-view">
       <div className="memory-stats" aria-label="记忆统计">
         <div><strong>{stats.active}</strong><span>已确认</span></div>
         <div><strong>{stats.pending}</strong><span>待确认</span></div>
@@ -648,7 +748,9 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           <div className="memory-archive-breakdown"><strong>归档构成</strong>{insights.archiveReasons.filter((item) => item.count > 0).map((item) => <span key={item.reason}>{ARCHIVE_LABELS[item.reason] || item.reason} {item.count}</span>)}{insights.archiveReasons.every((item) => item.count === 0) && <span>暂无归档记忆</span>}</div>
         </div>
       </details>
+      </div>}
 
+      {!loading && activeView === 'organize' && <div className="memory-view memory-organize-view">
       <section className="memory-lifecycle-card">
         <div className="memory-lifecycle-heading">
           <div><strong>记忆生命周期</strong><span>过期和超出容量的记忆只会归档，不会永久删除。</span></div>
@@ -697,7 +799,17 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
               <span className="settings-switch-slider" />
             </label>
             <button type="button" onClick={() => { void loadClusters() }} disabled={clusterBusy} aria-expanded={showClusters}>{clusterBusy ? '分析中…' : showClusters ? '收起主题' : '查看主题'}</button>
-            <button type="button" onClick={() => { setTopicMergeMode((value) => !value); setTopicSelection(new Set()); setTopicLabel('') }} disabled={clusterBusy} aria-pressed={topicMergeMode}>{topicMergeMode ? '取消合并' : '人工合并'}</button>
+            <button type="button" onClick={() => {
+              if (topicMergeMode) setTopicMergeMode(false)
+              else {
+                setTopicMergeMode(true)
+                setStatus('active')
+                setType('all')
+                setActiveView('library')
+              }
+              setTopicSelection(new Set())
+              setTopicLabel('')
+            }} disabled={clusterBusy} aria-pressed={topicMergeMode}>{topicMergeMode ? '取消合并' : '人工合并'}</button>
           </div>
         </div>
         {topicMergeMode && <div className="memory-topic-builder">
@@ -726,7 +838,9 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           </div>
         )}
       </section>
+      </div>}
 
+      {!loading && activeView === 'connections' && <div className="memory-view memory-connections-view">
       <section className="memory-embedding-card">
         <div className="memory-embedding-header">
           <div>
@@ -808,8 +922,17 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           {syncStatus && <div className="memory-sync-status" role="status">{syncStatus}</div>}
         </div>}
       </section>}
+      </div>}
 
-      {showAdd && (
+      {!loading && (activeView === 'review' || activeView === 'library') && <div className={`memory-view memory-library-view${activeView === 'review' ? ' is-review' : ''}`}>
+      {activeView === 'library' && topicMergeMode && <div className="memory-topic-builder memory-topic-builder-library">
+        <div><strong>创建人工主题</strong><span>勾选至少两条同类型的已确认记忆。</span></div>
+        <input value={topicLabel} maxLength={60} onChange={(event) => setTopicLabel(event.target.value)} placeholder="主题名称" aria-label="人工主题名称" />
+        <span>已选 {topicSelection.size} 条</span>
+        <button type="button" className="primary" onClick={() => { void createManualTopic() }} disabled={clusterBusy || topicSelection.size < 2 || !topicLabel.trim()}>创建主题</button>
+        <button type="button" onClick={() => { setTopicMergeMode(false); setTopicSelection(new Set()); setTopicLabel('') }}>取消</button>
+      </div>}
+      {activeView === 'library' && showAdd && (
         <div className="memory-add-form">
           <select value={newType} onChange={(event) => setNewType(event.target.value as MemoryType)} aria-label="记忆类型">
             {Object.entries(TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -819,14 +942,14 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         </div>
       )}
 
-      <div className="memory-toolbar memory-library">
+      <div className={`memory-toolbar memory-library${activeView === 'review' ? ' is-review' : ''}`}>
         <label>
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索记忆…" aria-label="搜索记忆" />
         </label>
-        <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} aria-label="记忆状态">
+        {activeView === 'library' ? <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} aria-label="记忆状态">
           <option value="all">全部状态</option><option value="active">已确认</option><option value="pending">待确认</option><option value="archived">已归档</option>
-        </select>
+        </select> : <label className="memory-review-scope"><span>显示范围</span><select value={reviewScope} onChange={(event) => handleReviewScopeChange(event.target.value as MemoryReviewScope)} aria-label="待处理显示范围"><option value="pending">仅待确认与冲突</option><option value="all">全部记忆</option></select></label>}
         <select value={type} onChange={(event) => setType(event.target.value as typeof type)} aria-label="记忆类型筛选">
           <option value="all">全部类型</option>
           {Object.entries(TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -926,10 +1049,10 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
             )}
           </article>
         })}
-        {memories.length === 0 && <div className="memory-empty">没有匹配的记忆。明确说“请记住……”可以创建候选。</div>}
+        {memories.length === 0 && <div className="memory-empty">{activeView === 'review' ? '没有待处理的记忆，当前收件箱已经清空。' : '没有匹配的记忆。明确说“请记住……”可以创建候选。'}</div>}
       </div>
 
-      {importPreview && <section className="memory-import-panel" aria-label="记忆导入预览">
+      {activeView === 'library' && importPreview && <section className="memory-import-panel" aria-label="记忆导入预览">
         <div className="memory-import-heading"><div><strong>导入预览 · {importPreview.fileName}</strong><span>逐条确认处理方式，提交前不会写入数据库。</span></div><button type="button" onClick={() => { setImportPreview(null); setConfirmImport(false) }}>关闭</button></div>
         <div className="memory-import-list">
           {importPreview.items.map((item) => <article key={item.id} className={`status-${item.status}`}>
@@ -941,12 +1064,13 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         <div className="memory-import-actions">{confirmImport ? <><span>确认按当前选择导入？替换操作会归档旧记忆。</span><button type="button" onClick={() => setConfirmImport(false)}>取消</button><button type="button" className="primary" onClick={() => { void commitImport() }} disabled={importBusy}>确认导入</button></> : <button type="button" className="primary" onClick={() => setConfirmImport(true)} disabled={importBusy || importPreview.items.length === 0}>提交导入</button>}</div>
       </section>}
 
-      <div className="memory-footer-actions">
+      {activeView === 'library' && <div className="memory-footer-actions">
         <button type="button" onClick={() => { void previewImport() }} disabled={importBusy}>{importBusy ? '处理中…' : '导入 JSON'}</button>
         <button type="button" onClick={() => { void run('export', () => window.electronAPI.memory.export()) }}>导出 JSON</button>
         <button type="button" className="danger" onClick={() => setConfirmClear(true)}>忘记全部</button>
-      </div>
-      {importStatus && <div className="memory-import-status" role="status">{importStatus}</div>}
+      </div>}
+      {activeView === 'library' && importStatus && <div className="memory-import-status" role="status">{importStatus}</div>}
+      </div>}
 
       {confirmClear && (
         <div className="memory-clear-confirm" role="alertdialog" aria-modal="true" aria-labelledby="memory-clear-title">
@@ -957,7 +1081,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           </div>
         </div>
       )}
-      {error && <div className="memory-settings-error" role="alert">{error}</div>}
+      {error && <div className="memory-settings-error" role="alert"><span>{error}</span><button type="button" onClick={() => { setLoading(true); void refresh() }}>重试</button></div>}
     </div>
   )
 }

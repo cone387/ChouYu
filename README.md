@@ -58,6 +58,7 @@ API Key 和插件 Token 使用 Electron `safeStorage` 加密后保存在本机�
 | `/new` | 新建对话 |
 | `/clear` | 清空当前对话（需要确认） |
 | `/remember 内容` | 创建长期记忆候选（确认后生效） |
+| `/memory` | 打开独立记忆工作区 |
 | `/settings` | 打开设置 |
 | `/model` | 打开模型选择器 |
 | `/model 模型名` | 直接切换到指定模型 |
