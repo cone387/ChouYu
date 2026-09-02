@@ -15,7 +15,6 @@ import type {
   MemoryTopic,
   MemoryType
 } from '../../shared/memory'
-import type { MemorySyncOutboxStatus } from '../../shared/memory'
 
 export interface MemoryUpdate {
   content?: string
@@ -63,6 +62,4 @@ export interface MemoryProvider {
   splitTopic(topicId: string): string[]
   excludeFromClusters(memoryIds: string[]): string[]
   listClusterExcludedIds(): string[]
-  getSyncOutboxStatus?: () => MemorySyncOutboxStatus
-  retrySyncOutbox?: () => Promise<MemorySyncOutboxStatus>
 }

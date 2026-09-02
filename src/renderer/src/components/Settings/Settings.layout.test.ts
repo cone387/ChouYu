@@ -77,8 +77,6 @@ describe('settings layout guardrails', () => {
     expect(memorySource).toContain('来源与依据')
     expect(memorySource).toContain('远程边界')
     expect(memoryStylesheet).toContain('.memory-source-details')
-    expect(memorySource).toContain('syncOutboxStatus')
-    expect(memorySource).toContain('远程同步队列')
     expect(memorySource).toContain("type MemoryReviewScope = 'pending' | 'all'")
     expect(memorySource).toContain('仅待确认与冲突')
     expect(memorySource).toContain('全部记忆')

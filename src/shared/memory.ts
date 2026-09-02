@@ -185,13 +185,6 @@ export interface MemorySyncStatus {
   remoteCount?: number
 }
 
-export interface MemorySyncOutboxStatus {
-  pending: number
-  failed: number
-  lastError?: string
-  lastAttemptAt?: number
-}
-
 export interface MemorySyncPushResult {
   provider: 'mem0'
   attempted: number
@@ -228,11 +221,6 @@ export interface MemoryListOptions {
 /** Remote Mem0 inference writes immediately; only automatic mode may use it. */
 export function shouldUseRemoteMemoryExtraction(memoryWriteMode: string, memoryEngineProvider: string): boolean {
   return memoryWriteMode === 'auto' && (memoryEngineProvider === 'mem0-self-hosted-engine' || memoryEngineProvider === 'mem0-platform-engine')
-}
-
-export function memorySyncRetryDelay(attempts: number): number {
-  const safeAttempts = Math.max(1, Math.min(20, Math.round(attempts)))
-  return Math.min(30 * 60_000, 1_000 * (2 ** (safeAttempts - 1)))
 }
 
 const SECRET_PATTERNS = [
