@@ -41,9 +41,12 @@ describe('Mem0 memory sync adapter', () => {
   })
 
   it('reports self-hosted search compatibility and connection failures clearly', async () => {
-    const unsupportedRequest = vi.fn(async () => new Response('missing', { status: 404 })) as typeof fetch
+    const unsupportedRequest = vi.fn(async (input, init) => {
+      if (init?.method === 'GET') return new Response(JSON.stringify({ memories: [{ id: 'r1', memory: 'test preference' }] }), { status: 200 })
+      return new Response('missing', { status: 404 })
+    }) as typeof fetch
     await expect(new Mem0MemorySyncAdapter({ ...config, mode: 'self-hosted' }, unsupportedRequest).search('test'))
-      .rejects.toThrow('不支持记忆搜索接口')
+      .resolves.toHaveLength(1)
 
     const offlineRequest = vi.fn(async () => { throw new TypeError('fetch failed') }) as typeof fetch
     await expect(new Mem0MemorySyncAdapter({ ...config, mode: 'self-hosted' }, offlineRequest).search('test'))

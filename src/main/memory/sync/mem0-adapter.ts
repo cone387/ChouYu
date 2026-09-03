@@ -26,6 +26,24 @@ function resultRows(value: unknown): unknown[] {
   return []
 }
 
+function recallFromList(memories: RemoteMemoryRecord[], query: string, limit: number): RemoteMemoryRecord[] {
+  const normalizedQuery = query.toLowerCase().replace(/\s+/g, '')
+  const queryBigrams = new Set(Array.from(normalizedQuery).flatMap((_, index, chars) => index + 1 < chars.length ? [chars.slice(index, index + 2).join('')] : []))
+  return memories
+    .map((memory, index) => {
+      const content = memory.content.toLowerCase().replace(/\s+/g, '')
+      const exact = normalizedQuery && content.includes(normalizedQuery) ? 1 : 0
+      const overlap = queryBigrams.size > 0
+        ? [...queryBigrams].filter((bigram) => content.includes(bigram)).length / queryBigrams.size
+        : 0
+      return { memory, score: exact * 2 + overlap, index }
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, limit)
+    .map((item) => item.memory)
+}
+
 export function parseMem0Memories(value: unknown): RemoteMemoryRecord[] {
   return resultRows(value).flatMap((row, index) => {
     const record = asRecord(row)
@@ -132,7 +150,12 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
         break
       }
     }
-    if (!response) throw new Error('当前 Mem0 Self-hosted 服务不支持记忆搜索接口，请检查服务版本。')
+    if (!response) {
+      // Some self-hosted deployments expose listing but not semantic search.
+      // Keep recall functional using only the remote records returned for this
+      // user; this is a compatibility fallback, not a second local store.
+      return recallFromList(await this.list(signal), query, boundedLimit)
+    }
     return parseMem0Memories(await this.responseJson(response))
   }
 
