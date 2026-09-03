@@ -34,8 +34,10 @@ describe('fake Mem0 server', () => {
 
   it('rejects a missing or wrong X-API-Key with 401', async () => {
     const fake = await start()
-    const response = await fetch(`${fake.url}/memories?user_id=alice`)
-    expect(response.status).toBe(401)
+    const missing = await fetch(`${fake.url}/memories?user_id=alice`)
+    expect(missing.status).toBe(401)
+    const wrong = await fetch(`${fake.url}/memories?user_id=alice`, { headers: { 'X-API-Key': 'not-the-key' } })
+    expect(wrong.status).toBe(401)
   })
 
   it('stores writes with infer and metadata echoed back', async () => {

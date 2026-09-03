@@ -153,6 +153,9 @@ export async function startFakeMem0Server(options: { apiKey: string; seed: Reado
     setMode(next: FakeMem0Mode) { mode = next },
     records: () => records,
     requests: () => requests,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve()))
+    close: () => {
+      server.closeAllConnections()
+      return new Promise<void>((resolve) => server.close(() => resolve()))
+    }
   }
 }
