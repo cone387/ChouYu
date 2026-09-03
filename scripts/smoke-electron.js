@@ -4,7 +4,7 @@ const os = require('os')
 const path = require('path')
 
 const READY_MARKER = 'CHOUYU_SMOKE_READY'
-const TIMEOUT_MS = 20_000
+const TIMEOUT_MS = 30_000
 const packagedArgIndex = process.argv.indexOf('--packaged')
 const packagedExecutable = packagedArgIndex >= 0 ? process.argv[packagedArgIndex + 1] : ''
 const executable = packagedExecutable || require('electron')
@@ -85,6 +85,10 @@ const timer = setTimeout(() => {
 child.on('error', (error) => finish(1, `Failed to launch Electron: ${error.message}`))
 child.on('exit', (code) => {
   if (!ready) {
+    if (output.includes('CHOUYU_SMOKE_FAILED')) {
+      finish(1, `Main-process smoke assertions failed.\n${output}`)
+      return
+    }
     finish(1, `Electron exited before renderer readiness (code ${code}).\n${output}`)
     return
   }
