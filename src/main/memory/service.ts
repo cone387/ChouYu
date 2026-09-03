@@ -322,7 +322,8 @@ export async function testMemoryEngine(): Promise<MemorySyncStatus> {
   try {
     const adapter = new Mem0MemorySyncAdapter({ baseUrl: config.memorySyncBaseUrl, apiKey: config.memorySyncApiKey, userId: config.memorySyncUserId, mode })
     const result = await adapter.test()
-    return { ok: true, provider: 'mem0', remoteCount: result.remoteCount, message: `Mem0 主记忆引擎连接成功，已有 ${result.remoteCount} 条记忆。` }
+    await adapter.search('ChouYu connection test', 1)
+    return { ok: true, provider: 'mem0', remoteCount: result.remoteCount, message: `Mem0 主记忆引擎连接和搜索均正常，已有 ${result.remoteCount} 条记忆。` }
   } catch (error) {
     return { ok: false, provider: 'mem0', message: error instanceof Error ? error.message : 'Mem0 主记忆引擎连接失败。' }
   }

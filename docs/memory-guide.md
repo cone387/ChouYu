@@ -138,4 +138,4 @@ Embedding Base URL 和 API Key 可以独立配置；留空时复用主 AI Provid
 
 ## 后续计划
 
-- Letta 适配器与双向增量同步
+- Self-hosted 真实环境兼容性与连接故障恢复

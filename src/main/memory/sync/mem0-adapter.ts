@@ -86,15 +86,25 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
     }
   }
 
+  private async send(input: Parameters<typeof fetch>[0], init: RequestInit, operation: string): Promise<Response> {
+    try {
+      return await this.request(input, init)
+    } catch (error) {
+      const name = error instanceof Error ? error.name : ''
+      if (name === 'AbortError' || name === 'TimeoutError') throw new Error(`Mem0 ${operation}超时，请检查服务状态和网络。`)
+      throw new Error(`无法连接 Mem0 执行${operation}，请检查 Base URL 和服务是否已启动。`)
+    }
+  }
+
   async list(signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
     const endpoint = new URL(this.endpoint())
     endpoint.searchParams.set('user_id', this.config.userId)
     endpoint.searchParams.set('page_size', '1000')
-    const response = await this.request(endpoint, {
+    const response = await this.send(endpoint, {
       method: 'GET',
       headers: this.headers(),
       signal: signal || AbortSignal.timeout(30_000)
-    })
+    }, '读取记忆')
     return parseMem0Memories(await this.responseJson(response))
   }
 
@@ -104,18 +114,19 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
 
   async search(query: string, limit = 6, signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
     this.validate()
-    const response = await this.request(joinApiUrl(this.config.baseUrl, 'memories/search'), {
+    const response = await this.send(joinApiUrl(this.config.baseUrl, 'memories/search'), {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify({ query: query.slice(0, 4000), user_id: this.config.userId, limit: Math.min(50, Math.max(1, limit)) }),
       signal: signal || AbortSignal.timeout(30_000)
-    })
+    }, '搜索记忆')
+    if (response.status === 404 || response.status === 405) throw new Error('当前 Mem0 Self-hosted 服务不支持 /memories/search，请检查服务版本。')
     return parseMem0Memories(await this.responseJson(response))
   }
 
   async rememberRaw(text: string, signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
     this.validate()
-    const response = await this.request(this.endpoint(), {
+    const response = await this.send(this.endpoint(), {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify({
@@ -124,7 +135,7 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
         infer: true
       }),
       signal: signal || AbortSignal.timeout(30_000)
-    })
+    }, '写入记忆')
     return parseMem0Memories(await this.responseJson(response))
   }
 
@@ -148,7 +159,7 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
     for (let start = 0; start < pending.length; start += 5) {
       await Promise.all(pending.slice(start, start + 5).map(async (memory) => {
         try {
-          const response = await this.request(this.endpoint(), {
+          const response = await this.send(this.endpoint(), {
             method: 'POST',
             headers: this.headers(),
             body: JSON.stringify({
@@ -170,7 +181,7 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
               }
             }),
             signal: signal || AbortSignal.timeout(30_000)
-          })
+          }, '写入记忆')
           await this.responseJson(response)
           succeeded += 1
         } catch (error) {

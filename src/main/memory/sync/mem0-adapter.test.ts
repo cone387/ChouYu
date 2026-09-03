@@ -40,6 +40,20 @@ describe('Mem0 memory sync adapter', () => {
     await expect(new Mem0MemorySyncAdapter(config, malformedRequest).search('test')).rejects.toThrow('无法解析的响应')
   })
 
+  it('reports self-hosted search compatibility and connection failures clearly', async () => {
+    const unsupportedRequest = vi.fn(async () => new Response('missing', { status: 404 })) as typeof fetch
+    await expect(new Mem0MemorySyncAdapter({ ...config, mode: 'self-hosted' }, unsupportedRequest).search('test'))
+      .rejects.toThrow('不支持 /memories/search')
+
+    const offlineRequest = vi.fn(async () => { throw new TypeError('fetch failed') }) as typeof fetch
+    await expect(new Mem0MemorySyncAdapter({ ...config, mode: 'self-hosted' }, offlineRequest).search('test'))
+      .rejects.toThrow('请检查 Base URL 和服务是否已启动')
+
+    const timeoutRequest = vi.fn(async () => { throw new DOMException('timed out', 'TimeoutError') }) as typeof fetch
+    await expect(new Mem0MemorySyncAdapter({ ...config, mode: 'self-hosted' }, timeoutRequest).search('test'))
+      .rejects.toThrow('搜索记忆超时')
+  })
+
   it('skips existing remote records and pushes new local memories', async () => {
     const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => init?.method === 'GET'
       ? Response.json({ results: [{ id: 'r1', memory: '已同步', metadata: { chouyu_id: 'local-1' } }] })
