@@ -80,7 +80,11 @@ export async function startFakeMem0Server(options: { apiKey: string; seed: Reado
     requests.push({ method: request.method || '', path: path.replace(/^\//, ''), apiKey: request.headers['x-api-key'] as string || '', body })
 
     if (mode === 'refuse') {
-      request.destroy()
+      // A crashed Mem0 server resets the TCP connection. A plain stream destroy
+      // after the request body was consumed sends a graceful FIN that fetch
+      // clients ignore until their abort timeout, so reset the socket to make
+      // the client observe ECONNRESET immediately.
+      request.socket?.resetAndDestroy()
       return
     }
     if (mode === 'auth') {
