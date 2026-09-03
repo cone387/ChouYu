@@ -120,7 +120,7 @@ describe('chat layout guardrails', () => {
   it('shows memory extraction status without blocking the composer', () => {
     expect(panelSource).toContain('正在分析这条消息是否需要记住')
     expect(panelSource).toContain('memory-write-notice')
-    expect(panelSource).toContain('记忆分析失败，可稍后重试')
+    expect(panelSource).toContain('Mem0 记忆写入失败')
   })
 
   it('keeps ambiguous identity statements out of assistant claims', () => {

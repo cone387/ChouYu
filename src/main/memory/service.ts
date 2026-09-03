@@ -26,6 +26,7 @@ import { Mem0MemorySyncAdapter } from './sync/mem0-adapter'
 
 let provider: MemoryProvider | null = null
 let maintenanceTimer: ReturnType<typeof setInterval> | null = null
+let activeMemoryEngineId = ''
 
 export function isRemoteMemoryEngine(): boolean {
   const engine = getConfig().memoryEngineProvider
@@ -42,6 +43,7 @@ export function initializeMemory(): void {
     provider = capabilityRegistry.createMemoryEngine('chouyu-sqlite', { userDataPath: app.getPath('userData'), config })
     saveConfig({ memoryEngineProvider: 'chouyu-sqlite' })
   }
+  activeMemoryEngineId = getConfig().memoryEngineProvider
   provider.initialize()
   if (!isRemoteMemoryEngine()) runMemoryMaintenance()
   maintenanceTimer = isRemoteMemoryEngine() ? null : setInterval(() => {
@@ -63,6 +65,7 @@ export function closeMemory(): void {
   maintenanceTimer = null
   provider?.close()
   provider = null
+  activeMemoryEngineId = ''
 }
 
 export function proposeMemoryCandidate(candidate: MemoryCandidateInput): MemoryRecord | null {
@@ -323,7 +326,8 @@ export async function testMemoryEngine(): Promise<MemorySyncStatus> {
     const adapter = new Mem0MemorySyncAdapter({ baseUrl: config.memorySyncBaseUrl, apiKey: config.memorySyncApiKey, userId: config.memorySyncUserId, mode })
     const result = await adapter.test()
     await adapter.search('ChouYu connection test', 1)
-    return { ok: true, provider: 'mem0', remoteCount: result.remoteCount, message: `Mem0 主记忆引擎连接和搜索均正常，已有 ${result.remoteCount} 条记忆。` }
+    const restartHint = activeMemoryEngineId === config.memoryEngineProvider ? '' : `配置已保存，但当前运行实例仍使用 ${activeMemoryEngineId || '旧'} 引擎；请重启 ChouYu 后再进行聊天测试。`
+    return { ok: true, provider: 'mem0', remoteCount: result.remoteCount, message: restartHint || `Mem0 主记忆引擎连接和搜索均正常，已有 ${result.remoteCount} 条记忆。` }
   } catch (error) {
     return { ok: false, provider: 'mem0', message: error instanceof Error ? error.message : 'Mem0 主记忆引擎连接失败。' }
   }

@@ -47,7 +47,9 @@ import {
   searchMemories,
   splitMemoryCluster,
   testMemoryEngine,
-  testEmbedding
+  testEmbedding,
+  closeMemory,
+  initializeMemory
 } from './memory/service'
 import { extractMemoriesWithLLM } from './memory/llm-extractor'
 import {
@@ -309,7 +311,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         })
       } catch (error) {
         console.warn('[Memory] Mem0 primary extraction failed:', error)
-        return []
+        throw error instanceof Error ? error : new Error('Mem0 记忆写入失败，请检查连接配置。')
       }
     }
     let candidates: Awaited<ReturnType<typeof extractMemoriesWithLLM>>
@@ -668,8 +670,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (patch.hotkey && !updateMainHotkey(patch.hotkey)) {
       throw new Error(`快捷键“${patch.hotkey}”无效或已被其他程序占用`)
     }
+    const previousMemoryEngine = getConfig().memoryEngineProvider
     saveConfig(patch)
     const updated = getConfig()
+    // The selected memory engine is a process-level capability. Reload it as
+    // soon as the setting changes so the next chat request uses the engine the
+    // user just selected instead of the provider created during app startup.
+    if (patch.memoryEngineProvider !== undefined && patch.memoryEngineProvider !== previousMemoryEngine) {
+      closeMemory()
+      initializeMemory()
+    }
     if (patch.memoryMaxItems !== undefined || patch.memoryDefaultTtlDays !== undefined) runMemoryMaintenance()
     if (typeof patch.autoStart === 'boolean') {
       app.setLoginItemSettings({ openAtLogin: patch.autoStart, openAsHidden: true })

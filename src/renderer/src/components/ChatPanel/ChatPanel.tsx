@@ -599,8 +599,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (config.memoryEnabled && latestUserMessage?.content) {
       try {
         relevantMemories = await window.electronAPI.memory.search(latestUserMessage.content, 6)
-      } catch {
+      } catch (error) {
         relevantMemories = []
+        showMemoryWriteNotice(error instanceof Error ? `Mem0 记忆检索失败：${error.message}` : 'Mem0 记忆检索失败，请检查连接配置')
       }
     }
     const memoryRefs = relevantMemories.map((memory) => ({
@@ -687,7 +688,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           : [...previous, errorMessage]
       })
     }
-  }, [config, finishPetResponse, onPetStateChange, persistSessionMessages, setSessionStreaming, updateSessionMessages])
+  }, [config, finishPetResponse, onPetStateChange, persistSessionMessages, setSessionStreaming, showMemoryWriteNotice, updateSessionMessages])
 
   const handleStopGeneration = useCallback(() => {
     const sessionId = activeSessionIdRef.current
@@ -873,7 +874,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         if (activeCandidates.some((candidate) => candidate.type === 'person')) showMemoryWriteNotice('身份档案已更新')
         else if (activeCandidates.length > 0) showMemoryWriteNotice(`已自动保存 ${activeCandidates.length} 条记忆`)
         else showMemoryWriteNotice('这条消息未识别为需要保存的用户信息')
-      }).catch(() => showMemoryWriteNotice('记忆分析失败，可稍后重试'))
+      }).catch((error) => showMemoryWriteNotice(error instanceof Error ? `Mem0 记忆写入失败：${error.message}` : 'Mem0 记忆写入失败，请检查连接配置'))
     }
     await generateAIResponse(nextMessages, sessionId)
   }

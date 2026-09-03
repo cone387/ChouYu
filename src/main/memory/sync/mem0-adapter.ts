@@ -74,6 +74,7 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
   }
 
   private async responseJson(response: Response): Promise<unknown> {
+    if (response.status === 204) return []
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 1000)
       if (response.status === 401 || response.status === 403) throw new Error('Mem0 认证失败，请检查 API Key。')
@@ -114,13 +115,24 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
 
   async search(query: string, limit = 6, signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
     this.validate()
-    const response = await this.send(joinApiUrl(this.config.baseUrl, 'memories/search'), {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify({ query: query.slice(0, 4000), user_id: this.config.userId, limit: Math.min(50, Math.max(1, limit)) }),
-      signal: signal || AbortSignal.timeout(30_000)
-    }, '搜索记忆')
-    if (response.status === 404 || response.status === 405) throw new Error('当前 Mem0 Self-hosted 服务不支持 /memories/search，请检查服务版本。')
+    const boundedLimit = Math.min(50, Math.max(1, limit))
+    const endpoints = ['memories/search', 'memories/search/', 'search', 'search/']
+    let response: Response | null = null
+    for (const endpoint of endpoints) {
+      const candidate = await this.send(joinApiUrl(this.config.baseUrl, endpoint), {
+        method: 'POST',
+        headers: this.headers(),
+        // `top_k` is accepted by older Mem0 OSS builds while newer builds use
+        // `limit`; sending both keeps the adapter compatible across versions.
+        body: JSON.stringify({ query: query.slice(0, 4000), user_id: this.config.userId, limit: boundedLimit, top_k: boundedLimit }),
+        signal: signal || AbortSignal.timeout(30_000)
+      }, '搜索记忆')
+      if (candidate.status !== 404 && candidate.status !== 405) {
+        response = candidate
+        break
+      }
+    }
+    if (!response) throw new Error('当前 Mem0 Self-hosted 服务不支持记忆搜索接口，请检查服务版本。')
     return parseMem0Memories(await this.responseJson(response))
   }
 
