@@ -102,9 +102,11 @@ describe('fake Mem0 server', () => {
     expect(search.status).toBe(401)
   })
 
-  it('destroys sockets in refuse mode', async () => {
+  it('resets sockets in refuse mode', async () => {
     const fake = await start()
     fake.setMode('refuse')
-    await expect(fetch(`${fake.url}/memories?user_id=alice`, { headers: { 'X-API-Key': 'test-key' } })).rejects.toThrow()
+    // A graceful FIN is ignored by fetch until its abort timeout; the fake
+    // must send an RST so clients observe ECONNRESET immediately.
+    await expect(fetch(`${fake.url}/memories?user_id=alice`, { headers: { 'X-API-Key': 'test-key' } })).rejects.toMatchObject({ cause: { code: 'ECONNRESET' } })
   })
 })
