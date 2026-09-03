@@ -7,7 +7,7 @@ import { startFakeMem0Server } from './fake-mem0-server'
 const SMOKE_USER = 'smoke-user'
 const SMOKE_KEY = 'smoke-key'
 const RETRIEVAL_QUERY = '简短回答'
-const RETRIEVAL_CONTENT = '用户偏好简短回答'
+const RETRIEVAL_CONTENT = '用户偏好简短回答（Mem0 冒烟）'
 const ISOLATION_CONTENT = '其他用户的记忆不应被检索到'
 
 async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
@@ -50,7 +50,7 @@ export async function runMem0RuntimeSmoke(): Promise<void> {
     if (!results.some((memory) => memory.content === RETRIEVAL_CONTENT)) throw new Error('Mem0 chat retrieval smoke test failed')
     if (results.some((memory) => memory.content === ISOLATION_CONTENT)) throw new Error('Mem0 user isolation smoke test failed')
     if (!provider.list({ status: 'all', limit: 2000 }).some((memory) => memory.content === RETRIEVAL_CONTENT)) throw new Error('Mem0 SQLite cache smoke test failed')
-    if (!server.requests().some((entry) => entry.method === 'POST' && entry.path === 'memories/search' && entry.apiKey === SMOKE_KEY)) throw new Error('Mem0 search request log smoke test failed')
+    if (!server.requests().some((entry) => entry.method === 'POST' && entry.path === 'memories/search' && entry.apiKey === SMOKE_KEY && entry.body?.query === RETRIEVAL_QUERY)) throw new Error('Mem0 search request log smoke test failed')
 
     const written = await provider.rememberRaw('冒烟写入：用户在上海工作')
     if (written.length === 0) throw new Error('Mem0 rememberRaw smoke test failed')
@@ -80,6 +80,13 @@ export async function runMem0RuntimeSmoke(): Promise<void> {
     server.setMode('refuse')
     const refuseStatus = await testMemoryEngine()
     if (refuseStatus.ok || !refuseStatus.message.includes('无法连接')) throw new Error(`Mem0 connection failure smoke test failed: ${refuseStatus.message}`)
+    let refuseSearchError = ''
+    try {
+      await searchMemories(RETRIEVAL_QUERY, 6)
+    } catch (error) {
+      refuseSearchError = error instanceof Error ? error.message : String(error)
+    }
+    if (!refuseSearchError.includes('无法连接')) throw new Error(`Mem0 refuse search rejection smoke test failed: ${refuseSearchError}`)
 
     server.setMode('ok')
     const recovered = await testMemoryEngine()
@@ -87,9 +94,13 @@ export async function runMem0RuntimeSmoke(): Promise<void> {
     const recoveredResults = await searchMemories(RETRIEVAL_QUERY, 6)
     if (!recoveredResults.some((memory) => memory.content === RETRIEVAL_CONTENT)) throw new Error('Mem0 recovery retrieval smoke test failed')
   } finally {
-    closeMemory()
-    saveConfig({ memoryEngineProvider: 'chouyu-sqlite' })
-    initializeMemory()
+    try {
+      closeMemory()
+      saveConfig({ memoryEngineProvider: 'chouyu-sqlite' })
+      initializeMemory()
+    } catch (error) {
+      console.warn('[Smoke] Mem0 phase restore failed:', error)
+    }
     await server.close()
   }
 }
