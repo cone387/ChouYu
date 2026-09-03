@@ -21,7 +21,7 @@
 ### 工程门禁
 
 - TypeScript 类型检查通过
-- Vitest 单元测试通过（当前 128 项）
+- Vitest 单元测试通过（当前 135 项）
 - Electron 生产构建通过
 - Electron 启动冒烟测试通过
 
@@ -73,7 +73,7 @@
 - [x] Mem0 模式不启动本地生命周期维护，不执行本地 Embedding、主题聚类和记忆整理
 - [x] Mem0 模式隐藏 SQLite 专属的待处理、记忆库和整理入口
 - [x] 移除备份、迁移和双向同步能力
-- [ ] 用 Electron runtime fake server 覆盖 Mem0 主引擎连接和错误恢复
+- [x] 用 Electron runtime fake server 覆盖 Mem0 主引擎连接和错误恢复
 - [x] Self-hosted 适配器覆盖列表、搜索、鉴权、超时、离线和异常响应
 
 ## P2：感知能力补齐
