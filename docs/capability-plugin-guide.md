@@ -22,6 +22,8 @@
 | 类型 | ID | 说明 |
 |---|---|---|
 | 记忆引擎 | `chouyu-sqlite` | 完全本地，默认启用 |
+| 记忆引擎 | `mem0-platform-engine` | Mem0 Platform 远程主记忆引擎 |
+| 记忆引擎 | `mem0-self-hosted-engine` | Mem0 Self-hosted 远程主记忆引擎 |
 | Embedding | `openai-compatible` | 调用兼容 `/embeddings` 的在线或本地服务 |
 
 Embedding 默认不启用。若 Embedding 插件不可用或请求失败，SQLite 引擎仍会退回关键词检索。若配置的记忆引擎插件被移除，启动时会安全退回 `chouyu-sqlite`。

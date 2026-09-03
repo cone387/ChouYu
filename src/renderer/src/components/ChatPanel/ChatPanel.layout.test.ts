@@ -7,6 +7,7 @@ const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/compon
 const sidebarSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.tsx'), 'utf8')
 const sidebarStylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.css'), 'utf8')
 const inputSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/InputArea.tsx'), 'utf8')
+const memoryServiceSource = readFileSync(resolve(process.cwd(), 'src/main/memory/service.ts'), 'utf8')
 
 describe('chat layout guardrails', () => {
   it('keeps the composer on one row and never enables horizontal scrolling', () => {
@@ -44,6 +45,12 @@ describe('chat layout guardrails', () => {
     expect(panelSource).toContain("!showSettings && !showMemoryWorkspace && (['top', 'bottom'] as const)")
     expect(panelSource).toContain("memoryReturnTarget === 'settings'")
     expect(panelSource).toContain('aria-label={memoryReturnTarget === \'settings\' ? \'返回设置\' : \'返回聊天\'}')
+  })
+
+  it('routes remote memory search through the selected Mem0 engine', () => {
+    expect(memoryServiceSource).toContain('searchRemote')
+    expect(memoryServiceSource).toContain('return remote.map')
+    expect(panelSource).not.toContain('memorySyncProvider')
   })
 
   it('uses the top-bar session toggle as the only close control', () => {

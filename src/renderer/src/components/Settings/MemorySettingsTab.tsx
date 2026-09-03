@@ -105,14 +105,23 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [activeView, setActiveView] = useState<MemoryWorkspaceView>(focusMemoryId ? 'library' : 'overview')
   const [reviewScope, setReviewScope] = useState<MemoryReviewScope>('pending')
   const workspaceNavRef = useRef<HTMLElement>(null)
+  const isRemoteEngine = config.memoryEngineProvider === 'mem0-platform-engine' || config.memoryEngineProvider === 'mem0-self-hosted-engine'
 
   const selectView = useCallback((view: MemoryWorkspaceView) => {
+    if (isRemoteEngine && !['overview', 'connections'].includes(view)) {
+      setActiveView('overview')
+      return
+    }
     setActiveView(view)
     setQuery('')
     setType('all')
     if (view === 'review') setStatus(reviewScope === 'pending' ? 'pending' : 'all')
     else if (view === 'library') setStatus((current) => current === 'pending' ? 'active' : current)
-  }, [reviewScope])
+  }, [isRemoteEngine, reviewScope])
+
+  useEffect(() => {
+    if (isRemoteEngine && !['overview', 'connections'].includes(activeView)) setActiveView('overview')
+  }, [activeView, isRemoteEngine])
 
   const handleWorkspaceNavKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -520,7 +529,6 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const memoryTypeCounts = Object.fromEntries((Object.keys(TYPE_LABELS) as MemoryType[]).map((memoryType) => [memoryType, memories.filter((memory) => memory.type === memoryType).length])) as Record<MemoryType, number>
   const memoryEngineCapabilities = capabilities.filter((item) => item.kind === 'memory-engine')
   const embeddingCapabilities = capabilities.filter((item) => item.kind === 'embedding')
-  const mem0EngineSelected = config.memoryEngineProvider === 'mem0-platform-engine' || config.memoryEngineProvider === 'mem0-self-hosted-engine'
 
   return (
     <div className={`settings-pane memory-settings-pane${workspace ? ' memory-workspace-pane' : ''}`}>
@@ -539,18 +547,18 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
           <span>总览</span>
         </button>
-        <button type="button" className={activeView === 'review' ? 'active' : ''} aria-current={activeView === 'review' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('review')}>
+        {!isRemoteEngine && <button type="button" className={activeView === 'review' ? 'active' : ''} aria-current={activeView === 'review' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('review')}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M8 2.2a5.8 5.8 0 105.8 5.8"/><path d="M8 4.5V8l2.3 1.4"/></svg>
           <span>待处理</span>{stats.pending > 0 && <b>{stats.pending}</b>}
-        </button>
-        <button type="button" className={activeView === 'library' ? 'active' : ''} aria-current={activeView === 'library' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('library')}>
+        </button>}
+        {!isRemoteEngine && <button type="button" className={activeView === 'library' ? 'active' : ''} aria-current={activeView === 'library' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('library')}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M3 2.5h8.5A1.5 1.5 0 0113 4v9.5H4.5A1.5 1.5 0 013 12z"/><path d="M3 12a1.5 1.5 0 011.5-1.5H13M6 5h4"/></svg>
           <span>记忆库</span>
-        </button>
-        <button type="button" className={activeView === 'organize' ? 'active' : ''} aria-current={activeView === 'organize' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('organize')}>
+        </button>}
+        {!isRemoteEngine && <button type="button" className={activeView === 'organize' ? 'active' : ''} aria-current={activeView === 'organize' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('organize')}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M3 4h10M5 8h8M7 12h6"/><circle cx="3" cy="8" r="1"/><circle cx="5" cy="12" r="1"/></svg>
           <span>整理</span>
-        </button>
+        </button>}
         <button type="button" className={activeView === 'connections' ? 'active' : ''} aria-current={activeView === 'connections' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('connections')}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M6 5V3M10 5V3M4 6h8v3a4 4 0 01-4 4 4 4 0 01-4-4zM8 13v1"/></svg>
           <span>连接</span>
@@ -567,7 +575,19 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         <i /><i /><i />
       </div>}
 
-      {!loading && activeView === 'overview' && <div className="memory-view memory-overview-view">
+      {!loading && activeView === 'overview' && <div className={`memory-view memory-overview-view${isRemoteEngine ? ' is-remote' : ''}`}>
+
+      {isRemoteEngine ? <section className="memory-remote-overview" aria-labelledby="memory-remote-overview-title">
+        <div className="memory-remote-overview-icon" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7.5A8 8 0 0112 4a8 8 0 018 3.5M4 7.5V12a8 8 0 0016 0V7.5M8 9.5v4M12 8.5v5M16 9.5v4"/></svg>
+        </div>
+        <div>
+          <h3 id="memory-remote-overview-title">Mem0 正在管理记忆</h3>
+          <p>当前使用 Mem0 作为唯一主记忆中心。ChouYu 会在聊天时将相关内容交给 Mem0 处理，不在本地维护记忆索引、聚类或生命周期。</p>
+          <span className="memory-remote-overview-note">日常使用无需额外操作；如需修改连接信息，请前往“连接”。</span>
+          <div className="memory-remote-toggle"><span>允许在聊天中使用长期记忆</span><label className="settings-switch"><input type="checkbox" checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} aria-label="允许在聊天中使用长期记忆" /><span className="settings-switch-slider" /></label></div>
+        </div>
+      </section> : <>
 
       <div className="memory-master-card">
         <div>
@@ -649,6 +669,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         </div>
       </section>
 
+      </>}
       </div>}
 
       {!loading && activeView === 'connections' && <div className="memory-view memory-connections-view">
@@ -660,12 +681,12 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
           const suggestedBaseUrl = engine === 'mem0-self-hosted-engine' ? 'http://localhost:8888/api' : engine === 'mem0-platform-engine' ? 'https://api.mem0.ai/v1' : syncDraft.memorySyncBaseUrl
           const defaultBaseUrl = remote && syncDraft.memorySyncBaseUrl.trim() ? syncDraft.memorySyncBaseUrl : suggestedBaseUrl
           setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: defaultBaseUrl }))
-          void onSaveConfig({ memoryEngineProvider: engine, ...(remote ? { memorySyncBaseUrl: defaultBaseUrl } : {}) })
+          void onSaveConfig({ memoryEngineProvider: engine, ...(remote ? { memorySyncBaseUrl: defaultBaseUrl, memoryWriteMode: 'auto' } : {}) })
           setCapabilityStatus('主记忆引擎选择已保存，重启 ChouYu 后生效。')
         }} aria-label="主记忆引擎">{memoryEngineCapabilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <div className="memory-capability-meta">{memoryEngineCapabilities.filter((item) => item.id === config.memoryEngineProvider).map((item) => <span key={item.id}><b>当前主引擎</b>{item.networkAccess ? '需要网络' : '完全本地'} · {item.description}</span>)}</div>
         {capabilityStatus && <div className="memory-capability-status" role="status">{capabilityStatus}</div>}
-        {mem0EngineSelected && (
+        {isRemoteEngine && (
           <div className="memory-engine-connection-card" aria-labelledby="memory-engine-connection-title">
             <div><strong id="memory-engine-connection-title">Mem0 主记忆引擎连接</strong><span>当前主记忆引擎为 Mem0，SQLite 仅作缓存。</span></div>
             <div className="memory-engine-fields">
@@ -680,7 +701,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       </section>
       </div>}
 
-      {!loading && activeView === 'overview' && <div className="memory-view memory-overview-stats-view">
+      {!loading && activeView === 'overview' && !isRemoteEngine && <div className="memory-view memory-overview-stats-view">
       <div className="memory-stats" aria-label="记忆统计">
         <div><strong>{stats.active}</strong><span>已确认</span></div>
         <div><strong>{stats.pending}</strong><span>待确认</span></div>
@@ -704,7 +725,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       </details>
       </div>}
 
-      {!loading && activeView === 'organize' && <div className="memory-view memory-organize-view">
+      {!loading && activeView === 'organize' && !isRemoteEngine && <div className="memory-view memory-organize-view">
       <section className="memory-lifecycle-card">
         <div className="memory-lifecycle-heading">
           <div><strong>记忆生命周期</strong><span>过期和超出容量的记忆只会归档，不会永久删除。</span></div>
@@ -955,7 +976,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
                     ? '来自较明确的用户表达，当前置信度较高。'
                     : '当前置信度较低，建议结合原始对话内容复核。'}</p>
                 <span>远程边界</span>
-                <p>{mem0EngineSelected
+                <p>{isRemoteEngine
                   ? '当前使用 Mem0 作为唯一主记忆引擎，内容会发送到所配置的 Mem0 服务。'
                   : '当前使用 SQLite 作为唯一主记忆引擎，内容仅保存在本机。'}</p>
               </div>

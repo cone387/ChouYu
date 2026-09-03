@@ -7,6 +7,12 @@
 .memory-workspace-nav button.active { background:var(--bg-panel); color:var(--accent); box-shadow:var(--shadow-sm); font-weight:600; }
 .memory-workspace-nav button b { display:grid; min-width:18px; height:18px; place-items:center; border-radius:999px; background:var(--warning-bg); color:var(--warning); font-size:10px; font-variant-numeric:tabular-nums; }
 .memory-view { animation:memory-view-in 160ms ease-out; }
+.memory-remote-overview { display:flex; align-items:flex-start; gap:14px; margin-top:8px; padding:18px; border:1px solid color-mix(in srgb,var(--accent) 24%,var(--border)); border-radius:12px; background:color-mix(in srgb,var(--accent) 7%,var(--bg-panel)); }
+.memory-remote-overview-icon { display:grid; width:44px; height:44px; flex:0 0 auto; place-items:center; border-radius:12px; background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent); }
+.memory-remote-overview h3 { margin:0; color:var(--text-primary); font-size:15px; font-weight:650; }
+.memory-remote-overview p { margin:6px 0 0; color:var(--text-secondary); font-size:12px; line-height:1.55; }
+.memory-remote-overview-note { display:block; margin-top:8px; color:var(--text-muted); font-size:11px; line-height:1.45; }
+.memory-remote-toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:14px; padding-top:12px; border-top:1px solid var(--divider); color:var(--text-secondary); font-size:11px; }
 .memory-overview-stats-view { margin-top:8px; }
 .memory-review-intro { display:flex; align-items:baseline; gap:8px; margin:-4px 0 10px; padding:9px 11px; border-left:3px solid var(--warning); border-radius:0 8px 8px 0; background:var(--warning-bg); }
 .memory-review-intro strong { flex:0 0 auto; color:var(--warning); font-size:12px; }
@@ -348,6 +354,8 @@
 
 
 @media (max-width: 520px) {
+  .memory-remote-overview { padding:14px; }
+  .memory-remote-overview h3 { font-size:14px; }
   .memory-workspace-nav { overflow-x:auto; justify-content:flex-start; }
   .memory-workspace-nav button { min-width:94px; flex:0 0 auto; }
   .memory-workspace-nav button span { white-space:nowrap; }

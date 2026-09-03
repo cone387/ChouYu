@@ -20,6 +20,18 @@ describe('Mem0 memory sync adapter', () => {
     expect((request.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBe('Token secret')
   })
 
+  it('searches the selected user scope without falling back to local records', async () => {
+    const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+      init?.method === 'POST'
+        ? Response.json({ results: [{ id: 'r-search', memory: '喜欢简洁回答' }] })
+        : Response.json({ results: [] }))
+    const adapter = new Mem0MemorySyncAdapter(config, request as typeof fetch)
+    const result = await adapter.search('回答风格', 4)
+    expect(result).toHaveLength(1)
+    expect(String(request.mock.calls[0][0])).toContain('/memories/search')
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({ query: '回答风格', user_id: 'user-1', limit: 4 })
+  })
+
   it('skips existing remote records and pushes new local memories', async () => {
     const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => init?.method === 'GET'
       ? Response.json({ results: [{ id: 'r1', memory: '已同步', metadata: { chouyu_id: 'local-1' } }] })

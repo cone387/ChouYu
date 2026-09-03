@@ -102,6 +102,17 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
     return { remoteCount: (await this.list(signal)).length }
   }
 
+  async search(query: string, limit = 6, signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
+    this.validate()
+    const response = await this.request(joinApiUrl(this.config.baseUrl, 'memories/search'), {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ query: query.slice(0, 4000), user_id: this.config.userId, limit: Math.min(50, Math.max(1, limit)) }),
+      signal: signal || AbortSignal.timeout(30_000)
+    })
+    return parseMem0Memories(await this.responseJson(response))
+  }
+
   async rememberRaw(text: string, signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
     this.validate()
     const response = await this.request(this.endpoint(), {

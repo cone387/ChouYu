@@ -13,8 +13,7 @@ import {
   type MemoryListOptions,
   type MemoryType,
   containsSecret,
-  shouldAutoWriteMemory,
-  shouldUseRemoteMemoryExtraction
+  shouldAutoWriteMemory
 } from '../shared/memory'
 import {
   type CaptureSourceInfo,
@@ -301,7 +300,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const { memoryEnabled, memoryWriteMode, memoryAutoWriteConfidence } = getConfig()
     if (!memoryEnabled || memoryWriteMode === 'off') return []
     const currentConfig = getConfig()
-    if (shouldUseRemoteMemoryExtraction(memoryWriteMode, currentConfig.memoryEngineProvider)) {
+    const remoteMemoryEngine = currentConfig.memoryEngineProvider === 'mem0-self-hosted-engine' || currentConfig.memoryEngineProvider === 'mem0-platform-engine'
+    if (remoteMemoryEngine) {
       try {
         return await rememberRawMemory(text, {
           sessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined,

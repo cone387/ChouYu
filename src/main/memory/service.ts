@@ -27,6 +27,11 @@ import { Mem0MemorySyncAdapter } from './sync/mem0-adapter'
 let provider: MemoryProvider | null = null
 let maintenanceTimer: ReturnType<typeof setInterval> | null = null
 
+export function isRemoteMemoryEngine(): boolean {
+  const engine = getConfig().memoryEngineProvider
+  return engine === 'mem0-platform-engine' || engine === 'mem0-self-hosted-engine'
+}
+
 export function initializeMemory(): void {
   if (provider) return
   const config = getConfig()
@@ -38,8 +43,8 @@ export function initializeMemory(): void {
     saveConfig({ memoryEngineProvider: 'chouyu-sqlite' })
   }
   provider.initialize()
-  runMemoryMaintenance()
-  maintenanceTimer = setInterval(() => {
+  if (!isRemoteMemoryEngine()) runMemoryMaintenance()
+  maintenanceTimer = isRemoteMemoryEngine() ? null : setInterval(() => {
     try {
       runMemoryMaintenance()
     } catch (error) {
@@ -127,6 +132,7 @@ export function reactivateMemory(memoryId: string): MemoryRecord {
 }
 
 export function runMemoryMaintenance(): MemoryMaintenanceResult {
+  if (isRemoteMemoryEngine()) return { expired: 0, capacityArchived: 0, archivedIds: [] }
   const memoryProvider = getMemoryProvider()
   const invalidIdentityIds = memoryProvider.list({ status: 'active', type: 'person', limit: 2000 })
     .filter((memory) => {
@@ -159,6 +165,7 @@ export function runMemoryMaintenance(): MemoryMaintenanceResult {
 }
 
 export function getIdentityProfile(): MemoryRecord | null {
+  if (isRemoteMemoryEngine()) return null
   runMemoryMaintenance()
   const people = getMemoryProvider().list({ status: 'active', type: 'person', limit: 2000 })
     .filter((memory) => Boolean(extractPersonName(memory.content)))
@@ -167,6 +174,7 @@ export function getIdentityProfile(): MemoryRecord | null {
 }
 
 export function listMemoryClusters(): MemoryCluster[] {
+  if (isRemoteMemoryEngine()) return []
   runMemoryMaintenance()
   const memoryProvider = getMemoryProvider()
   return buildMemoryClusters(
@@ -190,6 +198,7 @@ export function splitMemoryCluster(clusterId: string, memoryIds: string[], manua
 }
 
 export function getMemoryInsights(): MemoryInsights {
+  if (isRemoteMemoryEngine()) return { byType: [], createdByWeek: [], archiveReasons: [], helpful: 0, unhelpful: 0, clustered: 0, clusters: 0, savedCharacters: 0 }
   runMemoryMaintenance()
   const all = getMemoryProvider().list({ status: 'all', limit: 2000 })
   const clusters = listMemoryClusters()
@@ -337,13 +346,14 @@ export async function testEmbedding(): Promise<EmbeddingStatus> {
 
 export async function indexMemory(memory: MemoryRecord): Promise<void> {
   const config = getConfig()
-  if (!config.embeddingEnabled || config.embeddingProvider === 'none' || memory.status !== 'active') return
+  if (isRemoteMemoryEngine() || !config.embeddingEnabled || config.embeddingProvider === 'none' || memory.status !== 'active') return
   const { client, model } = embeddingClient()
   const vector = (await client.embed([memory.content]))[0]
   getMemoryProvider().upsertEmbedding(memory.id, model, vector)
 }
 
 export async function rebuildEmbeddings(): Promise<EmbeddingRebuildResult> {
+  if (isRemoteMemoryEngine()) throw new Error('当前使用 Mem0 主记忆引擎，Embedding 索引由 Mem0 管理。')
   const { client, model } = embeddingClient()
   const memories = getMemoryProvider().list({ status: 'active', limit: 2000 })
   getMemoryProvider().clearEmbeddings()
@@ -363,8 +373,11 @@ export async function rebuildEmbeddings(): Promise<EmbeddingRebuildResult> {
 }
 
 export async function searchMemories(query: string, limit = 6): Promise<MemorySearchResult[]> {
-  const remoteProvider = getMemoryProvider() as MemoryProvider & { refreshRemote?: () => Promise<void> }
-  await remoteProvider.refreshRemote?.()
+  const remoteProvider = getMemoryProvider() as MemoryProvider & { searchRemote?: (query: string, limit?: number) => Promise<MemoryRecord[]> }
+  if (remoteProvider.searchRemote) {
+    const remote = await remoteProvider.searchRemote(query, limit)
+    return remote.map((memory, index) => ({ ...memory, score: Math.max(0.9, 1 - index * 0.01) })).slice(0, limit)
+  }
   runMemoryMaintenance()
   const provider = remoteProvider
   const targeted = inferMemoryQueryTypes(query)
