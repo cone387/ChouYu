@@ -32,6 +32,14 @@ describe('Mem0 memory sync adapter', () => {
     expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({ query: '回答风格', user_id: 'user-1', limit: 4 })
   })
 
+  it('normalizes authentication and malformed-response failures', async () => {
+    const authRequest = vi.fn(async () => new Response('denied', { status: 401 })) as typeof fetch
+    await expect(new Mem0MemorySyncAdapter(config, authRequest).search('test')).rejects.toThrow('Mem0 认证失败')
+
+    const malformedRequest = vi.fn(async () => new Response('not-json', { status: 200, headers: { 'Content-Type': 'text/plain' } })) as typeof fetch
+    await expect(new Mem0MemorySyncAdapter(config, malformedRequest).search('test')).rejects.toThrow('无法解析的响应')
+  })
+
   it('skips existing remote records and pushes new local memories', async () => {
     const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => init?.method === 'GET'
       ? Response.json({ results: [{ id: 'r1', memory: '已同步', metadata: { chouyu_id: 'local-1' } }] })
