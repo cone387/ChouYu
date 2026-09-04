@@ -20,7 +20,16 @@ export interface SessionGeneration {
   responseId: string
   toolBoundary: boolean
   requestId?: string
+  /** Renders buffered stream chunks immediately; used before boundaries/stop. */
+  flushRender?: () => void
 }
+
+/**
+ * Stream chunks arrive far faster than React should re-render the message
+ * list. Chunks are buffered per generation and flushed at this cadence; the
+ * final flush happens synchronously on done/error/stop so nothing is lost.
+ */
+export const STREAM_RENDER_INTERVAL_MS = 80
 
 interface UseSessionWorkspaceParams {
   config: AppConfig
@@ -253,6 +262,36 @@ export function useSessionWorkspace({
     const systemPrompt = buildSystemPrompt(config.soulMd, [memoryContext, memoryConversationPolicy].filter(Boolean).join('\n\n'))
     const history = buildMessages(conversation)
 
+    // Buffer rendered content and flush on a cadence instead of re-rendering
+    // the whole message list per chunk (see STREAM_RENDER_INTERVAL_MS).
+    let renderTimer: ReturnType<typeof setTimeout> | null = null
+    const renderAccumulated = () => {
+      if (renderTimer) {
+        clearTimeout(renderTimer)
+        renderTimer = null
+      }
+      if (controller.signal.aborted) return
+      const targetMessageId = aiMsgId
+      const content = accumulated
+      updateSessionMessages(sessionId, (previous) => {
+        const existing = previous.find((message) => message.id === targetMessageId)
+        if (existing) {
+          return previous.map((message) => message.id === targetMessageId
+            ? { ...message, content, responseStatus: undefined, memoryRefs }
+            : message)
+        }
+        return [...previous, { id: targetMessageId, role: 'assistant', content, timestamp: Date.now(), memoryRefs }]
+      })
+    }
+    const scheduleRender = () => {
+      if (renderTimer) return
+      renderTimer = setTimeout(() => {
+        renderTimer = null
+        renderAccumulated()
+      }, STREAM_RENDER_INTERVAL_MS)
+    }
+    generation.flushRender = renderAccumulated
+
     const finishGeneration = () => {
       if (sessionGenerationsRef.current.get(sessionId) !== generation) return
       sessionGenerationsRef.current.delete(sessionId)
@@ -276,11 +315,13 @@ export function useSessionWorkspace({
         (chunk, done) => {
           if (controller.signal.aborted) return
           if (done) {
+            renderAccumulated()
             finishGeneration()
             if (activeSessionIdRef.current === sessionId) finishPetResponse()
             return
           }
           if (chunk && generation.toolBoundary) {
+            renderAccumulated()
             segmentIndex += 1
             aiMsgId = `${responseBaseId}-${segmentIndex}`
             accumulated = ''
@@ -289,15 +330,7 @@ export function useSessionWorkspace({
           }
           accumulated += chunk
           if (activeSessionIdRef.current === sessionId) onPetStateChange('talking')
-          updateSessionMessages(sessionId, (previous) => {
-            const existing = previous.find((message) => message.id === aiMsgId)
-            if (existing) {
-              return previous.map((message) => message.id === aiMsgId
-                ? { ...message, content: accumulated, responseStatus: undefined, memoryRefs }
-                : message)
-            }
-            return [...previous, { id: aiMsgId, role: 'assistant', content: accumulated, timestamp: Date.now(), memoryRefs }]
-          })
+          scheduleRender()
         },
         controller.signal,
         (requestId) => {
@@ -306,6 +339,7 @@ export function useSessionWorkspace({
         }
       )
     } catch (error) {
+      renderAccumulated()
       finishGeneration()
       if (activeSessionIdRef.current === sessionId) onPetStateChange('idle')
       if (error instanceof Error && error.name === 'AbortError') return
@@ -331,6 +365,7 @@ export function useSessionWorkspace({
     const generation = sessionGenerationsRef.current.get(sessionId)
     if (!generation) return
     pendingGenerationsRef.current.delete(sessionId)
+    generation.flushRender?.()
     const responseId = generation.responseId
     stopSessionResponse(sessionId)
     const nextMessages = updateSessionMessages(sessionId, (previous) => {

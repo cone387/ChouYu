@@ -761,6 +761,35 @@
   padding: 0;
 }
 
+/* Syntax highlighting (colors come from theme-aware vars in index.css) */
+.code-block .hljs-comment,
+.code-block .hljs-quote { color: var(--hljs-comment); font-style: italic; }
+.code-block .hljs-keyword,
+.code-block .hljs-selector-tag,
+.code-block .hljs-template-tag { color: var(--hljs-keyword); }
+.code-block .hljs-string,
+.code-block .hljs-regexp,
+.code-block .hljs-symbol { color: var(--hljs-string); }
+.code-block .hljs-number,
+.code-block .hljs-literal { color: var(--hljs-number); }
+.code-block .hljs-title,
+.code-block .hljs-title.function_,
+.code-block .hljs-title.class_,
+.code-block .hljs-section { color: var(--hljs-title); }
+.code-block .hljs-attr,
+.code-block .hljs-attribute,
+.code-block .hljs-variable,
+.code-block .hljs-template-variable,
+.code-block .hljs-name { color: var(--hljs-attr); }
+.code-block .hljs-built_in,
+.code-block .hljs-type { color: var(--hljs-built-in); }
+.code-block .hljs-meta,
+.code-block .hljs-link { color: var(--hljs-meta); }
+.code-block .hljs-addition { color: var(--hljs-addition); }
+.code-block .hljs-deletion { color: var(--hljs-deletion); }
+.code-block .hljs-emphasis { font-style: italic; }
+.code-block .hljs-strong { font-weight: 600; }
+
 /* Copy Button */
 .copy-btn {
   border: none;

@@ -28,10 +28,26 @@
   --warning: #9a6700;
   --warning-border: rgba(154, 103, 0, 0.3);
   --warning-bg: rgba(154, 103, 0, 0.08);
+  --hljs-comment: #9292a3;
+  --hljs-keyword: #7c3aed;
+  --hljs-string: #18794e;
+  --hljs-number: #b45309;
+  --hljs-title: #1d4ed8;
+  --hljs-attr: #0e7490;
+  --hljs-built-in: #b42318;
+  --hljs-meta: #626273;
+  --hljs-addition: #18794e;
+  --hljs-deletion: #b42318;
 }
 
+/*
+ * Dark theme variables. The two blocks must stay in sync:
+ * 1) media-query fallback for the window before JS resolves the preference,
+ *    suppressed once the user explicitly picks light (`data-theme="light"`);
+ * 2) explicit manual dark selection (`data-theme="dark"`).
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg-primary: #1e1e2e;
     --bg-secondary: #252535;
     --bg-panel: rgba(30, 30, 46, 0.98);
@@ -61,7 +77,59 @@
     --warning: #ffd166;
     --warning-border: rgba(255, 209, 102, 0.38);
     --warning-bg: rgba(255, 209, 102, 0.08);
+    --hljs-comment: #77768b;
+    --hljs-keyword: #c4b5fd;
+    --hljs-string: #6ee7a8;
+    --hljs-number: #fbbf24;
+    --hljs-title: #93c5fd;
+    --hljs-attr: #67e8f9;
+    --hljs-built-in: #ff8a80;
+    --hljs-meta: #aaa9bb;
+    --hljs-addition: #6ee7a8;
+    --hljs-deletion: #ff8a80;
   }
+}
+
+:root[data-theme='dark'] {
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #252535;
+  --bg-panel: rgba(30, 30, 46, 0.98);
+  --text-primary: #f0f0f0;
+  --text-secondary: #aaa9bb;
+  --text-muted: #77768b;
+  --border: rgba(255, 255, 255, 0.06);
+  --divider: rgba(220, 216, 255, 0.045);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --user-msg-bg: rgba(108, 92, 231, 0.18);
+  --ai-msg-bg: transparent;
+  --code-bg: #25243a;
+  --accent: #a69aff;
+  --accent-hover: #b9b1ff;
+  --on-accent: #1e1e2e;
+  --hover-bg: rgba(186, 177, 255, 0.08);
+  --input-bg: #222231;
+  --input-border: rgba(255, 255, 255, 0.08);
+  --input-focus-border: transparent;
+  --focus-ring: rgba(166, 153, 255, 0.35);
+  --error: #ff8a80;
+  --error-border: rgba(255, 138, 128, 0.45);
+  --success: #6ee7a8;
+  --success-border: rgba(110, 231, 168, 0.35);
+  --success-bg: rgba(110, 231, 168, 0.08);
+  --warning: #ffd166;
+  --warning-border: rgba(255, 209, 102, 0.38);
+  --warning-bg: rgba(255, 209, 102, 0.08);
+  --hljs-comment: #77768b;
+  --hljs-keyword: #c4b5fd;
+  --hljs-string: #6ee7a8;
+  --hljs-number: #fbbf24;
+  --hljs-title: #93c5fd;
+  --hljs-attr: #67e8f9;
+  --hljs-built-in: #ff8a80;
+  --hljs-meta: #aaa9bb;
+  --hljs-addition: #6ee7a8;
+  --hljs-deletion: #ff8a80;
 }
 
 * {

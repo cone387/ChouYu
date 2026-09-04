@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import TopBar from './TopBar'
 import MessageArea from './MessageArea'
 import InputArea, { PendingAttachment } from './InputArea'
@@ -128,6 +128,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     clearMemoryCandidates,
     requestComposerFocus
   })
+  const inputHistory = useMemo(
+    () => messages.filter((message) => message.role === 'user' && !message.toolData && message.content.trim()).map((message) => message.content),
+    [messages]
+  )
   const {
     panelHeight,
     sessionSidebarWidth,
@@ -782,6 +786,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               onInitialPluginConsumed={() => setActivePluginForInput(null)}
               initialAttachment={pendingAttachment}
               onInitialAttachmentConsumed={onPendingAttachmentConsumed}
+              history={inputHistory}
             />
           </>
         )}

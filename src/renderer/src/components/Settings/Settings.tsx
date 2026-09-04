@@ -8,6 +8,7 @@ import ModelPicker from '../ModelPicker/ModelPicker'
 import ToolsSettingsTab from './ToolsSettingsTab'
 import MemorySettingsTab from './MemorySettingsTab'
 import CapabilitySettingsTab from './CapabilitySettingsTab'
+import { searchSettings, type SettingsSearchEntry } from './settings-search-index'
 import './Settings.css'
 
 const SOUL_HISTORY_STATE_KEY = 'soul-history'
@@ -173,6 +174,28 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
     if (!query) return allNavItems
     return allNavItems.filter((item) => item.label.toLocaleLowerCase().includes(query))
   }, [allNavItems, navQuery])
+  const settingsResults = useMemo(() => searchSettings(navQuery), [navQuery])
+
+  const handleSearchResultSelect = useCallback((entry: SettingsSearchEntry) => {
+    if (entry.nav === 'memory' && onOpenMemoryWorkspace) {
+      onOpenMemoryWorkspace()
+      return
+    }
+    setActiveNav(entry.nav)
+    if (!entry.fieldId) return
+    // Wait for the target pane to mount, then scroll to the exact control
+    // and flash it so the user sees where the setting lives.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const target = document.getElementById(entry.fieldId as string)
+        if (!target) return
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        target.classList.add('settings-field-flash')
+        window.setTimeout(() => target.classList.remove('settings-field-flash'), 1600)
+        if (target instanceof HTMLElement) target.focus({ preventScroll: true })
+      })
+    })
+  }, [onOpenMemoryWorkspace])
 
   const handleNavKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
@@ -191,6 +214,13 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   }
 
   const handleNavSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      if (settingsResults.length > 0) {
+        event.preventDefault()
+        handleSearchResultSelect(settingsResults[0])
+      }
+      return
+    }
     if (event.key !== 'Escape') return
     if (!navQuery) return
     event.preventDefault()
@@ -265,6 +295,26 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               aria-label="搜索设置"
             />
           </label>
+          {navQuery.trim() && (
+            <div className="settings-search-results" role="listbox" aria-label="设置项搜索结果">
+              {settingsResults.map((entry) => (
+                <button
+                  key={`${entry.nav}:${entry.label}`}
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  className="settings-search-result"
+                  onClick={() => handleSearchResultSelect(entry)}
+                >
+                  <span className="settings-search-result-label">{entry.label}</span>
+                  <span className="settings-search-result-nav">{entry.navLabel}</span>
+                </button>
+              ))}
+              {settingsResults.length === 0 && filteredNavItems.length === 0 && (
+                <span className="settings-nav-empty">没有匹配项</span>
+              )}
+            </div>
+          )}
           {filteredNavItems.map((item) => (
             <button
               key={item.key}
@@ -297,7 +347,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               <span>{item.label}</span>
             </button>
           ))}
-          {filteredNavItems.length === 0 && <span className="settings-nav-empty">没有匹配项</span>}
+          {filteredNavItems.length === 0 && !navQuery.trim() && <span className="settings-nav-empty">没有匹配项</span>}
         </nav>
 
         <div className="settings-content">
@@ -530,6 +580,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                 <label>开机自启</label>
                 <label className="settings-switch">
                   <input
+                    id="settings-autostart"
                     type="checkbox"
                     aria-label="开机自启"
                     checked={config.autoStart}
@@ -560,6 +611,22 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                   />
                   <div className="settings-pet-size-scale" aria-hidden="true"><span>40px</span><span>160px</span></div>
                 </div>
+              </div>
+              <div className="settings-field">
+                <label id="settings-theme-label">外观主题</label>
+                <div className="settings-theme-options" role="radiogroup" aria-labelledby="settings-theme-label">
+                  {([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={config.theme === value}
+                      className={`settings-theme-option${config.theme === value ? ' active' : ''}`}
+                      onClick={() => { void save({ theme: value }) }}
+                    >{label}</button>
+                  ))}
+                </div>
+                <div className="settings-help">「跟随系统」会随 Windows 亮暗模式自动切换。</div>
               </div>
               <div className="settings-field settings-field-row">
                 <label htmlFor="settings-hotkey">唤出面板</label>

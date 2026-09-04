@@ -73,6 +73,7 @@ export interface AppConfig {
   hotkey: string
   autoStart: boolean
   petSize: number
+  theme: 'system' | 'light' | 'dark'
   proactiveGreeting: boolean
   proactiveRestReminder: boolean
   clipboardWatch: boolean
@@ -104,6 +105,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   hotkey: 'Alt+Space',
   autoStart: false,
   petSize: 80,
+  theme: 'system',
   proactiveGreeting: true,
   proactiveRestReminder: true,
   clipboardWatch: false,
@@ -152,6 +154,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     model: typeof source.model === 'string' ? source.model.trim() : '',
     hotkey: typeof source.hotkey === 'string' && source.hotkey.trim() ? source.hotkey.trim() : DEFAULT_APP_CONFIG.hotkey,
     autoStart: source.autoStart === true,
+    theme: source.theme === 'light' || source.theme === 'dark' ? source.theme : 'system',
     proactiveGreeting: source.proactiveGreeting !== false,
     proactiveRestReminder: source.proactiveRestReminder !== false,
     clipboardWatch: source.clipboardWatch === true,
@@ -195,6 +198,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.model === 'string') patch.model = input.model.trim().slice(0, 256)
   if (typeof input.hotkey === 'string') patch.hotkey = input.hotkey.trim().slice(0, 128)
   if (typeof input.autoStart === 'boolean') patch.autoStart = input.autoStart
+  if (input.theme === 'system' || input.theme === 'light' || input.theme === 'dark') patch.theme = input.theme
   if (typeof input.petSize === 'number' && Number.isFinite(input.petSize)) patch.petSize = input.petSize
   if (typeof input.proactiveGreeting === 'boolean') patch.proactiveGreeting = input.proactiveGreeting
   if (typeof input.proactiveRestReminder === 'boolean') patch.proactiveRestReminder = input.proactiveRestReminder

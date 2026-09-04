@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Message } from '../../shared/types'
 import type { MemoryFeedbackValue } from '../../../../shared/memory'
 import PluginMessageCard from './PluginMessageCard'
 import ToolActivityCard from './ToolActivityCard'
 import { getConversationForRetry } from '../../core/conversation-actions'
+import { highlightCode } from '../../core/highlight'
 
 interface MessageAreaProps {
   messages: Message[]
@@ -40,13 +41,19 @@ function CopyButton({ text }: { text: string }) {
 
 function CodeBlock({ className, children }: { className?: string; children: string }) {
   const lang = className?.replace('language-', '') || ''
+  const raw = children.replace(/\n$/, '')
+  const highlightedHtml = useMemo(() => highlightCode(raw, lang), [raw, lang])
   return (
     <div className="code-block">
       <div className="code-block-header">
         <span className="code-block-lang">{lang}</span>
-        <CopyButton text={children.replace(/\n$/, '')} />
+        <CopyButton text={raw} />
       </div>
-      <pre><code>{children}</code></pre>
+      {highlightedHtml !== null ? (
+        <pre><code className="hljs" dangerouslySetInnerHTML={{ __html: highlightedHtml }} /></pre>
+      ) : (
+        <pre><code>{children}</code></pre>
+      )}
     </div>
   )
 }

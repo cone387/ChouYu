@@ -29,9 +29,11 @@ interface InputAreaProps {
   onInitialPluginConsumed?: () => void
   initialAttachment?: PendingAttachment | null
   onInitialAttachmentConsumed?: () => void
+  /** User messages of the current session, oldest first — browsed with ↑/↓. */
+  history?: string[]
 }
 
-export default function InputArea({ onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed }: InputAreaProps) {
+export default function InputArea({ onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
@@ -54,6 +56,8 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const initialFocusDoneRef = useRef(false)
   const focusAfterSendRef = useRef(false)
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null)
+  const historyDraftRef = useRef('')
 
   const focusComposer = useCallback(() => {
     const textarea = textareaRef.current
@@ -163,6 +167,7 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
     if ((!trimmed && attachments.length === 0) || disabled) return
+    setHistoryIndex(null)
     if (activePlugin) {
       onSend(`/${activePlugin.command} ${trimmed}`)
       setValue('')
@@ -222,6 +227,38 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
       }
     }
 
+    if (e.key === 'ArrowUp' && history.length > 0) {
+      const target = e.currentTarget as HTMLTextAreaElement
+      const caretAtStart = target.selectionStart === 0 && target.selectionEnd === 0
+      if (historyIndex !== null || caretAtStart) {
+        e.preventDefault()
+        if (historyIndex === null) historyDraftRef.current = value
+        const nextIndex = Math.min(history.length - 1, historyIndex === null ? history.length - 1 : Math.max(0, historyIndex - 1))
+        setHistoryIndex(nextIndex)
+        const recalled = history[nextIndex] ?? ''
+        setValue(recalled)
+        setShowCommands(false)
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current
+          if (textarea) textarea.setSelectionRange(recalled.length, recalled.length)
+        })
+        return
+      }
+    }
+
+    if (e.key === 'ArrowDown' && historyIndex !== null) {
+      e.preventDefault()
+      const nextIndex = historyIndex + 1
+      const recalled = nextIndex >= history.length ? historyDraftRef.current : history[nextIndex]
+      setHistoryIndex(nextIndex >= history.length ? null : nextIndex)
+      setValue(recalled)
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current
+        if (textarea) textarea.setSelectionRange(recalled.length, recalled.length)
+      })
+      return
+    }
+
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       handleSend()
@@ -237,6 +274,7 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value
     setValue(v)
+    setHistoryIndex(null)
     const shouldShow = v === '/' || (v.startsWith('/') && !v.includes(' '))
     setShowCommands(shouldShow)
     if (shouldShow) setCmdIndex(0)
