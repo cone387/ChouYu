@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { extractPersonName } from '../../../../shared/memory'
-import type { MemoryCleanupSuggestion, MemoryCluster, MemoryConflictAction, MemoryImportAction, MemoryImportPreview, MemoryInsights, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
+import type { MemoryConflictAction, MemoryInsights, MemoryRecord, MemoryRevision, MemoryStats, MemoryType } from '../../../../shared/memory'
 import type { AppConfig } from '../../shared/types'
 import type { CapabilityInfo } from '../../../../shared/capabilities'
+import MemoryEngineCard from './memory/MemoryEngineCard'
+import MemoryEmbeddingCard from './memory/MemoryEmbeddingCard'
+import MemoryLifecycleCard from './memory/MemoryLifecycleCard'
+import MemoryClusterCard from './memory/MemoryClusterCard'
+import MemoryStatsView from './memory/MemoryStatsView'
+import MemoryImportPanel from './memory/MemoryImportPanel'
+import { ARCHIVE_LABELS, TYPE_LABELS } from './memory/labels'
 import './MemorySettingsTab.css'
 
 interface MemorySettingsTabProps {
@@ -17,22 +24,6 @@ interface MemorySettingsTabProps {
 type MemoryWorkspaceView = 'overview' | 'review' | 'library' | 'organize' | 'connections'
 type MemoryReviewScope = 'pending' | 'all'
 const MEMORY_REVIEW_SCOPE_STATE_KEY = 'memory-review-scope'
-
-const TYPE_LABELS: Record<MemoryType, string> = {
-  fact: '事实',
-  preference: '偏好',
-  person: '人物',
-  project: '项目',
-  workflow: '工作方式'
-}
-
-const ARCHIVE_LABELS: Record<string, string> = {
-  expired: '到期归档',
-  capacity: '容量整理',
-  cleanup: '手动整理',
-  manual: '手动归档',
-  replace: '被新记忆替换'
-}
 
 const EMPTY_INSIGHTS: MemoryInsights = { byType: [], createdByWeek: [], archiveReasons: [], helpful: 0, unhelpful: 0, clustered: 0, clusters: 0, savedCharacters: 0 }
 
@@ -59,47 +50,15 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [restoreConfirmId, setRestoreConfirmId] = useState('')
   const [deleteConfirmId, setDeleteConfirmId] = useState('')
   const [error, setError] = useState('')
-  const [showEmbedding, setShowEmbedding] = useState(config.embeddingEnabled)
-  const [showEmbeddingKey, setShowEmbeddingKey] = useState(false)
-  const [embeddingDraft, setEmbeddingDraft] = useState({
-    embeddingBaseUrl: config.embeddingBaseUrl,
-    embeddingApiKey: config.embeddingApiKey,
-    embeddingModel: config.embeddingModel
-  })
-  const [embeddingBusy, setEmbeddingBusy] = useState<'test' | 'rebuild' | ''>('')
-  const [embeddingStatus, setEmbeddingStatus] = useState('')
-  const [lifecycleDraft, setLifecycleDraft] = useState({ memoryMaxItems: config.memoryMaxItems, memoryDefaultTtlDays: config.memoryDefaultTtlDays })
-  const [cleanupSuggestions, setCleanupSuggestions] = useState<MemoryCleanupSuggestion[]>([])
-  const [cleanupSelected, setCleanupSelected] = useState<Set<string>>(new Set())
-  const [showCleanup, setShowCleanup] = useState(false)
-  const [confirmCleanup, setConfirmCleanup] = useState(false)
-  const [lifecycleBusy, setLifecycleBusy] = useState(false)
-  const [lifecycleStatus, setLifecycleStatus] = useState('')
-  const [clusters, setClusters] = useState<MemoryCluster[]>([])
-  const [showClusters, setShowClusters] = useState(false)
-  const [expandedClusterIds, setExpandedClusterIds] = useState<Set<string>>(new Set())
   const [clusterBusy, setClusterBusy] = useState(false)
   const [clusterStatus, setClusterStatus] = useState('')
+  const [clusterReloadSignal, setClusterReloadSignal] = useState(0)
   const [insights, setInsights] = useState<MemoryInsights>(EMPTY_INSIGHTS)
   const [expiryEditingId, setExpiryEditingId] = useState('')
   const [expiryDays, setExpiryDays] = useState(0)
   const [topicMergeMode, setTopicMergeMode] = useState(false)
   const [topicSelection, setTopicSelection] = useState<Set<string>>(new Set())
   const [topicLabel, setTopicLabel] = useState('')
-  const [splitConfirmId, setSplitConfirmId] = useState('')
-  const [importPreview, setImportPreview] = useState<MemoryImportPreview | null>(null)
-  const [importActions, setImportActions] = useState<Record<string, MemoryImportAction>>({})
-  const [importBusy, setImportBusy] = useState(false)
-  const [importStatus, setImportStatus] = useState('')
-  const [confirmImport, setConfirmImport] = useState(false)
-  const [showSyncKey, setShowSyncKey] = useState(false)
-  const [syncDraft, setSyncDraft] = useState({
-    memorySyncBaseUrl: config.memorySyncBaseUrl,
-    memorySyncApiKey: config.memorySyncApiKey,
-    memorySyncUserId: config.memorySyncUserId
-  })
-  const [syncBusy, setSyncBusy] = useState<'test' | 'pull' | 'push' | ''>('')
-  const [syncStatus, setSyncStatus] = useState('')
   const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([])
   const [capabilityStatus, setCapabilityStatus] = useState('')
   const [activeView, setActiveView] = useState<MemoryWorkspaceView>(focusMemoryId ? 'library' : 'overview')
@@ -195,23 +154,6 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   }, [focusMemoryId, memories])
 
   useEffect(() => {
-    setEmbeddingDraft({
-      embeddingBaseUrl: config.embeddingBaseUrl,
-      embeddingApiKey: config.embeddingApiKey,
-      embeddingModel: config.embeddingModel
-    })
-  }, [config.embeddingApiKey, config.embeddingBaseUrl, config.embeddingModel])
-
-  useEffect(() => {
-    setLifecycleDraft({ memoryMaxItems: config.memoryMaxItems, memoryDefaultTtlDays: config.memoryDefaultTtlDays })
-  }, [config.memoryDefaultTtlDays, config.memoryMaxItems])
-
-  useEffect(() => {
-    setSyncDraft({ memorySyncBaseUrl: config.memorySyncBaseUrl, memorySyncApiKey: config.memorySyncApiKey, memorySyncUserId: config.memorySyncUserId })
-  }, [config.memorySyncApiKey, config.memorySyncBaseUrl, config.memorySyncUserId])
-
-
-  useEffect(() => {
     void window.electronAPI.capabilities.list().then(setCapabilities).catch(() => setCapabilityStatus('能力插件目录加载失败。'))
   }, [config.embeddingProvider, config.memoryEngineProvider])
 
@@ -291,134 +233,6 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     }
   }
 
-  const saveEmbeddingDraft = async () => {
-    await onSaveConfig(embeddingDraft)
-  }
-
-  const testEmbeddingConnection = async () => {
-    setEmbeddingBusy('test')
-    setEmbeddingStatus('正在测试 Embedding 连接…')
-    try {
-      await saveEmbeddingDraft()
-      const result = await window.electronAPI.memory.testEmbedding()
-      setEmbeddingStatus(result.message)
-    } catch (reason) {
-      setEmbeddingStatus(reason instanceof Error ? reason.message : 'Embedding 测试失败。')
-    } finally {
-      setEmbeddingBusy('')
-    }
-  }
-
-  const rebuildEmbeddingIndex = async () => {
-    setEmbeddingBusy('rebuild')
-    setEmbeddingStatus('正在重建向量索引…')
-    try {
-      await saveEmbeddingDraft()
-      const result = await window.electronAPI.memory.rebuildEmbeddings()
-      setEmbeddingStatus(`索引完成：成功 ${result.indexed} 条，失败 ${result.failed} 条，模型 ${result.model}。`)
-      await refresh()
-    } catch (reason) {
-      setEmbeddingStatus(reason instanceof Error ? reason.message : '向量索引重建失败。')
-    } finally {
-      setEmbeddingBusy('')
-    }
-  }
-
-  const saveLifecyclePolicy = async () => {
-    setLifecycleBusy(true)
-    setLifecycleStatus('正在保存生命周期策略…')
-    try {
-      await onSaveConfig(lifecycleDraft)
-      const result = await window.electronAPI.memory.maintenance()
-      setLifecycleStatus(`策略已保存。本次归档：过期 ${result.expired} 条，超出容量 ${result.capacityArchived} 条。`)
-      await refresh()
-    } catch (reason) {
-      setLifecycleStatus(reason instanceof Error ? reason.message : '生命周期策略保存失败。')
-    } finally {
-      setLifecycleBusy(false)
-    }
-  }
-
-  const saveDefaultTtl = async (value: number) => {
-    setLifecycleDraft((previous) => ({ ...previous, memoryDefaultTtlDays: value }))
-    setLifecycleBusy(true)
-    setLifecycleStatus('正在保存默认有效期…')
-    try {
-      await onSaveConfig({ memoryDefaultTtlDays: value })
-      setLifecycleStatus(value > 0 ? `之后创建的记忆默认保留 ${value} 天。` : '之后创建的记忆将默认永久保留。')
-    } catch (reason) {
-      setLifecycleStatus(reason instanceof Error ? reason.message : '默认有效期保存失败。')
-    } finally {
-      setLifecycleBusy(false)
-    }
-  }
-
-  const loadCleanupSuggestions = async () => {
-    setLifecycleBusy(true)
-    setLifecycleStatus('正在分析低价值记忆…')
-    try {
-      const suggestions = await window.electronAPI.memory.cleanupPreview(50)
-      setCleanupSuggestions(suggestions)
-      setCleanupSelected(new Set(suggestions.map((memory) => memory.id)))
-      setShowCleanup(true)
-      setConfirmCleanup(false)
-      setLifecycleStatus(suggestions.length > 0 ? `找到 ${suggestions.length} 条整理建议。` : '暂时没有需要整理的低价值记忆。')
-    } catch (reason) {
-      setLifecycleStatus(reason instanceof Error ? reason.message : '整理建议加载失败。')
-    } finally {
-      setLifecycleBusy(false)
-    }
-  }
-
-  const archiveCleanupSelection = async () => {
-    setLifecycleBusy(true)
-    try {
-      const archived = await window.electronAPI.memory.archiveMany([...cleanupSelected])
-      setLifecycleStatus(`已归档 ${archived.length} 条记忆，可在“已归档”筛选中查看。`)
-      setCleanupSuggestions((previous) => previous.filter((memory) => !archived.includes(memory.id)))
-      setCleanupSelected(new Set())
-      setConfirmCleanup(false)
-      await refresh()
-    } catch (reason) {
-      setLifecycleStatus(reason instanceof Error ? reason.message : '批量归档失败。')
-    } finally {
-      setLifecycleBusy(false)
-    }
-  }
-
-  const loadClusters = async () => {
-    if (showClusters) {
-      setShowClusters(false)
-      return
-    }
-    setClusterBusy(true)
-    setClusterStatus('正在分析记忆主题…')
-    try {
-      const nextClusters = await window.electronAPI.memory.clusters()
-      setClusters(nextClusters)
-      setShowClusters(true)
-      setExpandedClusterIds(new Set())
-      setClusterStatus(nextClusters.length > 0 ? `已识别 ${nextClusters.length} 个主题。` : '当前还没有可聚合的相似记忆。')
-    } catch (reason) {
-      setClusterStatus(reason instanceof Error ? reason.message : '记忆主题加载失败。')
-    } finally {
-      setClusterBusy(false)
-    }
-  }
-
-  const toggleCompression = async (enabled: boolean) => {
-    setClusterBusy(true)
-    setClusterStatus('正在保存摘要压缩设置…')
-    try {
-      await onSaveConfig({ memoryCompressionEnabled: enabled })
-      setClusterStatus(enabled ? '检索时会把同主题记忆压缩为一个可追溯摘要。' : '已关闭摘要压缩，检索将使用原始记忆条目。')
-    } catch (reason) {
-      setClusterStatus(reason instanceof Error ? reason.message : '摘要压缩设置保存失败。')
-    } finally {
-      setClusterBusy(false)
-    }
-  }
-
   const saveExpiry = async (memory: MemoryRecord) => {
     const expiresAt = expiryDays > 0 ? Date.now() + expiryDays * 86_400_000 : null
     if (await run(memory.id, () => window.electronAPI.memory.update(memory.id, { expiresAt }))) setExpiryEditingId('')
@@ -430,11 +244,10 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     setClusterStatus('正在创建人工主题…')
     try {
       await window.electronAPI.memory.createTopic(topicLabel, [...topicSelection])
-      setClusters(await window.electronAPI.memory.clusters())
+      setClusterReloadSignal((value) => value + 1)
       setTopicMergeMode(false)
       setTopicSelection(new Set())
       setTopicLabel('')
-      setShowClusters(true)
       setActiveView('organize')
       setClusterStatus('人工主题已创建，摘要压缩会优先使用这个分组。')
     } catch (reason) {
@@ -444,82 +257,18 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     }
   }
 
-  const splitCluster = async (cluster: MemoryCluster) => {
-    setClusterBusy(true)
-    setClusterStatus('正在拆分主题…')
-    try {
-      await window.electronAPI.memory.splitCluster(cluster.id, cluster.memoryIds, cluster.manual === true)
-      setClusters(await window.electronAPI.memory.clusters())
-      setSplitConfirmId('')
-      setClusterStatus('主题已拆分；这些记忆将保持为独立条目，直到你重新人工合并。')
-    } catch (reason) {
-      setClusterStatus(reason instanceof Error ? reason.message : '主题拆分失败。')
-    } finally {
-      setClusterBusy(false)
+  const handleTopicMergeToggle = useCallback(() => {
+    if (topicMergeMode) setTopicMergeMode(false)
+    else {
+      setTopicMergeMode(true)
+      setStatus('active')
+      setType('all')
+      setActiveView('library')
     }
-  }
+    setTopicSelection(new Set())
+    setTopicLabel('')
+  }, [topicMergeMode])
 
-  const previewImport = async () => {
-    setImportBusy(true)
-    setImportStatus('正在读取并检查导入文件…')
-    try {
-      const preview = await window.electronAPI.memory.importPreview()
-      if (preview.canceled) {
-        setImportStatus('已取消导入。')
-        return
-      }
-      setImportPreview(preview)
-      setImportActions(Object.fromEntries(preview.items.map((item) => [item.id, item.suggestedAction])))
-      setConfirmImport(false)
-      setImportStatus(`已检查 ${preview.items.length} 条可导入记忆；忽略无效 ${preview.invalid} 条，阻止敏感内容 ${preview.blockedSecrets} 条。`)
-    } catch (reason) {
-      setImportStatus(reason instanceof Error ? reason.message : '记忆导入预览失败。')
-    } finally {
-      setImportBusy(false)
-    }
-  }
-
-  const commitImport = async () => {
-    if (!importPreview) return
-    setImportBusy(true)
-    setImportStatus('正在导入记忆…')
-    try {
-      const result = await window.electronAPI.memory.importCommit(importPreview.items.map((item) => ({ item, action: importActions[item.id] || 'skip' })))
-      setImportStatus(`导入完成：新增 ${result.added}，并存 ${result.kept}，替换 ${result.replaced}，跳过 ${result.skipped}，失败 ${result.failed}。`)
-      setImportPreview(null)
-      setImportActions({})
-      setConfirmImport(false)
-      await refresh()
-    } catch (reason) {
-      setImportStatus(reason instanceof Error ? reason.message : '记忆导入失败。')
-    } finally {
-      setImportBusy(false)
-    }
-  }
-
-  const saveSyncDraft = async () => {
-    await onSaveConfig(syncDraft)
-  }
-
-  const testMemoryEngineConnection = async () => {
-    setSyncBusy('test')
-    setSyncStatus('正在连接主记忆引擎…')
-    try {
-      await saveSyncDraft()
-      const result = await window.electronAPI.memory.engineTest()
-      setSyncStatus(result.message)
-    } catch (reason) {
-      setSyncStatus(reason instanceof Error ? reason.message : '主记忆引擎连接测试失败。')
-    } finally {
-      setSyncBusy('')
-    }
-  }
-
-
-  const clusteredMemoryCount = clusters.reduce((total, cluster) => total + cluster.memoryIds.length, 0)
-  const clusterSavedCharacters = clusters.reduce((total, cluster) => total + cluster.savedCharacters, 0)
-  const maxTypeCount = Math.max(1, ...insights.byType.map((item) => item.count))
-  const maxWeeklyCount = Math.max(1, ...insights.createdByWeek.map((item) => item.count))
   const selectedTopicType = memories.find((memory) => topicSelection.has(memory.id))?.type
   const orderedMemories = [...memories].sort((left, right) => sortBy === 'importance'
     ? right.importance - left.importance || right.updatedAt - left.updatedAt
@@ -673,205 +422,41 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       </div>}
 
       {!loading && activeView === 'connections' && <div className="memory-view memory-connections-view">
-      <section className="memory-capability-card">
-        <div><strong>记忆引擎插件</strong><span>负责本地记忆的存储、检索、冲突和历史。切换引擎需要重启应用。</span></div>
-        <select value={config.memoryEngineProvider} onChange={(event) => {
-          const engine = event.target.value
-          const remote = engine === 'mem0-self-hosted-engine' || engine === 'mem0-platform-engine'
-          const suggestedBaseUrl = engine === 'mem0-self-hosted-engine' ? 'http://localhost:8888/api' : engine === 'mem0-platform-engine' ? 'https://api.mem0.ai/v1' : syncDraft.memorySyncBaseUrl
-          const defaultBaseUrl = remote && syncDraft.memorySyncBaseUrl.trim() ? syncDraft.memorySyncBaseUrl : suggestedBaseUrl
-          setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: defaultBaseUrl }))
-          void onSaveConfig({ memoryEngineProvider: engine, ...(remote ? { memorySyncBaseUrl: defaultBaseUrl, memoryWriteMode: 'auto' } : {}) })
-          setCapabilityStatus('主记忆引擎选择已保存，重启 ChouYu 后生效。')
-        }} aria-label="主记忆引擎">{memoryEngineCapabilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <div className="memory-capability-meta">{memoryEngineCapabilities.filter((item) => item.id === config.memoryEngineProvider).map((item) => <span key={item.id}><b>当前主引擎</b>{item.networkAccess ? '需要网络' : '完全本地'} · {item.description}</span>)}</div>
-        {capabilityStatus && <div className="memory-capability-status" role="status">{capabilityStatus}</div>}
-        {isRemoteEngine && (
-          <div className="memory-engine-connection-card" aria-labelledby="memory-engine-connection-title">
-            <div><strong id="memory-engine-connection-title">Mem0 主记忆引擎连接</strong><span>当前主记忆引擎为 Mem0，SQLite 仅作缓存。</span></div>
-            <div className="memory-engine-fields">
-              <label><span>Base URL（必填）</span><input value={syncDraft.memorySyncBaseUrl} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder={config.memoryEngineProvider === 'mem0-self-hosted-engine' ? 'http://localhost:8888/api' : 'https://api.mem0.ai/v1'} /></label>
-              <label><span>User ID（必填）</span><input value={syncDraft.memorySyncUserId} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncUserId: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="用于隔离远程记忆" /></label>
-              <label className="memory-engine-key-field"><span>API Key</span><div><input type={showSyncKey ? 'text' : 'password'} value={syncDraft.memorySyncApiKey} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncApiKey: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="Mem0 API Key" /><button type="button" onClick={() => setShowSyncKey((value) => !value)}>{showSyncKey ? '隐藏' : '显示'}</button></div></label>
-            </div>
-            <div className="memory-engine-actions"><button type="button" onClick={() => { void testMemoryEngineConnection() }} disabled={Boolean(syncBusy)}>{syncBusy === 'test' ? '测试中…' : '测试主记忆引擎'}</button></div>
-            {syncStatus && <div className="memory-engine-status" role="status">{syncStatus}</div>}
-          </div>
-        )}
-      </section>
+        <MemoryEngineCard
+          config={config}
+          onSaveConfig={onSaveConfig}
+          memoryEngineCapabilities={memoryEngineCapabilities}
+          capabilityStatus={capabilityStatus}
+          onCapabilityStatusChange={setCapabilityStatus}
+          isRemoteEngine={isRemoteEngine}
+        />
       </div>}
 
       {!loading && activeView === 'overview' && !isRemoteEngine && <div className="memory-view memory-overview-stats-view">
-      <div className="memory-stats" aria-label="记忆统计">
-        <div><strong>{stats.active}</strong><span>已确认</span></div>
-        <div><strong>{stats.pending}</strong><span>待确认</span></div>
-        <div><strong>{stats.expiringSoon}</strong><span>7 天内过期</span></div>
-        <div><strong>{(stats.databaseSize / 1024).toFixed(1)} KB</strong><span>本地数据库</span></div>
-        <div><strong>{stats.embeddings}</strong><span>向量索引</span></div>
-      </div>
-
-      <details className="memory-insights-card">
-        <summary>记忆统计概览</summary>
-        <div className="memory-insights-content">
-          <div className="memory-insight-kpis">
-            <span><strong>{insights.clusters}</strong>主题</span><span><strong>{insights.clustered}</strong>已聚类</span><span><strong>{insights.savedCharacters}</strong>可压缩字符</span><span><strong>+{insights.helpful} / -{insights.unhelpful}</strong>来源反馈</span>
-          </div>
-          <div className="memory-insight-grid">
-            <div><strong>类型分布</strong><ul>{insights.byType.map((item) => <li key={item.type}><span>{TYPE_LABELS[item.type]}</span><i><b style={{ width: `${item.count / maxTypeCount * 100}%` }} /></i><em>{item.count}</em></li>)}</ul></div>
-            <div><strong>近 8 周新增</strong><div className="memory-week-chart" role="img" aria-label={`近 8 周新增记忆：${insights.createdByWeek.map((item) => `${item.label} ${item.count} 条`).join('，')}`}>{insights.createdByWeek.map((item) => <span key={item.label}><i style={{ height: `${Math.max(4, item.count / maxWeeklyCount * 100)}%` }} /><small>{item.label}</small><em>{item.count}</em></span>)}</div></div>
-          </div>
-          <div className="memory-archive-breakdown"><strong>归档构成</strong>{insights.archiveReasons.filter((item) => item.count > 0).map((item) => <span key={item.reason}>{ARCHIVE_LABELS[item.reason] || item.reason} {item.count}</span>)}{insights.archiveReasons.every((item) => item.count === 0) && <span>暂无归档记忆</span>}</div>
-        </div>
-      </details>
+        <MemoryStatsView stats={stats} insights={insights} />
       </div>}
 
       {!loading && activeView === 'organize' && !isRemoteEngine && <div className="memory-view memory-organize-view">
-      <section className="memory-lifecycle-card">
-        <div className="memory-lifecycle-heading">
-          <div><strong>记忆生命周期</strong><span>过期和超出容量的记忆只会归档，不会永久删除。</span></div>
-          <div className="memory-capacity-meter" aria-label={`已使用 ${stats.active} / ${config.memoryMaxItems} 条`}>
-            <span>{stats.active} / {config.memoryMaxItems}</span>
-            <i><b style={{ width: `${Math.min(100, stats.active / Math.max(1, config.memoryMaxItems) * 100)}%` }} /></i>
-          </div>
-        </div>
-        <div className="memory-lifecycle-fields">
-          <label><span>容量上限</span><input type="number" min="50" max="2000" step="50" value={lifecycleDraft.memoryMaxItems} disabled={lifecycleBusy} onChange={(event) => setLifecycleDraft((previous) => ({ ...previous, memoryMaxItems: Number(event.target.value) }))} onBlur={() => { void saveLifecyclePolicy() }} /><small>50–2000 条，超出后优先归档低价值记忆。</small></label>
-          <label><span>新记忆默认有效期</span><select value={lifecycleDraft.memoryDefaultTtlDays} disabled={lifecycleBusy} onChange={(event) => { void saveDefaultTtl(Number(event.target.value)) }}><option value="0">永久保留</option><option value="30">30 天</option><option value="90">90 天</option><option value="180">180 天</option><option value="365">1 年</option></select><small>只影响之后创建的记忆。</small></label>
-        </div>
-        <div className="memory-lifecycle-actions">
-          <button type="button" onClick={() => { void saveLifecyclePolicy() }} disabled={lifecycleBusy}>{lifecycleBusy ? '处理中…' : '立即维护'}</button>
-          <button type="button" className="primary" onClick={() => { void loadCleanupSuggestions() }} disabled={lifecycleBusy}>{showCleanup ? '重新分析' : '查看整理建议'}</button>
-        </div>
-        {lifecycleStatus && <div className="memory-lifecycle-status" role="status">{lifecycleStatus}</div>}
-        {showCleanup && cleanupSuggestions.length > 0 && (
-          <div className="memory-cleanup-panel">
-            <div className="memory-cleanup-toolbar">
-              <div><strong>低价值记忆建议</strong><span>根据重要度、使用时间和来源反馈生成。</span></div>
-              <label><input type="checkbox" checked={cleanupSelected.size === cleanupSuggestions.length} onChange={(event) => setCleanupSelected(event.target.checked ? new Set(cleanupSuggestions.map((memory) => memory.id)) : new Set())} />全选</label>
-            </div>
-            <div className="memory-cleanup-list">
-              {cleanupSuggestions.map((memory) => <label key={memory.id}>
-                <input type="checkbox" checked={cleanupSelected.has(memory.id)} onChange={(event) => setCleanupSelected((previous) => { const next = new Set(previous); if (event.target.checked) next.add(memory.id); else next.delete(memory.id); return next })} />
-                <span><strong>{memory.content}</strong><small>{memory.reasons.join(' · ')} · 保留分 {Math.round(memory.cleanupScore * 100)}</small></span>
-              </label>)}
-            </div>
-            <div className="memory-cleanup-actions">
-              {confirmCleanup ? <><span>确认归档选中的 {cleanupSelected.size} 条记忆？</span><button type="button" onClick={() => setConfirmCleanup(false)}>取消</button><button type="button" className="warning" onClick={() => { void archiveCleanupSelection() }} disabled={lifecycleBusy}>确认归档</button></> : <button type="button" className="warning" onClick={() => setConfirmCleanup(true)} disabled={cleanupSelected.size === 0 || lifecycleBusy}>归档选中项</button>}
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="memory-cluster-card">
-        <div className="memory-cluster-header">
-          <div>
-            <strong>主题聚类与摘要压缩</strong>
-            <span>本地归纳相似记忆，原始内容和来源始终保留。</span>
-          </div>
-          <div>
-            <label className="settings-switch">
-              <input type="checkbox" checked={config.memoryCompressionEnabled} disabled={clusterBusy} onChange={(event) => { void toggleCompression(event.target.checked) }} aria-label="启用记忆摘要压缩" />
-              <span className="settings-switch-slider" />
-            </label>
-            <button type="button" onClick={() => { void loadClusters() }} disabled={clusterBusy} aria-expanded={showClusters}>{clusterBusy ? '分析中…' : showClusters ? '收起主题' : '查看主题'}</button>
-            <button type="button" onClick={() => {
-              if (topicMergeMode) setTopicMergeMode(false)
-              else {
-                setTopicMergeMode(true)
-                setStatus('active')
-                setType('all')
-                setActiveView('library')
-              }
-              setTopicSelection(new Set())
-              setTopicLabel('')
-            }} disabled={clusterBusy} aria-pressed={topicMergeMode}>{topicMergeMode ? '取消合并' : '人工合并'}</button>
-          </div>
-        </div>
-        {topicMergeMode && <div className="memory-topic-builder">
-          <div><strong>创建人工主题</strong><span>请在下方记忆列表中勾选至少两条同类型的已确认记忆。</span></div>
-          <input value={topicLabel} maxLength={60} onChange={(event) => setTopicLabel(event.target.value)} placeholder="主题名称" aria-label="人工主题名称" />
-          <span>已选 {topicSelection.size} 条</span>
-          <button type="button" className="primary" onClick={() => { void createManualTopic() }} disabled={clusterBusy || topicSelection.size < 2 || !topicLabel.trim()}>创建主题</button>
-        </div>}
-        {clusterStatus && <div className="memory-cluster-status" role="status">{clusterStatus}</div>}
-        {showClusters && (
-          <div className="memory-cluster-view">
-            {clusters.length > 0 && <div className="memory-cluster-summary"><span><strong>{clusters.length}</strong> 个主题</span><span><strong>{clusteredMemoryCount}</strong> 条原始记忆</span><span><strong>{clusterSavedCharacters}</strong> 字符可压缩</span></div>}
-            {clusters.map((cluster) => {
-              const expanded = expandedClusterIds.has(cluster.id)
-              return <article className="memory-topic" key={cluster.id}>
-                <div className="memory-topic-heading">
-                  <div><span>{TYPE_LABELS[cluster.type]}</span><strong>{cluster.label}</strong><small>{cluster.memoryIds.length} 条 · 节省 {cluster.savedCharacters} 字符 · {cluster.manual ? '人工主题' : '自动主题'}</small></div>
-                  <div><button type="button" onClick={() => setExpandedClusterIds((previous) => { const next = new Set(previous); if (expanded) next.delete(cluster.id); else next.add(cluster.id); return next })} aria-expanded={expanded}>{expanded ? '收起来源' : '查看来源'}</button><button type="button" className="warning" onClick={() => setSplitConfirmId(cluster.id)} disabled={clusterBusy}>拆分主题</button></div>
-                </div>
-                <p>{cluster.summary}</p>
-                {expanded && <ul>{cluster.memories.map((memory) => <li key={memory.id}><time>{new Date(memory.updatedAt).toLocaleDateString('zh-CN')}</time><span>{memory.content}</span></li>)}</ul>}
-                {splitConfirmId === cluster.id && <div className="memory-topic-split-confirm"><span>拆分后这些记忆会保持独立，直到人工重新合并。</span><button type="button" onClick={() => setSplitConfirmId('')}>取消</button><button type="button" className="warning" onClick={() => { void splitCluster(cluster) }}>确认拆分</button></div>}
-              </article>
-            })}
-            {clusters.length === 0 && <div className="memory-cluster-empty">至少需要两条同类型且主题相近的已确认记忆，才会形成主题。</div>}
-          </div>
-        )}
-      </section>
+        <MemoryLifecycleCard config={config} stats={stats} onSaveConfig={onSaveConfig} refresh={refresh} />
+        <MemoryClusterCard
+          config={config}
+          onSaveConfig={onSaveConfig}
+          topicMergeMode={topicMergeMode}
+          onTopicMergeToggle={handleTopicMergeToggle}
+          topicLabel={topicLabel}
+          onTopicLabelChange={setTopicLabel}
+          topicSelectionSize={topicSelection.size}
+          onCreateManualTopic={createManualTopic}
+          clusterBusy={clusterBusy}
+          onClusterBusyChange={setClusterBusy}
+          clusterStatus={clusterStatus}
+          onClusterStatusChange={setClusterStatus}
+          reloadSignal={clusterReloadSignal}
+        />
       </div>}
 
       {!loading && activeView === 'connections' && <div className="memory-view memory-connections-view">
-      <section className="memory-embedding-card">
-        <div className="memory-embedding-header">
-          <div>
-            <strong>语义向量检索</strong>
-            <span>可选功能。失败时自动退回关键词检索。</span>
-          </div>
-          <div>
-            <select value={config.embeddingEnabled ? config.embeddingProvider : 'none'} onChange={(event) => { const provider = event.target.value; const enabled = provider !== 'none'; setShowEmbedding(enabled); void onSaveConfig({ embeddingProvider: provider, embeddingEnabled: enabled }) }} aria-label="Embedding 能力插件"><option value="none">不启用 · 关键词检索</option>{embeddingCapabilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-            <button type="button" className="memory-embedding-expand" onClick={() => setShowEmbedding((value) => !value)} aria-expanded={showEmbedding}>
-              {showEmbedding ? '收起' : '配置'}
-            </button>
-          </div>
-        </div>
-        {showEmbedding && (
-          <div className="memory-embedding-fields">
-            <div className="memory-embedding-privacy" role="note">当前插件会把记忆文本和搜索查询发送到配置的 Embedding 服务。留空 Base URL 或 API Key 时复用当前 AI Provider，但只有它实现 `/embeddings` 才能使用。</div>
-            <label>
-              <span>Base URL</span>
-              <input
-                value={embeddingDraft.embeddingBaseUrl}
-                onChange={(event) => setEmbeddingDraft((previous) => ({ ...previous, embeddingBaseUrl: event.target.value }))}
-                onBlur={() => { void saveEmbeddingDraft() }}
-                placeholder={`留空则使用 ${config.baseUrl || 'AI Provider Base URL'}`}
-              />
-            </label>
-            <label>
-              <span>API Key</span>
-              <div className="memory-embedding-key">
-                <input
-                  type={showEmbeddingKey ? 'text' : 'password'}
-                  value={embeddingDraft.embeddingApiKey}
-                  onChange={(event) => setEmbeddingDraft((previous) => ({ ...previous, embeddingApiKey: event.target.value }))}
-                  onBlur={() => { void saveEmbeddingDraft() }}
-                  placeholder="留空则使用 AI Provider API Key"
-                />
-                <button type="button" onClick={() => setShowEmbeddingKey((value) => !value)}>{showEmbeddingKey ? '隐藏' : '显示'}</button>
-              </div>
-            </label>
-            <label>
-              <span>Embedding 模型</span>
-              <input
-                value={embeddingDraft.embeddingModel}
-                onChange={(event) => setEmbeddingDraft((previous) => ({ ...previous, embeddingModel: event.target.value }))}
-                onBlur={() => { void saveEmbeddingDraft() }}
-                placeholder="text-embedding-v3"
-              />
-            </label>
-            <div className="memory-embedding-actions">
-              <button type="button" onClick={() => { void testEmbeddingConnection() }} disabled={Boolean(embeddingBusy)}>{embeddingBusy === 'test' ? '测试中…' : '测试连接'}</button>
-              <button type="button" className="primary" onClick={() => { void rebuildEmbeddingIndex() }} disabled={Boolean(embeddingBusy)}>{embeddingBusy === 'rebuild' ? '重建中…' : '重建全部索引'}</button>
-            </div>
-            {embeddingStatus && <div className="memory-embedding-status" role="status">{embeddingStatus}</div>}
-          </div>
-        )}
-      </section>
-
+        <MemoryEmbeddingCard config={config} onSaveConfig={onSaveConfig} refresh={refresh} embeddingCapabilities={embeddingCapabilities} />
       </div>}
 
       {!loading && (activeView === 'review' || activeView === 'library') && <div className={`memory-view memory-library-view${activeView === 'review' ? ' is-review' : ''}`}>
@@ -1021,24 +606,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         {memories.length === 0 && <div className="memory-empty">{activeView === 'review' ? '没有待处理的记忆，当前收件箱已经清空。' : '没有匹配的记忆。明确说“请记住……”可以创建候选。'}</div>}
       </div>
 
-      {activeView === 'library' && importPreview && <section className="memory-import-panel" aria-label="记忆导入预览">
-        <div className="memory-import-heading"><div><strong>导入预览 · {importPreview.fileName}</strong><span>逐条确认处理方式，提交前不会写入数据库。</span></div><button type="button" onClick={() => { setImportPreview(null); setConfirmImport(false) }}>关闭</button></div>
-        <div className="memory-import-list">
-          {importPreview.items.map((item) => <article key={item.id} className={`status-${item.status}`}>
-            <div><span>{item.status === 'new' ? '新增' : item.status === 'duplicate' ? '重复' : item.conflictKind === 'contradiction' ? '冲突' : '更新'}</span><strong>{TYPE_LABELS[item.candidate.type]}</strong><select value={importActions[item.id] || item.suggestedAction} disabled={item.status === 'duplicate'} onChange={(event) => setImportActions((previous) => ({ ...previous, [item.id]: event.target.value as MemoryImportAction }))} aria-label={`“${item.candidate.content}”的导入方式`}>{item.status === 'new' && <option value="add">新增</option>}{item.status === 'conflict' && <><option value="keep">与已有记忆并存</option><option value="replace">替换已有记忆</option></>}<option value="skip">跳过</option></select></div>
-            <p>{item.candidate.content}</p>
-            {item.existingContent && <div className="memory-import-existing"><span>已有</span><p>{item.existingContent}</p><small>{item.reason}</small></div>}
-          </article>)}
-        </div>
-        <div className="memory-import-actions">{confirmImport ? <><span>确认按当前选择导入？替换操作会归档旧记忆。</span><button type="button" onClick={() => setConfirmImport(false)}>取消</button><button type="button" className="primary" onClick={() => { void commitImport() }} disabled={importBusy}>确认导入</button></> : <button type="button" className="primary" onClick={() => setConfirmImport(true)} disabled={importBusy || importPreview.items.length === 0}>提交导入</button>}</div>
-      </section>}
-
-      {activeView === 'library' && <div className="memory-footer-actions">
-        <button type="button" onClick={() => { void previewImport() }} disabled={importBusy}>{importBusy ? '处理中…' : '导入 JSON'}</button>
-        <button type="button" onClick={() => { void run('export', () => window.electronAPI.memory.export()) }}>导出 JSON</button>
-        <button type="button" className="danger" onClick={() => setConfirmClear(true)}>忘记全部</button>
-      </div>}
-      {activeView === 'library' && importStatus && <div className="memory-import-status" role="status">{importStatus}</div>}
+      {activeView === 'library' && <MemoryImportPanel run={run} refresh={refresh} onConfirmClear={() => setConfirmClear(true)} />}
       </div>}
 
       {confirmClear && (

@@ -7,6 +7,7 @@ const panelStylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/co
 const memoryStylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Settings/MemorySettingsTab.css'), 'utf8')
 const settingsSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Settings/Settings.tsx'), 'utf8')
 const memorySource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Settings/MemorySettingsTab.tsx'), 'utf8')
+const memoryEngineCardSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Settings/memory/MemoryEngineCard.tsx'), 'utf8')
 const toolsSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Settings/ToolsSettingsTab.tsx'), 'utf8')
 
 describe('settings layout guardrails', () => {
@@ -51,9 +52,9 @@ describe('settings layout guardrails', () => {
     expect(toolsSource).toContain('手动确认')
     expect(toolsSource).toContain('自动审核')
     expect(toolsSource).toContain('完全访问')
-    expect(memorySource).toContain('memory-engine-connection-card')
-    expect(memorySource).toContain('engineTest()')
-    expect(memorySource).toContain('remote && syncDraft.memorySyncBaseUrl.trim()')
+    expect(memoryEngineCardSource).toContain('memory-engine-connection-card')
+    expect(memoryEngineCardSource).toContain('engineTest()')
+    expect(memoryEngineCardSource).toContain('remote && syncDraft.memorySyncBaseUrl.trim()')
   })
 
   it('splits memory management into focused workspace views', () => {
@@ -78,7 +79,7 @@ describe('settings layout guardrails', () => {
     expect(memoryStylesheet).toContain('.memory-source-details')
     expect(memorySource).toContain('Mem0 正在管理记忆')
     expect(memorySource).toContain('!isRemoteEngine &&')
-    expect(memorySource).toContain("memoryWriteMode: 'auto'")
+    expect(memoryEngineCardSource).toContain("memoryWriteMode: 'auto'")
     expect(memorySource).toContain('memory-remote-toggle')
     expect(memorySource).toContain("type MemoryReviewScope = 'pending' | 'all'")
     expect(memorySource).toContain('仅待确认与冲突')
