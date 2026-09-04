@@ -123,7 +123,7 @@ describe('settings layout guardrails', () => {
 
   it('clips settings content with rounded lower corners', () => {
     expect(stylesheet).toMatch(/\.settings-panel\s*\{[\s\S]*border-radius:\s*inherit/)
-    expect(stylesheet).toMatch(/\.settings-body\s*\{[\s\S]*border-radius:\s*0 0 12px 12px/)
-    expect(stylesheet).toMatch(/\.settings-nav\s*\{[\s\S]*border-radius:\s*0 0 0 12px/)
+    expect(stylesheet).toMatch(/\.settings-body\s*\{[\s\S]*border-radius:\s*0 0 var\(--radius-xl\) var\(--radius-xl\)/)
+    expect(stylesheet).toMatch(/\.settings-nav\s*\{[\s\S]*border-radius:\s*0 0 0 var\(--radius-xl\)/)
   })
 })

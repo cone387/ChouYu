@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 
 const stylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.css'), 'utf8')
 const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.tsx'), 'utf8')
+const panelResizeSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/usePanelResize.ts'), 'utf8')
+const workspaceSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
 const sidebarSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.tsx'), 'utf8')
 const sidebarStylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.css'), 'utf8')
 const inputSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/InputArea.tsx'), 'utf8')
@@ -25,7 +27,7 @@ describe('chat layout guardrails', () => {
     expect(stylesheet).toMatch(/\.chat-panel-main > \.input-area\s*\{\s*margin-top:\s*auto/)
     expect(stylesheet).toMatch(/\.panel-resize-edge\s*\{[\s\S]*cursor:\s*ns-resize/)
     expect(panelSource).toContain('const rect = panelEl.getBoundingClientRect()')
-    expect(panelSource).toContain('getDefaultPanelHeight(window.innerHeight)')
+    expect(panelResizeSource).toContain('getDefaultPanelHeight(window.innerHeight)')
     expect(panelSource).toContain("height: !showSettings && !showMemoryWorkspace ? panelHeight : undefined")
     expect(panelSource).toContain("(['top', 'bottom'] as const)")
   })
@@ -64,29 +66,38 @@ describe('chat layout guardrails', () => {
     expect(sidebarStylesheet).toMatch(/\.conversation-menu-trigger\s*\{[\s\S]*width:\s*28px[\s\S]*height:\s*28px/)
     expect(sidebarSource).toContain('aria-haspopup="menu"')
     expect(sidebarSource).toContain('role="menuitem"')
-    expect(sidebarStylesheet).toMatch(/\.conversation-item-main\s*\{[\s\S]*padding:\s*8px 9px 7px/)
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-main\s*\{[\s\S]*padding:\s*var\(--space-4\) var\(--space-4\) var\(--space-3\)/)
     expect(sidebarStylesheet).toMatch(/\.conversation-item-title-row,[\s\S]*padding-right:\s*34px/)
   })
 
   it('preserves visible session order while switching the active card', () => {
-    expect(panelSource).toContain('mergeSessionsInCurrentOrder')
-    expect(panelSource).toContain('await persistCurrentSession(true)')
-    expect(panelSource).toContain('db.selectSession(id), true')
+    expect(workspaceSource).toContain('mergeSessionsInCurrentOrder')
+    expect(workspaceSource).toContain('await persistCurrentSession(true)')
+    expect(workspaceSource).toContain('db.selectSession(id), true')
   })
 
   it('persists panel height and explicit sidebar visibility changes', () => {
-    expect(panelSource).toContain('PANEL_HEIGHT_STATE_KEY')
+    expect(panelResizeSource).toContain('PANEL_HEIGHT_STATE_KEY')
     expect(panelSource).toContain('SESSION_SIDEBAR_STATE_KEY')
-    expect(panelSource).toContain('db.setState(PANEL_HEIGHT_STATE_KEY')
+    expect(panelResizeSource).toContain('db.setState(PANEL_HEIGHT_STATE_KEY')
     expect(panelSource).toContain('db.setState(SESSION_SIDEBAR_STATE_KEY')
-    expect(panelSource).toContain('SESSION_SIDEBAR_WIDTH_STATE_KEY')
+    expect(panelResizeSource).toContain('SESSION_SIDEBAR_WIDTH_STATE_KEY')
     expect(panelSource).toContain('aria-label="调整会话列表宽度"')
     expect(panelSource).toContain('style={{ left: sessionSidebarWidth - 4 }}')
-    expect(panelSource).toContain('SESSION_SIDEBAR_WIDTH_STATE_KEY')
-    expect(panelSource).toContain('CHAT_CONTENT_WIDTH_STATE_KEY')
+    expect(panelResizeSource).toContain('CHAT_CONTENT_WIDTH_STATE_KEY')
     expect(panelSource).toContain('aria-label="调整聊天内容区宽度"')
     expect(stylesheet).toMatch(/\.chat-content-resize-edge\s*\{[\s\S]*cursor:\s*ew-resize/)
     expect(stylesheet).toMatch(/\.chat-content-resize-edge:hover,[\s\S]*box-shadow:\s*none/)
+  })
+
+  it('keeps panel dimension resizing inside the dedicated hook', () => {
+    expect(panelSource).toContain('usePanelResize({')
+    expect(panelSource).not.toContain('panelResizeRef')
+    expect(panelSource).not.toContain('sidebarResizeRef')
+    expect(panelSource).not.toContain('contentResizeRef')
+    expect(panelResizeSource).toContain('sidebarOccupiesSpace ? sessionSidebarWidth : 0')
+    expect(panelResizeSource).toContain('window.innerWidth - position.x - chatContentWidth - 16')
+    expect(panelResizeSource).toContain('startTop + startHeight - nextHeight')
   })
 
   it('focuses the composer only on explicit chat-entry transitions', () => {
@@ -102,9 +113,10 @@ describe('chat layout guardrails', () => {
   })
 
   it('keeps AI generations isolated by session while navigating', () => {
-    expect(panelSource).toContain('sessionGenerationsRef')
-    expect(panelSource).toContain('requestSessionRef')
-    expect(panelSource).toContain('sessionMessagesRef')
+    expect(workspaceSource).toContain('sessionGenerationsRef')
+    expect(workspaceSource).toContain('requestSessionRef')
+    expect(workspaceSource).toContain('sessionMessagesRef')
+    expect(panelSource).toContain('useSessionWorkspace({')
     expect(panelSource).not.toContain('stopActiveResponse()')
     expect(sidebarSource).toContain('streamingSessionIds.has(session.id)')
   })
@@ -113,8 +125,8 @@ describe('chat layout guardrails', () => {
     expect(panelSource).toContain('disabled={!workspaceLoaded}')
     expect(panelSource).toContain('isStreaming={isStreaming}')
     expect(inputSource).toContain('isStreaming?: boolean')
-    expect(panelSource).toContain('if (sessionGenerationsRef.current.has(sessionId))')
-    expect(panelSource).toContain('pendingGenerationsRef')
+    expect(workspaceSource).toContain('if (sessionGenerationsRef.current.has(sessionId))')
+    expect(workspaceSource).toContain('pendingGenerationsRef')
   })
 
   it('shows memory extraction status without blocking the composer', () => {
@@ -124,7 +136,7 @@ describe('chat layout guardrails', () => {
   })
 
   it('keeps ambiguous identity statements out of assistant claims', () => {
-    expect(panelSource).toContain('像“我叫不上”这类歧义表达应先询问确认')
-    expect(panelSource).toContain('记忆写入由系统单独分析并反馈')
+    expect(workspaceSource).toContain('像“我叫不上”这类歧义表达应先询问确认')
+    expect(workspaceSource).toContain('记忆写入由系统单独分析并反馈')
   })
 })

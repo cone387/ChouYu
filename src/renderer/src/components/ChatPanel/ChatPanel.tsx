@@ -10,16 +10,13 @@ import MemoryCandidateCard from '../Memory/MemoryCandidateCard'
 import MemorySettingsTab from '../Settings/MemorySettingsTab'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
 import type { MemoryConflictAction, MemoryFeedbackValue, MemoryRecord } from '../../../../shared/memory'
-import { formatMemoryContext } from '../../../../shared/memory'
 import { isAIConfigured } from '../../../../shared/config'
 import {
   Message,
   PetState,
   AppConfig,
   PluginInfo,
-  PluginMessageData,
-  ChatSessionSummary,
-  SessionWorkspace
+  PluginMessageData
 } from '../../shared/types'
 import {
   DEFAULT_CONFIG,
@@ -27,28 +24,13 @@ import {
   PANEL_SETTINGS_HEIGHT,
   PANEL_SETTINGS_WIDTH,
   PANEL_MEMORY_WIDTH,
-  PANEL_MIN_HEIGHT,
-  CHAT_CONTENT_MAX_WIDTH,
-  CHAT_CONTENT_MIN_WIDTH,
-  SESSION_SIDEBAR_MAX_WIDTH,
-  SESSION_SIDEBAR_MIN_WIDTH,
 } from '../../shared/constants'
-import { streamChat } from '../../core/ai-engine'
-import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
-import { loadSessionWorkspace, saveActiveSessionMessages } from '../../core/memory'
-import { getConversationForRetry } from '../../core/conversation-actions'
-import { mergeSessionsInCurrentOrder } from '../../core/session-order'
 import {
-  getDefaultPanelHeight,
-  normalizePanelHeight,
-  normalizeChatContentWidth,
-  normalizeSessionSidebarWidth,
-  PANEL_HEIGHT_STATE_KEY,
   parseStoredSidebarVisibility,
-  SESSION_SIDEBAR_STATE_KEY,
-  SESSION_SIDEBAR_WIDTH_STATE_KEY,
-  CHAT_CONTENT_WIDTH_STATE_KEY
+  SESSION_SIDEBAR_STATE_KEY
 } from '../../core/panel-state'
+import { usePanelResize } from './usePanelResize'
+import { useSessionWorkspace } from './useSessionWorkspace'
 import './ChatPanel.css'
 
 interface ChatPanelProps {
@@ -72,26 +54,11 @@ interface ChatPanelProps {
   onPendingMessageConsumed?: () => void
 }
 
-interface SessionGeneration {
-  controller: AbortController
-  responseId: string
-  toolBoundary: boolean
-  requestId?: string
-}
-
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
-  const [activeSessionId, setActiveSessionId] = useState('')
-  const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
-  const [streamingSessionIds, setStreamingSessionIds] = useState<Set<string>>(() => new Set())
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
   const [showMemoryWorkspace, setShowMemoryWorkspace] = useState(false)
   const [memoryReturnTarget, setMemoryReturnTarget] = useState<'chat' | 'settings'>('chat')
   const [showSessions, setShowSessions] = useState(false)
-  const [panelHeight, setPanelHeight] = useState(() => getDefaultPanelHeight(window.innerHeight))
-  const [sessionSidebarWidth, setSessionSidebarWidth] = useState(() => normalizeSessionSidebarWidth(undefined))
-  const [chatContentWidth, setChatContentWidth] = useState(() => normalizeChatContentWidth(undefined))
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
@@ -104,22 +71,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [memoryCandidateError, setMemoryCandidateError] = useState('')
   const [memoryWriteNotice, setMemoryWriteNotice] = useState('')
   const [memoryCorrectionId, setMemoryCorrectionId] = useState('')
-  const sessionGenerationsRef = useRef<Map<string, SessionGeneration>>(new Map())
-  const pendingGenerationsRef = useRef<Set<string>>(new Set())
-  const requestSessionRef = useRef<Map<string, string>>(new Map())
-  const sessionMessagesRef = useRef<Map<string, Message[]>>(new Map())
-  const happyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const memoryNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
-  const panelResizeRef = useRef({ resizing: false, edge: 'bottom' as 'top' | 'bottom', startY: 0, startHeight: 0, startTop: 0, currentHeight: 0 })
-  const sidebarResizeRef = useRef({ resizing: false, startX: 0, startWidth: 0, currentWidth: 0 })
-  const contentResizeRef = useRef({ resizing: false, startX: 0, startWidth: 0, currentWidth: 0 })
-  const initializedRef = useRef(false)
-  const latestMessagesRef = useRef<Message[]>([])
-  const activeSessionIdRef = useRef('')
-  const isStreaming = activeSessionId ? streamingSessionIds.has(activeSessionId) : false
-  const toolApprovalRequest = toolApprovalRequests[0] || null
 
   const showMemoryWriteNotice = useCallback((message: string) => {
     if (memoryNoticeTimerRef.current) clearTimeout(memoryNoticeTimerRef.current)
@@ -130,103 +84,81 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }, 5000)
   }, [])
 
-  useEffect(() => () => {
-    if (memoryNoticeTimerRef.current) clearTimeout(memoryNoticeTimerRef.current)
-  }, [])
-
   const requestComposerFocus = useCallback(() => {
     setComposerFocusRequest((current) => current + 1)
   }, [])
 
-  const setSessionStreaming = useCallback((sessionId: string, streaming: boolean) => {
-    setStreamingSessionIds((previous) => {
-      const next = new Set(previous)
-      if (streaming) next.add(sessionId)
-      else next.delete(sessionId)
-      return next
-    })
+  const onConfigLoaded = useCallback((loadedConfig: AppConfig) => {
+    setConfig(loadedConfig)
+    setShowOnboarding(!isAIConfigured(loadedConfig))
   }, [])
 
-  const updateSessionMessages = useCallback((sessionId: string, updater: (messages: Message[]) => Message[]): Message[] => {
-    const current = sessionMessagesRef.current.get(sessionId)
-      || (activeSessionIdRef.current === sessionId ? latestMessagesRef.current : [])
-    const next = updater(current)
-    sessionMessagesRef.current.set(sessionId, next)
-    if (activeSessionIdRef.current === sessionId) {
-      latestMessagesRef.current = next
-      setMessages(next)
-    }
-    return next
+  const clearMemoryCandidates = useCallback(() => {
+    setMemoryCandidates([])
   }, [])
 
-  const persistSessionMessages = useCallback((sessionId: string, nextMessages: Message[]) => {
-    void window.electronAPI.db.saveSessionMessages(sessionId, nextMessages).then((workspace) => {
-      setSessions((previous) => mergeSessionsInCurrentOrder(previous, workspace.sessions))
-    }).catch(() => {})
-  }, [])
+  const {
+    messages,
+    sessions,
+    activeSessionId,
+    workspaceLoaded,
+    streamingSessionIds,
+    isStreaming,
+    sessionGenerationsRef,
+    requestSessionRef,
+    sessionMessagesRef,
+    happyTimerRef,
+    activeSessionIdRef,
+    updateSessionMessages,
+    generateAIResponse,
+    createSession,
+    selectSession,
+    renameSession,
+    deleteSession,
+    exportSession,
+    clearCurrentSession,
+    handleStopGeneration,
+    retryAssistantMessage
+  } = useSessionWorkspace({
+    config,
+    onPetStateChange,
+    onConfigLoaded,
+    showMemoryWriteNotice,
+    setToolApprovalRequests,
+    clearMemoryCandidates,
+    requestComposerFocus
+  })
+  const {
+    panelHeight,
+    sessionSidebarWidth,
+    chatContentWidth,
+    handlePanelResizeStart,
+    handlePanelResizeMove,
+    handlePanelResizeEnd,
+    handleSidebarResizeStart,
+    handleSidebarResizeMove,
+    handleSidebarResizeEnd,
+    handleContentResizeStart,
+    handleContentResizeMove,
+    handleContentResizeEnd
+  } = usePanelResize({
+    position,
+    onPositionChange,
+    sidebarOccupiesSpace: showSessions && !showSettings && !showMemoryWorkspace
+  })
+  const toolApprovalRequest = toolApprovalRequests[0] || null
 
   const refreshPlugins = useCallback(async () => {
     setPlugins(await window.electronAPI.plugin.getPlugins())
   }, [])
 
-  const applyWorkspace = useCallback((workspace: SessionWorkspace, preserveSessionOrder = false) => {
-    const sessionId = workspace.activeSession.id
-    const activeMessages = sessionGenerationsRef.current.has(sessionId)
-      ? sessionMessagesRef.current.get(sessionId) || workspace.activeSession.messages
-      : workspace.activeSession.messages
-    activeSessionIdRef.current = sessionId
-    latestMessagesRef.current = activeMessages
-    sessionMessagesRef.current.set(sessionId, activeMessages)
-    setActiveSessionId(sessionId)
-    setMessages(activeMessages)
-    setSessions((previous) => {
-      if (!preserveSessionOrder || previous.length === 0) return workspace.sessions
-      return mergeSessionsInCurrentOrder(previous, workspace.sessions)
-    })
-    setMemoryCandidates([])
-  }, [])
-
-  const finishPetResponse = useCallback(() => {
-    if (happyTimerRef.current) clearTimeout(happyTimerRef.current)
-    onPetStateChange('happy')
-    happyTimerRef.current = setTimeout(() => {
-      onPetStateChange('idle')
-      happyTimerRef.current = null
-    }, 650)
-  }, [onPetStateChange])
-
-  const stopSessionResponse = useCallback((sessionId: string) => {
-    pendingGenerationsRef.current.delete(sessionId)
-    const generation = sessionGenerationsRef.current.get(sessionId)
-    if (!generation) return
-    generation.controller.abort()
-    if (generation.requestId) requestSessionRef.current.delete(generation.requestId)
-    sessionGenerationsRef.current.delete(sessionId)
-    setSessionStreaming(sessionId, false)
-    setToolApprovalRequests((current) => current.filter((request) => request.requestId !== generation.requestId))
-    if (activeSessionIdRef.current === sessionId) onPetStateChange('idle')
-  }, [onPetStateChange, setSessionStreaming])
-
-  const persistCurrentSession = useCallback(async (preserveSessionOrder = false) => {
-    const id = activeSessionIdRef.current
-    if (!id || !initializedRef.current) return
-    const workspace = await saveActiveSessionMessages(id, latestMessagesRef.current)
-    setSessions((previous) => preserveSessionOrder ? mergeSessionsInCurrentOrder(previous, workspace.sessions) : workspace.sessions)
+  useEffect(() => () => {
+    if (memoryNoticeTimerRef.current) clearTimeout(memoryNoticeTimerRef.current)
   }, [])
 
   useEffect(() => {
-    Promise.all([
-      loadSessionWorkspace(),
-      window.electronAPI.db.getConfig()
-    ]).then(([workspace, loadedConfig]) => {
-      applyWorkspace(workspace)
-      setConfig(loadedConfig)
-      setShowOnboarding(!isAIConfigured(loadedConfig))
-      initializedRef.current = true
-      setWorkspaceLoaded(true)
-    })
     void refreshPlugins()
-  }, [applyWorkspace, refreshPlugins])
+  }, [refreshPlugins])
 
   useEffect(() => window.electronAPI.onConfigChanged((nextConfig) => {
     setConfig(nextConfig)
@@ -234,24 +166,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }), [])
 
   useEffect(() => {
-    Promise.all([
-      window.electronAPI.db.getState(PANEL_HEIGHT_STATE_KEY),
-      window.electronAPI.db.getState(SESSION_SIDEBAR_STATE_KEY),
-      window.electronAPI.db.getState(SESSION_SIDEBAR_WIDTH_STATE_KEY),
-      window.electronAPI.db.getState(CHAT_CONTENT_WIDTH_STATE_KEY)
-    ]).then(([storedHeight, storedSidebar, storedSidebarWidth, storedContentWidth]) => {
-      setPanelHeight(normalizePanelHeight(storedHeight, window.innerHeight))
-      setShowSessions(parseStoredSidebarVisibility(storedSidebar))
-      setSessionSidebarWidth(normalizeSessionSidebarWidth(storedSidebarWidth))
-      setChatContentWidth(normalizeChatContentWidth(storedContentWidth, window.innerWidth, normalizeSessionSidebarWidth(storedSidebarWidth)))
-    }).catch(() => {})
-
-    const clampToViewport = () => {
-      setPanelHeight((current) => normalizePanelHeight(current, window.innerHeight))
-      setChatContentWidth((current) => normalizeChatContentWidth(current, window.innerWidth, sessionSidebarWidth))
-    }
-    window.addEventListener('resize', clampToViewport)
-    return () => window.removeEventListener('resize', clampToViewport)
+    window.electronAPI.db.getState(SESSION_SIDEBAR_STATE_KEY)
+      .then((storedSidebar) => setShowSessions(parseStoredSidebarVisibility(storedSidebar)))
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -370,84 +287,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     onPositionChange(nextPosition)
   }, [onPositionChange])
 
-  const handlePanelResizeStart = useCallback((edge: 'top' | 'bottom', event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    panelResizeRef.current = { resizing: true, edge, startY: event.screenY, startHeight: panelHeight, startTop: position.y, currentHeight: panelHeight }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }, [panelHeight, position.y])
-
-  const handlePanelResizeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!panelResizeRef.current.resizing) return
-    const { edge, startY, startHeight, startTop } = panelResizeRef.current
-    const delta = event.screenY - startY
-    const maxHeight = edge === 'top'
-      ? Math.max(PANEL_MIN_HEIGHT, startHeight + startTop - 4)
-      : Math.max(PANEL_MIN_HEIGHT, window.innerHeight - startTop - 4)
-    const requestedHeight = edge === 'top' ? startHeight - delta : startHeight + delta
-    const nextHeight = Math.min(maxHeight, Math.max(PANEL_MIN_HEIGHT, requestedHeight))
-    panelResizeRef.current.currentHeight = nextHeight
-    setPanelHeight(nextHeight)
-    if (edge === 'top') {
-      const nextTop = startTop + startHeight - nextHeight
-      onPositionChange({ x: position.x, y: nextTop })
-    }
-  }, [onPositionChange, position.x])
-
-  const handlePanelResizeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!panelResizeRef.current.resizing) return
-    panelResizeRef.current.resizing = false
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    void window.electronAPI.db.setState(PANEL_HEIGHT_STATE_KEY, String(panelResizeRef.current.currentHeight))
-  }, [])
-
-  const handleSidebarResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    sidebarResizeRef.current = { resizing: true, startX: event.screenX, startWidth: sessionSidebarWidth, currentWidth: sessionSidebarWidth }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }, [sessionSidebarWidth])
-
-  const handleSidebarResizeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!sidebarResizeRef.current.resizing) return
-    const requested = sidebarResizeRef.current.startWidth + event.screenX - sidebarResizeRef.current.startX
-    const viewportMaximum = Math.max(SESSION_SIDEBAR_MIN_WIDTH, window.innerWidth - position.x - chatContentWidth - 16)
-    const nextWidth = Math.min(SESSION_SIDEBAR_MAX_WIDTH, viewportMaximum, Math.max(SESSION_SIDEBAR_MIN_WIDTH, requested))
-    sidebarResizeRef.current.currentWidth = nextWidth
-    setSessionSidebarWidth(nextWidth)
-  }, [chatContentWidth, position.x])
-
-  const handleSidebarResizeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!sidebarResizeRef.current.resizing) return
-    sidebarResizeRef.current.resizing = false
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    void window.electronAPI.db.setState(SESSION_SIDEBAR_WIDTH_STATE_KEY, String(sidebarResizeRef.current.currentWidth))
-  }, [])
-
-  const handleContentResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    contentResizeRef.current = { resizing: true, startX: event.screenX, startWidth: chatContentWidth, currentWidth: chatContentWidth }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }, [chatContentWidth])
-
-  const handleContentResizeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!contentResizeRef.current.resizing) return
-    const requested = contentResizeRef.current.startWidth + event.screenX - contentResizeRef.current.startX
-    const nextWidth = normalizeChatContentWidth(requested, window.innerWidth - position.x, showSessions && !showSettings && !showMemoryWorkspace ? sessionSidebarWidth : 0)
-    contentResizeRef.current.currentWidth = nextWidth
-    setChatContentWidth(nextWidth)
-  }, [position.x, sessionSidebarWidth, showMemoryWorkspace, showSessions, showSettings])
-
-  const handleContentResizeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!contentResizeRef.current.resizing) return
-    contentResizeRef.current.resizing = false
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    void window.electronAPI.db.setState(CHAT_CONTENT_WIDTH_STATE_KEY, String(contentResizeRef.current.currentWidth))
-  }, [])
 
   const toggleSessionSidebar = useCallback(() => {
     setShowSessions((current) => {
@@ -457,31 +296,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       return next
     })
   }, [requestComposerFocus])
-
-  useEffect(() => {
-    latestMessagesRef.current = messages
-    if (!initializedRef.current || !activeSessionId) return
-    const sessionId = activeSessionId
-    const timer = setTimeout(() => {
-      void saveActiveSessionMessages(sessionId, messages).then((workspace) => {
-        if (activeSessionIdRef.current === sessionId) {
-          setSessions((previous) => mergeSessionsInCurrentOrder(previous, workspace.sessions))
-        }
-      })
-    }, 450)
-    return () => clearTimeout(timer)
-  }, [messages, activeSessionId])
-
-  useEffect(() => () => {
-    sessionGenerationsRef.current.forEach((generation) => generation.controller.abort())
-    if (happyTimerRef.current) clearTimeout(happyTimerRef.current)
-    onPetStateChange('idle')
-    if (initializedRef.current) {
-      sessionMessagesRef.current.forEach((storedMessages, sessionId) => {
-        void window.electronAPI.db.saveSessionMessages(sessionId, storedMessages)
-      })
-    }
-  }, [])
 
   useEffect(() => {
     if (messages.length === 0 && !isStreaming) return
@@ -532,197 +346,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [confirmClear, memoryReturnTarget, onClose, onPositionChange, onSettingsClose, position, requestComposerFocus, showMemoryWorkspace, showSessions, showSettings, toggleSessionSidebar, visible])
 
-  const createSession = useCallback(async () => {
-    await persistCurrentSession()
-    const workspace = await window.electronAPI.db.createSession()
-    applyWorkspace(workspace)
-    requestComposerFocus()
-  }, [applyWorkspace, persistCurrentSession, requestComposerFocus])
-
-  const selectSession = useCallback(async (id: string) => {
-    if (id === activeSessionIdRef.current) return
-    await persistCurrentSession(true)
-    applyWorkspace(await window.electronAPI.db.selectSession(id), true)
-    requestComposerFocus()
-  }, [applyWorkspace, persistCurrentSession, requestComposerFocus])
-
-  const renameSession = useCallback(async (id: string, title: string) => {
-    const updated = await window.electronAPI.db.renameSession(id, title)
-    setSessions((previous) => mergeSessionsInCurrentOrder(previous, updated))
-  }, [])
-
-  const deleteSession = useCallback(async (id: string) => {
-    stopSessionResponse(id)
-    applyWorkspace(await window.electronAPI.db.deleteSession(id), true)
-  }, [applyWorkspace, stopSessionResponse])
-
-  const exportSession = useCallback(async (id: string) => {
-    await persistCurrentSession(true)
-    const result = await window.electronAPI.db.exportSession(id)
-    return result.ok
-  }, [persistCurrentSession])
-
-  const clearCurrentSession = useCallback(async () => {
-    stopSessionResponse(activeSessionIdRef.current)
-    updateSessionMessages(activeSessionIdRef.current, () => [])
-    setConfirmClear(false)
-    if (!activeSessionIdRef.current) return
-    const workspace = await window.electronAPI.db.saveSessionMessages(activeSessionIdRef.current, [])
-    setSessions((previous) => mergeSessionsInCurrentOrder(previous, workspace.sessions))
-    requestComposerFocus()
-  }, [requestComposerFocus, stopSessionResponse, updateSessionMessages])
 
   const pluginCommands = plugins.map((plugin) => ({ cmd: '/' + plugin.command, desc: plugin.description }))
-
-  const generateAIResponse = useCallback(async (conversation: Message[], sessionId = activeSessionIdRef.current) => {
-    if (!sessionId) return
-    if (sessionGenerationsRef.current.has(sessionId)) {
-      // Start another response as soon as the current one completes. Read the
-      // session's latest messages at that point so the completed answer is in
-      // the next request's context.
-      pendingGenerationsRef.current.add(sessionId)
-      return
-    }
-    const responseBaseId = `${Date.now()}-assistant`
-    let segmentIndex = 0
-    let aiMsgId = responseBaseId
-    let accumulated = ''
-    const controller = new AbortController()
-    const generation: SessionGeneration = { controller, responseId: aiMsgId, toolBoundary: false }
-    // Mark the session busy before memory lookup so a fast second send is queued.
-    sessionGenerationsRef.current.set(sessionId, generation)
-    if (activeSessionIdRef.current === sessionId) onPetStateChange('thinking')
-    setSessionStreaming(sessionId, true)
-
-    const latestUserMessage = [...conversation].reverse().find((message) => message.role === 'user' && !message.toolData)
-    let relevantMemories: Awaited<ReturnType<typeof window.electronAPI.memory.search>> = []
-    if (config.memoryEnabled && latestUserMessage?.content) {
-      try {
-        relevantMemories = await window.electronAPI.memory.search(latestUserMessage.content, 6)
-      } catch (error) {
-        relevantMemories = []
-        showMemoryWriteNotice(error instanceof Error ? `Mem0 记忆检索失败：${error.message}` : 'Mem0 记忆检索失败，请检查连接配置')
-      }
-    }
-    const memoryRefs = relevantMemories.map((memory) => ({
-      id: memory.id,
-      content: memory.content,
-      type: memory.type,
-      sourceIds: memory.sourceMemoryIds,
-      clusterId: memory.clusterId,
-      compressedCount: memory.compressedCount
-    }))
-    const memoryContext = formatMemoryContext(relevantMemories)
-    const memoryConversationPolicy = '记忆写入由系统单独分析并反馈。除非相关记忆明确出现在上下文中，否则不要声称已经记住用户信息；像“我叫不上”这类歧义表达应先询问确认，不要直接当作姓名。'
-    const systemPrompt = buildSystemPrompt(config.soulMd, [memoryContext, memoryConversationPolicy].filter(Boolean).join('\n\n'))
-    const history = buildMessages(conversation)
-
-    const finishGeneration = () => {
-      if (sessionGenerationsRef.current.get(sessionId) !== generation) return
-      sessionGenerationsRef.current.delete(sessionId)
-      if (generation.requestId) requestSessionRef.current.delete(generation.requestId)
-      if (pendingGenerationsRef.current.has(sessionId)) {
-        pendingGenerationsRef.current.delete(sessionId)
-        const queuedConversation = sessionMessagesRef.current.get(sessionId) || []
-        void generateAIResponse(queuedConversation, sessionId)
-        return
-      }
-      setSessionStreaming(sessionId, false)
-      const storedMessages = sessionMessagesRef.current.get(sessionId) || []
-      persistSessionMessages(sessionId, storedMessages)
-    }
-
-    try {
-      await streamChat(
-        history,
-        systemPrompt,
-        config,
-        (chunk, done) => {
-          if (controller.signal.aborted) return
-          if (done) {
-            finishGeneration()
-            if (activeSessionIdRef.current === sessionId) finishPetResponse()
-            return
-          }
-          if (chunk && generation.toolBoundary) {
-            segmentIndex += 1
-            aiMsgId = `${responseBaseId}-${segmentIndex}`
-            accumulated = ''
-            generation.responseId = aiMsgId
-            generation.toolBoundary = false
-          }
-          accumulated += chunk
-          if (activeSessionIdRef.current === sessionId) onPetStateChange('talking')
-          updateSessionMessages(sessionId, (previous) => {
-            const existing = previous.find((message) => message.id === aiMsgId)
-            if (existing) {
-              return previous.map((message) => message.id === aiMsgId
-                ? { ...message, content: accumulated, responseStatus: undefined, memoryRefs }
-                : message)
-            }
-            return [...previous, { id: aiMsgId, role: 'assistant', content: accumulated, timestamp: Date.now(), memoryRefs }]
-          })
-        },
-        controller.signal,
-        (requestId) => {
-          generation.requestId = requestId
-          requestSessionRef.current.set(requestId, sessionId)
-        }
-      )
-    } catch (error) {
-      finishGeneration()
-      if (activeSessionIdRef.current === sessionId) onPetStateChange('idle')
-      if (error instanceof Error && error.name === 'AbortError') return
-      const message = error instanceof Error ? error.message : '未知错误'
-      const errorMessage: Message = {
-        id: aiMsgId,
-        role: 'assistant',
-        content: `请求失败：${message}`,
-        timestamp: Date.now(),
-        responseStatus: 'error'
-      }
-      updateSessionMessages(sessionId, (previous) => {
-        const existing = previous.find((item) => item.id === aiMsgId)
-        return existing
-          ? previous.map((item) => item.id === aiMsgId ? errorMessage : item)
-          : [...previous, errorMessage]
-      })
-    }
-  }, [config, finishPetResponse, onPetStateChange, persistSessionMessages, setSessionStreaming, showMemoryWriteNotice, updateSessionMessages])
-
-  const handleStopGeneration = useCallback(() => {
-    const sessionId = activeSessionIdRef.current
-    const generation = sessionGenerationsRef.current.get(sessionId)
-    if (!generation) return
-    pendingGenerationsRef.current.delete(sessionId)
-    const responseId = generation.responseId
-    stopSessionResponse(sessionId)
-    const nextMessages = updateSessionMessages(sessionId, (previous) => {
-      const existing = previous.find((message) => message.id === responseId)
-      if (existing) {
-        return previous.map((message) => message.id === responseId
-          ? { ...message, responseStatus: 'stopped' }
-          : message)
-      }
-      return [...previous, {
-        id: responseId,
-        role: 'assistant',
-        content: '已停止生成。',
-        timestamp: Date.now(),
-        responseStatus: 'stopped'
-      }]
-    })
-    persistSessionMessages(sessionId, nextMessages)
-  }, [persistSessionMessages, stopSessionResponse, updateSessionMessages])
-
-  const retryAssistantMessage = useCallback((messageId: string) => {
-    if (isStreaming) return
-    const conversation = getConversationForRetry(messages, messageId)
-    if (!conversation) return
-    const sessionId = activeSessionIdRef.current
-    updateSessionMessages(sessionId, () => conversation)
-    void generateAIResponse(conversation, sessionId)
-  }, [messages, isStreaming, generateAIResponse, updateSessionMessages])
 
   const handleSend = async (content: string, attachments?: PendingAttachment[]) => {
     const originatingSessionId = activeSessionIdRef.current
@@ -1123,7 +748,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 </div>
                 <div className="clear-session-actions">
                   <button type="button" autoFocus onClick={() => { setConfirmClear(false); requestComposerFocus() }}>取消</button>
-                  <button type="button" className="danger" onClick={() => { void clearCurrentSession() }}>确认清空</button>
+                  <button type="button" className="danger" onClick={() => { setConfirmClear(false); void clearCurrentSession() }}>确认清空</button>
                 </div>
               </div>
             )}

@@ -1,0 +1,50 @@
+/*
+ * ChouYu design tokens.
+ *
+ * Layout primitives shared by every renderer stylesheet. Components must not
+ * hard-code spacing or corner radii; they reference these tokens so future
+ * density or theme changes land in one place.
+ *
+ * Scale rationale: a 4px base grid with two half-steps (2px, 6px) that cover
+ * icon badges and compact controls. Values were normalised from the 13 distinct
+ * pixel values that had drifted into ChatPanel.css.
+ */
+
+:root {
+  /* Spacing */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+
+  /* Corner radii */
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-pill: 999px;
+  --radius-round: 50%;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+
+  --font-2xs: 9px;
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-md: 13px;
+  --font-base: 14px;
+  --font-lg: 15px;
+  --font-xl: 19px;
+  --font-2xl: 22px;
+
+  --leading-tight: 1.35;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.65;
+}
