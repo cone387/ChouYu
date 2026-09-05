@@ -176,4 +176,12 @@ describe('message edit and continue generation', () => {
   it('keeps the original memory refs while continuing', () => {
     expect(workspaceSource).toContain('memoryRefs: options.appendTo ? message.memoryRefs : memoryRefs')
   })
+
+  it('re-proposes memory for edited text and wires both actions into MessageArea', () => {
+    expect(panelSource).toContain('const proposeMemories = useCallback')
+    expect(panelSource).toContain('proposeMemories(newContent, sessionId, messageId)')
+    expect(panelSource).toContain('const handleEditMessage = useCallback')
+    expect(panelSource).toContain('onEditMessage={handleEditMessage}')
+    expect(panelSource).toContain('onContinueMessage={continueAssistantMessage}')
+  })
 })

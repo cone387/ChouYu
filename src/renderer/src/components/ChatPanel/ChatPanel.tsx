@@ -119,7 +119,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     exportSession,
     clearCurrentSession,
     handleStopGeneration,
-    retryAssistantMessage
+    retryAssistantMessage,
+    editUserMessage,
+    continueAssistantMessage
   } = useSessionWorkspace({
     config,
     onPetStateChange,
@@ -354,6 +356,23 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   const pluginCommands = plugins.map((plugin) => ({ cmd: '/' + plugin.command, desc: plugin.description }))
 
+  const proposeMemories = useCallback((content: string, sessionId: string, messageId: string) => {
+    if (!config.memoryEnabled || !content.trim()) return
+    showMemoryWriteNotice('正在分析这条消息是否需要记住…')
+    void window.electronAPI.memory.propose(content, sessionId, messageId).then((candidates) => {
+      const pendingCandidates = candidates.filter((candidate) => candidate.status === 'pending')
+      if (pendingCandidates.length > 0) {
+        setMemoryCandidates((previous) => [...previous, ...pendingCandidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
+        showMemoryWriteNotice(`发现 ${pendingCandidates.length} 条记忆候选，等待确认`)
+        return
+      }
+      const activeCandidates = candidates.filter((candidate) => candidate.status === 'active')
+      if (activeCandidates.some((candidate) => candidate.type === 'person')) showMemoryWriteNotice('身份档案已更新')
+      else if (activeCandidates.length > 0) showMemoryWriteNotice(`已自动保存 ${activeCandidates.length} 条记忆`)
+      else showMemoryWriteNotice('这条消息未识别为需要保存的用户信息')
+    }).catch((error) => showMemoryWriteNotice(error instanceof Error ? `Mem0 记忆写入失败：${error.message}` : 'Mem0 记忆写入失败，请检查连接配置'))
+  }, [config.memoryEnabled, showMemoryWriteNotice])
+
   const handleSend = async (content: string, attachments?: PendingAttachment[]) => {
     const originatingSessionId = activeSessionIdRef.current
     if (happyTimerRef.current) {
@@ -491,23 +510,15 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     const currentMessages = sessionMessagesRef.current.get(sessionId) || messages
     const nextMessages = [...currentMessages, userMessage]
     updateSessionMessages(sessionId, () => nextMessages)
-    if (config.memoryEnabled && content.trim()) {
-      showMemoryWriteNotice('正在分析这条消息是否需要记住…')
-      void window.electronAPI.memory.propose(content, sessionId, userMessage.id).then((candidates) => {
-        const pendingCandidates = candidates.filter((candidate) => candidate.status === 'pending')
-        if (pendingCandidates.length > 0) {
-          setMemoryCandidates((previous) => [...previous, ...pendingCandidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
-          showMemoryWriteNotice(`发现 ${pendingCandidates.length} 条记忆候选，等待确认`)
-          return
-        }
-        const activeCandidates = candidates.filter((candidate) => candidate.status === 'active')
-        if (activeCandidates.some((candidate) => candidate.type === 'person')) showMemoryWriteNotice('身份档案已更新')
-        else if (activeCandidates.length > 0) showMemoryWriteNotice(`已自动保存 ${activeCandidates.length} 条记忆`)
-        else showMemoryWriteNotice('这条消息未识别为需要保存的用户信息')
-      }).catch((error) => showMemoryWriteNotice(error instanceof Error ? `Mem0 记忆写入失败：${error.message}` : 'Mem0 记忆写入失败，请检查连接配置'))
-    }
+    proposeMemories(content, sessionId, userMessage.id)
     await generateAIResponse(nextMessages, sessionId)
   }
+
+  const handleEditMessage = useCallback((messageId: string, newContent: string) => {
+    const sessionId = activeSessionIdRef.current
+    proposeMemories(newContent, sessionId, messageId)
+    editUserMessage(messageId, newContent)
+  }, [proposeMemories, editUserMessage])
 
   const getStatusText = () => {
     if (isStreaming) return '正在回复...'
@@ -740,6 +751,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 messages={messages}
                 isStreaming={isStreaming}
                 onRetry={retryAssistantMessage}
+                onEditMessage={handleEditMessage}
+                onContinueMessage={continueAssistantMessage}
                 contextLimit={MAX_HISTORY_MESSAGES}
                 onMemoryFeedback={submitMemoryFeedback}
                 onCorrectMemory={correctMemory}

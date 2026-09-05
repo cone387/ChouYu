@@ -12,6 +12,8 @@ interface MessageAreaProps {
   messages: Message[]
   isStreaming: boolean
   onRetry?: (messageId: string) => void
+  onEditMessage?: (messageId: string, newContent: string) => void
+  onContinueMessage?: (messageId: string) => void
   contextLimit?: number
   onMemoryFeedback?: (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => Promise<void>
   onCorrectMemory?: (memoryId: string) => void
