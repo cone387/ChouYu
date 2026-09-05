@@ -22,6 +22,8 @@ jobs:
   build-macos:
     needs: quality
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -34,13 +36,15 @@ jobs:
 
       - name: Build & Publish
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run build && npx electron-builder --mac --publish always
 
   build-windows:
     needs: quality
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -53,5 +57,5 @@ jobs:
 
       - name: Build & Publish
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build && npx electron-builder --win --publish always
