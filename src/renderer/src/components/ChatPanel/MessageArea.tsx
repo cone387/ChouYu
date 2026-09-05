@@ -189,6 +189,11 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
                         return <CodeBlock className={className}>{String(children)}</CodeBlock>
                       }
                       return <code>{children}</code>
+                    },
+                    // react-markdown keeps its own <pre> around fenced code; the card
+                    // renders its own pre, so unwrap to avoid nesting card-in-pre.
+                    pre({ children }) {
+                      return <>{children}</>
                     }
                   }}
                 >{msg.content}</ReactMarkdown>

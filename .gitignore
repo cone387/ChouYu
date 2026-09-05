@@ -3,3 +3,5 @@ out/
 dist/
 *.local
 *.tsbuildinfo
+temp/
+.superpowers/

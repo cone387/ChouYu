@@ -75,13 +75,35 @@ describe('code block mac window styling', () => {
     expect(messageAreaSource).toContain('aria-hidden="true"')
   })
 
+  it('unwraps the markdown pre so the card is not nested in a second pre', () => {
+    expect(messageAreaSource).toContain('pre({ children })')
+  })
+
+  it('keeps legacy bubble pre/code rules from restyling the card', () => {
+    expect(chatPanelCssSource).not.toContain('.message-assistant .message-bubble pre {')
+    expect(chatPanelCssSource).not.toContain('.message-bubble pre,')
+    expect(chatPanelCssSource).toContain('.message-assistant .message-bubble :not(pre) > code')
+    expect(chatPanelCssSource).toContain('.message-bubble :not(pre) > code')
+  })
+
+  it('lets the card hug the code instead of stretching to the full bubble width', () => {
+    const block = chatPanelCssSource.slice(
+      chatPanelCssSource.indexOf('.code-block {'),
+      chatPanelCssSource.indexOf('.code-block-header')
+    )
+    expect(block).toContain('width: fit-content')
+    expect(block).toContain('max-width: 100%')
+  })
+
   it('wraps code lines at spaces without breaking tokens mid-word', () => {
     const pre = chatPanelCssSource.slice(
       chatPanelCssSource.indexOf('.code-block pre {'),
-      chatPanelCssSource.indexOf('.code-block pre code')
+      chatPanelCssSource.indexOf('.code-block .hljs-comment')
     )
-    expect(pre).not.toContain('word-break')
-    expect(pre).not.toContain('overflow-wrap')
+    expect(pre).toContain('overflow-wrap: normal')
+    expect(pre).toContain('word-break: normal')
+    expect(pre).not.toContain('anywhere')
+    expect(pre).not.toContain('break-word')
   })
 
   it('uses the card radius, 13px code font and accent copy button', () => {
