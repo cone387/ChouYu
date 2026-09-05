@@ -5,7 +5,8 @@ import type { MemoryFeedbackValue } from '../../../../shared/memory'
 import PluginMessageCard from './PluginMessageCard'
 import ToolActivityCard from './ToolActivityCard'
 import { getConversationForRetry } from '../../core/conversation-actions'
-import { highlightCode } from '../../core/highlight'
+import { highlightCode, isSupportedLanguage } from '../../core/highlight'
+import { useMessageWindow } from './useMessageWindow'
 
 interface MessageAreaProps {
   messages: Message[]
@@ -42,7 +43,22 @@ function CopyButton({ text }: { text: string }) {
 function CodeBlock({ className, children }: { className?: string; children: string }) {
   const lang = className?.replace('language-', '') || ''
   const raw = children.replace(/\n$/, '')
-  const highlightedHtml = useMemo(() => highlightCode(raw, lang), [raw, lang])
+  // Highlighting loads lazily: plain text shows immediately, colors arrive once
+  // the highlighter chunk is ready (first code block in a session pays the cost).
+  const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null)
+  useEffect(() => {
+    // Unsupported languages render plain text; also clear stale colors when
+    // the block's language changes to one we cannot highlight.
+    if (!isSupportedLanguage(lang)) {
+      setHighlightedHtml(null)
+      return
+    }
+    let cancelled = false
+    void highlightCode(raw, lang).then((html) => {
+      if (!cancelled) setHighlightedHtml(html)
+    })
+    return () => { cancelled = true }
+  }, [raw, lang])
   return (
     <div className="code-block">
       <div className="code-block-header">
@@ -77,9 +93,14 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
 
 export default function MessageArea({ messages, isStreaming, onRetry, contextLimit, onMemoryFeedback, onCorrectMemory }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [feedbackBusy, setFeedbackBusy] = useState('')
   const [feedbackError, setFeedbackError] = useState('')
+  // Identify the session by its earliest message id: switching sessions resets
+  // the window, while streaming (appending) must not.
+  const sessionKey = messages.length > 0 ? messages[0].id : ''
+  const windowed = useMessageWindow(scrollRef, messages.length, [sessionKey])
 
   const submitMemoryFeedback = async (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => {
     if (!onMemoryFeedback) return
@@ -104,8 +125,14 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
     return null
   }
 
+  // Short lists render directly: windowing only pays off with many messages.
+  const useWindowing = messages.length > 40
+  const start = useWindowing ? windowed.start : 0
+  const end = useWindowing ? windowed.end : messages.length
+  const visibleMessages = messages.slice(start, end)
+
   return (
-    <div className="message-area" aria-live="polite" aria-busy={isStreaming}>
+    <div className="message-area" ref={scrollRef} aria-live="polite" aria-busy={isStreaming}>
       {contextLimit && messages.length > contextLimit && (
         <div className="context-limit-notice" role="status">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
@@ -114,11 +141,21 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
           会话已保存 {messages.length} 条消息；发送给模型时仅使用最近 {contextLimit} 条。
         </div>
       )}
-      {messages.map((msg) => {
+      {useWindowing && start > 0 && (
+        <div style={{ height: windowed.startOffset }} aria-hidden="true" />
+      )}
+      {visibleMessages.map((msg, offset) => {
+        const index = start + offset
         const canRetry = !isStreaming && getConversationForRetry(messages, msg.id) !== null
         const memorySourceCount = msg.memoryRefs?.reduce((total, memory) => total + (memory.compressedCount || 1), 0) || 0
         return (
-        <div key={msg.id} className={`message message-${msg.role}${msg.responseStatus ? ` message-${msg.responseStatus}` : ''}`}>
+        <div
+          key={msg.id}
+          ref={(node) => {
+            if (node && useWindowing) windowed.measureRow(index, node.offsetHeight)
+          }}
+          className={`message message-${msg.role}${msg.responseStatus ? ` message-${msg.responseStatus}` : ''}`}
+        >
           {msg.role === 'assistant' && (
             <div className="message-avatar" aria-hidden="true">
               <svg width="28" height="28" viewBox="0 0 80 80">
@@ -204,6 +241,9 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
         </div>
         )
       })}
+      {useWindowing && end < messages.length && (
+        <div style={{ height: windowed.endOffset }} aria-hidden="true" />
+      )}
       {isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
         <div className="message message-assistant">
           <div className="message-avatar" aria-hidden="true">

@@ -1,43 +1,15 @@
 /**
  * Lightweight syntax highlighting for chat code blocks.
  *
- * Uses highlight.js core with a curated language set (keeps bundle small);
- * unknown languages fall back to plain text rendering by returning null.
+ * highlight.js and its language grammars are loaded lazily via dynamic
+ * import, so conversations without code blocks never pay for them. Unknown
+ * languages fall back to plain text rendering by resolving to null.
  */
-import hljs from 'highlight.js/lib/core'
-import javascript from 'highlight.js/lib/languages/javascript'
-import typescript from 'highlight.js/lib/languages/typescript'
-import python from 'highlight.js/lib/languages/python'
-import json from 'highlight.js/lib/languages/json'
-import bash from 'highlight.js/lib/languages/bash'
-import css from 'highlight.js/lib/languages/css'
-import xml from 'highlight.js/lib/languages/xml'
-import sql from 'highlight.js/lib/languages/sql'
-import yaml from 'highlight.js/lib/languages/yaml'
-import markdown from 'highlight.js/lib/languages/markdown'
-import diff from 'highlight.js/lib/languages/diff'
-import go from 'highlight.js/lib/languages/go'
-import rust from 'highlight.js/lib/languages/rust'
-import java from 'highlight.js/lib/languages/java'
-import c from 'highlight.js/lib/languages/c'
-import cpp from 'highlight.js/lib/languages/cpp'
 
-hljs.registerLanguage('javascript', javascript)
-hljs.registerLanguage('typescript', typescript)
-hljs.registerLanguage('python', python)
-hljs.registerLanguage('json', json)
-hljs.registerLanguage('bash', bash)
-hljs.registerLanguage('css', css)
-hljs.registerLanguage('xml', xml)
-hljs.registerLanguage('sql', sql)
-hljs.registerLanguage('yaml', yaml)
-hljs.registerLanguage('markdown', markdown)
-hljs.registerLanguage('diff', diff)
-hljs.registerLanguage('go', go)
-hljs.registerLanguage('rust', rust)
-hljs.registerLanguage('java', java)
-hljs.registerLanguage('c', c)
-hljs.registerLanguage('cpp', cpp)
+const LANGUAGES = [
+  'javascript', 'typescript', 'python', 'json', 'bash', 'css', 'xml', 'sql',
+  'yaml', 'markdown', 'diff', 'go', 'rust', 'java', 'c', 'cpp'
+] as const
 
 const LANGUAGE_ALIASES: Record<string, string> = {
   js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript', node: 'javascript',
@@ -50,15 +22,70 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   golang: 'go', rs: 'rust'
 }
 
-/** Returns highlighted HTML, or null when the language is unknown/unsafe. */
-export function highlightCode(code: string, language: string): string | null {
-  const normalized = language.trim().toLowerCase()
-  if (!normalized) return null
-  const resolved = LANGUAGE_ALIASES[normalized] || normalized
-  if (!hljs.getLanguage(resolved)) return null
+const SUPPORTED = new Set<string>([...LANGUAGES, ...Object.keys(LANGUAGE_ALIASES)])
+
+type HighlightFn = (code: string, resolvedLanguage: string) => string | null
+
+let highlighterPromise: Promise<HighlightFn | null> | null = null
+
+async function loadHighlighter(): Promise<HighlightFn | null> {
   try {
-    return hljs.highlight(code, { language: resolved }).value
+    const [core, ...languages] = await Promise.all([
+      import('highlight.js/lib/core'),
+      import('highlight.js/lib/languages/javascript'),
+      import('highlight.js/lib/languages/typescript'),
+      import('highlight.js/lib/languages/python'),
+      import('highlight.js/lib/languages/json'),
+      import('highlight.js/lib/languages/bash'),
+      import('highlight.js/lib/languages/css'),
+      import('highlight.js/lib/languages/xml'),
+      import('highlight.js/lib/languages/sql'),
+      import('highlight.js/lib/languages/yaml'),
+      import('highlight.js/lib/languages/markdown'),
+      import('highlight.js/lib/languages/diff'),
+      import('highlight.js/lib/languages/go'),
+      import('highlight.js/lib/languages/rust'),
+      import('highlight.js/lib/languages/java'),
+      import('highlight.js/lib/languages/c'),
+      import('highlight.js/lib/languages/cpp')
+    ])
+    const hljs = core.default
+    LANGUAGES.forEach((name, index) => {
+      hljs.registerLanguage(name, languages[index].default)
+    })
+    return (code, resolvedLanguage) => {
+      try {
+        return hljs.highlight(code, { language: resolvedLanguage }).value
+      } catch {
+        return null
+      }
+    }
   } catch {
     return null
   }
+}
+
+function resolveLanguage(language: string): string | null {
+  const normalized = language.trim().toLowerCase()
+  if (!normalized) return null
+  return LANGUAGE_ALIASES[normalized] || normalized
+}
+
+/** True when the language is offered at all, without loading the highlighter. */
+export function isSupportedLanguage(language: string): boolean {
+  const resolved = resolveLanguage(language)
+  return resolved !== null && SUPPORTED.has(resolved)
+}
+
+/**
+ * Resolves to highlighted HTML, or null when the language is unknown, the
+ * highlighter failed to load, or highlighting itself fails.
+ */
+export async function highlightCode(code: string, language: string): Promise<string | null> {
+  const resolved = resolveLanguage(language)
+  if (!resolved || !SUPPORTED.has(resolved)) return null
+  highlighterPromise ??= loadHighlighter()
+  const highlighter = await highlighterPromise
+  if (!highlighter) return null
+  return highlighter(code, resolved)
 }

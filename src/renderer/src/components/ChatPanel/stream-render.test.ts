@@ -1,29 +1,41 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { highlightCode } from '../../core/highlight'
+import { highlightCode, isSupportedLanguage } from '../../core/highlight'
 
 const workspaceSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
 const inputSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/InputArea.tsx'), 'utf8')
 const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.tsx'), 'utf8')
+const messageAreaSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/MessageArea.tsx'), 'utf8')
 
 describe('syntax highlighting', () => {
-  it('highlights known languages into hljs markup', () => {
-    const html = highlightCode('const x = 1', 'typescript')
+  it('highlights known languages into hljs markup', async () => {
+    const html = await highlightCode('const x = 1', 'typescript')
     expect(html).toContain('hljs-')
     expect(html).toContain('const')
   })
 
-  it('resolves common language aliases', () => {
-    expect(highlightCode('print(1)', 'py')).toContain('hljs-')
-    expect(highlightCode('echo hi', 'sh')).toContain('hljs-')
-    expect(highlightCode('<div></div>', 'html')).toContain('hljs-')
+  it('resolves common language aliases', async () => {
+    expect(await highlightCode('print(1)', 'py')).toContain('hljs-')
+    expect(await highlightCode('echo hi', 'sh')).toContain('hljs-')
+    expect(await highlightCode('<div></div>', 'html')).toContain('hljs-')
   })
 
-  it('returns null for unknown or empty languages so plain rendering takes over', () => {
-    expect(highlightCode('hello', 'not-a-language')).toBeNull()
-    expect(highlightCode('hello', '')).toBeNull()
-    expect(highlightCode('hello', '  ')).toBeNull()
+  it('returns null for unknown or empty languages so plain rendering takes over', async () => {
+    expect(await highlightCode('hello', 'not-a-language')).toBeNull()
+    expect(await highlightCode('hello', '')).toBeNull()
+    expect(await highlightCode('hello', '  ')).toBeNull()
+  })
+
+  it('reports language support synchronously without loading the highlighter', () => {
+    expect(isSupportedLanguage('typescript')).toBe(true)
+    expect(isSupportedLanguage('PY')).toBe(true)
+    expect(isSupportedLanguage('not-a-language')).toBe(false)
+    expect(isSupportedLanguage('')).toBe(false)
+  })
+
+  it('skips the async highlight round-trip for unsupported languages', () => {
+    expect(messageAreaSource).toContain('isSupportedLanguage(lang)')
   })
 })
 
@@ -39,6 +51,20 @@ describe('stream render throttling', () => {
     expect(workspaceSource).toContain('generation.flushRender?.()')
     const doneIndex = workspaceSource.indexOf('if (done) {')
     expect(workspaceSource.indexOf('renderAccumulated()', doneIndex)).toBeLessThan(workspaceSource.indexOf('finishGeneration()', doneIndex))
+  })
+})
+
+describe('message windowing', () => {
+  it('only windows long sessions and keys the reset on the session, not the length', () => {
+    expect(messageAreaSource).toContain('messages.length > 40')
+    expect(messageAreaSource).toContain('messages[0].id')
+    expect(messageAreaSource).toContain('useMessageWindow(scrollRef')
+  })
+
+  it('keeps scrollbar geometry with placeholders above and below the window', () => {
+    expect(messageAreaSource).toContain('windowed.startOffset')
+    expect(messageAreaSource).toContain('windowed.endOffset')
+    expect(messageAreaSource).toContain('end < messages.length')
   })
 })
 
