@@ -14,7 +14,12 @@ const memoryServiceSource = readFileSync(resolve(process.cwd(), 'src/main/memory
 describe('chat layout guardrails', () => {
   it('keeps the composer on one row and never enables horizontal scrolling', () => {
     expect(stylesheet).toMatch(/\.input-toolbar\s*\{[\s\S]*flex-wrap:\s*nowrap/)
-    expect(stylesheet).not.toMatch(/overflow-x\s*:\s*(auto|scroll)/)
+    // Code blocks may scroll horizontally for long tokens; the panel itself must not.
+    const codePre = stylesheet.slice(
+      stylesheet.indexOf('.code-block pre {'),
+      stylesheet.indexOf('.code-block pre code')
+    )
+    expect(stylesheet.replace(codePre, '')).not.toMatch(/overflow-x\s*:\s*(auto|scroll)/)
   })
 
   it('keeps upward menus visible while message content remains clipped safely', () => {

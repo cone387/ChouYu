@@ -7,6 +7,7 @@ const workspaceSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/co
 const inputSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/InputArea.tsx'), 'utf8')
 const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.tsx'), 'utf8')
 const messageAreaSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/MessageArea.tsx'), 'utf8')
+const chatPanelCssSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.css'), 'utf8')
 
 describe('syntax highlighting', () => {
   it('highlights known languages into hljs markup', async () => {
@@ -65,6 +66,43 @@ describe('message windowing', () => {
     expect(messageAreaSource).toContain('windowed.startOffset')
     expect(messageAreaSource).toContain('windowed.endOffset')
     expect(messageAreaSource).toContain('end < messages.length')
+  })
+})
+
+describe('code block mac window styling', () => {
+  it('renders decorative window dots in the code header', () => {
+    expect(messageAreaSource).toContain('code-block-dots')
+    expect(messageAreaSource).toContain('aria-hidden="true"')
+  })
+
+  it('wraps code lines at spaces without breaking tokens mid-word', () => {
+    const pre = chatPanelCssSource.slice(
+      chatPanelCssSource.indexOf('.code-block pre {'),
+      chatPanelCssSource.indexOf('.code-block pre code')
+    )
+    expect(pre).not.toContain('word-break')
+    expect(pre).not.toContain('overflow-wrap')
+  })
+
+  it('uses the card radius, 13px code font and accent copy button', () => {
+    const block = chatPanelCssSource.slice(
+      chatPanelCssSource.indexOf('.code-block {'),
+      chatPanelCssSource.indexOf('.code-block-header')
+    )
+    expect(block).toContain('var(--radius-xl)')
+    expect(block).toContain('box-shadow')
+
+    const code = chatPanelCssSource.slice(
+      chatPanelCssSource.indexOf('.code-block pre code'),
+      chatPanelCssSource.indexOf('.code-block .hljs-comment')
+    )
+    expect(code).toContain('var(--font-md)')
+
+    const copyStart = chatPanelCssSource.indexOf('.code-block-header .copy-btn')
+    const hoverStart = chatPanelCssSource.indexOf('.code-block-header .copy-btn:hover', copyStart)
+    const copyBtn = chatPanelCssSource.slice(copyStart, chatPanelCssSource.indexOf('}', hoverStart) + 1)
+    expect(copyBtn).toContain('var(--accent)')
+    expect(copyBtn).not.toContain('rgba(255, 255, 255')
   })
 })
 

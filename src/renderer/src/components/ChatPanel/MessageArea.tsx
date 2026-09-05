@@ -62,6 +62,9 @@ function CodeBlock({ className, children }: { className?: string; children: stri
   return (
     <div className="code-block">
       <div className="code-block-header">
+        <span className="code-block-dots" aria-hidden="true">
+          <i /><i /><i />
+        </span>
         <span className="code-block-lang">{lang}</span>
         <CopyButton text={raw} />
       </div>
