@@ -28,8 +28,10 @@ export function getEditedConversation(messages: Message[], userMessageId: string
 
 /** 已停止的纯文本助手消息可继续生成；返回续写的 seed 内容（占位消息 seed 为空串）。 */
 export function getContinuationSeed(messages: Message[], assistantMessageId: string): string | null {
-  const target = messages.find((message) => message.id === assistantMessageId)
-  if (!target || target.role !== 'assistant' || target.pluginData || target.toolData) return null
+  const assistantIndex = messages.findIndex((message) => message.id === assistantMessageId)
+  if (assistantIndex < 0 || assistantIndex !== messages.length - 1) return null
+  const target = messages[assistantIndex]
+  if (target.role !== 'assistant' || target.pluginData || target.toolData) return null
   if (target.responseStatus !== 'stopped') return null
   return target.content === STOPPED_PLACEHOLDER_CONTENT ? '' : target.content
 }

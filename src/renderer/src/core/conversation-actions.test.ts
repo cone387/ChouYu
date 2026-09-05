@@ -38,6 +38,22 @@ describe('getEditedConversation', () => {
     expect(getEditedConversation(withImage, 'u1', '新文本')?.[0].imageUrl).toBe('data:image/png;base64,x')
   })
 
+  it('preserves earlier messages when editing a mid-conversation message', () => {
+    const edited = getEditedConversation(messages, 'u2', '改后的第二条')
+    expect(edited).toEqual([
+      userMessage({ id: 'u1', content: '第一条' }),
+      assistantMessage({ id: 'a1' }),
+      userMessage({ id: 'u2', content: '改后的第二条', timestamp: 1 })
+    ])
+  })
+
+  it('returns null for tool/plugin user messages', () => {
+    const toolUser = [userMessage({ toolData: { callId: 'c1', name: 'get_current_time', displayName: '时间', risk: 'safe', status: 'completed' } })]
+    expect(getEditedConversation(toolUser, 'u1', 'x')).toBeNull()
+    const pluginUser = [userMessage({ pluginData: { pluginId: 'p', pluginName: '插件', ok: true, message: '输出', inputContent: 'x' } })]
+    expect(getEditedConversation(pluginUser, 'u1', 'x')).toBeNull()
+  })
+
   it('returns null for unknown ids, assistant targets and blank content', () => {
     expect(getEditedConversation(messages, 'nope', 'x')).toBeNull()
     expect(getEditedConversation(messages, 'a1', 'x')).toBeNull()
@@ -54,6 +70,12 @@ describe('getContinuationSeed', () => {
   it('seeds empty for the stopped placeholder message', () => {
     const placeholder = assistantMessage({ content: STOPPED_PLACEHOLDER_CONTENT, responseStatus: 'stopped' })
     expect(getContinuationSeed([placeholder], 'a1')).toBe('')
+  })
+
+  it('returns null when the stopped message is no longer the last message', () => {
+    const stopped = assistantMessage({ id: 'a1', responseStatus: 'stopped' })
+    const messages = [userMessage({ id: 'u1' }), stopped, userMessage({ id: 'u2', content: '追问' })]
+    expect(getContinuationSeed(messages, 'a1')).toBeNull()
   })
 
   it('returns null unless the target is a stopped plain assistant message', () => {
