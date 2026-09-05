@@ -105,6 +105,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
   const [editingId, setEditingId] = useState('')
   const [editDraft, setEditDraft] = useState('')
   const commitEdit = (messageId: string) => {
+    if (isStreaming) return
     const draft = editDraft
     setEditingId('')
     if (!draft.trim()) return
@@ -232,7 +233,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
                   )}
                   <div className="message-edit-actions">
                     <button type="button" onClick={() => setEditingId('')}>取消</button>
-                    <button type="button" className="primary" onClick={() => commitEdit(msg.id)} disabled={!editDraft.trim()}>保存并重发</button>
+                    <button type="button" className="primary" onClick={() => commitEdit(msg.id)} disabled={!editDraft.trim() || isStreaming}>保存并重发</button>
                   </div>
                 </div>
               ) : (
@@ -245,7 +246,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
               {msg.role === 'assistant' && msg.content && !msg.toolData && (
                 <CopyButton text={msg.content} />
               )}
-              {msg.role === 'user' && !isStreaming && !msg.toolData && onEditMessage && msg.id !== editingId && (
+              {msg.role === 'user' && !isStreaming && !msg.toolData && !msg.pluginData && onEditMessage && msg.id !== editingId && (
                 <button
                   className="message-edit-btn"
                   onClick={() => { setEditingId(msg.id); setEditDraft(msg.content) }}
