@@ -235,6 +235,7 @@ export function useSessionWorkspace({
       // Start another response as soon as the current one completes. Read the
       // session's latest messages at that point so the completed answer is in
       // the next request's context.
+      // Note: options are not queued — append-mode callers must be guarded by isStreaming.
       pendingGenerationsRef.current.add(sessionId)
       return
     }
@@ -289,8 +290,9 @@ export function useSessionWorkspace({
       updateSessionMessages(sessionId, (previous) => {
         const existing = previous.find((message) => message.id === targetMessageId)
         if (existing) {
+          // 续写针对同一条用户消息重新检索记忆，保留原引用（含用户反馈标记）而不是整组替换。
           return previous.map((message) => message.id === targetMessageId
-            ? { ...message, content, responseStatus: undefined, memoryRefs }
+            ? { ...message, content, responseStatus: undefined, memoryRefs: options.appendTo ? message.memoryRefs : memoryRefs }
             : message)
         }
         return [...previous, { id: targetMessageId, role: 'assistant', content, timestamp: Date.now(), memoryRefs }]
@@ -336,6 +338,7 @@ export function useSessionWorkspace({
           if (chunk && generation.toolBoundary) {
             renderAccumulated()
             segmentIndex += 1
+            // 追加模式的分段 id 在既有消息 id 后扩展；安全前提是被续写消息只可能处于 stopped（首次续写渲染即清除）。
             aiMsgId = `${responseBaseId}-${segmentIndex}`
             accumulated = ''
             generation.responseId = aiMsgId
@@ -360,15 +363,21 @@ export function useSessionWorkspace({
       const errorMessage: Message = {
         id: aiMsgId,
         role: 'assistant',
-        content: options.appendTo ? accumulated : `请求失败：${message}`,
+        content: options.appendTo ? (accumulated || STOPPED_PLACEHOLDER_CONTENT) : `请求失败：${message}`,
         timestamp: Date.now(),
-        responseStatus: 'error'
+        // 失败的续写保持可继续状态：'stopped' 让「继续生成」按钮仍然可用，
+        // 而不是退化成会丢弃半截内容的整体重试。
+        responseStatus: options.appendTo ? 'stopped' : 'error'
       }
+      if (options.appendTo) showMemoryWriteNotice(`继续生成失败：${message}`)
       updateSessionMessages(sessionId, (previous) => {
         const existing = previous.find((item) => item.id === aiMsgId)
-        return existing
-          ? previous.map((item) => item.id === aiMsgId ? errorMessage : item)
-          : [...previous, errorMessage]
+        if (!existing) return [...previous, errorMessage]
+        return previous.map((item) => item.id === aiMsgId
+          ? (options.appendTo
+            ? { ...item, content: errorMessage.content, responseStatus: errorMessage.responseStatus }
+            : errorMessage)
+          : item)
       })
     }
   }, [config, finishPetResponse, onPetStateChange, persistSessionMessages, setSessionStreaming, showMemoryWriteNotice, updateSessionMessages])

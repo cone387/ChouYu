@@ -165,6 +165,15 @@ describe('message edit and continue generation', () => {
   })
 
   it('preserves partial content when a continuation errors out', () => {
-    expect(workspaceSource).toContain('content: options.appendTo ? accumulated : `请求失败：${message}`')
+    expect(workspaceSource).toContain('content: options.appendTo ? (accumulated || STOPPED_PLACEHOLDER_CONTENT) : `请求失败：${message}`')
+  })
+
+  it('keeps a failed continuation continuable instead of degrading to retry', () => {
+    expect(workspaceSource).toContain("responseStatus: options.appendTo ? 'stopped' : 'error'")
+    expect(workspaceSource).toContain('继续生成失败：')
+  })
+
+  it('keeps the original memory refs while continuing', () => {
+    expect(workspaceSource).toContain('memoryRefs: options.appendTo ? message.memoryRefs : memoryRefs')
   })
 })
