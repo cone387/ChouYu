@@ -19,6 +19,9 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [petState, setPetState] = useState<PetState>(stateMachine.getState())
   const [screenshotImage, setScreenshotImage] = useState<string | null>(null)
+  const [captureMode, setCaptureMode] = useState<'crop' | 'scroll'>('crop')
+  const [scrollCaptureBusy, setScrollCaptureBusy] = useState(false)
+  const [scrollCaptureProgress, setScrollCaptureProgress] = useState(0)
   const [activePluginId, setActivePluginId] = useState<string | null>(null)
   const [clipboardText, setClipboardText] = useState<string | null>(null)
   const [proactiveMsg, setProactiveMsg] = useState<string | null>(null)
@@ -331,10 +334,70 @@ function App() {
 
   const handleScreenshotCancel = useCallback(() => {
     setScreenshotImage(null)
+    setCaptureMode('crop')
     ignoreRef.current = true
     window.electronAPI.setIgnoreMouseEvents(true)
     screenshotCallbackRef.current = null
   }, [])
+
+  const startScrollScreenshot = useCallback((callback: (dataUrl: string) => void) => {
+    setScrollCaptureBusy(false)
+    setScrollCaptureProgress(0)
+    setCaptureMode('scroll')
+    screenshotCallbackRef.current = callback
+    window.electronAPI.takeScreenshot(true)
+      .then((dataUrl) => {
+        if (dataUrl) {
+          window.electronAPI.setIgnoreMouseEvents(false)
+          setScreenshotImage(dataUrl)
+          return
+        }
+        screenshotCallbackRef.current = null
+        setCaptureMode('crop')
+        setFileDropError('截图失败，请稍后重试。')
+      })
+      .catch(() => {
+        screenshotCallbackRef.current = null
+        setCaptureMode('crop')
+        setFileDropError('截图失败，请检查系统的屏幕录制权限。')
+      })
+  }, [])
+
+  const finishScrollCapture = useCallback((dataUrl?: string, error?: string) => {
+    setScrollCaptureBusy(false)
+    setScrollCaptureProgress(0)
+    setScreenshotImage(null)
+    setCaptureMode('crop')
+    ignoreRef.current = true
+    window.electronAPI.setIgnoreMouseEvents(true)
+    const callback = screenshotCallbackRef.current
+    screenshotCallbackRef.current = null
+    if (dataUrl) callback?.(dataUrl)
+    else if (error) setFileDropError(error)
+  }, [])
+
+  const handleScrollCapture = useCallback((rect: { x: number; y: number; w: number; h: number }) => {
+    setScrollCaptureBusy(true)
+    setScrollCaptureProgress(0)
+    window.electronAPI.captureScrollRegion({ x: rect.x, y: rect.y, width: rect.w, height: rect.h })
+      .then((result) => {
+        if (result?.dataUrl) {
+          finishScrollCapture(result.dataUrl)
+          return
+        }
+        finishScrollCapture(undefined, result?.error || '滚动截图失败，请重试。')
+      })
+      .catch(() => {
+        finishScrollCapture(undefined, '滚动截图失败，请稍后重试。')
+      })
+  }, [finishScrollCapture])
+
+  useEffect(() => {
+    if (!scrollCaptureBusy) return
+    return window.electronAPI.onScrollCaptureProgress((info) => {
+      setScrollCaptureProgress(info.frames)
+    })
+  }, [scrollCaptureBusy])
 
   const handleFileDrop = useCallback((file: { type: 'image' | 'text'; data: string; name: string }) => {
     stateMachine.userActivity()
@@ -442,6 +505,7 @@ function App() {
           initialShowSettings={showSettings}
           onSettingsClose={() => setShowSettings(false)}
           onScreenshot={startScreenshot}
+          onScrollScreenshot={startScrollScreenshot}
           initialPluginId={activePluginId}
           onPluginIdConsumed={() => setActivePluginId(null)}
           pendingAttachment={pendingDrop}
@@ -453,7 +517,11 @@ function App() {
       {screenshotImage && (
         <ScreenCapture
           imageDataUrl={screenshotImage}
+          mode={captureMode}
+          busy={scrollCaptureBusy}
+          progress={scrollCaptureProgress}
           onCapture={handleScreenshotCapture}
+          onScrollCapture={handleScrollCapture}
           onCancel={handleScreenshotCancel}
         />
       )}

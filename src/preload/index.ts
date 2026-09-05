@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../shared/ai'
-import type { CaptureSourceInfo } from '../shared/capture'
+import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from '../shared/capture'
 import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
 import type { CapabilityInfo } from '../shared/capabilities'
 import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncStatus } from '../shared/memory'
@@ -23,6 +23,13 @@ const api = {
   takeScreenshot: (hideWindow?: boolean) => ipcRenderer.invoke('take-screenshot', hideWindow),
   getCaptureSources: () => ipcRenderer.invoke('get-capture-sources') as Promise<CaptureSourceInfo[]>,
   captureSource: (sourceId: string, hideWindow?: boolean) => ipcRenderer.invoke('capture-source', sourceId, hideWindow) as Promise<string>,
+  captureScrollRegion: (region: ScrollCaptureRegion) =>
+    ipcRenderer.invoke('capture-scroll-region', region) as Promise<ScrollCaptureResult>,
+  onScrollCaptureProgress: (callback: (info: { frames: number }) => void) => {
+    const handler = (_event: unknown, info: { frames: number }) => callback(info)
+    ipcRenderer.on('scroll-capture:progress', handler)
+    return () => { ipcRenderer.removeListener('scroll-capture:progress', handler) }
+  },
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   fetchModels: () => ipcRenderer.invoke('fetch-models') as Promise<AIModelListResult>,
   diagnoseProvider: () => ipcRenderer.invoke('diagnose-provider') as Promise<ProviderDiagnostics>,

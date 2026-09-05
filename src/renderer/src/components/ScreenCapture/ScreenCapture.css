@@ -85,3 +85,15 @@
   z-index: 2;
   pointer-events: none;
 }
+
+.screen-capture-overlay.is-busy {
+  cursor: progress;
+}
+
+.screen-capture-hint.is-busy {
+  background: rgba(0, 0, 0, 0.82);
+}
+
+.screen-capture-hint.is-error {
+  background: var(--error, #d64545);
+}

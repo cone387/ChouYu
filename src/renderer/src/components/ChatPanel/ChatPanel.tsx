@@ -46,6 +46,7 @@ interface ChatPanelProps {
   initialShowSettings?: boolean
   onSettingsClose?: () => void
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
+  onScrollScreenshot?: (callback: (dataUrl: string) => void) => void
   initialPluginId?: string | null
   onPluginIdConsumed?: () => void
   pendingAttachment?: { type: 'image' | 'text'; data: string; name: string } | null
@@ -54,7 +55,7 @@ interface ChatPanelProps {
   onPendingMessageConsumed?: () => void
 }
 
-export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, onSettingsClose, onScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
+export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
   const [showMemoryWorkspace, setShowMemoryWorkspace] = useState(false)
   const [memoryReturnTarget, setMemoryReturnTarget] = useState<'chat' | 'settings'>('chat')
@@ -780,6 +781,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               model={config.model}
               onModelChange={handleModelChange}
               onScreenshot={onScreenshot}
+              onScrollScreenshot={onScrollScreenshot}
               plugins={plugins}
               pluginCommands={pluginCommands}
               initialActivePlugin={activePluginForInput}

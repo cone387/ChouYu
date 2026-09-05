@@ -19,8 +19,11 @@ import {
   type CaptureSourceInfo,
   filterCaptureSources,
   getCaptureSourceKind,
-  isValidCaptureSourceId
+  isScrollCaptureRegion,
+  isValidCaptureSourceId,
+  type ScrollCaptureResult
 } from '../shared/capture'
+import { captureScrollingRegion } from './scrolling-capture'
 import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { capabilityRegistry } from './capabilities/registry'
 import { setClipboardWatcherEnabled } from './clipboard'
@@ -524,6 +527,28 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return source.thumbnail.toDataURL()
     } finally {
       if (shouldHide && !mainWindow.isDestroyed()) mainWindow.show()
+    }
+  })
+
+  ipcMain.handle('capture-scroll-region', async (_event, region: unknown): Promise<ScrollCaptureResult> => {
+    if (!isScrollCaptureRegion(region)) throw new Error('Invalid scroll capture region')
+    const workArea = screen.getPrimaryDisplay().workAreaSize
+    const clamped = {
+      x: Math.max(0, Math.min(region.x, Math.max(0, workArea.width - 1))),
+      y: Math.max(0, Math.min(region.y, Math.max(0, workArea.height - 1))),
+      width: Math.min(region.width, workArea.width),
+      height: Math.min(region.height, workArea.height)
+    }
+    mainWindow.hide()
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    try {
+      return await captureScrollingRegion(clamped, {
+        onProgress: (info) => {
+          if (!mainWindow.isDestroyed()) mainWindow.webContents.send('scroll-capture:progress', info)
+        }
+      })
+    } finally {
+      if (!mainWindow.isDestroyed()) mainWindow.show()
     }
   })
 

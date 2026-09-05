@@ -1,6 +1,6 @@
 import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../../../shared/ai'
-import type { CaptureSourceInfo } from '../../../shared/capture'
+import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from '../../../shared/capture'
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
 import type { CapabilityInfo } from '../../../shared/capabilities'
 import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncStatus, MemoryType } from '../../../shared/memory'
@@ -79,6 +79,8 @@ export interface ElectronAPI {
   takeScreenshot: (hideWindow?: boolean) => Promise<string | null>
   getCaptureSources: () => Promise<CaptureSourceInfo[]>
   captureSource: (sourceId: string, hideWindow?: boolean) => Promise<string>
+  captureScrollRegion: (region: ScrollCaptureRegion) => Promise<ScrollCaptureResult>
+  onScrollCaptureProgress: (callback: (info: { frames: number }) => void) => () => void
   openFileDialog: () => Promise<{ type: 'image' | 'text'; data: string; name: string } | null>
   fetchModels: () => Promise<AIModelListResult>
   diagnoseProvider: () => Promise<ProviderDiagnostics>

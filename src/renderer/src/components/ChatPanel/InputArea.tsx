@@ -23,6 +23,7 @@ interface InputAreaProps {
   model?: string
   onModelChange?: (model: string) => void
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
+  onScrollScreenshot?: (callback: (dataUrl: string) => void) => void
   plugins?: PluginInfo[]
   pluginCommands?: { cmd: string; desc: string }[]
   initialActivePlugin?: PluginInfo | null
@@ -33,7 +34,7 @@ interface InputAreaProps {
   history?: string[]
 }
 
-export default function InputArea({ onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
+export default function InputArea({ onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
@@ -334,6 +335,19 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
     })
   }, [attachments.length, onScreenshot, hideWindowOnCapture])
 
+  const doScrollScreenshot = useCallback(() => {
+    if (attachments.length >= MAX_ATTACHMENT_COUNT) {
+      setAttachmentError(`最多添加 ${MAX_ATTACHMENT_COUNT} 个附件。`)
+      return
+    }
+    setShowScreenshotMenu(false)
+    onScrollScreenshot?.((dataUrl) => {
+      const attachment: PendingAttachment = { type: 'image', data: dataUrl, name: `滚动截图${Date.now()}.png` }
+      setAttachments((prev) => prev.length < MAX_ATTACHMENT_COUNT ? [...prev, attachment] : prev)
+      setRecentCaptures((prev) => [attachment, ...prev.filter((item) => item.data !== attachment.data)].slice(0, 5))
+    })
+  }, [attachments.length, onScrollScreenshot])
+
   const doScreenshotAction = useCallback((action: VisualQuickAction) => {
     if (disabled) return
     setShowScreenshotMenu(false)
@@ -544,11 +558,11 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
                     </svg>
                     <span className="screenshot-menu-label">窗口或屏幕</span>
                   </button>
-                  <button className="screenshot-menu-item disabled" disabled>
+                  <button className="screenshot-menu-item" onClick={() => doScrollScreenshot()} disabled={disabled}>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                       <rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 10l4-4 3 3 5-5"/>
                     </svg>
-                    <span className="screenshot-menu-label">滚动截图（稍后支持）</span>
+                    <span className="screenshot-menu-label">滚动截图（长图）</span>
                   </button>
                   {recentCaptures.length > 0 && (
                     <>

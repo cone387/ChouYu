@@ -19,6 +19,32 @@ export function getCaptureSourceKind(id: string): CaptureSourceKind {
   return id.startsWith('screen:') ? 'screen' : 'window'
 }
 
+/** Region in CSS pixels, relative to the overlay window (which covers the primary work area). */
+export interface ScrollCaptureRegion {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface ScrollCaptureResult {
+  dataUrl: string | null
+  frames: number
+  height: number
+  /** False when the platform cannot inject scroll input, so the user has to scroll manually. */
+  autoScroll: boolean
+  error?: string
+}
+
+export function isScrollCaptureRegion(value: unknown): value is ScrollCaptureRegion {
+  if (!value || typeof value !== 'object') return false
+  const region = value as Record<string, unknown>
+  const isValid = (n: unknown): boolean => typeof n === 'number' && Number.isFinite(n) && n > 0
+  return isValid(region.width) && isValid(region.height)
+    && typeof region.x === 'number' && Number.isFinite(region.x)
+    && typeof region.y === 'number' && Number.isFinite(region.y)
+}
+
 export function isValidCaptureSourceId(value: unknown): value is string {
   return typeof value === 'string'
     && value.length > 0
