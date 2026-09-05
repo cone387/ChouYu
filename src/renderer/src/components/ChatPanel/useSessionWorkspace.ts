@@ -360,7 +360,7 @@ export function useSessionWorkspace({
       const errorMessage: Message = {
         id: aiMsgId,
         role: 'assistant',
-        content: `请求失败：${message}`,
+        content: options.appendTo ? accumulated : `请求失败：${message}`,
         timestamp: Date.now(),
         responseStatus: 'error'
       }

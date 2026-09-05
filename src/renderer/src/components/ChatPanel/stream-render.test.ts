@@ -163,4 +163,8 @@ describe('message edit and continue generation', () => {
     expect(workspaceSource).toContain('STOPPED_PLACEHOLDER_CONTENT')
     expect(workspaceSource).not.toContain("'已停止生成。'")
   })
+
+  it('preserves partial content when a continuation errors out', () => {
+    expect(workspaceSource).toContain('content: options.appendTo ? accumulated : `请求失败：${message}`')
+  })
 })
