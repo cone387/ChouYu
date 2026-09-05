@@ -515,10 +515,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }
 
   const handleEditMessage = useCallback((messageId: string, newContent: string) => {
+    if (isStreaming) return
     const sessionId = activeSessionIdRef.current
     proposeMemories(newContent, sessionId, messageId)
     editUserMessage(messageId, newContent)
-  }, [proposeMemories, editUserMessage])
+  }, [isStreaming, proposeMemories, editUserMessage])
 
   const getStatusText = () => {
     if (isStreaming) return '正在回复...'

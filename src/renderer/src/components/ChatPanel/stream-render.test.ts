@@ -184,4 +184,19 @@ describe('message edit and continue generation', () => {
     expect(panelSource).toContain('onEditMessage={handleEditMessage}')
     expect(panelSource).toContain('onContinueMessage={continueAssistantMessage}')
   })
+
+  it('edits user messages inline with a truncation warning', () => {
+    expect(messageAreaSource).toContain('onEditMessage?: (messageId: string, newContent: string) => void')
+    expect(messageAreaSource).toContain('const [editingId, setEditingId]')
+    expect(messageAreaSource).toContain('保存并重发')
+    expect(messageAreaSource).toContain('保存将删除之后的')
+    expect(messageAreaSource).toContain("e.key === 'Escape'")
+    expect(messageAreaSource).toContain("e.key === 'Enter' && !e.shiftKey")
+  })
+
+  it('continues stopped assistant messages in place', () => {
+    expect(messageAreaSource).toContain('onContinueMessage?: (messageId: string) => void')
+    expect(messageAreaSource).toContain('继续生成')
+    expect(messageAreaSource).toContain("msg.responseStatus === 'stopped' && !msg.toolData")
+  })
 })

@@ -839,7 +839,9 @@
   font-size: 10px;
 }
 
-.message-retry-btn {
+.message-retry-btn,
+.message-edit-btn,
+.message-continue-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -853,9 +855,73 @@
   transition: background 150ms, color 150ms;
 }
 
-.message-retry-btn:hover {
+.message-retry-btn:hover,
+.message-edit-btn:hover,
+.message-continue-btn:hover {
   background: var(--hover-bg);
   color: var(--text-primary);
+}
+
+.message-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+
+.message-edit-textarea {
+  width: 100%;
+  min-height: 64px;
+  max-height: 220px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: 14px;
+  line-height: 1.5;
+  font-family: inherit;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.message-edit-textarea:focus-visible {
+  border-color: var(--accent);
+}
+
+.message-edit-warning {
+  color: var(--warning);
+  font-size: 10px;
+}
+
+.message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.message-edit-actions button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.message-edit-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.message-edit-actions button.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .message-memory-refs {

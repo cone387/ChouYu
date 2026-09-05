@@ -96,12 +96,20 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ messages, isStreaming, onRetry, contextLimit, onMemoryFeedback, onCorrectMemory }: MessageAreaProps) {
+export default function MessageArea({ messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [feedbackBusy, setFeedbackBusy] = useState('')
   const [feedbackError, setFeedbackError] = useState('')
+  const [editingId, setEditingId] = useState('')
+  const [editDraft, setEditDraft] = useState('')
+  const commitEdit = (messageId: string) => {
+    const draft = editDraft
+    setEditingId('')
+    if (!draft.trim()) return
+    onEditMessage?.(messageId, draft)
+  }
   // Identify the session by its earliest message id: switching sessions resets
   // the window, while streaming (appending) must not.
   const sessionKey = messages.length > 0 ? messages[0].id : ''
@@ -199,6 +207,34 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
                     }
                   }}
                 >{msg.content}</ReactMarkdown>
+              ) : msg.id === editingId ? (
+                <div className="message-edit">
+                  <textarea
+                    className="message-edit-textarea"
+                    value={editDraft}
+                    autoFocus
+                    aria-label="编辑消息内容"
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        setEditingId('')
+                      } else if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        commitEdit(msg.id)
+                      }
+                    }}
+                  />
+                  {index < messages.length - 1 && (
+                    <div className="message-edit-warning" role="status">
+                      保存将删除之后的 {messages.length - 1 - index} 条消息
+                    </div>
+                  )}
+                  <div className="message-edit-actions">
+                    <button type="button" onClick={() => setEditingId('')}>取消</button>
+                    <button type="button" className="primary" onClick={() => commitEdit(msg.id)} disabled={!editDraft.trim()}>保存并重发</button>
+                  </div>
+                </div>
               ) : (
                 msg.content && <span>{msg.content}</span>
               )}
@@ -208,6 +244,18 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
               {msg.responseStatus === 'stopped' && <span className="message-state">已停止</span>}
               {msg.role === 'assistant' && msg.content && !msg.toolData && (
                 <CopyButton text={msg.content} />
+              )}
+              {msg.role === 'user' && !isStreaming && !msg.toolData && onEditMessage && msg.id !== editingId && (
+                <button
+                  className="message-edit-btn"
+                  onClick={() => { setEditingId(msg.id); setEditDraft(msg.content) }}
+                  aria-label="编辑这条消息"
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M11.3 2.7l2 2L6 12l-3 1 1-3z"/>
+                  </svg>
+                  编辑
+                </button>
               )}
               {canRetry && (
                 <button
@@ -219,6 +267,18 @@ export default function MessageArea({ messages, isStreaming, onRetry, contextLim
                     <path d="M13 5V2l-2 2A5.5 5.5 0 1013.5 8"/>
                   </svg>
                   {msg.responseStatus === 'error' ? '重试' : '重新生成'}
+                </button>
+              )}
+              {!isStreaming && index === messages.length - 1 && msg.role === 'assistant' && msg.responseStatus === 'stopped' && !msg.toolData && !msg.pluginData && onContinueMessage && (
+                <button
+                  className="message-continue-btn"
+                  onClick={() => onContinueMessage(msg.id)}
+                  aria-label="继续生成这条回复"
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M4 2.5v11l9-5.5z"/>
+                  </svg>
+                  继续生成
                 </button>
               )}
             </div>
