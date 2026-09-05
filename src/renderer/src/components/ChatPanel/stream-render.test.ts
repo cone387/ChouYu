@@ -86,12 +86,12 @@ describe('code block mac window styling', () => {
     expect(chatPanelCssSource).toContain('.message-bubble :not(pre) > code')
   })
 
-  it('lets the card hug the code instead of stretching to the full bubble width', () => {
+  it('keeps every code card at one unified width', () => {
     const block = chatPanelCssSource.slice(
       chatPanelCssSource.indexOf('.code-block {'),
       chatPanelCssSource.indexOf('.code-block-header')
     )
-    expect(block).toContain('width: fit-content')
+    expect(block).not.toContain('fit-content')
     expect(block).toContain('max-width: 100%')
   })
 

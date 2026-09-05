@@ -704,7 +704,6 @@
   box-shadow: 0 2px 10px rgba(108, 92, 231, 0.1);
   min-width: 0;
   max-width: 100%;
-  width: fit-content;
 }
 
 .code-block-header {
