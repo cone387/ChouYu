@@ -12,7 +12,7 @@ import {
 import { streamChat } from '../../core/ai-engine'
 import { buildSystemPrompt, buildMessages } from '../../core/prompt-builder'
 import { loadSessionWorkspace, saveActiveSessionMessages } from '../../core/memory'
-import { getConversationForRetry } from '../../core/conversation-actions'
+import { getContinuationSeed, getConversationForRetry, getEditedConversation, STOPPED_PLACEHOLDER_CONTENT } from '../../core/conversation-actions'
 import { mergeSessionsInCurrentOrder } from '../../core/session-order'
 
 export interface SessionGeneration {
@@ -22,6 +22,16 @@ export interface SessionGeneration {
   requestId?: string
   /** Renders buffered stream chunks immediately; used before boundaries/stop. */
   flushRender?: () => void
+}
+
+interface GenerationAppend {
+  messageId: string
+  seedContent: string
+}
+
+interface GenerationOptions {
+  /** 追加模式：流式内容拼接到既有消息（停止后继续生成）。 */
+  appendTo?: GenerationAppend
 }
 
 /**
@@ -219,7 +229,7 @@ export function useSessionWorkspace({
     requestComposerFocus()
   }, [requestComposerFocus, stopSessionResponse, updateSessionMessages])
 
-  const generateAIResponse = useCallback(async (conversation: Message[], sessionId = activeSessionIdRef.current) => {
+  const generateAIResponse = useCallback(async (conversation: Message[], sessionId = activeSessionIdRef.current, options: GenerationOptions = {}) => {
     if (!sessionId) return
     if (sessionGenerationsRef.current.has(sessionId)) {
       // Start another response as soon as the current one completes. Read the
@@ -228,10 +238,10 @@ export function useSessionWorkspace({
       pendingGenerationsRef.current.add(sessionId)
       return
     }
-    const responseBaseId = `${Date.now()}-assistant`
+    const responseBaseId = options.appendTo?.messageId ?? `${Date.now()}-assistant`
     let segmentIndex = 0
     let aiMsgId = responseBaseId
-    let accumulated = ''
+    let accumulated = options.appendTo?.seedContent ?? ''
     const controller = new AbortController()
     const generation: SessionGeneration = { controller, responseId: aiMsgId, toolBoundary: false }
     // Mark the session busy before memory lookup so a fast second send is queued.
@@ -259,7 +269,10 @@ export function useSessionWorkspace({
     }))
     const memoryContext = formatMemoryContext(relevantMemories)
     const memoryConversationPolicy = '记忆写入由系统单独分析并反馈。除非相关记忆明确出现在上下文中，否则不要声称已经记住用户信息；像“我叫不上”这类歧义表达应先询问确认，不要直接当作姓名。'
-    const systemPrompt = buildSystemPrompt(config.soulMd, [memoryContext, memoryConversationPolicy].filter(Boolean).join('\n\n'))
+    const continuationPolicy = options.appendTo
+      ? '上一条回复被中断了。请从中断处自然地继续写完剩余内容，不要重复已写部分，不要重新开头。'
+      : ''
+    const systemPrompt = buildSystemPrompt(config.soulMd, [memoryContext, memoryConversationPolicy, continuationPolicy].filter(Boolean).join('\n\n'))
     const history = buildMessages(conversation)
 
     // Buffer rendered content and flush on a cadence instead of re-rendering
@@ -378,7 +391,7 @@ export function useSessionWorkspace({
       return [...previous, {
         id: responseId,
         role: 'assistant',
-        content: '已停止生成。',
+        content: STOPPED_PLACEHOLDER_CONTENT,
         timestamp: Date.now(),
         responseStatus: 'stopped'
       }]
@@ -394,6 +407,22 @@ export function useSessionWorkspace({
     updateSessionMessages(sessionId, () => conversation)
     void generateAIResponse(conversation, sessionId)
   }, [messages, isStreaming, generateAIResponse, updateSessionMessages])
+
+  const editUserMessage = useCallback((messageId: string, newContent: string) => {
+    if (isStreaming) return
+    const conversation = getEditedConversation(messages, messageId, newContent)
+    if (!conversation) return
+    const sessionId = activeSessionIdRef.current
+    updateSessionMessages(sessionId, () => conversation)
+    void generateAIResponse(conversation, sessionId)
+  }, [messages, isStreaming, generateAIResponse, updateSessionMessages])
+
+  const continueAssistantMessage = useCallback((messageId: string) => {
+    if (isStreaming) return
+    const seedContent = getContinuationSeed(messages, messageId)
+    if (seedContent === null) return
+    void generateAIResponse(messages, activeSessionIdRef.current, { appendTo: { messageId, seedContent } })
+  }, [messages, isStreaming, generateAIResponse])
 
   return {
     messages,
@@ -418,6 +447,8 @@ export function useSessionWorkspace({
     exportSession,
     clearCurrentSession,
     handleStopGeneration,
-    retryAssistantMessage
+    retryAssistantMessage,
+    editUserMessage,
+    continueAssistantMessage
   }
 }

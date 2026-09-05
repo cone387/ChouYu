@@ -142,3 +142,25 @@ describe('composer history navigation', () => {
     expect(panelSource).toContain('history={inputHistory}')
   })
 })
+
+describe('message edit and continue generation', () => {
+  it('seeds append-mode generations with the stopped message content', () => {
+    expect(workspaceSource).toContain("options.appendTo?.seedContent ?? ''")
+    expect(workspaceSource).toContain('options.appendTo?.messageId ??')
+    expect(workspaceSource).toContain('appendTo?: GenerationAppend')
+    expect(workspaceSource).toContain('从中断处自然地继续写完剩余内容')
+  })
+
+  it('exposes edit and continue handlers guarded like retry', () => {
+    expect(workspaceSource).toContain('const editUserMessage = useCallback')
+    expect(workspaceSource).toContain('const continueAssistantMessage = useCallback')
+    expect(workspaceSource).toContain('getEditedConversation(messages, messageId, newContent)')
+    expect(workspaceSource).toContain('getContinuationSeed(messages, messageId)')
+    expect(workspaceSource).toContain('editUserMessage,\n    continueAssistantMessage')
+  })
+
+  it('reuses the stopped placeholder constant', () => {
+    expect(workspaceSource).toContain('STOPPED_PLACEHOLDER_CONTENT')
+    expect(workspaceSource).not.toContain("'已停止生成。'")
+  })
+})
