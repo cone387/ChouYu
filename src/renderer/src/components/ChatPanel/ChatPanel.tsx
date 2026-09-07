@@ -362,15 +362,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         }
         return
       }
-      if (showSessions) {
-        toggleSessionSidebar()
-        return
-      }
       onClose()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [confirmClear, memoryReturnTarget, onClose, onPositionChange, onSettingsClose, position, requestComposerFocus, showMemoryWorkspace, showMessageSearch, showSessions, showSettings, toggleSessionSidebar, toolApprovalRequest, visible])
+  }, [confirmClear, memoryReturnTarget, onClose, onPositionChange, onSettingsClose, position, requestComposerFocus, showMemoryWorkspace, showMessageSearch, showSettings, toolApprovalRequest, visible])
 
 
   const pluginCommands = plugins.map((plugin) => ({ cmd: '/' + plugin.command, desc: plugin.description }))

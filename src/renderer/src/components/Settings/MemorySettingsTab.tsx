@@ -61,14 +61,14 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [topicLabel, setTopicLabel] = useState('')
   const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([])
   const [capabilityStatus, setCapabilityStatus] = useState('')
-  const [activeView, setActiveView] = useState<MemoryWorkspaceView>(focusMemoryId ? 'library' : 'overview')
+  const [activeView, setActiveView] = useState<MemoryWorkspaceView>('library')
   const [reviewScope, setReviewScope] = useState<MemoryReviewScope>('pending')
   const workspaceNavRef = useRef<HTMLElement>(null)
   const isRemoteEngine = config.memoryEngineProvider === 'mem0-platform-engine' || config.memoryEngineProvider === 'mem0-self-hosted-engine'
 
   const selectView = useCallback((view: MemoryWorkspaceView) => {
-    if (isRemoteEngine && !['overview', 'connections'].includes(view)) {
-      setActiveView('overview')
+    if (isRemoteEngine && !['overview', 'library', 'connections'].includes(view)) {
+      setActiveView('library')
       return
     }
     setActiveView(view)
@@ -79,7 +79,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   }, [isRemoteEngine, reviewScope])
 
   useEffect(() => {
-    if (isRemoteEngine && !['overview', 'connections'].includes(activeView)) setActiveView('overview')
+    if (isRemoteEngine && !['overview', 'library', 'connections'].includes(activeView)) setActiveView('library')
   }, [activeView, isRemoteEngine])
 
   const handleWorkspaceNavKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -286,7 +286,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     <div className={`settings-pane memory-settings-pane${workspace ? ' memory-workspace-pane' : ''}`}>
       <div className="settings-pane-heading memory-heading">
         <div>
-          <h2>{workspace ? '记忆工作区' : '记忆中心'}</h2>
+          <h2>记忆中心</h2>
           <p>查看、校正并控制 ChouYu 可以长期使用的信息。</p>
         </div>
         {activeView === 'library' && <button type="button" className="memory-add-btn" onClick={() => setShowAdd((value) => !value)}>
@@ -295,6 +295,10 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       </div>
 
       <nav ref={workspaceNavRef} className="memory-workspace-nav" aria-label="记忆工作区">
+        <button type="button" className={activeView === 'library' ? 'active' : ''} aria-current={activeView === 'library' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('library')}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M3 2.5h8.5A1.5 1.5 0 0113 4v9.5H4.5A1.5 1.5 0 013 12z"/><path d="M3 12a1.5 1.5 0 011.5-1.5H13M6 5h4"/></svg>
+          <span>记忆库</span>
+        </button>
         <button type="button" className={activeView === 'overview' ? 'active' : ''} aria-current={activeView === 'overview' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('overview')}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
           <span>总览</span>
@@ -302,10 +306,6 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         {!isRemoteEngine && <button type="button" className={activeView === 'review' ? 'active' : ''} aria-current={activeView === 'review' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('review')}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M8 2.2a5.8 5.8 0 105.8 5.8"/><path d="M8 4.5V8l2.3 1.4"/></svg>
           <span>待处理</span>{stats.pending > 0 && <b>{stats.pending}</b>}
-        </button>}
-        {!isRemoteEngine && <button type="button" className={activeView === 'library' ? 'active' : ''} aria-current={activeView === 'library' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('library')}>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M3 2.5h8.5A1.5 1.5 0 0113 4v9.5H4.5A1.5 1.5 0 013 12z"/><path d="M3 12a1.5 1.5 0 011.5-1.5H13M6 5h4"/></svg>
-          <span>记忆库</span>
         </button>}
         {!isRemoteEngine && <button type="button" className={activeView === 'organize' ? 'active' : ''} aria-current={activeView === 'organize' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('organize')}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M3 4h10M5 8h8M7 12h6"/><circle cx="3" cy="8" r="1"/><circle cx="5" cy="12" r="1"/></svg>
@@ -463,6 +463,12 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       </div>}
 
       {!loading && (activeView === 'review' || activeView === 'library') && <div className={`memory-view memory-library-view${activeView === 'review' ? ' is-review' : ''}`}>
+      {isRemoteEngine && <p role="note">当前展示 ChouYu 已缓存的 Mem0 记忆及数量，不代表远端完整记忆库。</p>}
+      {activeView === 'library' && <div className="memory-status-summary" aria-label="记忆概况">
+        <span>已确认 <strong>{stats.active}</strong></span>
+        <span>待确认 <strong>{stats.pending}</strong></span>
+        <span>已归档 <strong>{stats.archived}</strong></span>
+      </div>}
       {activeView === 'library' && topicMergeMode && <div className="memory-topic-builder memory-topic-builder-library">
         <div><strong>创建人工主题</strong><span>勾选至少两条同类型的已确认记忆。</span></div>
         <input value={topicLabel} maxLength={60} onChange={(event) => setTopicLabel(event.target.value)} placeholder="主题名称" aria-label="人工主题名称" />

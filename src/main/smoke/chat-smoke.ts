@@ -113,6 +113,21 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('.input-textarea') && document.querySelector('table') && document.querySelector('del')")
     await snapshots(window, 'chat')
 
+    const grip = await window.webContents.executeJavaScript(`(() => {
+      const rect = document.querySelector('.composer-resize-handle').getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, height: document.querySelector('.input-textarea').getBoundingClientRect().height };
+    })()`)
+    await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: grip.x, y: grip.y, button: 'left', clickCount: 1 })
+    await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: grip.x, y: grip.y - 64, button: 'left', buttons: 1 })
+    await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: grip.x, y: grip.y - 64, button: 'left', clickCount: 1 })
+    await waitForRenderer(window, `document.querySelector('.input-textarea').getBoundingClientRect().height >= ${grip.height + 60}`)
+    await input(window, '.input-textarea', '调整大小后仍保留草稿')
+    await waitForRenderer(window, `document.querySelector('.input-textarea').getBoundingClientRect().height >= ${grip.height + 60}`)
+    await snapshots(window, 'composer-resized')
+    await window.webContents.executeJavaScript("document.querySelector('.composer-resize-handle').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))")
+    await input(window, '.input-textarea', '')
+    await waitForRenderer(window, "document.querySelector('.input-textarea').getBoundingClientRect().height === 92")
+
     await window.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }))")
     await waitForRenderer(window, "document.activeElement?.getAttribute('aria-label') === '搜索当前对话全文'")
     await input(window, '.message-search input', '海盐拿铁')
@@ -182,18 +197,13 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     }
 
     await click(window, '[aria-label="打开设置"]')
-    await waitForRenderer(window, "document.querySelector('.settings-advanced-toggle')")
-    const hidden = await window.webContents.executeJavaScript("!Array.from(document.querySelectorAll('[data-settings-nav]')).some(button => button.textContent.includes('能力中心'))")
-    if (!hidden) throw new Error('Advanced settings are not collapsed by default')
-    await snapshots(window, 'settings')
-    await click(window, '.settings-advanced-toggle')
     await waitForRenderer(window, "Array.from(document.querySelectorAll('[data-settings-nav]')).some(button => button.textContent.includes('能力中心'))")
+    await snapshots(window, 'settings')
     await click(window, '[aria-label="关闭设置"]')
 
     await click(window, '[aria-label="打开记忆中心"]')
-    await waitForRenderer(window, "document.querySelector('.memory-overview-view')")
-    await snapshots(window, 'memory-overview')
-    await window.webContents.executeJavaScript("Array.from(document.querySelectorAll('.memory-workspace-nav button')).find(button => button.textContent === '记忆库').click()")
+    await waitForRenderer(window, "document.querySelector('.memory-library-view') && document.querySelector('.memory-status-summary')")
+    await snapshots(window, 'memory-home')
     await waitForRenderer(window, "document.querySelector('.memory-add-btn')")
     await click(window, '.memory-add-btn')
     await input(window, '[aria-label="新记忆内容"]', '验收记忆：我喜欢无糖咖啡')
@@ -230,7 +240,10 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await click(window, '.tool-approval-actions .primary')
     await waitForRenderer(window, "!document.querySelector('.tool-approval-dialog')")
     if (JSON.stringify(resolutions) !== '[false,true]') throw new Error('Tool approval choices were not delivered correctly')
-    await click(window, '[aria-label="关闭面板"]')
+    await click(window, '[aria-label="显示对话列表"]')
+    await waitForRenderer(window, "document.querySelector('[aria-label=隐藏对话列表]')")
+    await window.webContents.executeJavaScript("document.querySelector('.conversation-search input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
+    await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     console.log('CHOUYU_CHAT_SMOKE_PASSED markdown, full-text search, streaming scroll, settings, memory CRUD, approval keyboard')
   } catch (error) {
     console.error('CHOUYU_CHAT_UI_STATE', await window.webContents.executeJavaScript(`JSON.stringify({

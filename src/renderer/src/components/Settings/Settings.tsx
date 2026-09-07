@@ -74,7 +74,6 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showKey, setShowKey] = useState(false)
   const [activeNav, setActiveNav] = useState<string>(initialNav || 'ai')
-  const [showAdvanced, setShowAdvanced] = useState(Boolean(initialNav === 'capabilities' || initialNav?.startsWith('plugin-')))
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [appVersion, setAppVersion] = useState<string>('')
   const [updateStatus, setUpdateStatus] = useState<string>('')
@@ -172,13 +171,12 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   ]
   const filteredNavItems = useMemo(() => {
     const query = navQuery.trim().toLocaleLowerCase()
-    if (!query) return allNavItems.filter((item) => showAdvanced || (item.key !== 'capabilities' && !item.key.startsWith('plugin-')))
+    if (!query) return allNavItems
     return allNavItems.filter((item) => item.label.toLocaleLowerCase().includes(query))
-  }, [allNavItems, navQuery, showAdvanced])
+  }, [allNavItems, navQuery])
   const settingsResults = useMemo(() => searchSettings(navQuery), [navQuery])
 
   const handleSearchResultSelect = useCallback((entry: SettingsSearchEntry) => {
-    if (entry.nav === 'capabilities' || entry.nav.startsWith('plugin-')) setShowAdvanced(true)
     if (entry.nav === 'memory' && onOpenMemoryWorkspace) {
       onOpenMemoryWorkspace()
       return
@@ -349,10 +347,6 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               <span>{item.label}</span>
             </button>
           ))}
-          {!navQuery.trim() && <button type="button" className="settings-advanced-toggle" aria-expanded={showAdvanced} onClick={() => {
-            setShowAdvanced(!showAdvanced)
-            if (showAdvanced && (activeNav === 'capabilities' || activeNav.startsWith('plugin-'))) setActiveNav('ai')
-          }}>{showAdvanced ? '收起高级设置' : '高级设置 · 能力与插件'}</button>}
           {filteredNavItems.length === 0 && !navQuery.trim() && <span className="settings-nav-empty">没有匹配项</span>}
         </nav>
 

@@ -1,4 +1,5 @@
 .chat-panel {
+  --chat-section-border: color-mix(in srgb, var(--text-primary) 14%, transparent);
   position: absolute;
   width: min(420px, calc(100vw - 16px));
   min-height: min(280px, calc(100vh - 8px));
@@ -476,11 +477,23 @@
   padding: 0;
   position: relative;
   flex-shrink: 0;
-  background: var(--input-bg);
+  background: transparent;
   border: none;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--chat-section-border);
   border-radius: 0 0 var(--radius-xl) var(--radius-xl);
   overflow: visible;
+}
+
+.composer-resize-handle {
+  position: absolute;
+  top: -7px;
+  left: 12px;
+  right: 12px;
+  height: 14px;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 2;
 }
 
 .context-limit-notice {

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import CommandMenu, { getFilteredCommands } from './CommandMenu'
+import { useComposerResize } from './useComposerResize'
 import ModelPicker from '../ModelPicker/ModelPicker'
 import WindowCapturePicker, { CaptureAction } from '../WindowCapturePicker/WindowCapturePicker'
 import { PluginInfo } from '../../shared/types'
@@ -81,16 +82,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
     return document.activeElement === textarea
   }, [])
 
-  const resizeTextarea = useCallback(() => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-    textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`
-  }, [])
-
-  useEffect(() => {
-    resizeTextarea()
-  }, [value, resizeTextarea])
+  const composerResize = useComposerResize(textareaRef, value)
 
   useEffect(() => {
     if (autoFocus === false || disabled || initialFocusDoneRef.current) return
@@ -514,6 +506,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
 
   return (
     <div className="input-area">
+      <div {...composerResize} />
       {showCommands && (
         <CommandMenu
           filter={value}

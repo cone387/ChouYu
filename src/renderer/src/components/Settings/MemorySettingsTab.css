@@ -425,3 +425,16 @@
 .memory-settings-pane .memory-cluster-summary strong {
   font-size: 13px !important;
 }
+.memory-status-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  padding: var(--space-4) 0;
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+}
+
+.memory-status-summary strong {
+  margin-left: var(--space-2);
+  color: var(--text-primary);
+}
