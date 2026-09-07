@@ -2,6 +2,12 @@
 
 日期：2026-09-07
 
+## 本轮界面与总结参考（第二次迭代）
+
+再次检查 Windows 的 `ui/timeline_view.py`、`core/llm_provider.py`，以及 Mac 的 `Views/Components/DaySummaryView.swift`、`Views/UI/MainView/Layout+TimelineHeader.swift`。采用“日期导航、事项卡片、当天概览、原始依据”的内容层次，收起原版大篇幅介绍；宽窗口显示右侧概览，窄窗口按阅读顺序排列。
+
+分析侧借鉴相关活动归并和具体对象优先的原则：重复窗口信息先归组，保留每次来源；分别标记进展、决定和待解决问题。没有复制第三方代码或提示词。未采用 Windows 示例的生产力评分，标题采样不足以支持这类评价。实现与实测边界见 [工作日志说明](work-journal.md)。
+
 范围：静态阅读本机 `D:/codespace/Dayflow-mac` 与 `D:/codespace/Dayflow-windows`，未安装依赖、运行录制、发送屏幕数据或进行性能测试。以下实现事实对应本机快照，不代表上游最新版本；方案尚未实现。
 
 ## 源码中确认的设计

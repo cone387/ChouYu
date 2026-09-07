@@ -26,9 +26,10 @@ interface RequestGuard {
   signal: AbortSignal
   didTimeout: () => boolean
   cleanup: () => void
+  timeoutMs: number
 }
 
-function createRequestGuard(externalSignal?: AbortSignal): RequestGuard {
+function createRequestGuard(externalSignal?: AbortSignal, timeoutMs = REQUEST_TIMEOUT_MS): RequestGuard {
   const controller = new AbortController()
   let timedOut = false
   const abortFromCaller = () => controller.abort(externalSignal?.reason)
@@ -39,10 +40,11 @@ function createRequestGuard(externalSignal?: AbortSignal): RequestGuard {
   const timer = setTimeout(() => {
     timedOut = true
     controller.abort()
-  }, REQUEST_TIMEOUT_MS)
+  }, timeoutMs)
 
   return {
     signal: controller.signal,
+    timeoutMs,
     didTimeout: () => timedOut,
     cleanup: () => {
       clearTimeout(timer)
@@ -53,7 +55,7 @@ function createRequestGuard(externalSignal?: AbortSignal): RequestGuard {
 
 function rethrowRequestError(error: unknown, guard: RequestGuard): never {
   if (guard.didTimeout()) {
-    throw new Error('请求超过 60 秒未完成，请检查网络后重试。')
+    throw new Error(`请求超过 ${Math.round(guard.timeoutMs / 1000)} 秒未完成，请检查网络后重试。`)
   }
   throw error
 }
@@ -235,7 +237,8 @@ export async function streamAIChat(
   config: AppConfig,
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
-  toolRuntime?: AIToolRuntime
+  toolRuntime?: AIToolRuntime,
+  options: { timeoutMs?: number } = {}
 ): Promise<void> {
   if (!config.baseUrl.trim()) {
     throw new Error('尚未配置 Base URL，请先打开设置完成配置。')
@@ -249,9 +252,9 @@ export async function streamAIChat(
 
   console.log(`[AI] provider=${config.provider} model=${config.model} baseUrl=${config.baseUrl}`)
   if (config.provider === 'claude') {
-    await streamClaude(messages, systemPrompt, config, onChunk, signal, toolRuntime)
+    await streamClaude(messages, systemPrompt, config, onChunk, signal, toolRuntime, options)
   } else {
-    await streamOpenAI(messages, systemPrompt, config, onChunk, signal, toolRuntime)
+    await streamOpenAI(messages, systemPrompt, config, onChunk, signal, toolRuntime, options)
   }
 }
 
@@ -273,7 +276,8 @@ async function streamOpenAI(
   config: AppConfig,
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
-  toolRuntime?: AIToolRuntime
+  toolRuntime?: AIToolRuntime,
+  options: { timeoutMs?: number } = {}
 ): Promise<void> {
   const apiMessages: Array<Record<string, unknown>> = [
     { role: 'system', content: systemPrompt },
@@ -285,7 +289,7 @@ async function streamOpenAI(
   }))
 
   for (let round = 0; round < 4; round++) {
-    const result = await streamOpenAIRound(apiMessages, config, onChunk, signal, tools)
+    const result = await streamOpenAIRound(apiMessages, config, onChunk, signal, tools, options)
     if (result.toolCalls.length === 0 || !toolRuntime) {
       onChunk('', true)
       return
@@ -337,9 +341,10 @@ async function streamOpenAIRound(
   config: AppConfig,
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
-  tools?: Array<Record<string, unknown>>
+  tools?: Array<Record<string, unknown>>,
+  options: { timeoutMs?: number } = {}
 ): Promise<{ text: string; toolCalls: AIToolCall[] }> {
-  const guard = createRequestGuard(signal)
+  const guard = createRequestGuard(signal, Math.min(180_000, Math.max(1000, options.timeoutMs ?? REQUEST_TIMEOUT_MS)))
   try {
     const requestBody: Record<string, unknown> = { model: config.model, messages: apiMessages, stream: true }
     if (tools?.length) {
@@ -417,7 +422,8 @@ async function streamClaude(
   config: AppConfig,
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
-  toolRuntime?: AIToolRuntime
+  toolRuntime?: AIToolRuntime,
+  options: { timeoutMs?: number } = {}
 ): Promise<void> {
   const apiMessages: Array<Record<string, unknown>> = messages
     .filter((message) => message.role === 'user' || message.role === 'assistant')
@@ -432,7 +438,7 @@ async function streamClaude(
   }))
 
   for (let round = 0; round < 4; round++) {
-    const result = await streamClaudeRound(apiMessages, systemPrompt, config, onChunk, signal, tools)
+    const result = await streamClaudeRound(apiMessages, systemPrompt, config, onChunk, signal, tools, options)
     if (result.toolCalls.length === 0 || !toolRuntime) {
       onChunk('', true)
       return
@@ -494,9 +500,10 @@ async function streamClaudeRound(
   config: AppConfig,
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
-  tools?: Array<Record<string, unknown>>
+  tools?: Array<Record<string, unknown>>,
+  options: { timeoutMs?: number } = {}
 ): Promise<{ text: string; toolCalls: AIToolCall[] }> {
-  const guard = createRequestGuard(signal)
+  const guard = createRequestGuard(signal, Math.min(180_000, Math.max(1000, options.timeoutMs ?? REQUEST_TIMEOUT_MS)))
   try {
     const requestBody: Record<string, unknown> = {
       model: config.model,

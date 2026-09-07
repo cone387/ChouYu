@@ -7,6 +7,8 @@ import type { JournalPage } from '../../shared/journal'
 import { ActivityHelper } from '../journal/activity-helper'
 import { captureJournalWindow } from '../journal/capture'
 import { JournalOcr } from '../journal/ocr'
+import { createServer } from 'http'
+import { getConfig, saveConfig } from '../database'
 
 /** Only synthetic activity in the isolated smoke profile; never enables collection. */
 export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
@@ -24,7 +26,28 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     worker.postMessage({ id: requestId, method, payload })
   })
   let journal: BrowserWindow | undefined
+  const originalConfig = getConfig()
+  let requests = 0
+  let sourceId = ''
+  const server = createServer((req, res) => {
+    let body = ''
+    req.on('data', chunk => { body += chunk })
+    req.on('end', () => {
+      try {
+        const input = JSON.parse(JSON.parse(body).messages.at(-1).content)
+        if (!Array.isArray(input.evidence) || body.includes('data:image/')) throw new Error('Unexpected journal model input')
+        requests++
+        const content = input.question ? { text: '可以回到工作日志原型，继续检查搜索与来源回看。', sourceIds: [sourceId] } : { items: [{ title: '工作日志原型：搜索与来源回看', kind: 'activity', text: '查看工作日志原型和 Dayflow 设计，记录中保留了搜索文字与窗口画面。', nextStep: '回到原型检查搜索结果是否能打开对应画面。', sourceIds: [sourceId] }] }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(content) } }] })}\n\ndata: [DONE]\n\n`)
+      } catch { res.writeHead(400); res.end() }
+    })
+  })
   try {
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Journal smoke provider unavailable')
+    saveConfig({ provider: 'openai', model: 'journal-smoke', apiKey: 'synthetic', baseUrl: `http://127.0.0.1:${address.port}/v1` })
     const now = Date.now(); const start = new Date(); start.setHours(0, 0, 0, 0)
     const from = start.getTime(); const end = new Date(start); end.setDate(end.getDate() + 1)
     const to = end.getTime()
@@ -64,6 +87,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     const picture = fixture ? nativeImage.createFromPath(fixture) : nativeImage.createFromBuffer(captured.bytes)
     const imagePayload = { activityId, at, ...picture.getSize(), bytes: picture.toJPEG(90) }
     const saved = await request('capture', imagePayload)
+    sourceId = `capture:${saved.id}`
     if ((await request('capture', imagePayload)).id !== saved.id) throw new Error('Journal frame deduplication failed')
     const job = await request('ocrJob', saved.id)
     let recognized = '合成 OCR 证据：工作日志搜索 100%'
@@ -89,9 +113,23 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await journal.webContents.executeJavaScript("document.querySelector('dialog header button').click()")
     await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[2].click()")
     await waitForRenderer(journal, "document.querySelector('.journal-summary-items li')")
+    await journal.webContents.executeJavaScript("document.querySelector('.journal-summary-intro button').click()")
+    await waitForRenderer(journal, "document.querySelector('.journal-summary-items h3') && document.querySelector('.journal-next-step')")
+    if (!(await request('summary', { from, to })).coverage.ocrSources) throw new Error('Summary coverage was not persisted')
+    const overview = await request('overview', { from, to })
+    if (overview.activityCount !== 2 || overview.captureCount !== 1 || overview.ocrReady !== 1) throw new Error('Journal day overview was incorrect')
     await journal.webContents.executeJavaScript("document.querySelector('.journal-source-links button').click()")
     await waitForRenderer(journal, "document.querySelector('dialog[open] img')")
     await journal.webContents.executeJavaScript("document.querySelector('dialog header button').click()")
+    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[3].click()")
+    await waitForRenderer(journal, "document.querySelector('.journal-question-examples button')")
+    await journal.webContents.executeJavaScript("document.querySelector('.journal-question-examples button').click()")
+    await waitForRenderer(journal, "document.querySelector('.journal-ask textarea').value.length > 0")
+    await journal.webContents.executeJavaScript("document.querySelector('.journal-ask form button').click()")
+    await waitForRenderer(journal, "document.querySelector('.journal-answer .journal-source-links button')")
+    if (requests !== 2) throw new Error('Journal did not use configured provider for summary and question')
+    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[2].click()")
+    await waitForRenderer(journal, "document.querySelector('.journal-summary-items h3')")
     const directory = process.env.CHOUYU_SMOKE_ARTIFACTS
     if (directory) {
       mkdirSync(directory, { recursive: true })
@@ -138,12 +176,18 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     for (let index = 0; index < 101; index++) await request('sample', { app: 'editor.exe', title: `分页样例 ${index}`, at: from + index * 1000 })
     const secondPage = await request('list', { from, to, offset: 100 })
     if (secondPage.total !== 101 || secondPage.items.length !== 1) throw new Error('Journal pagination failed')
+    for (let index = 101; index < 450; index++) await request('sample', { app: 'editor.exe', title: `sample ${index}`, at: from + index * 1000 })
+    const sampled = await request('summaryInput', { from, to })
+    if (!sampled.truncated || sampled.available !== 450 || sampled.sources[0].at !== from || sampled.sources.at(-1).at !== from + 449000) throw new Error('Journal sampling lost a day boundary')
     await request('deleteRange', { from, to })
     // A fresh connection must read disabled state and deleted records.
     const final = await journal.webContents.executeJavaScript('window.electronAPI.journal.status()')
     if (final.config.enabled || final.lastCapturedAt !== null) throw new Error('Smoke accidentally enabled journal collection')
     console.log('CHOUYU_JOURNAL_SMOKE_PASSED opt-in, native helper, SQLite worker, interval merge, Chinese search, pagination, native capture, frame dedup, OCR search, image and summary UI, cascading deletion')
   } finally {
+    saveConfig(originalConfig)
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
     journal?.destroy()
     await request('close').catch(() => {})
     await worker.terminate()

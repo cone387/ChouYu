@@ -4,7 +4,8 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlink
 import { join } from 'path'
 import { randomUUID, createHash } from 'crypto'
 import { DEFAULT_JOURNAL_CONFIG, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
-import type { JournalActivity, JournalConfig, JournalCapture, JournalEvidence } from '../../shared/journal'
+import type { JournalActivity, JournalConfig } from '../../shared/journal'
+import { readJournalDay, readJournalEvidence } from './evidence'
 
 mkdirSync(workerData.directory, { recursive: true })
 const db = new Database(join(workerData.directory, 'journal.db'))
@@ -168,16 +169,15 @@ parentPort!.on('message', ({ id, method, payload }) => {
       case 'retryOcr': {
         mediaName(payload); db.prepare("UPDATE captures SET ocrStatus='pending',ocrError='' WHERE id=? AND ocrStatus='failed'").run(payload); break
       }
+      case 'overview': {
+        prune(settings().retentionDays)
+        const { from, to } = validateJournalQuery(payload)
+        result = readJournalDay(db, from, to); break
+      }
       case 'summaryInput': {
         prune(settings().retentionDays)
         const { from, to } = validateJournalQuery(payload)
-        const activities = db.prepare('SELECT * FROM activities WHERE endedAt >= ? AND startedAt < ? ORDER BY startedAt DESC LIMIT 201').all(from, to) as JournalActivity[]
-        const captures = db.prepare('SELECT * FROM captures WHERE capturedAt >= ? AND capturedAt < ? ORDER BY capturedAt DESC LIMIT 101').all(from, to) as JournalCapture[]
-        const sources: JournalEvidence[] = [
-          ...activities.slice(0, 200).map(item => ({ id: `activity:${item.id}`, at: Math.max(from, item.startedAt), app: item.app, title: item.title, text: `观察时段 ${new Date(Math.max(from, item.startedAt)).toISOString()} 至 ${new Date(Math.min(to, item.endedAt)).toISOString()}` })),
-          ...captures.slice(0, 100).map(item => ({ id: `capture:${item.id}`, at: item.capturedAt, app: item.app, title: item.title, text: item.ocrText.slice(0, 3000) }))
-        ].sort((a, b) => a.at - b.at)
-        result = { sources, truncated: activities.length > 200 || captures.length > 100 || captures.some(item => item.ocrText.length > 3000), generation }; break
+        result = { ...readJournalEvidence(db, from, to, payload.query || ''), generation }; break
       }
       case 'summarySave': {
         if (payload.generation !== generation) throw new Error('来源已删除或过期，请重新生成总结。')

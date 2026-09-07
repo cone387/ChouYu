@@ -1,4 +1,4 @@
-// Explicit opt-in integration evaluation. Reads connection configuration only; never loads chat history into the evaluator.
+// Explicit opt-in evaluation. --journal-local additionally reads local journal evidence, never chat history.
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -50,10 +50,12 @@ async function evaluate() {
     if (!config.apiKey || !config.baseUrl || !config.model) throw new Error('Incomplete provider configuration')
     stage = 'load-extractor'
     if (process.argv.includes('--journal')) {
-      const { runJournalAcceptance } = require(bundle)
+      const { runJournalAcceptance, runJournalLocalAcceptance } = require(bundle)
       const originalLog = console.log
       let result
-      try { console.log = () => {}; result = await runJournalAcceptance(config) } finally { console.log = originalLog }
+      const localIndex = process.argv.indexOf('--journal-local')
+      if (localIndex >= 0 && (!process.argv[localIndex + 1] || !path.resolve(reportFile).startsWith(path.join(root, 'temp') + path.sep))) throw new Error('Local journal evaluation requires a private report under temp/')
+      try { console.log = () => {}; result = localIndex >= 0 ? await runJournalLocalAcceptance(config, path.resolve(process.argv[localIndex + 1])) : await runJournalAcceptance(config) } finally { console.log = originalLog }
       fs.mkdirSync(path.dirname(reportFile), { recursive: true })
       fs.writeFileSync(reportFile, JSON.stringify({ timestamp: new Date().toISOString(), ...result }, null, 2) + '\n')
       console.log(`Journal model check: ${result.passed ? 'PASS' : 'FAIL'}, model=${result.model}`)

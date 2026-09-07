@@ -2,7 +2,9 @@ import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_JOURNAL_CONFIG } from '../../shared/journal'
 
-const mock = vi.hoisted(() => ({ read: vi.fn(), stop: vi.fn(), idle: vi.fn(), capture: vi.fn(), ocr: vi.fn(), worker: null as any, config: null as any, writes: [] as any[] }))
+const mock = vi.hoisted(() => ({ read: vi.fn(), stop: vi.fn(), idle: vi.fn(), capture: vi.fn(), ocr: vi.fn(), summarize: vi.fn(), answer: vi.fn(), worker: null as any, config: null as any, writes: [] as any[] }))
+vi.mock('./summary', () => ({ generateJournalSummary: mock.summarize, answerJournalQuestion: mock.answer }))
+vi.mock('../database', () => ({ getConfig: () => ({ model: 'test' }) }))
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('events')
   return { app: { getPath: () => 'test-only' }, powerMonitor: Object.assign(new EventEmitter(), { getSystemIdleTime: mock.idle }) }
@@ -15,7 +17,7 @@ vi.mock('worker_threads', () => ({ Worker: class extends EventEmitter {
   postMessage({ id, method, payload }: any) {
     mock.writes.push({ method, payload })
     if (method === 'configure') mock.config = payload
-    queueMicrotask(() => this.emit('message', { id, result: method === 'config' || method === 'configure' ? mock.config : method === 'sample' ? 1 : method === 'ocrJob' ? { id: payload, path: 'synthetic-only.jpg' } : null }))
+    queueMicrotask(() => this.emit('message', { id, result: method === 'config' || method === 'configure' ? mock.config : method === 'sample' ? 1 : method === 'ocrJob' ? { id: payload, path: 'synthetic-only.jpg' } : method === 'summaryInput' ? { sources: [], truncated: false, generation: 0 } : null }))
   }
   terminate = vi.fn(async () => 0)
 } }))
@@ -28,7 +30,7 @@ describe('journal recording lifecycle', () => {
     vi.useFakeTimers(); mock.writes = []; mock.config = { ...DEFAULT_JOURNAL_CONFIG }
     mock.read.mockReset(); mock.stop.mockReset(); mock.idle.mockReturnValue(0)
     mock.read.mockResolvedValue({ app: 'editor.exe', title: '合成工作记录', pid: 123456, hwnd: '100' })
-    mock.capture.mockReset(); mock.ocr.mockReset()
+    mock.capture.mockReset(); mock.ocr.mockReset(); mock.summarize.mockReset(); mock.answer.mockReset()
     mock.capture.mockResolvedValue({ bytes: Buffer.from('fake'), width: 100, height: 100 })
     service = new JournalService(); await service.ready
   })
@@ -37,6 +39,29 @@ describe('journal recording lifecycle', () => {
     await vi.advanceTimersByTimeAsync(20_000)
     expect(mock.read).not.toHaveBeenCalled()
     expect(service.status().state).toBe('off')
+  })
+  it('cancels a model summary without changing recording settings or saving a late result', async () => {
+    let signal: AbortSignal | undefined
+    let finish!: (result: any) => void
+    mock.summarize.mockImplementation((_input, _config, received) => { signal = received; return new Promise(resolve => { finish = resolve }) })
+    const pending = service.summarize({ from: 1, to: 100 }).catch(error => error)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mock.summarize).toHaveBeenCalledOnce()
+    service.cancelAnalysis()
+    expect(signal?.aborted).toBe(true)
+    finish({ items: [] })
+    expect((await pending).message).toContain('取消')
+    expect(mock.writes.some(item => item.method === 'summarySave')).toBe(false)
+    expect(service.status().config.enabled).toBe(false)
+  })
+  it('rejects a journal answer that finishes after deleting its sources', async () => {
+    let finish!: (result: any) => void
+    mock.answer.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const pending = service.ask({ from: 1, to: 100, question: '在哪？' }).catch(error => error)
+    await vi.advanceTimersByTimeAsync(0)
+    await service.deleteRange({ from: 1, to: 100 })
+    finish({ text: 'late', sourceIds: [] })
+    expect((await pending).message).toContain('取消')
   })
   it('discards activity arriving after a pause', async () => {
     let finish!: (value: any) => void

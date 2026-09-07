@@ -4,9 +4,9 @@ import { join } from 'path'
 import { ActivityHelper } from './activity-helper'
 import { captureJournalWindow } from './capture'
 import { JournalOcr } from './ocr'
-import { generateJournalSummary } from './summary'
+import { answerJournalQuestion, generateJournalSummary } from './summary'
 import { DEFAULT_JOURNAL_CONFIG, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
-import type { JournalCapturePage, JournalConfig, JournalPage, JournalQuery, JournalStatus, JournalEvidence, JournalSummary } from '../../shared/journal'
+import type { JournalAnswer, JournalDay, JournalCapturePage, JournalConfig, JournalPage, JournalQuery, JournalStatus, JournalEvidence, JournalSummary } from '../../shared/journal'
 
 export class JournalService {
   private worker: Worker
@@ -31,6 +31,7 @@ export class JournalService {
   private ocrBusy = false
   private ocrTimer?: ReturnType<typeof setTimeout>
   private summaryController?: AbortController
+  private analysisKind: 'summary' | 'question' = 'summary'
   readonly ready: Promise<void>
   private lock = () => { this.locked = true; this.restart() }
   private unlock = () => { this.locked = false; this.restart() }
@@ -71,7 +72,7 @@ export class JournalService {
   }
 
   status(): JournalStatus {
-    return { config: { ...this.config, excludedApps: [...this.config.excludedApps] }, supported: process.platform === 'win32', state: this.state, lastCapturedAt: this.lastCapturedAt, error: this.error, captureError: this.captureError }
+    return { config: { ...this.config, excludedApps: [...this.config.excludedApps] }, supported: process.platform === 'win32', state: this.state, lastCapturedAt: this.lastCapturedAt, error: this.error, captureError: this.captureError, analysis: this.summaryController ? this.analysisKind : null }
   }
 
   private stopSampling(): void {
@@ -162,6 +163,27 @@ export class JournalService {
   async captures(query: JournalQuery): Promise<JournalCapturePage> { await this.ready; return this.request('captures', validateJournalQuery(query)) }
   async image(id: string): Promise<string> { await this.ready; return this.request('image', id) }
   async summary(range: { from: number; to: number }): Promise<JournalSummary | null> { await this.ready; return this.request('summary', validateJournalQuery(range)) }
+  async overview(range: { from: number; to: number }): Promise<JournalDay> { await this.ready; return this.request('overview', validateJournalQuery(range)) }
+  cancelAnalysis(): void { this.summaryController?.abort() }
+
+  async ask(input: { from: number; to: number; question: string }): Promise<JournalAnswer> {
+    await this.ready
+    const query = validateJournalQuery(input)
+    if (typeof input.question !== 'string' || !input.question.trim() || input.question.length > 1000) throw new Error('请输入 1 至 1000 字的问题。')
+    if (this.summaryController) throw new Error('已有日志分析正在进行，请稍后再试。')
+    const controller = new AbortController(); this.summaryController = controller
+    this.analysisKind = 'question'
+    const epoch = this.epoch
+    try {
+      const evidence = await this.request<{ sources: JournalEvidence[]; truncated: boolean }>('summaryInput', query)
+      if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，回答已取消。')
+      const { getConfig } = await import('../database')
+      const answer = await answerJournalQuestion({ ...evidence, from: query.from, to: query.to }, input.question.trim(), getConfig(), controller.signal)
+      if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，回答已取消。')
+      return answer
+    } catch (error) { if (controller.signal.aborted) throw new Error('日志分析已取消。'); throw error }
+    finally { if (this.summaryController === controller) this.summaryController = undefined }
+  }
 
   private scheduleOcr(): void { this.ocrTimer = setTimeout(() => void this.processOcr(), 2000) }
   private async processOcr(): Promise<void> {
@@ -203,6 +225,7 @@ export class JournalService {
     const query = validateJournalQuery(range)
     if (this.summaryController) throw new Error('已有日志总结正在生成。')
     const controller = new AbortController(); this.summaryController = controller
+    this.analysisKind = 'summary'
     const epoch = this.epoch
     try {
       const input = await this.request<{ sources: JournalEvidence[]; truncated: boolean; generation: number }>('summaryInput', query)
@@ -211,7 +234,8 @@ export class JournalService {
       const summary = await generateJournalSummary({ ...input, from: query.from, to: query.to }, getConfig(), controller.signal)
       if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，总结已取消。')
       return await this.request('summarySave', { summary, generation: input.generation })
-    } finally { if (this.summaryController === controller) this.summaryController = undefined }
+    } catch (error) { if (controller.signal.aborted) throw new Error('日志分析已取消。'); throw error }
+    finally { if (this.summaryController === controller) this.summaryController = undefined }
   }
 
   deleteRange(range: { from: number; to: number }): Promise<void> {

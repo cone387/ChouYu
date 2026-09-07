@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { JournalCapture, JournalCapturePage, JournalSummary } from '../../../../shared/journal'
+import type { JournalAnswer, JournalCapture, JournalCapturePage, JournalSummary } from '../../../../shared/journal'
 
 export function journalRange(date: string) {
   const start = new Date(`${date}T00:00:00`); const end = new Date(start); end.setDate(end.getDate() + 1)
@@ -70,11 +70,12 @@ export function JournalCaptures({ date, query, revision }: { date: string; query
   </div>
 }
 
-export function JournalSummaryView({ date, revision }: { date: string; revision: number }) {
+export function JournalSummaryView({ date, revision, onGenerated }: { date: string; revision: number; onGenerated?(): void }) {
   const [summary, setSummary] = useState<JournalSummary | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [image, setImage] = useState('')
+  const [copied, setCopied] = useState(false)
   const generation = useRef(0)
   useEffect(() => { generation.current++; setSummary(null); setImage(''); setError('') }, [date])
   useEffect(() => {
@@ -85,21 +86,56 @@ export function JournalSummaryView({ date, revision }: { date: string; revision:
     return () => { active = false }
   }, [date, revision, busy])
   const generate = async () => {
-    setBusy(true); setError(''); const current = generation.current
-    try { const result = await window.electronAPI.journal.summarize(journalRange(date)); if (generation.current === current) setSummary(result) }
+    setBusy(true); setError(''); setCopied(false); const current = generation.current
+    try { const result = await window.electronAPI.journal.summarize(journalRange(date)); if (generation.current === current) { setSummary(result); onGenerated?.() } }
     catch (reason) { if (generation.current === current) setError(String(reason)) }
     finally { setBusy(false) }
   }
   return <section className="journal-ai-summary">
-    <div className="journal-summary-intro"><div><h2>{date} 的工作日志</h2><p>使用当前聊天模型整理当天的活动与识别文字。点击生成会将这些文字发送至你配置的 AI 服务，不发送截图。</p></div><button className="journal-primary" disabled={busy} onClick={() => void generate()}>{busy ? '正在整理…' : summary ? '重新生成' : '生成日志总结'}</button></div>
+    <div className="journal-summary-intro"><div><h2>这一天，推进了哪些事</h2><p>按事项整理具体进展与继续入口。生成时向当前 AI 服务发送当天标题和识别文字，不发送截图。</p></div><button className="journal-primary" disabled={busy} onClick={() => void generate()}>{busy ? '正在整理事项…' : summary ? '重新生成' : '整理这一天'}</button></div>
     {error && <p className="journal-error" role="alert">{error}</p>}
-    {summary ? <><p>{summary.model} · 生成于 {new Date(summary.createdAt).toLocaleString()} · 基于采样记录，内容可追溯但不代表完整工时或成果。{summary.truncated && '记录较多，本次只分析了部分内容。'}</p>
-      <ol className="journal-summary-items">{summary.items.map((item, index) => <li key={index}><p>{item.text}</p><div className="journal-source-links">{item.sourceIds.map(id => {
+    {busy && <p role="status">正在归并事项，最长等待 2 分钟。<button onClick={() => void window.electronAPI.journal.cancelAnalysis().catch(reason => setError(String(reason)))}>取消生成</button></p>}
+    {summary ? <><div className="journal-summary-meta"><p>{summary.model} · {new Date(summary.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 生成</p><button onClick={() => { void navigator.clipboard.writeText(summary.items.map(item => `${item.title || '活动'}\n${item.text}${item.nextStep ? `\n建议继续：${item.nextStep}` : ''}`).join('\n\n')).then(() => setCopied(true)).catch(() => setError('复制失败，请选择文字手动复制。')) }}>{copied ? '已复制' : '复制日志'}</button></div>
+      {summary.version !== 2 && <p className="journal-coverage">这是旧版总结，重新生成后可按事项查看具体线索。</p>}
+      {summary.coverage && <p className="journal-coverage">分析了 {summary.coverage.analyzed} / {summary.coverage.available} 条来源 · {summary.coverage.ocrSources} 条含正文。{!summary.coverage.ocrSources && '仅有标题线索，无法确认具体修改与完成结果。'}{summary.truncated && '记录已抽样，可能遗漏部分事项。'}</p>}
+      <ol className="journal-summary-items">{summary.items.map((item, index) => <li key={index} data-kind={item.kind || 'activity'}>
+        <div className="journal-task-heading"><span className="journal-task-kind">{{ activity: '活动线索', progress: '具体进展', blocker: '待解决', decision: '决定' }[item.kind || 'activity']}</span><span>{(() => { const cited = summary.sources.filter(source => item.sourceIds.includes(source.id)); return cited.length ? `${clock(Math.min(...cited.map(source => source.at)))} — ${clock(Math.max(...cited.map(source => source.endedAt ?? source.at)))}` : '' })()}</span></div>
+        {item.title && <h3>{item.title}</h3>}<p>{item.text}</p>{item.nextStep && <div className="journal-next-step"><strong>建议继续</strong><p>{item.nextStep}</p></div>}<div className="journal-source-links">{item.sourceIds.map(id => {
         const source = summary.sources.find(value => value.id === id)
         return source ? <button key={id} onClick={() => { if (id.startsWith('capture:')) setImage(id.slice(8)); else { const element = document.getElementById(`source-${id}`); const details = element?.closest('details'); if (details) details.open = true; element?.scrollIntoView({ block: 'center' }) } }}>{clock(source.at)} · {id.startsWith('capture:') ? '查看画面' : '活动依据'}</button> : null
       })}</div></li>)}</ol>
       <details className="journal-summary-sources"><summary>查看全部引用依据（{summary.sources.length} 条）</summary>{summary.sources.map(source => <article id={`source-${source.id}`} key={source.id}><strong>{clock(source.at)} · {source.app} · {source.title}</strong><pre>{source.text || '此画面尚无识别文字'}</pre></article>)}</details>
     </> : !busy && <div className="journal-empty"><h2>从活动线索整理一天</h2><p>先积累一些记录，再生成带来源的工作日志。已有结果会保存在本机。</p></div>}
+    {image && <CaptureDetail id={image} onClose={() => setImage('')} />}
+  </section>
+}
+
+export function JournalAsk({ date }: { date: string }) {
+  const [question, setQuestion] = useState('')
+  const [answer, setAnswer] = useState<JournalAnswer | null>(null)
+  const [asked, setAsked] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [image, setImage] = useState('')
+  const alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+  const ask = async () => {
+    if (busy || !question.trim()) return
+    setBusy(true); setError(''); setAnswer(null); setAsked(question.trim())
+    try { const result = await window.electronAPI.journal.ask({ ...journalRange(date), question: question.trim() }); if (alive.current) setAnswer(result) }
+    catch (reason) { if (alive.current) setError(String(reason)) }
+    finally { if (alive.current) setBusy(false) }
+  }
+  return <section className="journal-ask">
+    <h2>从这一天的记录里找答案</h2><p>只分析 {date} 的活动和识别文字。提问会将问题及这些文字发送至当前 AI 服务，回答附来源。</p>
+    <div className="journal-question-examples">{['有哪些具体文档或报告可以接着看？', '今天遇到了哪些报错？', '有哪些事情还需要确认结果？'].map(value => <button key={value} disabled={busy} onClick={() => setQuestion(value)}>{value}</button>)}</div>
+    <form onSubmit={event => { event.preventDefault(); void ask() }}><label htmlFor="journal-question">想找回什么</label><textarea id="journal-question" value={question} maxLength={1000} rows={3} placeholder="例如：下午看的评测报告叫什么？" onChange={event => setQuestion(event.target.value)} /><button className="journal-primary" disabled={busy || !question.trim()}>{busy ? '正在查找依据…' : '查找答案'}</button></form>
+    {error && <p role="alert" className="journal-error">{error}</p>}
+    {busy && <p role="status">正在整理所选日期的证据，最长等待 2 分钟。<button onClick={() => void window.electronAPI.journal.cancelAnalysis().catch(reason => setError(String(reason)))}>取消查找</button></p>}
+    {answer && <article className="journal-answer"><h3>{asked}</h3><p>{answer.text}</p>{answer.truncated && <p>本次使用抽样记录，未找到的内容可能在未覆盖的片段中。</p>}
+      <div className="journal-source-links">{answer.sources.map(source => <button key={source.id} onClick={() => { if (source.id.startsWith('capture:')) setImage(source.id.slice(8)); else { const target = document.getElementById(`answer-${source.id}`); const details = target?.closest('details'); if (details) details.open = true; target?.scrollIntoView({ block: 'nearest' }) } }}>{clock(source.at)} · {source.id.startsWith('capture:') ? '查看画面' : '活动依据'}</button>)}</div>
+      {!!answer.sources.length && <details><summary>引用的原始记录</summary>{answer.sources.map(source => <div key={source.id} id={`answer-${source.id}`}><strong>{clock(source.at)} · {source.app}</strong><p>{source.title}</p>{source.text && <pre>{source.text}</pre>}</div>)}</details>}
+    </article>}
     {image && <CaptureDetail id={image} onClose={() => setImage('')} />}
   </section>
 }

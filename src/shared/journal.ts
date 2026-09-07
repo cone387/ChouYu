@@ -31,6 +31,7 @@ export interface JournalStatus {
   lastCapturedAt: number | null
   error: string
   captureError: string
+  analysis?: 'summary' | 'question' | null
 }
 
 export interface JournalQuery { from: number; to: number; query?: string; offset?: number }
@@ -46,6 +47,9 @@ export interface JournalAPI {
   retryOcr(id: string): Promise<void>
   summarize(range: { from: number; to: number }): Promise<JournalSummary>
   summary(range: { from: number; to: number }): Promise<JournalSummary | null>
+  overview(range: { from: number; to: number }): Promise<JournalDay>
+  ask(input: { from: number; to: number; question: string }): Promise<JournalAnswer>
+  cancelAnalysis(): Promise<void>
 }
 
 export interface JournalCapture {
@@ -54,11 +58,24 @@ export interface JournalCapture {
   ocrStatus: 'pending' | 'ready' | 'failed'; ocrError: string
 }
 export interface JournalCapturePage { items: JournalCapture[]; total: number; storageBytes: number; pendingOcr: number }
-export interface JournalEvidence { id: string; at: number; app: string; title: string; text: string }
+export interface JournalEvidence { id: string; at: number; endedAt?: number; app: string; title: string; text: string }
+export interface JournalDay {
+  activityCount: number; durationMs: number; captureCount: number; ocrReady: number; ocrFailed: number
+  firstAt: number | null; lastAt: number | null
+  apps: Array<{ app: string; durationMs: number; count: number }>
+}
+export interface JournalSummaryItem {
+  text: string; sourceIds: string[]; title?: string
+  kind?: 'activity' | 'progress' | 'blocker' | 'decision'
+  nextStep?: string
+}
+export interface JournalAnswer { text: string; sourceIds: string[]; sources: JournalEvidence[]; model: string; truncated: boolean }
 export interface JournalSummary {
   from: number; to: number; createdAt: number; model: string
-  items: Array<{ text: string; sourceIds: string[] }>
+  items: JournalSummaryItem[]
   sources: JournalEvidence[]; truncated: boolean
+  version?: number
+  coverage?: { available: number; analyzed: number; ocrSources: number }
 }
 
 export const DEFAULT_JOURNAL_CONFIG: JournalConfig = {

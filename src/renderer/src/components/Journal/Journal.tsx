@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JournalConfig, JournalPage, JournalStatus } from '../../../../shared/journal'
 import './Journal.css'
-import { JournalCaptures, JournalSummaryView } from './JournalEvidence'
+import { JournalCaptures, JournalSummaryView, JournalAsk } from './JournalEvidence'
+import { JournalDayPanel } from './JournalDayPanel'
 
 const today = () => {
   const now = new Date()
@@ -23,7 +24,8 @@ export default function Journal() {
   const [captureEnabled, setCaptureEnabled] = useState(false)
   const [captureInterval, setCaptureInterval] = useState(20)
   const [storageLimit, setStorageLimit] = useState(512)
-  const [view, setView] = useState<'activity' | 'captures' | 'summary'>('activity')
+  const [view, setView] = useState<'activity' | 'captures' | 'summary' | 'ask'>('activity')
+  const [deletedRevision, setDeletedRevision] = useState(0)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -84,14 +86,14 @@ export default function Journal() {
     const start = new Date(`${date}T00:00:00`); const end = new Date(start); end.setDate(end.getDate() + 1)
     try {
       await window.electronAPI.journal.deleteRange({ from: start.getTime(), to: end.getTime() })
-      setConfirmDelete(false); setOffset(0); setRevision(value => value + 1); setNotice('当天记录已删除')
+      setConfirmDelete(false); setOffset(0); setRevision(value => value + 1); setDeletedRevision(value => value + 1); setNotice('当天记录已删除')
     } catch (reason) { setError(String(reason)) }
     finally { setBusy(false) }
   }
 
   return <main className="journal-shell">
     <header className="journal-header">
-      <div><span className="journal-eyebrow">CHOUYU / 工作日志</span><h1>把一天的线索留住。</h1><p>回看用过的应用，找回当时的工作上下文。</p></div>
+      <div><span className="journal-eyebrow">CHOUYU</span><h1>工作日志</h1><p>回看一天，接着往下做。</p></div>
       <div className="journal-controls">
         <span className={`journal-status state-${status?.state || 'off'}`} role="status"><i />{status ? labels[status.state] : '正在加载'}</span>
         {status?.config.enabled && <button disabled={busy} onClick={() => void configure({ paused: !status.config.paused })}>{status.config.paused ? '继续记录' : '暂停记录'}</button>}
@@ -103,9 +105,10 @@ export default function Journal() {
     {status?.error && <div className="journal-error" role="alert">{status.error}</div>}
     {status?.captureError && <div className="journal-error" role="alert">{status.captureError}</div>}
     {notice && <p className="journal-notice" role="status">{notice}</p>}
+    {status?.analysis && <p className="journal-analysis-status" role="status">{status.analysis === 'summary' ? '日志总结正在生成' : '正在根据日志查找答案'}<button onClick={() => void window.electronAPI.journal.cancelAnalysis().catch(reason => setError(String(reason)))}>取消分析</button></p>}
 
     {!status?.config.enabled && status && <section className="journal-welcome">
-      <div><h2>从现在开始，留下活动轨迹</h2><p>每约 5 秒检查前台应用，保存应用名、窗口标题与活动时段。画面记录需在设置中单独开启，不记录键盘输入。原始记录保存在本机，AI 总结由你手动生成。</p><p>开启后重启应用会继续记录；关闭此窗口不停止记录。可随时在托盘暂停。</p></div>
+      <div><p>开启后记录应用与标题，画面需单独设置。关闭窗口后继续，可在托盘暂停。</p></div>
       <button className="journal-primary" disabled={busy || !status.supported || Boolean(status.error)} onClick={() => void configure({ enabled: true, paused: false })}>{status.supported ? '开启活动记录' : '目前仅支持 Windows'}</button>
     </section>}
 
@@ -124,22 +127,23 @@ export default function Journal() {
       </div>
     </section>}
 
-    <section className="journal-content" aria-label="活动时间线">
-      <nav className="journal-view-nav" aria-label="日志视图">{([['activity', '活动轨迹'], ['captures', '关键画面'], ['summary', '日志总结']] as const).map(([key, label]) => <button key={key} aria-current={view === key ? 'page' : undefined} onClick={() => setView(key)}>{label}</button>)}</nav>
+    <div className="journal-workspace"><section className="journal-content" aria-label="活动时间线">
+      <nav className="journal-view-nav" aria-label="日志视图">{([['activity', '活动轨迹'], ['captures', '关键画面'], ['summary', '日志总结'], ['ask', '问问这一天']] as const).map(([key, label]) => <button key={key} aria-current={view === key ? 'page' : undefined} onClick={() => setView(key)}>{label}</button>)}</nav>
       <div className="journal-filterbar">
         <div className="journal-date"><button aria-label="前一天" onClick={() => shiftDate(-1)}>‹</button><input type="date" aria-label="日志日期" value={date} onChange={event => changeDate(event.target.value)} /><button aria-label="后一天" onClick={() => shiftDate(1)}>›</button><button onClick={() => changeDate(today())}>今天</button></div>
-        {view !== 'summary' && <label className="search-field journal-search" data-filled={Boolean(query)}><svg className="search-field-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input aria-label="搜索活动" value={query} onChange={event => { setQuery(event.target.value); setOffset(0); setLoading(true) }} placeholder={view === 'captures' ? '搜索画面文字或标题' : '搜索应用或窗口标题'} />{query && <button className="search-field-action" aria-label="清空活动搜索" onClick={() => { setQuery(''); setOffset(0) }}>×</button>}</label>}
+        {(view === 'activity' || view === 'captures') && <label className="search-field journal-search" data-filled={Boolean(query)}><svg className="search-field-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input aria-label="搜索活动" value={query} onChange={event => { setQuery(event.target.value); setOffset(0); setLoading(true) }} placeholder={view === 'captures' ? '搜索画面文字或标题' : '搜索应用或窗口标题'} />{query && <button className="search-field-action" aria-label="清空活动搜索" onClick={() => { setQuery(''); setOffset(0) }}>×</button>}</label>}
       </div>
       <div className="journal-summary"><div>{view === 'activity' && <><strong>{page.total}</strong> 个活动片段 <span>· {duration(page.durationMs)}{query ? '匹配时长' : '记录时长'}</span></>}</div><button onClick={() => setConfirmDelete(true)} disabled={busy || loading}>删除当天记录</button></div>
       {confirmDelete && <div className="journal-delete" role="alert"><span>删除 {date} 的活动、画面及识别文字？包含与当天重叠的跨日片段，已生成的日志总结也会清空。此操作不可撤销。</span><div><button disabled={busy} onClick={() => setConfirmDelete(false)}>取消</button><button disabled={busy} onClick={() => void deleteDay()}>确认删除</button></div></div>}
       {view === 'captures' && <JournalCaptures date={date} query={query} revision={revision} />}
-      {view === 'summary' && <JournalSummaryView date={date} revision={revision} />}
+      {view === 'summary' && <JournalSummaryView date={date} revision={revision} onGenerated={() => setRevision(value => value + 1)} />}
+      {view === 'ask' && <JournalAsk key={`${date}-${deletedRevision}`} date={date} />}
       {view === 'activity' && (loading ? <div className="journal-empty" role="status">正在读取活动…</div> : page.items.length === 0 ? <div className="journal-empty"><h2>{query ? '没有找到匹配的活动' : '这一天还没有记录'}</h2><p>{query ? '试试应用名或窗口标题中的其他文字。' : '开启记录后，你的应用活动会按时间出现在这里。'}</p></div> : <ol className="journal-timeline">{page.items.map(item => <li key={item.id}>
         <div className="journal-time"><time dateTime={new Date(item.startedAt).toISOString()}>{time(item.startedAt)}</time><span>{time(item.endedAt)}</span></div>
         <article><div className="journal-card-heading"><span className="journal-app">{item.app.replace(/\.exe$/i, '')}</span><span>{duration(item.endedAt - item.startedAt)}</span></div><h2>{item.title || '无窗口标题'}</h2><p>应用活动记录</p></article>
       </li>)}</ol>)}
       {view === 'activity' && page.total > 100 && <nav className="journal-pagination" aria-label="活动分页"><button disabled={!offset || loading} onClick={() => { setOffset(value => Math.max(0, value - 100)); setLoading(true) }}>上一页</button><span>第 {Math.floor(offset / 100) + 1} 页</span><button disabled={offset + 100 >= page.total || loading} onClick={() => { setOffset(value => value + 100); setLoading(true) }}>下一页</button></nav>}
-    </section>
+    </section><JournalDayPanel date={date} revision={revision} onSettings={() => { if (!settings) openSettings(); document.querySelector('.journal-shell')?.scrollTo({ top: 0, behavior: 'auto' }) }} /></div>
     <footer>本地活动日志 · {status?.lastCapturedAt ? `最近记录 ${time(status.lastCapturedAt)}` : '尚无本次运行的活动记录'}</footer>
   </main>
 }

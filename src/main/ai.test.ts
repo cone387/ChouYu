@@ -14,6 +14,22 @@ afterEach(() => {
 })
 
 describe('main-process AI provider routing', () => {
+  it.each([['openai', 60_000], ['openai', 120_000], ['claude', 60_000], ['claude', 120_000]] as const)('bounds %s requests at %i ms without changing the default', async (provider, timeoutMs) => {
+    vi.useFakeTimers()
+    try {
+      let signal: AbortSignal | undefined
+      vi.stubGlobal('fetch', vi.fn((_url, options) => new Promise((_resolve, reject) => {
+        signal = options.signal
+        signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+      })))
+      const request = streamAIChat([{ role: 'user', content: 'test' }], 'system', { ...DEFAULT_APP_CONFIG, provider, baseUrl: 'https://provider.example/v1', apiKey: 'test', model: 'test' }, () => {}, undefined, undefined, timeoutMs === 60_000 ? undefined : { timeoutMs })
+      const outcome = request.catch(error => error)
+      await vi.advanceTimersByTimeAsync(timeoutMs - 1)
+      expect(signal?.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect((await outcome).message).toContain(`${timeoutMs / 1000} 秒`)
+    } finally { vi.useRealTimers() }
+  })
   it('uses the saved OpenAI-compatible endpoint and bearer credentials', async () => {
     const fetchMock = vi.fn(async (_input: Parameters<typeof fetch>[0], _options?: Parameters<typeof fetch>[1]) => streamResponse(
       'data: {"choices":[{"delta":{"content":"你好"}}]}\n\ndata: [DONE]\n\n'

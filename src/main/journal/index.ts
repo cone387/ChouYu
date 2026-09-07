@@ -37,6 +37,9 @@ export function initializeJournal(): JournalService {
   ipcMain.handle('journal:retry-ocr', (_event, id) => service!.retryOcr(id))
   ipcMain.handle('journal:summarize', (_event, range) => service!.summarize(range))
   ipcMain.handle('journal:summary', (_event, range) => service!.summary(range))
+  ipcMain.handle('journal:overview', (_event, range) => service!.overview(range))
+  ipcMain.handle('journal:ask', (_event, input) => service!.ask(input))
+  ipcMain.handle('journal:cancel-analysis', () => service!.cancelAnalysis())
   return service
 }
 

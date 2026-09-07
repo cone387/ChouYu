@@ -19,7 +19,10 @@ const api = {
     image: (id) => ipcRenderer.invoke('journal:image', id),
     retryOcr: (id) => ipcRenderer.invoke('journal:retry-ocr', id),
     summarize: (range) => ipcRenderer.invoke('journal:summarize', range),
-    summary: (range) => ipcRenderer.invoke('journal:summary', range)
+    summary: (range) => ipcRenderer.invoke('journal:summary', range),
+    overview: (range) => ipcRenderer.invoke('journal:overview', range),
+    ask: (input) => ipcRenderer.invoke('journal:ask', input),
+    cancelAnalysis: () => ipcRenderer.invoke('journal:cancel-analysis')
   } satisfies JournalAPI,
   recognizeOfflineImage: (dataUrl: string) => ipcRenderer.invoke('ocr:offline', dataUrl) as Promise<import('../shared/ocr').OfflineOcrResult>,
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
