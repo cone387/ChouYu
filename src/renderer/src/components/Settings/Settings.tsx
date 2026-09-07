@@ -64,6 +64,7 @@ const NAV_ITEMS = [
   { key: 'ai', label: '连接 AI', icon: 'M4 7a4 4 0 018 0v1a2 2 0 012 2v4a2 2 0 01-2 2H2a2 2 0 01-2-2v-4a2 2 0 012-2V7z' },
   { key: 'tools', label: '操作权限', icon: 'tools' },
   { key: 'memory', label: '记忆中心', icon: 'memory' },
+  { key: 'journal', label: '工作日志', icon: 'journal' },
   { key: 'capabilities', label: '能力中心', icon: 'capabilities' },
   { key: 'persona', label: '角色人格', icon: 'M7 1.5a3 3 0 013 3c0 2-3 4-3 4s-3-2-3-4a3 3 0 013-3z' },
   { key: 'general', label: '通用', icon: 'M7 1.5v2M7 10.5v2M1.5 7h2M10.5 7h2M3 3l1.4 1.4M9.6 9.6l1.4 1.4M11 3l-1.4 1.4M4.4 9.6L3 11' },
@@ -177,6 +178,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   const settingsResults = useMemo(() => searchSettings(navQuery), [navQuery])
 
   const handleSearchResultSelect = useCallback((entry: SettingsSearchEntry) => {
+    if (entry.nav === 'journal') { void window.electronAPI.journal.open(); return }
     if (entry.nav === 'memory' && onOpenMemoryWorkspace) {
       onOpenMemoryWorkspace()
       return
@@ -322,7 +324,8 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               data-settings-nav
               className={`settings-nav-item${activeNav === item.key ? ' active' : ''}`}
               onClick={() => {
-                if (item.key === 'memory' && onOpenMemoryWorkspace) onOpenMemoryWorkspace()
+                if (item.key === 'journal') void window.electronAPI.journal.open()
+                else if (item.key === 'memory' && onOpenMemoryWorkspace) onOpenMemoryWorkspace()
                 else setActiveNav(item.key)
               }}
               onKeyDown={handleNavKeyDown}
@@ -338,6 +341,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                   {item.key === 'ai' && <><rect x="2" y="3" width="10" height="9" rx="2"/><circle cx="5" cy="7.5" r="1"/><circle cx="9" cy="7.5" r="1"/><path d="M5 3V1.5M9 3V1.5"/></>}
                   {item.key === 'tools' && <><path d="M3 3.5h8v7H3z"/><path d="M5 1.5v2M9 1.5v2M5 10.5v2M9 10.5v2M1.5 5h1.5M11 5h1.5M1.5 9h1.5M11 9h1.5"/></>}
                   {item.key === 'memory' && <><path d="M4 3.5a3 3 0 016 0v7a3 3 0 01-6 0z"/><path d="M5.5 6h3M5.5 8.5h3"/></>}
+                  {item.key === 'journal' && <><rect x="3" y="1.5" width="8" height="11" rx="1"/><path d="M5 4h4M5 7h4M5 10h2"/></>}
                   {item.key === 'capabilities' && <><circle cx="7" cy="7" r="2"/><path d="M7 1.5v2M7 10.5v2M1.5 7h2M10.5 7h2M3 3l1.4 1.4M9.6 9.6l1.4 1.4M11 3l-1.4 1.4M4.4 9.6L3 11"/></>}
                   {item.key === 'persona' && <><circle cx="7" cy="5" r="2.5"/><path d="M2.5 12c.7-2.3 2.2-3.5 4.5-3.5s3.8 1.2 4.5 3.5"/></>}
                   {item.key === 'general' && <><circle cx="7" cy="7" r="2"/><path d={item.icon}/></>}

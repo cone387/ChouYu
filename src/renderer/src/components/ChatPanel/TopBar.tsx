@@ -32,6 +32,7 @@ export default function TopBar({ status, showSessions, onToggleSessions, onNewTo
         <span className="chat-topbar-status">{status}</span>
       </div>
       <div className="chat-topbar-actions">
+        <button className="topbar-btn" onClick={() => void window.electronAPI.journal.open()} title="工作日志" aria-label="打开工作日志"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg></button>
         <button type="button" className={`topbar-btn${searchOpen ? ' topbar-btn-active' : ''}`} onClick={onSearch} title={searchOpen ? '关闭搜索（Esc）' : '搜索当前对话（Ctrl+F）'} aria-label="搜索当前对话" aria-pressed={searchOpen}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
         </button>

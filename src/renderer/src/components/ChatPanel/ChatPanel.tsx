@@ -434,7 +434,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       updateSessionMessages(originatingSessionId, (previous) => [...previous, {
         id: Date.now().toString(),
         role: 'assistant',
-        content: '可用指令：\n- `/new` 新建对话\n- `/clear` 清空当前对话\n- `/remember 内容` 创建记忆候选\n- `/memory` 打开记忆工作区\n- `/settings` 打开设置\n- `/model` 切换模型\n- `/help` 查看帮助',
+        content: '可用指令：\n- `/new` 新建对话\n- `/clear` 清空当前对话\n- `/remember 内容` 创建记忆候选\n- `/memory` 打开记忆工作区\n- `/journal` 打开工作日志\n- `/settings` 打开设置\n- `/model` 切换模型\n- `/help` 查看帮助',
         timestamp: Date.now()
       }])
       return
@@ -452,6 +452,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       const candidates = await window.electronAPI.memory.propose(`请记住：${memoryText}`, activeSessionIdRef.current)
       const pendingCandidates = candidates.filter((candidate) => candidate.status === 'pending')
       setMemoryCandidates((previous) => [...previous, ...pendingCandidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
+      return
+    }
+    if (content === '/journal') {
+      void window.electronAPI.journal.open()
       return
     }
     if (content === '/memory') {

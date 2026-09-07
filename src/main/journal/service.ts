@@ -1,0 +1,237 @@
+import { app, powerMonitor } from 'electron'
+import { Worker } from 'worker_threads'
+import { join } from 'path'
+import { ActivityHelper } from './activity-helper'
+import { captureJournalWindow } from './capture'
+import { JournalOcr } from './ocr'
+import { generateJournalSummary } from './summary'
+import { DEFAULT_JOURNAL_CONFIG, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
+import type { JournalCapturePage, JournalConfig, JournalPage, JournalQuery, JournalStatus, JournalEvidence, JournalSummary } from '../../shared/journal'
+
+export class JournalService {
+  private worker: Worker
+  private sequence = 0
+  private requests = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>()
+  private helper = new ActivityHelper()
+  private config: JournalConfig = { ...DEFAULT_JOURNAL_CONFIG }
+  private state: JournalStatus['state'] = 'off'
+  private error = ''
+  private storageError = ''
+  private lastCapturedAt: number | null = null
+  private epoch = 0
+  private locked = false
+  private suspended = false
+  private busy = false
+  private timer?: ReturnType<typeof setTimeout>
+  private changes = Promise.resolve()
+  private closed = false
+  private captureError = ''
+  private lastFrameAt = 0
+  private ocr = new JournalOcr()
+  private ocrBusy = false
+  private ocrTimer?: ReturnType<typeof setTimeout>
+  private summaryController?: AbortController
+  readonly ready: Promise<void>
+  private lock = () => { this.locked = true; this.restart() }
+  private unlock = () => { this.locked = false; this.restart() }
+  private suspend = () => { this.suspended = true; this.restart() }
+  private resume = () => { this.suspended = false; this.restart() }
+
+  constructor() {
+    this.worker = new Worker(join(__dirname, 'journal-worker.js'), { workerData: { directory: join(app.getPath('userData'), 'journal') } })
+    this.worker.on('message', ({ id, result, error }) => {
+      const pending = this.requests.get(id)
+      if (!pending) return
+      clearTimeout(pending.timer); this.requests.delete(id)
+      if (error) pending.reject(new Error(error)); else pending.resolve(result)
+    })
+    this.worker.on('error', () => this.failStorage('工作日志数据库无法启动，请检查数据目录后重启应用。'))
+    this.worker.on('exit', () => { if (!this.closed) this.failStorage('工作日志存储进程已退出，请重启应用。') })
+    this.ready = this.request<JournalConfig>('config').then(config => { this.config = config; this.restart() }).catch(error => { this.failStorage(String(error.message || error)) })
+    powerMonitor.on('lock-screen', this.lock)
+    powerMonitor.on('unlock-screen', this.unlock)
+    powerMonitor.on('suspend', this.suspend)
+    powerMonitor.on('resume', this.resume)
+  }
+
+  private request<T = void>(method: string, payload?: unknown): Promise<T> {
+    if (this.storageError) return Promise.reject(new Error(this.storageError))
+    return new Promise((resolve, reject) => {
+      const id = ++this.sequence
+      this.requests.set(id, { resolve, reject, timer: setTimeout(() => this.failStorage('工作日志存储超时，已停止记录。请重启应用。'), 10_000) })
+      this.worker.postMessage({ id, method, payload })
+    })
+  }
+
+  private failStorage(message: string): void {
+    this.storageError = message; this.error = message; this.state = 'error'
+    this.stopSampling()
+    for (const pending of this.requests.values()) { clearTimeout(pending.timer); pending.reject(new Error(message)) }
+    this.requests.clear()
+  }
+
+  status(): JournalStatus {
+    return { config: { ...this.config, excludedApps: [...this.config.excludedApps] }, supported: process.platform === 'win32', state: this.state, lastCapturedAt: this.lastCapturedAt, error: this.error, captureError: this.captureError }
+  }
+
+  private stopSampling(): void {
+    this.epoch++
+    clearTimeout(this.timer)
+    this.helper.stop()
+    clearTimeout(this.ocrTimer)
+    this.ocr.stop()
+    this.summaryController?.abort()
+  }
+
+  private restart(): void {
+    this.stopSampling()
+    if (this.closed || this.storageError) return
+    this.error = ''
+    this.captureError = ''; this.lastFrameAt = 0
+    this.state = !this.config.enabled ? 'off' : this.config.paused ? 'paused' : this.locked || this.suspended ? 'locked' : 'starting'
+    void this.request('cut').catch(error => this.failStorage(error.message))
+    if (this.state === 'starting' && process.platform === 'win32') this.schedule(0)
+    if (this.state === 'starting' && this.config.captureEnabled) this.scheduleOcr()
+  }
+
+  private schedule(delay = 5000): void { this.timer = setTimeout(() => void this.sample(), delay) }
+
+  private async sample(): Promise<void> {
+    if (this.closed || !this.config.enabled || this.config.paused || this.locked || this.suspended || this.storageError) return
+    if (this.busy) { this.schedule(); return }
+    this.busy = true
+    const epoch = this.epoch
+    try {
+      if (powerMonitor.getSystemIdleTime() >= 120) {
+        this.state = 'idle'; this.helper.stop(); await this.request('cut')
+      } else {
+        const sample = await this.helper.read()
+        if (epoch !== this.epoch) return
+        if (sample.pid === process.pid || this.config.excludedApps.includes(sample.app.toLowerCase())) {
+          this.state = 'excluded'; await this.request('cut')
+        } else {
+          const activityId = await this.request<number>('sample', { app: sample.app, title: sample.title, at: Date.now() })
+          if (epoch !== this.epoch) return
+          this.state = 'recording'; this.lastCapturedAt = Date.now()
+          if (this.config.captureEnabled && Date.now() - this.lastFrameAt >= this.config.captureIntervalSeconds * 1000) {
+            this.lastFrameAt = Date.now()
+            const at = this.lastFrameAt
+            try {
+              const frame = await captureJournalWindow(sample.hwnd)
+              if (epoch !== this.epoch) return
+              const current = await this.helper.read()
+              if (epoch !== this.epoch) return
+              // A changed tab, process or foreground window invalidates the in-flight frame.
+              if (current.hwnd !== sample.hwnd || current.pid !== sample.pid || current.title !== sample.title) return
+              await this.request('capture', { activityId, width: frame.width, height: frame.height, bytes: frame.bytes, at })
+              if (epoch === this.epoch) this.captureError = ''
+            } catch (error) { if (epoch === this.epoch) this.captureError = error instanceof Error ? error.message : '画面采集失败。' }
+          }
+        }
+      }
+      if (epoch === this.epoch) this.error = ''
+    } catch (error) {
+      if (epoch === this.epoch) { this.state = 'error'; this.error = error instanceof Error ? error.message : '活动采集失败。' }
+    } finally {
+      this.busy = false
+      if (epoch === this.epoch && !this.closed && !this.storageError) this.schedule(this.state === 'error' ? 30_000 : 5000)
+    }
+  }
+
+  configure(patch: unknown): Promise<JournalStatus> {
+    const operation = this.changes.then(async () => {
+      if (this.closed) throw new Error('工作日志正在关闭。')
+      await this.ready
+      const next = validateJournalConfig(patch, this.config)
+      if (next.enabled && process.platform !== 'win32') throw new Error('活动记录目前仅支持 Windows。')
+      this.stopSampling()
+      try { this.config = await this.request('configure', next) }
+      catch (error) { this.failStorage(error instanceof Error ? error.message : '设置未能保存。'); throw error }
+      this.restart()
+      return this.status()
+    })
+    this.changes = operation.then(() => {}, () => {})
+    return operation
+  }
+
+  async list(query: JournalQuery): Promise<JournalPage> {
+    await this.ready
+    return this.request('list', validateJournalQuery(query))
+  }
+
+  async captures(query: JournalQuery): Promise<JournalCapturePage> { await this.ready; return this.request('captures', validateJournalQuery(query)) }
+  async image(id: string): Promise<string> { await this.ready; return this.request('image', id) }
+  async summary(range: { from: number; to: number }): Promise<JournalSummary | null> { await this.ready; return this.request('summary', validateJournalQuery(range)) }
+
+  private scheduleOcr(): void { this.ocrTimer = setTimeout(() => void this.processOcr(), 2000) }
+  private async processOcr(): Promise<void> {
+    if (this.closed || this.storageError || !this.config.enabled || this.config.paused || !this.config.captureEnabled || this.locked || this.suspended) return
+    if (this.ocrBusy) { this.scheduleOcr(); return }
+    this.ocrBusy = true
+    const epoch = this.epoch
+    try {
+      const job = await this.request<{ id: string; path: string } | null>('ocrNext')
+      if (!job || epoch !== this.epoch) return
+      try {
+        const text = await this.ocr.read(job.path)
+        if (epoch === this.epoch) await this.request('ocrDone', { id: job.id, text })
+      } catch (error) {
+        if (epoch === this.epoch) await this.request('ocrDone', { id: job.id, error: error instanceof Error ? error.message : 'OCR 失败。' })
+      }
+    } catch (error) { if (epoch === this.epoch) this.captureError = error instanceof Error ? error.message : '画面索引失败。' }
+    finally { this.ocrBusy = false; if (epoch === this.epoch && !this.closed && !this.storageError) this.scheduleOcr() }
+  }
+
+  async retryOcr(id: string): Promise<void> {
+    await this.ready
+    if (this.closed || this.ocrBusy || this.locked || this.suspended) throw new Error('OCR 暂不可用，请稍后重试。')
+    this.ocrBusy = true
+    const epoch = this.epoch
+    try {
+      const job = await this.request<{ id: string; path: string }>('ocrJob', id)
+      if (epoch !== this.epoch) throw new Error('识别已取消。')
+      const text = await this.ocr.read(job.path)
+      if (epoch === this.epoch) await this.request('ocrDone', { id, text })
+    } catch (error) {
+      if (epoch === this.epoch) await this.request('ocrDone', { id, error: error instanceof Error ? error.message : 'OCR 失败。' })
+      throw error
+    } finally { this.ocrBusy = false; if (!this.config.enabled || this.config.paused) this.ocr.stop() }
+  }
+
+  async summarize(range: { from: number; to: number }): Promise<JournalSummary> {
+    await this.ready
+    const query = validateJournalQuery(range)
+    if (this.summaryController) throw new Error('已有日志总结正在生成。')
+    const controller = new AbortController(); this.summaryController = controller
+    const epoch = this.epoch
+    try {
+      const input = await this.request<{ sources: JournalEvidence[]; truncated: boolean; generation: number }>('summaryInput', query)
+      if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，总结已取消。')
+      const { getConfig } = await import('../database')
+      const summary = await generateJournalSummary({ ...input, from: query.from, to: query.to }, getConfig(), controller.signal)
+      if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，总结已取消。')
+      return await this.request('summarySave', { summary, generation: input.generation })
+    } finally { if (this.summaryController === controller) this.summaryController = undefined }
+  }
+
+  deleteRange(range: { from: number; to: number }): Promise<void> {
+    const operation = this.changes.then(async () => {
+      await this.ready
+      const query = validateJournalQuery(range)
+      this.stopSampling()
+      try { await this.request('deleteRange', query) } finally { this.restart() }
+    })
+    this.changes = operation.then(() => {}, () => {})
+    return operation
+  }
+
+  async close(): Promise<void> {
+    if (this.closed) return
+    this.closed = true; this.stopSampling()
+    powerMonitor.removeListener('lock-screen', this.lock)
+    powerMonitor.removeListener('unlock-screen', this.unlock)
+    powerMonitor.removeListener('suspend', this.suspend)
+    powerMonitor.removeListener('resume', this.resume)
+    try { await this.changes; await this.request('close') } finally { await this.worker.terminate() }
+  }
+}

@@ -6,6 +6,7 @@ export default defineConfig({
   main: {
     build: {
       outDir: 'out/main',
+      rollupOptions: { input: { index: resolve('src/main/index.ts'), 'journal-worker': resolve('src/main/journal/journal-worker.ts') } },
       minify: true
     }
   },

@@ -15,6 +15,7 @@ export interface SettingsSearchEntry {
 }
 
 export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
+  { nav: 'journal', navLabel: '工作日志', label: '活动记录与时间线', keywords: ['日志', '记录', '暂停', '排除应用', '保留期限', 'journal'] },
   // AI 提供者
   { nav: 'ai', navLabel: 'AI 提供者', label: '服务类型', keywords: ['provider', 'openai', 'claude'], fieldId: 'settings-provider' },
   { nav: 'ai', navLabel: 'AI 提供者', label: 'Base URL', keywords: ['接口地址', 'api 地址', 'endpoint'], fieldId: 'settings-base-url' },

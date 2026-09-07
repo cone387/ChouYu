@@ -65,7 +65,7 @@ describe('settings field search', () => {
   })
 
   it('keeps every indexed anchor pointing at a real nav pane', () => {
-    const navKeys = new Set(['ai', 'tools', 'memory', 'capabilities', 'persona', 'general', 'about'])
+    const navKeys = new Set(['ai', 'tools', 'memory', 'journal', 'capabilities', 'persona', 'general', 'about'])
     for (const entry of SETTINGS_SEARCH_INDEX) {
       expect(navKeys.has(entry.nav), `${entry.label} -> ${entry.nav}`).toBe(true)
     }

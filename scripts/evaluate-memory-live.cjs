@@ -20,7 +20,7 @@ async function launch() {
       const { os_crypt } = JSON.parse(fs.readFileSync(localState, 'utf8'))
       if (os_crypt) fs.writeFileSync(path.join(directory, 'Local State'), JSON.stringify({ os_crypt }))
     }
-    const entry = process.argv.includes('--recall') ? 'src/main/smoke/mem0-recall-live.ts' : process.argv.includes('--mem0') ? 'src/main/smoke/mem0-live.ts' : process.argv.includes('--provider') ? 'src/main/smoke/provider-live.ts' : 'src/main/memory/llm-extractor.ts'
+    const entry = process.argv.includes('--journal') ? 'src/main/smoke/journal-live.ts' : process.argv.includes('--recall') ? 'src/main/smoke/mem0-recall-live.ts' : process.argv.includes('--mem0') ? 'src/main/smoke/mem0-live.ts' : process.argv.includes('--provider') ? 'src/main/smoke/provider-live.ts' : 'src/main/memory/llm-extractor.ts'
     await require('esbuild').build({ entryPoints: [path.join(root, entry)], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], plugins: [{ name: 'native-sqlite', setup(build) { build.onResolve({ filter: /^better-sqlite3$/ }, () => ({ path: require.resolve('better-sqlite3'), external: true })) } }], outfile: bundle, logLevel: 'silent' })
     const env = { ...process.env, CHOUYU_EVAL_USER_DATA: directory, NODE_PATH: path.join(root, 'node_modules') }
     delete env.ELECTRON_RUN_AS_NODE
@@ -49,6 +49,17 @@ async function evaluate() {
     if (config.apiKey.startsWith('safe:v1:')) config.apiKey = safeStorage.decryptString(Buffer.from(config.apiKey.slice(8), 'base64'))
     if (!config.apiKey || !config.baseUrl || !config.model) throw new Error('Incomplete provider configuration')
     stage = 'load-extractor'
+    if (process.argv.includes('--journal')) {
+      const { runJournalAcceptance } = require(bundle)
+      const originalLog = console.log
+      let result
+      try { console.log = () => {}; result = await runJournalAcceptance(config) } finally { console.log = originalLog }
+      fs.mkdirSync(path.dirname(reportFile), { recursive: true })
+      fs.writeFileSync(reportFile, JSON.stringify({ timestamp: new Date().toISOString(), ...result }, null, 2) + '\n')
+      console.log(`Journal model check: ${result.passed ? 'PASS' : 'FAIL'}, model=${result.model}`)
+      app.exit(result.passed ? 0 : 1)
+      return
+    }
     if (process.argv.includes('--mem0') || process.argv.includes('--recall')) {
       if (config.memorySyncApiKey?.startsWith('safe:v1:')) config.memorySyncApiKey = safeStorage.decryptString(Buffer.from(config.memorySyncApiKey.slice(8), 'base64'))
       if (process.argv.includes('--recall')) {

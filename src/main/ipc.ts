@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app, shell } from 'electron'
+import { notifyJournalConfig } from './journal'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
@@ -184,7 +185,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('db:storage-status', () => getStorageStatus())
   ipcMain.handle('db:retry-save', () => {
     const status = flushDatabase()
-    if (!status.error) mainWindow.webContents.send('config:changed', getConfig())
+    if (!status.error) { mainWindow.webContents.send('config:changed', getConfig()); notifyJournalConfig(getConfig()) }
     return status
   })
   ipcMain.handle('db:dismiss-storage-notice', () => dismissStorageNotice())
@@ -276,6 +277,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (result.ok && result.baseUrlAdjusted) {
       saveConfig({ baseUrl: result.baseUrl })
       mainWindow.webContents.send('config:changed', getConfig())
+      notifyJournalConfig(getConfig())
     }
     return result
   })
@@ -742,6 +744,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       setClipboardWatcherEnabled(mainWindow, patch.clipboardWatch)
     }
     mainWindow.webContents.send('config:changed', updated)
+    notifyJournalConfig(updated)
     return updated
   })
   ipcMain.handle('db:get-messages', () => getMessages())

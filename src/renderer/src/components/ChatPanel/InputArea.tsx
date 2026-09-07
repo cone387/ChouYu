@@ -206,6 +206,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
         { cmd: '/clear', desc: '清空当前对话' },
         { cmd: '/remember', desc: '创建长期记忆候选' },
         { cmd: '/memory', desc: '打开记忆工作区' },
+        { cmd: '/journal', desc: '打开工作日志' },
         { cmd: '/settings', desc: '打开设置' },
         { cmd: '/model', desc: '切换模型' },
         { cmd: '/help', desc: '查看可用指令' }
@@ -303,6 +304,9 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
         break
       case '/memory':
         onSend('/memory')
+        break
+      case '/journal':
+        onSend('/journal')
         break
       case '/help':
         onSend('/help')

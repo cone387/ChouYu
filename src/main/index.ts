@@ -1,6 +1,7 @@
 import { app, BrowserWindow, screen, shell, globalShortcut, dialog } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
+import { initializeJournal, closeJournal } from './journal'
 import { setupTray } from './tray'
 import { registerHotkey } from './hotkey'
 import { initDatabase, getConfig, flushDatabase } from './database'
@@ -14,6 +15,7 @@ import { capabilityRegistry } from './capabilities/registry'
 import { runMem0RuntimeSmoke } from './smoke/mem0-smoke'
 import { runStorageRuntimeSmoke } from './smoke/storage-smoke'
 import { runChatRuntimeSmoke } from './smoke/chat-smoke'
+import { runJournalSmoke } from './smoke/journal-smoke'
 
 let mainWindow: BrowserWindow | null = null
 const isSmokeTest = process.env['CHOUYU_SMOKE_TEST'] === '1'
@@ -75,6 +77,7 @@ function createWindow(): void {
       try {
         await runStorageRuntimeSmoke(mainWindow!)
         await runChatRuntimeSmoke(mainWindow!)
+        await runJournalSmoke(mainWindow!)
         console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
         setTimeout(() => app.quit(), 300)
       } catch (error) {
@@ -243,6 +246,7 @@ app.whenReady().then(async () => {
   registerPluginTools()
 
   // Create window
+  initializeJournal()
   createWindow()
 
   // Register IPC handlers immediately after window creation
@@ -272,9 +276,11 @@ app.on('window-all-closed', () => {
   app.quit()
 })
 
+let journalClosed = false
+let journalClosing = false
 app.on('before-quit', (event) => {
   const storage = flushDatabase()
-  if (storage.error && !isSmokeTest) {
+  if (storage.error && !isSmokeTest && !journalClosing) {
     const choice = dialog.showMessageBoxSync({
       type: 'warning',
       title: '还有数据尚未保存',
@@ -290,6 +296,14 @@ app.on('before-quit', (event) => {
       mainWindow?.show()
       return
     }
+  }
+  if (!journalClosed) {
+    event.preventDefault()
+    if (!journalClosing) {
+      journalClosing = true
+      void closeJournal().catch(() => {}).finally(() => { journalClosed = true; app.quit() })
+    }
+    return
   }
   stopClipboardWatcher()
   closeMemory()

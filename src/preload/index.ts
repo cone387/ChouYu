@@ -1,5 +1,6 @@
 import type { StorageStatus } from '../shared/storage'
 import { contextBridge, ipcRenderer } from 'electron'
+import type { JournalAPI } from '../shared/journal'
 import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../shared/ai'
 import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from '../shared/capture'
@@ -8,6 +9,18 @@ import type { CapabilityInfo } from '../shared/capabilities'
 import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncStatus } from '../shared/memory'
 
 const api = {
+  journal: {
+    open: () => ipcRenderer.invoke('journal:open'),
+    status: () => ipcRenderer.invoke('journal:status'),
+    configure: (patch) => ipcRenderer.invoke('journal:configure', patch),
+    list: (query) => ipcRenderer.invoke('journal:list', query),
+    deleteRange: (range) => ipcRenderer.invoke('journal:delete-range', range),
+    captures: (query) => ipcRenderer.invoke('journal:captures', query),
+    image: (id) => ipcRenderer.invoke('journal:image', id),
+    retryOcr: (id) => ipcRenderer.invoke('journal:retry-ocr', id),
+    summarize: (range) => ipcRenderer.invoke('journal:summarize', range),
+    summary: (range) => ipcRenderer.invoke('journal:summary', range)
+  } satisfies JournalAPI,
   recognizeOfflineImage: (dataUrl: string) => ipcRenderer.invoke('ocr:offline', dataUrl) as Promise<import('../shared/ocr').OfflineOcrResult>,
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   quitApp: () => ipcRenderer.invoke('quit-app'),

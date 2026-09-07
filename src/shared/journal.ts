@@ -1,0 +1,97 @@
+export interface JournalConfig {
+  enabled: boolean
+  paused: boolean
+  retentionDays: number
+  excludedApps: string[]
+  captureEnabled: boolean
+  captureIntervalSeconds: number
+  maxStorageMB: number
+}
+
+export interface JournalSample {
+  app: string
+  title: string
+  pid: number
+  idleSeconds: number
+  hwnd: string
+}
+
+export interface JournalActivity {
+  id: number
+  app: string
+  title: string
+  startedAt: number
+  endedAt: number
+}
+
+export interface JournalStatus {
+  config: JournalConfig
+  supported: boolean
+  state: 'off' | 'paused' | 'locked' | 'starting' | 'recording' | 'idle' | 'excluded' | 'error'
+  lastCapturedAt: number | null
+  error: string
+  captureError: string
+}
+
+export interface JournalQuery { from: number; to: number; query?: string; offset?: number }
+export interface JournalPage { items: JournalActivity[]; total: number; durationMs: number }
+export interface JournalAPI {
+  open(): Promise<void>
+  status(): Promise<JournalStatus>
+  configure(patch: Partial<JournalConfig>): Promise<JournalStatus>
+  list(query: JournalQuery): Promise<JournalPage>
+  deleteRange(range: { from: number; to: number }): Promise<void>
+  captures(query: JournalQuery): Promise<JournalCapturePage>
+  image(id: string): Promise<string>
+  retryOcr(id: string): Promise<void>
+  summarize(range: { from: number; to: number }): Promise<JournalSummary>
+  summary(range: { from: number; to: number }): Promise<JournalSummary | null>
+}
+
+export interface JournalCapture {
+  id: string; activityId: number; app: string; title: string; capturedAt: number
+  width: number; height: number; bytes: number; ocrText: string
+  ocrStatus: 'pending' | 'ready' | 'failed'; ocrError: string
+}
+export interface JournalCapturePage { items: JournalCapture[]; total: number; storageBytes: number; pendingOcr: number }
+export interface JournalEvidence { id: string; at: number; app: string; title: string; text: string }
+export interface JournalSummary {
+  from: number; to: number; createdAt: number; model: string
+  items: Array<{ text: string; sourceIds: string[] }>
+  sources: JournalEvidence[]; truncated: boolean
+}
+
+export const DEFAULT_JOURNAL_CONFIG: JournalConfig = {
+  enabled: false, paused: false, retentionDays: 30,
+  captureEnabled: false, captureIntervalSeconds: 20, maxStorageMB: 512,
+  excludedApps: ['1password.exe', 'bitwarden.exe', 'keepass.exe', 'keepassxc.exe', 'authy.exe']
+}
+
+export function validateJournalConfig(value: unknown, current: JournalConfig): JournalConfig {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('无效的日志设置。')
+  const patch = value as Record<string, unknown>
+  if (Object.keys(patch).some(key => !['enabled', 'paused', 'retentionDays', 'excludedApps', 'captureEnabled', 'captureIntervalSeconds', 'maxStorageMB'].includes(key))) throw new Error('未知日志设置。')
+  for (const key of ['enabled', 'paused', 'captureEnabled']) {
+    if (patch[key] !== undefined && typeof patch[key] !== 'boolean') throw new Error('记录状态必须为布尔值。')
+  }
+  if (patch.retentionDays !== undefined && ![7, 30, 90].includes(patch.retentionDays as number)) throw new Error('保留期限须为 7、30 或 90 天。')
+  if (patch.captureIntervalSeconds !== undefined && ![10, 20, 30, 60].includes(patch.captureIntervalSeconds as number)) throw new Error('画面间隔须为 10、20、30 或 60 秒。')
+  if (patch.maxStorageMB !== undefined && ![256, 512, 1024, 2048].includes(patch.maxStorageMB as number)) throw new Error('无效的画面存储上限。')
+  if (patch.excludedApps !== undefined && (!Array.isArray(patch.excludedApps) || patch.excludedApps.length > 100 || patch.excludedApps.some(item => typeof item !== 'string' || !/^[^\\/:*?"<>|\r\n]{1,100}\.exe$/i.test(item)))) throw new Error('排除应用请填写进程名，例如 chrome.exe，每行一个。')
+  return { enabled: patch.enabled === undefined ? current.enabled : patch.enabled as boolean,
+    captureEnabled: patch.captureEnabled === undefined ? current.captureEnabled : patch.captureEnabled as boolean,
+    captureIntervalSeconds: patch.captureIntervalSeconds === undefined ? current.captureIntervalSeconds : patch.captureIntervalSeconds as number,
+    maxStorageMB: patch.maxStorageMB === undefined ? current.maxStorageMB : patch.maxStorageMB as number,
+    paused: patch.paused === undefined ? current.paused : patch.paused as boolean,
+    retentionDays: patch.retentionDays === undefined ? current.retentionDays : patch.retentionDays as number,
+    excludedApps: patch.excludedApps === undefined ? [...current.excludedApps] : [...new Set((patch.excludedApps as string[]).map(item => item.toLowerCase()))] }
+}
+
+export function validateJournalQuery(value: unknown): Required<JournalQuery> {
+  if (!value || typeof value !== 'object') throw new Error('无效查询。')
+  const input = value as JournalQuery
+  if (!Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to) || input.from < 0 || input.to <= input.from || input.to - input.from > 32 * 86400_000) throw new Error('每次查询最多 32 天。')
+  if (input.query !== undefined && (typeof input.query !== 'string' || input.query.length > 200)) throw new Error('搜索词过长。')
+  if (input.offset !== undefined && (!Number.isSafeInteger(input.offset) || input.offset < 0)) throw new Error('无效分页。')
+  return { from: input.from, to: input.to, query: input.query?.trim() || '', offset: input.offset || 0 }
+}

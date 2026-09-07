@@ -8,6 +8,10 @@ files:
   - "!out/types-*"
 
 extraResources:
+  - from: resources/journal-ocr.ps1
+    to: journal-ocr.ps1
+  - from: resources/journal-activity.ps1
+    to: journal-activity.ps1
   - from: resources/offline-ocr.ps1
     to: offline-ocr.ps1
   - from: resources/icon.png
