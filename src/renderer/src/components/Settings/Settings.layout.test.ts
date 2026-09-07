@@ -20,7 +20,7 @@ describe('settings layout guardrails', () => {
 
   it('keeps dense settings content readable and touchable', () => {
     expect(stylesheet).toMatch(/\.settings-nav-item\s*\{[\s\S]*min-height:\s*40px/)
-    expect(stylesheet).toMatch(/\.settings-diagnostic-item > small\s*\{\s*font-size:\s*11px/)
+    expect(stylesheet).toMatch(/\.settings-diagnostic-item > small\s*\{\s*font-size:\s*var\(--font-sm\)/)
     expect(memoryStylesheet).toMatch(/\.memory-settings-pane p,[\s\S]*font-size:\s*12px/)
     expect(memoryStylesheet).toMatch(/\.memory-settings-pane button,[\s\S]*min-height:\s*34px/)
   })

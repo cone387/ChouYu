@@ -30,7 +30,7 @@ export function validateProcessCapabilityManifest(value: unknown): ProcessCapabi
   if (typeof input.id !== 'string' || !/^[a-z0-9][a-z0-9.-]{1,79}$/.test(input.id)) throw new Error('进程能力 ID 无效。')
   if (typeof input.command !== 'string' || !input.command.trim() || input.command.length > 260) throw new Error('进程能力命令无效。')
   if (input.protocol !== 'jsonl') throw new Error('进程能力只支持 JSONL 协议。')
-  if (input.args !== undefined && (!Array.isArray(input.args) || input.args.some((arg) => typeof arg !== 'string' || arg.length > 1000))) throw new Error('进程能力参数无效。')
+  if (input.args !== undefined && (!Array.isArray(input.args) || input.args.length > 32 || input.args.some((arg) => typeof arg !== 'string' || arg.length > 1000 || arg.includes('\0')))) throw new Error('进程能力参数无效。')
   if (input.cwd !== undefined && (typeof input.cwd !== 'string' || input.cwd.length > 1000)) throw new Error('进程能力工作目录无效。')
   const timeoutMs = input.timeoutMs === undefined ? 30_000 : Number(input.timeoutMs)
   if (!Number.isFinite(timeoutMs) || timeoutMs < 500 || timeoutMs > 120_000) throw new Error('进程能力超时范围无效。')

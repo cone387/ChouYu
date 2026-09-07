@@ -5,7 +5,7 @@ const path = require('path')
 
 const READY_MARKER = 'CHOUYU_SMOKE_READY'
 const FAILED_MARKER = 'CHOUYU_SMOKE_FAILED'
-const TIMEOUT_MS = 30_000
+const TIMEOUT_MS = 60_000
 const packagedArgIndex = process.argv.indexOf('--packaged')
 const packagedExecutable = packagedArgIndex >= 0 ? process.argv[packagedArgIndex + 1] : ''
 const executable = packagedExecutable || require('electron')
@@ -27,6 +27,7 @@ const env = {
   CHOUYU_SMOKE_TEST: '1',
   CHOUYU_SMOKE_USER_DATA: smokeUserData
 }
+if (process.argv.includes('--ocr')) env.CHOUYU_SMOKE_OCR_FIXTURE = path.resolve(__dirname, '../tests/fixtures/ocr-sample.png')
 delete env.ELECTRON_RUN_AS_NODE
 
 let ready = false

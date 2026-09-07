@@ -63,8 +63,8 @@ const tools: RegisteredTool[] = [
     risk: 'read',
     requiresConfirmation: true,
     source: 'builtin',
-    execute() {
-      const text = clipboard.readText().slice(0, 50_000)
+    async execute() {
+      const text = (await clipboard.readText()).slice(0, 50_000)
       return { content: text || '（剪贴板中没有文本）', summary: text ? `已读取 ${text.length} 个字符` : '剪贴板中没有文本' }
     }
   },
@@ -81,10 +81,10 @@ const tools: RegisteredTool[] = [
     risk: 'write',
     requiresConfirmation: true,
     source: 'builtin',
-    execute(arguments_) {
+    async execute(arguments_) {
       const text = typeof arguments_.text === 'string' ? arguments_.text.slice(0, 20_000) : ''
       if (!text) throw new Error('没有提供要写入的文本。')
-      clipboard.writeText(text)
+      await clipboard.writeText(text)
       return { content: '已写入剪贴板。', summary: `已写入 ${text.length} 个字符` }
     }
   },

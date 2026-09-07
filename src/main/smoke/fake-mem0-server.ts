@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
 
-export type FakeMem0Mode = 'ok' | 'auth' | 'search-missing' | 'refuse'
+export type FakeMem0Mode = 'ok' | 'auth' | 'search-missing' | 'refuse' | 'reject-create'
 
 export interface FakeMem0Record {
   id: string
@@ -76,7 +76,7 @@ export async function startFakeMem0Server(options: { apiKey: string; seed: Reado
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const url = new URL(request.url || '/', 'http://127.0.0.1')
     const path = url.pathname.replace(/\/+$/, '')
-    const { body } = request.method === 'POST' ? await readJsonBody(request) : { body: null }
+    const { body } = request.method === 'POST' || request.method === 'PUT' ? await readJsonBody(request) : { body: null }
     requests.push({ method: request.method || '', path: path.replace(/^\//, ''), apiKey: request.headers['x-api-key'] as string || '', body })
 
     if (mode === 'refuse') {
@@ -100,9 +100,21 @@ export async function startFakeMem0Server(options: { apiKey: string; seed: Reado
       response.setHeader('Content-Type', 'application/json')
       response.end(JSON.stringify(payload))
     }
+    if (mode === 'reject-create' && request.method === 'POST' && path === '/memories') { sendJson(503, { detail: 'synthetic create failure' }); return }
 
     if (!authorized) {
       sendJson(401, { detail: 'unauthorized' })
+      return
+    }
+    if ((request.method === 'PUT' || request.method === 'DELETE') && path.startsWith('/memories/')) {
+      const id = decodeURIComponent(path.slice('/memories/'.length))
+      const index = records.findIndex(record => record.id === id)
+      if (index < 0) { sendJson(404, { detail: 'not found' }); return }
+      if (request.method === 'DELETE') { records.splice(index, 1); response.statusCode = 204; response.end(); return }
+      if (typeof body?.text !== 'string' || !body.text.trim()) { sendJson(400, { detail: 'missing text' }); return }
+      records[index].memory = body.text
+      if (body.metadata && typeof body.metadata === 'object') records[index].metadata = { ...records[index].metadata, ...body.metadata as Record<string, unknown> }
+      sendJson(200, { message: 'updated' })
       return
     }
     if (request.method === 'GET' && path === '/memories') {

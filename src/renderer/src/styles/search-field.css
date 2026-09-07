@@ -1,0 +1,50 @@
+/* Shared search surface: focus is expressed by the fill and icon, not a ring. */
+.search-field {
+  transition: background-color 160ms ease;
+}
+.search-field:focus-within {
+  background: var(--hover-bg);
+  box-shadow: none;
+}
+.search-field .search-field-icon {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  transition: color 160ms ease, transform 160ms ease;
+}
+.search-field:focus-within .search-field-icon,
+.search-field[data-filled="true"] .search-field-icon {
+  color: var(--accent);
+  transform: scale(1.1);
+}
+.search-field input:focus,
+.search-field input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.search-field .search-field-action {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+.search-field .search-field-action:hover,
+.search-field .search-field-action:focus-visible {
+  color: var(--text-primary);
+  background: var(--hover-bg);
+  outline: none !important;
+  box-shadow: none;
+}
+.search-field .search-field-action:active { transform: scale(.92); }
+@media (prefers-reduced-motion: reduce) {
+  .search-field,
+  .search-field .search-field-icon,
+  .search-field .search-field-action { transition: none; }
+}

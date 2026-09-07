@@ -1,3 +1,4 @@
+import type { StorageStatus } from '../shared/storage'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../shared/ai'
@@ -7,6 +8,7 @@ import type { CapabilityInfo } from '../shared/capabilities'
 import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncStatus } from '../shared/memory'
 
 const api = {
+  recognizeOfflineImage: (dataUrl: string) => ipcRenderer.invoke('ocr:offline', dataUrl) as Promise<import('../shared/ocr').OfflineOcrResult>,
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   setAutoStart: (enabled: boolean) => ipcRenderer.invoke('set-auto-start', enabled),
@@ -143,12 +145,22 @@ const api = {
     return () => { ipcRenderer.removeListener('config:changed', handler) }
   },
   db: {
+    getStorageStatus: () => ipcRenderer.invoke('db:storage-status') as Promise<StorageStatus>,
+    retrySave: () => ipcRenderer.invoke('db:retry-save') as Promise<StorageStatus>,
+    dismissStorageNotice: () => ipcRenderer.invoke('db:dismiss-storage-notice') as Promise<StorageStatus>,
+    openDataDirectory: () => ipcRenderer.invoke('db:open-data-directory') as Promise<string>,
+    onStorageStatus: (callback: (status: StorageStatus) => void) => {
+      const handler = (_event: unknown, status: StorageStatus) => callback(status)
+      ipcRenderer.on('db:storage-status', handler)
+      return () => { ipcRenderer.removeListener('db:storage-status', handler) }
+    },
     getConfig: () => ipcRenderer.invoke('db:get-config'),
     saveConfig: (cfg: Partial<AppConfig>) => ipcRenderer.invoke('db:save-config', cfg) as Promise<AppConfig>,
     getMessages: () => ipcRenderer.invoke('db:get-messages'),
     saveMessages: (msgs: unknown[]) => ipcRenderer.invoke('db:save-messages', msgs),
     clearMessages: () => ipcRenderer.invoke('db:clear-messages'),
     getSessionWorkspace: () => ipcRenderer.invoke('db:get-session-workspace'),
+    searchSessions: (query: string) => ipcRenderer.invoke('db:search-sessions', query),
     createSession: (title?: string) => ipcRenderer.invoke('db:create-session', title),
     selectSession: (id: string) => ipcRenderer.invoke('db:select-session', id),
     renameSession: (id: string, title: string) => ipcRenderer.invoke('db:rename-session', id, title),

@@ -1,0 +1,157 @@
+{
+  "sourceSha256": "e2a4093c26af62172ebfcd946f36bfa7cbadefb5bb0977c8533d9fb158a2770b",
+  "normalization": "Only remove the literal memory: citation prefix. Expected IDs and answers are unchanged; no new provider requests.",
+  "rawPassed": 5,
+  "normalizedPassed": 14,
+  "count": 14,
+  "results": [
+    {
+      "id": "coffee-paraphrase",
+      "selected": [
+        "drink-user"
+      ],
+      "answer": "不加糖，选美式即可",
+      "passed": true,
+      "rawSelected": [
+        "drink-user"
+      ]
+    },
+    {
+      "id": "colleague-coffee",
+      "selected": [
+        "drink-colleague"
+      ],
+      "answer": "需要，陈浩喝咖啡喜欢加两块糖。",
+      "passed": true,
+      "rawSelected": [
+        "memory:drink-colleague"
+      ]
+    },
+    {
+      "id": "work-paraphrase",
+      "selected": [
+        "work-user"
+      ],
+      "answer": "周二和周四",
+      "passed": true,
+      "rawSelected": [
+        "work-user"
+      ]
+    },
+    {
+      "id": "colleague-work",
+      "selected": [
+        "work-colleague"
+      ],
+      "answer": "在办公室",
+      "passed": true,
+      "rawSelected": [
+        "memory:work-colleague"
+      ]
+    },
+    {
+      "id": "lantern-stack",
+      "selected": [
+        "project-lantern"
+      ],
+      "answer": "Rust 与 SQLite",
+      "passed": true,
+      "rawSelected": [
+        "memory:project-lantern"
+      ]
+    },
+    {
+      "id": "harbor-english",
+      "selected": [
+        "project-harbor"
+      ],
+      "answer": "Python and PostgreSQL",
+      "passed": true,
+      "rawSelected": [
+        "memory:project-harbor"
+      ]
+    },
+    {
+      "id": "allergy-paraphrase",
+      "selected": [
+        "allergy-user"
+      ],
+      "answer": "您对虾、蟹等甲壳类海鲜过敏，安排晚餐时会避开此类海产品。",
+      "passed": true,
+      "rawSelected": [
+        "memory:allergy-user"
+      ]
+    },
+    {
+      "id": "peanut-subject",
+      "selected": [
+        "allergy-friend"
+      ],
+      "answer": "周宁不能吃花生",
+      "passed": true,
+      "rawSelected": [
+        "allergy-friend"
+      ]
+    },
+    {
+      "id": "identity-homophone",
+      "selected": [
+        "identity-user"
+      ],
+      "answer": "你名字中的 lan 写作“岚”，是山字头下面一个“风”。",
+      "passed": true,
+      "rawSelected": [
+        "memory:identity-user"
+      ]
+    },
+    {
+      "id": "current-city",
+      "selected": [
+        "city-current"
+      ],
+      "answer": "南京",
+      "passed": true,
+      "rawSelected": [
+        "memory:city-current"
+      ]
+    },
+    {
+      "id": "old-city",
+      "selected": [
+        "city-past"
+      ],
+      "answer": "苏州",
+      "passed": true,
+      "rawSelected": [
+        "memory:city-past"
+      ]
+    },
+    {
+      "id": "both-projects",
+      "selected": [
+        "project-lantern",
+        "project-harbor"
+      ],
+      "answer": "灯塔项目使用 SQLite，港湾项目使用 PostgreSQL。",
+      "passed": true,
+      "rawSelected": [
+        "memory:project-lantern",
+        "memory:project-harbor"
+      ]
+    },
+    {
+      "id": "unknown-pet",
+      "selected": [],
+      "answer": "UNKNOWN",
+      "passed": true,
+      "rawSelected": []
+    },
+    {
+      "id": "unknown-birthday",
+      "selected": [],
+      "answer": "UNKNOWN",
+      "passed": true,
+      "rawSelected": []
+    }
+  ]
+}

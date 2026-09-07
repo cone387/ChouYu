@@ -7,6 +7,13 @@ const config = {
 } as AppConfig
 
 describe('LLM memory extraction', () => {
+  it('rejects oversized candidates instead of truncating away disqualifying content', async () => {
+    const request = vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({ memories: [
+      { action: 'remember', subject: 'self', certainty: 'explicit', type: 'fact', content: '普通内容'.repeat(130) + ' password: synthetic-secret', confidence: 0.99 },
+      { action: 'remember', subject: 'self', certainty: 'explicit', type: 'fact', content: '完整信息'.repeat(130), confidence: 0.99 }
+    ] }) } }] })) as typeof fetch
+    expect(await extractMemoriesWithLLM('合成长度边界样例', config, request)).toEqual([])
+  })
   it('accepts structured self memory and rejects model guesses', async () => {
     const request = vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({ memories: [
       { action: 'remember', subject: 'self', certainty: 'explicit', type: 'person', content: '我的名字是 小鱼', confidence: 0.96, importance: 0.9 },

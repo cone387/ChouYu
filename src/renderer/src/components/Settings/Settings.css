@@ -37,6 +37,19 @@
   font-size: 14px;
 }
 
+.settings-advanced-toggle {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
 /* Body: left nav + right content */
 .settings-body {
   display: flex;
@@ -81,12 +94,11 @@
   outline: 0;
   background: transparent;
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .settings-nav-search:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  background: var(--hover-bg);
 }
 
 .settings-nav-search input:focus,
@@ -99,7 +111,7 @@
 .settings-nav-empty {
   padding: var(--space-5) var(--space-3);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   line-height: 1.4;
   text-align: center;
 }
@@ -146,10 +158,10 @@
 /* Diagnostics and notices are secondary text, not footnotes. Keep them
    legible when the panel is used at 100% display scaling. */
 .settings-required-notice strong { font-size: 12px; }
-.settings-required-notice span { font-size: 11px; }
-.settings-diagnostic-item > span { font-size: 11px; }
+.settings-required-notice span { font-size: var(--font-sm); }
+.settings-diagnostic-item > span { font-size: var(--font-sm); }
 .settings-diagnostic-item > strong { font-size: 12px; }
-.settings-diagnostic-item > small { font-size: 11px; }
+.settings-diagnostic-item > small { font-size: var(--font-sm); }
 
 .settings-nav-item:hover {
   background: var(--hover-bg);
@@ -207,7 +219,7 @@
 .settings-pane-heading p {
   margin: var(--space-2) 0 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   line-height: 1.45;
 }
 
@@ -220,14 +232,14 @@
 }
 
 .settings-required-notice { display:flex; flex-direction:column; gap: var(--space-2); margin-bottom: var(--space-5); padding: var(--space-4) var(--space-4); border:1px solid var(--warning-border); border-radius: var(--radius-lg); background:var(--warning-bg); color:var(--warning); }
-.settings-required-notice strong { font-size:10px; }
-.settings-required-notice span { font-size:9px; line-height:1.45; }
+.settings-required-notice strong { font-size: var(--font-sm); }
+.settings-required-notice span { font-size: var(--font-sm); line-height:1.45; }
 
 .settings-diagnostics { display:grid; grid-template-columns:1fr 1fr; gap: var(--space-3); margin-top: var(--space-4); }
 .settings-diagnostic-item { display:flex; min-width:0; flex-direction:column; gap: var(--space-2); padding: var(--space-4); border:1px solid var(--divider); border-radius: var(--radius-lg); background:var(--bg-secondary); }
-.settings-diagnostic-item > span { color:var(--text-muted); font-size:9px; }
-.settings-diagnostic-item > strong { color:var(--text-primary); font-size:10px; }
-.settings-diagnostic-item > small { color:var(--text-secondary); font-size:8px; line-height:1.4; overflow-wrap:anywhere; }
+.settings-diagnostic-item > span { color:var(--text-muted); font-size: var(--font-sm); }
+.settings-diagnostic-item > strong { color:var(--text-primary); font-size: var(--font-sm); }
+.settings-diagnostic-item > small { color:var(--text-secondary); font-size: var(--font-sm); line-height:1.4; overflow-wrap:anywhere; }
 .settings-diagnostic-item.ready { border-color:var(--success-border); background:var(--success-bg); }
 .settings-diagnostic-item.ready > strong { color:var(--success); }
 .settings-diagnostic-item.unconfigured,.settings-diagnostic-item.error { border-color:var(--warning-border); background:var(--warning-bg); }
@@ -237,8 +249,8 @@
 @media (max-width: 520px) {
   .settings-nav { width: 108px; padding: var(--space-4) var(--space-3); }
   .settings-nav-search { padding: 0 var(--space-3); }
-  .settings-nav-search input { font-size: 10px; }
-  .settings-nav-item { gap: var(--space-3); padding: var(--space-3) var(--space-3); font-size: 11px; }
+  .settings-nav-search input { font-size: var(--font-sm); }
+  .settings-nav-item { gap: var(--space-3); padding: var(--space-3) var(--space-3); font-size: var(--font-sm); }
   .settings-content { padding: var(--space-5); }
   .settings-diagnostics { grid-template-columns:1fr; }
 }
@@ -398,7 +410,7 @@
   background: var(--input-bg);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
@@ -436,7 +448,7 @@
   min-height: 16px;
   margin-top: var(--space-3);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   line-height: 1.4;
 }
 
@@ -452,7 +464,7 @@
   padding: var(--space-4) var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  font-size: 11px;
+  font-size: var(--font-sm);
   line-height: 1.45;
 }
 
@@ -501,7 +513,7 @@
   min-height: 16px;
   margin-top: var(--space-2);
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-sm);
   line-height: 1.4;
 }
 
@@ -554,7 +566,7 @@
 .settings-kbd {
   display: inline-block;
   padding: var(--space-2) var(--space-4);
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-family: 'Cascadia Code', 'Fira Code', monospace;
   color: var(--text-secondary);
   background: var(--input-bg);
@@ -789,8 +801,8 @@
 
 .settings-soul-history { display:flex; flex-direction:column; gap: var(--space-4); margin-top: var(--space-4); }
 .settings-soul-history-panel { display:grid; gap: var(--space-4); padding: var(--space-4); border:1px solid var(--border); border-radius: var(--radius-lg); background:var(--bg-secondary); }
-.settings-soul-history-panel label { display:flex; align-items:center; gap: var(--space-4); color:var(--text-muted); font-size:10px; }
-.settings-soul-history-panel select { min-width:180px; border:1px solid var(--input-border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-3); background:var(--input-bg); color:var(--text-primary); font-size:10px; }
+.settings-soul-history-panel label { display:flex; align-items:center; gap: var(--space-4); color:var(--text-muted); font-size: var(--font-sm); }
+.settings-soul-history-panel select { min-width:180px; border:1px solid var(--input-border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-3); background:var(--input-bg); color:var(--text-primary); font-size: var(--font-sm); }
 .settings-soul-diff { max-height:220px; margin: 0; padding: var(--space-4); overflow:auto; border:1px solid var(--border); border-radius: var(--radius-md); background:var(--code-bg); color:var(--text-secondary); font:11px/1.5 'Cascadia Code','Fira Code',monospace; white-space:pre-wrap; }
 
 .settings-pet-size-control {
@@ -802,7 +814,7 @@
   display: flex;
   justify-content: space-between;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -881,7 +893,7 @@
 .settings-search-result-nav {
   flex: 0 0 auto;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .settings-field-flash {
@@ -941,7 +953,7 @@
 .settings-help {
   margin-top: var(--space-3);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-sm);
   line-height: 1.4;
 }
 

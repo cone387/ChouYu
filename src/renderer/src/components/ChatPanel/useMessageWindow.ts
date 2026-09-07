@@ -100,10 +100,16 @@ export function useMessageWindow(
         averageRowHeight,
         count
       )
+      // Measured rows and estimated spacers can change total height while
+      // leaving the viewport at the bottom. Anchor to the actual last row,
+      // rather than inferring its index from an outdated height average.
+      const atBottom = container.scrollHeight - viewportTop - viewportHeight <= 2
+      const end = atBottom ? count : nextEnd
+      const start = atBottom ? Math.max(0, count - Math.max(OVERSCAN * 2 + 1, nextEnd - firstVisible)) : firstVisible
       setRange((previous) =>
-        previous.start === firstVisible && previous.end === nextEnd
+        previous.start === start && previous.end === end
           ? previous
-          : { start: firstVisible, end: nextEnd }
+          : { start, end }
       )
     }
 

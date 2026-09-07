@@ -36,7 +36,7 @@
 
 .window-capture-header span {
   color: var(--accent);
-  font-size: 9px;
+  font-size: var(--font-sm);
   font-weight: 700;
   letter-spacing: 0.1em;
 }
@@ -79,7 +79,7 @@
   background: var(--hover-bg);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 10px;
+  font-size: var(--font-sm);
 }
 
 .window-capture-actions button.active,
@@ -125,7 +125,7 @@
   outline: 0;
   background: transparent;
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .window-capture-filters input:focus-visible {
@@ -197,7 +197,7 @@
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.58);
   color: #fff;
-  font-size: 8px;
+  font-size: var(--font-sm);
 }
 
 .window-capture-source-name {
@@ -219,7 +219,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -233,7 +233,7 @@
   flex-direction: column;
   gap: 9px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   text-align: center;
 }
 
@@ -249,7 +249,7 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 10px;
+  font-size: var(--font-sm);
 }
 
 .window-capture-spinner {
@@ -272,7 +272,7 @@
   padding: 7px 15px;
   border-top: 1px solid var(--divider);
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 560px) {

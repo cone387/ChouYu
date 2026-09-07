@@ -90,7 +90,7 @@ export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpac
     if (!panelResizeRef.current.resizing) return
     panelResizeRef.current.resizing = false
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    void window.electronAPI.db.setState(PANEL_HEIGHT_STATE_KEY, String(panelResizeRef.current.currentHeight))
+    void window.electronAPI.db.setState(PANEL_HEIGHT_STATE_KEY, String(panelResizeRef.current.currentHeight)).catch(() => { /* The persistent storage notice reports disk failures. */ })
   }, [])
 
   const handleSidebarResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -114,7 +114,7 @@ export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpac
     if (!sidebarResizeRef.current.resizing) return
     sidebarResizeRef.current.resizing = false
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    void window.electronAPI.db.setState(SESSION_SIDEBAR_WIDTH_STATE_KEY, String(sidebarResizeRef.current.currentWidth))
+    void window.electronAPI.db.setState(SESSION_SIDEBAR_WIDTH_STATE_KEY, String(sidebarResizeRef.current.currentWidth)).catch(() => { /* The persistent storage notice reports disk failures. */ })
   }, [])
 
   const handleContentResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -138,7 +138,7 @@ export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpac
     contentResizeRef.current.resizing = false
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     if (contentResizeRef.current.currentWidth < CHAT_CONTENT_MIN_WIDTH) return
-    void window.electronAPI.db.setState(CHAT_CONTENT_WIDTH_STATE_KEY, String(contentResizeRef.current.currentWidth))
+    void window.electronAPI.db.setState(CHAT_CONTENT_WIDTH_STATE_KEY, String(contentResizeRef.current.currentWidth)).catch(() => { /* The persistent storage notice reports disk failures. */ })
   }, [])
 
   return {

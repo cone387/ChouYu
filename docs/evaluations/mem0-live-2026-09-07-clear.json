@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-09-07T04:04:18.211Z",
+  "host": "memory.cone387.top",
+  "userId": "chouyu-acceptance-bd753874-4209-431c-9d30-2340792b1afc",
+  "testLocalId": "79cc0c52-cc64-4eb7-aef7-02bee86bd958",
+  "scopeVerified": true,
+  "checks": [
+    {
+      "name": "empty-isolated-user",
+      "passed": true
+    },
+    {
+      "name": "create-and-read",
+      "passed": true
+    },
+    {
+      "name": "confirmed-approval",
+      "passed": true
+    },
+    {
+      "name": "remote-search-cache",
+      "passed": true
+    },
+    {
+      "name": "confirmed-update",
+      "passed": true
+    },
+    {
+      "name": "confirmed-history-restoration",
+      "passed": true
+    },
+    {
+      "name": "confirmed-archive-and-reactivate",
+      "passed": true
+    },
+    {
+      "name": "confirmed-conflict-replacement",
+      "passed": true
+    },
+    {
+      "name": "restart-and-confirmed-delete",
+      "passed": true
+    },
+    {
+      "name": "confirmed-clear",
+      "passed": true
+    }
+  ],
+  "failureDetail": "",
+  "cleanupError": "",
+  "cleanupPassed": true,
+  "passed": true
+}

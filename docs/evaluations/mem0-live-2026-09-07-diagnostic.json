@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-09-07T03:36:20.581Z",
+  "host": "memory.cone387.top",
+  "userId": "chouyu-acceptance-b694e091-a2fd-4a0d-be33-606356592ee6",
+  "testLocalId": "bf8eb75f-7e98-4ff6-b6ea-f83d99f82267",
+  "scopeVerified": true,
+  "checks": [
+    {
+      "name": "empty-isolated-user",
+      "passed": true
+    },
+    {
+      "name": "create-and-read",
+      "passed": true
+    },
+    {
+      "name": "remote-search-cache",
+      "passed": true
+    },
+    {
+      "name": "update-failed-assertion-or-protocol",
+      "passed": false
+    }
+  ],
+  "cleanupPassed": false,
+  "passed": false
+}

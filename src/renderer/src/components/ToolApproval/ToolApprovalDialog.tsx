@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ToolApprovalRequest } from '../../../../shared/tools'
 import { getToolRiskLabel } from '../../../../shared/tools'
 import './ToolApprovalDialog.css'
@@ -18,20 +18,34 @@ function formatArguments(arguments_: Record<string, unknown>): string {
 }
 
 export default function ToolApprovalDialog({ request, onResolve }: ToolApprovalDialogProps) {
+  const dialogRef = useRef<HTMLElement>(null)
   useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null
+    dialogRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
     const denyOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault()
         event.stopImmediatePropagation()
         onResolve(false)
       }
+      if (event.key === 'Tab') {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        const buttons = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') || [])
+        const index = buttons.findIndex(button => button === document.activeElement)
+        buttons[(index + (event.shiftKey ? buttons.length - 1 : 1)) % buttons.length]?.focus()
+      }
     }
     window.addEventListener('keydown', denyOnEscape, true)
-    return () => window.removeEventListener('keydown', denyOnEscape, true)
+    return () => {
+      window.removeEventListener('keydown', denyOnEscape, true)
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
+    }
   }, [onResolve])
 
   return (
     <div className="tool-approval-overlay">
-      <section className={`tool-approval-dialog risk-${request.risk}`} role="alertdialog" aria-modal="true" aria-labelledby="tool-approval-title" aria-describedby="tool-approval-description">
+      <section ref={dialogRef} className={`tool-approval-dialog risk-${request.risk}`} role="alertdialog" aria-modal="true" aria-labelledby="tool-approval-title" aria-describedby="tool-approval-description">
         <div className="tool-approval-icon" aria-hidden="true">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 3l8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7zM9 12l2 2 4-4"/>
@@ -49,7 +63,7 @@ export default function ToolApprovalDialog({ request, onResolve }: ToolApprovalD
         <pre className="tool-approval-arguments">{formatArguments(request.arguments)}</pre>
         <p className="tool-approval-help">仅本次调用有效。拒绝后 AI 会收到“用户拒绝”结果并继续回答。</p>
         <div className="tool-approval-actions">
-          <button type="button" autoFocus className="secondary" onClick={() => onResolve(false)}>拒绝</button>
+          <button type="button" className="secondary" onClick={() => onResolve(false)}>拒绝</button>
           <button type="button" className="primary" onClick={() => onResolve(true)}>允许本次操作</button>
         </div>
       </section>

@@ -1,0 +1,258 @@
+{
+  "timestamp": "2026-09-07T03:20:55.574Z",
+  "provider": "openai",
+  "host": "llm2.cone387.top",
+  "model": "deepseek-v4-flash",
+  "temperature": 0,
+  "sampleCount": 16,
+  "passed": 15,
+  "errors": 0,
+  "results": [
+    {
+      "id": "self-name",
+      "expected": {
+        "id": "self-name",
+        "text": "我叫林舟。",
+        "type": "person",
+        "contains": "林舟"
+      },
+      "actual": [
+        {
+          "type": "person",
+          "content": "我的名字是 林舟",
+          "importance": 0.8,
+          "confidence": 1,
+          "certainty": "explicit",
+          "subject": "self",
+          "sensitivity": "normal"
+        },
+        {
+          "type": "preference",
+          "content": "希望助手在称呼我时使用我的名字",
+          "importance": 0.2,
+          "confidence": 0.7,
+          "certainty": "inferred",
+          "subject": "self",
+          "sensitivity": "normal"
+        }
+      ],
+      "passed": false
+    },
+    {
+      "id": "english-name",
+      "expected": {
+        "id": "english-name",
+        "text": "My name is Alice.",
+        "type": "person",
+        "contains": "Alice"
+      },
+      "actual": [
+        {
+          "type": "person",
+          "content": "我的名字是 Alice",
+          "importance": 0.8,
+          "confidence": 1,
+          "certainty": "explicit",
+          "subject": "self",
+          "sensitivity": "normal"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "id": "stable-preference",
+      "expected": {
+        "id": "stable-preference",
+        "text": "我平时喝咖啡都不加糖，喜欢无糖的。",
+        "type": "preference",
+        "contains": "糖"
+      },
+      "actual": [
+        {
+          "type": "preference",
+          "content": "我平时喝咖啡不加糖，喜欢无糖咖啡。",
+          "importance": 0.3,
+          "confidence": 1,
+          "certainty": "explicit",
+          "subject": "self",
+          "sensitivity": "normal"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "id": "negative-preference",
+      "expected": {
+        "id": "negative-preference",
+        "text": "我不喜欢香菜。",
+        "type": "preference",
+        "contains": "香菜"
+      },
+      "actual": [
+        {
+          "type": "preference",
+          "content": "我不喜欢吃香菜。",
+          "importance": 0.6,
+          "confidence": 0.95,
+          "certainty": "explicit",
+          "subject": "self",
+          "sensitivity": "normal"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "id": "project",
+      "expected": {
+        "id": "project",
+        "text": "我正在开发名为 ChouYu 的桌面助手。",
+        "type": "project",
+        "contains": "ChouYu"
+      },
+      "actual": [
+        {
+          "type": "project",
+          "content": "我正在开发名为 ChouYu 的桌面助手。",
+          "importance": 0.6,
+          "confidence": 0.95,
+          "certainty": "explicit",
+          "subject": "self",
+          "sensitivity": "normal"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "id": "workflow",
+      "expected": {
+        "id": "workflow",
+        "text": "以后给我答案时，请先说结论再解释原因。",
+        "type": "workflow",
+        "contains": "结论"
+      },
+      "actual": [
+        {
+          "type": "workflow",
+          "content": "以后回答问题时先说结论，再解释原因。",
+          "importance": 0.7,
+          "confidence": 1,
+          "certainty": "explicit",
+          "subject": "self",
+          "sensitivity": "normal"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "id": "fact",
+      "expected": {
+        "id": "fact",
+        "text": "请记住，我的显示器分辨率是 4K。",
+        "type": "fact",
+        "contains": "4K"
+      },
+      "actual": [
+        {
+          "type": "fact",
+          "content": "我的显示器分辨率是 4K。",
+          "importance": 0.6,
+          "confidence": 1,
+          "certainty": "explicit",
+          "subject": "self",
+          "sensitivity": "normal"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "id": "imperative",
+      "expected": {
+        "id": "imperative",
+        "text": "我叫你检查这个文件。",
+        "type": null
+      },
+      "actual": [],
+      "passed": true
+    },
+    {
+      "id": "summon",
+      "expected": {
+        "id": "summon",
+        "text": "我叫小王过来帮忙。",
+        "type": null
+      },
+      "actual": [],
+      "passed": true
+    },
+    {
+      "id": "question",
+      "expected": {
+        "id": "question",
+        "text": "我喜欢什么",
+        "type": null
+      },
+      "actual": [],
+      "passed": true
+    },
+    {
+      "id": "quotation",
+      "expected": {
+        "id": "quotation",
+        "text": "请翻译这句话：My name is Alice.",
+        "type": null
+      },
+      "actual": [],
+      "passed": true
+    },
+    {
+      "id": "third-party",
+      "expected": {
+        "id": "third-party",
+        "text": "我同事小张喜欢喝无糖咖啡。",
+        "type": null
+      },
+      "actual": [],
+      "passed": true
+    },
+    {
+      "id": "hypothetical",
+      "expected": {
+        "id": "hypothetical",
+        "text": "假如我叫小明，就用这个名字写一个故事。",
+        "type": null
+      },
+      "actual": [],
+      "passed": true
+    },
+    {
+      "id": "joke",
+      "expected": {
+        "id": "joke",
+        "text": "我叫超人，开玩笑的啦。",
+        "type": null
+      },
+      "actual": [],
+      "passed": true
+    },
+    {
+      "id": "uncertain",
+      "expected": {
+        "id": "uncertain",
+        "text": "我可能喜欢浅色主题，还不确定。",
+        "type": null
+      },
+      "actual": [],
+      "passed": true
+    },
+    {
+      "id": "secret",
+      "expected": {
+        "id": "secret",
+        "text": "请记住，我的密码是 synthetic-test-password。",
+        "type": null
+      },
+      "actual": [],
+      "passed": true
+    }
+  ]
+}

@@ -7,6 +7,7 @@
 - 🐟 桌面悬浮角色，有自己的性格和说话风格
 - 💬 AI 对话，支持流式输出和 Markdown 渲染
 - 🧠 对话记忆，关闭重开后能接着聊
+- 💾 聊天历史不再按数量静默截断，图片独立保存，损坏文件保留并尝试备份恢复（开发中版本）
 - 🗂️ 多会话工作区，支持搜索、重命名、删除和 Markdown 导出
 - 🔌 插件系统，可接入外部服务（BBTalk、翻译等）
 - 📸 截图并发送给支持视觉能力的模型
@@ -34,12 +35,21 @@
 
 ## 快速开始
 
+开发环境使用 Node.js 24（见 `.nvmrc`）。当前工作区为 `1.3.0-rc.2` 候选版本，尚未发布；完整进度见 [迭代验收](docs/iteration-acceptance.md)，候选包信息见 [发布验证](docs/release-candidate.md)。Windows 图片附件支持[离线文字识别](docs/offline-ocr.md)。
+
 ```bash
 # 安装依赖
 npm install
+npx install-electron --no
 
 # 开发模式
 npm run dev
+
+# 质量检查
+npm run typecheck
+npm test
+npm run test:memory-eval
+npm run test:smoke
 
 # 打包 Windows 安装包
 npm run package:win
@@ -114,6 +124,7 @@ src/
 - [V1 功能规格](docs/v1-spec.md)
 - [当前功能状态](docs/current-status.md)
 - [迭代路线与发布验收](docs/roadmap.md)
+- [聊天数据保存与恢复](docs/storage-recovery.md)
 - [1.1.15 发布检查清单](docs/release-checklist-v1.1.15.md)
 - [插件开发指南](docs/plugin-guide.md)
 - [工具系统指南](docs/tool-guide.md)

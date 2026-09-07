@@ -61,8 +61,8 @@ interface SettingsProps {
 }
 
 const NAV_ITEMS = [
-  { key: 'ai', label: 'AI 提供者', icon: 'M4 7a4 4 0 018 0v1a2 2 0 012 2v4a2 2 0 01-2 2H2a2 2 0 01-2-2v-4a2 2 0 012-2V7z' },
-  { key: 'tools', label: 'AI 工具', icon: 'tools' },
+  { key: 'ai', label: '连接 AI', icon: 'M4 7a4 4 0 018 0v1a2 2 0 012 2v4a2 2 0 01-2 2H2a2 2 0 01-2-2v-4a2 2 0 012-2V7z' },
+  { key: 'tools', label: '操作权限', icon: 'tools' },
   { key: 'memory', label: '记忆中心', icon: 'memory' },
   { key: 'capabilities', label: '能力中心', icon: 'capabilities' },
   { key: 'persona', label: '角色人格', icon: 'M7 1.5a3 3 0 013 3c0 2-3 4-3 4s-3-2-3-4a3 3 0 013-3z' },
@@ -74,6 +74,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showKey, setShowKey] = useState(false)
   const [activeNav, setActiveNav] = useState<string>(initialNav || 'ai')
+  const [showAdvanced, setShowAdvanced] = useState(Boolean(initialNav === 'capabilities' || initialNav?.startsWith('plugin-')))
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [appVersion, setAppVersion] = useState<string>('')
   const [updateStatus, setUpdateStatus] = useState<string>('')
@@ -135,7 +136,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
         const initial: SoulVersion = { id: `${Date.now()}`, content: loaded.soulMd, createdAt: Date.now() }
         setSoulHistory([initial])
         setSelectedSoulVersionId(initial.id)
-        void window.electronAPI.db.setState(SOUL_HISTORY_STATE_KEY, JSON.stringify([initial]))
+        void window.electronAPI.db.setState(SOUL_HISTORY_STATE_KEY, JSON.stringify([initial])).catch(() => { /* The persistent storage notice reports disk failures. */ })
       }).catch(() => {})
     })
     window.electronAPI.plugin.getPlugins().then(setPlugins)
@@ -171,12 +172,13 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   ]
   const filteredNavItems = useMemo(() => {
     const query = navQuery.trim().toLocaleLowerCase()
-    if (!query) return allNavItems
+    if (!query) return allNavItems.filter((item) => showAdvanced || (item.key !== 'capabilities' && !item.key.startsWith('plugin-')))
     return allNavItems.filter((item) => item.label.toLocaleLowerCase().includes(query))
-  }, [allNavItems, navQuery])
+  }, [allNavItems, navQuery, showAdvanced])
   const settingsResults = useMemo(() => searchSettings(navQuery), [navQuery])
 
   const handleSearchResultSelect = useCallback((entry: SettingsSearchEntry) => {
+    if (entry.nav === 'capabilities' || entry.nav.startsWith('plugin-')) setShowAdvanced(true)
     if (entry.nav === 'memory' && onOpenMemoryWorkspace) {
       onOpenMemoryWorkspace()
       return
@@ -189,7 +191,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
       requestAnimationFrame(() => {
         const target = document.getElementById(entry.fieldId as string)
         if (!target) return
-        target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        target.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
         target.classList.add('settings-field-flash')
         window.setTimeout(() => target.classList.remove('settings-field-flash'), 1600)
         if (target instanceof HTMLElement) target.focus({ preventScroll: true })
@@ -283,8 +285,8 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
 
       <div className="settings-body">
         <nav ref={settingsNavRef} className="settings-nav" aria-label="设置分类">
-          <label className="settings-nav-search">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+          <label className="settings-nav-search search-field" data-filled={Boolean(navQuery)}>
+            <svg className="search-field-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
               <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
             </svg>
             <input
@@ -347,6 +349,10 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               <span>{item.label}</span>
             </button>
           ))}
+          {!navQuery.trim() && <button type="button" className="settings-advanced-toggle" aria-expanded={showAdvanced} onClick={() => {
+            setShowAdvanced(!showAdvanced)
+            if (showAdvanced && (activeNav === 'capabilities' || activeNav.startsWith('plugin-'))) setActiveNav('ai')
+          }}>{showAdvanced ? '收起高级设置' : '高级设置 · 能力与插件'}</button>}
           {filteredNavItems.length === 0 && !navQuery.trim() && <span className="settings-nav-empty">没有匹配项</span>}
         </nav>
 
@@ -354,7 +360,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
           {activeNav === 'ai' && (
             <div className="settings-pane">
               <div className="settings-pane-heading">
-                <h2>AI 提供者</h2>
+                <h2>连接 AI</h2>
                 <p>配置用于对话的服务地址、凭据和默认模型。</p>
               </div>
               <div className="settings-card">
@@ -447,7 +453,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                   </button>
                 </div>
                 <div id="settings-model-help" className="settings-model-status" role="status">
-                  {modelFetchStatus === 'idle' && '配置好 Provider、Base URL 和 API Key 后，点击测试连接。'}
+                  {modelFetchStatus === 'idle' && '选择服务类型，填写接口地址和密钥，再点击测试连接。'}
                   {modelFetchStatus === 'ready' && `已获取 ${modelOptions.length} 个可用模型。`}
                   {modelFetchStatus === 'unavailable' && (providerCheck?.message || '未获取到模型，请检查配置。')}
                 </div>

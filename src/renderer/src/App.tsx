@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import StorageNotice from './components/StorageNotice/StorageNotice'
 import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
@@ -31,6 +32,15 @@ function App() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const screenshotCallbackRef = useRef<((dataUrl: string) => void) | null>(null)
   const ignoreRef = useRef(true)
+
+  useEffect(() => {
+    const clampPet = () => setPetPosition((position) => ({
+      x: Math.min(Math.max(0, position.x), Math.max(0, window.innerWidth - config.petSize)),
+      y: Math.min(Math.max(0, position.y), Math.max(0, window.innerHeight - config.petSize))
+    }))
+    window.addEventListener('resize', clampPet)
+    return () => window.removeEventListener('resize', clampPet)
+  }, [config.petSize])
 
   useEffect(() => {
     const unsubscribe = stateMachine.onStateChange(setPetState)
@@ -80,7 +90,7 @@ function App() {
 
   const updatePetVisibility = useCallback((visible: boolean) => {
     setPetVisible(visible)
-    void window.electronAPI.db.setState('pet-visible', String(visible))
+    void window.electronAPI.db.setState('pet-visible', String(visible)).catch(() => { /* The persistent storage notice reports disk failures. */ })
     window.electronAPI.notifyPetVisible(visible)
   }, [])
 
@@ -217,7 +227,7 @@ function App() {
 
   const handlePanelPositionChange = useCallback((position: { x: number; y: number }) => {
     setPanelPosition(position)
-    void window.electronAPI.db.setState('panel-position', JSON.stringify(position))
+    void window.electronAPI.db.setState('panel-position', JSON.stringify(position)).catch(() => { /* The persistent storage notice reports disk failures. */ })
   }, [])
 
   const ensurePanelPosition = useCallback((panelH?: number, panelW?: number) => {
@@ -429,12 +439,13 @@ function App() {
 
   useEffect(() => {
     if (positionLoaded) {
-      window.electronAPI.db.setState('pet-position', JSON.stringify(petPosition))
+      window.electronAPI.db.setState('pet-position', JSON.stringify(petPosition)).catch(() => { /* The persistent storage notice reports disk failures. */ })
     }
   }, [petPosition, positionLoaded])
 
   return (
     <div className="app-container">
+      <StorageNotice />
       {petVisible && (
         <Pet
           position={petPosition}

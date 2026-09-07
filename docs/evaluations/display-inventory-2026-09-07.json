@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-09-07T04:20:28.808Z",
+  "displays": [
+    {
+      "id": 4140013447,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1536,
+        "height": 864
+      },
+      "workArea": {
+        "x": 0,
+        "y": 0,
+        "width": 1536,
+        "height": 816
+      },
+      "scaleFactor": 1.25,
+      "rotation": 0,
+      "internal": false
+    }
+  ]
+}

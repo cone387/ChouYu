@@ -15,7 +15,7 @@ const MEMORY_SYSTEM_PROMPT = `你是 ChouYu 的记忆分析器。你的唯一任
 严格规则：
 1. 只提取用户明确表达、且确实指向用户本人的信息；第三方、引用、假设、玩笑、问题、否定、猜测和模型回复都不要提取。
 2. “我不知道”“我可能叫……”不是可靠姓名。像“我叫不上”这种既可能是短语、也可能被用户当作昵称的表达，返回一个 certainty=uncertain、confidence<=0.79 的 person 候选，交给用户确认；不要自动保存，也不要直接丢弃。
-3. 记忆类型只能是 fact、preference、person、project、workflow。
+3. 记忆类型只能是 fact、preference、person、project、workflow。person 是用户身份，project 是持续进行的项目，preference 是对事物的喜好，workflow 是要求助手以后持续遵守的回答格式、协作顺序或操作习惯，fact 是其他稳定事实。针对助手未来行为的要求优先归 workflow，不要归 preference；“不喜欢某事物”属于有效偏好，不等于否认某事实。
 4. person 的 content 必须是规范形式“我的名字是 <姓名>”；其他类型用简洁、完整的中文事实句。
 5. action 只能为 remember 或 ignore。只有 action=remember 且 subject=self 才能进入候选。
 6. certainty 只能为 explicit、inferred、uncertain。只有 explicit 的候选允许自动写入；inferred/uncertain 必须等待确认。
@@ -60,11 +60,11 @@ function normalizeCandidate(value: unknown): ExtractedMemory | null {
   if (!value || typeof value !== 'object') return null
   const item = value as Record<string, unknown>
   const type = String(item.type) as MemoryType
-  const content = typeof item.content === 'string' ? item.content.trim().slice(0, 500) : ''
+  const content = typeof item.content === 'string' ? item.content.trim() : ''
   const subject = item.subject === 'self' ? 'self' : item.subject === 'other' ? 'other' : 'unknown'
   const certainty = item.certainty === 'explicit' ? 'explicit' : item.certainty === 'inferred' ? 'inferred' : 'uncertain'
   const action = item.action === 'remember' ? 'remember' : 'ignore'
-  if (action !== 'remember' || subject !== 'self' || !MEMORY_TYPES.has(type) || !content || containsSecret(content)) return null
+  if (action !== 'remember' || subject !== 'self' || !MEMORY_TYPES.has(type) || !content || content.length > 500 || containsSecret(content)) return null
   const importance = typeof item.importance === 'number' && Number.isFinite(item.importance) ? Math.min(1, Math.max(0, item.importance)) : 0.6
   const confidenceValue = typeof item.confidence === 'number' && Number.isFinite(item.confidence) ? Math.min(1, Math.max(0, item.confidence)) : 0.5
   const confidence = certainty === 'explicit' ? confidenceValue : Math.min(confidenceValue, 0.79)

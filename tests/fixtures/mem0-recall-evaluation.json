@@ -1,0 +1,32 @@
+{
+  "memories": [
+    { "id": "drink-user", "content": "用户林岚喝咖啡时不加糖，通常选择美式。" },
+    { "id": "drink-colleague", "content": "同事陈浩喝咖啡喜欢加两块糖。" },
+    { "id": "work-user", "content": "用户每周二和周四在家远程办公，其他工作日在办公室。" },
+    { "id": "work-colleague", "content": "同事陈浩每周一远程办公，周二会到办公室。" },
+    { "id": "project-lantern", "content": "灯塔项目的后端用 Rust 编写，数据保存在 SQLite 中。" },
+    { "id": "project-harbor", "content": "港湾项目的后端使用 Python 和 PostgreSQL。" },
+    { "id": "allergy-user", "content": "用户对虾、蟹等甲壳类海鲜过敏，聚餐需要避开。" },
+    { "id": "allergy-friend", "content": "朋友周宁对花生过敏，用户本人可以吃花生。" },
+    { "id": "identity-user", "content": "用户的名字是林岚，其中岚是山字头的岚。" },
+    { "id": "identity-friend", "content": "用户的朋友叫林蓝，其中蓝是蓝色的蓝。" },
+    { "id": "city-current", "content": "用户在 2026 年搬到了南京，目前在南京生活。" },
+    { "id": "city-past", "content": "用户在 2024 年住在苏州，那是搬家前的住址。" }
+  ],
+  "queries": [
+    { "id": "coffee-paraphrase", "query": "帮我点饮料时，咖啡甜度怎么选？", "expected": ["drink-user"] },
+    { "id": "colleague-coffee", "query": "陈浩的咖啡需要放糖吗？", "expected": ["drink-colleague"] },
+    { "id": "work-paraphrase", "query": "我哪两天不用通勤，可以从家里工作？", "expected": ["work-user"] },
+    { "id": "colleague-work", "query": "陈浩星期二在哪里上班？", "expected": ["work-colleague"] },
+    { "id": "lantern-stack", "query": "灯塔后端的编程语言与持久化数据库是什么？", "expected": ["project-lantern"] },
+    { "id": "harbor-english", "query": "Which language and database does the Harbor project use?", "expected": ["project-harbor"] },
+    { "id": "allergy-paraphrase", "query": "替我安排晚餐，哪些海产品会引起过敏？", "expected": ["allergy-user"] },
+    { "id": "peanut-subject", "query": "我和周宁谁不能吃花生？", "expected": ["allergy-friend"] },
+    { "id": "identity-homophone", "query": "我的姓名中，lan 这个字怎么写？", "expected": ["identity-user"] },
+    { "id": "current-city", "query": "我现在定居在哪座城市？", "expected": ["city-current"] },
+    { "id": "old-city", "query": "2024 年我住在哪里？", "expected": ["city-past"] },
+    { "id": "both-projects", "query": "灯塔与港湾两个项目分别用了什么数据库？", "expected": ["project-lantern", "project-harbor"] },
+    { "id": "unknown-pet", "query": "我养的猫叫什么名字？", "expected": [] },
+    { "id": "unknown-birthday", "query": "我的生日是几月几日？", "expected": [] }
+  ]
+}

@@ -1,0 +1,332 @@
+{
+  "timestamp": "2026-09-07T04:12:00.406Z",
+  "host": "memory.cone387.top",
+  "userId": "chouyu-recall-d596d807-772c-4e0a-be30-38c5472ea72f",
+  "runId": "d596d807-772c-4e0a-be30-38c5472ea72f",
+  "corpusSha256": "c5e61df57d4e67c5e3971086c35737d401bb8ed2e276868aec6fbc18b19b3cca",
+  "scope": "Synthetic labeled corpus; configured Mem0 search endpoint, k=3. No user conversation data.",
+  "memoryCount": 12,
+  "queryCount": 14,
+  "completedQueries": 14,
+  "errors": 0,
+  "meanRecallAt3": 1,
+  "meanReciprocalRank": 1,
+  "meanPrecisionAt3": 0.36111111111111116,
+  "negativeQueries": 2,
+  "negativeAbstentions": 0,
+  "evidenceSelection": {
+    "model": "deepseek-v4-flash",
+    "passed": 5,
+    "count": 14,
+    "results": [
+      {
+        "id": "coffee-paraphrase",
+        "selected": [
+          "drink-user"
+        ],
+        "answer": "不加糖，选美式即可",
+        "passed": true
+      },
+      {
+        "id": "colleague-coffee",
+        "selected": [
+          "memory:drink-colleague"
+        ],
+        "answer": "需要，陈浩喝咖啡喜欢加两块糖。",
+        "passed": false
+      },
+      {
+        "id": "work-paraphrase",
+        "selected": [
+          "work-user"
+        ],
+        "answer": "周二和周四",
+        "passed": true
+      },
+      {
+        "id": "colleague-work",
+        "selected": [
+          "memory:work-colleague"
+        ],
+        "answer": "在办公室",
+        "passed": false
+      },
+      {
+        "id": "lantern-stack",
+        "selected": [
+          "memory:project-lantern"
+        ],
+        "answer": "Rust 与 SQLite",
+        "passed": false
+      },
+      {
+        "id": "harbor-english",
+        "selected": [
+          "memory:project-harbor"
+        ],
+        "answer": "Python and PostgreSQL",
+        "passed": false
+      },
+      {
+        "id": "allergy-paraphrase",
+        "selected": [
+          "memory:allergy-user"
+        ],
+        "answer": "您对虾、蟹等甲壳类海鲜过敏，安排晚餐时会避开此类海产品。",
+        "passed": false
+      },
+      {
+        "id": "peanut-subject",
+        "selected": [
+          "allergy-friend"
+        ],
+        "answer": "周宁不能吃花生",
+        "passed": true
+      },
+      {
+        "id": "identity-homophone",
+        "selected": [
+          "memory:identity-user"
+        ],
+        "answer": "你名字中的 lan 写作“岚”，是山字头下面一个“风”。",
+        "passed": false
+      },
+      {
+        "id": "current-city",
+        "selected": [
+          "memory:city-current"
+        ],
+        "answer": "南京",
+        "passed": false
+      },
+      {
+        "id": "old-city",
+        "selected": [
+          "memory:city-past"
+        ],
+        "answer": "苏州",
+        "passed": false
+      },
+      {
+        "id": "both-projects",
+        "selected": [
+          "memory:project-lantern",
+          "memory:project-harbor"
+        ],
+        "answer": "灯塔项目使用 SQLite，港湾项目使用 PostgreSQL。",
+        "passed": false
+      },
+      {
+        "id": "unknown-pet",
+        "selected": [],
+        "answer": "UNKNOWN",
+        "passed": true
+      },
+      {
+        "id": "unknown-birthday",
+        "selected": [],
+        "answer": "UNKNOWN",
+        "passed": true
+      }
+    ]
+  },
+  "results": [
+    {
+      "id": "coffee-paraphrase",
+      "expected": [
+        "drink-user"
+      ],
+      "actual": [
+        "drink-user",
+        "drink-colleague",
+        "identity-friend"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "colleague-coffee",
+      "expected": [
+        "drink-colleague"
+      ],
+      "actual": [
+        "drink-colleague",
+        "drink-user",
+        "work-colleague"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "work-paraphrase",
+      "expected": [
+        "work-user"
+      ],
+      "actual": [
+        "work-user",
+        "work-colleague",
+        "city-current"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "colleague-work",
+      "expected": [
+        "work-colleague"
+      ],
+      "actual": [
+        "work-colleague",
+        "drink-colleague",
+        "work-user"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "lantern-stack",
+      "expected": [
+        "project-lantern"
+      ],
+      "actual": [
+        "project-lantern",
+        "project-harbor",
+        "identity-friend"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "harbor-english",
+      "expected": [
+        "project-harbor"
+      ],
+      "actual": [
+        "project-harbor",
+        "project-lantern",
+        "work-colleague"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "allergy-paraphrase",
+      "expected": [
+        "allergy-user"
+      ],
+      "actual": [
+        "allergy-user",
+        "allergy-friend",
+        "drink-colleague"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "peanut-subject",
+      "expected": [
+        "allergy-friend"
+      ],
+      "actual": [
+        "allergy-friend",
+        "allergy-user",
+        "drink-colleague"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "identity-homophone",
+      "expected": [
+        "identity-user"
+      ],
+      "actual": [
+        "identity-user",
+        "identity-friend",
+        "city-current"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "current-city",
+      "expected": [
+        "city-current"
+      ],
+      "actual": [
+        "city-current",
+        "city-past",
+        "work-user"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "old-city",
+      "expected": [
+        "city-past"
+      ],
+      "actual": [
+        "city-past",
+        "city-current",
+        "work-colleague"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "both-projects",
+      "expected": [
+        "project-lantern",
+        "project-harbor"
+      ],
+      "actual": [
+        "project-lantern",
+        "project-harbor",
+        "city-current"
+      ],
+      "recallAt3": 1,
+      "reciprocalRank": 1,
+      "passed": true
+    },
+    {
+      "id": "unknown-pet",
+      "expected": [],
+      "actual": [
+        "identity-user",
+        "identity-friend",
+        "city-current"
+      ],
+      "recallAt3": null,
+      "reciprocalRank": null,
+      "passed": false
+    },
+    {
+      "id": "unknown-birthday",
+      "expected": [],
+      "actual": [
+        "city-current",
+        "identity-friend",
+        "identity-user"
+      ],
+      "recallAt3": null,
+      "reciprocalRank": null,
+      "passed": false
+    }
+  ],
+  "failure": "",
+  "scopeVerified": true,
+  "cleanupPassed": true,
+  "passed": false
+}

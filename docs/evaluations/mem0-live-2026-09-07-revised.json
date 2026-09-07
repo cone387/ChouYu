@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-09-07T03:37:47.734Z",
+  "host": "memory.cone387.top",
+  "userId": "chouyu-acceptance-c23d5bf9-7622-4488-a5b5-9dd2036addcb",
+  "testLocalId": "4b7b8bab-372d-46bc-84cf-92868ddba451",
+  "scopeVerified": true,
+  "checks": [
+    {
+      "name": "empty-isolated-user",
+      "passed": true
+    },
+    {
+      "name": "create-and-read",
+      "passed": true
+    },
+    {
+      "name": "remote-search-cache",
+      "passed": true
+    },
+    {
+      "name": "update-failed-assertion-or-protocol",
+      "passed": false
+    }
+  ],
+  "failureDetail": "Updated content not readable from remote",
+  "cleanupError": "",
+  "cleanupPassed": true,
+  "passed": false
+}

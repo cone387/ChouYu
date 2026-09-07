@@ -1,3 +1,4 @@
+import type { StorageStatus } from '../../../shared/storage'
 import type { AppConfig } from '../../../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../../../shared/ai'
 import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from '../../../shared/capture'
@@ -82,6 +83,7 @@ export interface ElectronAPI {
   captureScrollRegion: (region: ScrollCaptureRegion) => Promise<ScrollCaptureResult>
   onScrollCaptureProgress: (callback: (info: { frames: number }) => void) => () => void
   openFileDialog: () => Promise<{ type: 'image' | 'text'; data: string; name: string } | null>
+  recognizeOfflineImage: (dataUrl: string) => Promise<import('../../../shared/ocr').OfflineOcrResult>
   fetchModels: () => Promise<AIModelListResult>
   diagnoseProvider: () => Promise<ProviderDiagnostics>
   ai: {
@@ -141,12 +143,18 @@ export interface ElectronAPI {
   onClipboardChange: (callback: (text: string) => void) => () => void
   onConfigChanged: (callback: (config: AppConfig) => void) => () => void
   db: {
+    getStorageStatus: () => Promise<StorageStatus>
+    retrySave: () => Promise<StorageStatus>
+    dismissStorageNotice: () => Promise<StorageStatus>
+    openDataDirectory: () => Promise<string>
+    onStorageStatus: (callback: (status: StorageStatus) => void) => () => void
     getConfig: () => Promise<AppConfig>
     saveConfig: (cfg: Partial<AppConfig>) => Promise<AppConfig>
     getMessages: () => Promise<Message[]>
     saveMessages: (msgs: Message[]) => Promise<void>
     clearMessages: () => Promise<void>
     getSessionWorkspace: () => Promise<SessionWorkspace>
+    searchSessions: (query: string) => Promise<ChatSessionSummary[]>
     createSession: (title?: string) => Promise<SessionWorkspace>
     selectSession: (id: string) => Promise<SessionWorkspace>
     renameSession: (id: string, title: string) => Promise<ChatSessionSummary[]>

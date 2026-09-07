@@ -184,7 +184,7 @@ export class SQLiteMemoryProvider implements MemoryProvider {
     this.database = null
   }
 
-  private db(): Database.Database {
+  protected db(): Database.Database {
     if (!this.database) throw new Error('Memory provider is not initialized')
     return this.database
   }
@@ -645,14 +645,14 @@ export class SQLiteMemoryProvider implements MemoryProvider {
     return (this.db().prepare('SELECT memory_id FROM memory_cluster_exclusions').all() as Array<{ memory_id: string }>).map((row) => row.memory_id)
   }
 
-  private insertRevision(memory: MemoryRecord, reason: MemoryRevision['reason']): void {
+  protected insertRevision(memory: MemoryRecord, reason: MemoryRevision['reason']): void {
     this.db().prepare(`
       INSERT INTO memory_revisions (id, memory_id, content, type, importance, reason, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(randomUUID(), memory.id, memory.content, memory.type, memory.importance, reason, Date.now())
   }
 
-  private getRequired(id: string): MemoryRecord {
+  protected getRequired(id: string): MemoryRecord {
     const row = this.db().prepare('SELECT * FROM memories WHERE id = ? LIMIT 1').get(id) as MemoryRow | undefined
     if (!row) throw new Error('记忆不存在或已删除。')
     return this.mapRow(row)

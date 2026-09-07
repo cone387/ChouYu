@@ -141,7 +141,7 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
           onChange={(e) => {
             const val = e.target.value
             setCustomIcon(val)
-            window.electronAPI.db.setState(`plugin:${plugin.id}:customIcon`, val)
+            window.electronAPI.db.setState(`plugin:${plugin.id}:customIcon`, val).catch(() => { /* The persistent storage notice reports disk failures. */ })
           }}
           placeholder={plugin.icon || '🔌'}
           maxLength={2}
@@ -247,7 +247,7 @@ export default function PluginSettingsTab({ plugin }: PluginSettingsTabProps) {
             checked={feedToPet}
             onChange={(e) => {
               setFeedToPet(e.target.checked)
-              window.electronAPI.db.setState(`plugin:${plugin.id}:feedToPet`, e.target.checked ? 'true' : 'false')
+              window.electronAPI.db.setState(`plugin:${plugin.id}:feedToPet`, e.target.checked ? 'true' : 'false').catch(() => { /* The persistent storage notice reports disk failures. */ })
             }}
           />
           <span className="settings-switch-slider" />

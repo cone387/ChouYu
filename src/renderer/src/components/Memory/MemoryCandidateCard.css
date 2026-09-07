@@ -44,7 +44,7 @@
 
 .memory-candidate-copy strong {
   color: var(--text-primary);
-  font-size: 10px;
+  font-size: var(--font-sm);
 }
 
 .memory-candidate-copy span {
@@ -52,7 +52,7 @@
   border-radius: 5px;
   background: var(--hover-bg);
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: var(--font-sm);
 }
 
 .memory-candidate-copy span.sensitive {
@@ -63,13 +63,13 @@
 .memory-candidate-copy p {
   margin: 4px 0 2px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-sm);
   line-height: 1.45;
 }
 
 .memory-candidate-copy small {
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: var(--font-sm);
 }
 
 .memory-candidate-review-note {
@@ -84,7 +84,7 @@
 }
 
 .memory-candidate-review-note svg { flex: 0 0 auto; margin-top: 1px; }
-.memory-candidate-review-note span { padding: 0; background: transparent; color: inherit; font-size: 9px; line-height: 1.4; }
+.memory-candidate-review-note span { padding: 0; background: transparent; color: inherit; font-size: var(--font-sm); line-height: 1.4; }
 
 .memory-candidate-conflict {
   margin: 7px 0 5px;
@@ -101,12 +101,12 @@
   margin-bottom: 5px;
 }
 
-.memory-candidate-conflict-title strong { color: var(--warning); font-size: 9px; }
-.memory-candidate-conflict-title span { padding: 0; background: transparent; color: var(--text-secondary); font-size: 8px; }
+.memory-candidate-conflict-title strong { color: var(--warning); font-size: var(--font-sm); }
+.memory-candidate-conflict-title span { padding: 0; background: transparent; color: var(--text-secondary); font-size: var(--font-sm); }
 .memory-candidate-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .memory-candidate-compare > div { min-width: 0; padding: 5px 6px; border-radius: 6px; background: var(--bg-secondary); }
-.memory-candidate-compare span { padding: 0; background: transparent; color: var(--text-muted); font-size: 8px; }
-.memory-candidate-compare p { margin: 3px 0 0; color: var(--text-primary); font-size: 9px; overflow-wrap: anywhere; }
+.memory-candidate-compare span { padding: 0; background: transparent; color: var(--text-muted); font-size: var(--font-sm); }
+.memory-candidate-compare p { margin: 3px 0 0; color: var(--text-primary); font-size: var(--font-sm); overflow-wrap: anywhere; }
 
 .memory-candidate-actions {
   display: flex;
@@ -126,7 +126,7 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 9px;
+  font-size: var(--font-sm);
 }
 
 .memory-candidate-actions button.primary {

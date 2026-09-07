@@ -131,6 +131,33 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
     return { remoteCount: (await this.list(signal)).length }
   }
 
+  /** Mutations are scoped to an ID returned by the configured user's list. */
+  private async ownedEndpoint(remoteId: string, signal?: AbortSignal): Promise<string> {
+    if (!remoteId || remoteId.length > 256) throw new Error('Mem0 记忆 ID 无效。')
+    const owned = await this.list(signal)
+    if (!owned.some(memory => memory.id === remoteId)) throw new Error('当前 Mem0 用户范围内找不到这条记忆，已取消修改。')
+    return `${this.endpoint()}/${encodeURIComponent(remoteId)}`
+  }
+
+  async updateRemote(remoteId: string, content: string, metadata: Record<string, unknown>, signal?: AbortSignal): Promise<void> {
+    if (!content.trim() || content.length > 500) throw new Error('Mem0 记忆正文长度无效。')
+    const endpoint = await this.ownedEndpoint(remoteId, signal)
+    // Both HTTP APIs accept `text`; OSS's Python SDK uses `data` instead.
+    const body = { text: content, metadata }
+    const response = await this.send(endpoint, { method: 'PUT', headers: this.headers(), body: JSON.stringify(body), signal: signal || AbortSignal.timeout(30_000) }, '更新记忆')
+    await this.responseJson(response)
+    const stored = (await this.list(signal)).find(memory => memory.id === remoteId)
+    if (stored?.content !== content.trim()) throw new Error('Mem0 尚未确认更新后的内容，请刷新后重试；本地内容未修改。')
+    if (Object.entries(metadata).some(([key, value]) => JSON.stringify(stored.metadata[key]) !== JSON.stringify(value))) throw new Error('Mem0 尚未确认更新后的属性，请刷新后重试；本地状态未修改。')
+  }
+
+  async deleteRemote(remoteId: string, signal?: AbortSignal): Promise<void> {
+    const endpoint = await this.ownedEndpoint(remoteId, signal)
+    const response = await this.send(endpoint, { method: 'DELETE', headers: this.headers(), signal: signal || AbortSignal.timeout(30_000) }, '删除记忆')
+    await this.responseJson(response)
+    if ((await this.list(signal)).some(memory => memory.id === remoteId)) throw new Error('Mem0 尚未确认删除，请刷新后重试；本地记录已保留。')
+  }
+
   async search(query: string, limit = 6, signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
     this.validate()
     const boundedLimit = Math.min(50, Math.max(1, limit))

@@ -58,6 +58,14 @@ interface ChatPanelProps {
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
   const [showSettings, setShowSettings] = useState(initialShowSettings || false)
   const [showMemoryWorkspace, setShowMemoryWorkspace] = useState(false)
+  const [showMessageSearch, setShowMessageSearch] = useState(false)
+  const [messageSearchQuery, setMessageSearchQuery] = useState('')
+  const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight })
+  useEffect(() => {
+    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight })
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
   const [memoryReturnTarget, setMemoryReturnTarget] = useState<'chat' | 'settings'>('chat')
   const [showSessions, setShowSessions] = useState(false)
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
@@ -244,7 +252,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [activeSessionId, isStreaming, onPetStateChange])
 
   useEffect(() => {
-    if (!visible || showSettings || showMemoryWorkspace) return
+    if (!visible) return
     const panelEl = panelRef.current
     if (!panelEl) return
     requestAnimationFrame(() => {
@@ -253,7 +261,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       const nextY = Math.min(Math.max(4, position.y), Math.max(4, window.innerHeight - rect.height - 4))
       if (nextX !== position.x || nextY !== position.y) onPositionChange({ x: nextX, y: nextY })
     })
-  }, [visible, showMemoryWorkspace, showSettings, showSessions, panelHeight, position, onPositionChange])
+  }, [visible, showMemoryWorkspace, showSettings, showSessions, panelHeight, chatContentWidth, position, onPositionChange, viewport])
 
   const handleDragStart = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return
@@ -298,7 +306,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const toggleSessionSidebar = useCallback(() => {
     setShowSessions((current) => {
       const next = !current
-      void window.electronAPI.db.setState(SESSION_SIDEBAR_STATE_KEY, String(next))
+      void window.electronAPI.db.setState(SESSION_SIDEBAR_STATE_KEY, String(next)).catch(() => { /* The persistent storage notice reports disk failures. */ })
       if (!next) setTimeout(requestComposerFocus, 0)
       return next
     })
@@ -318,7 +326,18 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (toolApprovalRequest || event.defaultPrevented) return
+      if (visible && !showSettings && !showMemoryWorkspace && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        setShowMessageSearch(true)
+        return
+      }
       if (event.key !== 'Escape' || !visible) return
+      if (showMessageSearch && !showSettings && !showMemoryWorkspace) {
+        setShowMessageSearch(false)
+        requestComposerFocus()
+        return
+      }
       if (confirmClear) {
         setConfirmClear(false)
         return
@@ -351,7 +370,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [confirmClear, memoryReturnTarget, onClose, onPositionChange, onSettingsClose, position, requestComposerFocus, showMemoryWorkspace, showSessions, showSettings, toggleSessionSidebar, visible])
+  }, [confirmClear, memoryReturnTarget, onClose, onPositionChange, onSettingsClose, position, requestComposerFocus, showMemoryWorkspace, showMessageSearch, showSessions, showSettings, toggleSessionSidebar, toolApprovalRequest, visible])
 
 
   const pluginCommands = plugins.map((plugin) => ({ cmd: '/' + plugin.command, desc: plugin.description }))
@@ -635,7 +654,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             onPointerCancel: handleDragEnd
           }}
           onCreate={createSession}
-          onSelect={selectSession}
+          onSelect={async (id, query) => {
+            await selectSession(id)
+            setMessageSearchQuery(query || '')
+            setShowMessageSearch(Boolean(query))
+          }}
           onRename={renameSession}
           onDelete={deleteSession}
           onExport={exportSession}
@@ -728,6 +751,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             >
               <TopBar
                 status={getStatusText()}
+                searchOpen={showMessageSearch}
+                onSearch={() => { setMessageSearchQuery(''); setShowMessageSearch((open) => !open) }}
                 showSessions={showSessions}
                 onToggleSessions={toggleSessionSidebar}
                 onMemory={() => openMemoryWorkspace()}
@@ -749,6 +774,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             {showOnboarding && <OnboardingCard onConfigure={openAISettings} />}
             {workspaceLoaded && (
               <MessageArea
+                key={activeSessionId}
+                searchOpen={showMessageSearch}
+                initialSearch={messageSearchQuery}
+                onCloseSearch={() => { setShowMessageSearch(false); requestComposerFocus() }}
                 messages={messages}
                 isStreaming={isStreaming}
                 onRetry={retryAssistantMessage}
@@ -787,6 +816,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             {memoryCandidateError && <div className="memory-candidate-error" role="alert">{memoryCandidateError}</div>}
             {memoryWriteNotice && <div className="memory-write-notice" role="status">{memoryWriteNotice}</div>}
             <InputArea
+              sessionId={activeSessionId}
               onSend={handleSend}
               onStop={handleStopGeneration}
               disabled={!workspaceLoaded}

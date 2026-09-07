@@ -1,7 +1,7 @@
 import { getConfig, saveConfig } from '../database'
 import { capabilityRegistry } from '../capabilities/registry'
 import { Mem0MemoryProvider } from '../memory/mem0-provider'
-import { closeMemory, getMemoryProvider, initializeMemory, searchMemories, testMemoryEngine } from '../memory/service'
+import { closeMemory, getMemoryProvider, importMemories, initializeMemory, searchMemories, testMemoryEngine } from '../memory/service'
 import { startFakeMem0Server } from './fake-mem0-server'
 
 const SMOKE_USER = 'smoke-user'
@@ -56,11 +56,89 @@ export async function runMem0RuntimeSmoke(): Promise<void> {
     if (written.length === 0) throw new Error('Mem0 rememberRaw smoke test failed')
     if (!server.records().some((record) => record.userId === SMOKE_USER && record.memory.includes('上海工作'))) throw new Error('Mem0 remote write smoke test failed')
 
-    const pushed = provider.createActive({ type: 'fact', content: '冒烟推送记忆', importance: 0.7, confidence: 1, sensitivity: 'normal' })
+    const pushed = await provider.createActiveConfirmed({ type: 'fact', content: '冒烟推送记忆', importance: 0.7, confidence: 1, sensitivity: 'normal' })
     const pushArrived = await waitFor(() => server.requests().some((entry) =>
       entry.method === 'POST' && entry.path === 'memories' && entry.body?.infer === false && (entry.body?.metadata as { chouyu_id?: string } | undefined)?.chouyu_id === pushed.id
     ), 2000)
     if (!pushArrived) throw new Error('Mem0 background push smoke test failed')
+
+    server.setMode('auth')
+    const candidate = provider.createCandidate({ type: 'fact', content: '确认写入失败后重试的候选', importance: 0.6, confidence: 1, sensitivity: 'normal' })!
+    let approveRejected = false
+    try { await provider.approveConfirmed(candidate.id) } catch { approveRejected = true }
+    if (!approveRejected || provider.list({ status: 'pending' }).every(item => item.id !== candidate.id)) throw new Error('Failed approval did not preserve pending candidate')
+    let updateRejected = false, deleteRejected = false
+    try { await provider.updateConfirmed(written[0].id, { content: '不应保存的更新' }) } catch { updateRejected = true }
+    try { await provider.deleteConfirmed(written[0].id) } catch { deleteRejected = true }
+    if (!updateRejected || !deleteRejected || !provider.list({ status: 'all' }).some(item => item.id === written[0].id && item.content.includes('上海工作'))) throw new Error('Mem0 failed mutation did not preserve local cache')
+    server.setMode('ok')
+    await provider.approveConfirmed(candidate.id)
+    if (!server.records().some(item => item.metadata.chouyu_id === candidate.id) || !provider.list({ status: 'active' }).some(item => item.id === candidate.id)) throw new Error('Approval retry was not confirmed in both stores')
+    await provider.deleteConfirmed(candidate.id)
+    await provider.updateConfirmed(written[0].id, { content: '冒烟更新：用户在杭州工作' })
+    if (!server.records().some(item => item.memory.includes('杭州工作')) || server.records().some(item => item.memory.includes('上海工作'))) throw new Error('Mem0 confirmed update did not reach remote')
+    const revision = provider.listRevisions(written[0].id).find(item => item.content.includes('上海工作'))!
+    server.setMode('auth')
+    let restoreRejected = false
+    try { await provider.restoreRevisionConfirmed(written[0].id, revision.id) } catch { restoreRejected = true }
+    if (!restoreRejected || !provider.list({ status: 'active' }).some(item => item.id === written[0].id && item.content.includes('杭州工作'))) throw new Error('Failed restoration changed local memory')
+    server.setMode('ok')
+    await provider.restoreRevisionConfirmed(written[0].id, revision.id)
+    if (!server.records().some(item => item.memory.includes('上海工作'))) throw new Error('Restored revision did not reach remote')
+    await provider.updateConfirmed(written[0].id, { content: '冒烟更新：用户在杭州工作' })
+
+    const importDecision = { item: { id: 'import-smoke', candidate: { type: 'project' as const, content: '导入验收项目使用测试数据库', importance: 0.6, confidence: 1, sensitivity: 'normal' as const }, status: 'new' as const, suggestedAction: 'add' as const }, action: 'add' as const }
+    server.setMode('auth')
+    const failedImport = await importMemories([importDecision])
+    if (failedImport.failed !== 1 || failedImport.added !== 0) throw new Error('Failed import was reported as successful')
+    server.setMode('ok')
+    const retriedImport = await importMemories([importDecision])
+    if (retriedImport.added !== 1 || retriedImport.skipped !== 0 || !server.records().some(item => item.memory === importDecision.item.candidate.content)) throw new Error('Import retry did not confirm pending record')
+    console.log('CHOUYU_MEM0_HISTORY_IMPORT_SMOKE_PASSED restoration, failure preservation, import failure and retry')
+    server.setMode('auth')
+    let archiveRejected = false
+    try { await provider.archiveManyConfirmed([written[0].id], 'manual') } catch { archiveRejected = true }
+    if (!archiveRejected || !provider.list({ status: 'active' }).some(item => item.id === written[0].id)) throw new Error('Failed archive changed local status')
+    server.setMode('ok')
+    await provider.archiveManyConfirmed([written[0].id], 'manual')
+    if ((await provider.searchRemote('杭州工作')).length) throw new Error('Archived memory was recalled')
+    server.setMode('auth')
+    let reactivationRejected = false
+    try { await provider.reactivateConfirmed(written[0].id) } catch { reactivationRejected = true }
+    if (!reactivationRejected || !provider.list({ status: 'archived' }).some(item => item.id === written[0].id)) throw new Error('Failed reactivation changed local status')
+    server.setMode('ok')
+    await provider.reactivateConfirmed(written[0].id)
+    if (!(await provider.searchRemote('杭州工作')).some(item => item.id === written[0].id)) throw new Error('Reactivated memory was not recalled')
+    console.log('CHOUYU_MEM0_ARCHIVE_SMOKE_PASSED archive, excluded recall, reactivation, failure preservation')
+    const replacement = provider.createCandidate({ type: 'fact', content: '冲突替换：用户在苏州工作', importance: 0.7, confidence: 1, sensitivity: 'normal' })!
+    provider.createConflict(replacement.id, written[0].id, 'update', '合成替换验收')
+    server.setMode('reject-create')
+    let partialRejected = false
+    try { await provider.resolveConflictConfirmed(replacement.id, 'replace') } catch (error) { partialRejected = error instanceof Error && error.message.includes('已归档 1 条') }
+    if (!partialRejected || !provider.list({ status: 'pending' }).some(item => item.id === replacement.id) || !provider.list({ status: 'archived' }).some(item => item.id === written[0].id)) throw new Error('Partial conflict failure was not preserved accurately')
+    server.setMode('ok')
+    await provider.resolveConflictConfirmed(replacement.id, 'replace')
+    if ((await provider.searchRemote('杭州工作')).length || !(await provider.searchRemote('苏州工作')).some(item => item.id === replacement.id)) throw new Error('Conflict retry did not replace remote recall')
+    await provider.deleteConfirmed(replacement.id)
+    await provider.reactivateConfirmed(written[0].id)
+    console.log('CHOUYU_MEM0_CONFLICT_SMOKE_PASSED partial replacement failure, retry, remote recall, original recovery')
+    const concurrent = provider.createCandidate({ type: 'fact', content: '冲突并存：用户也在南京工作', importance: 0.7, confidence: 1, sensitivity: 'normal' })!
+    provider.createConflict(concurrent.id, written[0].id, 'update', '合成并存验收')
+    await provider.resolveConflictConfirmed(concurrent.id, 'keep')
+    if (!(await provider.searchRemote('杭州工作')).some(item => item.id === written[0].id) || !(await provider.searchRemote('南京工作')).some(item => item.id === concurrent.id)) throw new Error('Conflict keep did not preserve both records')
+    await provider.deleteConfirmed(concurrent.id)
+    const rejected = provider.createCandidate({ type: 'fact', content: '冲突拒绝：未确认城市', importance: 0.7, confidence: 1, sensitivity: 'normal' })!
+    provider.createConflict(rejected.id, written[0].id, 'update', '合成拒绝验收')
+    const writesBeforeReject = server.requests().filter(item => item.method !== 'GET').length
+    await provider.resolveConflictConfirmed(rejected.id, 'reject')
+    if (server.requests().filter(item => item.method !== 'GET').length !== writesBeforeReject || provider.list({ status: 'all' }).some(item => item.id === rejected.id)) throw new Error('Conflict rejection wrote remote state or retained candidate')
+    closeMemory()
+    initializeMemory()
+    const restarted = getMemoryProvider() as Mem0MemoryProvider
+    await restarted.deleteConfirmed(written[0].id)
+    if (server.records().some(item => item.memory.includes('杭州工作')) || restarted.list({ status: 'all' }).some(item => item.id === written[0].id)) throw new Error('Mem0 confirmed delete after restart did not clear both stores')
+    if ((await restarted.searchRemote('杭州工作')).length) throw new Error('Deleted remote memory resurfaced')
+    console.log('CHOUYU_MEM0_MUTATION_SMOKE_PASSED confirmed update/delete, failure preservation, restart mapping')
 
     server.setMode('auth')
     const authStatus = await testMemoryEngine()
@@ -93,6 +171,38 @@ export async function runMem0RuntimeSmoke(): Promise<void> {
     if (!recovered.ok) throw new Error(`Mem0 recovery smoke test failed: ${recovered.message}`)
     const recoveredResults = await searchMemories(RETRIEVAL_QUERY, 6)
     if (!recoveredResults.some((memory) => memory.content === RETRIEVAL_CONTENT)) throw new Error('Mem0 recovery retrieval smoke test failed')
+
+    const userA = getMemoryProvider() as Mem0MemoryProvider
+    const privateCandidate = userA.createCandidate({ type: 'fact', content: '仅属于 A 的待确认候选', importance: 0.6, confidence: 1, sensitivity: 'normal' })!
+    const lateSearch = userA.searchRemote(RETRIEVAL_QUERY).then(() => false, () => true)
+    saveConfig({ memorySyncUserId: 'other-user' })
+    const userB = getMemoryProvider() as Mem0MemoryProvider
+    if (userB === userA || userB.list({ status: 'all' }).length) throw new Error('Mem0 cache leaked across user switch')
+    if (!await lateSearch) throw new Error('Old user search was accepted after configuration switched')
+    await userB.searchRemote(ISOLATION_CONTENT)
+    if (userB.list({ status: 'all' }).some(item => item.content === RETRIEVAL_CONTENT || item.id === privateCandidate.id)) throw new Error('Previous user records leaked into the new cache')
+    let foreignDeleteRejected = false
+    try { await userB.deleteConfirmed(privateCandidate.id) } catch { foreignDeleteRejected = true }
+    if (!foreignDeleteRejected) throw new Error('Previous user ID was accepted for deletion')
+    saveConfig({ memoryEngineProvider: 'chouyu-sqlite' })
+    if (getMemoryProvider().list({ status: 'all' }).some(item => item.content === ISOLATION_CONTENT || item.id === privateCandidate.id)) throw new Error('Remote cache leaked into local engine')
+    saveConfig({ memoryEngineProvider: 'mem0-self-hosted-engine', memorySyncUserId: SMOKE_USER })
+    if (!getMemoryProvider().list({ status: 'pending' }).some(item => item.id === privateCandidate.id)) throw new Error('Original user candidate did not survive switching back')
+    console.log('CHOUYU_MEM0_SCOPE_SMOKE_PASSED user switch, stale response, foreign ID, local engine, return to original cache')
+    const toClear = getMemoryProvider() as Mem0MemoryProvider
+    const beforeClear = toClear.list({ status: 'all' }).length
+    server.setMode('auth')
+    let clearRejected = false
+    try { await toClear.clearConfirmed() } catch { clearRejected = true }
+    if (!clearRejected || toClear.list({ status: 'all' }).length !== beforeClear) throw new Error('Failed clear removed local records')
+    server.setMode('ok')
+    await toClear.clearConfirmed()
+    if (toClear.list({ status: 'all' }).length || server.records().some(item => item.userId === SMOKE_USER)) throw new Error('Clear left local or uncached remote records behind')
+    if (!server.records().some(item => item.userId === 'other-user' && item.memory === ISOLATION_CONTENT)) throw new Error('Clear modified another user')
+    let legacyRejected = false
+    try { toClear.createActive({ type: 'fact', content: '不得后台写入', importance: 0.6, confidence: 1, sensitivity: 'normal' }) } catch { legacyRejected = true }
+    if (!legacyRejected || toClear.list({ status: 'all' }).length) throw new Error('Legacy synchronous mutation changed local state')
+    console.log('CHOUYU_MEM0_CLEAR_SMOKE_PASSED remote-only records, pending candidates, failure preservation, user isolation, legacy guard')
   } finally {
     try {
       closeMemory()

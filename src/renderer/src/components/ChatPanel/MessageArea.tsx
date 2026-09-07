@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { findTextMatch, searchExcerpt, searchableMessageText } from '../../../../shared/conversation-search'
+import { useChatScroll } from './useChatScroll'
 import { Message } from '../../shared/types'
 import type { MemoryFeedbackValue } from '../../../../shared/memory'
 import PluginMessageCard from './PluginMessageCard'
@@ -9,6 +12,9 @@ import { highlightCode, isSupportedLanguage } from '../../core/highlight'
 import { useMessageWindow } from './useMessageWindow'
 
 interface MessageAreaProps {
+  searchOpen?: boolean
+  initialSearch?: string
+  onCloseSearch?: () => void
   messages: Message[]
   isStreaming: boolean
   onRetry?: (messageId: string) => void
@@ -22,6 +28,16 @@ interface MessageAreaProps {
 function formatTime(ts: number) {
   const d = new Date(ts)
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+}
+
+function SearchMatch({ text, query }: { text: string; query: string }) {
+  const excerpt = searchExcerpt(text, query)
+  return <div className="message-search-snippet"><SearchHighlight text={excerpt} query={query} /></div>
+}
+
+function SearchHighlight({ text, query }: { text: string; query: string }) {
+  const match = findTextMatch(text, query)
+  return <>{match ? <>{text.slice(0, match.start)}<mark>{text.slice(match.start, match.end)}</mark>{text.slice(match.end)}</> : text}</>
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -96,8 +112,18 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory }: MessageAreaProps) {
+export default function MessageArea({ searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState(initialSearch)
+  const [searchPage, setSearchPage] = useState(0)
+  const searchInput = useRef<HTMLInputElement>(null)
+  const normalizedQuery = searchOpen ? query.trim() : ''
+  const searching = Boolean(normalizedQuery)
+  const matches = useMemo(() => messages.map((message, index) => ({ message, index })).filter(({ message }) => findTextMatch(searchableMessageText(message), normalizedQuery)), [messages, normalizedQuery])
+  useEffect(() => { setQuery(initialSearch) }, [initialSearch])
+  useEffect(() => { if (searchOpen) searchInput.current?.focus() }, [searchOpen])
+  useEffect(() => { setSearchPage(0); if (normalizedQuery && scrollRef.current) scrollRef.current.scrollTop = 0 }, [normalizedQuery])
   const scrollRef = useRef<HTMLDivElement>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [feedbackBusy, setFeedbackBusy] = useState('')
@@ -114,7 +140,8 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
   // Identify the session by its earliest message id: switching sessions resets
   // the window, while streaming (appending) must not.
   const sessionKey = messages.length > 0 ? messages[0].id : ''
-  const windowed = useMessageWindow(scrollRef, messages.length, [sessionKey])
+  const windowed = useMessageWindow(scrollRef, messages.length, [sessionKey, searching])
+  const { hasNewContent, scrollToLatest } = useChatScroll(scrollRef, listRef, sessionKey, messages, searching)
 
   const submitMemoryFeedback = async (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => {
     if (!onMemoryFeedback) return
@@ -130,41 +157,50 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
     }
   }
 
-  useEffect(() => {
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    bottomRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' })
-  }, [messages])
-
-  if (messages.length === 0 && !isStreaming) {
-    return null
-  }
-
   // Short lists render directly: windowing only pays off with many messages.
-  const useWindowing = messages.length > 40
+  const useWindowing = messages.length > 40 && !searching
   const start = useWindowing ? windowed.start : 0
   const end = useWindowing ? windowed.end : messages.length
-  const visibleMessages = messages.slice(start, end)
+  const page = Math.min(searchPage, Math.max(0, Math.ceil(matches.length / 25) - 1))
+  const visibleMessages = searching ? matches.slice(page * 25, (page + 1) * 25) : messages.slice(start, end).map((message, offset) => ({ message, index: start + offset }))
 
   return (
-    <div className="message-area" ref={scrollRef} aria-live="polite" aria-busy={isStreaming}>
-      {contextLimit && messages.length > contextLimit && (
+    <>
+      {searchOpen && <div className="message-search" role="search" aria-label="搜索当前对话">
+        <div className="message-search-controls search-field" data-filled={Boolean(query)}>
+          <svg className="search-field-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+          <input ref={searchInput} value={query} maxLength={500} aria-label="搜索当前对话全文" placeholder="搜索当前对话全文…" onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onCloseSearch?.() } }} />
+          <button type="button" className="search-field-action" onClick={onCloseSearch} aria-label="关闭对话内搜索" title="关闭搜索（Esc）"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7"/></svg></button>
+        </div>
+        <div className="message-search-summary" role="status">{searching ? `匹配 ${matches.length} 条消息 · 正在筛选本会话全部消息` : '输入关键词查找全部历史消息'}</div>
+        {matches.length > 25 && <div className="message-search-pages">
+          <button type="button" disabled={page === 0} onClick={() => { setSearchPage(page - 1); if (scrollRef.current) scrollRef.current.scrollTop = 0 }}>上一页</button>
+          <span>{page + 1} / {Math.ceil(matches.length / 25)}</span>
+          <button type="button" disabled={(page + 1) * 25 >= matches.length} onClick={() => { setSearchPage(page + 1); if (scrollRef.current) scrollRef.current.scrollTop = 0 }}>下一页</button>
+        </div>}
+      </div>}
+    <div className="message-area" ref={scrollRef} aria-live={searching ? 'off' : 'polite'} aria-busy={isStreaming}>
+      <div className="message-list" ref={listRef}>
+      {searching && matches.length === 0 && <p className="message-search-empty" role="status">没有匹配的消息，试试其他关键词。</p>}
+      {!searching && contextLimit && messages.length > contextLimit && (
         <div className="context-limit-notice" role="status">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
             <circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 4.5v.5"/>
           </svg>
-          会话已保存 {messages.length} 条消息；发送给模型时仅使用最近 {contextLimit} 条。
+          当前会话共 {messages.length} 条消息；发送给模型时仅使用最近 {contextLimit} 条。
         </div>
       )}
       {useWindowing && start > 0 && (
         <div style={{ height: windowed.startOffset }} aria-hidden="true" />
       )}
-      {visibleMessages.map((msg, offset) => {
-        const index = start + offset
+      {visibleMessages.map(({ message: msg, index }) => {
         const canRetry = !isStreaming && getConversationForRetry(messages, msg.id) !== null
         const memorySourceCount = msg.memoryRefs?.reduce((total, memory) => total + (memory.compressedCount || 1), 0) || 0
         return (
         <div
           key={msg.id}
+          data-message-id={msg.id}
           ref={(node) => {
             if (node && useWindowing) windowed.measureRow(index, node.offsetHeight)
           }}
@@ -183,6 +219,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
             </div>
           )}
           <div className="message-body">
+            {searching && (msg.role !== 'user' || msg.toolData) && <SearchMatch text={searchableMessageText(msg)} query={normalizedQuery} />}
             <div className="message-bubble">
               {msg.imageUrl && (
                 <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
@@ -193,6 +230,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
                 <PluginMessageCard data={msg.pluginData} />
               ) : msg.role === 'assistant' ? (
                 <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
                   components={{
                     code({ className, children }) {
                       const isBlock = className || String(children).includes('\n')
@@ -237,7 +275,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
                   </div>
                 </div>
               ) : (
-                msg.content && <span>{msg.content}</span>
+                msg.content && <span>{searching ? <SearchHighlight text={msg.content} query={normalizedQuery} /> : msg.content}</span>
               )}
             </div>
             <div className="message-meta">
@@ -315,7 +353,7 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
       {useWindowing && end < messages.length && (
         <div style={{ height: windowed.endOffset }} aria-hidden="true" />
       )}
-      {isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
+      {!searching && isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
         <div className="message message-assistant">
           <div className="message-avatar" aria-hidden="true">
             <svg width="28" height="28" viewBox="0 0 80 80">
@@ -335,7 +373,10 @@ export default function MessageArea({ messages, isStreaming, onRetry, onEditMess
         </div>
       )}
       <div ref={bottomRef} />
-      {previewImage && <ImagePreview src={previewImage} onClose={() => setPreviewImage(null)} />}
+      </div>
     </div>
+      {!searching && hasNewContent && <button type="button" className="message-jump-latest" onClick={scrollToLatest}>有新内容 · 回到最新消息 ↓</button>}
+      {previewImage && <ImagePreview src={previewImage} onClose={() => setPreviewImage(null)} />}
+    </>
   )
 }

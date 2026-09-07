@@ -3,13 +3,15 @@ interface TopBarProps {
   showSessions: boolean
   onToggleSessions: () => void
   onNewTopic: () => void
+  onSearch: () => void
+  searchOpen: boolean
   onMemory: () => void
   onSettings: () => void
   onHide: () => void
   onClose: () => void
 }
 
-export default function TopBar({ status, showSessions, onToggleSessions, onNewTopic, onMemory, onSettings, onHide, onClose }: TopBarProps) {
+export default function TopBar({ status, showSessions, onToggleSessions, onNewTopic, onSearch, searchOpen, onMemory, onSettings, onHide, onClose }: TopBarProps) {
   return (
     <div className="chat-topbar">
       <div className="chat-topbar-left">
@@ -30,6 +32,9 @@ export default function TopBar({ status, showSessions, onToggleSessions, onNewTo
         <span className="chat-topbar-status">{status}</span>
       </div>
       <div className="chat-topbar-actions">
+        <button type="button" className={`topbar-btn${searchOpen ? ' topbar-btn-active' : ''}`} onClick={onSearch} title={searchOpen ? '关闭搜索（Esc）' : '搜索当前对话（Ctrl+F）'} aria-label="搜索当前对话" aria-pressed={searchOpen}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+        </button>
         <button
           className={`topbar-btn${showSessions ? ' topbar-btn-active' : ''}`}
           onClick={onToggleSessions}

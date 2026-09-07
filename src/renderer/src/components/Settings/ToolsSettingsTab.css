@@ -27,7 +27,7 @@
 .tool-master-card span {
   margin-top: 3px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-sm);
 }
 
 .tool-global-notice,
@@ -38,7 +38,7 @@
   border-radius: 8px;
   background: var(--warning-bg);
   color: var(--warning);
-  font-size: 10px;
+  font-size: var(--font-sm);
 }
 
 .tool-permission-card {
@@ -58,9 +58,9 @@
   display: block;
 }
 
-.tool-permission-card strong { color: var(--text-primary); font-size: 11px; }
-.tool-permission-card span { margin-top: 3px; color: var(--text-secondary); font-size: 9px; line-height: 1.45; }
-.tool-permission-card select { min-width: 112px; min-height: 34px; border: 1px solid var(--input-border); border-radius: 7px; padding: 6px 8px; background: var(--input-bg); color: var(--text-primary); font-size: 10px; }
+.tool-permission-card strong { color: var(--text-primary); font-size: var(--font-sm); }
+.tool-permission-card span { margin-top: 3px; color: var(--text-secondary); font-size: var(--font-sm); line-height: 1.45; }
+.tool-permission-card select { min-width: 112px; min-height: 34px; border: 1px solid var(--input-border); border-radius: 7px; padding: 6px 8px; background: var(--input-bg); color: var(--text-primary); font-size: var(--font-sm); }
 
 .tool-settings-error {
   border-color: var(--error-border);
@@ -78,7 +78,7 @@
   gap: 6px;
   margin: 0 0 6px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
@@ -90,7 +90,7 @@
   border-radius: 8px;
   background: var(--hover-bg);
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-sm);
 }
 
 .tool-settings-list {
@@ -144,7 +144,7 @@
 
 .tool-catalog-title strong {
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .tool-risk-pill {
@@ -152,7 +152,7 @@
   border-radius: 5px;
   background: var(--hover-bg);
   color: var(--accent);
-  font-size: 8px;
+  font-size: var(--font-sm);
 }
 
 .tool-risk-pill.risk-read { color: var(--warning); background: var(--warning-bg); }
@@ -161,7 +161,7 @@
 .tool-catalog-copy p {
   margin: 3px 0 5px;
   color: var(--text-secondary);
-  font-size: 9px;
+  font-size: var(--font-sm);
   line-height: 1.45;
 }
 
@@ -170,13 +170,13 @@
   align-items: center;
   gap: 6px;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: var(--font-sm);
 }
 
 .tool-catalog-meta code {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: var(--font-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -191,7 +191,7 @@
   min-height: 100px;
   place-items: center;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-sm);
 }
 
 /* Keep catalog descriptions and controls readable alongside the compact
@@ -204,7 +204,7 @@
   font-size: 12px;
 }
 
-.tool-settings-pane small { font-size: 11px; }
+.tool-settings-pane small { font-size: var(--font-sm); }
 
 .tool-settings-pane p,
 .tool-settings-pane small,
@@ -223,7 +223,7 @@
 }
 
 .tool-settings-pane .tool-permission-card strong { font-size: 12px !important; }
-.tool-settings-pane .tool-permission-card span { font-size: 11px !important; }
+.tool-settings-pane .tool-permission-card span { font-size: var(--font-sm) !important; }
 
 @media (max-width: 520px) {
   .tool-permission-card { align-items: stretch; flex-direction: column; }

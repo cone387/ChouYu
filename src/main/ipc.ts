@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app } from 'electron'
+import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app, shell } from 'electron'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
@@ -24,6 +24,7 @@ import {
   type ScrollCaptureResult
 } from '../shared/capture'
 import { captureScrollingRegion } from './scrolling-capture'
+import { recognizeOfflineImage } from './offline-ocr'
 import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { capabilityRegistry } from './capabilities/registry'
 import { setClipboardWatcherEnabled } from './clipboard'
@@ -64,12 +65,17 @@ import {
   shouldConfirmTool
 } from '../shared/tools'
 import {
+  getStorageStatus,
+  onStorageStatus,
+  dismissStorageNotice,
+  flushDatabase,
   getConfig,
   saveConfig,
   getMessages,
   saveMessages,
   clearMessages,
   getSessionWorkspace,
+  searchSessions,
   getSession,
   createChatSession,
   selectChatSession,
@@ -171,6 +177,19 @@ function requestToolApproval(
 }
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
+  const unsubscribeStorage = onStorageStatus((status) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('db:storage-status', status)
+  })
+  mainWindow.once('closed', unsubscribeStorage)
+  ipcMain.handle('db:storage-status', () => getStorageStatus())
+  ipcMain.handle('db:retry-save', () => {
+    const status = flushDatabase()
+    if (!status.error) mainWindow.webContents.send('config:changed', getConfig())
+    return status
+  })
+  ipcMain.handle('db:dismiss-storage-notice', () => dismissStorageNotice())
+  ipcMain.handle('db:open-data-directory', () => shell.openPath(app.getPath('userData')))
+
   ipcMain.on('set-ignore-mouse-events', (_event, ignore: boolean) => {
     if (mainWindow) {
       if (ignore) {
@@ -324,9 +343,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       console.warn('[Memory] LLM extraction failed; no memory written:', error)
       return []
     }
-    return candidates.map((candidate) => memoryWriteMode === 'auto' && shouldAutoWriteMemory(candidate, memoryAutoWriteConfidence)
+    return (await Promise.all(candidates.map((candidate) => memoryWriteMode === 'auto' && shouldAutoWriteMemory(candidate, memoryAutoWriteConfidence)
       ? createMemory({ ...candidate, sourceSessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined, sourceMessageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined })
-      : proposeMemoryCandidate({ ...candidate, sourceSessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined, sourceMessageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined })).filter(Boolean)
+      : proposeMemoryCandidate({ ...candidate, sourceSessionId: typeof sessionId === 'string' ? sessionId.slice(0, 128) : undefined, sourceMessageId: typeof messageId === 'string' ? messageId.slice(0, 128) : undefined })))).filter(Boolean)
   })
 
   ipcMain.handle('memory:create', (_event, rawCandidate: MemoryCandidateInput) => {
@@ -344,9 +363,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return createMemory(candidate)
   })
 
-  ipcMain.handle('memory:approve', (_event, id: string) => {
+  ipcMain.handle('memory:approve', async (_event, id: string) => {
     if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid memory id')
-    const memory = getMemoryProvider().approve(id)
+    const provider = getMemoryProvider()
+    const memory = provider.approveConfirmed ? await provider.approveConfirmed(id) : provider.approve(id)
     void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index approved memory:', error))
     runMemoryMaintenance()
     return memory
@@ -354,7 +374,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('memory:reject', (_event, id: string) => {
     if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid memory id')
-    getMemoryProvider().reject(id)
+    const provider = getMemoryProvider()
+    return provider.rejectConfirmed ? provider.rejectConfirmed(id) : provider.reject(id)
   })
 
   ipcMain.handle('memory:conflicts', (_event, candidateId?: string) => {
@@ -440,7 +461,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid memory id')
       return id
     })
-    return getMemoryProvider().archiveMany(ids, 'cleanup')
+    const provider = getMemoryProvider()
+    return provider.archiveManyConfirmed ? provider.archiveManyConfirmed(ids, 'cleanup') : provider.archiveMany(ids, 'cleanup')
   })
 
   ipcMain.handle('memory:reactivate', (_event, memoryId: string) => {
@@ -455,10 +477,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getMemoryProvider().recordFeedback(memoryId, contextId, value)
   })
 
-  ipcMain.handle('memory:update', (_event, id: string, patch: { content?: string; type?: string; importance?: number; expiresAt?: number | null }) => {
+  ipcMain.handle('memory:update', async (_event, id: string, patch: { content?: string; type?: string; importance?: number; expiresAt?: number | null }) => {
     if (typeof id !== 'string' || id.length > 128 || !patch || typeof patch !== 'object') throw new Error('Invalid memory update')
     if (typeof patch.content === 'string' && containsSecret(patch.content)) throw new Error('检测到密码、Token 或密钥，已阻止保存。')
-    const memory = getMemoryProvider().update(id, {
+    const provider = getMemoryProvider()
+    const update = provider.updateConfirmed?.bind(provider) || provider.update.bind(provider)
+    const memory = await update(id, {
       content: typeof patch.content === 'string' ? patch.content.slice(0, 500) : undefined,
       type: ['fact', 'preference', 'person', 'project', 'workflow'].includes(String(patch.type)) ? patch.type as MemoryType : undefined,
       importance: typeof patch.importance === 'number' ? patch.importance : undefined,
@@ -468,12 +492,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return memory
   })
 
-  ipcMain.handle('memory:delete', (_event, id: string) => {
+  ipcMain.handle('memory:delete', async (_event, id: string) => {
     if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid memory id')
-    getMemoryProvider().delete(id)
+    const provider = getMemoryProvider()
+    if (provider.deleteConfirmed) await provider.deleteConfirmed(id)
+    else provider.delete(id)
   })
 
-  ipcMain.handle('memory:clear', () => getMemoryProvider().clear())
+  ipcMain.handle('memory:clear', () => {
+    const provider = getMemoryProvider()
+    return provider.clearConfirmed ? provider.clearConfirmed() : provider.clear()
+  })
 
   ipcMain.handle('memory:export', async () => {
     const result = await dialog.showSaveDialog(mainWindow, {
@@ -667,6 +696,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   ipcMain.handle('get-app-version', () => app.getVersion())
+  ipcMain.handle('ocr:offline', (_event, dataUrl: unknown) => recognizeOfflineImage(dataUrl))
 
   ipcMain.handle('quit-app', () => {
     app.quit()
@@ -674,8 +704,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('set-auto-start', (_event, enabled: boolean) => {
     app.setLoginItemSettings({
-      openAtLogin: enabled,
-      openAsHidden: true
+      openAtLogin: enabled
     })
   })
 
@@ -707,7 +736,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     if (patch.memoryMaxItems !== undefined || patch.memoryDefaultTtlDays !== undefined) runMemoryMaintenance()
     if (typeof patch.autoStart === 'boolean') {
-      app.setLoginItemSettings({ openAtLogin: patch.autoStart, openAsHidden: true })
+      app.setLoginItemSettings({ openAtLogin: patch.autoStart })
     }
     if (typeof patch.clipboardWatch === 'boolean') {
       setClipboardWatcherEnabled(mainWindow, patch.clipboardWatch)
@@ -719,6 +748,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('db:save-messages', (_event, messages) => saveMessages(messages))
   ipcMain.handle('db:clear-messages', () => clearMessages())
   ipcMain.handle('db:get-session-workspace', () => getSessionWorkspace())
+  ipcMain.handle('db:search-sessions', (_event, query: string) => {
+    if (typeof query !== 'string' || query.length > 500) throw new Error('Invalid search query')
+    return searchSessions(query)
+  })
   ipcMain.handle('db:create-session', (_event, title?: string) =>
     createChatSession(typeof title === 'string' ? title.slice(0, 80) : undefined))
   ipcMain.handle('db:select-session', (_event, id: string) => {

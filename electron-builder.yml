@@ -8,6 +8,8 @@ files:
   - "!out/types-*"
 
 extraResources:
+  - from: resources/offline-ocr.ps1
+    to: offline-ocr.ps1
   - from: resources/icon.png
     to: icon.png
 

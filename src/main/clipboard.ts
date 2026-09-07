@@ -1,19 +1,27 @@
 import { clipboard, BrowserWindow } from 'electron'
 
 let lastText = ''
-let timer: ReturnType<typeof setInterval> | null = null
+let timer: ReturnType<typeof setTimeout> | null = null
+let generation = 0
 
 export function startClipboardWatcher(mainWindow: BrowserWindow): void {
   stopClipboardWatcher()
-  lastText = clipboard.readText() || ''
-
-  timer = setInterval(() => {
-    const current = clipboard.readText() || ''
-    if (current && current !== lastText) {
+  const currentGeneration = generation
+  let initialized = false
+  const poll = async () => {
+    try {
+      const current = await clipboard.readText()
+      if (generation !== currentGeneration || mainWindow.isDestroyed()) return
+      if (initialized && current && current !== lastText) mainWindow.webContents.send('clipboard:changed', current)
       lastText = current
-      mainWindow.webContents.send('clipboard:changed', current)
+      initialized = true
+    } catch {
+      // A temporarily unavailable system clipboard should not stop future polling.
+    } finally {
+      if (generation === currentGeneration && !mainWindow.isDestroyed()) timer = setTimeout(() => { void poll() }, 1500)
     }
-  }, 1500)
+  }
+  void poll()
 }
 
 export function setClipboardWatcherEnabled(mainWindow: BrowserWindow, enabled: boolean): void {
@@ -22,8 +30,9 @@ export function setClipboardWatcherEnabled(mainWindow: BrowserWindow, enabled: b
 }
 
 export function stopClipboardWatcher(): void {
+  generation++
   if (timer) {
-    clearInterval(timer)
+    clearTimeout(timer)
     timer = null
   }
 }

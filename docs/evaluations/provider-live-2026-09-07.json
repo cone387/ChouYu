@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-09-07T03:25:49.119Z",
+  "provider": "openai",
+  "host": "llm2.cone387.top",
+  "model": "deepseek-v4-flash",
+  "checks": [
+    {
+      "name": "model-list",
+      "passed": true,
+      "detail": {
+        "ok": true,
+        "configuredModelValid": true,
+        "count": 56
+      }
+    },
+    {
+      "name": "stream-completion",
+      "passed": true,
+      "detail": {
+        "chunks": 8,
+        "done": 1,
+        "markerMatched": true
+      }
+    },
+    {
+      "name": "cancel-active-stream",
+      "passed": true,
+      "detail": {
+        "chunks": 1,
+        "done": 0,
+        "aborted": true,
+        "elapsedMs": 4775
+      }
+    },
+    {
+      "name": "pure-tool-roundtrip",
+      "passed": true,
+      "detail": {
+        "calls": 1,
+        "resultMatched": true
+      }
+    }
+  ],
+  "passed": true
+}

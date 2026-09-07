@@ -1,6 +1,5 @@
 export const DEFAULT_SESSION_TITLE = '新对话'
 export const MAX_SESSION_TITLE_LENGTH = 80
-export const MAX_SESSION_MESSAGES = 500
 
 export interface SessionMessageLike {
   role: 'user' | 'assistant' | 'system'

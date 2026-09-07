@@ -14,6 +14,7 @@ import {
 export type { PendingAttachment } from '../../core/attachments'
 
 interface InputAreaProps {
+  sessionId: string
   onSend: (content: string, attachments?: PendingAttachment[]) => void
   onStop?: () => void
   disabled: boolean
@@ -34,7 +35,7 @@ interface InputAreaProps {
   history?: string[]
 }
 
-export default function InputArea({ onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
+export default function InputArea({ sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
@@ -49,6 +50,19 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
   const [activePlugin, setActivePlugin] = useState<PluginInfo | null>(null)
   const [showPluginOverflow, setShowPluginOverflow] = useState(false)
   const [attachmentError, setAttachmentError] = useState('')
+  const [ocrBusy, setOcrBusy] = useState(false)
+  const [ocrNotice, setOcrNotice] = useState('')
+  const ocrMounted = useRef(true)
+  const ocrContext = useRef(sessionId)
+  const ocrRevision = useRef(0)
+  if (ocrContext.current !== sessionId) ocrRevision.current++
+  const ocrAttachments = useRef(attachments)
+  ocrContext.current = sessionId
+  ocrAttachments.current = attachments
+  useEffect(() => {
+    ocrMounted.current = true
+    return () => { ocrMounted.current = false }
+  }, [])
   const [showWindowCapture, setShowWindowCapture] = useState(false)
   const [captureSources, setCaptureSources] = useState<CaptureSourceInfo[]>([])
   const [captureSourcesLoading, setCaptureSourcesLoading] = useState(false)
@@ -413,6 +427,31 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
     setAttachmentError('')
   }, [attachments, disabled, onSend])
 
+  const runOfflineOcr = async () => {
+    const revision = ocrRevision.current
+    const attachment = attachments.find(item => item.type === 'image')
+    if (!attachment || ocrBusy) return
+    setOcrBusy(true)
+    setOcrNotice('')
+    setAttachmentError('')
+    try {
+      const result = await window.electronAPI.recognizeOfflineImage(attachment.data)
+      if (!ocrMounted.current || ocrRevision.current !== revision || !ocrAttachments.current.includes(attachment)) return
+      if (!result.text.trim()) {
+        setOcrNotice('没有识别到文字；可尝试裁剪或使用更清晰的图片。')
+        return
+      }
+      setValue(previous => previous ? `${previous}\n${result.text}` : result.text)
+      setAttachments(previous => previous.filter(item => item !== attachment))
+      setOcrNotice('离线识别完成：文字已填入输入框，已移除这张图片。请检查后再发送。')
+      restoreComposerFocus()
+    } catch (error) {
+      if (ocrMounted.current && ocrRevision.current === revision) setAttachmentError(error instanceof Error ? error.message : '离线识别失败，请重试。')
+    } finally {
+      if (ocrMounted.current) setOcrBusy(false)
+    }
+  }
+
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'a') {
@@ -512,6 +551,7 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
             </div>
             {attachments.some((attachment) => attachment.type === 'image') && (
               <div className="attachment-quick-actions" aria-label="图片快捷操作">
+                <button type="button" onClick={() => void runOfflineOcr()} disabled={ocrBusy} title="在本机识别第一张图片，不上传；结果填入输入框并移除该图片">{ocrBusy ? '离线识别中…' : '离线识别首张'}</button>
                 <span>用 AI 处理图片</span>
                 <button type="button" onClick={() => runVisualAttachmentAction('ocr')} disabled={disabled}>识别文字</button>
                 <button type="button" onClick={() => runVisualAttachmentAction('summarize')} disabled={disabled}>总结</button>
@@ -520,6 +560,7 @@ export default function InputArea({ onSend, onStop, disabled, isStreaming = fals
             )}
           </>
         )}
+        {ocrNotice && <div className="attachment-ocr-notice" role="status">{ocrNotice}</div>}
         <textarea
           ref={textareaRef}
           className="input-textarea"

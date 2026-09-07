@@ -111,7 +111,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const handleReviewScopeChange = useCallback((scope: MemoryReviewScope) => {
     setReviewScope(scope)
     setStatus(scope === 'pending' ? 'pending' : 'all')
-    void window.electronAPI.db.setState(MEMORY_REVIEW_SCOPE_STATE_KEY, scope)
+    void window.electronAPI.db.setState(MEMORY_REVIEW_SCOPE_STATE_KEY, scope).catch(() => { /* The persistent storage notice reports disk failures. */ })
   }, [])
 
   useEffect(() => {
@@ -165,6 +165,9 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       await refresh()
       return true
     } catch (reason) {
+      // Remote batches may have partially succeeded. Reload committed state
+      // before displaying the operation error, retaining that error afterward.
+      await refresh()
       setError(reason instanceof Error ? reason.message : '记忆操作失败。')
       return false
     } finally {
@@ -613,12 +616,13 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         <div className="memory-clear-confirm" role="alertdialog" aria-modal="true" aria-labelledby="memory-clear-title">
           <div>
             <strong id="memory-clear-title">删除全部长期记忆？</strong>
-            <p>此操作不会删除聊天记录，但无法撤销。</p>
-            <div><button type="button" autoFocus onClick={() => setConfirmClear(false)}>取消</button><button type="button" className="danger" onClick={() => { void run('clear', () => window.electronAPI.memory.clear()).then((cleared) => { if (cleared) setConfirmClear(false) }) }}>确认删除</button></div>
+            <p>此操作不会删除聊天记录，但无法撤销。{config.memoryEngineProvider.startsWith('mem0-') && '将删除当前 Mem0 服务及用户范围内的远端记忆和本地候选。'}</p>
+            {error && <p role="alert">{error}</p>}
+            <div><button type="button" autoFocus disabled={busyId === 'clear'} onClick={() => setConfirmClear(false)}>取消</button><button type="button" className="danger" disabled={Boolean(busyId)} onClick={() => { void run('clear', () => window.electronAPI.memory.clear()).then((cleared) => { if (cleared) setConfirmClear(false) }) }}>{busyId === 'clear' ? '正在删除…' : '确认删除'}</button></div>
           </div>
         </div>
       )}
-      {error && <div className="memory-settings-error" role="alert"><span>{error}</span><button type="button" onClick={() => { setLoading(true); void refresh() }}>重试</button></div>}
+      {error && !confirmClear && <div className="memory-settings-error" role="alert"><span>{error}</span><button type="button" onClick={() => { setLoading(true); void refresh() }}>重试</button></div>}
     </div>
   )
 }

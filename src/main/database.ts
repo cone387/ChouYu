@@ -2,10 +2,14 @@ import { app, safeStorage } from 'electron'
 import { randomUUID } from 'crypto'
 import path from 'path'
 import fs from 'fs'
+import { EventEmitter } from 'events'
+import type { StorageStatus } from '../shared/storage'
+import { AttachmentStore, isAttachmentReference } from './attachment-store'
+import { readStoreFile, writeStoreFile } from './store-file'
+import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/conversation-search'
 import { AppConfig, DEFAULT_APP_CONFIG, normalizeConfig } from '../shared/config'
 import {
   DEFAULT_SESSION_TITLE,
-  MAX_SESSION_MESSAGES,
   buildSessionPreview,
   deriveSessionTitle,
   normalizeSessionTitle
@@ -60,11 +64,33 @@ interface PersistedStoreData extends Partial<StoreData> {
 }
 
 const STORE_VERSION = 3
-const MAX_SESSIONS = 100
 const ENCRYPTED_PREFIX = 'safe:v1:'
 
 let store: StoreData
 let filePath: string
+let attachments: AttachmentStore
+let writesBlocked = false
+let storageStatus: StorageStatus = { error: null, notice: null, revision: 0 }
+const storageEvents = new EventEmitter()
+
+export function getStorageStatus(): StorageStatus { return { ...storageStatus } }
+
+export function onStorageStatus(listener: (status: StorageStatus) => void): () => void {
+  storageEvents.on('change', listener)
+  return () => { storageEvents.off('change', listener) }
+}
+
+function updateStorageStatus(patch: Partial<Omit<StorageStatus, 'revision'>>): void {
+  if (Object.entries(patch).every(([key, value]) => storageStatus[key as 'error' | 'notice'] === value)) return
+  storageStatus = { ...storageStatus, ...patch, revision: storageStatus.revision + 1 }
+  storageEvents.emit('change', getStorageStatus())
+}
+
+export function dismissStorageNotice(): StorageStatus {
+  updateStorageStatus({ notice: null })
+  return getStorageStatus()
+}
+
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 
 function protect(value: string): string {
@@ -129,25 +155,20 @@ function sanitizeMemoryRefs(value: unknown): Message['memoryRefs'] {
 function sanitizeMessages(value: unknown): Message[] {
   if (!Array.isArray(value)) return []
   return value
-    .slice(-MAX_SESSION_MESSAGES)
     .filter((message): message is Message => Boolean(
       message && typeof message === 'object' && ['user', 'assistant', 'system'].includes(message.role)
     ))
     .map((message) => ({
       ...message,
       id: String(message.id || randomUUID()).slice(0, 128),
-      content: String(message.content ?? '').slice(0, 200_000),
+      content: String(message.content ?? ''),
       timestamp: Number.isFinite(message.timestamp) ? message.timestamp : Date.now(),
       responseStatus: message.responseStatus === 'error' || message.responseStatus === 'stopped'
         ? message.responseStatus
         : undefined,
       toolData: sanitizeToolData(message.toolData),
       memoryRefs: sanitizeMemoryRefs(message.memoryRefs),
-      // Screenshots can be several MB. Keep them in the active runtime session but
-      // do not embed base64 image data in the durable JSON conversation store.
-      imageUrl: typeof message.imageUrl === 'string' && !message.imageUrl.startsWith('data:')
-        ? message.imageUrl.slice(0, 4096)
-        : undefined
+      imageUrl: typeof message.imageUrl === 'string' ? message.imageUrl : undefined
     }))
 }
 
@@ -182,11 +203,17 @@ function normalizeSessions(value: unknown): ChatSession[] {
       }
     })
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, MAX_SESSIONS)
 }
 
 function cloneSession(session: ChatSession): ChatSession {
-  return { ...session, messages: session.messages.map((message) => ({ ...message })) }
+  return { ...session, messages: session.messages.map((message) => {
+    try {
+      return { ...message, imageUrl: attachments.read(message.imageUrl) }
+    } catch {
+      updateStorageStatus({ notice: '部分图片附件缺失或损坏，文字记录仍可使用。请从备份恢复 attachments 文件夹。' })
+      return { ...message, imageUrl: undefined }
+    }
+  }) }
 }
 
 function toSummary(session: ChatSession): ChatSessionSummary {
@@ -210,43 +237,55 @@ function getActiveSessionInternal(): ChatSession {
   return session
 }
 
+function parseStore(text: string): PersistedStoreData {
+  const data = JSON.parse(text) as PersistedStoreData
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid store')
+  if (typeof data.version === 'number' && data.version > STORE_VERSION) throw new Error('NEWER_STORE_VERSION')
+  if (!Array.isArray(data.sessions) && !Array.isArray(data.messages)) throw new Error('Invalid conversations')
+  if (data.sessions !== undefined && (!Array.isArray(data.sessions) || data.sessions.some((session) =>
+    !session || typeof session !== 'object' || !Array.isArray(session.messages)
+  ))) throw new Error('Invalid session')
+  return data
+}
+
 function load(): StoreData {
-  try {
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, 'utf-8')
-      const data = JSON.parse(raw) as PersistedStoreData
-      const persistedConfig: Partial<AppConfig> = data.config && typeof data.config === 'object' ? data.config : {}
-      const persistedState = data.state && typeof data.state === 'object' ? data.state : {}
-      let sessions = normalizeSessions(data.sessions)
+  const loaded = readStoreFile(filePath, parseStore)
+  writesBlocked = loaded.blocked
+  updateStorageStatus({
+    notice: loaded.notice,
+    error: loaded.blocked ? '无法安全读取聊天数据，已停止写入原文件。请检查数据目录权限或使用较新版本，然后重新启动。' : null
+  })
+  if (loaded.data) {
+    const data = loaded.data
+    const persistedConfig: Partial<AppConfig> = data.config && typeof data.config === 'object' ? data.config : {}
+    const persistedState = data.state && typeof data.state === 'object' ? data.state : {}
+    let sessions = normalizeSessions(data.sessions)
 
-      // Version 2 stored one global messages array. Preserve it as the first session.
-      if (sessions.length === 0) {
-        const legacyMessages = sanitizeMessages(data.messages)
-        sessions = [createSession(legacyMessages, legacyMessages.length ? undefined : DEFAULT_SESSION_TITLE)]
-      }
-
-      const requestedActiveId = typeof data.activeSessionId === 'string' ? data.activeSessionId : ''
-      const activeSessionId = sessions.some((session) => session.id === requestedActiveId)
-        ? requestedActiveId
-        : sessions[0].id
-
-      return {
-        version: STORE_VERSION,
-        config: normalizeConfig({
-          ...persistedConfig,
-          apiKey: unprotect(persistedConfig.apiKey),
-          embeddingApiKey: unprotect(persistedConfig.embeddingApiKey),
-          memorySyncApiKey: unprotect(persistedConfig.memorySyncApiKey)
-        }),
-        sessions,
-        activeSessionId,
-        state: Object.fromEntries(
-          Object.entries(persistedState).map(([key, value]) => [key, isSecretStateKey(key) ? unprotect(value) : value])
-        )
-      }
+    // Version 2 stored one global messages array. Preserve it as the first session.
+    if (sessions.length === 0) {
+      const legacyMessages = sanitizeMessages(data.messages)
+      sessions = [createSession(legacyMessages, legacyMessages.length ? undefined : DEFAULT_SESSION_TITLE)]
     }
-  } catch (error) {
-    console.error('Failed to load data:', error)
+
+    const requestedActiveId = typeof data.activeSessionId === 'string' ? data.activeSessionId : ''
+    const activeSessionId = sessions.some((session) => session.id === requestedActiveId)
+      ? requestedActiveId
+      : sessions[0].id
+
+    return {
+      version: STORE_VERSION,
+      config: normalizeConfig({
+        ...persistedConfig,
+        apiKey: unprotect(persistedConfig.apiKey),
+        embeddingApiKey: unprotect(persistedConfig.embeddingApiKey),
+        memorySyncApiKey: unprotect(persistedConfig.memorySyncApiKey)
+      }),
+      sessions,
+      activeSessionId,
+      state: Object.fromEntries(
+        Object.entries(persistedState).map(([key, value]) => [key, isSecretStateKey(key) ? unprotect(value) : value])
+      )
+    }
   }
 
   const session = createSession()
@@ -268,7 +307,10 @@ function serializeStore(): StoreData {
       embeddingApiKey: protect(store.config.embeddingApiKey),
       memorySyncApiKey: protect(store.config.memorySyncApiKey)
     },
-    sessions: store.sessions,
+    sessions: store.sessions.map((session) => ({
+      ...session,
+      messages: session.messages.map((message) => ({ ...message, imageUrl: attachments.persist(message.imageUrl) }))
+    })),
     activeSessionId: store.activeSessionId,
     state: Object.fromEntries(
       Object.entries(store.state).map(([key, value]) => [key, isSecretStateKey(key) ? protect(value) : value])
@@ -276,31 +318,42 @@ function serializeStore(): StoreData {
   }
 }
 
-function persist(): void {
+function persist(throwOnError = true): boolean {
   if (persistTimer) {
     clearTimeout(persistTimer)
     persistTimer = null
   }
   try {
-    const dir = path.dirname(filePath)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    const tempPath = `${filePath}.tmp`
-    fs.writeFileSync(tempPath, JSON.stringify(serializeStore(), null, 2), 'utf-8')
-    fs.renameSync(tempPath, filePath)
-  } catch (error) {
-    console.error('Failed to persist data:', error)
+    if (writesBlocked) throw new Error('Protected store')
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    const serialized = serializeStore()
+    writeStoreFile(filePath, JSON.stringify(serialized, null, 2), parseStore)
+    // Retain file references in memory after a successful commit; UI receives data URLs on demand.
+    store.sessions = serialized.sessions
+    updateStorageStatus({ error: null })
+    return true
+  } catch {
+    const message = writesBlocked
+      ? '无法安全读取聊天数据，已停止写入原文件。请检查数据目录权限或使用较新版本，然后重新启动。'
+      : '聊天数据保存失败，最新修改尚未写入磁盘。请检查剩余空间和目录权限后重试；恢复前请勿退出。'
+    updateStorageStatus({ error: message })
+    if (throwOnError) throw new Error(message)
+    return false
   }
 }
 
 function schedulePersist(): void {
   if (persistTimer) clearTimeout(persistTimer)
-  persistTimer = setTimeout(persist, 500)
+  persistTimer = setTimeout(() => persist(false), 500)
 }
 
 export function initDatabase(): void {
   filePath = path.join(app.getPath('userData'), 'chouyu-data.json')
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = null
+  attachments = new AttachmentStore(path.join(app.getPath('userData'), 'attachments'))
   store = load()
-  persist()
+  persist(false)
 }
 
 export function getConfig(): AppConfig {
@@ -322,6 +375,15 @@ export function getActiveSession(): ChatSession {
   return cloneSession(getActiveSessionInternal())
 }
 
+export function searchSessions(query: string): ChatSessionSummary[] {
+  if (!query.trim()) return getSessions()
+  return store.sessions.flatMap((session) => {
+    const message = session.messages.find((item) => findTextMatch(searchableMessageText(item), query))
+    if (!message && !findTextMatch(session.title, query)) return []
+    return [{ ...toSummary(session), preview: message ? searchExcerpt(searchableMessageText(message), query) : buildSessionPreview(session.messages) }]
+  }).sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 export function getSession(id: string): ChatSession | null {
   const session = store.sessions.find((candidate) => candidate.id === id)
   return session ? cloneSession(session) : null
@@ -334,7 +396,6 @@ export function getSessionWorkspace(): SessionWorkspace {
 export function createChatSession(title?: string): SessionWorkspace {
   const session = createSession([], title)
   store.sessions.unshift(session)
-  store.sessions = store.sessions.slice(0, MAX_SESSIONS)
   store.activeSessionId = session.id
   persist()
   return getSessionWorkspace()
@@ -370,7 +431,12 @@ export function deleteChatSession(id: string): SessionWorkspace {
 export function saveSessionMessages(id: string, messages: Message[]): SessionWorkspace {
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
-  session.messages = sanitizeMessages(messages)
+  const previousImages = new Map(session.messages.filter((message) => message.imageUrl && isAttachmentReference(message.imageUrl)).map((message) => [message.id, message.imageUrl]))
+  session.messages = sanitizeMessages(messages).map((message) => ({
+    ...message,
+    // A missing file must not erase its durable reference when the renderer saves text updates.
+    imageUrl: message.imageUrl ?? previousImages.get(message.id)
+  }))
   session.updatedAt = Date.now()
   if (session.title === DEFAULT_SESSION_TITLE) session.title = deriveSessionTitle(session.messages)
   schedulePersist()
@@ -408,6 +474,7 @@ export function setState(key: string, value: string): void {
   persist()
 }
 
-export function flushDatabase(): void {
-  if (store && filePath) persist()
+export function flushDatabase(): StorageStatus {
+  if (store && filePath) persist(false)
+  return getStorageStatus()
 }

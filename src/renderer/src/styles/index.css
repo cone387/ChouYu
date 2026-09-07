@@ -1,10 +1,12 @@
+@import './search-field.css';
+
 :root {
   --bg-primary: #ffffff;
   --bg-secondary: #f7f7fb;
   --bg-panel: rgba(255, 255, 255, 0.98);
   --text-primary: #1a1a1a;
   --text-secondary: #626273;
-  --text-muted: #9292a3;
+  --text-muted: #68687b;
   --border: rgba(0, 0, 0, 0.08);
   --divider: rgba(49, 46, 82, 0.045);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -28,7 +30,7 @@
   --warning: #9a6700;
   --warning-border: rgba(154, 103, 0, 0.3);
   --warning-bg: rgba(154, 103, 0, 0.08);
-  --hljs-comment: #9292a3;
+  --hljs-comment: #68687b;
   --hljs-keyword: #7c3aed;
   --hljs-string: #18794e;
   --hljs-number: #b45309;
@@ -48,12 +50,13 @@
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    color-scheme: dark;
     --bg-primary: #1e1e2e;
     --bg-secondary: #252535;
     --bg-panel: rgba(30, 30, 46, 0.98);
     --text-primary: #f0f0f0;
     --text-secondary: #aaa9bb;
-    --text-muted: #77768b;
+    --text-muted: #a3a1b5;
     --border: rgba(255, 255, 255, 0.06);
     --divider: rgba(220, 216, 255, 0.045);
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
@@ -91,12 +94,13 @@
 }
 
 :root[data-theme='dark'] {
+  color-scheme: dark;
   --bg-primary: #1e1e2e;
   --bg-secondary: #252535;
   --bg-panel: rgba(30, 30, 46, 0.98);
   --text-primary: #f0f0f0;
   --text-secondary: #aaa9bb;
-  --text-muted: #77768b;
+  --text-muted: #a3a1b5;
   --border: rgba(255, 255, 255, 0.06);
   --divider: rgba(220, 216, 255, 0.045);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);

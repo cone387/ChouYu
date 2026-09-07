@@ -23,10 +23,12 @@ import { getConfig, saveConfig } from '../database'
 import { cosineSimilarity } from './embedding-client'
 import { capabilityRegistry } from '../capabilities/registry'
 import { Mem0MemorySyncAdapter } from './sync/mem0-adapter'
+import { memoryConnectionScope } from './connection-scope'
 
 let provider: MemoryProvider | null = null
 let maintenanceTimer: ReturnType<typeof setInterval> | null = null
 let activeMemoryEngineId = ''
+let activeConnectionScope = ''
 
 export function isRemoteMemoryEngine(): boolean {
   const engine = getConfig().memoryEngineProvider
@@ -44,6 +46,7 @@ export function initializeMemory(): void {
     saveConfig({ memoryEngineProvider: 'chouyu-sqlite' })
   }
   activeMemoryEngineId = getConfig().memoryEngineProvider
+  activeConnectionScope = memoryConnectionScope(getConfig())
   provider.initialize()
   if (!isRemoteMemoryEngine()) runMemoryMaintenance()
   maintenanceTimer = isRemoteMemoryEngine() ? null : setInterval(() => {
@@ -56,6 +59,10 @@ export function initializeMemory(): void {
 }
 
 export function getMemoryProvider(): MemoryProvider {
+  if (provider && activeConnectionScope !== memoryConnectionScope(getConfig())) {
+    closeMemory()
+    initializeMemory()
+  }
   if (!provider) throw new Error('Memory service is not initialized')
   return provider
 }
@@ -66,6 +73,7 @@ export function closeMemory(): void {
   provider?.close()
   provider = null
   activeMemoryEngineId = ''
+  activeConnectionScope = ''
 }
 
 export function proposeMemoryCandidate(candidate: MemoryCandidateInput): MemoryRecord | null {
@@ -91,45 +99,48 @@ export async function rememberRawMemory(text: string, source?: { sessionId?: str
   return (active.rememberRaw as (value: string, source?: { sessionId?: string; messageId?: string }) => Promise<MemoryRecord[]>)(text, source)
 }
 
-export function createMemory(candidate: MemoryCandidateInput): MemoryRecord {
+export async function createMemory(candidate: MemoryCandidateInput): Promise<MemoryRecord> {
   const memoryProvider = getMemoryProvider()
   const proposed = proposeMemoryCandidate(candidate)
   if (!proposed) {
     const normalizedKey = normalizeMemoryKey(candidate.content)
     const existing = memoryProvider.list({ status: 'all', limit: 2000 }).find((memory) => memory.normalizedKey === normalizedKey && memory.status !== 'archived')
-    return existing || memoryProvider.createActive(candidate)
+    if (existing?.status === 'pending' && memoryProvider.approveConfirmed) return memoryProvider.approveConfirmed(existing.id)
+    return existing || (memoryProvider.createActiveConfirmed ? await memoryProvider.createActiveConfirmed(candidate) : memoryProvider.createActive(candidate))
   }
   // A direct, high-confidence name statement is the user's profile update.
   // Replace the previous identity automatically instead of leaving a hidden
   // pending conflict in the default automatic-write mode.
   if (candidate.type === 'person' && extractPersonName(candidate.content) && proposed.conflicts?.some((conflict) => conflict.status === 'pending')) {
-    const replaced = resolveMemoryConflict(proposed.id, 'replace')
+    const replaced = await resolveMemoryConflict(proposed.id, 'replace')
     if (replaced) return replaced
   }
   if (proposed.conflicts?.some((conflict) => conflict.status === 'pending')) return proposed
-  const memory = memoryProvider.approve(proposed.id)
+  const memory = memoryProvider.approveConfirmed ? await memoryProvider.approveConfirmed(proposed.id) : memoryProvider.approve(proposed.id)
   void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index new memory:', error))
   runMemoryMaintenance()
   return memory
 }
 
-export function resolveMemoryConflict(candidateId: string, action: MemoryConflictAction): MemoryRecord | null {
-  const memory = getMemoryProvider().resolveConflict(candidateId, action)
+export async function resolveMemoryConflict(candidateId: string, action: MemoryConflictAction): Promise<MemoryRecord | null> {
+  const provider = getMemoryProvider()
+  const memory = provider.resolveConflictConfirmed ? await provider.resolveConflictConfirmed(candidateId, action) : provider.resolveConflict(candidateId, action)
   if (memory) void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index resolved memory:', error))
   runMemoryMaintenance()
   return memory
 }
 
-export function restoreMemoryRevision(memoryId: string, revisionId: string): MemoryRecord {
-  const memory = getMemoryProvider().restoreRevision(memoryId, revisionId)
+export async function restoreMemoryRevision(memoryId: string, revisionId: string): Promise<MemoryRecord> {
+  const provider = getMemoryProvider()
+  const memory = provider.restoreRevisionConfirmed ? await provider.restoreRevisionConfirmed(memoryId, revisionId) : provider.restoreRevision(memoryId, revisionId)
   void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index restored memory:', error))
   return memory
 }
 
-export function reactivateMemory(memoryId: string): MemoryRecord {
+export async function reactivateMemory(memoryId: string): Promise<MemoryRecord> {
   const memoryProvider = getMemoryProvider()
   if (memoryProvider.stats().active >= getConfig().memoryMaxItems) throw new Error('当前记忆容量已满，请先提高容量上限或归档其他记忆。')
-  const memory = memoryProvider.reactivate(memoryId)
+  const memory = memoryProvider.reactivateConfirmed ? await memoryProvider.reactivateConfirmed(memoryId) : memoryProvider.reactivate(memoryId)
   void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index reactivated memory:', error))
   return memory
 }
@@ -281,9 +292,11 @@ export function previewMemoryImport(value: unknown): Omit<MemoryImportPreview, '
   return { items, invalid, blockedSecrets }
 }
 
-export function importMemories(decisions: MemoryImportDecision[]): MemoryImportResult {
+export async function importMemories(decisions: MemoryImportDecision[]): Promise<MemoryImportResult> {
   const result: MemoryImportResult = { added: 0, kept: 0, replaced: 0, skipped: 0, failed: 0 }
+  const targetScope = memoryConnectionScope(getConfig())
   for (const decision of decisions.slice(0, 2000)) {
+    if (targetScope !== memoryConnectionScope(getConfig())) { result.failed += 1; continue }
     const candidate = importCandidate(decision.item?.candidate)
     if (!candidate || containsSecret(candidate.content) || !['add', 'keep', 'replace', 'skip'].includes(decision.action)) {
       result.failed += 1
@@ -294,7 +307,14 @@ export function importMemories(decisions: MemoryImportDecision[]): MemoryImportR
       continue
     }
     try {
-      const proposed = proposeMemoryCandidate(candidate)
+      let proposed = proposeMemoryCandidate(candidate)
+      if (!proposed) {
+        // A previous failed upload remains pending. Retrying the same import
+        // must confirm it, rather than silently counting it as a duplicate.
+        const provider = getMemoryProvider()
+        const pending = provider.list({ status: 'pending', limit: 2000 }).find(memory => memory.normalizedKey === normalizeMemoryKey(candidate.content))
+        if (pending) proposed = { ...pending, conflicts: provider.listConflicts(pending.id) }
+      }
       if (!proposed) {
         result.skipped += 1
         continue
@@ -302,11 +322,12 @@ export function importMemories(decisions: MemoryImportDecision[]): MemoryImportR
       const hasConflict = proposed.conflicts?.some((conflict) => conflict.status === 'pending')
       if (hasConflict) {
         if (decision.action === 'add') throw new Error('导入期间检测到新的冲突。')
-        resolveMemoryConflict(proposed.id, decision.action)
+        await resolveMemoryConflict(proposed.id, decision.action)
         if (decision.action === 'keep') result.kept += 1
         else result.replaced += 1
       } else {
-        const memory = getMemoryProvider().approve(proposed.id)
+        const provider = getMemoryProvider()
+        const memory = provider.approveConfirmed ? await provider.approveConfirmed(proposed.id) : provider.approve(proposed.id)
         void indexMemory(memory).catch((error) => console.warn('[Memory] Failed to index imported memory:', error))
         result.added += 1
       }

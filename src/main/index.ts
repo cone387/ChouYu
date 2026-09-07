@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, shell, globalShortcut } from 'electron'
+import { app, BrowserWindow, screen, shell, globalShortcut, dialog } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { setupTray } from './tray'
@@ -12,6 +12,8 @@ import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 import { registerBuiltInCapabilities } from './capabilities/builtins'
 import { capabilityRegistry } from './capabilities/registry'
 import { runMem0RuntimeSmoke } from './smoke/mem0-smoke'
+import { runStorageRuntimeSmoke } from './smoke/storage-smoke'
+import { runChatRuntimeSmoke } from './smoke/chat-smoke'
 
 let mainWindow: BrowserWindow | null = null
 const isSmokeTest = process.env['CHOUYU_SMOKE_TEST'] === '1'
@@ -41,7 +43,8 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      backgroundThrottling: !isSmokeTest
     }
   })
 
@@ -68,9 +71,16 @@ function createWindow(): void {
   })
 
   if (isSmokeTest) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
-      setTimeout(() => app.quit(), 300)
+    mainWindow.webContents.once('did-finish-load', async () => {
+      try {
+        await runStorageRuntimeSmoke(mainWindow!)
+        await runChatRuntimeSmoke(mainWindow!)
+        console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
+        setTimeout(() => app.quit(), 300)
+      } catch (error) {
+        console.error(`CHOUYU_SMOKE_FAILED stage=runtime-ui message=${error instanceof Error ? error.message : String(error)}`)
+        app.exit(1)
+      }
     })
     mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
       console.error(`CHOUYU_SMOKE_FAILED code=${errorCode} message=${errorDescription}`)
@@ -215,7 +225,7 @@ app.whenReady().then(async () => {
         { type: 'fact', content: '我的显示器是 8K', importance: 0.7, confidence: 1 }
       ] })
       if (!importPreview.items.some((item) => item.status === 'new') || !importPreview.items.some((item) => item.status === 'duplicate') || !importPreview.items.some((item) => item.status === 'conflict')) throw new Error('Memory import preview smoke test failed')
-      const importResult = importMemories(importPreview.items.map((item) => ({ item, action: item.status === 'new' ? 'add' : item.status === 'conflict' ? 'replace' : 'skip' })))
+      const importResult = await importMemories(importPreview.items.map((item) => ({ item, action: item.status === 'new' ? 'add' : item.status === 'conflict' ? 'replace' : 'skip' })))
       if (importResult.added !== 1 || importResult.replaced !== 1 || importResult.skipped !== 1) throw new Error('Memory import commit smoke test failed')
       const insights = getMemoryInsights()
       if (insights.byType.length !== 5 || insights.createdByWeek.length !== 8) throw new Error('Memory insights smoke test failed')
@@ -250,8 +260,7 @@ app.whenReady().then(async () => {
     // Sync auto-start setting with system
     const config = getConfig()
     app.setLoginItemSettings({
-      openAtLogin: config.autoStart ?? false,
-      openAsHidden: true
+      openAtLogin: config.autoStart ?? false
     })
 
     // Delay update check to avoid competing with startup I/O
@@ -263,9 +272,26 @@ app.on('window-all-closed', () => {
   app.quit()
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  const storage = flushDatabase()
+  if (storage.error && !isSmokeTest) {
+    const choice = dialog.showMessageBoxSync({
+      type: 'warning',
+      title: '还有数据尚未保存',
+      message: '退出会丢失尚未保存的修改。',
+      detail: storage.error,
+      buttons: ['返回并处理', '仍然退出'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    })
+    if (choice === 0) {
+      event.preventDefault()
+      mainWindow?.show()
+      return
+    }
+  }
   stopClipboardWatcher()
-  flushDatabase()
   closeMemory()
   globalShortcut.unregisterAll()
 })

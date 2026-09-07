@@ -5,6 +5,60 @@ import { Mem0MemorySyncAdapter, parseMem0Memories } from './mem0-adapter'
 const config = { baseUrl: 'https://api.mem0.test/v1', apiKey: 'secret', userId: 'user-1', mode: 'platform' as const }
 
 describe('Mem0 memory sync adapter', () => {
+  it.each(['platform', 'self-hosted'] as const)('updates a scoped remote ID using the %s payload', async mode => {
+    let content = '旧记忆'
+    let metadata = {}
+    const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (init?.method === 'GET') return Response.json([{ id: 'owned/id', memory: content, metadata }])
+      content = JSON.parse(String(init?.body)).text
+      metadata = JSON.parse(String(init?.body)).metadata
+      return Response.json({ message: 'updated' })
+    })
+    await new Mem0MemorySyncAdapter({ ...config, mode }, request as typeof fetch).updateRemote('owned/id', '新的记忆', { chouyu_id: 'local-1' })
+    expect(String(request.mock.calls[1][0]).endsWith('/memories/owned%2Fid')).toBe(true)
+    expect(request.mock.calls[1][1]?.method).toBe('PUT')
+    expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toEqual({ text: '新的记忆', metadata: { chouyu_id: 'local-1' } })
+  })
+
+  it('rejects a successful response when the server ignored the new content', async () => {
+    const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => init?.method === 'GET'
+      ? Response.json([{ id: 'owned', memory: '旧记忆' }]) : Response.json({ message: 'updated' }))
+    await expect(new Mem0MemorySyncAdapter(config, request as typeof fetch).updateRemote('owned', '新记忆', {})).rejects.toThrow('尚未确认')
+  })
+
+  it('rejects an ignored archive status even when the content matches', async () => {
+    const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => init?.method === 'GET'
+      ? Response.json([{ id: 'owned', memory: '记忆', metadata: {} }]) : Response.json({ message: 'updated' }))
+    await expect(new Mem0MemorySyncAdapter(config, request as typeof fetch).updateRemote('owned', '记忆', { chouyu_status: 'archived' })).rejects.toThrow('属性')
+  })
+
+  it('refuses mutations of IDs outside the configured user scope', async () => {
+    const request = vi.fn(async () => Response.json([{ id: 'owned', memory: '自己的记忆' }]))
+    const adapter = new Mem0MemorySyncAdapter(config, request as typeof fetch)
+    await expect(adapter.updateRemote('other', '不能修改', {})).rejects.toThrow('用户范围')
+    await expect(adapter.deleteRemote('other')).rejects.toThrow('用户范围')
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  it('awaits deletion and propagates server refusal instead of reporting success', async () => {
+    const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => init?.method === 'GET'
+      ? Response.json([{ id: 'owned', memory: '记忆' }]) : new Response('denied', { status: 403 }))
+    const adapter = new Mem0MemorySyncAdapter(config, request as typeof fetch)
+    await expect(adapter.deleteRemote('owned')).rejects.toThrow('认证失败')
+    expect(request.mock.calls[1][1]?.method).toBe('DELETE')
+    let deleted = false
+    request.mockImplementation(async (_input, init) => {
+      if (init?.method === 'GET') return Response.json(deleted ? [] : [{ id: 'owned', memory: '记忆' }])
+      deleted = true
+      return new Response(null, { status: 204 })
+    })
+    await expect(adapter.deleteRemote('owned')).resolves.toBeUndefined()
+  })
+  it('rejects a deletion acknowledged but ignored by the service', async () => {
+    const request = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => init?.method === 'GET'
+      ? Response.json([{ id: 'owned', memory: '记忆' }]) : new Response(null, { status: 204 }))
+    await expect(new Mem0MemorySyncAdapter(config, request as typeof fetch).deleteRemote('owned')).rejects.toThrow('尚未确认删除')
+  })
   it('parses common Mem0 list response shapes', () => {
     expect(parseMem0Memories({ results: [{ id: 'r1', memory: '偏好简短回答', metadata: { chouyu_type: 'preference' } }] })).toEqual([
       expect.objectContaining({ id: 'r1', content: '偏好简短回答', metadata: { chouyu_type: 'preference' } })
