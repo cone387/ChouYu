@@ -22,3 +22,6 @@ jobs:
       - run: npm run test:memory-eval
       - run: npm run build
       - run: npm run test:smoke:built
+        env:
+          # Native foreground/WGC acceptance runs separately on an interactive Windows desktop.
+          CHOUYU_SMOKE_SYNTHETIC_CAPTURE: '1'

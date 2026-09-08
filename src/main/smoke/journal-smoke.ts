@@ -12,6 +12,7 @@ import { getConfig, saveConfig } from '../database'
 
 /** Only synthetic activity in the isolated smoke profile; never enables collection. */
 export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
+  const syntheticCapture = process.env.CHOUYU_SMOKE_SYNTHETIC_CAPTURE === '1'
   const initial = await main.webContents.executeJavaScript('window.electronAPI.journal.status()')
   if (initial.state !== 'off' || initial.config.enabled || initial.error) throw new Error('Journal smoke fixture must explicitly disable collection with healthy storage')
   const worker = new Worker(join(__dirname, 'journal-worker.js'), { workerData: { directory: join(app.getPath('userData'), 'journal') } })
@@ -70,7 +71,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await waitForRenderer(journal, "document.querySelector('.journal-timeline') && document.querySelectorAll('.journal-timeline li').length === 2")
     // Validate the native reader without persisting or logging foreground metadata.
     // Windows may deny foreground activation; collection must still report the actual app.
-    if (process.platform === 'win32') {
+    if (process.platform === 'win32' && !syntheticCapture) {
       journal.setAlwaysOnTop(true); journal.show(); journal.focus()
       const helper = new ActivityHelper()
       try {
@@ -87,15 +88,21 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     journal.show(); journal.focus()
     await journal.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     // Capture only our synthetic test window, never the user's foreground screen.
-    const captured = await captureJournalWindow(journal.getMediaSourceId().split(':')[1])
+    const captured = syntheticCapture
+      ? { bytes: (await journal.webContents.capturePage()).toJPEG(90) }
+      : await captureJournalWindow(journal.getMediaSourceId().split(':')[1])
     if (!captured.bytes.length) throw new Error('Native journal window capture was empty')
-    const capturer = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/journal-capture.html'))
-    if (!capturer || capturer.isVisible() || !(await capturer.webContents.executeJavaScript("document.querySelector('video').srcObject === null"))) throw new Error('Journal capturer was visible or retained a live stream')
-    const repeated = await captureJournalWindow(journal.getMediaSourceId().split(':')[1])
-    if (!repeated.bytes.length || capturer.isDestroyed()) throw new Error('Repeated target capture did not reuse the isolated renderer')
-    stopJournalCapture()
-    if (!capturer.isDestroyed()) throw new Error('Stopping capture did not release the renderer')
-    if (!(await captureJournalWindow(journal.getMediaSourceId().split(':')[1])).bytes.length) throw new Error('Target capture did not resume after stop')
+    if (!syntheticCapture) {
+      const capturer = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/journal-capture.html'))
+      if (!capturer || capturer.isVisible() || !(await capturer.webContents.executeJavaScript("document.querySelector('video').srcObject === null"))) throw new Error('Journal capturer was visible or retained a live stream')
+      const repeated = await captureJournalWindow(journal.getMediaSourceId().split(':')[1])
+      if (!repeated.bytes.length || capturer.isDestroyed()) throw new Error('Repeated target capture did not reuse the isolated renderer')
+      stopJournalCapture()
+      if (!capturer.isDestroyed()) throw new Error('Stopping capture did not release the renderer')
+      if (!(await captureJournalWindow(journal.getMediaSourceId().split(':')[1])).bytes.length) throw new Error('Target capture did not resume after stop')
+    } else {
+      console.log('CHOUYU_JOURNAL_NATIVE_CAPTURE_SKIPPED explicit CI synthetic capture mode; native helper and WGC require separate interactive Windows acceptance')
+    }
     const fixture = process.env.CHOUYU_SMOKE_OCR_FIXTURE
     const picture = fixture ? nativeImage.createFromPath(fixture) : nativeImage.createFromBuffer(captured.bytes)
     const imagePayload = { activityId, at, ...picture.getSize(), bytes: picture.toJPEG(90) }
@@ -309,7 +316,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     // A fresh connection must read disabled state and deleted records.
     const final = await journal.webContents.executeJavaScript('window.electronAPI.journal.status()')
     if (final.config.enabled || final.lastCapturedAt !== null) throw new Error('Smoke accidentally enabled journal collection')
-    console.log('CHOUYU_JOURNAL_SMOKE_PASSED fixture recording disabled, native helper, SQLite worker, interval merge, Chinese search, pagination, native capture, frame dedup, OCR search, image and summary UI, cascading deletion')
+    console.log(`CHOUYU_JOURNAL_SMOKE_PASSED capture=${syntheticCapture ? 'synthetic-renderer' : 'native-helper-and-WGC'}, fixture recording disabled, SQLite worker, interval merge, Chinese search, pagination, frame dedup, OCR search, image and summary UI, cascading deletion`)
   } finally {
     stopJournalCapture()
     saveConfig(originalConfig)
