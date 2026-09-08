@@ -3,12 +3,19 @@ import { createInterface } from 'readline'
 import { join } from 'path'
 import { app } from 'electron'
 import type { JournalSample } from '../../shared/journal'
+import { MacJournalHelper } from './mac-helper'
 
 export class ActivityHelper {
+  private mac = new MacJournalHelper()
   private child?: ChildProcessWithoutNullStreams
   private pending?: { resolve(value: Omit<JournalSample, 'idleSeconds'>): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }
 
   read(): Promise<Omit<JournalSample, 'idleSeconds'>> {
+    if (process.platform === 'darwin') return this.mac.read('journal-activity-mac.js').then(text => {
+      const value = JSON.parse(text)
+      if (!value.ok || typeof value.app !== 'string' || typeof value.title !== 'string' || !Number.isSafeInteger(value.pid) || typeof value.hwnd !== 'string' || !/^\d+$/.test(value.hwnd)) throw new Error('macOS 前台应用信息无效。')
+      return { app: value.app.slice(0, 120), title: value.title.slice(0, 512), pid: value.pid, hwnd: value.hwnd }
+    })
     if (this.pending) return Promise.reject(new Error('已有活动读取请求。'))
     if (!this.child) {
       const script = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources'), 'journal-activity.ps1')
@@ -41,6 +48,7 @@ export class ActivityHelper {
   }
 
   stop(message = '活动采集已停止。'): void {
+    this.mac.stop()
     const pending = this.pending
     this.pending = undefined
     if (pending) { clearTimeout(pending.timer); pending.reject(new Error(message)) }

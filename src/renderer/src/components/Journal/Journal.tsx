@@ -17,7 +17,7 @@ const time = (value: number) => new Date(value).toLocaleTimeString('zh-CN', { ho
 const duration = (value: number) => value <= 0 ? '0 分钟' : value < 60_000 ? '不足 1 分钟' : value < 3600_000 ? `${Math.floor(value / 60_000)} 分钟` : `${Math.floor(value / 3600_000)} 小时 ${Math.floor(value / 60_000) % 60} 分钟`
 const labels: Record<JournalStatus['state'], string> = { off: '尚未开启', paused: '已手动暂停', locked: '锁屏或休眠，已暂停', starting: '正在连接采集器', recording: '正在记录', idle: '电脑空闲，等待活动', excluded: '当前应用不记录', error: '记录遇到问题' }
 
-export default function Journal({ active = true }: { active?: boolean }) {
+export default function Journal({ active = true, searchRequest }: { active?: boolean; searchRequest?: { date: string; query: string; id: number } }) {
   const [status, setStatus] = useState<JournalStatus | null>(null)
   const [date, setDate] = useState(today)
   const [query, setQuery] = useState('')
@@ -32,6 +32,10 @@ export default function Journal({ active = true }: { active?: boolean }) {
   const [storageLimit, setStorageLimit] = useState(DEFAULT_JOURNAL_CONFIG.maxStorageMB)
   const [view, setView] = useState<'activity' | 'captures' | 'summary' | 'ask' | 'usage'>('activity')
   const [activityMode, setActivityMode] = useState<'tasks' | 'raw'>('tasks')
+  useEffect(() => {
+    if (!searchRequest) return
+    setDate(searchRequest.date); setQuery(searchRequest.query); setOffset(0); setView('activity'); setActivityMode('raw')
+  }, [searchRequest])
   const [selectedSource, setSelectedSource] = useState('')
   const [deletedRevision, setDeletedRevision] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -116,7 +120,7 @@ export default function Journal({ active = true }: { active?: boolean }) {
     <header className="journal-header">
       <div className="journal-brand"><h1>工作日志</h1><p>回看一天，接着往下做。</p></div>
       <div className="journal-controls">
-        <span className={`journal-status state-${status?.state || 'off'}`} role="status"><i />{status ? `${labels[status.state]}${status.config.enabled ? status.captureError ? ' · 画面异常' : status.config.captureEnabled ? ' · 活动＋画面＋本地 OCR' : ' · 仅记录标题' : ''}` : '正在加载'}</span>
+        <span className={`journal-status state-${status?.state || 'off'}`} role="status"><i />{status ? `${labels[status.state]}${status.config.enabled ? status.permissionNotice ? ' · 仅应用名称' : status.captureError ? ' · 画面异常' : status.config.captureEnabled ? ' · 活动＋画面＋本地 OCR' : ' · 仅记录标题' : ''}` : '正在加载'}</span>
         <div className="journal-recording-actions">
           <button type="button" className="journal-recording-switch" role="switch" aria-label="活动记录"
             aria-checked={Boolean(status?.config.enabled && !status.config.paused)}
@@ -133,12 +137,13 @@ export default function Journal({ active = true }: { active?: boolean }) {
     {error && <div className="journal-error" role="alert">{error}<button onClick={() => { setError(''); setRevision(value => value + 1) }}>重试加载</button></div>}
     {status?.error && <div className="journal-error" role="alert">{status.error}</div>}
     {status?.captureError && <div className="journal-error" role="alert">{status.captureError}</div>}
+    {status?.config.enabled && status.permissionNotice && <p className="journal-notice" role="status">{status.permissionNotice}</p>}
     {notice && <p className="journal-notice" role="status">{notice}</p>}
     {status?.analysis && <p className="journal-analysis-status" role="status">{status.analysis === 'summary' ? '日志总结正在生成' : '正在根据日志查找答案'}<button onClick={() => void window.electronAPI.journal.cancelAnalysis().catch(reason => setError(String(reason)))}>取消分析</button></p>}
 
     {!status?.config.enabled && status && <section className="journal-welcome">
       <div><p>默认记录活动、前台画面并在本机识别文字。关闭窗口后继续，可在托盘暂停。</p></div>
-      {!status.supported && <span>目前仅支持 Windows</span>}
+      {!status.supported && <span>目前仅支持 Windows 和 macOS</span>}
     </section>}
 
     {settings && <dialog ref={settingsDialog} className="journal-detail journal-settings-dialog" aria-labelledby="journal-settings-title" onCancel={() => setSettings(false)} onClose={() => setSettings(false)}>

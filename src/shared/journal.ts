@@ -34,6 +34,7 @@ export interface JournalActivity {
 export interface JournalStatus {
   config: JournalConfig
   supported: boolean
+  permissionNotice?: string
   state: 'off' | 'paused' | 'locked' | 'starting' | 'recording' | 'idle' | 'excluded' | 'error'
   lastCapturedAt: number | null
   error: string
@@ -120,7 +121,7 @@ export function validateJournalConfig(value: unknown, current: JournalConfig): J
   if (patch.retentionDays !== undefined && ![7, 30, 90].includes(patch.retentionDays as number)) throw new Error('保留期限须为 7、30 或 90 天。')
   if (patch.captureIntervalSeconds !== undefined && ![5, 10, 20, 30, 60].includes(patch.captureIntervalSeconds as number)) throw new Error('画面间隔须为 5、10、20、30 或 60 秒。')
   if (patch.maxStorageMB !== undefined && ![256, 512, 1024, 2048].includes(patch.maxStorageMB as number)) throw new Error('无效的画面存储上限。')
-  if (patch.excludedApps !== undefined && (!Array.isArray(patch.excludedApps) || patch.excludedApps.length > 100 || patch.excludedApps.some(item => typeof item !== 'string' || !/^[^\\/:*?"<>|\r\n]{1,100}\.exe$/i.test(item)))) throw new Error('排除应用请填写进程名，例如 chrome.exe，每行一个。')
+  if (patch.excludedApps !== undefined && (!Array.isArray(patch.excludedApps) || patch.excludedApps.length > 100 || patch.excludedApps.some(item => typeof item !== 'string' || !/^[^\\/:*?"<>|\r\n]{1,104}$/i.test(item) || !item.trim()))) throw new Error('排除应用请填写进程名或 macOS 应用名，例如 chrome.exe 或 Safari，每行一个。')
   return { enabled: patch.enabled === undefined ? current.enabled : patch.enabled as boolean,
     captureEnabled: patch.captureEnabled === undefined ? current.captureEnabled : patch.captureEnabled as boolean,
     captureIntervalSeconds: patch.captureIntervalSeconds === undefined ? current.captureIntervalSeconds : patch.captureIntervalSeconds as number,

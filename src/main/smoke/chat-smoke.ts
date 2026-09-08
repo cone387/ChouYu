@@ -150,7 +150,14 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     const openingFrames = await window.webContents.executeJavaScript('window.__watchChatOpening = false; window.__chatOpeningFrames')
     if (!openingFrames.length || openingFrames.some((frame: any) => !frame.ready || !frame.messages || !frame.input)) throw new Error('Chat revealed an incomplete opening frame')
-    await window.webContents.executeJavaScript("document.querySelector('[aria-label=隐藏对话列表]')?.click()")
+    const chromeProblem = await window.webContents.executeJavaScript(`(() => {
+      const mode = document.querySelector('.workspace-mode-control').getBoundingClientRect();
+      const minimize = document.querySelector('[aria-label="隐藏面板"]').getBoundingClientRect();
+      if (mode.right > minimize.left + 1 || minimize.left - mode.right > 8) return 'Mode control must sit immediately before minimize';
+      if (document.querySelector('.chat-panel-main .chat-topbar')) return 'Redundant chat toolbar remains';
+      return '';
+    })()`)
+    if (chromeProblem) throw new Error(chromeProblem)
     await snapshots(window, 'chat')
 
     await input(window, '.input-textarea', '窗口模式切换保留草稿')
@@ -203,14 +210,20 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await click(window, '[aria-label="关闭对话内搜索"]')
     await waitForRenderer(window, "document.querySelector('table')")
 
-    await click(window, '[aria-label="显示对话列表"]')
+    await click(window, '[aria-label="全局搜索"]')
+    await input(window, '.global-search-heading input', '海盐拿铁')
+    await waitForRenderer(window, "document.querySelector('.global-search-result')?.textContent.includes('海盐拿铁')")
+    await click(window, '.global-search-result')
+    await waitForRenderer(window, "!document.querySelector('.global-search-dialog') && document.querySelector('.message-bubble mark')?.textContent === '海盐拿铁'")
+    await click(window, '[aria-label="关闭对话内搜索"]')
+    await click(window, '[aria-label="窗口模式"]')
+    await click(window, '[data-workspace-mode-option="workspace"]')
     await snapshots(window, 'workspace-sessions')
     await input(window, '.conversation-search input', '海盐拿铁')
     await waitForRenderer(window, "document.querySelectorAll('.conversation-item-main').length === 1 && document.querySelector('.conversation-item-preview')?.textContent.includes('海盐拿铁')")
     await click(window, '.conversation-item-main')
     await waitForRenderer(window, "document.querySelector('.message-bubble mark')?.textContent === '海盐拿铁'")
     await click(window, '[aria-label="关闭对话内搜索"]')
-    await click(window, '[aria-label="隐藏对话列表"]')
 
     await input(window, '.input-textarea', '请继续回复，用于验证阅读位置。')
     await click(window, '[aria-label="发送消息"]')
@@ -358,8 +371,9 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await click(window, '.tool-approval-actions .primary')
     await waitForRenderer(window, "!document.querySelector('.tool-approval-dialog')")
     if (JSON.stringify(resolutions) !== '[false,true]') throw new Error('Tool approval choices were not delivered correctly')
-    await click(window, '[aria-label="显示对话列表"]')
-    await waitForRenderer(window, "document.querySelector('[aria-label=隐藏对话列表]')")
+    await click(window, '[aria-label="窗口模式"]')
+    await click(window, '[data-workspace-mode-option="workspace"]')
+    await waitForRenderer(window, "document.querySelector('.workspace-sessions:not([hidden])')")
     await window.webContents.executeJavaScript("document.querySelector('.conversation-search input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
     await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     console.log('CHOUYU_CHAT_SMOKE_PASSED markdown, full-text search, streaming scroll, settings, memory CRUD, approval keyboard')

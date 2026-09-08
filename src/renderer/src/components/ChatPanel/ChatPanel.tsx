@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
-import TopBar from './TopBar'
+import GlobalSearch from '../Workspace/GlobalSearch'
 import Journal from '../Journal/Journal'
 import WorkspaceNav, { type WorkspacePage } from '../Workspace/WorkspaceNav'
 import WorkspaceHeader from '../Workspace/WorkspaceHeader'
@@ -76,6 +76,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (page !== 'settings') settingsCloseRef.current?.()
   }, [])
   const [showMessageSearch, setShowMessageSearch] = useState(false)
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false)
+  const [journalSearch, setJournalSearch] = useState<{ date: string; query: string; id: number }>()
   const [messageSearchQuery, setMessageSearchQuery] = useState('')
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight })
   useEffect(() => {
@@ -191,8 +193,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const panelReady = presentation.loaded && dimensionsLoaded && sidebarLoaded && (workspaceLoaded || Boolean(workspaceError) || showSettings)
   const changeDisplayMode = (mode: WorkspaceMode) => {
     presentation.changeMode(mode)
+    if (mode !== 'chat') setShowSessions(true)
     if (mode !== 'workspace') navigate('chat')
-    setNarrowSessionsOpen(mode === 'sessions' && viewport.width < 616)
+    setNarrowSessionsOpen(mode !== 'chat' && narrowLayout)
   }
 
   const refreshPlugins = useCallback(async () => {
@@ -368,6 +371,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!visible || toolApprovalRequest || event.defaultPrevented || document.querySelector('dialog[open], [aria-modal="true"]')) return
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault(); setShowGlobalSearch(true); return
+      }
       if (isChat && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
         event.preventDefault()
         setShowMessageSearch(true)
@@ -639,6 +645,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       style={{ left: maximized ? 4 : position.x, top: maximized ? 4 : position.y, width: shellWidth, height: geometry.height, display: visible && panelReady ? undefined : 'none' }}>
       {displayMode === 'workspace' && <WorkspaceNav activePage={activePage} onNavigate={navigate} status={getStatusText()} />}
       <WorkspaceHeader onHide={onHide} onClose={onClose} dragHandleProps={dragHandleProps}
+        onSearch={() => setShowGlobalSearch(true)}
         maximized={maximized} onMaximize={presentation.toggleMaximized} mode={displayMode} onModeChange={changeDisplayMode} />
       <div className="workspace-body">
         <div className="workspace-page workspace-chat" hidden={!isChat}>
@@ -662,12 +669,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             onPointerDown={handleSidebarResizeStart} onPointerMove={handleSidebarResizeMove}
             onPointerUp={handleSidebarResizeEnd} onPointerCancel={handleSidebarResizeEnd} />}
           <div className="chat-panel-main">
-            <div className="chat-panel-drag-handle" {...dragHandleProps}>
-              <TopBar searchOpen={showMessageSearch}
-                onSearch={() => { setMessageSearchQuery(''); setShowMessageSearch(open => !open) }}
-                showSessions={sessionsVisible} onToggleSessions={toggleSessionSidebar}
-                onNewTopic={() => { void createSession() }} />
-            </div>
             {showOnboarding && <OnboardingCard onConfigure={openAISettings} />}
             {workspaceError && <div className="memory-candidate-error" role="alert">{workspaceError}<button onClick={retryWorkspace}>重新加载</button></div>}
             {workspaceLoaded && (
@@ -746,7 +747,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         </section>
         <section className="workspace-page workspace-journal" hidden={activePage !== 'journal'} aria-label="活动工作区">
           {visitedPages.journal && <>
-            <Journal active={visible && activePage === 'journal'} />
+            <Journal active={visible && activePage === 'journal'} searchRequest={journalSearch} />
           </>}
         </section>
         <section className="workspace-page workspace-settings" hidden={!showSettings} aria-label="设置工作区">
@@ -766,6 +767,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         onPointerDown={event => handlePanelResizeStart(edge, event)} onPointerMove={handlePanelResizeMove}
         onPointerUp={handlePanelResizeEnd} onPointerCancel={handlePanelResizeEnd} />)}
       {toolApprovalRequest && <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />}
+      {showGlobalSearch && visible && <GlobalSearch onClose={() => setShowGlobalSearch(false)}
+        onSession={async (id, query) => { await selectSession(id); navigate('chat'); setNarrowSessionsOpen(false); setMessageSearchQuery(query); setShowMessageSearch(true) }}
+        onMemory={openMemoryWorkspace}
+        onJournal={(date, query) => { setJournalSearch({ date, query, id: Date.now() }); navigate('journal') }} />}
     </div>
   )
 }

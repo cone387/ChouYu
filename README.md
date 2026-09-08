@@ -42,7 +42,6 @@
 ```bash
 # 安装依赖
 npm install
-npx install-electron --no
 
 # 开发模式
 npm run dev

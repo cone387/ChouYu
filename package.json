@@ -17,7 +17,7 @@
     "package:mac": "electron-vite build && electron-builder --mac",
     "package:all": "electron-vite build && electron-builder --mac --win",
     "publish": "electron-vite build && electron-builder --mac --win --publish always",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "node scripts/install-electron.js",
     "test": "vitest --run",
     "test:memory-eval": "node scripts/evaluate-memory.mjs",
     "test:smoke": "npm run build && npm run test:smoke:built",

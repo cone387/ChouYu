@@ -7,7 +7,8 @@ const modes: { id: WorkspaceMode; label: string; detail: string }[] = [
   { id: 'workspace', label: '完整工作区', detail: '全局导航与所有页面' }
 ]
 
-export default function WorkspaceHeader({ onHide, onClose, dragHandleProps, maximized, onMaximize, mode, onModeChange }: {
+export default function WorkspaceHeader({ onHide, onClose, dragHandleProps, maximized, onMaximize, mode, onModeChange, onSearch }: {
+  onSearch: () => void
   onHide: () => void
   onClose: () => void
   dragHandleProps: HTMLAttributes<HTMLDivElement>
@@ -32,6 +33,10 @@ export default function WorkspaceHeader({ onHide, onClose, dragHandleProps, maxi
   }, [menuOpen])
   return <div className="workspace-header chat-panel-drag-handle" {...dragHandleProps}
     onDoubleClick={event => { if (!(event.target as HTMLElement).closest('button, [role="menu"]')) onMaximize() }}>
+    <button type="button" className="workspace-search-trigger" onClick={onSearch} aria-label="全局搜索" title="全局搜索（⌘K / Ctrl+K）">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+      <span>搜索</span>
+    </button>
     <div className="workspace-mode-control" ref={menuRef}>
       <button ref={triggerRef} type="button" className="topbar-btn" aria-label="窗口模式" title="窗口模式" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(value => !value)}>
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M5 2.5v11M8 2.5v11"/></svg>

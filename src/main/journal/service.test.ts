@@ -2,12 +2,12 @@ import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_JOURNAL_CONFIG } from '../../shared/journal'
 
-const mock = vi.hoisted(() => ({ read: vi.fn(), stop: vi.fn(), idle: vi.fn(), capture: vi.fn(), ocr: vi.fn(), summarize: vi.fn(), answer: vi.fn(), worker: null as any, config: null as any, writes: [] as any[], sources: [] as any[] }))
+const mock = vi.hoisted(() => ({ screen: vi.fn(() => 'granted'), read: vi.fn(), stop: vi.fn(), idle: vi.fn(), capture: vi.fn(), ocr: vi.fn(), summarize: vi.fn(), answer: vi.fn(), worker: null as any, config: null as any, writes: [] as any[], sources: [] as any[] }))
 vi.mock('./summary', () => ({ generateJournalSummary: mock.summarize, answerJournalQuestion: mock.answer }))
 vi.mock('../database', () => ({ getConfig: () => ({ model: 'test' }) }))
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('events')
-  return { app: { getPath: () => 'test-only' }, powerMonitor: Object.assign(new EventEmitter(), { getSystemIdleTime: mock.idle }) }
+  return { app: { getPath: () => 'test-only' }, systemPreferences: { getMediaAccessStatus: mock.screen }, powerMonitor: Object.assign(new EventEmitter(), { getSystemIdleTime: mock.idle }) }
 })
 vi.mock('./activity-helper', () => ({ ActivityHelper: class { read = mock.read; stop = mock.stop } }))
 vi.mock('./capture', () => ({ captureJournalWindow: mock.capture, stopJournalCapture: vi.fn() }))
@@ -24,9 +24,12 @@ vi.mock('worker_threads', () => ({ Worker: class extends EventEmitter {
 import { powerMonitor } from 'electron'
 import { JournalService } from './service'
 
-describe('journal recording lifecycle', () => {
+describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s', platform => {
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
   let service: JournalService
   beforeEach(async () => {
+    Object.defineProperty(process, 'platform', { value: platform })
+    mock.screen.mockReturnValue('granted')
     vi.useFakeTimers(); mock.writes = []; mock.sources = []; mock.config = { ...DEFAULT_JOURNAL_CONFIG, enabled: false, captureEnabled: false }
     mock.read.mockReset(); mock.stop.mockReset(); mock.idle.mockReturnValue(0)
     mock.read.mockResolvedValue({ app: 'editor.exe', title: '合成工作记录', pid: 123456, hwnd: '100' })
@@ -34,7 +37,18 @@ describe('journal recording lifecycle', () => {
     mock.capture.mockResolvedValue({ bytes: Buffer.from('fake'), width: 100, height: 100 })
     service = new JournalService(); await service.ready
   })
-  afterEach(async () => { await service.close().catch(() => {}); vi.useRealTimers() })
+  afterEach(async () => { await service.close().catch(() => {}); vi.useRealTimers(); Object.defineProperty(process, 'platform', originalPlatform) })
+  it('continues macOS app recording without requesting screen capture when permission is denied', async () => {
+    mock.screen.mockReturnValue('denied')
+    await service.configure({ enabled: true, captureEnabled: true })
+    await vi.advanceTimersByTimeAsync(7000)
+    expect(mock.writes.some(item => item.method === 'sample')).toBe(true)
+    expect(service.status().state).toBe('recording')
+    if (platform === 'darwin') {
+      expect(mock.capture).not.toHaveBeenCalled()
+      expect(service.status().permissionNotice).toContain('屏幕录制权限')
+    } else expect(mock.capture).toHaveBeenCalled()
+  })
   it.each(['success', 'failed', 'cancelled'] as const)('persists %s analysis metadata with partial or final provider usage', async state => {
     mock.sources = [{ id: 'activity:1', at: 1, app: 'test.exe', title: 'synthetic', text: '' }]
     mock.summarize.mockImplementation(async (_input, _config, _signal, onMetadata) => {

@@ -3,11 +3,18 @@ productName: ChouYu
 directories:
   buildResources: resources
   output: dist
+# better-sqlite3 ships Node-API prebuilds for every supported platform/architecture.
+# Rebuilding it only adds an unnecessary Electron headers download.
+npmRebuild: false
 files:
   - out/**/*
   - "!out/types-*"
 
 extraResources:
+  - from: resources/journal-activity-mac.js
+    to: journal-activity-mac.js
+  - from: resources/journal-ocr-mac.js
+    to: journal-ocr-mac.js
   - from: resources/journal-capture.html
     to: journal-capture.html
   - from: resources/journal-ocr.ps1

@@ -2,13 +2,20 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { StringDecoder } from 'string_decoder'
 import { app } from 'electron'
 import { join } from 'path'
+import { MacJournalHelper } from './mac-helper'
 
 /** One persistent OCR process and one outstanding image; no per-frame PowerShell startup. */
 export class JournalOcr {
+  private mac = new MacJournalHelper()
   private child?: ChildProcessWithoutNullStreams
   private pending?: { resolve(text: string): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }
 
   read(path: string): Promise<string> {
+    if (process.platform === 'darwin') return this.mac.read('journal-ocr-mac.js', [path]).then(text => {
+      const result = JSON.parse(text)
+      if (typeof result.text !== 'string') throw new Error('macOS OCR 返回无效数据。')
+      return result.text.slice(0, 30000)
+    })
     if (this.pending) return Promise.reject(new Error('OCR 正忙。'))
     if (!this.child) {
       const script = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources'), 'journal-ocr.ps1')
@@ -42,6 +49,7 @@ export class JournalOcr {
     })
   }
   stop(): void {
+    this.mac.stop()
     const pending = this.pending; this.pending = undefined
     if (pending) { clearTimeout(pending.timer); pending.reject(new Error('OCR 已停止或超时。')) }
     const child = this.child; this.child = undefined; child?.kill()

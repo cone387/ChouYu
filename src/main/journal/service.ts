@@ -1,4 +1,4 @@
-import { app, powerMonitor } from 'electron'
+import { app, powerMonitor, systemPreferences } from 'electron'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import type { JournalAnalysisRecord } from '../../shared/journal'
 import { Worker } from 'worker_threads'
@@ -80,7 +80,9 @@ export class JournalService {
   }
 
   status(): JournalStatus {
-    return { config: { ...this.config, excludedApps: [...this.config.excludedApps] }, supported: process.platform === 'win32', state: this.state, lastCapturedAt: this.lastCapturedAt, error: this.error, captureError: this.captureError, analysis: this.summaryController ? this.analysisKind : null }
+    const permissionNotice = process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('screen') !== 'granted'
+      ? 'macOS 尚未授予屏幕录制权限：目前只记录应用名称。请在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许此应用，然后重启；窗口标题和画面需要此权限。' : ''
+    return { config: { ...this.config, excludedApps: [...this.config.excludedApps] }, supported: ['win32', 'darwin'].includes(process.platform), permissionNotice, state: this.state, lastCapturedAt: this.lastCapturedAt, error: this.error, captureError: this.captureError, analysis: this.summaryController ? this.analysisKind : null }
   }
 
   private stopSampling(): void {
@@ -102,7 +104,8 @@ export class JournalService {
     this.failedCaptureKey = ''; this.captureFailures = 0; this.captureRetryAt = 0
     this.state = !this.config.enabled ? 'off' : this.config.paused ? 'paused' : this.locked || this.suspended ? 'locked' : 'starting'
     void this.request('cut').catch(error => this.failStorage(error.message))
-    if (this.state === 'starting' && process.platform === 'win32') this.schedule(0)
+    if (this.state === 'starting' && !['win32', 'darwin'].includes(process.platform)) { this.state = 'error'; this.error = '活动记录目前仅支持 Windows 和 macOS。'; return }
+    if (this.state === 'starting') this.schedule(0)
     if (this.state === 'starting' && this.config.captureEnabled) this.scheduleOcr()
   }
 
@@ -121,7 +124,7 @@ export class JournalService {
       } else {
         const sample = await this.helper.read()
         if (epoch !== this.epoch) return
-        if (sample.pid === process.pid || this.config.excludedApps.includes(sample.app.toLowerCase())) {
+        if (sample.pid === process.pid || this.config.excludedApps.some(name => name === sample.app.toLowerCase() || (process.platform === 'darwin' && name.replace(/\.exe$/, '') === sample.app.toLowerCase()))) {
           this.foregroundKey = ''; this.capturedKey = ''
           this.state = 'excluded'; await this.request('cut')
         } else {
@@ -132,7 +135,9 @@ export class JournalService {
           if (key !== this.foregroundKey) { this.foregroundKey = key; this.foregroundSince = Date.now() }
           const settled = Date.now() - this.foregroundSince >= 1000
           const due = key !== this.capturedKey || Date.now() - this.lastFrameAt >= this.config.captureIntervalSeconds * 1000
-          if (this.config.captureEnabled && settled && due && (key !== this.failedCaptureKey || Date.now() >= this.captureRetryAt)) {
+          const screenAllowed = process.platform !== 'darwin' || systemPreferences.getMediaAccessStatus('screen') === 'granted'
+          if (!screenAllowed) this.captureError = ''
+          if (this.config.captureEnabled && screenAllowed && settled && due && (key !== this.failedCaptureKey || Date.now() >= this.captureRetryAt)) {
             this.lastFrameAt = Date.now()
             this.capturedKey = key
             const at = this.lastFrameAt
@@ -174,7 +179,7 @@ export class JournalService {
       if (this.closed) throw new Error('工作日志正在关闭。')
       await this.ready
       const next = validateJournalConfig(patch, this.config)
-      if (next.enabled && process.platform !== 'win32') throw new Error('活动记录目前仅支持 Windows。')
+      if (next.enabled && !['win32', 'darwin'].includes(process.platform)) throw new Error('活动记录目前仅支持 Windows 和 macOS。')
       this.stopSampling()
       try { this.config = await this.request('configure', next) }
       catch (error) { this.failStorage(error instanceof Error ? error.message : '设置未能保存。'); throw error }
