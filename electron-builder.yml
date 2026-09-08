@@ -27,6 +27,8 @@ publish:
 mac:
   category: public.app-category.utilities
   icon: resources/icon.png
+  # Both architecture-specific prebuilds ship in each slice; the binding loader selects process.arch.
+  x64ArchFiles: "**/better-sqlite3/prebuilds/darwin-*.node"
   target:
     - target: dmg
       arch:
