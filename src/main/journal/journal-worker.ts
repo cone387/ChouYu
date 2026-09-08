@@ -3,7 +3,7 @@ import Database from 'better-sqlite3'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, statSync } from 'fs'
 import { join } from 'path'
 import { randomUUID, createHash } from 'crypto'
-import { DEFAULT_JOURNAL_CONFIG, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
+import { DEFAULT_JOURNAL_CONFIG, migrateJournalConfig, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
 import type { JournalActivity, JournalConfig } from '../../shared/journal'
 import { readJournalDay, readJournalEvidence } from './evidence'
 
@@ -12,7 +12,8 @@ const db = new Database(join(workerData.directory, 'journal.db'))
 db.pragma('journal_mode = WAL')
 db.pragma('busy_timeout = 3000')
 db.pragma('secure_delete = ON')
-if (Number(db.pragma('user_version', { simple: true })) > 2) throw new Error('工作日志由更新版本创建，请升级应用。')
+const previousVersion = Number(db.pragma('user_version', { simple: true }))
+if (previousVersion > 3) throw new Error('工作日志由更新版本创建，请升级应用。')
 db.exec(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY, app TEXT NOT NULL, title TEXT NOT NULL, startedAt INTEGER NOT NULL, endedAt INTEGER NOT NULL);
   CREATE INDEX IF NOT EXISTS activities_time ON activities(endedAt, startedAt);
@@ -22,7 +23,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1)
   CREATE INDEX IF NOT EXISTS captures_ocr ON captures(ocrStatus,capturedAt);
   CREATE TABLE IF NOT EXISTS media_gc (name TEXT PRIMARY KEY);
   CREATE TABLE IF NOT EXISTS summaries (fromTs INTEGER NOT NULL, toTs INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(fromTs,toTs));
-  PRAGMA user_version = 2;`)
+  `)
+db.transaction(() => {
+  const row = db.prepare('SELECT value FROM settings WHERE id=1').get() as { value: string } | undefined
+  const config = migrateJournalConfig(row ? JSON.parse(row.value) : {}, previousVersion)
+  // Smoke fixtures explicitly opt out before the service can start its first sample.
+  if (workerData.recordingDisabled) { config.enabled = false; config.captureEnabled = false }
+  db.prepare('INSERT OR REPLACE INTO settings(id,value) VALUES(1,?)').run(JSON.stringify(config))
+  db.pragma('user_version = 3')
+})()
 const media = join(workerData.directory, 'media')
 mkdirSync(media, { recursive: true })
 const mediaName = (id: unknown) => {

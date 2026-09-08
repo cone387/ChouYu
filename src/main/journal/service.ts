@@ -27,6 +27,9 @@ export class JournalService {
   private closed = false
   private captureError = ''
   private lastFrameAt = 0
+  private foregroundKey = ''
+  private foregroundSince = 0
+  private capturedKey = ''
   private ocr = new JournalOcr()
   private ocrBusy = false
   private ocrTimer?: ReturnType<typeof setTimeout>
@@ -38,8 +41,8 @@ export class JournalService {
   private suspend = () => { this.suspended = true; this.restart() }
   private resume = () => { this.suspended = false; this.restart() }
 
-  constructor() {
-    this.worker = new Worker(join(__dirname, 'journal-worker.js'), { workerData: { directory: join(app.getPath('userData'), 'journal') } })
+  constructor(options: { recordingDisabled?: boolean } = {}) {
+    this.worker = new Worker(join(__dirname, 'journal-worker.js'), { workerData: { directory: join(app.getPath('userData'), 'journal'), recordingDisabled: options.recordingDisabled } })
     this.worker.on('message', ({ id, result, error }) => {
       const pending = this.requests.get(id)
       if (!pending) return
@@ -89,33 +92,42 @@ export class JournalService {
     if (this.closed || this.storageError) return
     this.error = ''
     this.captureError = ''; this.lastFrameAt = 0
+    this.foregroundKey = ''; this.capturedKey = ''; this.foregroundSince = 0
     this.state = !this.config.enabled ? 'off' : this.config.paused ? 'paused' : this.locked || this.suspended ? 'locked' : 'starting'
     void this.request('cut').catch(error => this.failStorage(error.message))
     if (this.state === 'starting' && process.platform === 'win32') this.schedule(0)
     if (this.state === 'starting' && this.config.captureEnabled) this.scheduleOcr()
   }
 
-  private schedule(delay = 5000): void { this.timer = setTimeout(() => void this.sample(), delay) }
+  private schedule(delay = this.config.captureEnabled ? 1000 : 5000): void { this.timer = setTimeout(() => void this.sample(), delay) }
 
   private async sample(): Promise<void> {
     if (this.closed || !this.config.enabled || this.config.paused || this.locked || this.suspended || this.storageError) return
     if (this.busy) { this.schedule(); return }
     this.busy = true
+    const startedAt = Date.now()
     const epoch = this.epoch
     try {
       if (powerMonitor.getSystemIdleTime() >= 120) {
+        this.foregroundKey = ''; this.capturedKey = ''
         this.state = 'idle'; this.helper.stop(); await this.request('cut')
       } else {
         const sample = await this.helper.read()
         if (epoch !== this.epoch) return
         if (sample.pid === process.pid || this.config.excludedApps.includes(sample.app.toLowerCase())) {
+          this.foregroundKey = ''; this.capturedKey = ''
           this.state = 'excluded'; await this.request('cut')
         } else {
           const activityId = await this.request<number>('sample', { app: sample.app, title: sample.title, at: Date.now() })
           if (epoch !== this.epoch) return
           this.state = 'recording'; this.lastCapturedAt = Date.now()
-          if (this.config.captureEnabled && Date.now() - this.lastFrameAt >= this.config.captureIntervalSeconds * 1000) {
+          const key = JSON.stringify([sample.pid, sample.hwnd, sample.title])
+          if (key !== this.foregroundKey) { this.foregroundKey = key; this.foregroundSince = Date.now() }
+          const settled = Date.now() - this.foregroundSince >= 1000
+          const due = key !== this.capturedKey || Date.now() - this.lastFrameAt >= this.config.captureIntervalSeconds * 1000
+          if (this.config.captureEnabled && settled && due) {
             this.lastFrameAt = Date.now()
+            this.capturedKey = key
             const at = this.lastFrameAt
             try {
               const frame = await captureJournalWindow(sample.hwnd)
@@ -135,7 +147,10 @@ export class JournalService {
       if (epoch === this.epoch) { this.state = 'error'; this.error = error instanceof Error ? error.message : '活动采集失败。' }
     } finally {
       this.busy = false
-      if (epoch === this.epoch && !this.closed && !this.storageError) this.schedule(this.state === 'error' ? 30_000 : 5000)
+      if (epoch === this.epoch && !this.closed && !this.storageError) {
+        const cadence = this.config.captureEnabled && this.state !== 'idle' ? 1000 : 5000
+        this.schedule(this.state === 'error' ? 30_000 : Math.max(100, cadence - (Date.now() - startedAt)))
+      }
     }
   }
 

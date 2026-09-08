@@ -67,11 +67,12 @@ export function setupTray(mainWindow: BrowserWindow): void {
     const status = getJournalStatus()
     if (!status || !tray || tray.isDestroyed()) return
     const text = status.state === 'error' ? '记录异常' : !status.config.enabled ? '未开启' : status.config.paused ? '已暂停' : status.state === 'locked' ? '锁屏暂停' : status.state === 'idle' ? '空闲暂停' : status.state === 'excluded' ? '当前应用不记录' : status.state === 'starting' ? '启动中' : '正在记录'
-    contextMenu.getMenuItemById('journal-state')!.label = `活动记录：${text}`
+    const scope = !status.config.enabled ? '' : status.captureError ? ' · 画面异常' : status.config.captureEnabled ? ' · 活动＋画面＋OCR' : ' · 仅标题'
+    contextMenu.getMenuItemById('journal-state')!.label = `活动记录：${text}${scope}`
     const pause = contextMenu.getMenuItemById('journal-pause')!
     pause.enabled = status.config.enabled
     pause.label = status.config.paused ? '继续活动记录' : '暂停活动记录'
-    tray.setToolTip(`ChouYu · 活动记录${text}`)
+    tray.setToolTip(`ChouYu · 活动记录${text}${scope}`)
   }
   updateJournalStatus()
   const journalTimer = setInterval(updateJournalStatus, 3000)

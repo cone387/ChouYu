@@ -27,7 +27,7 @@ import { JournalService } from './service'
 describe('journal recording lifecycle', () => {
   let service: JournalService
   beforeEach(async () => {
-    vi.useFakeTimers(); mock.writes = []; mock.config = { ...DEFAULT_JOURNAL_CONFIG }
+    vi.useFakeTimers(); mock.writes = []; mock.config = { ...DEFAULT_JOURNAL_CONFIG, enabled: false, captureEnabled: false }
     mock.read.mockReset(); mock.stop.mockReset(); mock.idle.mockReturnValue(0)
     mock.read.mockResolvedValue({ app: 'editor.exe', title: '合成工作记录', pid: 123456, hwnd: '100' })
     mock.capture.mockReset(); mock.ocr.mockReset(); mock.summarize.mockReset(); mock.answer.mockReset()
@@ -35,7 +35,7 @@ describe('journal recording lifecycle', () => {
     service = new JournalService(); await service.ready
   })
   afterEach(async () => { await service.close().catch(() => {}); vi.useRealTimers() })
-  it('does not launch collection until explicitly enabled', async () => {
+  it('respects a saved disabled preference', async () => {
     await vi.advanceTimersByTimeAsync(20_000)
     expect(mock.read).not.toHaveBeenCalled()
     expect(service.status().state).toBe('off')
@@ -104,14 +104,14 @@ describe('journal recording lifecycle', () => {
   it('discards a picture that finishes after pause', async () => {
     let finish!: (value: unknown) => void
     mock.capture.mockImplementation(() => new Promise(resolve => { finish = resolve }))
-    await service.configure({ enabled: true, captureEnabled: true }); await vi.advanceTimersByTimeAsync(0)
+    await service.configure({ enabled: true, captureEnabled: true }); await vi.advanceTimersByTimeAsync(1000)
     await service.configure({ paused: true }); finish({ bytes: Buffer.from('fake'), width: 100, height: 100 })
     await vi.advanceTimersByTimeAsync(0)
     expect(mock.writes.some(item => item.method === 'capture')).toBe(false)
   })
   it('discards a picture if the foreground window changed during capture', async () => {
-    mock.read.mockResolvedValueOnce({ app: 'editor.exe', title: 'A', pid: 123456, hwnd: '100' }).mockResolvedValueOnce({ app: 'editor.exe', title: 'B', pid: 123456, hwnd: '100' })
-    await service.configure({ enabled: true, captureEnabled: true }); await vi.advanceTimersByTimeAsync(0)
+    mock.read.mockResolvedValueOnce({ app: 'editor.exe', title: 'A', pid: 123456, hwnd: '100' }).mockResolvedValueOnce({ app: 'editor.exe', title: 'A', pid: 123456, hwnd: '100' }).mockResolvedValueOnce({ app: 'editor.exe', title: 'B', pid: 123456, hwnd: '100' })
+    await service.configure({ enabled: true, captureEnabled: true }); await vi.advanceTimersByTimeAsync(1000)
     expect(mock.writes.some(item => item.method === 'capture')).toBe(false)
   })
   it('allows explicit OCR without enabling recording and prevents late writes after deletion', async () => {
@@ -122,5 +122,32 @@ describe('journal recording lifecycle', () => {
     await service.deleteRange({ from: 0, to: 86400_000 }); finish('deleted text'); await operation
     expect(mock.writes.some(item => item.method === 'ocrDone')).toBe(false)
     expect(service.status().config.enabled).toBe(false)
+  })
+  it('waits for a stable foreground, captures every five seconds and supplements a window switch', async () => {
+    await service.configure({ enabled: true, captureEnabled: true })
+    await vi.advanceTimersByTimeAsync(999)
+    expect(mock.capture).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(mock.capture).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(mock.capture).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(mock.capture).toHaveBeenCalledTimes(2)
+    mock.read.mockResolvedValue({ app: 'editor.exe', title: 'New tab', pid: 123456, hwnd: '100' })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mock.capture).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mock.capture).toHaveBeenCalledTimes(3)
+  })
+  it('does not stack capture tasks while the previous frame is still processing', async () => {
+    let finish!: (value: any) => void
+    mock.capture.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    await service.configure({ enabled: true, captureEnabled: true })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(mock.capture).toHaveBeenCalledTimes(1)
+    await service.configure({ paused: true })
+    finish({ bytes: Buffer.from('fake'), width: 100, height: 100 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mock.writes.some(item => item.method === 'capture')).toBe(false)
   })
 })

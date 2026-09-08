@@ -25,8 +25,8 @@ export function openJournalWindow(): void {
   else void window.loadFile(join(__dirname, '../renderer/index.html'), { query: { view: 'journal' } })
 }
 
-export function initializeJournal(): JournalService {
-  service = new JournalService()
+export function initializeJournal(options: { recordingDisabled?: boolean } = {}): JournalService {
+  service = new JournalService(options)
   ipcMain.handle('journal:open', () => openJournalWindow())
   ipcMain.handle('journal:status', async () => { await service!.ready; return service!.status() })
   ipcMain.handle('journal:configure', (_event, patch) => service!.configure(patch))

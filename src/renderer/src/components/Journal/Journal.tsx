@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JournalConfig, JournalPage, JournalStatus } from '../../../../shared/journal'
+import { DEFAULT_JOURNAL_CONFIG } from '../../../../shared/journal'
 import './Journal.css'
 import { JournalCaptures, JournalSummaryView, JournalAsk } from './JournalEvidence'
 import { JournalDayPanel } from './JournalDayPanel'
@@ -21,9 +22,9 @@ export default function Journal() {
   const [settings, setSettings] = useState(false)
   const [excluded, setExcluded] = useState('')
   const [retention, setRetention] = useState(30)
-  const [captureEnabled, setCaptureEnabled] = useState(false)
-  const [captureInterval, setCaptureInterval] = useState(20)
-  const [storageLimit, setStorageLimit] = useState(512)
+  const [captureEnabled, setCaptureEnabled] = useState(DEFAULT_JOURNAL_CONFIG.captureEnabled)
+  const [captureInterval, setCaptureInterval] = useState(DEFAULT_JOURNAL_CONFIG.captureIntervalSeconds)
+  const [storageLimit, setStorageLimit] = useState(DEFAULT_JOURNAL_CONFIG.maxStorageMB)
   const [view, setView] = useState<'activity' | 'captures' | 'summary' | 'ask'>('activity')
   const [deletedRevision, setDeletedRevision] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -71,9 +72,9 @@ export default function Journal() {
   const openSettings = () => {
     setExcluded(status?.config.excludedApps.join('\n') || '')
     setRetention(status?.config.retentionDays || 30)
-    setCaptureEnabled(status?.config.captureEnabled || false)
-    setCaptureInterval(status?.config.captureIntervalSeconds || 20)
-    setStorageLimit(status?.config.maxStorageMB || 512)
+    setCaptureEnabled(status?.config.captureEnabled ?? DEFAULT_JOURNAL_CONFIG.captureEnabled)
+    setCaptureInterval(status?.config.captureIntervalSeconds ?? DEFAULT_JOURNAL_CONFIG.captureIntervalSeconds)
+    setStorageLimit(status?.config.maxStorageMB ?? DEFAULT_JOURNAL_CONFIG.maxStorageMB)
     setSettings(value => !value)
   }
   const changeDate = (value: string) => { setDate(value); setOffset(0); setLoading(true); setConfirmDelete(false) }
@@ -95,7 +96,7 @@ export default function Journal() {
     <header className="journal-header">
       <div><span className="journal-eyebrow">CHOUYU</span><h1>工作日志</h1><p>回看一天，接着往下做。</p></div>
       <div className="journal-controls">
-        <span className={`journal-status state-${status?.state || 'off'}`} role="status"><i />{status ? labels[status.state] : '正在加载'}</span>
+        <span className={`journal-status state-${status?.state || 'off'}`} role="status"><i />{status ? `${labels[status.state]}${status.config.enabled ? status.captureError ? ' · 画面异常' : status.config.captureEnabled ? ' · 活动＋画面＋本地 OCR' : ' · 仅记录标题' : ''}` : '正在加载'}</span>
         {status?.config.enabled && <button disabled={busy} onClick={() => void configure({ paused: !status.config.paused })}>{status.config.paused ? '继续记录' : '暂停记录'}</button>}
         <button onClick={openSettings} disabled={!status} aria-expanded={settings}>记录设置</button>
       </div>
@@ -108,7 +109,7 @@ export default function Journal() {
     {status?.analysis && <p className="journal-analysis-status" role="status">{status.analysis === 'summary' ? '日志总结正在生成' : '正在根据日志查找答案'}<button onClick={() => void window.electronAPI.journal.cancelAnalysis().catch(reason => setError(String(reason)))}>取消分析</button></p>}
 
     {!status?.config.enabled && status && <section className="journal-welcome">
-      <div><p>开启后记录应用与标题，画面需单独设置。关闭窗口后继续，可在托盘暂停。</p></div>
+      <div><p>默认记录活动、前台画面并在本机识别文字。关闭窗口后继续，可在托盘暂停。</p></div>
       <button className="journal-primary" disabled={busy || !status.supported || Boolean(status.error)} onClick={() => void configure({ enabled: true, paused: false })}>{status.supported ? '开启活动记录' : '目前仅支持 Windows'}</button>
     </section>}
 
@@ -119,7 +120,8 @@ export default function Journal() {
       <div><label>保留期限<select aria-label="保留期限" value={retention} onChange={event => setRetention(Number(event.target.value))}><option value={7}>7 天</option><option value={30}>30 天</option><option value={90}>90 天</option></select></label>
         <label className="journal-capture-toggle"><input type="checkbox" checked={captureEnabled} onChange={event => setCaptureEnabled(event.target.checked)} />保存前台窗口画面，并在本机识别文字</label>
         <p>只保存当时的前台窗口，不保存整个桌面。窗口内部的隐私字段不会自动遮蔽，请排除相关应用或暂停记录。</p>
-        <label>画面间隔<select aria-label="画面间隔" value={captureInterval} onChange={event => setCaptureInterval(Number(event.target.value))}>{[10, 20, 30, 60].map(value => <option key={value} value={value}>{value} 秒</option>)}</select></label>
+        <label>画面间隔<select aria-label="画面间隔" value={captureInterval} onChange={event => setCaptureInterval(Number(event.target.value))}>{[5, 10, 20, 30, 60].map(value => <option key={value} value={value}>{value} 秒{value === 5 ? '（推荐）' : ''}</option>)}</select></label>
+        <p>窗口切换后稳定约 1 秒补采；同一窗口按所选间隔采集，相同画面去重。处理较慢时会延后，不叠加任务。</p>
         <label>画面存储上限<select aria-label="画面存储上限" value={storageLimit} onChange={event => setStorageLimit(Number(event.target.value))}>{[256, 512, 1024, 2048].map(value => <option key={value} value={value}>{value >= 1024 ? `${value / 1024} GB` : `${value} MB`}</option>)}</select></label>
         <p>缩短期限会立即清理过期记录。时间为采样估计，不代表实际工作产出。</p>
         <div className="journal-actions"><button disabled={busy} onClick={() => void configure({ excludedApps: excluded.split('\n').map(value => value.trim()).filter(Boolean), retentionDays: retention, captureEnabled, captureIntervalSeconds: captureInterval, maxStorageMB: storageLimit })}>保存设置</button>

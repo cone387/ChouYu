@@ -79,8 +79,8 @@ export interface JournalSummary {
 }
 
 export const DEFAULT_JOURNAL_CONFIG: JournalConfig = {
-  enabled: false, paused: false, retentionDays: 30,
-  captureEnabled: false, captureIntervalSeconds: 20, maxStorageMB: 512,
+  enabled: true, paused: false, retentionDays: 30,
+  captureEnabled: true, captureIntervalSeconds: 5, maxStorageMB: 2048,
   excludedApps: ['1password.exe', 'bitwarden.exe', 'keepass.exe', 'keepassxc.exe', 'authy.exe']
 }
 
@@ -92,7 +92,7 @@ export function validateJournalConfig(value: unknown, current: JournalConfig): J
     if (patch[key] !== undefined && typeof patch[key] !== 'boolean') throw new Error('记录状态必须为布尔值。')
   }
   if (patch.retentionDays !== undefined && ![7, 30, 90].includes(patch.retentionDays as number)) throw new Error('保留期限须为 7、30 或 90 天。')
-  if (patch.captureIntervalSeconds !== undefined && ![10, 20, 30, 60].includes(patch.captureIntervalSeconds as number)) throw new Error('画面间隔须为 10、20、30 或 60 秒。')
+  if (patch.captureIntervalSeconds !== undefined && ![5, 10, 20, 30, 60].includes(patch.captureIntervalSeconds as number)) throw new Error('画面间隔须为 5、10、20、30 或 60 秒。')
   if (patch.maxStorageMB !== undefined && ![256, 512, 1024, 2048].includes(patch.maxStorageMB as number)) throw new Error('无效的画面存储上限。')
   if (patch.excludedApps !== undefined && (!Array.isArray(patch.excludedApps) || patch.excludedApps.length > 100 || patch.excludedApps.some(item => typeof item !== 'string' || !/^[^\\/:*?"<>|\r\n]{1,100}\.exe$/i.test(item)))) throw new Error('排除应用请填写进程名，例如 chrome.exe，每行一个。')
   return { enabled: patch.enabled === undefined ? current.enabled : patch.enabled as boolean,
@@ -102,6 +102,15 @@ export function validateJournalConfig(value: unknown, current: JournalConfig): J
     paused: patch.paused === undefined ? current.paused : patch.paused as boolean,
     retentionDays: patch.retentionDays === undefined ? current.retentionDays : patch.retentionDays as number,
     excludedApps: patch.excludedApps === undefined ? [...current.excludedApps] : [...new Set((patch.excludedApps as string[]).map(item => item.toLowerCase()))] }
+}
+
+/** Upgrade only the previous title-only preset, once per database schema upgrade. */
+export function migrateJournalConfig(value: unknown, version: number): JournalConfig {
+  const previous = validateJournalConfig(value || {}, DEFAULT_JOURNAL_CONFIG)
+  if (version > 0 && version < 3 && !previous.captureEnabled && previous.captureIntervalSeconds === 20) {
+    return { ...previous, enabled: true, captureEnabled: true, captureIntervalSeconds: 5, maxStorageMB: previous.maxStorageMB === 512 ? 2048 : previous.maxStorageMB }
+  }
+  return previous
 }
 
 export function validateJournalQuery(value: unknown): Required<JournalQuery> {

@@ -246,7 +246,7 @@ app.whenReady().then(async () => {
   registerPluginTools()
 
   // Create window
-  initializeJournal()
+  initializeJournal({ recordingDisabled: isSmokeTest })
   createWindow()
 
   // Register IPC handlers immediately after window creation

@@ -13,7 +13,7 @@ import { getConfig, saveConfig } from '../database'
 /** Only synthetic activity in the isolated smoke profile; never enables collection. */
 export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
   const initial = await main.webContents.executeJavaScript('window.electronAPI.journal.status()')
-  if (initial.state !== 'off' || initial.config.enabled || initial.error) throw new Error('Journal must start disabled with healthy storage')
+  if (initial.state !== 'off' || initial.config.enabled || initial.error) throw new Error('Journal smoke fixture must explicitly disable collection with healthy storage')
   const worker = new Worker(join(__dirname, 'journal-worker.js'), { workerData: { directory: join(app.getPath('userData'), 'journal') } })
   let id = 0
   const request = (method: string, payload?: unknown): Promise<any> => new Promise((resolve, reject) => {
@@ -183,7 +183,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     // A fresh connection must read disabled state and deleted records.
     const final = await journal.webContents.executeJavaScript('window.electronAPI.journal.status()')
     if (final.config.enabled || final.lastCapturedAt !== null) throw new Error('Smoke accidentally enabled journal collection')
-    console.log('CHOUYU_JOURNAL_SMOKE_PASSED opt-in, native helper, SQLite worker, interval merge, Chinese search, pagination, native capture, frame dedup, OCR search, image and summary UI, cascading deletion')
+    console.log('CHOUYU_JOURNAL_SMOKE_PASSED fixture recording disabled, native helper, SQLite worker, interval merge, Chinese search, pagination, native capture, frame dedup, OCR search, image and summary UI, cascading deletion')
   } finally {
     saveConfig(originalConfig)
     server.closeAllConnections()
