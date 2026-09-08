@@ -1,3 +1,6 @@
+import { readAIUsage, type AIResponseMetadata } from '../shared/ai-usage'
+export interface AIStreamOptions { timeoutMs?: number; onMetadata?: (metadata: AIResponseMetadata) => void }
+
 import type { AppConfig } from '../shared/config'
 import { isAIConfigured } from '../shared/config'
 import {
@@ -238,7 +241,7 @@ export async function streamAIChat(
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
   toolRuntime?: AIToolRuntime,
-  options: { timeoutMs?: number } = {}
+  options: AIStreamOptions = {}
 ): Promise<void> {
   if (!config.baseUrl.trim()) {
     throw new Error('尚未配置 Base URL，请先打开设置完成配置。')
@@ -277,7 +280,7 @@ async function streamOpenAI(
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
   toolRuntime?: AIToolRuntime,
-  options: { timeoutMs?: number } = {}
+  options: AIStreamOptions = {}
 ): Promise<void> {
   const apiMessages: Array<Record<string, unknown>> = [
     { role: 'system', content: systemPrompt },
@@ -342,11 +345,12 @@ async function streamOpenAIRound(
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
   tools?: Array<Record<string, unknown>>,
-  options: { timeoutMs?: number } = {}
+  options: AIStreamOptions = {}
 ): Promise<{ text: string; toolCalls: AIToolCall[] }> {
   const guard = createRequestGuard(signal, Math.min(180_000, Math.max(1000, options.timeoutMs ?? REQUEST_TIMEOUT_MS)))
   try {
     const requestBody: Record<string, unknown> = { model: config.model, messages: apiMessages, stream: true }
+    if (options.onMetadata) requestBody.stream_options = { include_usage: true }
     if (tools?.length) {
       requestBody.tools = tools
       requestBody.tool_choice = 'auto'
@@ -369,12 +373,23 @@ async function streamOpenAIRound(
         signal: guard.signal
       })
     }
+    if (!response.ok && requestBody.stream_options && [400, 422].includes(response.status) && /stream_options|include_usage/i.test(await response.clone().text())) {
+      // Older compatible endpoints may explicitly reject usage reporting.
+      await response.text()
+      delete requestBody.stream_options
+      response = await fetch(joinApiUrl(config.baseUrl, 'chat/completions'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+        body: JSON.stringify(requestBody), signal: guard.signal
+      })
+    }
     if (!response.ok) throw new Error(`API error ${response.status}: ${(await response.text()).slice(0, 2000)}`)
     if (!response.body) throw new Error('API 返回了空响应，请稍后重试。')
 
     const accumulators = new Map<number, OpenAIToolAccumulator>()
+    let metadata: AIResponseMetadata = {}
     let text = ''
     await readSseStream(response.body, (payload) => {
+      if (options.onMetadata) { metadata = readAIUsage(payload, 'openai', metadata); options.onMetadata(metadata) }
       const delta = accumulateOpenAIToolCalls(payload, accumulators)
       if (delta.text) {
         text += delta.text
@@ -423,7 +438,7 @@ async function streamClaude(
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
   toolRuntime?: AIToolRuntime,
-  options: { timeoutMs?: number } = {}
+  options: AIStreamOptions = {}
 ): Promise<void> {
   const apiMessages: Array<Record<string, unknown>> = messages
     .filter((message) => message.role === 'user' || message.role === 'assistant')
@@ -501,7 +516,7 @@ async function streamClaudeRound(
   onChunk: AIStreamCallback,
   signal?: AbortSignal,
   tools?: Array<Record<string, unknown>>,
-  options: { timeoutMs?: number } = {}
+  options: AIStreamOptions = {}
 ): Promise<{ text: string; toolCalls: AIToolCall[] }> {
   const guard = createRequestGuard(signal, Math.min(180_000, Math.max(1000, options.timeoutMs ?? REQUEST_TIMEOUT_MS)))
   try {
@@ -534,8 +549,10 @@ async function streamClaudeRound(
     if (!response.body) throw new Error('API 返回了空响应，请稍后重试。')
 
     const accumulators = new Map<number, ClaudeToolAccumulator>()
+    let metadata: AIResponseMetadata = {}
     let text = ''
     await readSseStream(response.body, (payload) => {
+      if (options.onMetadata) { metadata = readAIUsage(payload, 'claude', metadata); options.onMetadata(metadata) }
       const delta = accumulateClaudeToolCalls(payload, accumulators)
       if (delta.text) {
         text += delta.text

@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; media-src 'self' blob:; connect-src 'none'"></head><body>
+<video muted playsinline></video>
+<script>
+// Isolated local page: no IPC bridge, network access, audio or source picker.
+window.captureJournalFrame = async () => {
+  const video = document.querySelector('video')
+  let stream
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ audio: false, video: { frameRate: 1 } })
+    video.srcObject = stream
+    const frame = new Promise(resolve => video.requestVideoFrameCallback(resolve))
+    await video.play()
+    await frame
+    if (video.videoWidth < 32 || video.videoHeight < 32) throw new Error('窗口画面过小，已跳过。')
+    const scale = Math.min(1, 1920 / video.videoWidth, 1080 / video.videoHeight)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.floor(video.videoWidth * scale)
+    canvas.height = Math.floor(video.videoHeight * scale)
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+    return { data: canvas.toDataURL('image/jpeg', .88), width: canvas.width, height: canvas.height }
+  } catch (error) {
+    return { error: String(error) }
+  } finally {
+    stream?.getTracks().forEach(track => track.stop())
+    video.pause()
+    video.srcObject = null
+  }
+}
+</script></body></html>

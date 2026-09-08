@@ -1,12 +1,14 @@
 import { app, powerMonitor } from 'electron'
+import type { AIResponseMetadata } from '../../shared/ai-usage'
+import type { JournalAnalysisRecord } from '../../shared/journal'
 import { Worker } from 'worker_threads'
 import { join } from 'path'
 import { ActivityHelper } from './activity-helper'
-import { captureJournalWindow } from './capture'
+import { captureJournalWindow, stopJournalCapture } from './capture'
 import { JournalOcr } from './ocr'
 import { answerJournalQuestion, generateJournalSummary } from './summary'
 import { DEFAULT_JOURNAL_CONFIG, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
-import type { JournalAnswer, JournalDay, JournalCapturePage, JournalConfig, JournalPage, JournalQuery, JournalStatus, JournalEvidence, JournalSummary } from '../../shared/journal'
+import type { JournalAnswer, JournalDay, JournalCapture, JournalCapturePage, JournalConfig, JournalPage, JournalQuery, JournalStatus, JournalEvidence, JournalSummary, JournalTaskPage, JournalDetail, JournalTaskEdit } from '../../shared/journal'
 
 export class JournalService {
   private worker: Worker
@@ -30,6 +32,9 @@ export class JournalService {
   private foregroundKey = ''
   private foregroundSince = 0
   private capturedKey = ''
+  private failedCaptureKey = ''
+  private captureFailures = 0
+  private captureRetryAt = 0
   private ocr = new JournalOcr()
   private ocrBusy = false
   private ocrTimer?: ReturnType<typeof setTimeout>
@@ -51,7 +56,7 @@ export class JournalService {
     })
     this.worker.on('error', () => this.failStorage('工作日志数据库无法启动，请检查数据目录后重启应用。'))
     this.worker.on('exit', () => { if (!this.closed) this.failStorage('工作日志存储进程已退出，请重启应用。') })
-    this.ready = this.request<JournalConfig>('config').then(config => { this.config = config; this.restart() }).catch(error => { this.failStorage(String(error.message || error)) })
+    this.ready = this.request<JournalConfig>('config').then(async config => { await this.request('analysisRecover'); this.config = config; this.restart() }).catch(error => { this.failStorage(String(error.message || error)) })
     powerMonitor.on('lock-screen', this.lock)
     powerMonitor.on('unlock-screen', this.unlock)
     powerMonitor.on('suspend', this.suspend)
@@ -82,6 +87,7 @@ export class JournalService {
     this.epoch++
     clearTimeout(this.timer)
     this.helper.stop()
+    stopJournalCapture()
     clearTimeout(this.ocrTimer)
     this.ocr.stop()
     this.summaryController?.abort()
@@ -93,6 +99,7 @@ export class JournalService {
     this.error = ''
     this.captureError = ''; this.lastFrameAt = 0
     this.foregroundKey = ''; this.capturedKey = ''; this.foregroundSince = 0
+    this.failedCaptureKey = ''; this.captureFailures = 0; this.captureRetryAt = 0
     this.state = !this.config.enabled ? 'off' : this.config.paused ? 'paused' : this.locked || this.suspended ? 'locked' : 'starting'
     void this.request('cut').catch(error => this.failStorage(error.message))
     if (this.state === 'starting' && process.platform === 'win32') this.schedule(0)
@@ -125,7 +132,7 @@ export class JournalService {
           if (key !== this.foregroundKey) { this.foregroundKey = key; this.foregroundSince = Date.now() }
           const settled = Date.now() - this.foregroundSince >= 1000
           const due = key !== this.capturedKey || Date.now() - this.lastFrameAt >= this.config.captureIntervalSeconds * 1000
-          if (this.config.captureEnabled && settled && due) {
+          if (this.config.captureEnabled && settled && due && (key !== this.failedCaptureKey || Date.now() >= this.captureRetryAt)) {
             this.lastFrameAt = Date.now()
             this.capturedKey = key
             const at = this.lastFrameAt
@@ -137,8 +144,16 @@ export class JournalService {
               // A changed tab, process or foreground window invalidates the in-flight frame.
               if (current.hwnd !== sample.hwnd || current.pid !== sample.pid || current.title !== sample.title) return
               await this.request('capture', { activityId, width: frame.width, height: frame.height, bytes: frame.bytes, at })
-              if (epoch === this.epoch) this.captureError = ''
-            } catch (error) { if (epoch === this.epoch) this.captureError = error instanceof Error ? error.message : '画面采集失败。' }
+              if (epoch === this.epoch) { this.captureError = ''; this.failedCaptureKey = ''; this.captureFailures = 0; this.captureRetryAt = 0 }
+            } catch (error) {
+              if (epoch === this.epoch) {
+                this.captureFailures = key === this.failedCaptureKey ? this.captureFailures + 1 : 1
+                this.failedCaptureKey = key
+                const retrySeconds = Math.min(30, 5 * 2 ** Math.min(this.captureFailures - 1, 3))
+                this.captureRetryAt = Date.now() + retrySeconds * 1000
+                this.captureError = `${error instanceof Error ? error.message : '画面采集失败。'} ${retrySeconds} 秒后重试；活动记录继续。`
+              }
+            }
           }
         }
       }
@@ -176,10 +191,31 @@ export class JournalService {
   }
 
   async captures(query: JournalQuery): Promise<JournalCapturePage> { await this.ready; return this.request('captures', validateJournalQuery(query)) }
+  async tasks(query: JournalQuery): Promise<JournalTaskPage> { await this.ready; return this.request('tasks', validateJournalQuery(query)) }
+  async detail(input: { from: number; to: number; id: string }): Promise<JournalDetail> { await this.ready; return this.request('detail', { ...validateJournalQuery(input), id: input.id }) }
+  async captureInfo(id: string): Promise<JournalCapture> { await this.ready; return this.request('captureInfo', id) }
+  editTask(input: JournalTaskEdit): Promise<void> { return this.mutate('editTask', input) }
+  deleteActivity(id: number): Promise<void> { return this.mutate('deleteActivity', id) }
+  deleteCapture(id: string): Promise<void> { return this.mutate('deleteCapture', id) }
   async image(id: string): Promise<string> { await this.ready; return this.request('image', id) }
   async summary(range: { from: number; to: number }): Promise<JournalSummary | null> { await this.ready; return this.request('summary', validateJournalQuery(range)) }
   async overview(range: { from: number; to: number }): Promise<JournalDay> { await this.ready; return this.request('overview', validateJournalQuery(range)) }
   cancelAnalysis(): void { this.summaryController?.abort() }
+  async analysisRecords(range: { from: number; to: number }): Promise<JournalAnalysisRecord[]> { await this.ready; return this.request('analysisRecords', validateJournalQuery(range)) }
+
+  private async trackAnalysis<T>(range: { from: number; to: number }, kind: 'summary' | 'question', config: { provider: string; model: string }, signal: AbortSignal, run: (onMetadata: (value: AIResponseMetadata) => void) => Promise<T>): Promise<T> {
+    const id = await this.request<string>('analysisStart', { from: range.from, to: range.to, kind, provider: config.provider, model: config.model, requestedModel: config.model })
+    let metadata: AIResponseMetadata = {}
+    let state: JournalAnalysisRecord['state'] = 'failed'
+    try {
+      if (signal.aborted) throw new Error('日志分析已取消。')
+      const result = await run(value => { metadata = value })
+      state = 'success'
+      return result
+    } finally {
+      await this.request('analysisFinish', { id, model: metadata.model || config.model, usage: metadata.usage, state: signal.aborted ? 'cancelled' : state })
+    }
+  }
 
   async ask(input: { from: number; to: number; question: string }): Promise<JournalAnswer> {
     await this.ready
@@ -193,7 +229,9 @@ export class JournalService {
       const evidence = await this.request<{ sources: JournalEvidence[]; truncated: boolean }>('summaryInput', query)
       if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，回答已取消。')
       const { getConfig } = await import('../database')
-      const answer = await answerJournalQuestion({ ...evidence, from: query.from, to: query.to }, input.question.trim(), getConfig(), controller.signal)
+      const config = getConfig()
+      const run = (onMetadata?: (value: AIResponseMetadata) => void) => answerJournalQuestion({ ...evidence, from: query.from, to: query.to }, input.question.trim(), config, controller.signal, onMetadata)
+      const answer = evidence.sources.length ? await this.trackAnalysis(query, 'question', config, controller.signal, run) : await run()
       if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，回答已取消。')
       return answer
     } catch (error) { if (controller.signal.aborted) throw new Error('日志分析已取消。'); throw error }
@@ -246,7 +284,9 @@ export class JournalService {
       const input = await this.request<{ sources: JournalEvidence[]; truncated: boolean; generation: number }>('summaryInput', query)
       if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，总结已取消。')
       const { getConfig } = await import('../database')
-      const summary = await generateJournalSummary({ ...input, from: query.from, to: query.to }, getConfig(), controller.signal)
+      const config = getConfig()
+      const run = (onMetadata?: (value: AIResponseMetadata) => void) => generateJournalSummary({ ...input, from: query.from, to: query.to }, config, controller.signal, onMetadata)
+      const summary = input.sources.length ? await this.trackAnalysis(query, 'summary', config, controller.signal, run) : await run()
       if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，总结已取消。')
       return await this.request('summarySave', { summary, generation: input.generation })
     } catch (error) { if (controller.signal.aborted) throw new Error('日志分析已取消。'); throw error }
@@ -254,11 +294,15 @@ export class JournalService {
   }
 
   deleteRange(range: { from: number; to: number }): Promise<void> {
+    return this.mutate('deleteRange', validateJournalQuery(range))
+  }
+
+  private mutate(method: string, payload: unknown): Promise<void> {
     const operation = this.changes.then(async () => {
+      if (this.closed) throw new Error('工作日志正在关闭。')
       await this.ready
-      const query = validateJournalQuery(range)
       this.stopSampling()
-      try { await this.request('deleteRange', query) } finally { this.restart() }
+      try { await this.request(method, payload) } finally { this.restart() }
     })
     this.changes = operation.then(() => {}, () => {})
     return operation

@@ -14,6 +14,15 @@ afterEach(() => {
 })
 
 describe('main-process AI provider routing', () => {
+  it('requests usage and falls back only when a compatible endpoint rejects that option', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response('unsupported stream_options', { status: 400 })).mockResolvedValueOnce(streamResponse('data: {"model":"actual-model","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}\n\ndata: [DONE]\n\n'))
+    vi.stubGlobal('fetch', fetchMock)
+    const metadata = vi.fn()
+    await streamAIChat([{ role: 'user', content: 'test' }], 'system', { ...DEFAULT_APP_CONFIG, provider: 'openai', baseUrl: 'https://provider.example/v1', apiKey: 'test', model: 'requested' }, () => {}, undefined, undefined, { onMetadata: metadata })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).stream_options).toEqual({ include_usage: true })
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).stream_options).toBeUndefined()
+    expect(metadata).toHaveBeenLastCalledWith({ model: 'actual-model', usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 } })
+  })
   it.each([['openai', 60_000], ['openai', 120_000], ['claude', 60_000], ['claude', 120_000]] as const)('bounds %s requests at %i ms without changing the default', async (provider, timeoutMs) => {
     vi.useFakeTimers()
     try {

@@ -1,3 +1,10 @@
+import type { AIUsage } from './ai-usage'
+
+export interface JournalAnalysisRecord {
+  id: string; from: number; to: number; createdAt: number; finishedAt?: number
+  kind: 'summary' | 'question'; provider: string; model: string; requestedModel: string
+  state: 'running' | 'success' | 'failed' | 'cancelled'; usage?: AIUsage
+}
 export interface JournalConfig {
   enabled: boolean
   paused: boolean
@@ -36,11 +43,26 @@ export interface JournalStatus {
 
 export interface JournalQuery { from: number; to: number; query?: string; offset?: number }
 export interface JournalPage { items: JournalActivity[]; total: number; durationMs: number }
+export interface JournalTask {
+  id: string; title: string; text: string; kind: NonNullable<JournalSummaryItem['kind']>
+  nextStep?: string; category: string; note: string; edited: boolean; organized: boolean
+  sourceIds: string[]; activityIds: number[]; captureIds: string[]; apps: string[]
+  startedAt: number; endedAt: number; durationMs: number
+}
+export interface JournalTaskPage { items: JournalTask[]; total: number; organized: number }
+export interface JournalDetail { task: JournalTask; activities: JournalActivity[]; captures: JournalCapture[] }
+export interface JournalTaskEdit { from: number; to: number; id: string; title: string; category: string; note: string }
 export interface JournalAPI {
   open(): Promise<void>
   status(): Promise<JournalStatus>
   configure(patch: Partial<JournalConfig>): Promise<JournalStatus>
   list(query: JournalQuery): Promise<JournalPage>
+  tasks(query: JournalQuery): Promise<JournalTaskPage>
+  detail(input: { from: number; to: number; id: string }): Promise<JournalDetail>
+  editTask(input: JournalTaskEdit): Promise<void>
+  deleteActivity(id: number): Promise<void>
+  deleteCapture(id: string): Promise<void>
+  captureInfo(id: string): Promise<JournalCapture>
   deleteRange(range: { from: number; to: number }): Promise<void>
   captures(query: JournalQuery): Promise<JournalCapturePage>
   image(id: string): Promise<string>
@@ -50,6 +72,7 @@ export interface JournalAPI {
   overview(range: { from: number; to: number }): Promise<JournalDay>
   ask(input: { from: number; to: number; question: string }): Promise<JournalAnswer>
   cancelAnalysis(): Promise<void>
+  analysisRecords(range: { from: number; to: number }): Promise<JournalAnalysisRecord[]>
 }
 
 export interface JournalCapture {
@@ -65,13 +88,16 @@ export interface JournalDay {
   apps: Array<{ app: string; durationMs: number; count: number }>
 }
 export interface JournalSummaryItem {
+  id?: string
+  category?: string; note?: string; edited?: boolean
   text: string; sourceIds: string[]; title?: string
   kind?: 'activity' | 'progress' | 'blocker' | 'decision'
   nextStep?: string
 }
-export interface JournalAnswer { text: string; sourceIds: string[]; sources: JournalEvidence[]; model: string; truncated: boolean }
+export interface JournalAnswer { text: string; sourceIds: string[]; sources: JournalEvidence[]; model: string; truncated: boolean; usage?: AIUsage }
 export interface JournalSummary {
   from: number; to: number; createdAt: number; model: string
+  usage?: AIUsage
   items: JournalSummaryItem[]
   sources: JournalEvidence[]; truncated: boolean
   version?: number

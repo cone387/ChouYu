@@ -6,6 +6,7 @@ import { randomUUID, createHash } from 'crypto'
 import { DEFAULT_JOURNAL_CONFIG, migrateJournalConfig, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
 import type { JournalActivity, JournalConfig } from '../../shared/journal'
 import { readJournalDay, readJournalEvidence } from './evidence'
+import { pruneTaskOverrides, readTaskData, readCorrectedSummary, reconcileTaskIds } from './tasks'
 
 mkdirSync(workerData.directory, { recursive: true })
 const db = new Database(join(workerData.directory, 'journal.db'))
@@ -13,7 +14,7 @@ db.pragma('journal_mode = WAL')
 db.pragma('busy_timeout = 3000')
 db.pragma('secure_delete = ON')
 const previousVersion = Number(db.pragma('user_version', { simple: true }))
-if (previousVersion > 3) throw new Error('工作日志由更新版本创建，请升级应用。')
+if (previousVersion > 5) throw new Error('工作日志由更新版本创建，请升级应用。')
 db.exec(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY, app TEXT NOT NULL, title TEXT NOT NULL, startedAt INTEGER NOT NULL, endedAt INTEGER NOT NULL);
   CREATE INDEX IF NOT EXISTS activities_time ON activities(endedAt, startedAt);
@@ -23,6 +24,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1)
   CREATE INDEX IF NOT EXISTS captures_ocr ON captures(ocrStatus,capturedAt);
   CREATE TABLE IF NOT EXISTS media_gc (name TEXT PRIMARY KEY);
   CREATE TABLE IF NOT EXISTS summaries (fromTs INTEGER NOT NULL, toTs INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(fromTs,toTs));
+  CREATE TABLE IF NOT EXISTS task_overrides (id TEXT PRIMARY KEY, fromTs INTEGER NOT NULL, toTs INTEGER NOT NULL, value TEXT NOT NULL);
+  CREATE INDEX IF NOT EXISTS task_overrides_range ON task_overrides(fromTs,toTs);
+  CREATE TABLE IF NOT EXISTS analysis_records (id TEXT PRIMARY KEY, fromTs INTEGER NOT NULL, toTs INTEGER NOT NULL, createdAt INTEGER NOT NULL, value TEXT NOT NULL);
+  CREATE INDEX IF NOT EXISTS analysis_records_range ON analysis_records(fromTs,toTs,createdAt);
   `)
 db.transaction(() => {
   const row = db.prepare('SELECT value FROM settings WHERE id=1').get() as { value: string } | undefined
@@ -30,7 +35,7 @@ db.transaction(() => {
   // Smoke fixtures explicitly opt out before the service can start its first sample.
   if (workerData.recordingDisabled) { config.enabled = false; config.captureEnabled = false }
   db.prepare('INSERT OR REPLACE INTO settings(id,value) VALUES(1,?)').run(JSON.stringify(config))
-  db.pragma('user_version = 3')
+  db.pragma('user_version = 5')
 })()
 const media = join(workerData.directory, 'media')
 mkdirSync(media, { recursive: true })
@@ -39,7 +44,7 @@ const mediaName = (id: unknown) => {
   return `${id}.jpg`
 }
 let generation = 0
-const invalidate = () => { generation++; db.prepare('DELETE FROM summaries').run() }
+const invalidate = () => { generation++; db.prepare('DELETE FROM summaries').run(); pruneTaskOverrides(db) }
 const garbageCollect = () => {
   for (const { name } of db.prepare('SELECT name FROM media_gc').all() as { name: string }[]) {
     if (!/^[a-f0-9-]{36}\.(?:jpg|part)$/.test(name)) continue
@@ -71,6 +76,7 @@ const settings = (): JournalConfig => {
 const prune = (days: number) => {
   const before = Date.now() - days * 86400_000
   db.transaction(() => {
+    db.prepare('DELETE FROM analysis_records WHERE toTs <= ?').run(before)
     const removed = queueMediaDeletion('capturedAt < ? OR activityId IN (SELECT id FROM activities WHERE endedAt < ?)', [before, before])
     const changed = db.prepare('DELETE FROM activities WHERE endedAt < ?').run(before).changes
     db.prepare('UPDATE activities SET startedAt=? WHERE startedAt < ? AND endedAt >= ?').run(before, before, before)
@@ -119,11 +125,62 @@ parentPort!.on('message', ({ id, method, payload }) => {
         cut(); db.transaction(() => {
           queueMediaDeletion('(capturedAt >= ? AND capturedAt < ?) OR activityId IN (SELECT id FROM activities WHERE endedAt >= ? AND startedAt < ?)', [from, to, from, to])
           db.prepare('DELETE FROM activities WHERE endedAt >= ? AND startedAt < ?').run(from, to)
+          db.prepare('DELETE FROM analysis_records WHERE toTs > ? AND fromTs < ?').run(from, to)
           invalidate()
         })()
         garbageCollect()
         if ((db.prepare('SELECT COUNT(*) total FROM media_gc').get() as { total: number }).total) throw new Error('记录索引已删除，但部分图片文件被占用；请稍后再次删除以完成清理。')
         db.pragma('wal_checkpoint(TRUNCATE)'); break
+      }
+      case 'tasks':
+      case 'detail': {
+        prune(settings().retentionDays)
+        const { from, to, query, offset } = validateJournalQuery(payload)
+        const data = readTaskData(db, from, to)
+        if (method === 'tasks') {
+          const needle = query.toLocaleLowerCase()
+          const items = data.tasks.filter(item => [item.title, item.text, item.note, item.category, ...item.apps].join('\n').toLocaleLowerCase().includes(needle))
+          result = { items: items.slice(offset, offset + 100), total: items.length, organized: data.tasks.filter(item => item.organized).length }
+        } else {
+          if (typeof payload.id !== 'string') throw new Error('无效事项。')
+          let task = data.tasks.find(item => item.id === payload.id)
+          if (!task && payload.id.startsWith('activity:')) {
+            const activityId = Number(payload.id.slice(9))
+            task = data.tasks.find(item => item.activityIds.includes(activityId))
+          }
+          if (!task && payload.id.startsWith('capture:')) task = data.tasks.find(item => item.captureIds.includes(payload.id.slice(8)))
+          if (!task) throw new Error('事项已删除或不在所选日期。')
+          result = { task, activities: data.activities.filter(item => task!.activityIds.includes(item.id)), captures: data.captures.filter(item => task!.captureIds.includes(item.id)) }
+        }
+        break
+      }
+      case 'editTask': {
+        const { from, to } = validateJournalQuery(payload)
+        if (typeof payload.id !== 'string' || typeof payload.title !== 'string' || !payload.title.trim() || payload.title.length > 200 || typeof payload.category !== 'string' || payload.category.length > 40 || typeof payload.note !== 'string' || payload.note.length > 4000) throw new Error('标题须为 1–200 字，分类最多 40 字，备注最多 4000 字。')
+        const task = readTaskData(db, from, to).tasks.find(item => item.id === payload.id)
+        if (!task) throw new Error('事项已删除，请刷新。')
+        const value = { id: task.id, from, to, title: payload.title.trim(), category: payload.category.trim(), note: payload.note.trim(), item: { id: task.id, title: task.title, text: task.text, kind: task.kind, nextStep: task.nextStep, sourceIds: task.sourceIds } }
+        db.prepare('INSERT OR REPLACE INTO task_overrides VALUES(?,?,?,?)').run(`${from}:${to}:${task.id}`, from, to, JSON.stringify(value))
+        generation++; break
+      }
+      case 'deleteActivity':
+      case 'deleteCapture': {
+        if (method === 'deleteActivity' && (!Number.isSafeInteger(payload) || payload <= 0)) throw new Error('无效活动 ID。')
+        if (method === 'deleteCapture') mediaName(payload)
+        cut(); db.transaction(() => {
+          queueMediaDeletion(method === 'deleteActivity' ? 'activityId=?' : 'id=?', [payload])
+          if (method === 'deleteActivity') db.prepare('DELETE FROM activities WHERE id=?').run(payload)
+          invalidate()
+        })()
+        garbageCollect()
+        if ((db.prepare('SELECT COUNT(*) total FROM media_gc').get() as { total: number }).total) throw new Error('记录已删除，但图片文件被占用；请稍后重试清理。')
+        db.pragma('wal_checkpoint(TRUNCATE)'); break
+      }
+      case 'captureInfo': {
+        mediaName(payload)
+        result = db.prepare('SELECT * FROM captures WHERE id=?').get(payload)
+        if (!result) throw new Error('画面已删除或不存在。')
+        break
       }
       case 'capture': {
         const { activityId, width, height, at } = payload
@@ -183,6 +240,27 @@ parentPort!.on('message', ({ id, method, payload }) => {
         const { from, to } = validateJournalQuery(payload)
         result = readJournalDay(db, from, to); break
       }
+      case 'analysisRecover': {
+        db.prepare("UPDATE analysis_records SET value=json_set(value,'$.state','cancelled') WHERE json_extract(value,'$.state')='running'").run()
+        break
+      }
+      case 'analysisStart': {
+        const record = { ...payload, id: randomUUID(), createdAt: Date.now(), state: 'running' }
+        db.prepare('INSERT INTO analysis_records VALUES(?,?,?,?,?)').run(record.id, record.from, record.to, record.createdAt, JSON.stringify(record))
+        result = record.id; break
+      }
+      case 'analysisFinish': {
+        const row = db.prepare('SELECT value FROM analysis_records WHERE id=?').get(payload.id) as { value: string } | undefined
+        // A late result must never recreate a deleted day's metadata.
+        if (row) db.prepare('UPDATE analysis_records SET value=? WHERE id=?').run(JSON.stringify({ ...JSON.parse(row.value), ...payload, finishedAt: Date.now() }), payload.id)
+        break
+      }
+      case 'analysisRecords': {
+        prune(settings().retentionDays)
+        const { from, to } = validateJournalQuery(payload)
+        result = (db.prepare('SELECT value FROM analysis_records WHERE toTs > ? AND fromTs < ? ORDER BY createdAt DESC, id DESC').all(from, to) as { value: string }[]).map(row => JSON.parse(row.value))
+        break
+      }
       case 'summaryInput': {
         prune(settings().retentionDays)
         const { from, to } = validateJournalQuery(payload)
@@ -191,13 +269,14 @@ parentPort!.on('message', ({ id, method, payload }) => {
       case 'summarySave': {
         if (payload.generation !== generation) throw new Error('来源已删除或过期，请重新生成总结。')
         const summary = payload.summary
-        db.prepare('INSERT OR REPLACE INTO summaries VALUES(?,?,?)').run(summary.from, summary.to, JSON.stringify(summary)); result = summary; break
+        const old = readTaskData(db, summary.from, summary.to)
+        summary.items = reconcileTaskIds(summary.items, [...old.overrides.map(edit => ({ ...edit.item, id: edit.id })), ...(old.summary?.items || []).filter(item => !old.overrides.some(edit => edit.id === item.id))])
+        db.prepare('INSERT OR REPLACE INTO summaries VALUES(?,?,?)').run(summary.from, summary.to, JSON.stringify(summary)); result = readCorrectedSummary(db, summary.from, summary.to); break
       }
       case 'summary': {
         prune(settings().retentionDays)
         const { from, to } = validateJournalQuery(payload)
-        const row = db.prepare('SELECT value FROM summaries WHERE fromTs=? AND toTs=?').get(from, to) as { value: string } | undefined
-        result = row ? JSON.parse(row.value) : null; break
+        result = readCorrectedSummary(db, from, to); break
       }
       case 'close': db.close(); parentPort!.postMessage({ id, result: null }); parentPort!.close(); return
       default: throw new Error('未知日志存储操作。')

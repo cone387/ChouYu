@@ -129,6 +129,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32') app.setAppUserModelId('com.chouyu.app')
   // Init database first (needed by plugins and IPC handlers)
   initDatabase()
   registerBuiltInCapabilities()

@@ -8,6 +8,8 @@ files:
   - "!out/types-*"
 
 extraResources:
+  - from: resources/journal-capture.html
+    to: journal-capture.html
   - from: resources/journal-ocr.ps1
     to: journal-ocr.ps1
   - from: resources/journal-activity.ps1
