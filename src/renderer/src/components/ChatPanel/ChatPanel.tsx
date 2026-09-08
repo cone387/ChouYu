@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import TopBar from './TopBar'
 import MessageArea from './MessageArea'
 import InputArea, { PendingAttachment } from './InputArea'
@@ -68,6 +68,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [])
   const [memoryReturnTarget, setMemoryReturnTarget] = useState<'chat' | 'settings'>('chat')
   const [showSessions, setShowSessions] = useState(false)
+  const [sidebarLoaded, setSidebarLoaded] = useState(false)
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
@@ -111,6 +112,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     sessions,
     activeSessionId,
     workspaceLoaded,
+    workspaceError,
+    retryWorkspace,
     streamingSessionIds,
     isStreaming,
     sessionGenerationsRef,
@@ -144,6 +147,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     [messages]
   )
   const {
+    dimensionsLoaded,
     panelHeight,
     sessionSidebarWidth,
     chatContentWidth,
@@ -162,6 +166,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     sidebarOccupiesSpace: showSessions && !showSettings && !showMemoryWorkspace
   })
   const toolApprovalRequest = toolApprovalRequests[0] || null
+  const panelReady = dimensionsLoaded && sidebarLoaded && (workspaceLoaded || Boolean(workspaceError) || showSettings)
 
   const refreshPlugins = useCallback(async () => {
     setPlugins(await window.electronAPI.plugin.getPlugins())
@@ -183,7 +188,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   useEffect(() => {
     window.electronAPI.db.getState(SESSION_SIDEBAR_STATE_KEY)
       .then((storedSidebar) => setShowSessions(parseStoredSidebarVisibility(storedSidebar)))
-      .catch(() => {})
+      .catch(() => {}).finally(() => setSidebarLoaded(true))
   }, [])
 
   useEffect(() => {
@@ -243,25 +248,23 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [pendingMessage, isStreaming, workspaceLoaded])
 
   useEffect(() => {
-    if (visible && !showSettings && !showMemoryWorkspace && workspaceLoaded) requestComposerFocus()
-  }, [requestComposerFocus, showMemoryWorkspace, showSettings, visible, workspaceLoaded])
+    if (visible && panelReady && !showSettings && !showMemoryWorkspace && workspaceLoaded) requestComposerFocus()
+  }, [requestComposerFocus, showMemoryWorkspace, showSettings, visible, workspaceLoaded, panelReady])
 
   useEffect(() => {
     if (!activeSessionId) return
     onPetStateChange(isStreaming ? 'talking' : 'idle')
   }, [activeSessionId, isStreaming, onPetStateChange])
 
-  useEffect(() => {
-    if (!visible) return
+  useLayoutEffect(() => {
+    if (!visible || !panelReady) return
     const panelEl = panelRef.current
     if (!panelEl) return
-    requestAnimationFrame(() => {
       const rect = panelEl.getBoundingClientRect()
       const nextX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - rect.width - 4))
       const nextY = Math.min(Math.max(4, position.y), Math.max(4, window.innerHeight - rect.height - 4))
       if (nextX !== position.x || nextY !== position.y) onPositionChange({ x: nextX, y: nextY })
-    })
-  }, [visible, showMemoryWorkspace, showSettings, showSessions, panelHeight, chatContentWidth, position, onPositionChange, viewport])
+  }, [visible, panelReady, showMemoryWorkspace, showSettings, showSessions, panelHeight, chatContentWidth, sessionSidebarWidth, position, onPositionChange, viewport])
 
   const handleDragStart = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return
@@ -632,13 +635,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     <div
       ref={panelRef}
       data-interactive
+      data-ready={panelReady}
       className={`chat-panel${showSettings ? ' chat-panel-settings' : ''}${showMemoryWorkspace ? ' chat-panel-memory' : ''}${showSessions && !showSettings && !showMemoryWorkspace ? ' chat-panel-workspace' : ''}`}
       style={{
         left: position.x,
         top: position.y,
         width: showSettings || showMemoryWorkspace ? undefined : Math.min(chatContentWidth + (showSessions ? sessionSidebarWidth : 0), window.innerWidth - 16),
         height: !showSettings && !showMemoryWorkspace ? panelHeight : undefined,
-        display: visible ? undefined : 'none'
+        display: visible && panelReady ? undefined : 'none'
       }}
     >
       {showSessions && !showSettings && !showMemoryWorkspace && (
@@ -772,6 +776,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             </div>
 
             {showOnboarding && <OnboardingCard onConfigure={openAISettings} />}
+            {workspaceError && <div className="memory-candidate-error" role="alert">{workspaceError}<button onClick={retryWorkspace}>重新加载</button></div>}
             {workspaceLoaded && (
               <MessageArea
                 key={activeSessionId}

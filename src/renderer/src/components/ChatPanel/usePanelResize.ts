@@ -32,6 +32,7 @@ interface UsePanelResizeOptions {
  * state instead of pointer geometry bookkeeping.
  */
 export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpace }: UsePanelResizeOptions) {
+  const [dimensionsLoaded, setDimensionsLoaded] = useState(false)
   const [panelHeight, setPanelHeight] = useState(() => getDefaultPanelHeight(window.innerHeight))
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(() => normalizeSessionSidebarWidth(undefined))
   const [chatContentWidth, setChatContentWidth] = useState(() => normalizeChatContentWidth(undefined))
@@ -49,7 +50,7 @@ export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpac
       setPanelHeight(normalizePanelHeight(storedHeight, window.innerHeight))
       setSessionSidebarWidth(sidebarWidth)
       setChatContentWidth(normalizeChatContentWidth(storedContentWidth, window.innerWidth, sidebarWidth))
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setDimensionsLoaded(true))
   }, [])
 
   useEffect(() => {
@@ -142,6 +143,7 @@ export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpac
   }, [])
 
   return {
+    dimensionsLoaded,
     panelHeight,
     sessionSidebarWidth,
     chatContentWidth,

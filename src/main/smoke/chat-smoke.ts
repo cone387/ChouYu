@@ -109,8 +109,23 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     saveSessionMessages(fixture, messages)
     flushDatabase()
     window.webContents.send('config:changed', getConfig())
+    await window.webContents.executeJavaScript(`(() => {
+      window.__chatOpeningFrames = [];
+      window.__watchChatOpening = true;
+      const observe = () => {
+        const panel = document.querySelector('.chat-panel');
+        if (panel && getComputedStyle(panel).display !== 'none') {
+          window.__chatOpeningFrames.push({ ready: panel.dataset.ready === 'true', messages: !!panel.querySelector('.message-area'), input: !!panel.querySelector('.input-textarea') });
+        }
+        if (window.__watchChatOpening) requestAnimationFrame(observe);
+      };
+      requestAnimationFrame(observe);
+    })()`)
     window.webContents.send('open-chat-panel')
-    await waitForRenderer(window, "document.querySelector('.input-textarea') && document.querySelector('table') && document.querySelector('del')")
+    await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true]') && document.querySelector('.input-textarea') && document.querySelector('table') && document.querySelector('del')")
+    await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    const openingFrames = await window.webContents.executeJavaScript('window.__watchChatOpening = false; window.__chatOpeningFrames')
+    if (!openingFrames.length || openingFrames.some((frame: any) => !frame.ready || !frame.messages || !frame.input)) throw new Error('Chat revealed an incomplete opening frame')
     await snapshots(window, 'chat')
 
     const grip = await window.webContents.executeJavaScript(`(() => {

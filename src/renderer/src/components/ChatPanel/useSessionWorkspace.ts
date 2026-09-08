@@ -70,6 +70,8 @@ export function useSessionWorkspace({
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [activeSessionId, setActiveSessionId] = useState('')
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
+  const [workspaceError, setWorkspaceError] = useState('')
+  const [loadRevision, setLoadRevision] = useState(0)
   const [streamingSessionIds, setStreamingSessionIds] = useState<Set<string>>(() => new Set())
   const sessionGenerationsRef = useRef<Map<string, SessionGeneration>>(new Map())
   const pendingGenerationsRef = useRef<Set<string>>(new Set())
@@ -154,16 +156,20 @@ export function useSessionWorkspace({
   }, [])
 
   useEffect(() => {
+    let active = true
+    setWorkspaceError('')
     Promise.all([
       loadSessionWorkspace(),
       window.electronAPI.db.getConfig()
     ]).then(([workspace, loadedConfig]) => {
+      if (!active) return
       applyWorkspace(workspace)
       onConfigLoaded(loadedConfig)
       initializedRef.current = true
       setWorkspaceLoaded(true)
-    })
-  }, [applyWorkspace, onConfigLoaded])
+    }).catch(() => { if (active) setWorkspaceError('会话加载失败，请重试。') })
+    return () => { active = false }
+  }, [applyWorkspace, onConfigLoaded, loadRevision])
 
   useEffect(() => {
     latestMessagesRef.current = messages
@@ -438,6 +444,8 @@ export function useSessionWorkspace({
     sessions,
     activeSessionId,
     workspaceLoaded,
+    workspaceError,
+    retryWorkspace: () => setLoadRevision(value => value + 1),
     streamingSessionIds,
     isStreaming,
     sessionGenerationsRef,
