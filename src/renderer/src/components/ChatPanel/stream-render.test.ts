@@ -156,7 +156,7 @@ describe('message edit and continue generation', () => {
     expect(workspaceSource).toContain('const continueAssistantMessage = useCallback')
     expect(workspaceSource).toContain('getEditedConversation(messages, messageId, newContent)')
     expect(workspaceSource).toContain('getContinuationSeed(messages, messageId)')
-    expect(workspaceSource).toContain('editUserMessage,\n    continueAssistantMessage')
+    expect(workspaceSource).toMatch(/editUserMessage,\r?\n\s+continueAssistantMessage/)
   })
 
   it('reuses the stopped placeholder constant', () => {
