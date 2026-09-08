@@ -19,6 +19,7 @@ interface MemorySettingsTabProps {
   onSaveConfig: (patch: Partial<AppConfig>) => Promise<void>
   focusMemoryId?: string
   workspace?: boolean
+  active?: boolean
 }
 
 type MemoryWorkspaceView = 'overview' | 'review' | 'library' | 'organize' | 'connections'
@@ -27,7 +28,7 @@ const MEMORY_REVIEW_SCOPE_STATE_KEY = 'memory-review-scope'
 
 const EMPTY_INSIGHTS: MemoryInsights = { byType: [], createdByWeek: [], archiveReasons: [], helpful: 0, unhelpful: 0, clustered: 0, clusters: 0, savedCharacters: 0 }
 
-export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveConfig, focusMemoryId, workspace = false }: MemorySettingsTabProps) {
+export default function MemorySettingsTab({ enabled, onEnabledChange, config, onSaveConfig, focusMemoryId, workspace = false, active = true }: MemorySettingsTabProps) {
   const [memories, setMemories] = useState<MemoryRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [identity, setIdentity] = useState<MemoryRecord | null>(null)
@@ -115,10 +116,10 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   }, [])
 
   useEffect(() => {
-    if (!workspace) return
+    if (!workspace || !active) return
     const frame = requestAnimationFrame(() => workspaceNavRef.current?.querySelector<HTMLButtonElement>('button.active')?.focus({ preventScroll: true }))
     return () => cancelAnimationFrame(frame)
-  }, [activeView, workspace])
+  }, [activeView, workspace, active])
 
   const refresh = useCallback(async () => {
     setError('')
@@ -142,16 +143,17 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   }, [identityEditing, query, status, type])
 
   useEffect(() => {
+    if (!active) return
     const timer = setTimeout(() => { void refresh() }, 180)
     return () => clearTimeout(timer)
-  }, [refresh])
+  }, [refresh, active])
 
   useEffect(() => {
-    if (!focusMemoryId || memories.length === 0) return
+    if (!active || !focusMemoryId || memories.length === 0) return
     setActiveView('library')
     const element = document.querySelector(`[data-memory-id="${CSS.escape(focusMemoryId)}"]`)
     element?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' })
-  }, [focusMemoryId, memories])
+  }, [focusMemoryId, memories, active])
 
   useEffect(() => {
     void window.electronAPI.capabilities.list().then(setCapabilities).catch(() => setCapabilityStatus('能力插件目录加载失败。'))
@@ -284,7 +286,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
 
   return (
     <div className={`settings-pane memory-settings-pane${workspace ? ' memory-workspace-pane' : ''}`}>
-      <div className="settings-pane-heading memory-heading">
+      {!workspace && <div className="settings-pane-heading memory-heading">
         <div>
           <h2>记忆中心</h2>
           <p>查看、校正并控制 ChouYu 可以长期使用的信息。</p>
@@ -292,7 +294,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         {activeView === 'library' && <button type="button" className="memory-add-btn" onClick={() => setShowAdd((value) => !value)}>
           {showAdd ? '取消添加' : '添加记忆'}
         </button>}
-      </div>
+      </div>}
 
       <nav ref={workspaceNavRef} className="memory-workspace-nav" aria-label="记忆工作区">
         <button type="button" className={activeView === 'library' ? 'active' : ''} aria-current={activeView === 'library' ? 'page' : undefined} onKeyDown={handleWorkspaceNavKeyDown} onClick={() => selectView('library')}>
@@ -468,6 +470,9 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         <span>已确认 <strong>{stats.active}</strong></span>
         <span>待确认 <strong>{stats.pending}</strong></span>
         <span>已归档 <strong>{stats.archived}</strong></span>
+        {workspace && <button type="button" className="memory-add-btn" onClick={() => setShowAdd((value) => !value)}>
+          {showAdd ? '取消添加' : '添加记忆'}
+        </button>}
       </div>}
       {activeView === 'library' && topicMergeMode && <div className="memory-topic-builder memory-topic-builder-library">
         <div><strong>创建人工主题</strong><span>勾选至少两条同类型的已确认记忆。</span></div>

@@ -16,7 +16,7 @@ const time = (value: number) => new Date(value).toLocaleTimeString('zh-CN', { ho
 const duration = (value: number) => value <= 0 ? '0 分钟' : value < 60_000 ? '不足 1 分钟' : value < 3600_000 ? `${Math.floor(value / 60_000)} 分钟` : `${Math.floor(value / 3600_000)} 小时 ${Math.floor(value / 60_000) % 60} 分钟`
 const labels: Record<JournalStatus['state'], string> = { off: '尚未开启', paused: '已手动暂停', locked: '锁屏或休眠，已暂停', starting: '正在连接采集器', recording: '正在记录', idle: '电脑空闲，等待活动', excluded: '当前应用不记录', error: '记录遇到问题' }
 
-export default function Journal() {
+export default function Journal({ active = true }: { active?: boolean }) {
   const [status, setStatus] = useState<JournalStatus | null>(null)
   const [date, setDate] = useState(today)
   const [query, setQuery] = useState('')
@@ -43,11 +43,12 @@ export default function Journal() {
   const settingsDialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     const dialog = settingsDialog.current
-    if (settings) dialog?.showModal()
+    if (settings && active) dialog?.showModal()
     return () => { if (dialog?.open) dialog.close() }
-  }, [settings])
+  }, [settings, active])
 
   useEffect(() => {
+    if (!active) return
     let mounted = true
     const update = async () => {
       const version = statusRevision.current
@@ -57,25 +58,27 @@ export default function Journal() {
       } catch (reason) { if (mounted) setError(String(reason)) }
     }
     void update()
+    setRevision(value => value + 1)
     const timer = setInterval(() => { void update(); setRevision(value => value + 1) }, 5000)
     return () => { mounted = false; clearInterval(timer) }
-  }, [])
+  }, [active])
 
   useEffect(() => {
-    let active = true
+    if (!active) return
+    let mounted = true
     const timer = setTimeout(() => {
       const from = new Date(`${date}T00:00:00`).getTime()
       const nextDay = new Date(from); nextDay.setDate(nextDay.getDate() + 1)
       if (!Number.isFinite(from)) { setError('请选择有效日期。'); setLoading(false); return }
       void window.electronAPI.journal.list({ from, to: nextDay.getTime(), query, offset }).then(result => {
-        if (active) {
+        if (mounted) {
           if (offset && offset >= result.total) { setOffset(Math.max(0, Math.floor((result.total - 1) / 100) * 100)); return }
           setPage(result); setLoading(false); setError('')
         }
-      }).catch(reason => { if (active) { setError(String(reason)); setLoading(false) } })
+      }).catch(reason => { if (mounted) { setError(String(reason)); setLoading(false) } })
     }, 180)
-    return () => { active = false; clearTimeout(timer) }
-  }, [date, query, offset, revision])
+    return () => { mounted = false; clearTimeout(timer) }
+  }, [date, query, offset, revision, active])
 
   const configure = useCallback(async (patch: Partial<JournalConfig>) => {
     setBusy(true); setError(''); setNotice(''); statusRevision.current++
@@ -168,7 +171,7 @@ export default function Journal() {
       </li>)}</ol>)}
       {view === 'activity' && activityMode === 'raw' && page.total > 100 && <nav className="journal-pagination" aria-label="活动分页"><button disabled={!offset || loading} onClick={() => { setOffset(value => Math.max(0, value - 100)); setLoading(true) }}>上一页</button><span>第 {Math.floor(offset / 100) + 1} / {Math.ceil(page.total / 100)} 页</span><button disabled={offset + 100 >= page.total || loading} onClick={() => { setOffset(value => value + 100); setLoading(true) }}>下一页</button></nav>}
     </section><JournalDayPanel date={date} revision={revision} onFilter={app => { setQuery(app); setOffset(0); setView('activity'); setActivityMode('raw'); setLoading(true) }} onSettings={openSettings} /></div>
-    {selectedSource && <JournalDetailPanel key={`${date}:${selectedSource}`} id={selectedSource} date={date} onClose={() => setSelectedSource('')} onChanged={deleted => { setRevision(value => value + 1); if (deleted) setDeletedRevision(value => value + 1) }} />}
+    {selectedSource && <JournalDetailPanel key={`${date}:${selectedSource}`} active={active} id={selectedSource} date={date} onClose={() => setSelectedSource('')} onChanged={deleted => { setRevision(value => value + 1); if (deleted) setDeletedRevision(value => value + 1) }} />}
     <footer>本地活动日志 · {status?.lastCapturedAt ? `最近记录 ${time(status.lastCapturedAt)}` : '尚无本次运行的活动记录'}</footer>
   </main>
 }

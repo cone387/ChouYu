@@ -162,6 +162,10 @@ const api = {
     ipcRenderer.on('open-chat-panel', callback)
     return () => { ipcRenderer.removeListener('open-chat-panel', callback) }
   },
+  onOpenJournalPanel: (callback: () => void) => {
+    ipcRenderer.on('open-journal-panel', callback)
+    return () => { ipcRenderer.removeListener('open-journal-panel', callback) }
+  },
   onConfigChanged: (callback: (config: AppConfig) => void) => {
     const handler = (_e: unknown, config: AppConfig) => callback(config)
     ipcRenderer.on('config:changed', handler)

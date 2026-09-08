@@ -58,6 +58,8 @@ interface SettingsProps {
   initialNav?: string
   focusMemoryId?: string
   onOpenMemoryWorkspace?: () => void
+  onOpenJournalWorkspace?: () => void
+  embedded?: boolean
 }
 
 const NAV_ITEMS = [
@@ -71,7 +73,7 @@ const NAV_ITEMS = [
   { key: 'about', label: '关于', icon: 'M7 4v3M7 9.5v.5' }
 ]
 
-export default function Settings({ onClose, petVisible, onPetVisibleChange, dragHandleProps, initialNav, focusMemoryId, onOpenMemoryWorkspace }: SettingsProps) {
+export default function Settings({ onClose, petVisible, onPetVisibleChange, dragHandleProps, initialNav, focusMemoryId, onOpenMemoryWorkspace, onOpenJournalWorkspace, embedded = false }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showKey, setShowKey] = useState(false)
   const [activeNav, setActiveNav] = useState<string>(initialNav || 'ai')
@@ -143,6 +145,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
     window.electronAPI.getAppVersion().then(setAppVersion)
 
     const cleanups = [
+      window.electronAPI.onConfigChanged(setConfig),
       window.electronAPI.update.onAvailable((info) => setUpdateStatus(`发现新版本 v${info.version}`)),
       window.electronAPI.update.onNotAvailable(() => setUpdateStatus('已是最新版本')),
       window.electronAPI.update.onDownloading(() => setUpdateStatus('正在下载更新…')),
@@ -178,7 +181,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   const settingsResults = useMemo(() => searchSettings(navQuery), [navQuery])
 
   const handleSearchResultSelect = useCallback((entry: SettingsSearchEntry) => {
-    if (entry.nav === 'journal') { void window.electronAPI.journal.open(); return }
+    if (entry.nav === 'journal') { if (onOpenJournalWorkspace) onOpenJournalWorkspace(); else void window.electronAPI.journal.open(); return }
     if (entry.nav === 'memory' && onOpenMemoryWorkspace) {
       onOpenMemoryWorkspace()
       return
@@ -197,7 +200,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
         if (target instanceof HTMLElement) target.focus({ preventScroll: true })
       })
     })
-  }, [onOpenMemoryWorkspace])
+  }, [onOpenMemoryWorkspace, onOpenJournalWorkspace])
 
   const handleNavKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
@@ -278,10 +281,10 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
 
   return (
     <div className="settings-panel">
-      <div className="settings-header chat-panel-drag-handle" {...dragHandleProps}>
+      {!embedded && <div className="settings-header chat-panel-drag-handle" {...dragHandleProps}>
         <span className="settings-title">设置</span>
         <button className="settings-close" onClick={onClose} aria-label="关闭设置">&times;</button>
-      </div>
+      </div>}
 
       <div className="settings-body">
         <nav ref={settingsNavRef} className="settings-nav" aria-label="设置分类">
@@ -317,14 +320,14 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               )}
             </div>
           )}
-          {filteredNavItems.map((item) => (
+          {filteredNavItems.filter(item => !embedded || !['memory', 'journal'].includes(item.key)).map((item) => (
             <button
               key={item.key}
               type="button"
               data-settings-nav
               className={`settings-nav-item${activeNav === item.key ? ' active' : ''}`}
               onClick={() => {
-                if (item.key === 'journal') void window.electronAPI.journal.open()
+                if (item.key === 'journal') { if (onOpenJournalWorkspace) onOpenJournalWorkspace(); else void window.electronAPI.journal.open() }
                 else if (item.key === 'memory' && onOpenMemoryWorkspace) onOpenMemoryWorkspace()
                 else setActiveNav(item.key)
               }}

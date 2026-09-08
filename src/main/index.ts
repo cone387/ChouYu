@@ -247,7 +247,13 @@ app.whenReady().then(async () => {
   registerPluginTools()
 
   // Create window
-  initializeJournal({ recordingDisabled: isSmokeTest })
+  initializeJournal({ recordingDisabled: isSmokeTest, openWorkspace: () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+    mainWindow.webContents.send('open-journal-panel')
+  } })
   createWindow()
 
   // Register IPC handlers immediately after window creation

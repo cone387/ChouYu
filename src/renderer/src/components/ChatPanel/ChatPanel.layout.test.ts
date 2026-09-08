@@ -33,7 +33,7 @@ describe('chat layout guardrails', () => {
     expect(stylesheet).toMatch(/\.panel-resize-edge\s*\{[\s\S]*cursor:\s*ns-resize/)
     expect(panelSource).toContain('const rect = panelEl.getBoundingClientRect()')
     expect(panelResizeSource).toContain('getDefaultPanelHeight(window.innerHeight)')
-    expect(panelSource).toContain("height: !showSettings && !showMemoryWorkspace ? panelHeight : undefined")
+    expect(panelSource).toContain('height: panelHeight')
     expect(panelSource).toContain("(['top', 'bottom'] as const)")
   })
 
@@ -43,15 +43,13 @@ describe('chat layout guardrails', () => {
     expect(sidebarSource).toContain('chat-panel-drag-handle')
   })
 
-  it('opens memory as a dedicated workspace without chat resize controls', () => {
-    expect(panelSource).toContain("const [showMemoryWorkspace, setShowMemoryWorkspace]")
-    expect(panelSource).toContain('className="memory-workspace-shell"')
+  it('keeps workspaces mounted behind shared navigation and resize controls', () => {
+    expect(panelSource).toContain('<WorkspaceNav activePage={activePage}')
+    expect(panelSource).toContain('hidden={!showMemoryWorkspace}')
+    expect(panelSource).toContain('hidden={!isChat}')
     expect(panelSource).toContain('<MemorySettingsTab')
-    expect(panelSource).toContain('workspace')
-    expect(panelSource).toContain('onMemory={() => openMemoryWorkspace()}')
-    expect(panelSource).toContain("!showSettings && !showMemoryWorkspace && (['top', 'bottom'] as const)")
-    expect(panelSource).toContain("memoryReturnTarget === 'settings'")
-    expect(panelSource).toContain('aria-label={memoryReturnTarget === \'settings\' ? \'返回设置\' : \'返回聊天\'}')
+    expect(panelSource).toContain('visitedPages.memory')
+    expect(panelSource).toContain("(['top', 'bottom'] as const)")
   })
 
   it('routes remote memory search through the selected Mem0 engine', () => {
@@ -62,7 +60,7 @@ describe('chat layout guardrails', () => {
 
   it('uses the top-bar session toggle as the only close control', () => {
     expect(panelSource).not.toContain('onClose={() => setShowSessions(false)}')
-    expect(panelSource).toContain('dragHandleProps={{')
+    expect(panelSource).toContain('dragHandleProps={dragHandleProps}')
     expect(sidebarSource).not.toContain('aria-label="关闭对话列表"')
   })
 
@@ -101,7 +99,7 @@ describe('chat layout guardrails', () => {
     expect(panelSource).not.toContain('sidebarResizeRef')
     expect(panelSource).not.toContain('contentResizeRef')
     expect(panelResizeSource).toContain('sidebarOccupiesSpace ? sessionSidebarWidth : 0')
-    expect(panelResizeSource).toContain('window.innerWidth - position.x - chatContentWidth - 16')
+    expect(panelResizeSource).toContain('window.innerWidth - position.x - chatContentWidth - chromeWidth - 16')
     expect(panelResizeSource).toContain('startTop + startHeight - nextHeight')
   })
 

@@ -22,6 +22,7 @@ interface UsePanelResizeOptions {
   onPositionChange: (pos: { x: number; y: number }) => void
   /** True when the session sidebar is actually taking horizontal space. */
   sidebarOccupiesSpace: boolean
+  chromeWidth?: number
 }
 
 /**
@@ -31,7 +32,7 @@ interface UsePanelResizeOptions {
  * Kept out of ChatPanel so that component can stay focused on conversation
  * state instead of pointer geometry bookkeeping.
  */
-export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpace }: UsePanelResizeOptions) {
+export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpace, chromeWidth = 0 }: UsePanelResizeOptions) {
   const [dimensionsLoaded, setDimensionsLoaded] = useState(false)
   const [panelHeight, setPanelHeight] = useState(() => getDefaultPanelHeight(window.innerHeight))
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(() => normalizeSessionSidebarWidth(undefined))
@@ -49,18 +50,19 @@ export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpac
       const sidebarWidth = normalizeSessionSidebarWidth(storedSidebarWidth)
       setPanelHeight(normalizePanelHeight(storedHeight, window.innerHeight))
       setSessionSidebarWidth(sidebarWidth)
-      setChatContentWidth(normalizeChatContentWidth(storedContentWidth, window.innerWidth, sidebarWidth))
+      setChatContentWidth(normalizeChatContentWidth(storedContentWidth, window.innerWidth - chromeWidth, sidebarWidth))
     }).catch(() => {}).finally(() => setDimensionsLoaded(true))
   }, [])
 
   useEffect(() => {
     const clampToViewport = () => {
       setPanelHeight((current) => normalizePanelHeight(current, window.innerHeight))
-      setChatContentWidth((current) => normalizeChatContentWidth(current, window.innerWidth, sessionSidebarWidth))
+      // Keep the preferred width when a small viewport temporarily clamps the shell.
+      // This also restores the full workspace when returning from a narrow display.
     }
     window.addEventListener('resize', clampToViewport)
     return () => window.removeEventListener('resize', clampToViewport)
-  }, [sessionSidebarWidth])
+  }, [sessionSidebarWidth, chromeWidth])
 
   const handlePanelResizeStart = useCallback((edge: PanelResizeEdge, event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
@@ -105,11 +107,11 @@ export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpac
   const handleSidebarResizeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!sidebarResizeRef.current.resizing) return
     const requested = sidebarResizeRef.current.startWidth + event.screenX - sidebarResizeRef.current.startX
-    const viewportMaximum = Math.max(SESSION_SIDEBAR_MIN_WIDTH, window.innerWidth - position.x - chatContentWidth - 16)
+    const viewportMaximum = Math.max(SESSION_SIDEBAR_MIN_WIDTH, window.innerWidth - position.x - chatContentWidth - chromeWidth - 16)
     const nextWidth = Math.min(SESSION_SIDEBAR_MAX_WIDTH, viewportMaximum, Math.max(SESSION_SIDEBAR_MIN_WIDTH, requested))
     sidebarResizeRef.current.currentWidth = nextWidth
     setSessionSidebarWidth(nextWidth)
-  }, [chatContentWidth, position.x])
+  }, [chatContentWidth, position.x, chromeWidth])
 
   const handleSidebarResizeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!sidebarResizeRef.current.resizing) return
@@ -129,10 +131,10 @@ export function usePanelResize({ position, onPositionChange, sidebarOccupiesSpac
   const handleContentResizeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!contentResizeRef.current.resizing) return
     const requested = contentResizeRef.current.startWidth + event.screenX - contentResizeRef.current.startX
-    const nextWidth = normalizeChatContentWidth(requested, window.innerWidth - position.x, sidebarOccupiesSpace ? sessionSidebarWidth : 0)
+    const nextWidth = normalizeChatContentWidth(requested, window.innerWidth - position.x - chromeWidth, sidebarOccupiesSpace ? sessionSidebarWidth : 0)
     contentResizeRef.current.currentWidth = nextWidth
     setChatContentWidth(nextWidth)
-  }, [position.x, sessionSidebarWidth, sidebarOccupiesSpace])
+  }, [position.x, sessionSidebarWidth, sidebarOccupiesSpace, chromeWidth])
 
   const handleContentResizeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!contentResizeRef.current.resizing) return

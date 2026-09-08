@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import StorageNotice from './components/StorageNotice/StorageNotice'
 import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
+import type { WorkspacePage } from './components/Workspace/WorkspaceNav'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
 import { AppConfig, PetState } from './shared/types'
-import { DEFAULT_CONFIG, PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH, PANEL_WIDTH } from './shared/constants'
+import { DEFAULT_CONFIG, PANEL_WIDTH } from './shared/constants'
 import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
 import { clampPanelPosition, getCenteredPanelPosition } from './core/panel-position'
@@ -18,6 +19,7 @@ function App() {
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [panelInitialized, setPanelInitialized] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [workspaceRequest, setWorkspaceRequest] = useState<{ page: WorkspacePage; id: number }>({ page: 'chat', id: 0 })
   const [petState, setPetState] = useState<PetState>(stateMachine.getState())
   const [screenshotImage, setScreenshotImage] = useState<string | null>(null)
   const [captureMode, setCaptureMode] = useState<'crop' | 'scroll'>('crop')
@@ -255,6 +257,7 @@ function App() {
     if (!panelInitialized) setPanelInitialized(true)
     ensurePanelPosition()
     setShowSettings(false)
+    setWorkspaceRequest(previous => ({ page: 'chat', id: previous.id + 1 }))
     setPanelVisible(true)
     window.focus()
   }, [ensurePanelPosition, panelInitialized])
@@ -277,11 +280,21 @@ function App() {
   }, [restoreClickThrough])
 
   const openSettings = useCallback(() => {
-    ensurePanelPosition(PANEL_SETTINGS_HEIGHT, PANEL_SETTINGS_WIDTH)
+    ensurePanelPosition()
     setPanelVisible(true)
     setPanelInitialized(true)
     setShowSettings(true)
+    setWorkspaceRequest(previous => ({ page: 'settings', id: previous.id + 1 }))
   }, [ensurePanelPosition])
+
+  useEffect(() => window.electronAPI.onOpenJournalPanel(() => {
+    ensurePanelPosition()
+    setPanelVisible(true)
+    setPanelInitialized(true)
+    setShowSettings(false)
+    setWorkspaceRequest(previous => ({ page: 'journal', id: previous.id + 1 }))
+    window.focus()
+  }), [ensurePanelPosition])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onTogglePanel(togglePanel)
@@ -514,6 +527,7 @@ function App() {
           petVisible={petVisible}
           onPetVisibleChange={updatePetVisibility}
           initialShowSettings={showSettings}
+          workspaceRequest={workspaceRequest}
           onSettingsClose={() => setShowSettings(false)}
           onScreenshot={startScreenshot}
           onScrollScreenshot={startScrollScreenshot}

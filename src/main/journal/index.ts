@@ -5,6 +5,12 @@ import type { AppConfig } from '../../shared/config'
 
 let service: JournalService | undefined
 let journalWindow: BrowserWindow | undefined
+let openWorkspace: (() => void) | undefined
+
+export function openJournalWorkspace(): void {
+  if (openWorkspace) openWorkspace()
+  else openJournalWindow()
+}
 
 export function openJournalWindow(): void {
   if (journalWindow && !journalWindow.isDestroyed()) {
@@ -26,9 +32,10 @@ export function openJournalWindow(): void {
   else void window.loadFile(join(__dirname, '../renderer/index.html'), { query: { view: 'journal' } })
 }
 
-export function initializeJournal(options: { recordingDisabled?: boolean } = {}): JournalService {
+export function initializeJournal(options: { recordingDisabled?: boolean; openWorkspace?: () => void } = {}): JournalService {
+  openWorkspace = options.openWorkspace
   service = new JournalService(options)
-  ipcMain.handle('journal:open', () => openJournalWindow())
+  ipcMain.handle('journal:open', () => openJournalWorkspace())
   ipcMain.handle('journal:status', async () => { await service!.ready; return service!.status() })
   ipcMain.handle('journal:configure', (_event, patch) => service!.configure(patch))
   ipcMain.handle('journal:list', (_event, query) => service!.list(query))
@@ -52,7 +59,7 @@ export function initializeJournal(options: { recordingDisabled?: boolean } = {})
 }
 
 export function toggleJournalPause(): void {
-  if (service?.status().config.enabled) void service.configure({ paused: !service.status().config.paused }).catch(() => openJournalWindow())
+  if (service?.status().config.enabled) void service.configure({ paused: !service.status().config.paused }).catch(() => openJournalWorkspace())
 }
 
 export function getJournalStatus() { return service?.status() }

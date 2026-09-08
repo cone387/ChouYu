@@ -3,7 +3,7 @@ import type { JournalCapture, JournalDetail } from '../../../../shared/journal'
 import { CaptureImage, journalRange } from './JournalEvidence'
 import { journalDuration, journalTime, kindLabel } from './JournalTasks'
 
-export function JournalDetailPanel({ id, date, onClose, onChanged }: { id: string; date: string; onClose(): void; onChanged(deleted: boolean): void }) {
+export function JournalDetailPanel({ id, date, onClose, onChanged, active = true }: { id: string; date: string; active?: boolean; onClose(): void; onChanged(deleted: boolean): void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [detail, setDetail] = useState<JournalDetail | null>(null)
   const [frame, setFrame] = useState<JournalCapture | null>(null)
@@ -16,9 +16,14 @@ export function JournalDetailPanel({ id, date, onClose, onChanged }: { id: strin
   const [deleting, setDeleting] = useState<{ type: 'activity' | 'capture'; id: number | string } | null>(null)
   const alive = useRef(true)
   useEffect(() => {
-    alive.current = true; dialog.current?.showModal()
-    return () => { alive.current = false; dialog.current?.close() }
+    alive.current = true
+    return () => { alive.current = false }
   }, [])
+  useEffect(() => {
+    const element = dialog.current
+    if (active) element?.showModal()
+    return () => { element?.close() }
+  }, [active])
   useEffect(() => {
     let active = true
     void window.electronAPI.journal.detail({ ...journalRange(date), id }).then(value => {

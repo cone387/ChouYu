@@ -1,6 +1,6 @@
 import { Tray, Menu, BrowserWindow, MenuItem, app, nativeImage, ipcMain } from 'electron'
 import { PET_ICON_PNG_BASE64 } from '../shared/pet-icon'
-import { openJournalWindow, toggleJournalPause, getJournalStatus } from './journal'
+import { openJournalWorkspace, toggleJournalPause, getJournalStatus } from './journal'
 
 let tray: Tray | null = null
 let petVisibilityItem: MenuItem | null = null
@@ -23,7 +23,7 @@ export function setupTray(mainWindow: BrowserWindow): void {
   }
 
   const contextMenu = Menu.buildFromTemplate([
-    { label: '工作日志', click: openJournalWindow },
+    { label: '工作日志', click: openJournalWorkspace },
     { id: 'journal-state', label: '活动记录：未开启', enabled: false },
     { id: 'journal-pause', label: '暂停活动记录', click: toggleJournalPause, enabled: false },
     {

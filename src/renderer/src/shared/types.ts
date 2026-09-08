@@ -138,6 +138,7 @@ export interface ElectronAPI {
   onSetPetVisible: (callback: (visible: boolean) => void) => () => void
   notifyPetVisible: (visible: boolean) => void
   onOpenChatPanel: (callback: () => void) => () => void
+  onOpenJournalPanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
   onHidePanel: (callback: () => void) => () => void
   onPluginHotkey: (callback: (pluginId: string) => void) => () => void

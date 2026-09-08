@@ -18,7 +18,7 @@ export function useChatScroll(
 
   const scrollToLatest = useCallback(() => {
     const element = container.current
-    if (!element) return
+    if (!element || !element.clientHeight) return
     following.current = true
     element.scrollTop = element.scrollHeight
     previousTop.current = element.scrollTop
@@ -54,6 +54,7 @@ export function useChatScroll(
       if (['ArrowUp', 'PageUp', 'Home'].includes(event.key)) following.current = false
     }
     const onScroll = () => {
+      if (!element.clientHeight) return
       // Virtual row measurements can shrink scrollHeight and adjust scrollTop.
       // Only user input should detach the viewport from the live reply.
       if (pointerDown && element.scrollTop < previousTop.current - 1) following.current = false

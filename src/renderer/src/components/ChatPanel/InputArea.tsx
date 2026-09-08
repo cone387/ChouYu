@@ -21,6 +21,7 @@ interface InputAreaProps {
   disabled: boolean
   isStreaming?: boolean
   autoFocus?: boolean
+  active?: boolean
   focusRequest?: number
   model?: string
   onModelChange?: (model: string) => void
@@ -36,7 +37,7 @@ interface InputAreaProps {
   history?: string[]
 }
 
-export default function InputArea({ sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, model, onModelChange, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
+export default function InputArea({ sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
@@ -85,17 +86,17 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
   const composerResize = useComposerResize(textareaRef, value)
 
   useEffect(() => {
-    if (autoFocus === false || disabled || initialFocusDoneRef.current) return
+    if (!active || autoFocus === false || disabled || initialFocusDoneRef.current) return
     initialFocusDoneRef.current = true
     const frame = requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }))
     return () => cancelAnimationFrame(frame)
-  }, [autoFocus, disabled])
+  }, [autoFocus, disabled, active])
 
   useEffect(() => {
-    if (focusRequest <= 0 || disabled) return
+    if (!active || focusRequest <= 0 || disabled) return
     const frame = requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }))
     return () => cancelAnimationFrame(frame)
-  }, [focusRequest])
+  }, [focusRequest, active])
 
   useEffect(() => {
     if (initialActivePlugin) {
@@ -450,14 +451,14 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'a') {
+      if (active && (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'a') {
         event.preventDefault()
         doScreenshot()
       }
     }
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
-  }, [doScreenshot])
+  }, [doScreenshot, active])
 
   const handleFileSelect = useCallback(async () => {
     if (attachments.length >= MAX_ATTACHMENT_COUNT) {

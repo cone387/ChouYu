@@ -94,6 +94,7 @@ export function useMessageWindow(
     const update = () => {
       const viewportTop = container.scrollTop
       const viewportHeight = container.clientHeight || container.getBoundingClientRect().height
+      if (!viewportHeight) return
       const { start: firstVisible, end: nextEnd } = computeWindowRange(
         viewportTop,
         viewportHeight,

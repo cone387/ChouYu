@@ -63,8 +63,8 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     const filtered: JournalPage = await request('list', { from, to, query: '100%' })
     if (filtered.total !== 1) throw new Error('Journal literal wildcard search failed')
     await main.webContents.executeJavaScript('window.electronAPI.journal.open()')
-    journal = BrowserWindow.getAllWindows().find(window => window.id !== main.id)
-    if (!journal) throw new Error('Journal window did not open')
+    journal = main
+    await waitForRenderer(journal, "document.querySelector('[data-workspace-page=journal]')")
     await waitForRenderer(journal, "document.querySelector('.journal-mode-switch button:last-child')")
     await waitForRenderer(journal, "document.querySelectorAll('.journal-task-card').length === 2")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-mode-switch button:last-child').click()")
@@ -80,7 +80,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
       } finally { helper.stop(); journal.setAlwaysOnTop(false) }
     }
     await main.webContents.executeJavaScript('window.electronAPI.journal.open()')
-    if (BrowserWindow.getAllWindows().filter(window => window.id !== main.id).length !== 1) throw new Error('Journal opened duplicate windows')
+    if (BrowserWindow.getAllWindows().some(window => window.id !== main.id && window.webContents.getURL().includes('view=journal'))) throw new Error('Journal opened a separate window')
     await journal.webContents.executeJavaScript("document.querySelector('.journal-controls button').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-settings-dialog:modal') && document.querySelector('[aria-label=保留期限]')")
     await journal.webContents.executeJavaScript("document.querySelector('[aria-label=关闭记录设置]').click()")
@@ -285,7 +285,9 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     const singleActivity = await request('sample', { app: 'editor.exe', title: '单条删除测试', at: from + 1 })
     const singleCapture = await request('capture', { ...imagePayload, activityId: singleActivity, at: from + 1 })
     const singleJob = await request('ocrJob', singleCapture.id)
-    journal.webContents.reload()
+    await new Promise<void>(resolve => { journal!.webContents.once('did-finish-load', () => resolve()); journal!.webContents.reload() })
+    await waitForRenderer(journal, "document.querySelector('.app-container')")
+    await journal.webContents.executeJavaScript('window.electronAPI.journal.open()')
     await waitForRenderer(journal, "document.querySelector('.journal-task-card')?.textContent.includes('单条删除测试')")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-task-card').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-detail-activities article button:last-child')")
@@ -299,7 +301,9 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     const secondPage = await request('list', { from, to, offset: 100 })
     if (secondPage.total !== 101 || secondPage.items.length !== 1) throw new Error('Journal pagination failed')
     if ((await request('tasks', { from, to, offset: 100 })).items.length !== 1) throw new Error('Unorganized task pagination lost raw activity')
-    journal.webContents.reload()
+    await new Promise<void>(resolve => { journal!.webContents.once('did-finish-load', () => resolve()); journal!.webContents.reload() })
+    await waitForRenderer(journal, "document.querySelector('.app-container')")
+    await journal.webContents.executeJavaScript('window.electronAPI.journal.open()')
     await waitForRenderer(journal, "document.querySelectorAll('.journal-task-list li').length === 100")
     const verifyScroll = async () => {
       const scrollable = await journal!.webContents.executeJavaScript("(() => { const list=document.querySelector('.journal-list-scroll'); list.scrollTop=80; return list.scrollHeight>list.clientHeight && list.scrollTop>0 && getComputedStyle(list,'::-webkit-scrollbar').width==='8px' })()")
@@ -322,7 +326,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     saveConfig(originalConfig)
     server.closeAllConnections()
     await new Promise<void>(resolve => server.close(() => resolve()))
-    journal?.destroy()
+    main.webContents.send('open-chat-panel')
     await request('close').catch(() => {})
     await worker.terminate()
   }

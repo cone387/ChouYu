@@ -15,7 +15,7 @@ async function input(window: BrowserWindow, selector: string, value: string): Pr
     const prototype = element.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(prototype, 'value').set.call(element, ${JSON.stringify(value)});
     element.dispatchEvent(new Event('input', { bubbles: true }));
-  })()`)
+  })()`).catch(error => { throw new Error(`Could not fill ${selector}: ${String(error)}`) })
 }
 
 async function click(window: BrowserWindow, selector: string): Promise<void> {
@@ -23,7 +23,7 @@ async function click(window: BrowserWindow, selector: string): Promise<void> {
     const button = document.querySelector(${JSON.stringify(selector)});
     if (!button || button.disabled) throw new Error('Missing or disabled control ' + ${JSON.stringify(selector)});
     button.click();
-  })()`)
+  })()`).catch(error => { throw new Error(`Could not click ${selector}: ${String(error)}`) })
 }
 
 async function snapshots(window: BrowserWindow, name: string): Promise<void> {
@@ -31,19 +31,36 @@ async function snapshots(window: BrowserWindow, name: string): Promise<void> {
   if (!directory) return
   fs.mkdirSync(directory, { recursive: true })
   for (const theme of ['light', 'dark']) {
+    saveConfig({ theme: theme as 'light' | 'dark' })
+    window.webContents.send('config:changed', getConfig())
     await window.webContents.executeJavaScript(`document.documentElement.dataset.theme = '${theme}'`)
     for (const width of [1024, 375]) {
       window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
       await waitForRenderer(window, `innerWidth === ${width}`)
       await waitForRenderer(window, "Number(getComputedStyle(document.querySelector('.chat-panel')).opacity) > .99")
       await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      await window.webContents.executeJavaScript('new Promise(resolve => setTimeout(resolve, 120))')
       const problem = await window.webContents.executeJavaScript(`(() => {
         const panel = document.querySelector('.chat-panel');
         const rect = panel.getBoundingClientRect();
         if (rect.left < -1 || rect.right > innerWidth + 1 || rect.bottom > innerHeight + 1) return 'Panel outside viewport';
+        const header = panel.querySelector('.workspace-header');
+        const bodyTop = panel.querySelector('.workspace-body').getBoundingClientRect().top;
+        if (panel.querySelectorAll('.workspace-header').length !== 1 || header.textContent.trim()) return 'Window header must be global and title-free';
+        for (const label of ['隐藏面板', '关闭面板']) {
+          const controls = panel.querySelectorAll('[aria-label="' + label + '"]');
+          if (controls.length !== 1 || !header.contains(controls[0])) return 'Duplicate or misplaced window control: ' + label;
+          if (controls[0].getBoundingClientRect().bottom > bodyTop) return 'Window controls overlap page content';
+        }
+        if (panel.querySelector('.workspace-memory .memory-heading')) return 'Memory page repeats the navigation title';
+        const settingsNav = panel.querySelector('.settings-nav');
+        if (rect.width < 700 && settingsNav?.getClientRects().length) {
+          const settingsBody = panel.querySelector('.settings-body').getBoundingClientRect();
+          if (Math.abs(settingsNav.getBoundingClientRect().width - settingsBody.width) > 1) return 'Narrow settings navigation does not fill its row';
+        }
         for (const selector of ['.message-area', '.settings-content', '.message-search', '.memory-workspace-content', '.tool-approval-dialog']) {
           const element = document.querySelector(selector);
-          if (element && element.scrollWidth > element.clientWidth + 1) return selector + ' overflows';
+          if (element?.getClientRects().length && element.scrollWidth > element.clientWidth + 1) return selector + ' overflows';
         }
         return '';
       })()`)
@@ -54,7 +71,8 @@ async function snapshots(window: BrowserWindow, name: string): Promise<void> {
         const bitmap = screenshot.toBitmap()
         let opaquePixels = 0
         for (let index = 3; index < bitmap.length; index += 4) if (bitmap[index] > 200) opaquePixels++
-        if (opaquePixels > 20_000) {
+        // The first capture can contain stale compositor tiles after hidden-window resizing.
+        if (attempt > 0 && opaquePixels > 20_000) {
           fs.writeFileSync(path.join(directory, `${name}-${theme}-${width}.png`), screenshot.toPNG())
           captured = true
           break
@@ -126,6 +144,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     const openingFrames = await window.webContents.executeJavaScript('window.__watchChatOpening = false; window.__chatOpeningFrames')
     if (!openingFrames.length || openingFrames.some((frame: any) => !frame.ready || !frame.messages || !frame.input)) throw new Error('Chat revealed an incomplete opening frame')
+    await window.webContents.executeJavaScript("document.querySelector('[aria-label=隐藏对话列表]')?.click()")
     await snapshots(window, 'chat')
 
     const grip = await window.webContents.executeJavaScript(`(() => {
@@ -154,6 +173,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('table')")
 
     await click(window, '[aria-label="显示对话列表"]')
+    await snapshots(window, 'workspace-sessions')
     await input(window, '.conversation-search input', '海盐拿铁')
     await waitForRenderer(window, "document.querySelectorAll('.conversation-item-main').length === 1 && document.querySelector('.conversation-item-preview')?.textContent.includes('海盐拿铁')")
     await click(window, '.conversation-item-main')
@@ -166,15 +186,67 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('.message-area')?.textContent.includes('开始流式回复')")
     await window.webContents.executeJavaScript("(() => { const el = document.querySelector('.message-area'); el.dispatchEvent(new WheelEvent('wheel', { deltaY: -600, bubbles: true })); el.scrollTop = 0 })()")
     await waitForRenderer(window, "document.querySelector('.message-area').scrollTop === 0")
+    // Navigation must preserve live requests, the composer, list state and window geometry.
+    await input(window, '.input-textarea', '跨页面切换后保留这份草稿')
+    await window.webContents.executeJavaScript(`(() => {
+      window.__workspaceComposer = document.querySelector('.input-textarea');
+      window.__workspaceBounds = document.querySelector('.chat-panel').getBoundingClientRect().toJSON();
+      const buttons = Array.from(document.querySelectorAll('[data-workspace-nav]'));
+      buttons[0].focus();
+      buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+      if (document.activeElement !== buttons[1]) throw new Error('Navigation arrow keys did not move focus');
+      if (buttons.length !== 4 || buttons.some(button => button.textContent.trim() || !button.title || !button.getAttribute('aria-label'))) throw new Error('Navigation must have four labelled icon-only controls');
+      if (buttons.some(button => !['none', 'normal'].includes(getComputedStyle(button, '::before').content))) throw new Error('Navigation must not have a colored edge marker');
+    })()`)
+    await click(window, '[data-workspace-nav="memory"]')
+    await waitForRenderer(window, "document.querySelector('[data-workspace-page=memory]') && document.querySelector('[aria-label=搜索记忆]')")
+    await input(window, '[aria-label="搜索记忆"]', '导航保留筛选')
+    await click(window, '[data-workspace-nav="journal"]')
+    await waitForRenderer(window, "document.querySelector('[data-workspace-page=journal]') && document.querySelector('.journal-date input')")
+    await input(window, '.journal-date input', '2001-01-02')
+    await input(window, '.journal-search input', '导航保留活动')
+    await snapshots(window, 'workspace-activity')
+    await click(window, '[data-workspace-nav="settings"]')
+    await waitForRenderer(window, "document.querySelector('[data-workspace-page=settings]') && document.querySelector('.settings-content')")
+    await click(window, '[data-workspace-nav="memory"]')
+    await waitForRenderer(window, "document.querySelector('[data-workspace-page=memory]') && document.querySelector('[aria-label=搜索记忆]').value === '导航保留筛选'")
+    await input(window, '[aria-label="搜索记忆"]', '')
+    await click(window, '[data-workspace-nav="journal"]')
+    await waitForRenderer(window, "document.querySelector('.journal-date input').value === '2001-01-02' && document.querySelector('.journal-search input').value === '导航保留活动'")
+    const now = new Date()
+    await input(window, '.journal-date input', `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`)
+    await input(window, '.journal-search input', '')
+    await click(window, '[data-workspace-nav="chat"]')
+    await waitForRenderer(window, "document.querySelector('[data-workspace-page=chat]') && document.activeElement === window.__workspaceComposer")
+    const navigationProblem = await window.webContents.executeJavaScript(`(() => {
+      if (document.querySelector('.input-textarea') !== window.__workspaceComposer || window.__workspaceComposer.value !== '跨页面切换后保留这份草稿') return 'Composer was reset';
+      const bounds = document.querySelector('.chat-panel').getBoundingClientRect();
+      // Screenshots exercise narrow viewports; width may clamp, but never depends on the selected module.
+      window.__workspaceReturnBounds = bounds.toJSON();
+      if (document.querySelector('.message-area').scrollTop > 2) return 'Reading position was reset';
+      return '';
+    })()`)
+    if (navigationProblem) throw new Error(navigationProblem)
+    await click(window, '[data-workspace-nav="memory"]')
+    await waitForRenderer(window, "document.querySelector('[data-workspace-page=memory]')")
+    const stableBounds = await window.webContents.executeJavaScript(`(() => {
+      const before = window.__workspaceReturnBounds, after = document.querySelector('.chat-panel').getBoundingClientRect();
+      return ['x', 'y', 'width', 'height'].every(key => Math.abs(before[key] - after[key]) < 1);
+    })()`)
+    if (!stableBounds) throw new Error('Module navigation changed the workspace bounds')
     // Let the browser dispatch the scroll event before sending the next server chunk.
     await window.webContents.executeJavaScript('new Promise(resolve => setTimeout(resolve, 100))')
     stream!.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '这段新内容不应该把阅读历史的用户拉到底部。' } }] })}\n\n`)
     stream!.end('data: [DONE]\n\n')
     await waitForRenderer(window, "document.querySelector('.message-jump-latest')")
+    await click(window, '[data-workspace-nav="chat"]')
+    await waitForRenderer(window, "document.querySelector('[data-workspace-page=chat]')")
     const top = await window.webContents.executeJavaScript("document.querySelector('.message-area').scrollTop")
     if (top > 2) throw new Error(`Streaming moved the reading position: ${top}`)
     await click(window, '.message-jump-latest')
     await waitForRenderer(window, "document.querySelector('.message-area')?.textContent.includes('这段新内容') && !document.querySelector('.message-jump-latest')")
+    await input(window, '.input-textarea', '')
+    console.log('CHOUYU_WORKSPACE_NAV_SMOKE_PASSED icon-only navigation, stable bounds, drafts, memory filters, activity date/search, background streaming and reading position')
 
     const ocrFixture = process.env['CHOUYU_SMOKE_OCR_FIXTURE']
     if (ocrFixture) {
@@ -211,12 +283,12 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
       console.log('CHOUYU_OCR_SMOKE_PASSED local recognition, draft preservation, image removal, no provider request')
     }
 
-    await click(window, '[aria-label="打开设置"]')
+    await click(window, '[data-workspace-nav="settings"]')
     await waitForRenderer(window, "Array.from(document.querySelectorAll('[data-settings-nav]')).some(button => button.textContent.includes('能力中心'))")
     await snapshots(window, 'settings')
-    await click(window, '[aria-label="关闭设置"]')
+    await click(window, '[data-workspace-nav="chat"]')
 
-    await click(window, '[aria-label="打开记忆中心"]')
+    await click(window, '[data-workspace-nav="memory"]')
     await waitForRenderer(window, "document.querySelector('.memory-library-view') && document.querySelector('.memory-status-summary')")
     await snapshots(window, 'memory-home')
     await waitForRenderer(window, "document.querySelector('.memory-add-btn')")
@@ -235,7 +307,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('.memory-delete-label')")
     await click(window, '.memory-card-actions .danger.solid')
     await waitForRenderer(window, "!document.querySelector('.memory-card')")
-    await click(window, '[aria-label="返回聊天"]')
+    await click(window, '[data-workspace-nav="chat"]')
 
     await window.webContents.executeJavaScript("document.querySelector('.input-textarea').focus()")
     const approval = { requestId: 'ui-smoke-request', approvalId: 'ui-smoke-deny', callId: 'ui-smoke-call', name: 'smoke_only', displayName: '验证工具授权', description: '仅验证授权界面，不执行真实工具。', risk: 'write', arguments: { text: '合成验收内容' } }
