@@ -12,7 +12,7 @@ const pages: { id: WorkspacePage; label: string; path: string }[] = [
   { id: 'settings', label: '设置', path: 'M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1 1-3zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z' }
 ]
 
-export default function WorkspaceNav({ activePage, onNavigate }: { activePage: WorkspacePage; onNavigate: (page: WorkspacePage) => void }) {
+export default function WorkspaceNav({ activePage, onNavigate, status }: { activePage: WorkspacePage; onNavigate: (page: WorkspacePage) => void; status: string }) {
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
@@ -24,8 +24,9 @@ export default function WorkspaceNav({ activePage, onNavigate }: { activePage: W
   }
 
   return <nav className="workspace-nav" aria-label="全局导航" onKeyDown={handleKeyDown}>
-    <div className="workspace-brand" title="ChouYu" aria-label="ChouYu">
+    <div className="workspace-brand" title={`ChouYu · ${status}`} aria-label={`ChouYu · ${status}`} role="status">
       <img width="36" height="36" src={petIconUrl} alt="" />
+      <i className={`workspace-brand-status${status !== '在线' ? ' is-busy' : ''}`} aria-hidden="true" />
     </div>
     {pages.map(page => <button key={page.id} type="button" className={`workspace-nav-item${page.id === 'settings' ? ' workspace-nav-bottom' : ''}`}
       data-workspace-nav={page.id} aria-label={page.label} title={page.label}

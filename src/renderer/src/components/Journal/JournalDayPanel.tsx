@@ -7,13 +7,7 @@ const duration = (ms: number) => ms < 60_000 ? '不足 1 分钟' : `${Math.floor
 export function JournalDayPanel({ date, revision, onSettings, onFilter }: { date: string; revision: number; onSettings(): void; onFilter(app: string): void }) {
   const [day, setDay] = useState<JournalDay | null>(null)
   const [error, setError] = useState('')
-  const [appsOpen, setAppsOpen] = useState(() => window.innerWidth > 900)
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 901px)')
-    const update = () => setAppsOpen(media.matches)
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
+  const [appsOpen, setAppsOpen] = useState(true)
   useEffect(() => { setDay(null) }, [date])
   useEffect(() => {
     let active = true
@@ -22,14 +16,15 @@ export function JournalDayPanel({ date, revision, onSettings, onFilter }: { date
     return () => { active = false }
   }, [date, revision])
   return <aside className="journal-day-panel" aria-label="当天概览">
-    <h2>当天概览</h2>
     {error && <p role="alert">{error}</p>}
     {day ? <>
+      <div className="journal-day-summary"><h2>当天概览 <time dateTime={date}>{date}</time></h2>
       <div className="journal-day-total"><strong>{day.durationMs ? journalDuration(day.durationMs) : '0 分钟'}</strong><span>采样时长</span></div>
       <p>{day.activityCount} 个活动片段 · {day.captureCount} 张画面</p>
       {day.firstAt !== null && day.lastAt !== null && <p className="journal-day-range">{new Date(day.firstAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} — {new Date(day.lastAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 的记录</p>}
-      <section className="journal-evidence-health"><h3>{day.ocrReady ? '有正文可供分析' : '目前只有活动线索'}</h3><p>{day.ocrReady ? `${day.ocrReady} 张画面已识别到文字，总结可以提取更具体的内容。` : day.captureCount ? '画面尚未识别出正文，可前往关键画面检查 OCR 状态。' : '窗口标题能找回去过的地方，但无法说明正文、修改或成果。可按需开启画面与本地 OCR。'}</p>{day.ocrFailed > 0 && <p>{day.ocrFailed} 张 OCR 失败，可打开画面重试。</p>}<button onClick={onSettings}>调整记录范围</button></section>
+      </div>
       <details className="journal-app-disclosure" open={appsOpen} onToggle={event => setAppsOpen(event.currentTarget.open)}><summary>应用分布</summary><section className="journal-app-breakdown">{day.apps.map(item => <button key={item.app} onClick={() => onFilter(item.app)} aria-label={`筛选 ${item.app} 的活动`}><div><span>{item.app.replace(/\.exe$/i, '')}</span><small>{journalDuration(item.durationMs)}</small></div><progress max={Math.max(day.durationMs, 1)} value={item.durationMs} aria-label={`${item.app} ${duration(item.durationMs)}`} /></button>)}{!day.apps.length && <p>有记录后显示。</p>}</section></details>
+      <details className="journal-evidence-health"><summary>记录质量与范围</summary><h3>{day.ocrReady ? '有正文可供分析' : '目前只有活动线索'}</h3><p>{day.ocrReady ? `${day.ocrReady} 张画面已识别到文字，总结可以提取更具体的内容。` : day.captureCount ? '画面尚未识别出正文，可前往关键画面检查 OCR 状态。' : '窗口标题能找回去过的地方，但无法说明正文、修改或成果。可按需开启画面与本地 OCR。'}</p>{day.ocrFailed > 0 && <p>{day.ocrFailed} 张 OCR 失败，可打开画面重试。</p>}<button onClick={onSettings}>调整记录范围</button></details>
       <p className="journal-footnote">时长来自间隔采样，不等于精确工时。总结中的建议需要你确认。</p>
     </> : !error && <p>正在读取当天记录…</p>}
   </aside>

@@ -3,6 +3,8 @@ import TopBar from './TopBar'
 import Journal from '../Journal/Journal'
 import WorkspaceNav, { type WorkspacePage } from '../Workspace/WorkspaceNav'
 import WorkspaceHeader from '../Workspace/WorkspaceHeader'
+import { useWorkspacePresentation } from '../Workspace/useWorkspacePresentation'
+import { getWorkspaceGeometry, type WorkspaceMode } from '../../core/workspace-state'
 import MessageArea from './MessageArea'
 import InputArea, { PendingAttachment } from './InputArea'
 import Settings from '../Settings/Settings'
@@ -63,6 +65,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const showSettings = activePage === 'settings'
   const showMemoryWorkspace = activePage === 'memory'
   const isChat = activePage === 'chat'
+  const presentation = useWorkspacePresentation()
+  const displayMode = isChat ? presentation.mode : 'workspace'
+  const maximized = presentation.maximized
   const settingsCloseRef = useRef(onSettingsClose)
   settingsCloseRef.current = onSettingsClose
   const navigate = useCallback((page: WorkspacePage) => {
@@ -175,13 +180,20 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   } = usePanelResize({
     position,
     onPositionChange,
-    sidebarOccupiesSpace: true,
-    chromeWidth: WORKSPACE_NAV_WIDTH
+    sidebarOccupiesSpace: displayMode !== 'chat',
+    chromeWidth: displayMode === 'workspace' ? WORKSPACE_NAV_WIDTH : 0
   })
   const toolApprovalRequest = toolApprovalRequests[0] || null
-  const shellWidth = Math.min(chatContentWidth + sessionSidebarWidth + WORKSPACE_NAV_WIDTH, viewport.width - 16)
-  const sessionsVisible = shellWidth < 700 ? narrowSessionsOpen : showSessions
-  const panelReady = dimensionsLoaded && sidebarLoaded && (workspaceLoaded || Boolean(workspaceError) || showSettings)
+  const geometry = getWorkspaceGeometry(displayMode, maximized, viewport, chatContentWidth, sessionSidebarWidth, panelHeight)
+  const shellWidth = geometry.width
+  const narrowLayout = geometry.narrow
+  const sessionsVisible = displayMode !== 'chat' && (narrowLayout ? narrowSessionsOpen : displayMode === 'sessions' || showSessions)
+  const panelReady = presentation.loaded && dimensionsLoaded && sidebarLoaded && (workspaceLoaded || Boolean(workspaceError) || showSettings)
+  const changeDisplayMode = (mode: WorkspaceMode) => {
+    presentation.changeMode(mode)
+    if (mode !== 'workspace') navigate('chat')
+    setNarrowSessionsOpen(mode === 'sessions' && viewport.width < 616)
+  }
 
   const refreshPlugins = useCallback(async () => {
     setPlugins(await window.electronAPI.plugin.getPlugins())
@@ -277,17 +289,17 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [activeSessionId, isStreaming, onPetStateChange])
 
   useLayoutEffect(() => {
-    if (!visible || !panelReady) return
+    if (!visible || !panelReady || maximized) return
     const panelEl = panelRef.current
     if (!panelEl) return
       const rect = panelEl.getBoundingClientRect()
       const nextX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - rect.width - 4))
       const nextY = Math.min(Math.max(4, position.y), Math.max(4, window.innerHeight - rect.height - 4))
       if (nextX !== position.x || nextY !== position.y) onPositionChange({ x: nextX, y: nextY })
-  }, [visible, panelReady, showMemoryWorkspace, showSettings, showSessions, panelHeight, chatContentWidth, sessionSidebarWidth, position, onPositionChange, viewport])
+  }, [visible, panelReady, showMemoryWorkspace, showSettings, showSessions, panelHeight, chatContentWidth, sessionSidebarWidth, position, onPositionChange, viewport, maximized, shellWidth])
 
   const handleDragStart = useCallback((event: React.PointerEvent) => {
-    if (event.button !== 0) return
+    if (event.button !== 0 || maximized) return
     const target = event.target as HTMLElement
     if (target.closest('button, input, textarea, select')) return
     event.preventDefault()
@@ -301,7 +313,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       dy: 0
     }
     ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-  }, [position])
+  }, [position, maximized])
 
   const handleDragMove = useCallback((event: React.PointerEvent) => {
     if (!dragRef.current.dragging) return
@@ -327,20 +339,22 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
 
   const toggleSessionSidebar = useCallback(() => {
-    if (shellWidth < 700) {
+    if (displayMode === 'chat') { presentation.changeMode('sessions'); setNarrowSessionsOpen(true); return }
+    if (narrowLayout) {
       setNarrowSessionsOpen(current => !current)
       return
     }
+    if (displayMode === 'sessions') { presentation.changeMode('chat'); return }
     setShowSessions((current) => {
       const next = !current
       void window.electronAPI.db.setState(SESSION_SIDEBAR_STATE_KEY, String(next)).catch(() => { /* The persistent storage notice reports disk failures. */ })
       if (!next) setTimeout(requestComposerFocus, 0)
       return next
     })
-  }, [requestComposerFocus, shellWidth])
+  }, [requestComposerFocus, narrowLayout, displayMode, presentation.changeMode])
 
   useEffect(() => {
-    if (messages.length === 0 && !isStreaming) return
+    if (maximized || (messages.length === 0 && !isStreaming)) return
     const panelEl = panelRef.current
     if (!panelEl) return
     requestAnimationFrame(() => {
@@ -349,7 +363,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         onPositionChange({ ...position, y: Math.max(4, position.y - (rect.bottom - window.innerHeight + 8)) })
       }
     })
-  }, [messages.length, isStreaming])
+  }, [messages.length, isStreaming, maximized])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -620,23 +634,25 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   return (
     <div ref={panelRef} data-interactive data-ready={panelReady}
       className="chat-panel app-workspace"
+      data-window-mode={displayMode} data-maximized={maximized}
       data-workspace-page={activePage}
-      style={{ left: position.x, top: position.y, width: shellWidth, height: panelHeight, display: visible && panelReady ? undefined : 'none' }}>
-      <WorkspaceNav activePage={activePage} onNavigate={navigate} />
-      <WorkspaceHeader onHide={onHide} onClose={onClose} dragHandleProps={dragHandleProps} />
+      style={{ left: maximized ? 4 : position.x, top: maximized ? 4 : position.y, width: shellWidth, height: geometry.height, display: visible && panelReady ? undefined : 'none' }}>
+      {displayMode === 'workspace' && <WorkspaceNav activePage={activePage} onNavigate={navigate} status={getStatusText()} />}
+      <WorkspaceHeader onHide={onHide} onClose={onClose} dragHandleProps={dragHandleProps}
+        maximized={maximized} onMaximize={presentation.toggleMaximized} mode={displayMode} onModeChange={changeDisplayMode} />
       <div className="workspace-body">
         <div className="workspace-page workspace-chat" hidden={!isChat}>
-          {sessionsVisible && shellWidth < 700 && <button className="workspace-sessions-backdrop" aria-label="收起会话列表" onClick={toggleSessionSidebar} />}
+          {sessionsVisible && narrowLayout && <button className="workspace-sessions-backdrop" aria-label="收起会话列表" onClick={toggleSessionSidebar} />}
           <div className="workspace-sessions" hidden={!sessionsVisible} style={{ width: sessionSidebarWidth }}>
             <ConversationSidebar
               sessions={sessions} activeSessionId={activeSessionId} width={sessionSidebarWidth}
               streamingSessionIds={streamingSessionIds} dragHandleProps={dragHandleProps}
-              onCreate={async () => { await createSession(); if (shellWidth < 700) toggleSessionSidebar() }}
+              onCreate={async () => { await createSession(); if (narrowLayout) toggleSessionSidebar() }}
               onSelect={async (id, query) => {
                 await selectSession(id)
                 setMessageSearchQuery(query || '')
                 setShowMessageSearch(Boolean(query))
-                if (shellWidth < 700) toggleSessionSidebar()
+                if (narrowLayout) toggleSessionSidebar()
               }}
               onRename={renameSession} onDelete={deleteSession} onExport={exportSession}
             />
@@ -647,7 +663,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             onPointerUp={handleSidebarResizeEnd} onPointerCancel={handleSidebarResizeEnd} />}
           <div className="chat-panel-main">
             <div className="chat-panel-drag-handle" {...dragHandleProps}>
-              <TopBar status={getStatusText()} searchOpen={showMessageSearch}
+              <TopBar searchOpen={showMessageSearch}
                 onSearch={() => { setMessageSearchQuery(''); setShowMessageSearch(open => !open) }}
                 showSessions={sessionsVisible} onToggleSessions={toggleSessionSidebar}
                 onNewTopic={() => { void createSession() }} />

@@ -81,7 +81,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     }
     await main.webContents.executeJavaScript('window.electronAPI.journal.open()')
     if (BrowserWindow.getAllWindows().some(window => window.id !== main.id && window.webContents.getURL().includes('view=journal'))) throw new Error('Journal opened a separate window')
-    await journal.webContents.executeJavaScript("document.querySelector('.journal-controls button').click()")
+    await journal.webContents.executeJavaScript("document.querySelector('[aria-label=记录设置]').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-settings-dialog:modal') && document.querySelector('[aria-label=保留期限]')")
     await journal.webContents.executeJavaScript("document.querySelector('[aria-label=关闭记录设置]').click()")
     await waitForRenderer(journal, "!document.querySelector('dialog')")
@@ -222,7 +222,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
           if (overflow) throw new Error('Journal horizontal overflow')
           const screenshot = await journal.webContents.capturePage()
           writeFileSync(join(directory, `journal-summary-${theme}-${width}.png`), screenshot.toPNG())
-          await journal.webContents.executeJavaScript("document.querySelector('.journal-controls button:last-child').click()")
+          await journal.webContents.executeJavaScript("document.querySelector('[aria-label=记录设置]').click()")
           await waitForRenderer(journal, "document.querySelector('.journal-settings-dialog:modal')")
           await journal.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
           if (await journal.webContents.executeJavaScript("document.querySelector('.journal-settings-dialog').scrollWidth > document.querySelector('.journal-settings-dialog').clientWidth + 1")) throw new Error('Journal settings horizontal overflow')

@@ -506,7 +506,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         <select value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)} aria-label="记忆排序"><option value="updated">最近更新</option><option value="importance">重要度</option><option value="usage">使用次数</option></select>
       </div>
 
-      <div className="memory-library-summary"><span>显示 <strong>{orderedMemories.length}</strong> 条记忆</span><div className="memory-type-chips"><button type="button" className={type === 'all' ? 'active' : ''} onClick={() => setType('all')}>全部</button>{(Object.keys(TYPE_LABELS) as MemoryType[]).map((memoryType) => <button type="button" key={memoryType} className={type === memoryType ? 'active' : ''} onClick={() => setType(memoryType)}>{TYPE_LABELS[memoryType]} <b>{memoryTypeCounts[memoryType] || 0}</b></button>)}</div></div>
+      <div className="memory-library-summary"><span>显示 <strong>{orderedMemories.length}</strong> 条记忆</span><div className="memory-type-chips"><button type="button" className={type === 'all' ? 'active' : ''} aria-pressed={type === 'all'} onClick={() => setType('all')}>全部</button>{(Object.keys(TYPE_LABELS) as MemoryType[]).map((memoryType) => <button type="button" key={memoryType} className={type === memoryType ? 'active' : ''} aria-pressed={type === memoryType} onClick={() => setType(memoryType)}>{TYPE_LABELS[memoryType]} <b>{memoryTypeCounts[memoryType] || 0}</b></button>)}</div></div>
 
       <div className="memory-list">
         {orderedMemories.map((memory) => {

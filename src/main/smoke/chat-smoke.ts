@@ -46,13 +46,19 @@ async function snapshots(window: BrowserWindow, name: string): Promise<void> {
         if (rect.left < -1 || rect.right > innerWidth + 1 || rect.bottom > innerHeight + 1) return 'Panel outside viewport';
         const header = panel.querySelector('.workspace-header');
         const bodyTop = panel.querySelector('.workspace-body').getBoundingClientRect().top;
-        if (panel.querySelectorAll('.workspace-header').length !== 1 || header.textContent.trim()) return 'Window header must be global and title-free';
+        if (panel.querySelectorAll('.workspace-header').length !== 1 || header.querySelector('strong, h1, h2')) return 'Window header must be global and title-free';
         for (const label of ['隐藏面板', '关闭面板']) {
           const controls = panel.querySelectorAll('[aria-label="' + label + '"]');
           if (controls.length !== 1 || !header.contains(controls[0])) return 'Duplicate or misplaced window control: ' + label;
           if (controls[0].getBoundingClientRect().bottom > bodyTop) return 'Window controls overlap page content';
         }
         if (panel.querySelector('.workspace-memory .memory-heading')) return 'Memory page repeats the navigation title';
+        if (panel.querySelector('.chat-topbar-name, .chat-topbar-status')) return 'Chat repeats the global identity';
+        const day = panel.querySelector('.journal-day-panel');
+        const feed = panel.querySelector('.journal-mode-bar');
+        if (day?.getClientRects().length && feed?.getClientRects().length && day.getBoundingClientRect().bottom > feed.getBoundingClientRect().top + 1) return 'Day overview must precede the activity feed';
+        const recordSwitch = panel.querySelector('.journal-recording-switch');
+        if (recordSwitch?.getClientRects().length && (recordSwitch.getAttribute('role') !== 'switch' || recordSwitch.getAttribute('aria-checked') !== 'false')) return 'Fixture recording switch must remain off';
         const settingsNav = panel.querySelector('.settings-nav');
         if (rect.width < 700 && settingsNav?.getClientRects().length) {
           const settingsBody = panel.querySelector('.settings-body').getBoundingClientRect();
@@ -146,6 +152,31 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     if (!openingFrames.length || openingFrames.some((frame: any) => !frame.ready || !frame.messages || !frame.input)) throw new Error('Chat revealed an incomplete opening frame')
     await window.webContents.executeJavaScript("document.querySelector('[aria-label=隐藏对话列表]')?.click()")
     await snapshots(window, 'chat')
+
+    await input(window, '.input-textarea', '窗口模式切换保留草稿')
+    await window.webContents.executeJavaScript("window.__modeComposer = document.querySelector('.input-textarea'); window.__normalBounds = document.querySelector('.chat-panel').getBoundingClientRect().toJSON()")
+    await click(window, '[aria-label="最大化窗口"]')
+    await waitForRenderer(window, "document.querySelector('.chat-panel[data-maximized=true]') && Math.abs(document.querySelector('.chat-panel').getBoundingClientRect().width - (innerWidth - 8)) < 1")
+    await click(window, '[aria-label="还原窗口"]')
+    await waitForRenderer(window, "(() => { const a = window.__normalBounds, b = document.querySelector('.chat-panel').getBoundingClientRect(); return ['x', 'y', 'width', 'height'].every(key => Math.abs(a[key] - b[key]) < 1) })()")
+    for (const mode of ['chat', 'sessions', 'workspace']) {
+      await click(window, '[aria-label="窗口模式"]')
+      await click(window, '[data-workspace-mode-option="' + mode + '"]')
+      await waitForRenderer(window, `document.querySelector('.chat-panel').dataset.windowMode === '${mode}'`)
+      const problem = await window.webContents.executeJavaScript(`(() => {
+        const panel = document.querySelector('.chat-panel');
+        if (!!panel.querySelector('.workspace-nav') !== ('${mode}' === 'workspace')) return 'Incorrect global navigation visibility';
+        if (document.querySelector('.input-textarea') !== window.__modeComposer || window.__modeComposer.value !== '窗口模式切换保留草稿') return 'Mode switching lost the draft';
+        const sidebar = panel.querySelector('.workspace-sessions');
+        if ('${mode}' === 'chat' && sidebar.getClientRects().length) return 'Chat-only mode shows sessions';
+        if ('${mode}' === 'sessions' && innerWidth > 700 && !sidebar.getClientRects().length) return 'Two-column mode hides sessions';
+        return '';
+      })()`)
+      if (problem) throw new Error(problem)
+      if (mode !== 'workspace') await snapshots(window, 'mode-' + mode)
+    }
+    await input(window, '.input-textarea', '')
+    console.log('CHOUYU_WINDOW_MODES_SMOKE_PASSED maximize/restore geometry, mode navigation and draft preservation')
 
     const grip = await window.webContents.executeJavaScript(`(() => {
       const rect = document.querySelector('.composer-resize-handle').getBoundingClientRect();

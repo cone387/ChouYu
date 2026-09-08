@@ -71,7 +71,7 @@
 .journal-source-links button { font-size: 11px; }
 .journal-summary-sources summary { cursor: pointer; padding: 16px 0; font-size: 13px; }
 .journal-summary-sources article { padding: 14px 0; border-bottom: 1px solid var(--border); font-size: 12px; overflow-wrap: anywhere; }
-.journal-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 28px; align-items: start; }
+.journal-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: start; }
 .journal-content { min-width: 0; }
 .journal-analysis-status { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; }
 .journal-day-panel { position: sticky; top: 0; border-left: 1px solid var(--border); padding-left: 24px; }
@@ -238,3 +238,31 @@
 .journal-usage-list li > div { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-secondary); }
 .journal-usage-list time { margin-left: auto; }
 @media (max-width: 900px) { .journal-list-scroll { max-height: clamp(160px, calc(100vh - 540px), 600px); } }
+
+/* Recording controls and the day summary stay above the activity feed at every size. */
+.journal-controls { flex: 1; justify-content: space-between; min-width: 0; }
+.journal-recording-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.journal-shell .journal-recording-switch { display: inline-flex; align-items: center; gap: 8px; border: 0; padding-inline: 8px; }
+.journal-recording-switch i { display: block; width: 32px; height: 18px; border-radius: 12px; background: var(--text-muted); position: relative; }
+.journal-recording-switch i::after { content: ''; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg-primary); transition: transform 160ms ease; }
+.journal-recording-switch[aria-checked="true"] i { background: var(--accent); }
+.journal-recording-switch[aria-checked="true"] i::after { transform: translateX(14px); background: var(--on-accent); }
+.journal-shell .journal-day-panel { position: static; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 24px; width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 0 0 20px; }
+.journal-day-summary { min-width: 0; order: 0; }
+.journal-day-summary h2 { margin: 0; }
+.journal-day-summary h2 time { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+.journal-day-summary .journal-day-total { margin: 8px 0; flex-wrap: wrap; }
+.journal-day-summary .journal-day-total strong { font-size: 24px; }
+.journal-shell .journal-day-panel .journal-day-range { display: block; }
+.journal-shell .journal-day-panel .journal-app-disclosure { order: 1; width: auto; min-width: 0; margin: 0; }
+.journal-shell .journal-day-panel .journal-app-disclosure summary { font-size: 13px; font-weight: 600; }
+.journal-app-breakdown { max-height: 144px; overflow-y: auto; }
+.journal-shell .journal-day-panel .journal-evidence-health { display: block; grid-column: 1 / -1; order: 2; padding: 10px 0 0; margin: 0; border: 0; border-top: 1px solid var(--border); }
+.journal-evidence-health > summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
+.journal-evidence-health > h3 { margin-top: 12px; }
+.journal-shell .journal-day-panel .journal-footnote { display: none; }
+@media (prefers-reduced-motion: reduce) { .journal-recording-switch i::after { transition: none; } }
+@container workspace (max-width: 549px) {
+  .journal-shell .journal-day-panel { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px; }
+  .journal-header { margin-bottom: 16px; padding-bottom: 12px; }
+}

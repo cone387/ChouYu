@@ -7,6 +7,7 @@ import { JournalCaptures, JournalSummaryView, JournalAsk } from './JournalEviden
 import { JournalDayPanel } from './JournalDayPanel'
 import { JournalTasks } from './JournalTasks'
 import { JournalDetailPanel } from './JournalDetailPanel'
+import { recordingTogglePatch } from '../../core/journal-recording'
 
 const today = () => {
   const now = new Date()
@@ -116,8 +117,16 @@ export default function Journal({ active = true }: { active?: boolean }) {
       <div className="journal-brand"><h1>工作日志</h1><p>回看一天，接着往下做。</p></div>
       <div className="journal-controls">
         <span className={`journal-status state-${status?.state || 'off'}`} role="status"><i />{status ? `${labels[status.state]}${status.config.enabled ? status.captureError ? ' · 画面异常' : status.config.captureEnabled ? ' · 活动＋画面＋本地 OCR' : ' · 仅记录标题' : ''}` : '正在加载'}</span>
-        {status?.config.enabled && <button disabled={busy} onClick={() => void configure({ paused: !status.config.paused })}>{status.config.paused ? '继续记录' : '暂停记录'}</button>}
-        <button onClick={openSettings} disabled={!status} aria-expanded={settings}>记录设置</button>
+        <div className="journal-recording-actions">
+          <button type="button" className="journal-recording-switch" role="switch" aria-label="活动记录"
+            aria-checked={Boolean(status?.config.enabled && !status.config.paused)}
+            disabled={busy || !status || (!status.config.enabled && (!status.supported || Boolean(status.error)))}
+            title={status?.config.enabled && !status.config.paused ? '暂停记录' : '开启记录'}
+            onClick={() => { if (status) void configure(recordingTogglePatch(status.config)) }}>
+            <span>记录</span><i aria-hidden="true" />
+          </button>
+          <button onClick={openSettings} disabled={!status} aria-label="记录设置" aria-expanded={settings}>记录设置</button>
+        </div>
       </div>
     </header>
 
@@ -129,7 +138,7 @@ export default function Journal({ active = true }: { active?: boolean }) {
 
     {!status?.config.enabled && status && <section className="journal-welcome">
       <div><p>默认记录活动、前台画面并在本机识别文字。关闭窗口后继续，可在托盘暂停。</p></div>
-      <button className="journal-primary" disabled={busy || !status.supported || Boolean(status.error)} onClick={() => void configure({ enabled: true, paused: false })}>{status.supported ? '开启活动记录' : '目前仅支持 Windows'}</button>
+      {!status.supported && <span>目前仅支持 Windows</span>}
     </section>}
 
     {settings && <dialog ref={settingsDialog} className="journal-detail journal-settings-dialog" aria-labelledby="journal-settings-title" onCancel={() => setSettings(false)} onClose={() => setSettings(false)}>
@@ -152,6 +161,7 @@ export default function Journal({ active = true }: { active?: boolean }) {
     </section></dialog>}
 
     <div className="journal-workspace"><section className="journal-content" aria-label="活动时间线">
+      <JournalDayPanel date={date} revision={revision} onFilter={app => { setQuery(app); setOffset(0); setView('activity'); setActivityMode('raw'); setLoading(true) }} onSettings={openSettings} />
       <nav className="journal-view-nav" aria-label="日志视图">{([['activity', '活动轨迹'], ['captures', '关键画面'], ['summary', '日志总结'], ['ask', '问问这一天'], ['usage', 'AI 用量']] as const).map(([key, label]) => <button key={key} aria-current={view === key ? 'page' : undefined} onClick={() => setView(key)}>{label}</button>)}</nav>
       <div className="journal-filterbar">
         <div className="journal-date"><button aria-label="前一天" onClick={() => shiftDate(-1)}>‹</button><input type="date" aria-label="日志日期" value={date} onChange={event => changeDate(event.target.value)} /><button aria-label="后一天" onClick={() => shiftDate(1)}>›</button><button onClick={() => changeDate(today())}>今天</button></div>
@@ -170,7 +180,7 @@ export default function Journal({ active = true }: { active?: boolean }) {
         <article><button className="journal-raw-open" onClick={() => setSelectedSource(`activity:${item.id}`)}><div className="journal-card-heading"><span className="journal-app">{item.app.replace(/\.exe$/i, '')}</span><span>{duration(item.endedAt - item.startedAt)}</span></div><h2>{item.title || '无窗口标题'}</h2><span className="journal-task-open">查看详情 →</span></button></article>
       </li>)}</ol>)}
       {view === 'activity' && activityMode === 'raw' && page.total > 100 && <nav className="journal-pagination" aria-label="活动分页"><button disabled={!offset || loading} onClick={() => { setOffset(value => Math.max(0, value - 100)); setLoading(true) }}>上一页</button><span>第 {Math.floor(offset / 100) + 1} / {Math.ceil(page.total / 100)} 页</span><button disabled={offset + 100 >= page.total || loading} onClick={() => { setOffset(value => value + 100); setLoading(true) }}>下一页</button></nav>}
-    </section><JournalDayPanel date={date} revision={revision} onFilter={app => { setQuery(app); setOffset(0); setView('activity'); setActivityMode('raw'); setLoading(true) }} onSettings={openSettings} /></div>
+    </section></div>
     {selectedSource && <JournalDetailPanel key={`${date}:${selectedSource}`} active={active} id={selectedSource} date={date} onClose={() => setSelectedSource('')} onChanged={deleted => { setRevision(value => value + 1); if (deleted) setDeletedRevision(value => value + 1) }} />}
     <footer>本地活动日志 · {status?.lastCapturedAt ? `最近记录 ${time(status.lastCapturedAt)}` : '尚无本次运行的活动记录'}</footer>
   </main>
