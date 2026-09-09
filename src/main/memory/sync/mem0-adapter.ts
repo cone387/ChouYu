@@ -1,6 +1,7 @@
 import { joinApiUrl } from '../../../shared/ai'
 import type { MemoryRecord } from '../../../shared/memory'
 import type { MemorySyncAdapter, RemoteMemoryRecord } from './adapter'
+import { confirmMem0Event } from './mem0-event'
 
 export interface Mem0AdapterConfig {
   baseUrl: string
@@ -77,8 +78,19 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
     if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Mem0 Base URL 必须是有效的 HTTP(S) 地址。')
   }
 
-  private endpoint(): string {
+  private get platformV3(): boolean {
+    return (this.config.mode || 'platform') === 'platform' && /\/v3\/?$/.test(new URL(this.config.baseUrl).pathname)
+  }
+
+  private endpoint(operation: 'list' | 'add' | 'search' | 'manage' = 'list'): string {
     this.validate()
+    if (this.platformV3) {
+      const url = new URL(this.config.baseUrl)
+      const prefix = url.pathname.replace(/\/v3\/?$/, '')
+      url.pathname = operation === 'manage' ? `${prefix}/v1/memories` : `${prefix}/v3/memories/${operation === 'list' ? '' : operation + '/'}`
+      url.search = ''; url.hash = ''
+      return url.href
+    }
     return joinApiUrl(this.config.baseUrl, 'memories')
   }
 
@@ -116,15 +128,59 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
   }
 
   async list(signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
+    return (await this.listSnapshot(signal)).memories
+  }
+
+  async listSnapshot(signal?: AbortSignal): Promise<{ memories: RemoteMemoryRecord[]; complete: boolean }> {
     const endpoint = new URL(this.endpoint())
-    endpoint.searchParams.set('user_id', this.config.userId)
-    endpoint.searchParams.set('page_size', '1000')
-    const response = await this.send(endpoint, {
-      method: 'GET',
-      headers: this.headers(),
-      signal: signal || AbortSignal.timeout(30_000)
-    }, '读取记忆')
-    return parseMem0Memories(await this.responseJson(response))
+    if (!this.platformV3) endpoint.searchParams.set('user_id', this.config.userId)
+    endpoint.searchParams.set('page_size', this.platformV3 ? '200' : '1000')
+    const deadline = AbortSignal.timeout(30_000)
+    const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline
+    const visited = new Set<string>(), ids = new Set<string>()
+    const memories: RemoteMemoryRecord[] = []
+    let next: URL | null = endpoint, total: number | undefined
+    while (next) {
+      requestSignal.throwIfAborted()
+      if (visited.has(next.href) || visited.size >= 100) throw new Error('Mem0 分页循环或超过 100 页，未取得完整列表。')
+      visited.add(next.href)
+      const response = await this.send(next, { method: this.platformV3 ? 'POST' : 'GET', body: this.platformV3 ? JSON.stringify({ filters: { user_id: this.config.userId } }) : undefined, headers: this.headers(), signal: requestSignal, redirect: 'error' }, '读取记忆')
+      const value = await this.responseJson(response)
+      requestSignal.throwIfAborted()
+      const record = asRecord(value), nested = asRecord(record.data)
+      const envelope = Array.isArray(nested.results) || Array.isArray(nested.memories) ? { ...record, ...nested } : record
+      if (this.platformV3 && (!Array.isArray(record.results) || record.count === undefined || !Object.hasOwn(record, 'next'))) throw new Error('Mem0 V3 列表缺少分页信息。')
+      const rows = resultRows(value)
+      const recognized = Array.isArray(value) || ['results', 'memories', 'output', 'data'].some(key => Array.isArray(envelope[key]))
+      if (!recognized || rows.some(row => {
+        const item = asRecord(row)
+        return typeof item.id !== 'string' || !item.id.trim() || item.id.length > 256 ||
+          !(typeof item.memory === 'string' && item.memory.trim() || typeof item.content === 'string' && item.content.trim())
+      })) throw new Error('Mem0 列表格式无效，未取得完整列表。')
+      const page = parseMem0Memories(value)
+      for (const memory of page) {
+        if (ids.has(memory.id)) throw new Error('Mem0 分页出现重复记录，请重试以取得一致列表。')
+        ids.add(memory.id); memories.push(memory)
+      }
+      if (memories.length > 20_000) throw new Error('Mem0 列表超过 20000 条，未取得完整列表。')
+      if (envelope.count !== undefined) {
+        if (!Number.isSafeInteger(envelope.count) || Number(envelope.count) < 0 || total !== undefined && total !== envelope.count) throw new Error('Mem0 分页总数无效或发生变化，请重试。')
+        total = Number(envelope.count)
+      }
+      const link = envelope.next
+      if (link === undefined || link === null || link === '') {
+        if (total !== undefined && total !== memories.length) throw new Error('Mem0 分页尚未取完或总数不一致，未取得完整列表。')
+        next = null
+      } else {
+        if (typeof link !== 'string' || !page.length) throw new Error('Mem0 下一页格式无效，未取得完整列表。')
+        const candidate: URL = new URL(link, next)
+        if (candidate.origin !== endpoint.origin || candidate.pathname.replace(/\/$/, '') !== endpoint.pathname.replace(/\/$/, '') || candidate.username || candidate.password || candidate.hash ||
+          candidate.searchParams.getAll('user_id').some(user => user !== this.config.userId)) throw new Error('Mem0 下一页超出当前服务或用户范围。')
+        if (!this.platformV3) candidate.searchParams.set('user_id', this.config.userId)
+        next = candidate
+      }
+    }
+    return { memories, complete: total !== undefined }
   }
 
   async test(signal?: AbortSignal): Promise<{ remoteCount: number }> {
@@ -136,7 +192,7 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
     if (!remoteId || remoteId.length > 256) throw new Error('Mem0 记忆 ID 无效。')
     const owned = await this.list(signal)
     if (!owned.some(memory => memory.id === remoteId)) throw new Error('当前 Mem0 用户范围内找不到这条记忆，已取消修改。')
-    return `${this.endpoint()}/${encodeURIComponent(remoteId)}`
+    return `${this.endpoint('manage')}/${encodeURIComponent(remoteId)}${this.platformV3 ? '/' : ''}`
   }
 
   async updateRemote(remoteId: string, content: string, metadata: Record<string, unknown>, signal?: AbortSignal): Promise<void> {
@@ -161,6 +217,14 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
   async search(query: string, limit = 6, signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
     this.validate()
     const boundedLimit = Math.min(50, Math.max(1, limit))
+    if (this.platformV3) {
+      const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000)
+      bounded.throwIfAborted()
+      const response = await this.send(this.endpoint('search'), { method: 'POST', headers: this.headers(), body: JSON.stringify({ query: query.slice(0, 4000), filters: { user_id: this.config.userId }, top_k: boundedLimit }), signal: bounded, redirect: 'error' }, '搜索记忆')
+      const value = await this.responseJson(response)
+      bounded.throwIfAborted()
+      return parseMem0Memories(value)
+    }
     const endpoints = ['memories/search', 'memories/search/', 'search', 'search/']
     let response: Response | null = null
     for (const endpoint of endpoints) {
@@ -188,7 +252,7 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
 
   async rememberRaw(text: string, signal?: AbortSignal): Promise<RemoteMemoryRecord[]> {
     this.validate()
-    const response = await this.send(this.endpoint(), {
+    const response = await this.send(this.endpoint('add'), {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify({
@@ -198,7 +262,17 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
       }),
       signal: signal || AbortSignal.timeout(30_000)
     }, '写入记忆')
-    return parseMem0Memories(await this.responseJson(response))
+    return parseMem0Memories(await this.confirmWrite(await this.responseJson(response), signal))
+  }
+
+  private confirmWrite(value: unknown, signal?: AbortSignal): Promise<unknown> {
+    return confirmMem0Event(value, async (id, bounded) => {
+      const base = new URL(this.config.baseUrl)
+      base.pathname = `${base.pathname.replace(/\/+$/, '').replace(/\/v[123]$/, '')}/v1/event/${encodeURIComponent(id)}/`
+      base.search = ''; base.hash = ''
+      const response = await this.send(base, { method: 'GET', headers: this.headers(), signal: bounded, redirect: 'error' }, '确认写入')
+      return this.responseJson(response)
+    }, signal)
   }
 
   async push(memories: readonly MemoryRecord[], signal?: AbortSignal): Promise<{ attempted: number; succeeded: number; skipped: number; failed: number }> {
@@ -221,7 +295,7 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
     for (let start = 0; start < pending.length; start += 5) {
       await Promise.all(pending.slice(start, start + 5).map(async (memory) => {
         try {
-          const response = await this.send(this.endpoint(), {
+          const response = await this.send(this.endpoint('add'), {
             method: 'POST',
             headers: this.headers(),
             body: JSON.stringify({
@@ -244,7 +318,7 @@ export class Mem0MemorySyncAdapter implements MemorySyncAdapter {
             }),
             signal: signal || AbortSignal.timeout(30_000)
           }, '写入记忆')
-          await this.responseJson(response)
+          await this.confirmWrite(await this.responseJson(response), signal)
           succeeded += 1
         } catch (error) {
           failed += 1

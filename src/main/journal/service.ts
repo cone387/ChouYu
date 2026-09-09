@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile, unlink, rmdir } from 'fs/promises'
+import { tmpdir } from 'os'
+import type { JournalSavedItem, JournalSaveInput, JournalSavedUsage } from '../../shared/journal'
 import { app, powerMonitor, systemPreferences } from 'electron'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import type { JournalAnalysisRecord } from '../../shared/journal'
@@ -6,15 +9,32 @@ import { join } from 'path'
 import { ActivityHelper } from './activity-helper'
 import { captureJournalWindow, stopJournalCapture } from './capture'
 import { JournalOcr } from './ocr'
-import { answerJournalQuestion, generateJournalSummary } from './summary'
+import { answerJournalQuestion, generateJournalSummary, selectJournalEvidence } from './summary'
+import { JournalQuestionContexts } from './question-context'
+import { JournalSemanticSearch } from './semantic-search'
 import { DEFAULT_JOURNAL_CONFIG, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
 import type { JournalAnswer, JournalDay, JournalCapture, JournalCapturePage, JournalConfig, JournalPage, JournalQuery, JournalStatus, JournalEvidence, JournalSummary, JournalTaskPage, JournalDetail, JournalTaskEdit } from '../../shared/journal'
 
 export class JournalService {
+  private questionContexts = new JournalQuestionContexts()
+  private semantic = new JournalSemanticSearch(async query => { await this.ready; if (this.closed || this.locked || this.suspended) throw new Error('当前无法执行日志语义检索。'); return this.request<JournalEvidence[]>('semanticInput', query) }, async () => (await import('../database')).getConfig(), fetch, {
+    read: async (scope, sources) => { await this.ready; return this.request('readSemanticCache', { scope, sources }) },
+    write: async (scope, generation, entries) => { await this.ready; return this.request('writeSemanticCache', { scope, generation, entries }) },
+    clear: async () => { await this.ready; return this.request('clearSemanticCache') }
+  })
+  prepareSemantic(query: JournalQuery) { return this.semantic.prepare(query) }
+  searchSemantic(id: string) { return this.semantic.search(id) }
+  cancelSemantic() { this.semantic.cancel() }
+  clearSemanticCache() { return this.semantic.clearCache() }
   private worker: Worker
   private sequence = 0
+  private continuationBusy = false
+  private savedRevision = 0
   private requests = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>()
   private helper = new ActivityHelper()
+  private bookmarkHelper = new ActivityHelper()
+  private quickBusy = false
+  private quickBookmarkId = ''
   private config: JournalConfig = { ...DEFAULT_JOURNAL_CONFIG }
   private state: JournalStatus['state'] = 'off'
   private error = ''
@@ -82,13 +102,15 @@ export class JournalService {
   status(): JournalStatus {
     const permissionNotice = process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('screen') !== 'granted'
       ? 'macOS 尚未授予屏幕录制权限：目前只记录应用名称。请在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许此应用，然后重启；窗口标题和画面需要此权限。' : ''
-    return { config: { ...this.config, excludedApps: [...this.config.excludedApps] }, supported: ['win32', 'darwin'].includes(process.platform), permissionNotice, state: this.state, lastCapturedAt: this.lastCapturedAt, error: this.error, captureError: this.captureError, analysis: this.summaryController ? this.analysisKind : null }
+    return { quickBookmarkId: this.quickBookmarkId, config: { ...this.config, excludedApps: [...this.config.excludedApps] }, supported: ['win32', 'darwin'].includes(process.platform), permissionNotice, state: this.state, lastCapturedAt: this.lastCapturedAt, error: this.error, captureError: this.captureError, analysis: this.summaryController ? this.analysisKind : null }
   }
 
   private stopSampling(): void {
+    this.semantic.cancel()
     this.epoch++
     clearTimeout(this.timer)
     this.helper.stop()
+    this.bookmarkHelper.stop()
     stopJournalCapture()
     clearTimeout(this.ocrTimer)
     this.ocr.stop()
@@ -113,7 +135,7 @@ export class JournalService {
 
   private async sample(): Promise<void> {
     if (this.closed || !this.config.enabled || this.config.paused || this.locked || this.suspended || this.storageError) return
-    if (this.busy) { this.schedule(); return }
+    if (this.busy || this.quickBusy) { this.schedule(); return }
     this.busy = true
     const startedAt = Date.now()
     const epoch = this.epoch
@@ -195,6 +217,92 @@ export class JournalService {
     return this.request('list', validateJournalQuery(query))
   }
 
+  async quickBookmark(): Promise<JournalSavedItem> {
+    await this.ready
+    if (!this.config.quickBookmarkEnabled) throw new Error('请先在“接着做”开启书签快捷键。')
+    if (this.closed || this.locked || this.suspended || this.storageError) throw new Error('当前无法保存书签，请解锁并确认日志存储正常。')
+    if (!['win32', 'darwin'].includes(process.platform)) throw new Error('快捷书签目前仅支持 Windows 和 macOS。')
+    if (process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('screen') !== 'granted') throw new Error('请先授予 macOS 屏幕录制权限。')
+    if (this.quickBusy) throw new Error('上一张书签正在保存，请稍候。')
+    this.quickBusy = true
+    const epoch = this.epoch, savedRevision = this.savedRevision
+    const check = () => { if (epoch !== this.epoch || savedRevision !== this.savedRevision || this.closed) throw new Error('记录状态已变化，快捷书签已取消。') }
+    try {
+      const sample = await this.bookmarkHelper.read()
+      check()
+      if (sample.pid === process.pid || this.config.excludedApps.some(name => name === sample.app.toLowerCase() || (process.platform === 'darwin' && name.replace(/\.exe$/, '') === sample.app.toLowerCase()))) throw new Error('当前应用在排除范围内，未保存书签。')
+      const deadline = Date.now() + 10_000
+      while (this.busy && Date.now() < deadline) { await new Promise(resolve => setTimeout(resolve, 50)); check() }
+      if (this.busy) throw new Error('当前采集未结束，请稍后重试书签。')
+      const at = Date.now()
+      const frame = await captureJournalWindow(sample.hwnd)
+      check()
+      const current = await this.bookmarkHelper.read()
+      check()
+      if (current.hwnd !== sample.hwnd || current.pid !== sample.pid || current.title !== sample.title) throw new Error('窗口已切换，未保存画面；请停留在目标窗口重试。')
+      const saved = await this.request<JournalSavedItem>('quickBookmark', { sample, at, width: frame.width, height: frame.height, bytes: frame.bytes })
+      this.quickBookmarkId = saved.id
+      return saved
+    } finally {
+      this.bookmarkHelper.stop(); this.quickBusy = false
+      if (!this.config.enabled || this.config.paused) stopJournalCapture()
+    }
+  }
+
+  async retrySavedOcr(id: string): Promise<JournalCapture> {
+    await this.ready
+    if (this.ocrBusy || this.locked || this.suspended || this.closed) throw new Error('当前无法识别，请解锁或等待已有识别完成后重试。')
+    this.ocrBusy = true
+    const epoch = this.epoch, savedRevision = this.savedRevision
+    let directory = ''
+    try {
+      const image = await this.savedImage(id)
+      directory = await mkdtemp(join(tmpdir(), 'chouyu-bookmark-ocr-'))
+      const path = join(directory, 'frame.jpg')
+      await writeFile(path, Buffer.from(image.slice('data:image/jpeg;base64,'.length), 'base64'), { flag: 'wx' })
+      if (epoch !== this.epoch || savedRevision !== this.savedRevision) throw new Error('收藏或记录状态已变化，识别已取消。')
+      const text = await this.ocr.read(path)
+      if (epoch !== this.epoch || savedRevision !== this.savedRevision) throw new Error('收藏或记录状态已变化，识别已取消。')
+      return await this.request('savedOcrDone', { id, text })
+    } finally {
+      this.ocrBusy = false
+      if (!this.config.enabled || this.config.paused) this.ocr.stop()
+      if (directory) { await unlink(join(directory, 'frame.jpg')).catch(error => { if (error.code !== 'ENOENT') throw error }); await rmdir(directory) }
+    }
+  }
+
+  async generateContinuations(range: { from: number; to: number }): Promise<{ created: number; skipped: number; considered: number }> {
+    await this.ready
+    const query = validateJournalQuery(range)
+    if (query.to - query.from > 25 * 3600_000) throw new Error('请按一天生成接续卡。')
+    if (this.continuationBusy) throw new Error('接续卡正在生成，请稍候。')
+    this.continuationBusy = true
+    const epoch = this.epoch, savedRevision = this.savedRevision
+    try {
+      const existing = await this.summary(query)
+      const summary = existing || await this.summarize(query)
+      if (epoch !== this.epoch || savedRevision !== this.savedRevision) throw new Error('记录或收藏已变化，接续卡生成已取消。')
+      return await this.request('generateContinuations', { ...query, summaryCreatedAt: summary.createdAt })
+    } finally { this.continuationBusy = false }
+  }
+  async saveItem(input: JournalSaveInput): Promise<JournalSavedItem> { await this.ready; return this.request('saveItem', input) }
+  async savedItems(): Promise<JournalSavedItem[]> { await this.ready; return this.request('savedItems') }
+  async projects(): Promise<import('../../shared/journal-projects').JournalProjectState> { await this.ready; return this.request('projects') }
+  async weeklySources(range: import('../../shared/journal-weekly').JournalWeeklyRange): Promise<import('../../shared/journal-weekly').JournalWeeklySource[]> { await this.ready; return this.request('weeklySources', range) }
+  async weekly(): Promise<import('../../shared/journal-weekly').JournalWeeklyDraft[]> { await this.ready; return this.request('weekly') }
+  async createWeekly(input: import('../../shared/journal-weekly').JournalWeeklyCreate): Promise<import('../../shared/journal-weekly').JournalWeeklyDraft> { await this.ready; return this.request('createWeekly', input) }
+  async editWeekly(input: import('../../shared/journal-weekly').JournalWeeklyEdit): Promise<import('../../shared/journal-weekly').JournalWeeklyDraft> { await this.ready; return this.request('editWeekly', input) }
+  async deleteWeekly(input: { id: string; revision: number }): Promise<void> { await this.ready; return this.request('deleteWeekly', input) }
+  async playbook(): Promise<import('../../shared/journal-playbook').JournalPlaybookEntry[]> { await this.ready; return this.request('playbook') }
+  async savePlaybook(input: import('../../shared/journal-playbook').JournalPlaybookInput): Promise<import('../../shared/journal-playbook').JournalPlaybookEntry> { await this.ready; return this.request('savePlaybook', input) }
+  async deletePlaybook(input: { id: string; revision: number }): Promise<void> { await this.ready; await this.request('deletePlaybook', input) }
+  async saveProject(input: import('../../shared/journal-projects').JournalProjectInput): Promise<import('../../shared/journal-projects').JournalProject> { await this.ready; return this.request('saveProject', input) }
+  async deleteProject(id: string): Promise<void> { await this.ready; await this.request('deleteProject', id) }
+  async assignProject(input: { savedId: string; projectId: string | null; automatic?: boolean }): Promise<void> { await this.ready; await this.request('assignProject', input) }
+  async savedUsage(): Promise<JournalSavedUsage> { await this.ready; return this.request('savedUsage') }
+  async savedImage(id: string): Promise<string> { await this.ready; return this.request('savedImage', id) }
+  async updateSaved(input: { id: string; pinned?: boolean; completed?: boolean; note?: string }): Promise<void> { await this.ready; return this.request('updateSaved', input) }
+  async deleteSaved(id: string): Promise<void> { this.savedRevision++; await this.ready; await this.request('deleteSaved', id); if (this.quickBookmarkId === id) this.quickBookmarkId = '' }
   async captures(query: JournalQuery): Promise<JournalCapturePage> { await this.ready; return this.request('captures', validateJournalQuery(query)) }
   async tasks(query: JournalQuery): Promise<JournalTaskPage> { await this.ready; return this.request('tasks', validateJournalQuery(query)) }
   async detail(input: { from: number; to: number; id: string }): Promise<JournalDetail> { await this.ready; return this.request('detail', { ...validateJournalQuery(input), id: input.id }) }
@@ -205,7 +313,7 @@ export class JournalService {
   async image(id: string): Promise<string> { await this.ready; return this.request('image', id) }
   async summary(range: { from: number; to: number }): Promise<JournalSummary | null> { await this.ready; return this.request('summary', validateJournalQuery(range)) }
   async overview(range: { from: number; to: number }): Promise<JournalDay> { await this.ready; return this.request('overview', validateJournalQuery(range)) }
-  cancelAnalysis(): void { this.summaryController?.abort() }
+  cancelAnalysis(): void { this.savedRevision++; this.summaryController?.abort() }
   async analysisRecords(range: { from: number; to: number }): Promise<JournalAnalysisRecord[]> { await this.ready; return this.request('analysisRecords', validateJournalQuery(range)) }
 
   private async trackAnalysis<T>(range: { from: number; to: number }, kind: 'summary' | 'question', config: { provider: string; model: string }, signal: AbortSignal, run: (onMetadata: (value: AIResponseMetadata) => void) => Promise<T>): Promise<T> {
@@ -222,7 +330,7 @@ export class JournalService {
     }
   }
 
-  async ask(input: { from: number; to: number; question: string }): Promise<JournalAnswer> {
+  async ask(input: { from: number; to: number; question: string; conversationId?: string }): Promise<JournalAnswer> {
     await this.ready
     const query = validateJournalQuery(input)
     if (typeof input.question !== 'string' || !input.question.trim() || input.question.length > 1000) throw new Error('请输入 1 至 1000 字的问题。')
@@ -235,10 +343,11 @@ export class JournalService {
       if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，回答已取消。')
       const { getConfig } = await import('../database')
       const config = getConfig()
-      const run = (onMetadata?: (value: AIResponseMetadata) => void) => answerJournalQuestion({ ...evidence, from: query.from, to: query.to }, input.question.trim(), config, controller.signal, onMetadata)
+      const history = this.questionContexts.read(input.conversationId, query, selectJournalEvidence(evidence.sources))
+      const run = (onMetadata?: (value: AIResponseMetadata) => void) => answerJournalQuestion({ ...evidence, from: query.from, to: query.to }, input.question.trim(), config, controller.signal, onMetadata, history)
       const answer = evidence.sources.length ? await this.trackAnalysis(query, 'question', config, controller.signal, run) : await run()
       if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，回答已取消。')
-      return answer
+      return { ...answer, conversationId: this.questionContexts.commit({ from: query.from, to: query.to }, history, input.question.trim(), answer) }
     } catch (error) { if (controller.signal.aborted) throw new Error('日志分析已取消。'); throw error }
     finally { if (this.summaryController === controller) this.summaryController = undefined }
   }
@@ -307,7 +416,7 @@ export class JournalService {
       if (this.closed) throw new Error('工作日志正在关闭。')
       await this.ready
       this.stopSampling()
-      try { await this.request(method, payload) } finally { this.restart() }
+      try { await this.request(method, payload); if (method.startsWith('delete')) this.questionContexts.clear() } finally { this.restart() }
     })
     this.changes = operation.then(() => {}, () => {})
     return operation
@@ -315,7 +424,7 @@ export class JournalService {
 
   async close(): Promise<void> {
     if (this.closed) return
-    this.closed = true; this.stopSampling()
+    this.closed = true; this.stopSampling(); this.questionContexts.clear()
     powerMonitor.removeListener('lock-screen', this.lock)
     powerMonitor.removeListener('unlock-screen', this.unlock)
     powerMonitor.removeListener('suspend', this.suspend)

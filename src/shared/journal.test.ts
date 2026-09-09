@@ -24,6 +24,9 @@ describe('journal boundaries', () => {
   })
   it('bounds date queries and pagination', () => {
     for (const query of [{ from: NaN, to: 10 }, { from: 10, to: 9 }, { from: 0, to: 33 * 86400_000 }, { from: 0, to: 10, offset: -1 }]) expect(() => validateJournalQuery(query)).toThrow()
-    expect(validateJournalQuery({ from: 0, to: 86400_000, query: ' 项目 ' })).toEqual({ from: 0, to: 86400_000, query: '项目', offset: 0 })
+    expect(validateJournalQuery({ from: 0, to: 86400_000, query: ' 项目 ' })).toEqual({ from: 0, to: 86400_000, query: '项目', offset: 0, app: '' })
+    expect(validateJournalQuery({ from: 0, to: 10, app: ' editor.exe ' }).app).toBe('editor.exe')
+    expect(() => validateJournalQuery({ from: 0, to: 10, app: 123 })).toThrow()
+    expect(() => validateJournalQuery({ from: 0, to: 10, app: 'a'.repeat(121) })).toThrow()
   })
 })

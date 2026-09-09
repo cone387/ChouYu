@@ -1,3 +1,4 @@
+import { allMemoryRecords, findMemoryByKey } from './records'
 import { app } from 'electron'
 import { randomUUID } from 'crypto'
 import type { MemoryProvider } from './provider'
@@ -84,7 +85,7 @@ export function proposeMemoryCandidate(candidate: MemoryCandidateInput): MemoryR
     : candidate
   const candidateMemory = memoryProvider.createCandidate(candidateWithLifecycle)
   if (!candidateMemory) return null
-  const activeMemories = memoryProvider.list({ status: 'active', limit: 2000 })
+  const activeMemories = allMemoryRecords(memoryProvider, { status: 'active' })
   activeMemories.forEach((existing) => {
     const relation = detectMemoryRelation(candidateWithLifecycle, existing)
     if (relation) memoryProvider.createConflict(candidateMemory.id, existing.id, relation.kind, relation.reason)
@@ -104,7 +105,11 @@ export async function createMemory(candidate: MemoryCandidateInput): Promise<Mem
   const proposed = proposeMemoryCandidate(candidate)
   if (!proposed) {
     const normalizedKey = normalizeMemoryKey(candidate.content)
-    const existing = memoryProvider.list({ status: 'all', limit: 2000 }).find((memory) => memory.normalizedKey === normalizedKey && memory.status !== 'archived')
+    const existing = findMemoryByKey(memoryProvider, normalizedKey)
+    if (existing?.status === 'pending') {
+      const conflicts = memoryProvider.listConflicts(existing.id)
+      if (conflicts.some(conflict => conflict.status === 'pending')) return { ...existing, conflicts }
+    }
     if (existing?.status === 'pending' && memoryProvider.approveConfirmed) return memoryProvider.approveConfirmed(existing.id)
     return existing || (memoryProvider.createActiveConfirmed ? await memoryProvider.createActiveConfirmed(candidate) : memoryProvider.createActive(candidate))
   }
@@ -148,13 +153,13 @@ export async function reactivateMemory(memoryId: string): Promise<MemoryRecord> 
 export function runMemoryMaintenance(): MemoryMaintenanceResult {
   if (isRemoteMemoryEngine()) return { expired: 0, capacityArchived: 0, archivedIds: [] }
   const memoryProvider = getMemoryProvider()
-  const invalidIdentityIds = memoryProvider.list({ status: 'active', type: 'person', limit: 2000 })
+  const invalidIdentityIds = allMemoryRecords(memoryProvider, { status: 'active', type: 'person' })
     .filter((memory) => {
       const match = memory.content.match(/^我的名字是\s*(.+)$/i)
       return Boolean(match && !isLikelyPersonName(match[1]))
     })
     .map((memory) => memory.id)
-  const identityMemories = memoryProvider.list({ status: 'active', type: 'person', limit: 2000 })
+  const identityMemories = allMemoryRecords(memoryProvider, { status: 'active', type: 'person' })
   const duplicateIdentityIds: string[] = []
   const identityGroups = new Map<string, MemoryRecord[]>()
   identityMemories
@@ -214,7 +219,7 @@ export function splitMemoryCluster(clusterId: string, memoryIds: string[], manua
 export function getMemoryInsights(): MemoryInsights {
   if (isRemoteMemoryEngine()) return { byType: [], createdByWeek: [], archiveReasons: [], helpful: 0, unhelpful: 0, clustered: 0, clusters: 0, savedCharacters: 0 }
   runMemoryMaintenance()
-  const all = getMemoryProvider().list({ status: 'all', limit: 2000 })
+  const all = allMemoryRecords(getMemoryProvider(), { status: 'all' })
   const clusters = listMemoryClusters()
   const types: MemoryType[] = ['fact', 'preference', 'person', 'project', 'workflow']
   const archiveReasons = ['expired', 'capacity', 'cleanup', 'manual', 'replace'] as const
@@ -263,7 +268,8 @@ export function previewMemoryImport(value: unknown): Omit<MemoryImportPreview, '
   const source = Array.isArray(value) ? value : value && typeof value === 'object' && Array.isArray((value as { memories?: unknown }).memories)
     ? (value as { memories: unknown[] }).memories
     : []
-  const active = getMemoryProvider().list({ status: 'active', limit: 2000 })
+  if (source.length > 2000) throw new Error('单次最多导入 2000 条记忆，请拆分文件后重试；本次未导入任何记录。')
+  const active = allMemoryRecords(getMemoryProvider(), { status: 'active' })
   const items: MemoryImportItem[] = []
   let invalid = 0
   let blockedSecrets = 0
@@ -312,7 +318,7 @@ export async function importMemories(decisions: MemoryImportDecision[]): Promise
         // A previous failed upload remains pending. Retrying the same import
         // must confirm it, rather than silently counting it as a duplicate.
         const provider = getMemoryProvider()
-        const pending = provider.list({ status: 'pending', limit: 2000 }).find(memory => memory.normalizedKey === normalizeMemoryKey(candidate.content))
+        const pending = findMemoryByKey(provider, normalizeMemoryKey(candidate.content), 'pending')
         if (pending) proposed = { ...pending, conflicts: provider.listConflicts(pending.id) }
       }
       if (!proposed) {
@@ -381,7 +387,7 @@ export async function indexMemory(memory: MemoryRecord): Promise<void> {
 export async function rebuildEmbeddings(): Promise<EmbeddingRebuildResult> {
   if (isRemoteMemoryEngine()) throw new Error('当前使用 Mem0 主记忆引擎，Embedding 索引由 Mem0 管理。')
   const { client, model } = embeddingClient()
-  const memories = getMemoryProvider().list({ status: 'active', limit: 2000 })
+  const memories = allMemoryRecords(getMemoryProvider(), { status: 'active' })
   getMemoryProvider().clearEmbeddings()
   let indexed = 0
   let failed = 0

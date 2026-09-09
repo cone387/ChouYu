@@ -10,6 +10,9 @@ export class JournalOcr {
   private child?: ChildProcessWithoutNullStreams
   private pending?: { resolve(text: string): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }
 
+  /** Diagnostic PID only; no image contents or OCR text are exposed. */
+  get processId(): number | undefined { return this.child?.pid }
+
   read(path: string): Promise<string> {
     if (process.platform === 'darwin') return this.mac.read('journal-ocr-mac.js', [path]).then(text => {
       const result = JSON.parse(text)

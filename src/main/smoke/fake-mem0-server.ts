@@ -19,6 +19,7 @@ export interface FakeMem0RequestLogEntry {
 export interface FakeMem0Server {
   url: string
   setMode(mode: FakeMem0Mode): void
+  setListEnvelope(enabled: boolean): void
   records(): readonly FakeMem0Record[]
   requests(): readonly FakeMem0RequestLogEntry[]
   close(): Promise<void>
@@ -63,7 +64,8 @@ export async function startFakeMem0Server(options: { apiKey: string; seed: Reado
     userId: item.userId
   }))
   const requests: FakeMem0RequestLogEntry[] = []
-  let mode: FakeMem0Mode = 'ok'
+    let mode: FakeMem0Mode = 'ok'
+    let listEnvelope = false
   let nextId = records.length
 
   const server = createServer((request, response) => {
@@ -119,7 +121,8 @@ export async function startFakeMem0Server(options: { apiKey: string; seed: Reado
     }
     if (request.method === 'GET' && path === '/memories') {
       const userId = url.searchParams.get('user_id') || ''
-      sendJson(200, records.filter((record) => record.userId === userId).map(serialize))
+        const selected = records.filter((record) => record.userId === userId).map(serialize)
+        sendJson(200, listEnvelope ? { count: selected.length, results: selected, next: null } : selected)
       return
     }
     if (request.method === 'POST' && (path === '/memories/search' || path === '/search')) {
@@ -166,7 +169,8 @@ export async function startFakeMem0Server(options: { apiKey: string; seed: Reado
 
   return {
     url: `http://127.0.0.1:${address.port}`,
-    setMode(next: FakeMem0Mode) { mode = next },
+      setMode(next: FakeMem0Mode) { mode = next },
+      setListEnvelope(enabled: boolean) { listEnvelope = enabled },
     records: () => records,
     requests: () => requests,
     close: () => {

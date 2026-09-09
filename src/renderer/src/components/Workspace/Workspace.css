@@ -38,7 +38,16 @@
 .global-search-result strong, .global-search-result small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .global-search-result strong { font-size: 13px; font-weight: 500; }
 .global-search-result small { margin-top: 5px; font-size: 12px; color: var(--text-secondary); }
+.global-search-result .global-search-excerpt { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
 .global-search-kind { flex-shrink: 0; font-size: 11px; color: var(--accent); padding-top: 2px; }
+.global-search-range { margin-top: 12px; font-size: 13px; }
+.global-search-range summary { cursor: pointer; overflow-wrap: anywhere; }
+.global-search-range > div { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.global-search-range label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.global-search-range input { max-width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-secondary); color: var(--text-primary); }
+.global-search-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; font-size: 13px; }
+.global-search-pagination button { padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+.global-search-pagination button:disabled { opacity: .5; cursor: default; }
 .workspace-header .topbar-btn { width: 36px; height: 28px; }
 .workspace-header .topbar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .workspace-mode-control { position: relative; }

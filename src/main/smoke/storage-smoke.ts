@@ -3,9 +3,9 @@ import fs from 'fs'
 import path from 'path'
 import { getStorageStatus, setState } from '../database'
 
-export async function waitForRenderer(window: BrowserWindow, condition: string): Promise<void> {
+export async function waitForRenderer(window: BrowserWindow, condition: string, timeoutMs = 5000): Promise<void> {
   await window.webContents.executeJavaScript(`new Promise((resolve, reject) => {
-    const deadline = Date.now() + 5000;
+    const deadline = Date.now() + ${timeoutMs};
     const check = () => {
       if (${condition}) return resolve(true);
       if (Date.now() > deadline) return reject(new Error('Storage UI timed out: ' + ${JSON.stringify(condition)}));

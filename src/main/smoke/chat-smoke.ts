@@ -26,9 +26,10 @@ async function click(window: BrowserWindow, selector: string): Promise<void> {
   })()`).catch(error => { throw new Error(`Could not click ${selector}: ${String(error)}`) })
 }
 
-async function snapshots(window: BrowserWindow, name: string): Promise<void> {
+async function snapshots(window: BrowserWindow, name: string, focus?: string): Promise<void> {
   const directory = process.env['CHOUYU_SMOKE_ARTIFACTS']
   if (!directory) return
+  const originalViewport = await window.webContents.executeJavaScript('({ width: innerWidth, height: innerHeight })')
   fs.mkdirSync(directory, { recursive: true })
   for (const theme of ['light', 'dark']) {
     saveConfig({ theme: theme as 'light' | 'dark' })
@@ -37,6 +38,7 @@ async function snapshots(window: BrowserWindow, name: string): Promise<void> {
     for (const width of [1024, 375]) {
       window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
       await waitForRenderer(window, `innerWidth === ${width}`)
+      if (focus) await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(focus)})?.scrollIntoView({block:'center',behavior:'instant'})`)
       await waitForRenderer(window, "Number(getComputedStyle(document.querySelector('.chat-panel')).opacity) > .99")
       await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
       await window.webContents.executeJavaScript('new Promise(resolve => setTimeout(resolve, 120))')
@@ -70,7 +72,11 @@ async function snapshots(window: BrowserWindow, name: string): Promise<void> {
         }
         return '';
       })()`)
-      if (problem) throw new Error(`${name} ${width}: ${problem}`)
+      if (problem) {
+        const geometry = await window.webContents.executeJavaScript("JSON.stringify({viewport:[innerWidth,innerHeight],panel:document.querySelector('.chat-panel').getBoundingClientRect().toJSON(),style:document.querySelector('.chat-panel').getAttribute('style')})")
+        fs.writeFileSync(path.join(directory, `${name}-${theme}-${width}-failure.png`), (await window.webContents.capturePage()).toPNG())
+        throw new Error(`${name} ${width}: ${problem}; ${geometry}`)
+      }
       let captured = false
       for (let attempt = 0; attempt < 6; attempt++) {
         const screenshot = await window.webContents.capturePage({ x: 0, y: 0, width, height: 768 }, { stayHidden: true, stayAwake: true })
@@ -89,6 +95,9 @@ async function snapshots(window: BrowserWindow, name: string): Promise<void> {
     }
   }
   window.webContents.disableDeviceEmulation()
+  await waitForRenderer(window, `innerWidth === ${originalViewport.width} && innerHeight === ${originalViewport.height}`)
+  // Restore viewport-dependent React state before callers record normal window bounds.
+  await window.webContents.executeJavaScript('new Promise(resolve => { window.dispatchEvent(new Event("resize")); requestAnimationFrame(() => requestAnimationFrame(resolve)) })')
 }
 
 /** Real ChatPanel, real IPC and a loopback streaming provider; never touches a real account. */
@@ -161,6 +170,8 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await snapshots(window, 'chat')
 
     await input(window, '.input-textarea', '窗口模式切换保留草稿')
+    // Without screenshot work, this point can still be inside the 200 ms scale(.95) opening animation.
+    await waitForRenderer(window, "document.querySelector('.chat-panel').getAnimations().every(animation => animation.playState === 'finished' || animation.playState === 'idle')")
     await window.webContents.executeJavaScript("window.__modeComposer = document.querySelector('.input-textarea'); window.__normalBounds = document.querySelector('.chat-panel').getBoundingClientRect().toJSON()")
     await click(window, '[aria-label="最大化窗口"]')
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-maximized=true]') && Math.abs(document.querySelector('.chat-panel').getBoundingClientRect().width - (innerWidth - 8)) < 1")
@@ -187,7 +198,8 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
 
     const grip = await window.webContents.executeJavaScript(`(() => {
       const rect = document.querySelector('.composer-resize-handle').getBoundingClientRect();
-      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, height: document.querySelector('.input-textarea').getBoundingClientRect().height };
+      const value = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, height: document.querySelector('.input-textarea').getBoundingClientRect().height, maximum: Number(document.querySelector('.composer-resize-handle').getAttribute('aria-valuemax')) };
+      window.__composerGrip = value; return value;
     })()`)
     await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: grip.x, y: grip.y, button: 'left', clickCount: 1 })
     await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: grip.x, y: grip.y - 64, button: 'left', buttons: 1 })
@@ -305,7 +317,8 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
       await waitForRenderer(window, "document.querySelector('.attachment-thumb')")
       await snapshots(window, 'ocr-attachment')
       await window.webContents.executeJavaScript("Array.from(document.querySelectorAll('.attachment-quick-actions button')).find(button => button.textContent === '离线识别首张').click()")
-      await waitForRenderer(window, "document.querySelector('.input-textarea').value.includes('ChouYu offline OCR 2026') && !document.querySelector('.attachment-thumb')")
+      // Native OCR allows 30 seconds; include time for its result to reach the UI.
+      await waitForRenderer(window, "document.querySelector('.input-textarea').value.includes('ChouYu offline OCR 2026') && !document.querySelector('.attachment-thumb')", 35_000)
       const draftPreserved = await window.webContents.executeJavaScript("document.querySelector('.input-textarea').value.startsWith('保留草稿：')")
       if (!draftPreserved || providerRequests !== beforeOcrRequests) throw new Error('Offline OCR changed the draft or contacted the provider')
       await snapshots(window, 'ocr-result')
@@ -351,6 +364,24 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('.memory-delete-label')")
     await click(window, '.memory-card-actions .danger.solid')
     await waitForRenderer(window, "!document.querySelector('.memory-card')")
+    await window.webContents.executeJavaScript(`(async () => {
+      window.__memoryPaginationIds = [];
+      for (let index = 0; index < 55; index++) {
+        const item = await window.electronAPI.memory.create({ type: 'fact', content: '分页验收条目 ' + index + ' 唯一', importance: .6, confidence: 1, sensitivity: 'normal' });
+        window.__memoryPaginationIds.push(item.id);
+      }
+    })()`)
+    await window.webContents.executeJavaScript("(() => { const select = document.querySelector('[aria-label=记忆状态]'); select.value = 'all'; select.dispatchEvent(new Event('change', { bubbles: true })) })()")
+    await input(window, '[aria-label="搜索记忆"]', '分页验收条目')
+    await waitForRenderer(window, "document.querySelectorAll('.memory-card').length === 50 && document.querySelector('[aria-label=记忆分页]')?.textContent.includes('1 / 2')")
+    await window.webContents.executeJavaScript("window.__firstMemoryPage = [...document.querySelectorAll('.memory-card')].map(card=>card.getAttribute('data-memory-id')); document.querySelector('[aria-label=记忆分页] button:last-child').click()")
+    await waitForRenderer(window, "document.querySelectorAll('.memory-card').length === 5 && document.querySelector('[aria-label=记忆分页]')?.textContent.includes('2 / 2')")
+    const duplicatePage = await window.webContents.executeJavaScript("[...document.querySelectorAll('.memory-card')].some(card=>window.__firstMemoryPage.includes(card.getAttribute('data-memory-id')))")
+    if (duplicatePage) throw new Error('Memory UI pagination repeated records')
+    await snapshots(window, 'memory-pagination', '[aria-label="记忆分页"]')
+    await input(window, '[aria-label="搜索记忆"]', '分页验收条目 0 唯一')
+    await waitForRenderer(window, "document.querySelectorAll('.memory-card').length === 1 && document.querySelector('[aria-label=记忆分页]')?.textContent.includes('1 / 1')")
+    await window.webContents.executeJavaScript("(async () => { for (const id of window.__memoryPaginationIds) await window.electronAPI.memory.delete(id) })()")
     await click(window, '[data-workspace-nav="chat"]')
 
     await window.webContents.executeJavaScript("document.querySelector('.input-textarea').focus()")
@@ -379,6 +410,8 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     console.log('CHOUYU_CHAT_SMOKE_PASSED markdown, full-text search, streaming scroll, settings, memory CRUD, approval keyboard')
   } catch (error) {
     console.error('CHOUYU_CHAT_UI_STATE', await window.webContents.executeJavaScript(`JSON.stringify({
+      expectedBounds: window.__normalBounds, actualBounds: document.querySelector('.chat-panel')?.getBoundingClientRect().toJSON(),
+      composerGrip: window.__composerGrip, composerNow: document.querySelector('.input-textarea')?.getBoundingClientRect().toJSON(), composerMaximum: document.querySelector('.composer-resize-handle')?.getAttribute('aria-valuemax'),
       text: document.body.innerText.slice(-1800),
       inputs: document.querySelectorAll('textarea').length,
       scroll: (() => { const el = document.querySelector('.message-area'); return el && [el.scrollTop, el.scrollHeight, el.clientHeight] })(),

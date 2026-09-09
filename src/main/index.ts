@@ -1,3 +1,7 @@
+import { runJournalMigrationSmoke } from './smoke/journal-migration-smoke'
+import { runMemoryFullDataSmoke } from './smoke/memory-full-data-smoke'
+import { runJournalSemanticCacheSmoke } from './smoke/journal-semantic-cache-smoke'
+import { runJournalWeeklySmoke } from './smoke/journal-weekly-smoke'
 import { app, BrowserWindow, screen, shell, globalShortcut, dialog } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
@@ -13,6 +17,10 @@ import { setClipboardWatcherEnabled, stopClipboardWatcher } from './clipboard'
 import { registerBuiltInCapabilities } from './capabilities/builtins'
 import { capabilityRegistry } from './capabilities/registry'
 import { runMem0RuntimeSmoke } from './smoke/mem0-smoke'
+import { runMemoryPaginationSmoke } from './smoke/memory-pagination-smoke'
+import { runMem0V3Smoke } from './smoke/mem0-v3-smoke'
+import { runJournalProjectSmoke } from './smoke/journal-project-smoke'
+import { runJournalPlaybookSmoke } from './smoke/journal-playbook-smoke'
 import { runStorageRuntimeSmoke } from './smoke/storage-smoke'
 import { runChatRuntimeSmoke } from './smoke/chat-smoke'
 import { runJournalSmoke } from './smoke/journal-smoke'
@@ -235,6 +243,14 @@ app.whenReady().then(async () => {
       if (insights.byType.length !== 5 || insights.createdByWeek.length !== 8) throw new Error('Memory insights smoke test failed')
 
       await runMem0RuntimeSmoke()
+      runMemoryPaginationSmoke()
+      await runMemoryFullDataSmoke()
+      await runMem0V3Smoke()
+      runJournalProjectSmoke()
+      runJournalPlaybookSmoke()
+      runJournalWeeklySmoke()
+      runJournalSemanticCacheSmoke()
+      await runJournalMigrationSmoke()
     } catch (error) {
       console.error(`CHOUYU_SMOKE_FAILED stage=main message=${error instanceof Error ? error.message : String(error)}`)
       app.exit(1)

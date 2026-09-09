@@ -104,6 +104,8 @@ export interface ElectronAPI {
   }
   memory: {
     list: (options?: MemoryListOptions) => Promise<MemoryRecord[]>
+    listPage: (options?: MemoryListOptions) => Promise<import('../../../shared/memory').MemoryListPage>
+    refreshRemoteList: () => Promise<{ refreshedAt: number; remoteCount: number; removed: number; complete: boolean }>
     identity: () => Promise<MemoryRecord | null>
     stats: () => Promise<MemoryStats>
     search: (query: string, limit?: number) => Promise<MemorySearchResult[]>

@@ -77,7 +77,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [])
   const [showMessageSearch, setShowMessageSearch] = useState(false)
   const [showGlobalSearch, setShowGlobalSearch] = useState(false)
-  const [journalSearch, setJournalSearch] = useState<{ date: string; query: string; id: number }>()
+  const [journalSearch, setJournalSearch] = useState<{ date: string; query: string; id: number; sourceId?: string }>()
   const [messageSearchQuery, setMessageSearchQuery] = useState('')
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight })
   useEffect(() => {
@@ -770,7 +770,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       {showGlobalSearch && visible && <GlobalSearch onClose={() => setShowGlobalSearch(false)}
         onSession={async (id, query) => { await selectSession(id); navigate('chat'); setNarrowSessionsOpen(false); setMessageSearchQuery(query); setShowMessageSearch(true) }}
         onMemory={openMemoryWorkspace}
-        onJournal={(date, query) => { setJournalSearch({ date, query, id: Date.now() }); navigate('journal') }} />}
+        onJournal={(date, query, sourceId) => { setJournalSearch({ date, query, sourceId, id: Date.now() }); navigate('journal') }} />}
     </div>
   )
 }

@@ -32,6 +32,9 @@ export interface MemoryProvider {
   initialize(): void
   close(): void
   list(options?: MemoryListOptions): MemoryRecord[]
+  listPage(options?: MemoryListOptions): import('../../shared/memory').MemoryListPage
+  findByNormalizedKey?(key: string, status?: 'active' | 'pending'): MemoryRecord | undefined
+  refreshRemoteList?(): Promise<{ refreshedAt: number; remoteCount: number; removed: number; complete: boolean }>
   createCandidate(candidate: MemoryCandidateInput): MemoryRecord | null
   createActive(candidate: MemoryCandidateInput): MemoryRecord
   createActiveConfirmed?(candidate: MemoryCandidateInput): Promise<MemoryRecord>

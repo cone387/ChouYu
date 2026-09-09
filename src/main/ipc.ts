@@ -298,15 +298,25 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('capabilities:list', () => capabilityRegistry.list(getConfig()))
 
-  ipcMain.handle('memory:list', (_event, rawOptions?: MemoryListOptions) => {
+  const readMemoryList = (rawOptions?: MemoryListOptions, paged = false) => {
     runMemoryMaintenance()
     const options: MemoryListOptions = rawOptions && typeof rawOptions === 'object' ? {
       query: typeof rawOptions.query === 'string' ? rawOptions.query.slice(0, 500) : undefined,
       status: ['pending', 'active', 'archived', 'all'].includes(String(rawOptions.status)) ? rawOptions.status : 'all',
       type: ['fact', 'preference', 'person', 'project', 'workflow', 'all'].includes(String(rawOptions.type)) ? rawOptions.type : 'all',
-      limit: typeof rawOptions.limit === 'number' ? Math.min(1000, Math.max(1, rawOptions.limit)) : 500
+      limit: Number.isFinite(rawOptions.limit) ? Math.min(1000, Math.max(1, Math.floor(rawOptions.limit!))) : 500,
+      offset: Number.isFinite(rawOptions.offset) ? Math.max(0, Math.floor(rawOptions.offset!)) : 0,
+      sortBy: rawOptions.sortBy === 'importance' || rawOptions.sortBy === 'usage' ? rawOptions.sortBy : 'updated'
     } : { status: 'all', limit: 500 }
-    return getMemoryProvider().list(options)
+    return paged ? getMemoryProvider().listPage(options) : getMemoryProvider().list(options)
+  }
+  ipcMain.handle('memory:list', (_event, options) => readMemoryList(options))
+  ipcMain.handle('memory:list-page', (_event, options) => readMemoryList(options, true))
+
+  ipcMain.handle('memory:refresh-remote-list', () => {
+    const provider = getMemoryProvider()
+    if (!provider.refreshRemoteList) throw new Error('当前记忆引擎不支持远端列表刷新。')
+    return provider.refreshRemoteList()
   })
 
   ipcMain.handle('memory:stats', () => {

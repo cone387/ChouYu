@@ -6,6 +6,7 @@ import { SQLiteMemoryProvider } from './sqlite-provider'
 import { Mem0MemorySyncAdapter } from './sync/mem0-adapter'
 import { memoryConnectionScope } from './connection-scope'
 import type { MemoryUpdate } from './provider'
+import { remoteMemoryAttributes } from './remote-attributes'
 
 /**
  * Mem0-backed primary engine. SQLite is an implementation cache only; all
@@ -75,35 +76,58 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
     })
   }
 
+  refreshRemoteList(): Promise<{ refreshedAt: number; remoteCount: number; removed: number; complete: boolean }> {
+    return this.serialize(async () => {
+      this.refreshRemoteConfig()
+      const signature = this.remoteConfigSignature
+      const snapshot = await this.remote.listSnapshot()
+      const config = getConfig()
+      const mode = config.memoryEngineProvider === 'mem0-self-hosted-engine' ? 'self-hosted' : 'platform'
+      if (this.scope() !== this.cacheScope || this.signature(config, mode) !== signature) throw new Error('记忆连接已切换，已丢弃旧连接的列表。')
+      return this.db().transaction(() => {
+        const retained = new Set<string>()
+        const remoteIds = new Set(snapshot.memories.map(memory => memory.id))
+        for (const remote of snapshot.memories) {
+          const local = this.cacheRemoteMemory(remote.content, remote.metadata, remote.id)
+          if (local.status === 'pending' || retained.has(local.id)) throw new Error('远端条目与本地候选或其他远端条目存在映射冲突，缓存未修改。')
+          retained.add(local.id)
+        }
+        let removed = 0
+        if (snapshot.complete) {
+          const links = this.db().prepare('SELECT local_id,remote_id FROM mem0_links WHERE scope = ?').all(this.cacheScope) as Array<{ local_id: string; remote_id: string }>
+          for (const link of links) {
+            if (remoteIds.has(link.remote_id) || retained.has(link.local_id)) continue
+            const row = this.db().prepare('SELECT status FROM memories WHERE id = ?').get(link.local_id) as { status: string } | undefined
+            if (row && row.status !== 'pending') { super.delete(link.local_id); removed++ }
+            this.db().prepare('DELETE FROM mem0_links WHERE scope = ? AND local_id = ?').run(this.cacheScope, link.local_id)
+          }
+        }
+        return { refreshedAt: Date.now(), remoteCount: snapshot.memories.length, removed, complete: snapshot.complete }
+      })()
+    })
+  }
+
   private cacheRemoteMemory(content: string, metadata: Record<string, unknown>, remoteId: string): MemoryRecord {
     const scope = this.scope()
     const link = this.db().prepare('SELECT local_id FROM mem0_links WHERE scope = ? AND remote_id = ?').get(scope, remoteId) as { local_id: string } | undefined
     const remoteLocalId = typeof metadata.chouyu_id === 'string' ? metadata.chouyu_id : ''
-    const existing = this.list({ status: 'all', limit: 2000 }).find((item) =>
-      (link && item.id === link.local_id) || (remoteLocalId && item.id === remoteLocalId) || item.content === content
-    )
-    if (existing) {
-      this.db().prepare('INSERT OR REPLACE INTO mem0_links(scope, local_id, remote_id) VALUES (?, ?, ?)').run(scope, existing.id, remoteId)
-      const updated = existing.content === content ? existing : super.update(existing.id, { content })
-      if (metadata.chouyu_status === 'archived' && updated.status === 'active') super.archive(updated.id)
-      else if (metadata.chouyu_status === 'active' && updated.status === 'archived') super.reactivate(updated.id)
-      return this.getRequired(updated.id)
+    const match = this.db().prepare('SELECT id FROM memories WHERE id = ? OR id = ? OR content = ? ORDER BY CASE WHEN id = ? THEN 0 WHEN id = ? THEN 1 ELSE 2 END LIMIT 1')
+      .get(link?.local_id || '', remoteLocalId, content, link?.local_id || '', remoteLocalId) as { id: string } | undefined
+    const existing = match ? this.getRequired(match.id) : undefined
+    const attributes = remoteMemoryAttributes(metadata, existing)
+    const memory = existing || super.createActive({ ...attributes, content, confidence: 1 })
+    this.db().prepare('INSERT OR REPLACE INTO mem0_links(scope, local_id, remote_id) VALUES (?, ?, ?)').run(scope, memory.id, remoteId)
+    if (attributes.status === 'archived' && memory.status === 'active') super.archive(memory.id)
+    else if (attributes.status === 'active' && memory.status === 'archived') super.reactivate(memory.id)
+    const afterStatus = this.getRequired(memory.id)
+    if (afterStatus.content !== content || afterStatus.type !== attributes.type || afterStatus.importance !== attributes.importance || afterStatus.expiresAt !== attributes.expiresAt) {
+      super.update(memory.id, { content, type: attributes.type, importance: attributes.importance, expiresAt: attributes.expiresAt ?? null })
     }
-    const type = ['fact', 'preference', 'person', 'project', 'workflow'].includes(String(metadata.chouyu_type))
-      ? String(metadata.chouyu_type) as MemoryType
-      : 'fact'
-    const created = super.createActive({
-      type,
-      content,
-      importance: typeof metadata.chouyu_importance === 'number' ? metadata.chouyu_importance : 0.6,
-      confidence: 1,
-      sensitivity: metadata.chouyu_sensitivity === 'sensitive' ? 'sensitive' : 'normal',
-      sourceSessionId: typeof metadata.chouyu_source_session_id === 'string' ? metadata.chouyu_source_session_id : undefined,
-      sourceMessageId: typeof metadata.chouyu_source_message_id === 'string' ? metadata.chouyu_source_message_id : undefined
-    })
-    this.db().prepare('INSERT OR REPLACE INTO mem0_links(scope, local_id, remote_id) VALUES (?, ?, ?)').run(scope, created.id, remoteId)
-    if (metadata.chouyu_status === 'archived') super.archive(created.id)
-    return this.getRequired(created.id)
+    if (memory.sensitivity !== attributes.sensitivity || memory.sourceSessionId !== attributes.sourceSessionId || memory.sourceMessageId !== attributes.sourceMessageId) {
+      this.db().prepare('UPDATE memories SET sensitivity = ?,source_session_id = ?,source_message_id = ?,updated_at = ? WHERE id = ?')
+        .run(attributes.sensitivity, attributes.sourceSessionId ?? null, attributes.sourceMessageId ?? null, Date.now(), memory.id)
+    }
+    return this.getRequired(memory.id)
   }
 
   async rememberRaw(text: string, source?: { sessionId?: string; messageId?: string }): Promise<MemoryRecord[]> {
@@ -315,7 +339,7 @@ export class Mem0MemoryProvider extends SQLiteMemoryProvider {
     this.refreshRemoteConfig()
     if (!candidate.content.trim() || candidate.content.length > 500) throw new Error('记忆正文不能为空或超过 500 字符。')
     const pending = super.createCandidate(candidate)
-    const existing = pending || this.list({ status: 'all', limit: 2000 }).find(memory => memory.normalizedKey === normalizeMemoryKey(candidate.content) && memory.status !== 'archived')
+    const existing = pending || this.findByNormalizedKey(normalizeMemoryKey(candidate.content))
     if (!existing) throw new Error('无法创建记忆候选。')
     return existing.status === 'pending' ? this.approveConfirmed(existing.id) : existing
   }

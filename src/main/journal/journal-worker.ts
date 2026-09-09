@@ -1,3 +1,8 @@
+import { initializeSemanticCache, readSemanticCache, writeSemanticCache, clearSemanticCache } from './semantic-cache'
+import { initializeJournalWeekly, weeklySources, listWeekly, createWeekly, editWeekly, deleteWeekly } from './weekly'
+import { initializeSaved, saveJournalItem, listSaved, updateSaved, generateContinuations, saveQuickBookmark, savedUsage, replaceSaved } from './saved'
+import { initializeJournalProjects, readJournalProjects, saveJournalProject, assignJournalProject, deleteJournalProject } from './projects'
+import { initializeJournalPlaybook, listJournalPlaybook, saveJournalPlaybook, deleteJournalPlaybook } from './playbook'
 import { parentPort, workerData } from 'worker_threads'
 import Database from 'better-sqlite3'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, statSync } from 'fs'
@@ -14,7 +19,7 @@ db.pragma('journal_mode = WAL')
 db.pragma('busy_timeout = 3000')
 db.pragma('secure_delete = ON')
 const previousVersion = Number(db.pragma('user_version', { simple: true }))
-if (previousVersion > 5) throw new Error('工作日志由更新版本创建，请升级应用。')
+if (previousVersion > 11) throw new Error('工作日志由更新版本创建，请升级应用。')
 db.exec(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY, app TEXT NOT NULL, title TEXT NOT NULL, startedAt INTEGER NOT NULL, endedAt INTEGER NOT NULL);
   CREATE INDEX IF NOT EXISTS activities_time ON activities(endedAt, startedAt);
@@ -33,9 +38,14 @@ db.transaction(() => {
   const row = db.prepare('SELECT value FROM settings WHERE id=1').get() as { value: string } | undefined
   const config = migrateJournalConfig(row ? JSON.parse(row.value) : {}, previousVersion)
   // Smoke fixtures explicitly opt out before the service can start its first sample.
-  if (workerData.recordingDisabled) { config.enabled = false; config.captureEnabled = false }
+  if (workerData.recordingDisabled) { config.enabled = false; config.captureEnabled = false; config.quickBookmarkEnabled = false }
   db.prepare('INSERT OR REPLACE INTO settings(id,value) VALUES(1,?)').run(JSON.stringify(config))
-  db.pragma('user_version = 5')
+  initializeSaved(db)
+  initializeJournalProjects(db)
+  initializeJournalPlaybook(db)
+  initializeJournalWeekly(db)
+  initializeSemanticCache(db)
+  db.pragma('user_version = 11')
 })()
 const media = join(workerData.directory, 'media')
 mkdirSync(media, { recursive: true })
@@ -89,6 +99,60 @@ parentPort!.on('message', ({ id, method, payload }) => {
   try {
     let result: unknown
     switch (method) {
+      case 'generateContinuations': result = generateContinuations(db, media, payload); break
+      case 'quickBookmark': result = saveQuickBookmark(db, payload); break
+      case 'saveItem': result = saveJournalItem(db, media, payload); break
+      case 'savedItems': result = listSaved(db); break
+      case 'projects': result = readJournalProjects(db); break
+      case 'weeklySources': result = weeklySources(db, payload); break
+      case 'weekly': result = listWeekly(db); break
+      case 'createWeekly': result = createWeekly(db, payload); break
+      case 'editWeekly': result = editWeekly(db, payload); break
+      case 'deleteWeekly': result = deleteWeekly(db, payload); break
+      case 'playbook': result = listJournalPlaybook(db); break
+      case 'savePlaybook': result = saveJournalPlaybook(db, payload); break
+      case 'deletePlaybook': deleteJournalPlaybook(db, payload); break
+      case 'saveProject': result = saveJournalProject(db, payload); break
+      case 'assignProject': assignJournalProject(db, payload); break
+      case 'deleteProject': deleteJournalProject(db, payload); break
+      case 'readSemanticCache': result = readSemanticCache(db, payload); break
+      case 'writeSemanticCache': writeSemanticCache(db, payload); break
+      case 'clearSemanticCache': clearSemanticCache(db); break
+      case 'semanticInput': {
+        prune(settings().retentionDays)
+        const { from, to, app } = validateJournalQuery(payload)
+        const pattern = `%${app.replace(/[\\%_]/g, '\\$&')}%`
+        const sql = `SELECT 'activity:'||id id,MAX(startedAt,?) at,app,title,'' text FROM activities WHERE endedAt>=? AND startedAt<? AND app LIKE ? ESCAPE '\\'
+          UNION ALL SELECT 'capture:'||id id,capturedAt at,app,title,ocrText text FROM captures WHERE capturedAt>=? AND capturedAt<? AND app LIKE ? ESCAPE '\\'`
+        const args = [from, from, to, pattern, from, to, pattern]
+        const count = db.prepare(`SELECT COUNT(*) total,COALESCE(SUM(length(app)+length(title)+length(text)),0) characters FROM (${sql})`).get(...args) as { total: number; characters: number }
+        if (count.total > 600 || count.characters > 2_000_000) throw new Error('所选范围超过 600 条来源或 200 万字符，请缩小日期或应用范围。')
+        result = db.prepare(`SELECT * FROM (${sql}) ORDER BY at,id`).all(...args); break
+      }
+      case 'savedUsage': result = savedUsage(db); break
+      case 'updateSaved': updateSaved(db, payload); break
+      case 'deleteSaved': {
+        mediaName(payload)
+        db.prepare('DELETE FROM saved_items WHERE id=?').run(payload)
+        db.pragma('wal_checkpoint(TRUNCATE)'); break
+      }
+      case 'savedOcrDone': {
+        mediaName(payload.id)
+        const row = db.prepare('SELECT value FROM saved_items WHERE id=?').get(payload.id) as { value: string } | undefined
+        if (!row) throw new Error('收藏已删除，识别结果已丢弃。')
+        const item = JSON.parse(row.value)
+        if (!item.capture) throw new Error('这份收藏没有画面。')
+        item.capture.ocrText = String(payload.text || '').slice(0, 30000)
+        item.capture.ocrStatus = 'ready'; item.capture.ocrError = ''
+        replaceSaved(db, item)
+        result = item.capture; break
+      }
+      case 'savedImage': {
+        mediaName(payload)
+        const row = db.prepare('SELECT image FROM saved_items WHERE id=?').get(payload) as { image: Buffer | null } | undefined
+        if (!row?.image) throw new Error('收藏画面不存在或已删除。')
+        result = `data:image/jpeg;base64,${row.image.toString('base64')}`; break
+      }
       case 'config': result = settings(); prune((result as JournalConfig).retentionDays); break
       case 'configure': {
         const next = validateJournalConfig(payload, settings())
@@ -111,12 +175,14 @@ parentPort!.on('message', ({ id, method, payload }) => {
       }
       case 'list': {
         prune(settings().retentionDays)
-        const { from, to, query, offset } = validateJournalQuery(payload)
+        const { from, to, query, offset, app } = validateJournalQuery(payload)
         const pattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`
+        const appPattern = `%${app.replace(/[\\%_]/g, '\\$&')}%`
         const where = "endedAt >= ? AND startedAt < ? AND (app LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')"
-        const args = [from, to, pattern, pattern]
-        const items = db.prepare(`SELECT id,app,title,MAX(startedAt,?) startedAt,MIN(endedAt,?) endedAt FROM activities WHERE ${where} ORDER BY startedAt DESC,id DESC LIMIT 100 OFFSET ?`).all(from, to, ...args, offset)
-        const totals = db.prepare(`SELECT COUNT(*) total, COALESCE(SUM(MIN(endedAt,?)-MAX(startedAt,?)),0) durationMs FROM activities WHERE ${where}`).get(to, from, ...args) as object
+        const args = [from, to, pattern, pattern, appPattern]
+        const filtered = `${where} AND app LIKE ? ESCAPE '\\'`
+        const items = db.prepare(`SELECT id,app,title,MAX(startedAt,?) startedAt,MIN(endedAt,?) endedAt FROM activities WHERE ${filtered} ORDER BY startedAt DESC,id DESC LIMIT 100 OFFSET ?`).all(from, to, ...args, offset)
+        const totals = db.prepare(`SELECT COUNT(*) total, COALESCE(SUM(MIN(endedAt,?)-MAX(startedAt,?)),0) durationMs FROM activities WHERE ${filtered}`).get(to, from, ...args) as object
         result = { items, ...totals }; break
       }
       case 'deleteRange': {
@@ -206,12 +272,14 @@ parentPort!.on('message', ({ id, method, payload }) => {
       }
       case 'captures': {
         prune(settings().retentionDays)
-        const { from, to, query, offset } = validateJournalQuery(payload)
+        const { from, to, query, offset, app } = validateJournalQuery(payload)
         const pattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`
+        const appPattern = `%${app.replace(/[\\%_]/g, '\\$&')}%`
         const where = "capturedAt >= ? AND capturedAt < ? AND (app LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR ocrText LIKE ? ESCAPE '\\')"
-        const args = [from, to, pattern, pattern, pattern]
-        const items = db.prepare(`SELECT * FROM captures WHERE ${where} ORDER BY capturedAt DESC,id DESC LIMIT 30 OFFSET ?`).all(...args, offset)
-        const total = (db.prepare(`SELECT COUNT(*) total FROM captures WHERE ${where}`).get(...args) as { total: number }).total
+        const args = [from, to, pattern, pattern, pattern, appPattern]
+        const filtered = `${where} AND app LIKE ? ESCAPE '\\'`
+        const items = db.prepare(`SELECT * FROM captures WHERE ${filtered} ORDER BY capturedAt DESC,id DESC LIMIT 30 OFFSET ?`).all(...args, offset)
+        const total = (db.prepare(`SELECT COUNT(*) total FROM captures WHERE ${filtered}`).get(...args) as { total: number }).total
         result = { items, total, storageBytes: storageBytes(), pendingOcr: (db.prepare("SELECT COUNT(*) total FROM captures WHERE ocrStatus='pending'").get() as { total: number }).total }; break
       }
       case 'image': {

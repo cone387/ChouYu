@@ -1,3 +1,4 @@
+import { allMemoryRecords } from './records'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
@@ -80,6 +81,10 @@ export class SQLiteMemoryProvider implements MemoryProvider {
   initialize(): void {
     if (this.database) return
     this.database = new Database(this.filePath)
+    this.database.function('memory_contains', { deterministic: true }, (content, keywords, query) => {
+      const needle = String(query)
+      return Number(String(content).toLowerCase().includes(needle) || (JSON.parse(String(keywords)) as string[]).some(word => word.includes(needle)))
+    })
     this.database.pragma('journal_mode = WAL')
     this.database.pragma('synchronous = NORMAL')
     this.database.pragma('foreign_keys = ON')
@@ -214,23 +219,38 @@ export class SQLiteMemoryProvider implements MemoryProvider {
   }
 
   list(options: MemoryListOptions = {}): MemoryRecord[] {
-    const rows = this.db().prepare('SELECT * FROM memories ORDER BY updated_at DESC LIMIT ?').all(Math.min(2000, Math.max(1, options.limit || 500))) as MemoryRow[]
-    const normalizedQuery = options.query?.trim().toLowerCase() || ''
+    return this.listPage(options).items
+  }
+
+  listPage(options: MemoryListOptions = {}): import('../../shared/memory').MemoryListPage {
+    const limit = Number.isFinite(options.limit) ? Math.min(2000, Math.max(1, Math.floor(options.limit!))) : 500
+    const requested = Number.isFinite(options.offset) ? Math.max(0, Math.floor(options.offset!)) : 0
+    const clauses: string[] = [], args: string[] = []
+    if (options.status && options.status !== 'all') { clauses.push('status = ?'); args.push(options.status) }
+    const query = options.query?.trim().toLowerCase() || ''
+    if (query) { clauses.push('memory_contains(content, keywords, ?) = 1'); args.push(query) }
+    const where = () => clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+    const counts = this.db().prepare(`SELECT type,COUNT(*) count FROM memories ${where()} GROUP BY type`).all(...args) as Array<{ type: MemoryType; count: number }>
+    if (options.type && options.type !== 'all') { clauses.push('type = ?'); args.push(options.type) }
+    const total = (this.db().prepare(`SELECT COUNT(*) count FROM memories ${where()}`).get(...args) as { count: number }).count
+    const offset = total ? Math.min(requested, Math.floor((total - 1) / limit) * limit) : 0
+    const order = options.sortBy === 'importance' ? 'importance DESC, updated_at DESC, id' : options.sortBy === 'usage' ? 'access_count DESC, updated_at DESC, id' : 'updated_at DESC, id'
+    const rows = this.db().prepare(`SELECT * FROM memories ${where()} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...args, limit, offset) as MemoryRow[]
     const conflicts = this.listConflicts()
     const conflictsByCandidate = new Map<string, MemoryConflict[]>()
     conflicts.forEach((conflict) => conflictsByCandidate.set(conflict.candidateId, [...(conflictsByCandidate.get(conflict.candidateId) || []), conflict]))
-    return rows.map((row) => ({ ...this.mapRow(row), conflicts: conflictsByCandidate.get(row.id) })).filter((memory) => {
-      if (options.status && options.status !== 'all' && memory.status !== options.status) return false
-      if (options.type && options.type !== 'all' && memory.type !== options.type) return false
-      if (normalizedQuery && !memory.content.toLowerCase().includes(normalizedQuery) && !memory.keywords.some((keyword) => keyword.includes(normalizedQuery))) return false
-      return true
-    })
+    return { items: rows.map(row => ({ ...this.mapRow(row), conflicts: conflictsByCandidate.get(row.id) })), total, offset, typeCounts: Object.fromEntries(counts.map(row => [row.type, row.count])) }
+  }
+
+  findByNormalizedKey(key: string, status?: 'active' | 'pending'): MemoryRecord | undefined {
+    const row = this.db().prepare(`SELECT * FROM memories WHERE normalized_key=? AND ${status ? 'status=?' : "status IN ('pending','active')"} ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,updated_at DESC,id LIMIT 1`).get(...(status ? [key, status] : [key])) as MemoryRow | undefined
+    return row ? { ...this.mapRow(row), conflicts: this.listConflicts(row.id) } : undefined
   }
 
   createCandidate(candidate: MemoryCandidateInput): MemoryRecord | null {
     const normalizedKey = normalizeMemoryKey(candidate.content)
     if (!normalizedKey) return null
-    const existing = this.db().prepare("SELECT * FROM memories WHERE normalized_key = ? AND status IN ('pending', 'active') LIMIT 1").get(normalizedKey) as MemoryRow | undefined
+    const existing = this.findByNormalizedKey(normalizedKey)
     if (existing) return null
     return this.insert(candidate, 'pending')
   }
@@ -435,7 +455,7 @@ export class SQLiteMemoryProvider implements MemoryProvider {
   }
 
   exportAll(): MemoryRecord[] {
-    return this.list({ status: 'all', limit: 2000 })
+    return this.db().transaction(() => allMemoryRecords(this, { status: 'all' }))()
   }
 
   upsertEmbedding(memoryId: string, model: string, vector: number[]): void {

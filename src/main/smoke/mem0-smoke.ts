@@ -203,6 +203,54 @@ export async function runMem0RuntimeSmoke(): Promise<void> {
     try { toClear.createActive({ type: 'fact', content: '不得后台写入', importance: 0.6, confidence: 1, sensitivity: 'normal' }) } catch { legacyRejected = true }
     if (!legacyRejected || toClear.list({ status: 'all' }).length) throw new Error('Legacy synchronous mutation changed local state')
     console.log('CHOUYU_MEM0_CLEAR_SMOKE_PASSED remote-only records, pending candidates, failure preservation, user isolation, legacy guard')
+    const refreshPending = toClear.createCandidate({ type: 'fact', content: '刷新必须保留的本地候选', importance: .6, confidence: 1, sensitivity: 'normal' })
+    const remoteWrite = await fetch(`${server.url}/memories`, { method: 'POST', headers: { 'X-API-Key': SMOKE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: SMOKE_USER, messages: [{ role: 'user', content: '远端独有的刷新记录' }], infer: false }) })
+    if (!remoteWrite.ok) throw new Error('Refresh seed failed')
+    const partial = await toClear.refreshRemoteList()
+    const refreshed = toClear.list({ status: 'active' }).find(item => item.content === '远端独有的刷新记录')
+    if (partial.complete || partial.remoteCount !== 1 || !refreshed) throw new Error('Legacy remote refresh failed')
+    const metadataFixture = server.records().find(item => item.userId === SMOKE_USER)!
+    const expiry = Date.now() + 86_400_000
+    metadataFixture.metadata = { chouyu_type: 'workflow', chouyu_importance: .9, chouyu_sensitivity: 'sensitive', chouyu_status: 'archived', chouyu_expires_at: expiry, chouyu_source_session_id: 'remote-session', chouyu_source_message_id: 'remote-message' }
+    await toClear.refreshRemoteList()
+    const archivedMetadata = toClear.list({ status: 'all' }).find(item => item.id === refreshed.id)!
+    if (archivedMetadata.type !== 'workflow' || archivedMetadata.importance !== .9 || archivedMetadata.sensitivity !== 'sensitive' || archivedMetadata.status !== 'archived' || archivedMetadata.expiresAt !== expiry || archivedMetadata.sourceSessionId !== 'remote-session') throw new Error('Remote attributes were not applied')
+    metadataFixture.metadata = { chouyu_status: 'active' }
+    await toClear.refreshRemoteList()
+    const activeMetadata = toClear.list({ status: 'active' }).find(item => item.id === refreshed.id)!
+    if (!activeMetadata || activeMetadata.expiresAt !== expiry || activeMetadata.type !== 'workflow' || activeMetadata.sensitivity !== 'sensitive') throw new Error('Reactivation cleared absent remote attributes')
+    const revisionCount = toClear.listRevisions(refreshed.id).length
+    await toClear.refreshRemoteList()
+    if (toClear.list({ status: 'active' }).find(item => item.id === refreshed.id)!.updatedAt !== activeMetadata.updatedAt || toClear.listRevisions(refreshed.id).length !== revisionCount) throw new Error('Unchanged refresh rewrote metadata or revisions')
+    metadataFixture.metadata = { chouyu_expires_at: null, chouyu_source_session_id: null, chouyu_source_message_id: null }
+    await toClear.refreshRemoteList()
+    const clearedMetadata = toClear.list({ status: 'active' }).find(item => item.id === refreshed.id)!
+    if (clearedMetadata.expiresAt || clearedMetadata.sourceSessionId || clearedMetadata.sourceMessageId) throw new Error('Explicit remote null did not clear nullable attributes')
+    metadataFixture.metadata = { chouyu_importance: 'invalid' }; metadataFixture.memory = '不得部分写入的正文'
+    let metadataRejected = false
+    try { await toClear.refreshRemoteList() } catch { metadataRejected = true }
+    if (!metadataRejected || toClear.list({ status: 'active' }).find(item => item.id === refreshed.id)!.content !== refreshed.content) throw new Error('Invalid remote metadata partially updated cache')
+    metadataFixture.metadata = {}; metadataFixture.memory = refreshed.content
+    console.log('CHOUYU_MEM0_ATTRIBUTES_SMOKE_PASSED type, importance, sensitivity, expiry, source links, reactivation, idempotence and invalid metadata rollback')
+    const remoteRefreshId = server.records().find(item => item.userId === SMOKE_USER)!.id
+    await fetch(`${server.url}/memories/${remoteRefreshId}`, { method: 'DELETE', headers: { 'X-API-Key': SMOKE_KEY } })
+    await toClear.refreshRemoteList()
+    if (!toClear.list({ status: 'active' }).some(item => item.id === refreshed.id)) throw new Error('Unverified list removed cache')
+    server.setMode('auth')
+    let refreshFailed = false
+    try { await toClear.refreshRemoteList() } catch { refreshFailed = true }
+    if (!refreshFailed || !toClear.list({ status: 'active' }).some(item => item.id === refreshed.id)) throw new Error('Failed refresh changed cache')
+    server.setMode('ok'); server.setListEnvelope(true)
+    const complete = await toClear.refreshRemoteList()
+    if (!complete.complete || complete.removed !== 1 || toClear.list({ status: 'active' }).length || !toClear.list({ status: 'pending' }).some(item => item.id === refreshPending?.id)) throw new Error('Complete refresh did not reconcile cache or preserve candidate')
+    for (let index = 0; index < 2; index++) {
+      const response = await fetch(`${server.url}/memories`, { method: 'POST', headers: { 'X-API-Key': SMOKE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: SMOKE_USER, messages: [{ role: 'user', content: '同文不同远端 ID 的冲突样例' }], infer: false }) })
+      if (!response.ok) throw new Error('Refresh conflict fixture failed')
+    }
+    let conflictRejected = false
+    try { await toClear.refreshRemoteList() } catch { conflictRejected = true }
+    if (!conflictRejected || toClear.list({ status: 'active' }).length || !toClear.list({ status: 'pending' }).some(item => item.id === refreshPending?.id)) throw new Error('Refresh mapping conflict did not roll back the full transaction')
+    console.log('CHOUYU_MEM0_REFRESH_SMOKE_PASSED remote-only import, incomplete-list retention, failure preservation, complete deletion and pending preservation')
   } finally {
     try {
       closeMemory()

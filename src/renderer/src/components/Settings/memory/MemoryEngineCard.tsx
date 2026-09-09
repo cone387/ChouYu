@@ -61,10 +61,11 @@ export default function MemoryEngineCard({ config, onSaveConfig, memoryEngineCap
         <div className="memory-engine-connection-card" aria-labelledby="memory-engine-connection-title">
           <div><strong id="memory-engine-connection-title">Mem0 主记忆引擎连接</strong><span>当前主记忆引擎为 Mem0，SQLite 仅作缓存。</span></div>
           <div className="memory-engine-fields">
-            <label><span>Base URL（必填）</span><input value={syncDraft.memorySyncBaseUrl} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder={config.memoryEngineProvider === 'mem0-self-hosted-engine' ? 'http://localhost:8888/api' : 'https://api.mem0.ai/v1'} /></label>
+            <label><span>Base URL（必填）</span><input value={syncDraft.memorySyncBaseUrl} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncBaseUrl: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder={config.memoryEngineProvider === 'mem0-self-hosted-engine' ? 'http://localhost:8888/api' : 'https://api.mem0.ai/v3'} /></label>
             <label><span>User ID（必填）</span><input value={syncDraft.memorySyncUserId} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncUserId: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="用于隔离远程记忆" /></label>
             <label className="memory-engine-key-field"><span>API Key</span><div><input type={showSyncKey ? 'text' : 'password'} value={syncDraft.memorySyncApiKey} onChange={(event) => setSyncDraft((previous) => ({ ...previous, memorySyncApiKey: event.target.value }))} onBlur={() => { void saveSyncDraft() }} placeholder="Mem0 API Key" /><button type="button" onClick={() => setShowSyncKey((value) => !value)}>{showSyncKey ? '隐藏' : '显示'}</button></div></label>
           </div>
+          {config.memoryEngineProvider === 'mem0-platform-engine' && <p>平台 V3 可使用 https://api.mem0.ai/v3。切换地址后请刷新远端列表，原地址缓存仍独立保留。</p>}
           <div className="memory-engine-actions"><button type="button" onClick={() => { void testMemoryEngineConnection() }} disabled={Boolean(syncBusy)}>{syncBusy === 'test' ? '测试中…' : '测试主记忆引擎'}</button></div>
           {syncStatus && <div className="memory-engine-status" role="status">{syncStatus}</div>}
         </div>

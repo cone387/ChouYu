@@ -8,6 +8,8 @@ export function JournalDetailPanel({ id, date, onClose, onChanged, active = true
   const [detail, setDetail] = useState<JournalDetail | null>(null)
   const [frame, setFrame] = useState<JournalCapture | null>(null)
   const [selected, setSelected] = useState(id.startsWith('capture:') ? id.slice(8) : '')
+  const [savingKind, setSavingKind] = useState<'continuation' | 'bookmark' | null>(null)
+  const [savedNote, setSavedNote] = useState('')
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(''), [category, setCategory] = useState(''), [note, setNote] = useState('')
   const [error, setError] = useState(''), [notice, setNotice] = useState('')
@@ -52,6 +54,15 @@ export function JournalDetailPanel({ id, date, onClose, onChanged, active = true
       if (alive.current) { setEditing(false); setNotice('修正已保存，原始记录保留。'); setRevision(value => value + 1) }
     } catch (reason) { if (alive.current) setError(String(reason)) } finally { if (alive.current) setBusy(false) }
   }
+  const saveItem = async () => {
+    if (!detail || !savingKind || busy) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      await window.electronAPI.journal.saveItem({ ...journalRange(date), id: detail.task.id, kind: savingKind, note: savedNote, captureId: selected || undefined })
+      if (alive.current) { setSavingKind(null); setNotice('已保存到“接着做”，可跨日期回看。'); onChanged(false) }
+    } catch (reason) { if (alive.current) setError(String(reason)) }
+    finally { if (alive.current) setBusy(false) }
+  }
   const remove = async () => {
     if (!deleting || busy) return
     setBusy(true); setError('')
@@ -77,6 +88,12 @@ export function JournalDetailPanel({ id, date, onClose, onChanged, active = true
     {!detail && !error && <p role="status">正在读取活动与画面…</p>}
     {detail && <>
       <div className="journal-detail-meta"><span>{detail.task.category || kindLabel[detail.task.kind]}</span><span>{journalTime(detail.task.startedAt)} — {journalTime(detail.task.endedAt)} · {journalDuration(detail.task.durationMs)} 采样时长</span><button disabled={busy} aria-expanded={editing} onClick={() => setEditing(!editing)}>{editing ? '收起编辑' : '修正事项'}</button></div>
+      <div className="journal-actions"><button disabled={busy} onClick={() => { setSavingKind('continuation'); setSavedNote(detail.task.note) }}>添加接续卡</button><button disabled={busy || !selected} onClick={() => { setSavingKind('bookmark'); setSavedNote('') }}>保存画面书签</button></div>
+      {savingKind && <form className="journal-edit-form" onSubmit={event => { event.preventDefault(); void saveItem() }}>
+        <label>{savingKind === 'bookmark' ? '书签备注' : '下次继续的备注'}<textarea value={savedNote} maxLength={4000} rows={2} onChange={event => setSavedNote(event.target.value)} /></label>
+        <p>独立保存事项、活动来源{selected ? '及当前所选画面和识别文字' : ''}；日志到期或删除后仍保留，需到“接着做”单独删除。不调用模型。</p>
+        <div className="journal-actions"><button disabled={busy}>{busy ? '正在保存…' : '保存到接着做'}</button><button type="button" disabled={busy} onClick={() => setSavingKind(null)}>取消</button></div>
+      </form>}
       {editing && <form className="journal-edit-form" onSubmit={event => { event.preventDefault(); void save() }}>
         <label>事项标题<input aria-label="事项标题" value={title} required maxLength={200} onChange={event => setTitle(event.target.value)} /></label>
         <label>分类<input aria-label="事项分类" value={category} maxLength={40} placeholder="例如：开发、阅读、会议" onChange={event => setCategory(event.target.value)} /></label>
@@ -94,7 +111,7 @@ export function JournalDetailPanel({ id, date, onClose, onChanged, active = true
           {frame && <details className="journal-ocr-text" open><summary>识别文字</summary>{frame.ocrStatus === 'ready' ? <pre>{frame.ocrText || '没有识别到文字。'}</pre> : <p>{frame.ocrStatus === 'failed' ? frame.ocrError || '识别失败' : '等待本地识别'} <button disabled={busy} onClick={() => void retry()}>{busy ? '正在识别…' : frame.ocrStatus === 'failed' ? '重试 OCR' : '立即识别'}</button></p>}</details>}
         </> : <p className="journal-detail-no-frame">此事项没有保存的画面，以下原始活动仍可回看。</p>}
       </section>
-      {deleting && <div className="journal-delete" role="alert"><span>{deleting.type === 'activity' ? '删除这条完整活动及关联画面？跨日活动也会一并删除。' : '删除这张画面及识别文字？活动标题仍保留。'} 引用它的修正和可重新生成的总结会清理，此操作不可撤销。</span><div><button disabled={busy} onClick={() => setDeleting(null)}>取消</button><button disabled={busy} onClick={() => void remove()}>确认删除</button></div></div>}
+      {deleting && <div className="journal-delete" role="alert"><span>{deleting.type === 'activity' ? '删除这条完整活动及关联画面？跨日活动也会一并删除。' : '删除这张画面及识别文字？活动标题仍保留。'} 引用它的修正和可重新生成的总结会清理。独立收藏仍保留，请到“接着做”单独删除。此操作不可撤销。</span><div><button disabled={busy} onClick={() => setDeleting(null)}>取消</button><button disabled={busy} onClick={() => void remove()}>确认删除</button></div></div>}
       <section className="journal-detail-activities"><h3>原始活动 <small>{detail.activities.length} 条</small></h3>{detail.activities.map(activity => <article key={activity.id} data-source-id={`activity:${activity.id}`} className={id === `activity:${activity.id}` ? 'is-selected-source' : ''}>
         <div><time>{journalTime(activity.startedAt)} — {journalTime(activity.endedAt)}</time><span>{activity.app.replace(/\.exe$/i, '')}</span></div><p>{activity.title || '无窗口标题'}</p>
         <div><button disabled={!frames.some(item => item.activityId === activity.id)} onClick={() => { setSelected(frames.find(item => item.activityId === activity.id)!.id); dialog.current?.querySelector('.journal-detail-frames')?.scrollIntoView({ block: 'start' }) }}>查看关联画面</button><button disabled={busy} onClick={() => { setDeleting({ type: 'activity', id: activity.id }); setTimeout(() => dialog.current?.querySelector('.journal-delete')?.scrollIntoView({ block: 'center' }), 0) }}>删除这条活动</button></div>

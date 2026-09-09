@@ -1,9 +1,10 @@
+import { existsSync } from 'fs'
 import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_JOURNAL_CONFIG } from '../../shared/journal'
 
-const mock = vi.hoisted(() => ({ screen: vi.fn(() => 'granted'), read: vi.fn(), stop: vi.fn(), idle: vi.fn(), capture: vi.fn(), ocr: vi.fn(), summarize: vi.fn(), answer: vi.fn(), worker: null as any, config: null as any, writes: [] as any[], sources: [] as any[] }))
-vi.mock('./summary', () => ({ generateJournalSummary: mock.summarize, answerJournalQuestion: mock.answer }))
+const mock = vi.hoisted(() => ({ screen: vi.fn(() => 'granted'), read: vi.fn(), stop: vi.fn(), idle: vi.fn(), capture: vi.fn(), ocr: vi.fn(), summarize: vi.fn(), answer: vi.fn(), worker: null as any, config: null as any, writes: [] as any[], sources: [] as any[], cachedSummary: null as any }))
+vi.mock('./summary', async importOriginal => ({ ...await importOriginal<typeof import('./summary')>(), generateJournalSummary: mock.summarize, answerJournalQuestion: mock.answer }))
 vi.mock('../database', () => ({ getConfig: () => ({ model: 'test' }) }))
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('events')
@@ -17,7 +18,8 @@ vi.mock('worker_threads', () => ({ Worker: class extends EventEmitter {
   postMessage({ id, method, payload }: any) {
     mock.writes.push({ method, payload })
     if (method === 'configure') mock.config = payload
-    queueMicrotask(() => this.emit('message', { id, result: method === 'config' || method === 'configure' ? mock.config : method === 'sample' ? 1 : method === 'ocrJob' ? { id: payload, path: 'synthetic-only.jpg' } : method === 'summaryInput' ? { sources: mock.sources, truncated: false, generation: 0 } : null }))
+    if (method === 'summarySave') mock.cachedSummary = payload.summary
+    queueMicrotask(() => this.emit('message', { id, result: method === 'savedImage' ? 'data:image/jpeg;base64,Zml4dHVyZQ==' : method === 'savedOcrDone' ? { ocrText: payload.text, ocrStatus: 'ready' } : method === 'quickBookmark' ? { id: 'quick-fixture' } : method === 'summary' || method === 'summarySave' ? mock.cachedSummary : method === 'generateContinuations' ? { created: 1, skipped: 0, considered: 1 } : method === 'config' || method === 'configure' ? mock.config : method === 'sample' ? 1 : method === 'ocrJob' ? { id: payload, path: 'synthetic-only.jpg' } : method === 'summaryInput' ? { sources: mock.sources, truncated: false, generation: 0 } : null }))
   }
   terminate = vi.fn(async () => 0)
 } }))
@@ -30,7 +32,7 @@ describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s',
   beforeEach(async () => {
     Object.defineProperty(process, 'platform', { value: platform })
     mock.screen.mockReturnValue('granted')
-    vi.useFakeTimers(); mock.writes = []; mock.sources = []; mock.config = { ...DEFAULT_JOURNAL_CONFIG, enabled: false, captureEnabled: false }
+    vi.useFakeTimers(); mock.writes = []; mock.sources = []; mock.cachedSummary = null; mock.config = { ...DEFAULT_JOURNAL_CONFIG, enabled: false, captureEnabled: false }
     mock.read.mockReset(); mock.stop.mockReset(); mock.idle.mockReturnValue(0)
     mock.read.mockResolvedValue({ app: 'editor.exe', title: '合成工作记录', pid: 123456, hwnd: '100' })
     mock.capture.mockReset(); mock.ocr.mockReset(); mock.summarize.mockReset(); mock.answer.mockReset()
@@ -60,6 +62,79 @@ describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s',
     await service.summarize({ from: 1, to: 100 }).catch(() => {})
     expect(mock.writes.find(item => item.method === 'analysisStart').payload).toMatchObject({ kind: 'summary', requestedModel: 'test' })
     expect(mock.writes.find(item => item.method === 'analysisFinish').payload).toMatchObject({ state, model: 'resolved-model', usage: { totalTokens: 15 } })
+  })
+  it('reuses an existing summary without another model request', async () => {
+    mock.cachedSummary = { createdAt: 100, items: [] }
+    const result = await service.generateContinuations({ from: 1, to: 1000 })
+    expect(result.created).toBe(1)
+    expect(mock.summarize).not.toHaveBeenCalled()
+    expect(mock.writes.find(item => item.method === 'generateContinuations').payload.summaryCreatedAt).toBe(100)
+  })
+  it.each(['delete', 'cancel'] as const)('does not publish late cards after %s during model generation', async action => {
+    mock.sources = [{ id: 'activity:1', at: 1, app: 'test', title: 'fixture', text: '' }]
+    let finish!: (value: any) => void
+    mock.summarize.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const generation = service.generateContinuations({ from: 1, to: 1000 })
+    const rejection = expect(generation).rejects.toThrow()
+    await vi.advanceTimersByTimeAsync(0)
+    if (action === 'delete') await service.deleteSaved('synthetic')
+    else service.cancelAnalysis()
+    finish({ createdAt: 100, items: [] })
+    await rejection
+    expect(mock.writes.some(item => item.method === 'generateContinuations')).toBe(false)
+  })
+  it('captures one explicit bookmark while continuous recording stays disabled', async () => {
+    await service.configure({ quickBookmarkEnabled: true })
+    await service.quickBookmark()
+    expect(service.status()).toMatchObject({ config: { enabled: false }, state: 'off', quickBookmarkId: 'quick-fixture' })
+    expect(mock.capture).toHaveBeenCalledExactlyOnceWith('100')
+    const write = mock.writes.find(item => item.method === 'quickBookmark')
+    expect(write.payload).toMatchObject({ sample: { app: 'editor.exe', hwnd: '100' }, width: 100, height: 100 })
+    expect(mock.writes.some(item => item.method === 'sample')).toBe(false)
+    await service.deleteSaved('quick-fixture')
+    expect(service.status().quickBookmarkId).toBe('')
+  })
+  it('requires opt-in and respects excluded applications', async () => {
+    await expect(service.quickBookmark()).rejects.toThrow('开启')
+    await service.configure({ quickBookmarkEnabled: true, excludedApps: ['editor.exe'] })
+    await expect(service.quickBookmark()).rejects.toThrow('排除')
+    expect(mock.capture).not.toHaveBeenCalled()
+  })
+  it('rejects a frame if the foreground window changes during acquisition', async () => {
+    await service.configure({ quickBookmarkEnabled: true })
+    mock.read.mockResolvedValueOnce({ app: 'editor.exe', title: 'before', pid: 12, hwnd: '100' })
+      .mockResolvedValueOnce({ app: 'editor.exe', title: 'after', pid: 12, hwnd: '100' })
+    await expect(service.quickBookmark()).rejects.toThrow('窗口已切换')
+    expect(mock.writes.some(item => item.method === 'quickBookmark')).toBe(false)
+  })
+  it.each(['lock', 'delete', 'configure'] as const)('rejects late bookmark bytes after %s and prevents overlapping captures', async action => {
+    await service.configure({ quickBookmarkEnabled: true })
+    let finish!: (value: any) => void
+    mock.capture.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const capture = service.quickBookmark()
+    const rejection = expect(capture).rejects.toThrow('取消')
+    await vi.advanceTimersByTimeAsync(0)
+    await expect(service.quickBookmark()).rejects.toThrow('正在保存')
+    if (action === 'lock') powerMonitor.emit('lock-screen')
+    else if (action === 'delete') await service.deleteSaved('old')
+    else await service.configure({ quickBookmarkEnabled: false })
+    finish({ bytes: Buffer.from('late'), width: 100, height: 100 })
+    await rejection
+    expect(mock.writes.some(item => item.method === 'quickBookmark')).toBe(false)
+  })
+  it('cleans up its temporary image after local saved OCR', async () => {
+    let imagePath = ''
+    mock.ocr.mockImplementation(async path => { imagePath = path; expect(existsSync(path)).toBe(true); return 'recognized text' })
+    const result = await service.retrySavedOcr('saved')
+    expect(result.ocrText).toBe('recognized text')
+    expect(existsSync(imagePath)).toBe(false)
+  })
+  it('does not write late OCR after saved item deletion and removes its temporary image', async () => {
+    let imagePath = ''
+    mock.ocr.mockImplementation(async path => { imagePath = path; await service.deleteSaved('saved'); return 'late text' })
+    await expect(service.retrySavedOcr('saved')).rejects.toThrow('取消')
+    expect(mock.writes.some(item => item.method === 'savedOcrDone')).toBe(false)
+    expect(existsSync(imagePath)).toBe(false)
   })
   it('respects a saved disabled preference', async () => {
     await vi.advanceTimersByTimeAsync(20_000)

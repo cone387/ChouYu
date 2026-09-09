@@ -203,7 +203,11 @@ export interface MemoryListOptions {
   status?: MemoryStatus | 'all'
   type?: MemoryType | 'all'
   limit?: number
+  offset?: number
+  sortBy?: 'updated' | 'importance' | 'usage'
 }
+
+export interface MemoryListPage { items: MemoryRecord[]; total: number; offset: number; typeCounts: Partial<Record<MemoryType, number>> }
 
 const SECRET_PATTERNS = [
   /\bsk-[a-z0-9_-]{12,}\b/i,

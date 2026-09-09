@@ -38,6 +38,10 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'all' | 'active' | 'pending' | 'archived'>('active')
   const [type, setType] = useState<'all' | MemoryType>('all')
+  const [page, setPage] = useState(0)
+  const [pageTotal, setPageTotal] = useState(0)
+  const [memoryTypeCounts, setMemoryTypeCounts] = useState<Partial<Record<MemoryType, number>>>({})
+  const listRequest = useRef(0)
   const [sortBy, setSortBy] = useState<'updated' | 'importance' | 'usage'>('updated')
   const [editingId, setEditingId] = useState('')
   const [editingContent, setEditingContent] = useState('')
@@ -46,6 +50,11 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [showAdd, setShowAdd] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [busyId, setBusyId] = useState('')
+  const [remoteListNotice, setRemoteListNotice] = useState('')
+  const remoteListScope = JSON.stringify([config.memoryEngineProvider, config.memorySyncBaseUrl, config.memorySyncUserId, config.memorySyncApiKey])
+  const remoteListScopeRef = useRef(remoteListScope)
+  remoteListScopeRef.current = remoteListScope
+  useEffect(() => { setRemoteListNotice(''); setMemories([]); setLoading(true) }, [remoteListScope])
   const [historyId, setHistoryId] = useState('')
   const [revisions, setRevisions] = useState<MemoryRevision[]>([])
   const [restoreConfirmId, setRestoreConfirmId] = useState('')
@@ -121,32 +130,39 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     return () => cancelAnimationFrame(frame)
   }, [activeView, workspace, active])
 
+  useEffect(() => { setPage(0); listRequest.current++ }, [query, status, type, sortBy, remoteListScope])
+
   const refresh = useCallback(async () => {
+    const scope = remoteListScopeRef.current
+    const request = ++listRequest.current
     setError('')
     try {
       const [items, nextStats, nextInsights, nextIdentity] = await Promise.all([
-        window.electronAPI.memory.list({ query, status, type, limit: 500 }),
+        window.electronAPI.memory.listPage({ query, status, type, sortBy, limit: 50, offset: page * 50 }),
         window.electronAPI.memory.stats(),
         window.electronAPI.memory.insights(),
         window.electronAPI.memory.identity()
       ])
-      setMemories(items)
+      if (remoteListScopeRef.current !== scope || request !== listRequest.current) return
+      setMemories(items.items)
+      setPageTotal(items.total); setMemoryTypeCounts(items.typeCounts)
+      if (items.offset !== page * 50) setPage(Math.floor(items.offset / 50))
       setStats(nextStats)
       setInsights(nextInsights)
       setIdentity(nextIdentity)
       if (!identityEditing) setIdentityDraft(nextIdentity ? (extractPersonName(nextIdentity.content) || nextIdentity.content) : '')
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '记忆中心加载失败。')
+      if (remoteListScopeRef.current === scope && request === listRequest.current) setError(reason instanceof Error ? reason.message : '记忆中心加载失败。')
     } finally {
-      setLoading(false)
+      if (remoteListScopeRef.current === scope && request === listRequest.current) setLoading(false)
     }
-  }, [identityEditing, query, status, type])
+  }, [identityEditing, query, status, type, sortBy, page])
 
   useEffect(() => {
     if (!active) return
     const timer = setTimeout(() => { void refresh() }, 180)
     return () => clearTimeout(timer)
-  }, [refresh, active])
+  }, [refresh, active, remoteListScope])
 
   useEffect(() => {
     if (!active || !focusMemoryId || memories.length === 0) return
@@ -275,12 +291,7 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   }, [topicMergeMode])
 
   const selectedTopicType = memories.find((memory) => topicSelection.has(memory.id))?.type
-  const orderedMemories = [...memories].sort((left, right) => sortBy === 'importance'
-    ? right.importance - left.importance || right.updatedAt - left.updatedAt
-    : sortBy === 'usage'
-      ? right.accessCount - left.accessCount || right.updatedAt - left.updatedAt
-      : right.updatedAt - left.updatedAt)
-  const memoryTypeCounts = Object.fromEntries((Object.keys(TYPE_LABELS) as MemoryType[]).map((memoryType) => [memoryType, memories.filter((memory) => memory.type === memoryType).length])) as Record<MemoryType, number>
+  const orderedMemories = memories
   const memoryEngineCapabilities = capabilities.filter((item) => item.kind === 'memory-engine')
   const embeddingCapabilities = capabilities.filter((item) => item.kind === 'embedding')
 
@@ -465,7 +476,18 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
       </div>}
 
       {!loading && (activeView === 'review' || activeView === 'library') && <div className={`memory-view memory-library-view${activeView === 'review' ? ' is-review' : ''}`}>
-      {isRemoteEngine && <p role="note">当前展示 ChouYu 已缓存的 Mem0 记忆及数量，不代表远端完整记忆库。</p>}
+      {isRemoteEngine && <div>
+        <p role="note">列表展示本地缓存，每页 50 条，筛选与排序覆盖全部缓存。手动刷新会读取远端列表；服务未提供可核对的完整条数时，保留未返回的旧缓存。</p>
+        <button type="button" className="memory-remote-refresh" disabled={!!busyId} onClick={() => {
+          const scope = remoteListScope
+          setRemoteListNotice('')
+          void run('refresh-remote-list', async () => {
+            const result = await window.electronAPI.memory.refreshRemoteList()
+            if (remoteListScopeRef.current === scope) setRemoteListNotice(`${new Date(result.refreshedAt).toLocaleString()}：读取 ${result.remoteCount} 条远端记忆。${result.complete ? `已核对总数，移除 ${result.removed} 条远端已不存在的缓存。` : '服务未提供完整总数，仅更新返回条目，未清除旧缓存。'}`)
+          })
+        }}>{busyId === 'refresh-remote-list' ? '正在读取远端列表…' : '刷新 Mem0 远端列表'}</button>
+        {remoteListNotice && <p role="status">{remoteListNotice}</p>}
+      </div>}
       {activeView === 'library' && <div className="memory-status-summary" aria-label="记忆概况">
         <span>已确认 <strong>{stats.active}</strong></span>
         <span>待确认 <strong>{stats.pending}</strong></span>
@@ -506,8 +528,9 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
         <select value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)} aria-label="记忆排序"><option value="updated">最近更新</option><option value="importance">重要度</option><option value="usage">使用次数</option></select>
       </div>
 
-      <div className="memory-library-summary"><span>显示 <strong>{orderedMemories.length}</strong> 条记忆</span><div className="memory-type-chips"><button type="button" className={type === 'all' ? 'active' : ''} aria-pressed={type === 'all'} onClick={() => setType('all')}>全部</button>{(Object.keys(TYPE_LABELS) as MemoryType[]).map((memoryType) => <button type="button" key={memoryType} className={type === memoryType ? 'active' : ''} aria-pressed={type === memoryType} onClick={() => setType(memoryType)}>{TYPE_LABELS[memoryType]} <b>{memoryTypeCounts[memoryType] || 0}</b></button>)}</div></div>
+      <div className="memory-library-summary"><span>本页 <strong>{orderedMemories.length}</strong> 条，共 {pageTotal} 条匹配记忆</span><div className="memory-type-chips"><button type="button" className={type === 'all' ? 'active' : ''} aria-pressed={type === 'all'} onClick={() => setType('all')}>全部</button>{(Object.keys(TYPE_LABELS) as MemoryType[]).map((memoryType) => <button type="button" key={memoryType} className={type === memoryType ? 'active' : ''} aria-pressed={type === memoryType} onClick={() => setType(memoryType)}>{TYPE_LABELS[memoryType]} <b>{memoryTypeCounts[memoryType] || 0}</b></button>)}</div></div>
 
+      <nav className="memory-pagination" aria-label="记忆分页"><button type="button" disabled={loading || !!busyId || page === 0} onClick={() => { listRequest.current++; setPage(value => value - 1) }}>上一页记忆</button><span>第 {pageTotal ? page + 1 : 0} / {Math.ceil(pageTotal / 50)} 页</span><button type="button" disabled={loading || !!busyId || (page + 1) * 50 >= pageTotal} onClick={() => { listRequest.current++; setPage(value => value + 1) }}>下一页记忆</button></nav>
       <div className="memory-list">
         {orderedMemories.map((memory) => {
           const conflicts = memory.conflicts?.filter((conflict) => conflict.status === 'pending') || []

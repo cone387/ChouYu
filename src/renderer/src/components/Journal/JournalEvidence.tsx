@@ -1,4 +1,5 @@
 import { JournalUsage } from './JournalUsage'
+import { journalDateKey, journalSearchRange } from '../../core/journal-search'
 import { useEffect, useRef, useState } from 'react'
 import type { JournalAnswer, JournalCapture, JournalCapturePage, JournalSummary } from '../../../../shared/journal'
 
@@ -112,38 +113,43 @@ export function JournalSummaryView({ date, revision, onGenerated, onOpenSource }
   </section>
 }
 
-interface AskSession { question: string; answer: JournalAnswer | null; asked: string; busy: boolean; error: string }
-const emptyAsk: AskSession = { question: '', answer: null, asked: '', busy: false, error: '' }
+interface AskSession { question: string; turns: { question: string; answer: JournalAnswer }[]; busy: boolean; error: string }
+const emptyAsk: AskSession = { question: '', turns: [], busy: false, error: '' }
 
-export function JournalAsk({ date, onOpenSource }: { date: string; onOpenSource?(id: string): void }) {
+export function JournalAsk({ date, onOpenSource }: { date: string; onOpenSource?(id: string, sourceDate?: string): void }) {
   const [sessions, setSessions] = useState<Record<string, AskSession>>({})
-  const { question, answer, asked, busy, error } = sessions[date] || emptyAsk
-  const update = (patch: Partial<AskSession>) => setSessions(previous => ({ ...previous, [date]: { ...(previous[date] || emptyAsk), ...patch } }))
+  const [ranges, setRanges] = useState<Record<string, { start: string; end: string }>>({})
+  const chosen = ranges[date] || { start: date, end: date }
+  const sessionKey = `${chosen.start}:${chosen.end}`
+  const { question, turns, busy, error } = sessions[sessionKey] || emptyAsk
+  let range: { from: number; to: number } | undefined, rangeError = ''
+  try { range = journalSearchRange(chosen.start, chosen.end) } catch (reason) { rangeError = (reason as Error).message }
+  const changeRange = (patch: Partial<typeof chosen>) => { setRanges(previous => ({ ...previous, [date]: { ...chosen, ...patch } })); setImage('') }
+  const update = (patch: Partial<AskSession>) => setSessions(previous => ({ ...previous, [sessionKey]: { ...(previous[sessionKey] || emptyAsk), ...patch } }))
   const setQuestion = (question: string) => update({ question })
-  const setAnswer = (answer: JournalAnswer | null) => update({ answer })
-  const setAsked = (asked: string) => update({ asked })
   const setBusy = (busy: boolean) => update({ busy })
   const setError = (error: string) => update({ error })
   const [image, setImage] = useState('')
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const ask = async () => {
-    if (busy || !question.trim()) return
-    setBusy(true); setError(''); setAnswer(null); setAsked(question.trim())
-    try { const result = await window.electronAPI.journal.ask({ ...journalRange(date), question: question.trim() }); if (alive.current) setAnswer(result) }
+    if (busy || !question.trim() || !range) return
+    setBusy(true); setError('')
+    try { const result = await window.electronAPI.journal.ask({ ...range, question: question.trim(), conversationId: turns.at(-1)?.answer.conversationId }); if (alive.current) update({ turns: [...turns, { question: question.trim(), answer: result }].slice(-20) }) }
     catch (reason) { if (alive.current) setError(String(reason)) }
     finally { if (alive.current) setBusy(false) }
   }
   return <section className="journal-ask">
-    <h2>从这一天的记录里找答案</h2><p>只分析 {date} 的活动和识别文字。提问会将问题及这些文字发送至当前 AI 服务，回答附来源。</p>
-    <div className="journal-question-examples">{['有哪些具体文档或报告可以接着看？', '今天遇到了哪些报错？', '有哪些事情还需要确认结果？'].map(value => <button key={value} disabled={busy} onClick={() => setQuestion(value)}>{value}</button>)}</div>
-    <form onSubmit={event => { event.preventDefault(); void ask() }}><label htmlFor="journal-question">想找回什么</label><textarea id="journal-question" value={question} maxLength={1000} rows={3} placeholder="例如：下午看的评测报告叫什么？" onChange={event => setQuestion(event.target.value)} /><button className="journal-primary" disabled={busy || !question.trim()}>{busy ? '正在查找依据…' : '查找答案'}</button></form>
+    <h2>从日志里找答案</h2><div className="journal-question-range"><label>开始日期<input type="date" aria-label="问答开始日期" value={chosen.start} disabled={busy} onChange={event => changeRange({ start: event.target.value })} /></label><label>结束日期<input type="date" aria-label="问答结束日期" value={chosen.end} disabled={busy} onChange={event => changeRange({ end: event.target.value })} /></label><button disabled={busy} onClick={() => changeRange({ start: date, end: date })}>只问 {date}</button></div>{rangeError && <p role="alert" className="journal-error">{rangeError}</p>}<p>只分析 {chosen.start} 至 {chosen.end} 的活动和识别文字（含结束当天，最多 31 天）。提问会将问题、最近 5 轮问答及本次证据发送至当前 AI 服务，回答附来源。会话仅在本次窗口内保留，界面展示最近 20 轮。</p><button disabled={busy} onClick={() => { update({ question: '', turns: [], error: '' }); setImage('') }}>开始新问答</button>
+    <div className="journal-question-examples">{['有哪些具体文档或报告可以接着看？', '这段时间遇到了哪些报错？', '有哪些事情还需要确认结果？'].map(value => <button key={value} disabled={busy} onClick={() => setQuestion(value)}>{value}</button>)}</div>
+
     {error && <p role="alert" className="journal-error">{error}</p>}
     {busy && <p role="status">正在整理所选日期的证据，最长等待 2 分钟。<button onClick={() => void window.electronAPI.journal.cancelAnalysis().catch(reason => setError(String(reason)))}>取消查找</button></p>}
-    {answer && <article className="journal-answer"><h3>{asked}</h3><p>{answer.text}</p><p>{answer.model}<br /><JournalUsage usage={answer.usage} /></p>{answer.truncated && <p>本次使用抽样记录，未找到的内容可能在未覆盖的片段中。</p>}
-      <div className="journal-source-links">{answer.sources.map(source => <button key={source.id} onClick={() => { if (onOpenSource) onOpenSource(source.id); else if (source.id.startsWith('capture:')) setImage(source.id.slice(8)); else { const target = document.getElementById(`answer-${source.id}`); const details = target?.closest('details'); if (details) details.open = true; target?.scrollIntoView({ block: 'nearest' }) } }}>{clock(source.at)} · {source.id.startsWith('capture:') ? '查看画面' : '活动依据'}</button>)}</div>
-      {!!answer.sources.length && <details><summary>引用的原始记录</summary>{answer.sources.map(source => <div key={source.id} id={`answer-${source.id}`}><strong>{clock(source.at)} · {source.app}</strong><p>{source.title}</p>{source.text && <pre>{source.text}</pre>}</div>)}</details>}
-    </article>}
+    {turns.map(({ question: asked, answer }, turnIndex) => <article className="journal-answer" key={answer.conversationId || turnIndex}><h3>{asked}</h3><p>{answer.text}</p><p>{answer.model}<br /><JournalUsage usage={answer.usage} /></p>{answer.truncated && <p>本次使用抽样记录，未找到的内容可能在未覆盖的片段中。</p>}
+      <div className="journal-source-links">{answer.sources.map(source => <button key={source.id} onClick={() => { if (onOpenSource) onOpenSource(source.id, journalDateKey(source.at)); else if (source.id.startsWith('capture:')) setImage(source.id.slice(8)); else { const target = document.getElementById(`answer-${turnIndex}-${source.id}`); const details = target?.closest('details'); if (details) details.open = true; target?.scrollIntoView({ block: 'nearest' }) } }}>{journalDateKey(source.at)} {clock(source.at)} · {source.id.startsWith('capture:') ? '查看画面' : '活动依据'}</button>)}</div>
+      {!!answer.sources.length && <details><summary>引用的原始记录</summary>{answer.sources.map(source => <div key={source.id} id={`answer-${turnIndex}-${source.id}`}><strong>{journalDateKey(source.at)} {clock(source.at)} · {source.app}</strong><p>{source.title}</p>{source.text && <pre>{source.text}</pre>}</div>)}</details>}
+    </article>)}
+    <form onSubmit={event => { event.preventDefault(); void ask() }}><label htmlFor="journal-question">想找回什么</label><textarea id="journal-question" value={question} maxLength={1000} rows={3} placeholder="例如：下午看的评测报告叫什么？" onChange={event => setQuestion(event.target.value)} /><button className="journal-primary" disabled={busy || !question.trim() || !range}>{busy ? '正在查找依据…' : turns.length ? '继续追问' : '查找答案'}</button></form>
     {image && <CaptureDetail id={image} onClose={() => setImage('')} />}
   </section>
 }
