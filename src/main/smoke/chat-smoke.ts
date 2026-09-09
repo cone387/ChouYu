@@ -29,6 +29,7 @@ async function click(window: BrowserWindow, selector: string): Promise<void> {
 async function snapshots(window: BrowserWindow, name: string, focus?: string): Promise<void> {
   const directory = process.env['CHOUYU_SMOKE_ARTIFACTS']
   if (!directory) return
+  if (process.env.CHOUYU_SMOKE_SNAPSHOT_FILTER && !name.includes(process.env.CHOUYU_SMOKE_SNAPSHOT_FILTER)) return
   const originalViewport = await window.webContents.executeJavaScript('({ width: innerWidth, height: innerHeight })')
   fs.mkdirSync(directory, { recursive: true })
   for (const theme of ['light', 'dark']) {
@@ -66,7 +67,12 @@ async function snapshots(window: BrowserWindow, name: string, focus?: string): P
           const settingsBody = panel.querySelector('.settings-body').getBoundingClientRect();
           if (Math.abs(settingsNav.getBoundingClientRect().width - settingsBody.width) > 1) return 'Narrow settings navigation does not fill its row';
         }
-        for (const selector of ['.message-area', '.settings-content', '.message-search', '.memory-workspace-content', '.tool-approval-dialog']) {
+        const search = document.querySelector('.global-search-dialog');
+        if (search?.open) {
+          const bounds = search.getBoundingClientRect();
+          if (bounds.left < rect.left || bounds.right > rect.right + 1 || bounds.bottom > rect.bottom + 1) return 'Search panel outside workspace';
+        }
+        for (const selector of ['.message-area', '.settings-content', '.message-search', '.memory-workspace-content', '.tool-approval-dialog', '.global-search-dialog', '.global-search-body']) {
           const element = document.querySelector(selector);
           if (element?.getClientRects().length && element.scrollWidth > element.clientWidth + 1) return selector + ' overflows';
         }
@@ -231,9 +237,15 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await click(window, '[aria-label="窗口模式"]')
     await click(window, '[data-workspace-mode-option="workspace"]')
     await snapshots(window, 'workspace-sessions')
-    await input(window, '.conversation-search input', '海盐拿铁')
-    await waitForRenderer(window, "document.querySelectorAll('.conversation-item-main').length === 1 && document.querySelector('.conversation-item-preview')?.textContent.includes('海盐拿铁')")
-    await click(window, '.conversation-item-main')
+    if (await window.webContents.executeJavaScript("Boolean(document.querySelector('.conversation-search'))")) throw new Error('Duplicate sidebar search remains')
+    await click(window, '[aria-label="全局搜索"]')
+    await waitForRenderer(window, "document.querySelector('.global-search-heading input')?.value === '海盐拿铁'")
+    await click(window, '[data-search-scope="session"]')
+    await waitForRenderer(window, "document.querySelectorAll('.global-search-result').length === 1 && !document.querySelector('.global-search-range')")
+    await snapshots(window, 'unified-search')
+    await window.webContents.executeJavaScript("document.querySelector('.global-search-heading input').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))")
+    await waitForRenderer(window, "document.activeElement?.classList.contains('global-search-result')")
+    await click(window, '.global-search-result')
     await waitForRenderer(window, "document.querySelector('.message-bubble mark')?.textContent === '海盐拿铁'")
     await click(window, '[aria-label="关闭对话内搜索"]')
 
@@ -261,6 +273,19 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('[data-workspace-page=journal]') && document.querySelector('.journal-date input')")
     await input(window, '.journal-date input', '2001-01-02')
     await input(window, '.journal-search input', '导航保留活动')
+    await window.webContents.executeJavaScript(`(async () => {
+      if (document.querySelector('.workspace-brand-status')) throw new Error('Navigation logo status dot remains');
+      const shell = document.querySelector('.journal-shell');
+      shell.scrollTop = 0;
+      const nav = document.querySelector('.journal-view-nav');
+      const before = nav.getBoundingClientRect();
+      for (const button of [...nav.querySelectorAll('button'), nav.querySelector('button')]) {
+        button.click();
+        await new Promise(resolve => setTimeout(resolve, 250));
+        const after = nav.getBoundingClientRect();
+        if (Math.abs(after.top - before.top) > 1 || Math.abs(after.height - before.height) > 1) throw new Error('Journal tabs moved when selecting ' + button.textContent + JSON.stringify({before: before.toJSON(), after: after.toJSON(), scroll: shell.scrollTop}));
+      }
+    })()`)
     await snapshots(window, 'workspace-activity')
     await click(window, '[data-workspace-nav="settings"]')
     await waitForRenderer(window, "document.querySelector('[data-workspace-page=settings]') && document.querySelector('.settings-content')")
@@ -405,7 +430,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await click(window, '[aria-label="窗口模式"]')
     await click(window, '[data-workspace-mode-option="workspace"]')
     await waitForRenderer(window, "document.querySelector('.workspace-sessions:not([hidden])')")
-    await window.webContents.executeJavaScript("document.querySelector('.conversation-search input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
+    await window.webContents.executeJavaScript("document.querySelector('.conversation-item-main').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
     await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     console.log('CHOUYU_CHAT_SMOKE_PASSED markdown, full-text search, streaming scroll, settings, memory CRUD, approval keyboard')
   } catch (error) {

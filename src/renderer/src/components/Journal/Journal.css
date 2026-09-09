@@ -1,4 +1,4 @@
-.journal-shell { height: 100vh; overflow: auto; background: var(--bg-panel); color: var(--text-primary); padding: 24px clamp(20px, 3vw, 40px); user-select: text; }
+.journal-shell { height: 100vh; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable; background: var(--bg-panel); color: var(--text-primary); padding: 24px clamp(20px, 3vw, 40px); user-select: text; }
 .journal-shell button, .journal-shell input, .journal-shell select, .journal-shell textarea { font: inherit; }
 .journal-shell button { min-height: 36px; padding: 7px 13px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text-primary); cursor: pointer; }
 .journal-shell button:hover { background: var(--hover-bg); }
@@ -15,6 +15,7 @@
 .journal-status.state-error i { background: var(--error); }
 .journal-welcome { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 22px; }
 .journal-welcome > div { max-width: 660px; }
+
 .journal-shell .journal-primary { background: var(--accent); border-color: var(--accent); color: white; flex-shrink: 0; }
 .journal-settings { display: grid; grid-template-columns: 1.4fr 1fr; gap: 28px; border-block: 1px solid var(--border); padding: 24px 0; margin-bottom: 24px; }
 .journal-settings label { display: grid; gap: 8px; font-size: 13px; }
@@ -44,7 +45,7 @@
 .journal-shell footer { margin-top: 24px; font-size: 11px; color: var(--text-muted); }
 .journal-shell::-webkit-scrollbar { width: 6px; }
 .journal-shell::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
-.journal-view-nav { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+.journal-view-nav { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 16px; }
 .journal-view-nav button[aria-current="page"] { color: var(--accent); background: var(--hover-bg); border-color: transparent; }
 .journal-settings label + label { margin-top: 12px; }
 .journal-settings .journal-capture-toggle { display: flex; align-items: center; margin-top: 20px; }
@@ -313,3 +314,4 @@
 
 .journal-weekly-note { display: block; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); }
 .journal-weekly textarea { min-height: 320px; }
+.journal-day-panel-spacer { min-height: 220px; margin-bottom: 20px; }

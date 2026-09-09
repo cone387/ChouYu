@@ -26,7 +26,6 @@ export default function WorkspaceNav({ activePage, onNavigate, status }: { activ
   return <nav className="workspace-nav" aria-label="全局导航" onKeyDown={handleKeyDown}>
     <div className="workspace-brand" title={`ChouYu · ${status}`} aria-label={`ChouYu · ${status}`} role="status">
       <img width="36" height="36" src={petIconUrl} alt="" />
-      <i className={`workspace-brand-status${status !== '在线' ? ' is-busy' : ''}`} aria-hidden="true" />
     </div>
     {pages.map(page => <button key={page.id} type="button" className={`workspace-nav-item${page.id === 'settings' ? ' workspace-nav-bottom' : ''}`}
       data-workspace-nav={page.id} aria-label={page.label} title={page.label}

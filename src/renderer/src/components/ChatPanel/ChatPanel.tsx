@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
-import GlobalSearch from '../Workspace/GlobalSearch'
+import GlobalSearch, { type SearchSnapshot } from '../Workspace/GlobalSearch'
 import Journal from '../Journal/Journal'
 import WorkspaceNav, { type WorkspacePage } from '../Workspace/WorkspaceNav'
 import WorkspaceHeader from '../Workspace/WorkspaceHeader'
@@ -76,6 +76,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (page !== 'settings') settingsCloseRef.current?.()
   }, [])
   const [showMessageSearch, setShowMessageSearch] = useState(false)
+  const searchSnapshot = useRef<SearchSnapshot | null>(null)
   const [showGlobalSearch, setShowGlobalSearch] = useState(false)
   const [journalSearch, setJournalSearch] = useState<{ date: string; query: string; id: number; sourceId?: string }>()
   const [messageSearchQuery, setMessageSearchQuery] = useState('')
@@ -767,7 +768,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         onPointerDown={event => handlePanelResizeStart(edge, event)} onPointerMove={handlePanelResizeMove}
         onPointerUp={handlePanelResizeEnd} onPointerCancel={handlePanelResizeEnd} />)}
       {toolApprovalRequest && <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />}
-      {showGlobalSearch && visible && <GlobalSearch onClose={() => setShowGlobalSearch(false)}
+      {showGlobalSearch && visible && <GlobalSearch snapshot={searchSnapshot} onClose={() => setShowGlobalSearch(false)}
         onSession={async (id, query) => { await selectSession(id); navigate('chat'); setNarrowSessionsOpen(false); setMessageSearchQuery(query); setShowMessageSearch(true) }}
         onMemory={openMemoryWorkspace}
         onJournal={(date, query, sourceId) => { setJournalSearch({ date, query, sourceId, id: Date.now() }); navigate('journal') }} />}

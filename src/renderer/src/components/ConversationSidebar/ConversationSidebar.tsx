@@ -36,7 +36,6 @@ export default function ConversationSidebar({
   onDelete,
   onExport
 }: ConversationSidebarProps) {
-  const [query, setQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -46,26 +45,6 @@ export default function ConversationSidebar({
   const [menuId, setMenuId] = useState<string | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const cancelRenameRef = useRef(false)
-  const [searchResult, setSearchResult] = useState<ChatSessionSummary[]>([])
-  const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState('')
-  const filteredSessions = query.trim() ? searchResult : sessions
-
-  useEffect(() => {
-    let active = true
-    setSearchError('')
-    if (!query.trim()) { setSearching(false); return }
-    setSearching(true)
-    setSearchResult([])
-    const timer = setTimeout(() => {
-      void window.electronAPI.db.searchSessions(query).then((result) => {
-        if (active) setSearchResult(result)
-      }).catch(() => {
-        if (active) setSearchError('搜索失败，请修改关键词后重试。')
-      }).finally(() => { if (active) setSearching(false) })
-    }, 180)
-    return () => { active = false; clearTimeout(timer) }
-  }, [query, sessions])
   const deletingSession = sessions.find((session) => session.id === deletingId)
 
   useEffect(() => {
@@ -158,16 +137,8 @@ export default function ConversationSidebar({
         </div>
       </div>
 
-      <label className="conversation-search search-field" data-filled={Boolean(query)}>
-        <svg className="search-field-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-          <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
-        </svg>
-        <input value={query} maxLength={500} onChange={(event) => setQuery(event.target.value)} placeholder="搜索所有会话全文…" aria-label="搜索对话" />
-        {query && <button className="search-field-action" type="button" onClick={(event) => { setQuery(''); event.currentTarget.parentElement?.querySelector('input')?.focus() }} aria-label="清空对话搜索" title="清空搜索"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7"/></svg></button>}
-      </label>
-
       <div className="conversation-list" role="listbox" aria-label="会话列表">
-        {filteredSessions.map((session) => {
+        {sessions.map((session) => {
           const active = session.id === activeSessionId
           const editing = editingId === session.id
           return (
@@ -201,7 +172,7 @@ export default function ConversationSidebar({
                 <button
                   type="button"
                   className="conversation-item-main"
-                  onClick={() => { if (!active || query.trim()) void run(session.id, () => onSelect(session.id, query.trim())) }}
+                  onClick={() => { if (!active) void run(session.id, () => onSelect(session.id)) }}
                   role="option"
                   aria-selected={active}
                   disabled={busyId === session.id}
@@ -254,15 +225,13 @@ export default function ConversationSidebar({
           )
         })}
 
-        {searching && <p role="status">正在搜索全部历史…</p>}
-        {searchError && <p role="alert">{searchError}</p>}
-        {!searching && !searchError && filteredSessions.length === 0 && (
+        {sessions.length === 0 && (
           <div className="conversation-empty">
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
               <path d="M6 8h20v14H13l-5 4v-4H6V8zM11 13h10M11 17h7"/>
             </svg>
-            <strong>没有匹配的对话</strong>
-            <span>换个关键词，或新建一个对话。</span>
+            <strong>还没有对话</strong>
+            <span>点击上方加号，开始一个新对话。</span>
           </div>
         )}
       </div>

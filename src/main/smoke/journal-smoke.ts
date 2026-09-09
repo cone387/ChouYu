@@ -478,6 +478,8 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await waitForRenderer(journal, "document.querySelector('.global-search-heading input')")
     await inputSearch('.global-search-heading input', '仅OCR跨日验收词')
     await waitForRenderer(journal, "document.querySelector('.global-search-result')?.textContent.includes('仅OCR跨日验收词')")
+    await journal.webContents.executeJavaScript("document.querySelector('[data-search-scope=journal]').click()")
+    await waitForRenderer(journal, "document.querySelector('.global-search-range')")
     await journal.webContents.executeJavaScript("document.querySelector('.global-search-range').open=true")
     const todayKey = new Date(from).toLocaleDateString('sv-SE')
     await inputSearch('[aria-label=日志搜索开始日期]', todayKey)

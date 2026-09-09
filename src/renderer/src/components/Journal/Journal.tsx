@@ -153,10 +153,10 @@ export default function Journal({ active = true, searchRequest }: { active?: boo
     {notice && <p className="journal-notice" role="status">{notice}</p>}
     {status?.analysis && <p className="journal-analysis-status" role="status">{status.analysis === 'summary' ? '日志总结正在生成' : '正在根据日志查找答案'}<button onClick={() => void window.electronAPI.journal.cancelAnalysis().catch(reason => setError(String(reason)))}>取消分析</button></p>}
 
-    {view !== 'saved' && view !== 'projects' && view !== 'playbook' && view !== 'weekly' && !status?.config.enabled && status && <section className="journal-welcome">
+    {view !== 'saved' && view !== 'projects' && view !== 'playbook' && view !== 'weekly' && !status?.config.enabled && status ? <section className="journal-welcome">
       <div><p>默认记录活动、前台画面并在本机识别文字。关闭窗口后继续，可在托盘暂停。</p></div>
       {!status.supported && <span>目前仅支持 Windows 和 macOS</span>}
-    </section>}
+    </section> : null}
 
     {settings && <dialog ref={settingsDialog} className="journal-detail journal-settings-dialog" aria-labelledby="journal-settings-title" onCancel={() => setSettings(false)} onClose={() => setSettings(false)}>
       <header><h2 id="journal-settings-title">记录设置</h2><button aria-label="关闭记录设置" onClick={() => setSettings(false)}>关闭</button></header>
@@ -178,7 +178,7 @@ export default function Journal({ active = true, searchRequest }: { active?: boo
     </section></dialog>}
 
     <div className="journal-workspace"><section className="journal-content" aria-label="活动时间线">
-      {view !== 'saved' && view !== 'projects' && view !== 'playbook' && view !== 'weekly' && view !== 'ask' && view !== 'semantic' && <JournalDayPanel date={date} revision={revision} onFilter={app => { setQuery(app); setOffset(0); setView('activity'); setActivityMode('raw'); setLoading(true) }} onSettings={openSettings} />}
+      {view !== 'saved' && view !== 'projects' && view !== 'playbook' && view !== 'weekly' && view !== 'ask' && view !== 'semantic' ? <JournalDayPanel date={date} revision={revision} onFilter={app => { setQuery(app); setOffset(0); setView('activity'); setActivityMode('raw'); setLoading(true) }} onSettings={openSettings} /> : <div className="journal-day-panel-spacer" aria-hidden="true" />}
       <nav className="journal-view-nav" aria-label="日志视图">{([['activity', '活动轨迹'], ['captures', '关键画面'], ['summary', '日志总结'], ['ask', '日志问答'], ['usage', 'AI 用量'], ['projects', '项目归档'], ['playbook', '踩坑手册'], ['weekly', '周报草稿'], ['semantic', '语义查找'], ['saved', '接着做']] as const).map(([key, label]) => <button key={key} aria-current={view === key ? 'page' : undefined} onClick={() => setView(key)}>{label}</button>)}</nav>
       <div className="journal-filterbar" hidden={view === 'weekly' || view === 'playbook' || view === 'projects' || view === 'saved' || view === 'semantic'}>
         <div className="journal-date"><button aria-label="前一天" onClick={() => shiftDate(-1)}>‹</button><input type="date" aria-label="日志日期" value={date} onChange={event => changeDate(event.target.value)} /><button aria-label="后一天" onClick={() => shiftDate(1)}>›</button><button onClick={() => changeDate(today())}>今天</button></div>

@@ -35,7 +35,7 @@ export default function WorkspaceHeader({ onHide, onClose, dragHandleProps, maxi
     onDoubleClick={event => { if (!(event.target as HTMLElement).closest('button, [role="menu"]')) onMaximize() }}>
     <button type="button" className="workspace-search-trigger" onClick={onSearch} aria-label="全局搜索" title="全局搜索（⌘K / Ctrl+K）">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-      <span>搜索</span>
+      <span>搜索会话、日志、记忆…</span><kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
     </button>
     <div className="workspace-mode-control" ref={menuRef}>
       <button ref={triggerRef} type="button" className="topbar-btn" aria-label="窗口模式" title="窗口模式" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(value => !value)}>
