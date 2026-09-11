@@ -11,13 +11,14 @@ import { captureJournalWindow, stopJournalCapture } from './capture'
 import { JournalOcr } from './ocr'
 import { answerJournalQuestion, generateJournalSummary, selectJournalEvidence } from './summary'
 import { JournalQuestionContexts } from './question-context'
+import { getConfig } from '../database'
 import { JournalSemanticSearch } from './semantic-search'
 import { DEFAULT_JOURNAL_CONFIG, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
 import type { JournalAnswer, JournalDay, JournalCapture, JournalCapturePage, JournalConfig, JournalPage, JournalQuery, JournalStatus, JournalEvidence, JournalSummary, JournalTaskPage, JournalDetail, JournalTaskEdit } from '../../shared/journal'
 
 export class JournalService {
   private questionContexts = new JournalQuestionContexts()
-  private semantic = new JournalSemanticSearch(async query => { await this.ready; if (this.closed || this.locked || this.suspended) throw new Error('当前无法执行日志语义检索。'); return this.request<JournalEvidence[]>('semanticInput', query) }, async () => (await import('../database')).getConfig(), fetch, {
+  private semantic = new JournalSemanticSearch(async query => { await this.ready; if (this.closed || this.locked || this.suspended) throw new Error('当前无法执行日志语义检索。'); return this.request<JournalEvidence[]>('semanticInput', query) }, async () => getConfig(), fetch, {
     read: async (scope, sources) => { await this.ready; return this.request('readSemanticCache', { scope, sources }) },
     write: async (scope, generation, entries) => { await this.ready; return this.request('writeSemanticCache', { scope, generation, entries }) },
     clear: async () => { await this.ready; return this.request('clearSemanticCache') }
@@ -341,7 +342,6 @@ export class JournalService {
     try {
       const evidence = await this.request<{ sources: JournalEvidence[]; truncated: boolean }>('summaryInput', query)
       if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，回答已取消。')
-      const { getConfig } = await import('../database')
       const config = getConfig()
       const history = this.questionContexts.read(input.conversationId, query, selectJournalEvidence(evidence.sources))
       const run = (onMetadata?: (value: AIResponseMetadata) => void) => answerJournalQuestion({ ...evidence, from: query.from, to: query.to }, input.question.trim(), config, controller.signal, onMetadata, history)

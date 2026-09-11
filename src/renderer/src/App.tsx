@@ -4,9 +4,10 @@ import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import type { WorkspacePage } from './components/Workspace/WorkspaceNav'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
+import ProactiveCenter from './components/ProactiveCenter/ProactiveCenter'
 import { AppConfig, PetState } from './shared/types'
 import { DEFAULT_CONFIG, PANEL_WIDTH } from './shared/constants'
-import { proactiveEngine } from './core/proactive'
+import { proactiveEngine, type ProactiveMessage } from './core/proactive'
 import { stateMachine } from './core/state-machine'
 import { clampPanelPosition, getCenteredPanelPosition } from './core/panel-position'
 import { getDefaultPanelHeight } from './core/panel-state'
@@ -28,6 +29,8 @@ function App() {
   const [activePluginId, setActivePluginId] = useState<string | null>(null)
   const [clipboardText, setClipboardText] = useState<string | null>(null)
   const [proactiveMsg, setProactiveMsg] = useState<string | null>(null)
+  const [proactiveMessages, setProactiveMessages] = useState<ProactiveMessage[]>([])
+  const [showProactiveCenter, setShowProactiveCenter] = useState(false)
   const [pendingDrop, setPendingDrop] = useState<{ type: 'image' | 'text'; data: string; name: string } | null>(null)
   const [pendingClipboardMsg, setPendingClipboardMsg] = useState<string | null>(null)
   const [fileDropError, setFileDropError] = useState<string | null>(null)
@@ -124,10 +127,11 @@ function App() {
 
   // Proactive engine - respect config
   useEffect(() => {
-    if (!config.proactiveGreeting && !config.proactiveRestReminder) return
     proactiveEngine.start((msg) => {
       setProactiveMsg(msg)
+      setProactiveMessages(proactiveEngine.getMessages())
     }, { greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder })
+    setProactiveMessages(proactiveEngine.getMessages())
     return () => proactiveEngine.stop()
   }, [config.proactiveGreeting, config.proactiveRestReminder])
 
@@ -465,10 +469,39 @@ function App() {
           onPositionChange={setPetPosition}
           onClick={togglePanel}
           onOpenSettings={openSettings}
+          onOpenMessages={() => {
+            proactiveEngine.markAllRead()
+            setProactiveMessages(proactiveEngine.getMessages())
+            setShowProactiveCenter(true)
+          }}
           state={petState}
           size={config.petSize}
           onFileDrop={handleFileDrop}
           onFileDropError={setFileDropError}
+        />
+      )}
+      {showProactiveCenter && (
+        <ProactiveCenter
+          messages={proactiveMessages}
+          position={{
+            left: Math.max(12, Math.min(window.innerWidth - 352, petPosition.x >= 362 ? petPosition.x - 350 : petPosition.x + config.petSize + 10)),
+            top: Math.max(12, Math.min(window.innerHeight - 532, petPosition.y))
+          }}
+          onClose={() => setShowProactiveCenter(false)}
+          onSnooze={(id) => {
+            proactiveEngine.snooze(id)
+            setProactiveMessages(proactiveEngine.getMessages())
+            setShowProactiveCenter(false)
+          }}
+          onRemove={(id) => {
+            proactiveEngine.remove(id)
+            setProactiveMessages(proactiveEngine.getMessages())
+          }}
+          onClear={() => {
+            if (!window.confirm('清空全部助手消息？此操作无法撤销。')) return
+            proactiveEngine.clearMessages()
+            setProactiveMessages([])
+          }}
         />
       )}
       {/* Proactive message bubble */}
