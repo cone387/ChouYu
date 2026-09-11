@@ -153,7 +153,7 @@ export default function Journal({ active = true, searchRequest }: { active?: boo
     {notice && <p className="journal-notice" role="status">{notice}</p>}
     {status?.analysis && <p className="journal-analysis-status" role="status">{status.analysis === 'summary' ? '日志总结正在生成' : '正在根据日志查找答案'}<button onClick={() => void window.electronAPI.journal.cancelAnalysis().catch(reason => setError(String(reason)))}>取消分析</button></p>}
 
-    {view !== 'saved' && view !== 'projects' && view !== 'playbook' && view !== 'weekly' && !status?.config.enabled && status ? <section className="journal-welcome">
+    {!status?.config.enabled && status ? <section className="journal-welcome">
       <div><p>默认记录活动、前台画面并在本机识别文字。关闭窗口后继续，可在托盘暂停。</p></div>
       {!status.supported && <span>目前仅支持 Windows 和 macOS</span>}
     </section> : null}
@@ -178,13 +178,13 @@ export default function Journal({ active = true, searchRequest }: { active?: boo
     </section></dialog>}
 
     <div className="journal-workspace"><section className="journal-content" aria-label="活动时间线">
-      {view !== 'saved' && view !== 'projects' && view !== 'playbook' && view !== 'weekly' && view !== 'ask' && view !== 'semantic' ? <JournalDayPanel date={date} revision={revision} onFilter={app => { setQuery(app); setOffset(0); setView('activity'); setActivityMode('raw'); setLoading(true) }} onSettings={openSettings} /> : <div className="journal-day-panel-spacer" aria-hidden="true" />}
       <nav className="journal-view-nav" aria-label="日志视图">{([['activity', '活动轨迹'], ['captures', '关键画面'], ['summary', '日志总结'], ['ask', '日志问答'], ['usage', 'AI 用量'], ['projects', '项目归档'], ['playbook', '踩坑手册'], ['weekly', '周报草稿'], ['semantic', '语义查找'], ['saved', '接着做']] as const).map(([key, label]) => <button key={key} aria-current={view === key ? 'page' : undefined} onClick={() => setView(key)}>{label}</button>)}</nav>
       <div className="journal-filterbar" hidden={view === 'weekly' || view === 'playbook' || view === 'projects' || view === 'saved' || view === 'semantic'}>
         <div className="journal-date"><button aria-label="前一天" onClick={() => shiftDate(-1)}>‹</button><input type="date" aria-label="日志日期" value={date} onChange={event => changeDate(event.target.value)} /><button aria-label="后一天" onClick={() => shiftDate(1)}>›</button><button onClick={() => changeDate(today())}>今天</button></div>
         <details className="journal-more"><summary aria-label="更多日志操作">更多 ···</summary><div><button onClick={event => { setConfirmDelete(true); event.currentTarget.closest('details')!.open = false }} disabled={busy}>删除当天记录</button></div></details>
         {(view === 'activity' || view === 'captures') && <label className="search-field journal-search" data-filled={Boolean(query)}><svg className="search-field-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input aria-label="搜索活动" value={query} onChange={event => { setQuery(event.target.value); setOffset(0); setLoading(true) }} placeholder={view === 'captures' ? '搜索画面文字或标题' : activityMode === 'tasks' ? '搜索事项、应用或备注' : '搜索应用或窗口标题'} />{query && <button className="search-field-action" aria-label="清空活动搜索" onClick={() => { setQuery(''); setOffset(0) }}>×</button>}</label>}
       </div>
+      {view !== 'saved' && view !== 'projects' && view !== 'playbook' && view !== 'weekly' && view !== 'ask' && view !== 'semantic' ? <JournalDayPanel date={date} revision={revision} onFilter={app => { setQuery(app); setOffset(0); setView('activity'); setActivityMode('raw'); setLoading(true) }} onSettings={openSettings} /> : null}
       {view === 'activity' && <div className="journal-mode-bar"><div className="journal-mode-switch" aria-label="活动展示方式"><button aria-pressed={activityMode === 'tasks'} onClick={() => setActivityMode('tasks')}>事项视图</button><button aria-pressed={activityMode === 'raw'} onClick={() => setActivityMode('raw')}>原始记录</button></div>{activityMode === 'raw' && <span>{page.total} 条 · {duration(page.durationMs)}{query ? '匹配时长' : '记录时长'}</span>}</div>}
       {confirmDelete && <div className="journal-delete" role="alert"><span>删除 {date} 的活动、画面及识别文字？包含与当天重叠的跨日片段，已生成的日志总结也会清空。独立收藏仍保留，请到“接着做”单独删除。此操作不可撤销。</span><div><button disabled={busy} onClick={() => setConfirmDelete(false)}>取消</button><button disabled={busy} onClick={() => void deleteDay()}>确认删除</button></div></div>}
       {view === 'weekly' && <JournalWeekly />}

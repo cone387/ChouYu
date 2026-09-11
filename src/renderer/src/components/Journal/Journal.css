@@ -314,4 +314,3 @@
 
 .journal-weekly-note { display: block; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); }
 .journal-weekly textarea { min-height: 320px; }
-.journal-day-panel-spacer { min-height: 220px; margin-bottom: 20px; }

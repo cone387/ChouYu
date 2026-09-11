@@ -273,6 +273,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('[data-workspace-page=journal]') && document.querySelector('.journal-date input')")
     await input(window, '.journal-date input', '2001-01-02')
     await input(window, '.journal-search input', '导航保留活动')
+    await waitForRenderer(window, "document.querySelector('.journal-status') && document.querySelector('.journal-status').textContent !== '正在加载' && !document.querySelector('.journal-day-panel')?.textContent.includes('正在读取')")
     await window.webContents.executeJavaScript(`(async () => {
       if (document.querySelector('.workspace-brand-status')) throw new Error('Navigation logo status dot remains');
       const shell = document.querySelector('.journal-shell');
