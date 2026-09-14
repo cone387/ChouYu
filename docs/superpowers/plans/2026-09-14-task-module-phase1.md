@@ -1788,14 +1788,14 @@ git commit -m "feat(tasks): add tasks workspace page with list, form and smart v
     window.focus()
   }, [ensurePanelPosition])
 
-  useEffect(() => window.electronAPI.onOpenTasksPanel(openTasksPage), [openTasksPage])
+  useEffect(() => window.electronAPI.tasks.onOpenTasksPanel(openTasksPage), [openTasksPage])
 
   useEffect(() => {
-    const cleanup = window.electronAPI.onTasksReminder(payload => {
+    const cleanup = window.electronAPI.tasks.onTasksReminder(payload => {
       if ('task' in payload) proactiveEngine.postExternal(`任务提醒：${payload.task.title}`, 'task')
       else if (payload.backlog > 0) proactiveEngine.postExternal(`错过了 ${payload.backlog} 条任务提醒`, 'task')
     })
-    const rebuiltCleanup = window.electronAPI.onTasksStoreRebuilt(() => {
+    const rebuiltCleanup = window.electronAPI.tasks.onTasksStoreRebuilt(() => {
       proactiveEngine.postExternal('任务数据文件无法读取，已重建空库，原文件已隔离保存。', 'task')
     })
     window.electronAPI.tasks.ready()
@@ -1836,6 +1836,7 @@ Props 接口加:
   appearance: none; border: none; background: none; padding: 0; margin: 0;
   text-align: left; font: inherit; color: var(--accent); cursor: pointer;
 }
+.proactive-center-item > .proactive-center-task-link { display: block; margin-top: var(--space-3); font-size: var(--font-md); line-height: var(--leading-normal); white-space: pre-wrap; }
 .proactive-center-task-link:hover { text-decoration: underline; }
 ```
 
