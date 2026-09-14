@@ -12,6 +12,9 @@ describe('Tasks 视图源守卫', () => {
     expect(source).toContain('aria-label')
     expect(source).toContain('role="list"')
     expect(source).toContain('data-priority')
+    expect(source).not.toContain('window.prompt')
+    expect(source).toContain('tasks-new-project-form')
+    expect(source).toContain('remindChoiceFromTask')
   })
   test('样式:使用全局 token、窄屏断点与减少动画', () => {
     const css = read('Tasks.css')

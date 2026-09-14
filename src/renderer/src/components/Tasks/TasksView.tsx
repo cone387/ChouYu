@@ -36,6 +36,13 @@ const draftDueAt = (draft: Draft): number | null => {
   if (!draft.dueDate) return null
   return new Date(`${draft.dueDate}T${draft.dueTime || '09:00'}`).getTime() || null
 }
+const remindChoiceFromTask = (task: TaskRecord): RemindChoiceId => {
+  if (task.remindAt === null || task.dueAt === null) return 'none'
+  for (const choice of REMIND_CHOICES) {
+    if (remindAtFromChoice(choice.id, task.dueAt) === task.remindAt) return choice.id
+  }
+  return 'none'
+}
 const draftFromTask = (task: TaskRecord): Draft => ({
   id: task.id,
   title: task.title,
@@ -44,7 +51,7 @@ const draftFromTask = (task: TaskRecord): Draft => ({
   priority: task.priority,
   dueDate: task.dueAt ? toInputDate(task.dueAt) : '',
   dueTime: task.dueAt ? new Date(task.dueAt).toTimeString().slice(0, 5) : '09:00',
-  remind: 'none'
+  remind: remindChoiceFromTask(task)
 })
 const dueLabel = (at: number): string =>
   new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at)
@@ -59,6 +66,7 @@ export default function TasksView({ active }: { active: boolean }) {
   const [busy, setBusy] = useState(false)
   const [showDone, setShowDone] = useState(false)
   const [quarantineNotice, setQuarantineNotice] = useState('')
+  const [newProject, setNewProject] = useState<string | null>(null)
 
   const reload = useCallback(() => {
     void Promise.all([window.electronAPI.tasks.list(), window.electronAPI.tasks.projects()])
@@ -105,8 +113,10 @@ export default function TasksView({ active }: { active: boolean }) {
     if (!window.confirm('删除这个任务？此操作无法撤销。')) return
     void window.electronAPI.tasks.remove(id).then(reload).catch(reason => setError(String(reason)))
   }
-  const createProjectInline = () => {
-    const name = window.prompt('项目名称')?.trim()
+  const submitProject = (event: FormEvent) => {
+    event.preventDefault()
+    const name = newProject?.trim()
+    setNewProject(null)
     if (!name) return
     void window.electronAPI.tasks.createProject(name).then(reload).catch(reason => setError(String(reason)))
   }
@@ -127,7 +137,15 @@ export default function TasksView({ active }: { active: boolean }) {
               <button type="button" aria-current={selection === id || undefined} onClick={() => setSelection(id)}>{project.name}</button>
             </li>
           })}
-          <li><button type="button" className="tasks-new-project" onClick={createProjectInline}>新建项目 +</button></li>
+          {newProject === null
+            ? <li><button type="button" className="tasks-new-project" onClick={() => setNewProject('')}>新建项目 +</button></li>
+            : <li>
+                <form className="tasks-new-project-form" onSubmit={submitProject}>
+                  <input value={newProject} autoFocus aria-label="新项目名称" placeholder="项目名称"
+                    onChange={e => setNewProject(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Escape') setNewProject(null) }} />
+                </form>
+              </li>}
         </ul>
         {projects.some(project => project.archivedAt) && <details className="tasks-archived">
           <summary>已归档项目</summary>
