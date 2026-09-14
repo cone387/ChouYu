@@ -945,6 +945,14 @@ git commit -m "feat(tasks): add due reminder scheduler with merged backlog"
     taskNotifications: source.taskNotifications !== false,
 ```
 
+`sanitizeConfigPatch`(与 `proactiveRestReminder` 白名单行相邻)加:
+
+```ts
+  if (typeof input.taskNotifications === 'boolean') patch.taskNotifications = input.taskNotifications
+```
+
+并在 `src/shared/config.test.ts` 的「accepts only known patch fields」用例 input 里加 `taskNotifications: false,`、断言 `patch.taskNotifications` 为 `false`(否则 T8 设置页保存的开关会被 sanitize 静默丢弃)。
+
 - [ ] **Step 2: 实现 src/main/tasks/index.ts**
 
 ```ts
