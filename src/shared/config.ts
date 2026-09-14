@@ -205,6 +205,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.petSize === 'number' && Number.isFinite(input.petSize)) patch.petSize = input.petSize
   if (typeof input.proactiveGreeting === 'boolean') patch.proactiveGreeting = input.proactiveGreeting
   if (typeof input.proactiveRestReminder === 'boolean') patch.proactiveRestReminder = input.proactiveRestReminder
+  if (typeof input.taskNotifications === 'boolean') patch.taskNotifications = input.taskNotifications
   if (typeof input.clipboardWatch === 'boolean') patch.clipboardWatch = input.clipboardWatch
   if (typeof input.aiToolsEnabled === 'boolean') patch.aiToolsEnabled = input.aiToolsEnabled
   if (input.toolPermissionMode === 'confirm' || input.toolPermissionMode === 'auto' || input.toolPermissionMode === 'full') patch.toolPermissionMode = input.toolPermissionMode
