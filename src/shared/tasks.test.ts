@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   compareTasks, isDueThisWeek, isDueToday, isOverdue, remindAtFromChoice, TASK_PRIORITY_ORDER
 } from './tasks'
-import type { TaskRecord } from './tasks'
+import type { RemindChoiceId, TaskRecord } from './tasks'
 
 const base = (patch: Partial<TaskRecord> = {}): TaskRecord => ({
   id: 't', title: '任务', note: '', projectId: null, priority: 'medium', status: 'open',
@@ -16,6 +16,7 @@ describe('remindAtFromChoice', () => {
     expect(remindAtFromChoice('m30', 5_000)).toBe(5_000 - 30 * 60_000)
     expect(remindAtFromChoice('none', 5_000)).toBeNull()
     expect(remindAtFromChoice('due', null)).toBeNull()
+    expect(remindAtFromChoice('bogus' as RemindChoiceId, 5_000)).toBeNull()
   })
 })
 

@@ -84,6 +84,12 @@ function startOfDay(at: number): number {
   return date.getTime()
 }
 
+function addDays(at: number, days: number): number {
+  const date = new Date(at)
+  date.setDate(date.getDate() + days)
+  return date.getTime()
+}
+
 export function isOverdue(task: TaskRecord, now: number): boolean {
   return task.status === 'open' && task.dueAt !== null && task.dueAt < startOfDay(now)
 }
@@ -91,15 +97,15 @@ export function isOverdue(task: TaskRecord, now: number): boolean {
 export function isDueToday(task: TaskRecord, now: number): boolean {
   if (task.dueAt === null) return false
   const start = startOfDay(now)
-  return task.dueAt >= start && task.dueAt < start + 86_400_000
+  return task.dueAt >= start && task.dueAt < addDays(start, 1)
 }
 
 export function isDueThisWeek(task: TaskRecord, now: number): boolean {
   if (task.dueAt === null) return false
   const current = new Date(startOfDay(now))
   const weekday = (current.getDay() + 6) % 7 // 周一为 0
-  const monday = current.getTime() - weekday * 86_400_000
-  return task.dueAt >= monday && task.dueAt < monday + 7 * 86_400_000
+  const monday = addDays(current.getTime(), -weekday)
+  return task.dueAt >= monday && task.dueAt < addDays(monday, 7)
 }
 
 export function compareTasks(a: TaskRecord, b: TaskRecord, now: number): number {
