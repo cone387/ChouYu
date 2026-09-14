@@ -1144,7 +1144,7 @@ git commit -m "feat(tasks): wire task module into main process lifecycle and con
 `src/preload/index.ts` 顶部加 import:
 
 ```ts
-import type { TasksAPI } from '../shared/tasks'
+import type { TasksAPI, TasksReminderEvent } from '../shared/tasks'
 ```
 
 `const api = {` 内 `journal: {...} satisfies JournalAPI,` 之后加:
@@ -1162,7 +1162,7 @@ import type { TasksAPI } from '../shared/tasks'
     archiveProject: (id, archived) => ipcRenderer.invoke('tasks:archiveProject', id, archived),
     ready: () => { ipcRenderer.send('tasks:ready') },
     onTasksReminder: callback => {
-      const handler = (_event: unknown, payload: import('../shared/tasks').TasksReminderEvent) => callback(payload)
+      const handler = (_event: unknown, payload: TasksReminderEvent) => callback(payload)
       ipcRenderer.on('tasks:reminder', handler)
       return () => { ipcRenderer.removeListener('tasks:reminder', handler) }
     },
@@ -1179,30 +1179,10 @@ import type { TasksAPI } from '../shared/tasks'
 
 - [ ] **Step 2: ElectronAPI 镜像**
 
-`src/renderer/src/shared/types.ts` 顶部 import 区加:
+`src/renderer/src/shared/types.ts` 的 `ElectronAPI` 接口内(与 `journal` 同级,`memory` 之前)加一行,与 journal 的内联 import 类型惯例完全同构(不手写镜像,避免与 TasksAPI 漂移):
 
 ```ts
-import type { TaskListResult, TaskProject, TaskRecord, TaskCreateInput, TaskUpdateInput, TasksReminderEvent } from '../../../shared/tasks'
-```
-
-`ElectronAPI` 接口内(与 `journal` 同级,`memory` 之前)加:
-
-```ts
-  tasks: {
-    list(): Promise<TaskListResult>
-    create(input: TaskCreateInput): Promise<TaskRecord>
-    update(id: string, patch: TaskUpdateInput): Promise<TaskRecord>
-    complete(id: string): Promise<TaskRecord>
-    remove(id: string): Promise<void>
-    projects(): Promise<TaskProject[]>
-    createProject(name: string): Promise<TaskProject>
-    renameProject(id: string, name: string): Promise<TaskProject>
-    archiveProject(id: string, archived: boolean): Promise<TaskProject>
-    ready(): void
-    onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void
-    onOpenTasksPanel(callback: () => void): () => void
-    onTasksStoreRebuilt(callback: () => void): () => void
-  }
+  tasks: import('../../../shared/tasks').TasksAPI
 ```
 
 - [ ] **Step 3: 类型检查**
