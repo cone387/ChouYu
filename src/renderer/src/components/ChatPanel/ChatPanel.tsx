@@ -390,10 +390,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         setConfirmClear(false)
         return
       }
-      if (!isChat) {
-        navigate('chat')
-        return
-      }
       onClose()
     }
     window.addEventListener('keydown', handleKeyDown)

@@ -72,6 +72,7 @@ export interface PluginInfo {
 export interface ElectronAPI {
   journal: import('../../../shared/journal').JournalAPI
   getAppVersion: () => Promise<string>
+  getSystemIdleSeconds: () => Promise<number>
   quitApp: () => Promise<void>
   setAutoStart: (enabled: boolean) => Promise<void>
   checkForUpdates: () => Promise<void>

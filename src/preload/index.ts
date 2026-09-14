@@ -66,6 +66,7 @@ const api = {
   } satisfies JournalAPI,
   recognizeOfflineImage: (dataUrl: string) => ipcRenderer.invoke('ocr:offline', dataUrl) as Promise<import('../shared/ocr').OfflineOcrResult>,
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  getSystemIdleSeconds: () => ipcRenderer.invoke('system-idle-seconds') as Promise<number>,
   quitApp: () => ipcRenderer.invoke('quit-app'),
   setAutoStart: (enabled: boolean) => ipcRenderer.invoke('set-auto-start', enabled),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),

@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app, shell } from 'electron'
+import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app, shell, powerMonitor } from 'electron'
 import { notifyJournalConfig } from './journal'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
@@ -178,6 +178,7 @@ function requestToolApproval(
 }
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
+  ipcMain.handle('system-idle-seconds', () => powerMonitor.getSystemIdleTime())
   const unsubscribeStorage = onStorageStatus((status) => {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('db:storage-status', status)
   })

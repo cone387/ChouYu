@@ -127,13 +127,48 @@ function App() {
 
   // Proactive engine - respect config
   useEffect(() => {
-    proactiveEngine.start((msg) => {
-      setProactiveMsg(msg)
-      setProactiveMessages(proactiveEngine.getMessages())
+    proactiveEngine.start((msg, kind) => {
+      if (kind === 'return') {
+        const now = new Date()
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+        const to = Date.now()
+        const from = to - 30 * 60_000
+        void Promise.all([
+          window.electronAPI.journal.overview({ from: start, to }),
+          window.electronAPI.journal.list({ from, to, offset: 0 })
+        ]).then(([day, recent]) => {
+          const titles = [...new Set(recent.items.map(item => item.title.trim()).filter(Boolean))].slice(0, 3)
+          const where = titles.length ? `刚才停在：${titles.join('、')}。` : ''
+          setProactiveMsg(day.activityCount > 0
+            ? `欢迎回来。今天已经记录 ${day.activityCount} 段工作。${where}要接着刚才的工作吗？`
+            : `欢迎回来。${where}要接着刚才的工作吗？`)
+        }).catch(() => setProactiveMsg(msg))
+      } else {
+        setProactiveMsg(msg)
+      }
+      const next = proactiveEngine.getMessages()
+      setProactiveMessages(next)
+      void window.electronAPI.db.setState('proactive-messages', JSON.stringify(next)).catch(() => { /* storage notice covers persistence failures */ })
     }, { greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder })
     setProactiveMessages(proactiveEngine.getMessages())
+    void window.electronAPI.db.getState('proactive-messages').then(value => {
+      if (!value) return
+      try {
+        const stored = JSON.parse(value)
+        if (Array.isArray(stored)) {
+          proactiveEngine.hydrateMessages(stored)
+          setProactiveMessages(proactiveEngine.getMessages())
+        }
+      } catch { /* ignore malformed optional history */ }
+    }).catch(() => {})
     return () => proactiveEngine.stop()
   }, [config.proactiveGreeting, config.proactiveRestReminder])
+
+  const persistProactiveMessages = useCallback(() => {
+    const next = proactiveEngine.getMessages()
+    setProactiveMessages(next)
+    void window.electronAPI.db.setState('proactive-messages', JSON.stringify(next)).catch(() => { /* storage notice covers persistence failures */ })
+  }, [])
 
   // Auto-dismiss proactive message after 8s
   useEffect(() => {
@@ -471,7 +506,7 @@ function App() {
           onOpenSettings={openSettings}
           onOpenMessages={() => {
             proactiveEngine.markAllRead()
-            setProactiveMessages(proactiveEngine.getMessages())
+            persistProactiveMessages()
             setShowProactiveCenter(true)
           }}
           state={petState}
@@ -490,17 +525,17 @@ function App() {
           onClose={() => setShowProactiveCenter(false)}
           onSnooze={(id) => {
             proactiveEngine.snooze(id)
-            setProactiveMessages(proactiveEngine.getMessages())
+            persistProactiveMessages()
             setShowProactiveCenter(false)
           }}
           onRemove={(id) => {
             proactiveEngine.remove(id)
-            setProactiveMessages(proactiveEngine.getMessages())
+            persistProactiveMessages()
           }}
           onClear={() => {
             if (!window.confirm('清空全部助手消息？此操作无法撤销。')) return
             proactiveEngine.clearMessages()
-            setProactiveMessages([])
+            persistProactiveMessages()
           }}
         />
       )}

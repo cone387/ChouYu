@@ -181,7 +181,7 @@ parentPort!.on('message', ({ id, method, payload }) => {
         const where = "endedAt >= ? AND startedAt < ? AND (app LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')"
         const args = [from, to, pattern, pattern, appPattern]
         const filtered = `${where} AND app LIKE ? ESCAPE '\\'`
-        const items = db.prepare(`SELECT id,app,title,MAX(startedAt,?) startedAt,MIN(endedAt,?) endedAt FROM activities WHERE ${filtered} ORDER BY startedAt DESC,id DESC LIMIT 100 OFFSET ?`).all(from, to, ...args, offset)
+        const items = db.prepare(`SELECT id,app,title,MAX(startedAt,?) startedAt,MIN(endedAt,?) endedAt FROM activities WHERE ${filtered} ORDER BY startedAt DESC,id DESC LIMIT 50 OFFSET ?`).all(from, to, ...args, offset)
         const totals = db.prepare(`SELECT COUNT(*) total, COALESCE(SUM(MIN(endedAt,?)-MAX(startedAt,?)),0) durationMs FROM activities WHERE ${filtered}`).get(to, from, ...args) as object
         result = { items, ...totals }; break
       }
@@ -206,7 +206,7 @@ parentPort!.on('message', ({ id, method, payload }) => {
         if (method === 'tasks') {
           const needle = query.toLocaleLowerCase()
           const items = data.tasks.filter(item => [item.title, item.text, item.note, item.category, ...item.apps].join('\n').toLocaleLowerCase().includes(needle))
-          result = { items: items.slice(offset, offset + 100), total: items.length, organized: data.tasks.filter(item => item.organized).length }
+        result = { items: items.slice(offset, offset + 50), total: items.length, organized: data.tasks.filter(item => item.organized).length }
         } else {
           if (typeof payload.id !== 'string') throw new Error('无效事项。')
           let task = data.tasks.find(item => item.id === payload.id)

@@ -397,7 +397,6 @@ export class JournalService {
     try {
       const input = await this.request<{ sources: JournalEvidence[]; truncated: boolean; generation: number }>('summaryInput', query)
       if (epoch !== this.epoch || controller.signal.aborted) throw new Error('日志已变化，总结已取消。')
-      const { getConfig } = await import('../database')
       const config = getConfig()
       const run = (onMetadata?: (value: AIResponseMetadata) => void) => generateJournalSummary({ ...input, from: query.from, to: query.to }, config, controller.signal, onMetadata)
       const summary = input.sources.length ? await this.trackAnalysis(query, 'summary', config, controller.signal, run) : await run()

@@ -4,13 +4,15 @@
  * Rules:
  * - Greet on first launch of the day (configurable)
  * - Remind user to rest after 60 minutes of continuous use (configurable)
- * - Max 1 proactive message per 60 minutes
+ * - At most one new proactive event per 60 minutes
+ * - Keep every event until the user removes it
  */
 
 const COOLDOWN = 60 * 60 * 1000 // 60 minutes
 const REST_REMINDER_INTERVAL = 60 * 60 * 1000 // 60 minutes
 
-type ProactiveCallback = (message: string) => void
+export type ProactiveKind = 'greeting' | 'rest' | 'return'
+type ProactiveCallback = (message: string, kind?: ProactiveKind) => void
 
 export interface ProactiveMessage {
   id: string
@@ -18,6 +20,7 @@ export interface ProactiveMessage {
   createdAt: number
   readAt?: number
   snoozedUntil?: number
+  kind?: ProactiveKind
 }
 
 export interface ProactiveOptions {
@@ -32,10 +35,20 @@ class ProactiveEngine {
   private greetedDate: string | null = null
   private greetingTimer: ReturnType<typeof setTimeout> | null = null
   private snoozeTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private idleTimer: ReturnType<typeof setTimeout> | null = null
+  private interrupted = false
   private options: ProactiveOptions = { greeting: true, restReminder: true }
   private messages: ProactiveMessage[] = []
 
   getMessages(): ProactiveMessage[] { return [...this.messages] }
+
+  hydrateMessages(messages: ProactiveMessage[]): void {
+    const merged = new Map(this.messages.map(message => [message.id, message]))
+    messages.forEach(message => { if (message && typeof message.id === 'string' && typeof message.message === 'string') merged.set(message.id, message) })
+    this.messages = [...merged.values()].sort((a, b) => b.createdAt - a.createdAt)
+    this.messages.forEach(message => this.scheduleSnooze(message))
+    this.persistMessages()
+  }
 
   snooze(id: string, minutes = 10): void {
     const item = this.messages.find(message => message.id === id)
@@ -71,6 +84,7 @@ class ProactiveEngine {
     this.callback = callback
     this.messages = this.readMessages()
     this.messages.forEach(message => this.scheduleSnooze(message))
+    this.scheduleIdleCheck()
     this.options = options || { greeting: true, restReminder: true }
     this.greetedDate = this.readGreetingDate()
 
@@ -94,6 +108,7 @@ class ProactiveEngine {
     if (this.greetingTimer) { clearTimeout(this.greetingTimer); this.greetingTimer = null }
     this.snoozeTimers.forEach(timer => clearTimeout(timer))
     this.snoozeTimers.clear()
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null }
   }
 
   /** Call this when user interacts to reset rest timer */
@@ -107,16 +122,19 @@ class ProactiveEngine {
     return Date.now() - this.lastProactiveTime > COOLDOWN
   }
 
-  private speak(message: string): void {
+  private speak(message: string, kind: ProactiveKind = 'rest'): void {
     if (!this.callback) return
     this.lastProactiveTime = Date.now()
-    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now() })
+    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
     this.persistMessages()
     this.callback(message)
   }
 
   private readMessages(): ProactiveMessage[] {
-    try { const value = JSON.parse(localStorage.getItem('chouyu.proactive.messages') || '[]'); return Array.isArray(value) ? value : [] } catch { return [] }
+    try {
+      const value = JSON.parse(localStorage.getItem('chouyu.proactive.messages') || '[]')
+      return Array.isArray(value) ? value.filter(item => item && typeof item.id === 'string' && typeof item.message === 'string' && Number.isFinite(item.createdAt)) : []
+    } catch { return [] }
   }
 
   private persistMessages(): void {
@@ -132,7 +150,7 @@ class ProactiveEngine {
       this.snoozeTimers.delete(item.id)
       item.snoozedUntil = undefined
       this.persistMessages()
-      this.callback?.(item.message)
+      this.callback?.(item.message, item.kind)
     }, delay)
     this.snoozeTimers.set(item.id, timer)
   }
@@ -158,7 +176,7 @@ class ProactiveEngine {
     else if (hour < 22) greeting = '晚上好～今天辛苦了'
     else greeting = '夜深了，别太晚睡哦 🌙'
 
-    this.speak(greeting)
+    this.speak(greeting, 'greeting')
   }
 
   private readGreetingDate(): string | null {
@@ -178,9 +196,27 @@ class ProactiveEngine {
       '喝杯水休息一下？你已经坐了好一会儿了 ☕'
     ]
     const msg = messages[Math.floor(Math.random() * messages.length)]
-    this.speak(msg)
+    this.speak(msg, 'rest')
 
     this.restTimer = setTimeout(() => this.remindRest(), REST_REMINDER_INTERVAL)
+  }
+
+  private scheduleIdleCheck(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer)
+    this.idleTimer = setTimeout(() => void this.checkIdle(), 15_000)
+  }
+
+  private async checkIdle(): Promise<void> {
+    if (!this.callback || typeof window === 'undefined' || !window.electronAPI?.getSystemIdleSeconds) return
+    try {
+      const idleSeconds = await window.electronAPI.getSystemIdleSeconds()
+      if (idleSeconds >= 600) this.interrupted = true
+      else if (this.interrupted && idleSeconds < 30 && this.canSpeak()) {
+        this.interrupted = false
+        this.speak('欢迎回来。要接着刚才的工作吗？', 'return')
+      }
+    } catch { /* system idle is optional on unsupported platforms */ }
+    this.scheduleIdleCheck()
   }
 }
 
