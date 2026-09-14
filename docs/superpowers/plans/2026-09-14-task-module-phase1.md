@@ -1896,21 +1896,24 @@ export async function runTasksSmoke(): Promise<void> {
   const store = openTasksStore(file)
   const reminders: string[] = []
   let backlog = 0
-  const scheduler = startTaskScheduler(
-    now => store.claimDueReminders(now),
-    {
-      onReminder: task => { reminders.push(task.id) },
-      onBacklog: count => { backlog += count }
-    },
-    { intervalMs: 50 }
-  )
+  let scheduler: { stop(): void } | null = null
   try {
     const project = store.createProject('冒烟项目')
     let rejected = false
     try { store.createProject('冒烟项目') } catch { rejected = true }
     if (!rejected) throw new Error('Duplicate task project name was accepted')
 
+    // 启动调度器前先落下一条过期提醒,模拟应用未运行期间错过的积压
     const overdue = store.createTask({ title: '过期任务', priority: 'high', dueAt: Date.now() - 3_600_000, remindAt: Date.now() - 1_800_000 })
+    scheduler = startTaskScheduler(
+      now => store.claimDueReminders(now),
+      {
+        onReminder: task => { reminders.push(task.id) },
+        onBacklog: count => { backlog += count }
+      },
+      { intervalMs: 50 }
+    )
+
     const due = store.createTask({ title: '即将到期', dueAt: Date.now() + 400, remindAt: Date.now() + 120 })
     const toComplete = store.createTask({ title: '先完成', dueAt: Date.now() + 400, remindAt: Date.now() + 120 })
     store.completeTask(toComplete.id)
@@ -1931,11 +1934,13 @@ export async function runTasksSmoke(): Promise<void> {
     reopened.close()
     console.log('CHOUYU_TASKS_SMOKE_PASSED backlog merge, fire-once, complete cancels, persistence')
   } finally {
-    scheduler.stop()
+    scheduler?.stop()
     try { store.close() } catch { /* 已在用例内关闭 */ }
   }
 }
 ```
+
+注意顺序:过期任务必须在 `startTaskScheduler` **之前**入库,否则调度器启动时库为空、积压恒为 0。
 
 - [ ] **Step 2: 全量门禁**
 
