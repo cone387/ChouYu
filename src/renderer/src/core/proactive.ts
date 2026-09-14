@@ -122,18 +122,21 @@ export class ProactiveEngine {
     return Date.now() - this.lastProactiveTime > COOLDOWN
   }
 
+  private enqueue(message: string, kind: ProactiveKind): void {
+    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
+    this.persistMessages()
+  }
+
   private speak(message: string, kind: ProactiveKind = 'rest'): void {
     if (!this.callback) return
     this.lastProactiveTime = Date.now()
-    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
-    this.persistMessages()
+    this.enqueue(message, kind)
     this.callback(message)
   }
 
   /** 外部注入的确定性提醒(任务到期),不受 60 分钟冷却限制。 */
   postExternal(message: string, kind: ProactiveKind = 'task'): void {
-    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
-    this.persistMessages()
+    this.enqueue(message, kind)
     this.callback?.(message, kind)
   }
 
