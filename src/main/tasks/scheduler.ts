@@ -25,11 +25,14 @@ export function startTaskScheduler(
   let timer: ReturnType<typeof setInterval> | null = null
 
   // 启动积压:应用没开时错过的提醒合并成一条,不逐条轰炸
+  let backlog: TaskRecord[] = []
   try {
-    const backlog = claim(now())
-    if (backlog.length > 0) handlers.onBacklog(backlog.length)
+    backlog = claim(now())
   } catch (error) {
     console.error('tasks scheduler backlog failed:', error)
+  }
+  if (backlog.length > 0) {
+    try { handlers.onBacklog(backlog.length) } catch (error) { console.error('tasks scheduler backlog handler failed:', error) }
   }
 
   const tick = (): void => {
@@ -41,7 +44,9 @@ export function startTaskScheduler(
       console.error('tasks scheduler tick failed:', error)
       return
     }
-    for (const task of due) handlers.onReminder(toReminderPayload(task))
+    for (const task of due) {
+      try { handlers.onReminder(toReminderPayload(task)) } catch (error) { console.error('tasks scheduler reminder handler failed:', error) }
+    }
   }
 
   timer = setInterval(tick, intervalMs)

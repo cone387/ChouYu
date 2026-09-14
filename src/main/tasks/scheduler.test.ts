@@ -62,8 +62,10 @@ describe('startTaskScheduler', () => {
   test('领取抛错时不回调且不中断后续 tick', () => {
     vi.useFakeTimers()
     let failures = 0
+    let calls = 0
     let healthy = false
     const claim = () => {
+      calls += 1
       if (!healthy) { failures += 1; throw new Error('db busy') }
       return []
     }
@@ -71,8 +73,36 @@ describe('startTaskScheduler', () => {
     expect(failures).toBe(1) // 启动积压即失败
     healthy = true
     vi.advanceTimersByTime(1_000)
-    expect(failures).toBe(1) // 恢复后不再失败,调度仍在运行
+    expect(failures).toBe(1)
+    expect(calls).toBe(2) // 恢复后 tick 仍在执行
     scheduler.stop()
+  })
+
+  test('onReminder 抛错不影响同批其余提醒与后续 tick', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const store = openTasksStore(tempFile())
+    store.createTask({ title: '第一条', remindAt: 10_500 })
+    store.createTask({ title: '第二条', remindAt: 10_600 })
+    const seen: string[] = []
+    let willThrow = true
+    const scheduler = startTaskScheduler(
+      now => store.claimDueReminders(now),
+      {
+        onReminder: task => {
+          if (willThrow && task.title === '第一条') { willThrow = false; throw new Error('notify failed') }
+          seen.push(task.title)
+        },
+        onBacklog: () => {}
+      },
+      { intervalMs: 1_000, now: () => Date.now() }
+    )
+    vi.advanceTimersByTime(1_000)
+    expect(seen).toEqual(['第二条']) // 第一条抛错不吞掉第二条
+    vi.advanceTimersByTime(1_000)
+    expect(seen).toEqual(['第二条']) // 已领取的不重发
+    scheduler.stop()
+    store.close()
   })
 
   test('stop 后不再 tick', () => {
