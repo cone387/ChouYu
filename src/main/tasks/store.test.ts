@@ -103,15 +103,25 @@ describe('TasksStore', () => {
     expect(() => openTasksStore(file)).toThrow('版本')
   })
 
-  test('损坏文件被隔离并重建空库', () => {
+  test('损坏文件被隔离并重建空库,WAL 侧文件不残留', () => {
     const file = tempFile('tasks.db')
     writeFileSync(file, 'this is definitely not a sqlite database')
+    writeFileSync(`${file}-wal`, 'stale wal')
+    writeFileSync(`${file}-shm`, 'stale shm')
     const store = openTasksStore(file)
     const result = store.listTasks()
     expect(result.open).toHaveLength(0)
     expect(result.quarantinedAt).toBeGreaterThan(0)
-    const siblings = readdirSync(join(file, '..')).filter(name => name.includes('corrupt'))
-    expect(siblings.length).toBeGreaterThan(0)
     store.close()
+    const siblings = readdirSync(join(file, '..'))
+    expect(siblings.filter(name => name.includes('corrupt')).length).toBeGreaterThan(0)
+    expect(siblings.includes('tasks.db-wal')).toBe(false)
+    expect(siblings.includes('tasks.db-shm')).toBe(false)
+  })
+
+  test('非损坏的打开失败原样抛出,不隔离不重建', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'chouyu-tasks-block-'))
+    directories.push(directory)
+    expect(() => openTasksStore(directory)).toThrow()
   })
 })

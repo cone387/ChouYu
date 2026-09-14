@@ -85,6 +85,12 @@ const toProject = (row: ProjectRow): TaskProject => ({
   id: row.id, name: row.name, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
 })
 
+/** 仅确认的库损坏才允许隔离重建,被锁/磁盘满/权限等其他错误必须原样抛出。 */
+const isCorruptionError = (error: unknown): boolean => {
+  const code = (error as { code?: unknown } | null | undefined)?.code
+  return code === 'SQLITE_NOTADB' || code === 'SQLITE_CORRUPT'
+}
+
 export class TasksStore {
   readonly quarantinedAt: number | null = null
   private constructor(private readonly database: Database.Database, quarantinedAt: number | null) {
@@ -98,20 +104,27 @@ export class TasksStore {
       migrate(database)
       return new TasksStore(database, null)
     } catch (error) {
-      // 版本过新属于正常拒绝,不能把健康库当损坏隔离
-      if (error instanceof TasksSchemaVersionError) {
-        try { database?.close() } catch { /* 尽力关闭 */ }
-        throw error
-      }
-      // 打开或迁移失败:先关句柄(Windows 上不关无法重命名),再隔离原文件重建空库
       try { database?.close() } catch { /* 尽力关闭 */ }
+      // 版本过新与非损坏错误原样抛出,只有确认损坏才隔离重建
+      if (error instanceof TasksSchemaVersionError || !isCorruptionError(error)) throw error
       const quarantinedAt = Date.now()
       const quarantine = `${filePath}.corrupt-${quarantinedAt}`
       if (existsSync(filePath)) {
         try { renameSync(filePath, quarantine) } catch { /* 隔离失败则直接覆盖重建 */ }
       }
-      database = new Database(filePath)
-      migrate(database)
+      for (const suffix of ['-wal', '-shm']) {
+        const side = `${filePath}${suffix}`
+        if (existsSync(side)) {
+          try { renameSync(side, `${quarantine}${suffix}`) } catch { /* 尽力隔离侧文件 */ }
+        }
+      }
+      try {
+        database = new Database(filePath)
+        migrate(database)
+      } catch (rebuildError) {
+        try { database?.close() } catch { /* 尽力关闭 */ }
+        throw rebuildError
+      }
       return new TasksStore(database, quarantinedAt)
     }
   }
