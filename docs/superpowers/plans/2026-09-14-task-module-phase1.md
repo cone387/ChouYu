@@ -773,8 +773,10 @@ describe('startTaskScheduler', () => {
   test('领取抛错时不回调且不中断后续 tick', () => {
     vi.useFakeTimers()
     let failures = 0
+    let calls = 0
     let healthy = false
     const claim = () => {
+      calls += 1
       if (!healthy) { failures += 1; throw new Error('db busy') }
       return []
     }
@@ -782,8 +784,36 @@ describe('startTaskScheduler', () => {
     expect(failures).toBe(1) // 启动积压即失败
     healthy = true
     vi.advanceTimersByTime(1_000)
-    expect(failures).toBe(1) // 恢复后不再失败,调度仍在运行
+    expect(failures).toBe(1)
+    expect(calls).toBe(2) // 恢复后 tick 仍在执行
     scheduler.stop()
+  })
+
+  test('onReminder 抛错不影响同批其余提醒与后续 tick', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const store = openTasksStore(tempFile())
+    store.createTask({ title: '第一条', remindAt: 10_500 })
+    store.createTask({ title: '第二条', remindAt: 10_600 })
+    const seen: string[] = []
+    let willThrow = true
+    const scheduler = startTaskScheduler(
+      now => store.claimDueReminders(now),
+      {
+        onReminder: task => {
+          if (willThrow && task.title === '第一条') { willThrow = false; throw new Error('notify failed') }
+          seen.push(task.title)
+        },
+        onBacklog: () => {}
+      },
+      { intervalMs: 1_000, now: () => Date.now() }
+    )
+    vi.advanceTimersByTime(1_000)
+    expect(seen).toEqual(['第二条']) // 第一条抛错不吞掉第二条
+    vi.advanceTimersByTime(1_000)
+    expect(seen).toEqual(['第二条']) // 已领取的不重发
+    scheduler.stop()
+    store.close()
   })
 
   test('stop 后不再 tick', () => {
@@ -839,11 +869,14 @@ export function startTaskScheduler(
   let timer: ReturnType<typeof setInterval> | null = null
 
   // 启动积压:应用没开时错过的提醒合并成一条,不逐条轰炸
+  let backlog: TaskRecord[] = []
   try {
-    const backlog = claim(now())
-    if (backlog.length > 0) handlers.onBacklog(backlog.length)
+    backlog = claim(now())
   } catch (error) {
     console.error('tasks scheduler backlog failed:', error)
+  }
+  if (backlog.length > 0) {
+    try { handlers.onBacklog(backlog.length) } catch (error) { console.error('tasks scheduler backlog handler failed:', error) }
   }
 
   const tick = (): void => {
@@ -855,7 +888,9 @@ export function startTaskScheduler(
       console.error('tasks scheduler tick failed:', error)
       return
     }
-    for (const task of due) handlers.onReminder(toReminderPayload(task))
+    for (const task of due) {
+      try { handlers.onReminder(toReminderPayload(task)) } catch (error) { console.error('tasks scheduler reminder handler failed:', error) }
+    }
   }
 
   timer = setInterval(tick, intervalMs)
@@ -872,7 +907,7 @@ export function startTaskScheduler(
 - [ ] **Step 4: 运行确认通过**
 
 Run: `npx vitest --run src/main/tasks/scheduler.test.ts`
-Expected: PASS(4 个测试全绿)
+Expected: PASS(5 个测试全绿)
 
 - [ ] **Step 5: 提交**
 
