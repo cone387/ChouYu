@@ -206,8 +206,9 @@ export class TasksStore {
     const priority = patch?.priority === undefined ? current.priority : assertPriority(patch.priority)
     const dueAt = patch?.dueAt === undefined ? current.due_at : assertTimestamp(patch.dueAt, '截止时间')
     const remindAt = patch?.remindAt === undefined ? current.remind_at : assertTimestamp(patch.remindAt, '提醒时间')
-    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, updated_at = ? WHERE id = ?`)
-      .run(title, note, projectId, priority, dueAt, remindAt, Date.now(), id)
+    const resetFired = patch?.remindAt !== undefined && remindAt !== current.remind_at
+    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, updated_at = ? WHERE id = ?`)
+      .run(title, note, projectId, priority, dueAt, remindAt, resetFired ? null : current.remind_fired_at, Date.now(), id)
     return this.requireTask(id)
   }
 

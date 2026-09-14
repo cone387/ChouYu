@@ -92,6 +92,16 @@ describe('TasksStore', () => {
     store.close()
   })
 
+  test('修改提醒时间会重置已触发标记', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    const task = store.createTask({ title: '改期', remindAt: 1_000 })
+    expect(store.claimDueReminders(2_000).map(item => item.id)).toEqual([task.id])
+    const updated = store.updateTask(task.id, { remindAt: 10_000 })
+    expect(updated.remindFiredAt).toBeNull()
+    expect(store.claimDueReminders(11_000).map(item => item.id)).toEqual([task.id])
+    store.close()
+  })
+
   test('拒绝高于当前支持的数据库版本', async () => {
     const file = tempFile('tasks.db')
     const store = openTasksStore(file)
