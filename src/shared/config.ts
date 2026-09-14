@@ -76,6 +76,7 @@ export interface AppConfig {
   theme: 'system' | 'light' | 'dark'
   proactiveGreeting: boolean
   proactiveRestReminder: boolean
+  taskNotifications: boolean
   clipboardWatch: boolean
   aiToolsEnabled: boolean
   toolPermissionMode: 'confirm' | 'auto' | 'full'
@@ -108,6 +109,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   theme: 'system',
   proactiveGreeting: true,
   proactiveRestReminder: true,
+  taskNotifications: true,
   clipboardWatch: false,
   aiToolsEnabled: true,
   toolPermissionMode: 'confirm',
@@ -157,6 +159,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     theme: source.theme === 'light' || source.theme === 'dark' ? source.theme : 'system',
     proactiveGreeting: source.proactiveGreeting !== false,
     proactiveRestReminder: source.proactiveRestReminder !== false,
+    taskNotifications: source.taskNotifications !== false,
     clipboardWatch: source.clipboardWatch === true,
     aiToolsEnabled: source.aiToolsEnabled !== false,
     toolPermissionMode: source.toolPermissionMode === 'auto' || source.toolPermissionMode === 'full' ? source.toolPermissionMode : 'confirm',
