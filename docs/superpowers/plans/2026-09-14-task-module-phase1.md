@@ -1182,7 +1182,7 @@ import type { TasksAPI } from '../shared/tasks'
 `src/renderer/src/shared/types.ts` 顶部 import 区加:
 
 ```ts
-import type { TaskListResult, TaskProject, TaskRecord, TaskCreateInput, TaskUpdateInput, TasksReminderEvent } from '../../../../shared/tasks'
+import type { TaskListResult, TaskProject, TaskRecord, TaskCreateInput, TaskUpdateInput, TasksReminderEvent } from '../../../shared/tasks'
 ```
 
 `ElectronAPI` 接口内(与 `journal` 同级,`memory` 之前)加:
