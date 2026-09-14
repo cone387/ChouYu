@@ -132,6 +132,7 @@ export interface TasksAPI {
   createProject(name: string): Promise<TaskProject>
   renameProject(id: string, name: string): Promise<TaskProject>
   archiveProject(id: string, archived: boolean): Promise<TaskProject>
+  ready(): void
   onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void
   onOpenTasksPanel(callback: () => void): () => void
   onTasksStoreRebuilt(callback: () => void): () => void

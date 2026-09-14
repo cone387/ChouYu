@@ -1,6 +1,7 @@
 import type { StorageStatus } from '../shared/storage'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { JournalAPI } from '../shared/journal'
+import type { TasksAPI } from '../shared/tasks'
 import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../shared/ai'
 import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from '../shared/capture'
@@ -64,6 +65,31 @@ const api = {
     ask: (input) => ipcRenderer.invoke('journal:ask', input),
     cancelAnalysis: () => ipcRenderer.invoke('journal:cancel-analysis')
   } satisfies JournalAPI,
+  tasks: {
+    list: () => ipcRenderer.invoke('tasks:list'),
+    create: input => ipcRenderer.invoke('tasks:create', input),
+    update: (id, patch) => ipcRenderer.invoke('tasks:update', id, patch),
+    complete: id => ipcRenderer.invoke('tasks:complete', id),
+    remove: id => ipcRenderer.invoke('tasks:delete', id),
+    projects: () => ipcRenderer.invoke('tasks:projects'),
+    createProject: name => ipcRenderer.invoke('tasks:createProject', name),
+    renameProject: (id, name) => ipcRenderer.invoke('tasks:renameProject', id, name),
+    archiveProject: (id, archived) => ipcRenderer.invoke('tasks:archiveProject', id, archived),
+    ready: () => { ipcRenderer.send('tasks:ready') },
+    onTasksReminder: callback => {
+      const handler = (_event: unknown, payload: import('../shared/tasks').TasksReminderEvent) => callback(payload)
+      ipcRenderer.on('tasks:reminder', handler)
+      return () => { ipcRenderer.removeListener('tasks:reminder', handler) }
+    },
+    onOpenTasksPanel: callback => {
+      ipcRenderer.on('open-tasks-panel', callback)
+      return () => { ipcRenderer.removeListener('open-tasks-panel', callback) }
+    },
+    onTasksStoreRebuilt: callback => {
+      ipcRenderer.on('tasks:store-rebuilt', callback)
+      return () => { ipcRenderer.removeListener('tasks:store-rebuilt', callback) }
+    }
+  } satisfies TasksAPI,
   recognizeOfflineImage: (dataUrl: string) => ipcRenderer.invoke('ocr:offline', dataUrl) as Promise<import('../shared/ocr').OfflineOcrResult>,
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getSystemIdleSeconds: () => ipcRenderer.invoke('system-idle-seconds') as Promise<number>,
