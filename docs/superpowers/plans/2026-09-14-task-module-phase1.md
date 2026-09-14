@@ -1216,7 +1216,7 @@ describe('ProactiveEngine.postExternal', () => {
   test('外部消息绕过冷却直接入列并回调,最新在前', () => {
     const engine = new ProactiveEngine()
     const seen: Array<{ message: string; kind?: string }> = []
-    engine.start(message => { seen.push({ message, kind: 'rest' }) }, { greeting: false, restReminder: false })
+    engine.start((message, kind) => { seen.push({ message, kind }) }, { greeting: false, restReminder: false })
     engine.postExternal('任务提醒：写周报', 'task')
     engine.postExternal('错过了 2 条任务提醒', 'task')
     const messages = engine.getMessages()
@@ -1224,6 +1224,7 @@ describe('ProactiveEngine.postExternal', () => {
     expect(messages[0].message).toBe('错过了 2 条任务提醒')
     expect(messages.every(item => item.kind === 'task')).toBe(true)
     expect(seen).toHaveLength(2)
+    expect(seen.every(item => item.kind === 'task')).toBe(true)
     engine.stop()
   })
 
@@ -1254,13 +1255,21 @@ Expected: FAIL(`postExternal is not a function` / `ProactiveEngine` 未导出)
 export type ProactiveKind = 'greeting' | 'rest' | 'return' | 'task'
 ```
 
-`class ProactiveEngine` 改为 `export class ProactiveEngine`,并在 `speak` 方法旁新增公开方法:
+`class ProactiveEngine` 改为 `export class ProactiveEngine`;`speak()` 里「unshift 消息 + persistMessages」两行抽成私有方法(放在 `speak` 之前),`speak` 与新方法共用:
+
+```ts
+  private enqueue(message: string, kind: ProactiveKind): void {
+    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
+    this.persistMessages()
+  }
+```
+
+并在 `speak` 方法旁新增公开方法:
 
 ```ts
   /** 外部注入的确定性提醒(任务到期),不受 60 分钟冷却限制。 */
   postExternal(message: string, kind: ProactiveKind = 'task'): void {
-    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
-    this.persistMessages()
+    this.enqueue(message, kind)
     this.callback?.(message, kind)
   }
 ```
