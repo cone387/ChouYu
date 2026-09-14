@@ -386,6 +386,16 @@ describe('TasksStore', () => {
     store.close()
   })
 
+  test('修改提醒时间会重置已触发标记', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    const task = store.createTask({ title: '改期', remindAt: 1_000 })
+    expect(store.claimDueReminders(2_000).map(item => item.id)).toEqual([task.id])
+    const updated = store.updateTask(task.id, { remindAt: 10_000 })
+    expect(updated.remindFiredAt).toBeNull()
+    expect(store.claimDueReminders(11_000).map(item => item.id)).toEqual([task.id])
+    store.close()
+  })
+
   test('拒绝高于当前支持的数据库版本', () => {
     const file = tempFile('tasks.db')
     const store = openTasksStore(file)
@@ -639,8 +649,9 @@ export class TasksStore {
     const priority = patch?.priority === undefined ? current.priority : assertPriority(patch.priority)
     const dueAt = patch?.dueAt === undefined ? current.due_at : assertTimestamp(patch.dueAt, '截止时间')
     const remindAt = patch?.remindAt === undefined ? current.remind_at : assertTimestamp(patch.remindAt, '提醒时间')
-    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, updated_at = ? WHERE id = ?`)
-      .run(title, note, projectId, priority, dueAt, remindAt, Date.now(), id)
+    const resetFired = patch?.remindAt !== undefined && remindAt !== current.remind_at
+    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, updated_at = ? WHERE id = ?`)
+      .run(title, note, projectId, priority, dueAt, remindAt, resetFired ? null : current.remind_fired_at, Date.now(), id)
     return this.requireTask(id)
   }
 
@@ -686,7 +697,7 @@ export function openTasksStore(filePath: string): TasksStore {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `npx vitest --run src/main/tasks/store.test.ts`
-Expected: PASS(9 个测试全绿)
+Expected: PASS(10 个测试全绿)
 
 注意:如果「损坏文件被隔离」用例失败,原因通常是 `new Database(file)` 对垃圾字节懒打开成功、`migrate` 才抛错——实现已按「构造+迁移整体 try/catch」处理,隔离文件名以 `.corrupt-` 落盘为准。实测 SQLite close() 会自行删除 -wal/-shm(含损坏库),侧文件 rename 循环是 close 失败时的防御,测试断言的是「重建后原路径无侧文件残留」不变量。
 
@@ -964,6 +975,9 @@ import { startTaskScheduler } from './scheduler'
 let store: TasksStore | undefined
 let scheduler: { stop(): void } | undefined
 let shuttingDown = false
+let storeRebuilt = false
+let pendingBacklog = 0
+let readyDelivered = false
 
 const broadcast = (channel: string, payload?: unknown): void => {
   if (shuttingDown) return
@@ -981,11 +995,11 @@ export function initializeTasks(options: TasksModuleOptions): void {
   if (store) return
   shuttingDown = false
   store = openTasksStore(join(app.getPath('userData'), 'tasks.db'))
-  if (store.quarantinedAt) broadcast('tasks:store-rebuilt')
+  if (store.quarantinedAt) storeRebuilt = true
   scheduler = startTaskScheduler(
     now => store!.claimDueReminders(now),
     {
-      onBacklog: count => { broadcast('tasks:reminder', { backlog: count }) },
+      onBacklog: count => { pendingBacklog = count },
       onReminder: task => {
         if (options.notificationsEnabled() && Notification.isSupported()) {
           try {
@@ -1007,10 +1021,22 @@ export function initializeTasks(options: TasksModuleOptions): void {
   ipcMain.handle('tasks:createProject', (_event, name: string) => store!.createProject(name))
   ipcMain.handle('tasks:renameProject', (_event, id: string, name: string) => store!.renameProject(id, name))
   ipcMain.handle('tasks:archiveProject', (_event, id: string, archived: boolean) => store!.archiveProject(id, archived))
+  // initializeTasks 在 createWindow 之前执行,启动期事件必须暂存,等渲染端 ready 后一次性投递
+  ipcMain.on('tasks:ready', () => {
+    if (readyDelivered) return
+    readyDelivered = true
+    if (storeRebuilt) broadcast('tasks:store-rebuilt')
+    if (pendingBacklog > 0) broadcast('tasks:reminder', { backlog: pendingBacklog })
+  })
 }
 
 export function closeTasks(): void {
   shuttingDown = true
+  for (const channel of ['tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject']) ipcMain.removeHandler(channel)
+  ipcMain.removeAllListeners('tasks:ready')
+  storeRebuilt = false
+  pendingBacklog = 0
+  readyDelivered = false
   scheduler?.stop()
   scheduler = undefined
   try { store?.close() } catch { /* 退出路径上尽力关闭 */ }
@@ -1101,6 +1127,17 @@ git commit -m "feat(tasks): wire task module into main process lifecycle and con
 **Files:**
 - Modify: `src/preload/index.ts`
 - Modify: `src/renderer/src/shared/types.ts`
+- Modify: `src/shared/tasks.ts`(TasksAPI 加 ready)
+
+- [ ] **Step 0: TasksAPI 加 ready**
+
+`src/shared/tasks.ts` 的 `TasksAPI` 接口里加:
+
+```ts
+  ready(): void
+```
+
+(渲染端挂载完成后调用,通知主进程可以投递暂存的启动期任务事件。)
 
 - [ ] **Step 1: preload 增加 tasks 命名空间**
 
@@ -1123,6 +1160,7 @@ import type { TasksAPI } from '../shared/tasks'
     createProject: name => ipcRenderer.invoke('tasks:createProject', name),
     renameProject: (id, name) => ipcRenderer.invoke('tasks:renameProject', id, name),
     archiveProject: (id, archived) => ipcRenderer.invoke('tasks:archiveProject', id, archived),
+    ready: () => { ipcRenderer.send('tasks:ready') },
     onTasksReminder: callback => {
       const handler = (_event: unknown, payload: import('../shared/tasks').TasksReminderEvent) => callback(payload)
       ipcRenderer.on('tasks:reminder', handler)
@@ -1160,6 +1198,7 @@ import type { TaskListResult, TaskProject, TaskRecord, TaskCreateInput, TaskUpda
     createProject(name: string): Promise<TaskProject>
     renameProject(id: string, name: string): Promise<TaskProject>
     archiveProject(id: string, archived: boolean): Promise<TaskProject>
+    ready(): void
     onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void
     onOpenTasksPanel(callback: () => void): () => void
     onTasksStoreRebuilt(callback: () => void): () => void
@@ -1741,12 +1780,12 @@ git commit -m "feat(tasks): add tasks workspace page with list, form and smart v
       if ('task' in payload) proactiveEngine.postExternal(`任务提醒：${payload.task.title}`, 'task')
       else if (payload.backlog > 0) proactiveEngine.postExternal(`错过了 ${payload.backlog} 条任务提醒`, 'task')
     })
-    return cleanup
+    const rebuiltCleanup = window.electronAPI.onTasksStoreRebuilt(() => {
+      proactiveEngine.postExternal('任务数据文件无法读取，已重建空库，原文件已隔离保存。', 'task')
+    })
+    window.electronAPI.tasks.ready()
+    return () => { cleanup(); rebuiltCleanup() }
   }, [])
-
-  useEffect(() => window.electronAPI.onTasksStoreRebuilt(() => {
-    proactiveEngine.postExternal('任务数据文件无法读取，已重建空库，原文件已隔离保存。', 'task')
-  }), [])
 ```
 
 `ProactiveCenter` 调用处(props 列表)加:
