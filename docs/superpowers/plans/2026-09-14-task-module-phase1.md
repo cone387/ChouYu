@@ -1407,6 +1407,7 @@ export default function TasksView({ active }: { active: boolean }) {
   const [selection, setSelection] = useState<Selection>('today')
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [doneTasks, setDoneTasks] = useState<TaskRecord[]>([])
+  const [totalDone, setTotalDone] = useState(0)
   const [projects, setProjects] = useState<TaskProject[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [error, setError] = useState('')
@@ -1420,6 +1421,7 @@ export default function TasksView({ active }: { active: boolean }) {
       .then(([list, projectList]) => {
         setTasks(list.open)
         setDoneTasks(list.done)
+        setTotalDone(list.totalDone)
         setProjects(projectList)
         setQuarantineNotice(list.quarantinedAt ? '任务数据文件曾无法读取，已重建空库，原文件已隔离保存。' : '')
       })
@@ -1505,7 +1507,7 @@ export default function TasksView({ active }: { active: boolean }) {
       {quarantineNotice && <p role="alert" className="tasks-quarantine">{quarantineNotice}</p>}
       {error && <p role="alert" className="tasks-error">{error}</p>}
       <div className="tasks-toolbar">
-        <p>{visible.length} 个进行中{doneTasks.length > 0 ? ` · ${doneTasks.length} 个已完成` : ''}</p>
+        <p>{visible.length} 个进行中{totalDone > 0 ? ` · ${totalDone} 个已完成` : ''}</p>
         <button type="button" className="tasks-create" onClick={() => setDraft({ ...emptyDraft })}>新建任务</button>
       </div>
 
