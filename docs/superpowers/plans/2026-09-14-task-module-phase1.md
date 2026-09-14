@@ -401,7 +401,7 @@ describe('TasksStore', () => {
     const file = tempFile('tasks.db')
     writeFileSync(file, 'this is definitely not a sqlite database')
     const store = openTasksStore(file)
-    const result = store.listTasks({})
+    const result = store.listTasks()
     expect(result.open).toHaveLength(0)
     expect(result.quarantinedAt).toBeGreaterThan(0)
     const siblings = readdirSync(join(file, '..')).filter(name => name.includes('corrupt'))
