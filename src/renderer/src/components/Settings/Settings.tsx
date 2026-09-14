@@ -679,6 +679,18 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                 </label>
               </div>
               <div className="settings-field settings-field-row">
+                <label>任务到期通知</label>
+                <label className="settings-switch">
+                  <input
+                    type="checkbox"
+                    aria-label="任务到期通知"
+                    checked={config.taskNotifications !== false}
+                    onChange={(e) => save({ taskNotifications: e.target.checked })}
+                  />
+                  <span className="settings-switch-slider" />
+                </label>
+              </div>
+              <div className="settings-field settings-field-row">
                 <label>剪贴板感知</label>
                 <label className="settings-switch">
                   <input

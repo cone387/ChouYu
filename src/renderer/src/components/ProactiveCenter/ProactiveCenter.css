@@ -47,6 +47,13 @@
 .proactive-center-item > small { display: block; margin-top: var(--space-3); color: var(--accent); font-size: var(--font-sm); }
 .proactive-center-actions { display: flex; gap: var(--space-3); margin-top: var(--space-4); }
 
+.proactive-center-task-link {
+  appearance: none; border: none; background: none; padding: 0; margin: 0;
+  text-align: left; font: inherit; color: var(--accent); cursor: pointer;
+}
+.proactive-center-item > .proactive-center-task-link { display: block; margin-top: var(--space-3); font-size: var(--font-md); line-height: var(--leading-normal); white-space: pre-wrap; }
+.proactive-center-task-link:hover { text-decoration: underline; }
+
 .proactive-center-actions button, .proactive-center footer button {
   border: 0;
   border-radius: var(--radius-md);

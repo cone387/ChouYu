@@ -177,6 +177,19 @@ function App() {
     return () => clearTimeout(t)
   }, [proactiveMsg])
 
+  // Task reminders from the main-process scheduler flow into the message center.
+  useEffect(() => {
+    const cleanup = window.electronAPI.tasks.onTasksReminder(payload => {
+      if ('task' in payload) proactiveEngine.postExternal(`任务提醒：${payload.task.title}`, 'task')
+      else if (payload.backlog > 0) proactiveEngine.postExternal(`错过了 ${payload.backlog} 条任务提醒`, 'task')
+    })
+    const rebuiltCleanup = window.electronAPI.tasks.onTasksStoreRebuilt(() => {
+      proactiveEngine.postExternal('任务数据文件无法读取，已重建空库，原文件已隔离保存。', 'task')
+    })
+    window.electronAPI.tasks.ready()
+    return () => { cleanup(); rebuiltCleanup() }
+  }, [])
+
   useEffect(() => {
     if (!fileDropError) return
     const timer = setTimeout(() => setFileDropError(null), 5000)
@@ -326,6 +339,15 @@ function App() {
     setWorkspaceRequest(previous => ({ page: 'settings', id: previous.id + 1 }))
   }, [ensurePanelPosition])
 
+  const openTasksPage = useCallback(() => {
+    ensurePanelPosition()
+    setPanelVisible(true)
+    setPanelInitialized(true)
+    setShowSettings(false)
+    setWorkspaceRequest(previous => ({ page: 'tasks', id: previous.id + 1 }))
+    window.focus()
+  }, [ensurePanelPosition])
+
   useEffect(() => window.electronAPI.onOpenJournalPanel(() => {
     ensurePanelPosition()
     setPanelVisible(true)
@@ -334,6 +356,8 @@ function App() {
     setWorkspaceRequest(previous => ({ page: 'journal', id: previous.id + 1 }))
     window.focus()
   }), [ensurePanelPosition])
+
+  useEffect(() => window.electronAPI.tasks.onOpenTasksPanel(openTasksPage), [openTasksPage])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onTogglePanel(togglePanel)
@@ -537,6 +561,7 @@ function App() {
             proactiveEngine.clearMessages()
             persistProactiveMessages()
           }}
+          onOpenTask={() => { setShowProactiveCenter(false); openTasksPage() }}
         />
       )}
       {/* Proactive message bubble */}
