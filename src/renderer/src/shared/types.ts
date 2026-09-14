@@ -5,7 +5,6 @@ import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
 import type { CapabilityInfo } from '../../../shared/capabilities'
 import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncStatus, MemoryType } from '../../../shared/memory'
-import type { TaskListResult, TaskProject, TaskRecord, TaskCreateInput, TaskUpdateInput, TasksReminderEvent } from '../../../shared/tasks'
 export type { AppConfig } from '../../../shared/config'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
@@ -104,21 +103,7 @@ export interface ElectronAPI {
   capabilities: {
     list: () => Promise<CapabilityInfo[]>
   }
-  tasks: {
-    list(): Promise<TaskListResult>
-    create(input: TaskCreateInput): Promise<TaskRecord>
-    update(id: string, patch: TaskUpdateInput): Promise<TaskRecord>
-    complete(id: string): Promise<TaskRecord>
-    remove(id: string): Promise<void>
-    projects(): Promise<TaskProject[]>
-    createProject(name: string): Promise<TaskProject>
-    renameProject(id: string, name: string): Promise<TaskProject>
-    archiveProject(id: string, archived: boolean): Promise<TaskProject>
-    ready(): void
-    onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void
-    onOpenTasksPanel(callback: () => void): () => void
-    onTasksStoreRebuilt(callback: () => void): () => void
-  }
+  tasks: import('../../../shared/tasks').TasksAPI
   memory: {
     list: (options?: MemoryListOptions) => Promise<MemoryRecord[]>
     listPage: (options?: MemoryListOptions) => Promise<import('../../../shared/memory').MemoryListPage>

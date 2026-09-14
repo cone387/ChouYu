@@ -1,7 +1,7 @@
 import type { StorageStatus } from '../shared/storage'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { JournalAPI } from '../shared/journal'
-import type { TasksAPI } from '../shared/tasks'
+import type { TasksAPI, TasksReminderEvent } from '../shared/tasks'
 import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../shared/ai'
 import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from '../shared/capture'
@@ -77,7 +77,7 @@ const api = {
     archiveProject: (id, archived) => ipcRenderer.invoke('tasks:archiveProject', id, archived),
     ready: () => { ipcRenderer.send('tasks:ready') },
     onTasksReminder: callback => {
-      const handler = (_event: unknown, payload: import('../shared/tasks').TasksReminderEvent) => callback(payload)
+      const handler = (_event: unknown, payload: TasksReminderEvent) => callback(payload)
       ipcRenderer.on('tasks:reminder', handler)
       return () => { ipcRenderer.removeListener('tasks:reminder', handler) }
     },
