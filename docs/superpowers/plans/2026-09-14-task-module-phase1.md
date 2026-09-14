@@ -397,16 +397,26 @@ describe('TasksStore', () => {
     expect(() => openTasksStore(file)).toThrow('版本')
   })
 
-  test('损坏文件被隔离并重建空库', () => {
+  test('损坏文件被隔离并重建空库,WAL 侧文件不残留', () => {
     const file = tempFile('tasks.db')
     writeFileSync(file, 'this is definitely not a sqlite database')
+    writeFileSync(`${file}-wal`, 'stale wal')
+    writeFileSync(`${file}-shm`, 'stale shm')
     const store = openTasksStore(file)
     const result = store.listTasks()
     expect(result.open).toHaveLength(0)
     expect(result.quarantinedAt).toBeGreaterThan(0)
-    const siblings = readdirSync(join(file, '..')).filter(name => name.includes('corrupt'))
-    expect(siblings.length).toBeGreaterThan(0)
     store.close()
+    const siblings = readdirSync(join(file, '..'))
+    expect(siblings.filter(name => name.includes('corrupt')).length).toBeGreaterThan(0)
+    expect(siblings.includes('tasks.db-wal')).toBe(false)
+    expect(siblings.includes('tasks.db-shm')).toBe(false)
+  })
+
+  test('非损坏的打开失败原样抛出,不隔离不重建', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'chouyu-tasks-block-'))
+    directories.push(directory)
+    expect(() => openTasksStore(directory)).toThrow()
   })
 })
 ```
@@ -508,6 +518,12 @@ const toProject = (row: ProjectRow): TaskProject => ({
   id: row.id, name: row.name, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
 })
 
+/** 仅确认的库损坏才允许隔离重建,被锁/磁盘满/权限等其他错误必须原样抛出。 */
+const isCorruptionError = (error: unknown): boolean => {
+  const code = (error as { code?: unknown } | null | undefined)?.code
+  return code === 'SQLITE_NOTADB' || code === 'SQLITE_CORRUPT'
+}
+
 export class TasksStore {
   readonly quarantinedAt: number | null = null
   private constructor(private readonly database: Database.Database, quarantinedAt: number | null) {
@@ -521,20 +537,27 @@ export class TasksStore {
       migrate(database)
       return new TasksStore(database, null)
     } catch (error) {
-      // 版本过新属于正常拒绝,不能把健康库当损坏隔离
-      if (error instanceof TasksSchemaVersionError) {
-        try { database?.close() } catch { /* 尽力关闭 */ }
-        throw error
-      }
-      // 打开或迁移失败:先关句柄(Windows 上不关无法重命名),再隔离原文件重建空库
       try { database?.close() } catch { /* 尽力关闭 */ }
+      // 版本过新与非损坏错误原样抛出,只有确认损坏才隔离重建
+      if (error instanceof TasksSchemaVersionError || !isCorruptionError(error)) throw error
       const quarantinedAt = Date.now()
       const quarantine = `${filePath}.corrupt-${quarantinedAt}`
       if (existsSync(filePath)) {
         try { renameSync(filePath, quarantine) } catch { /* 隔离失败则直接覆盖重建 */ }
       }
-      database = new Database(filePath)
-      migrate(database)
+      for (const suffix of ['-wal', '-shm']) {
+        const side = `${filePath}${suffix}`
+        if (existsSync(side)) {
+          try { renameSync(side, `${quarantine}${suffix}`) } catch { /* 尽力隔离侧文件 */ }
+        }
+      }
+      try {
+        database = new Database(filePath)
+        migrate(database)
+      } catch (rebuildError) {
+        try { database?.close() } catch { /* 尽力关闭 */ }
+        throw rebuildError
+      }
       return new TasksStore(database, quarantinedAt)
     }
   }
@@ -663,9 +686,9 @@ export function openTasksStore(filePath: string): TasksStore {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `npx vitest --run src/main/tasks/store.test.ts`
-Expected: PASS(8 个测试全绿)
+Expected: PASS(9 个测试全绿)
 
-注意:如果「损坏文件被隔离」用例失败,原因通常是 `new Database(file)` 对垃圾字节懒打开成功、`migrate` 才抛错——实现已按「构造+迁移整体 try/catch」处理,隔离文件名以 `.corrupt-` 落盘为准。
+注意:如果「损坏文件被隔离」用例失败,原因通常是 `new Database(file)` 对垃圾字节懒打开成功、`migrate` 才抛错——实现已按「构造+迁移整体 try/catch」处理,隔离文件名以 `.corrupt-` 落盘为准。实测 SQLite close() 会自行删除 -wal/-shm(含损坏库),侧文件 rename 循环是 close 失败时的防御,测试断言的是「重建后原路径无侧文件残留」不变量。
 
 - [ ] **Step 5: 提交**
 
