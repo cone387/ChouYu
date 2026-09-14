@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import GlobalSearch, { type SearchSnapshot } from '../Workspace/GlobalSearch'
 import Journal from '../Journal/Journal'
+import TasksView from '../Tasks/TasksView'
 import WorkspaceNav, { type WorkspacePage } from '../Workspace/WorkspaceNav'
 import WorkspaceHeader from '../Workspace/WorkspaceHeader'
 import { useWorkspacePresentation } from '../Workspace/useWorkspacePresentation'
@@ -745,6 +746,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         <section className="workspace-page workspace-journal" hidden={activePage !== 'journal'} aria-label="活动工作区">
           {visitedPages.journal && <>
             <Journal active={visible && activePage === 'journal'} searchRequest={journalSearch} />
+          </>}
+        </section>
+        <section className="workspace-page workspace-tasks" hidden={activePage !== 'tasks'} aria-label="任务工作区">
+          {visitedPages.tasks && <>
+            <TasksView active={visible && activePage === 'tasks'} />
           </>}
         </section>
         <section className="workspace-page workspace-settings" hidden={!showSettings} aria-label="设置工作区">
