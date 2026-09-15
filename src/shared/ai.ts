@@ -8,6 +8,7 @@ export interface AIStreamRequest {
   requestId: string
   messages: AIChatMessage[]
   systemPrompt: string
+  characterId?: string
 }
 
 export interface AIStreamEvent {

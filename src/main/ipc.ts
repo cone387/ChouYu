@@ -6,6 +6,7 @@ import path from 'path'
 import { sanitizeConfigPatch } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
+import { resolveCharacterConfig } from '../shared/characters'
 import {
   type MemoryCandidateInput,
   type MemoryConflictAction,
@@ -72,6 +73,7 @@ import {
   flushDatabase,
   getConfig,
   saveConfig,
+  getCharacter,
   getMessages,
   saveMessages,
   clearMessages,
@@ -119,7 +121,9 @@ function parseAIStreamRequest(value: unknown): AIStreamRequest | null {
     })
   }
 
-  return { requestId: input.requestId, systemPrompt: input.systemPrompt, messages }
+  const characterId = typeof input.characterId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(input.characterId) ? input.characterId : undefined
+
+  return { requestId: input.requestId, systemPrompt: input.systemPrompt, messages, characterId }
 }
 
 function getErrorMessage(error: unknown): string {
@@ -602,6 +606,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     activeAIRequests.get(requestKey)?.abort()
     const controller = new AbortController()
     const config = getConfig()
+    let effectiveConfig = config
+    if (request.characterId) {
+      const resolution = resolveCharacterConfig(getCharacter(request.characterId), config)
+      if (!resolution.ok) return { ok: false, error: resolution.error }
+      effectiveConfig = { ...config, ...resolution.config }
+    }
     activeAIRequests.set(requestKey, controller)
     const abortWhenDestroyed = () => controller.abort()
     event.sender.once('destroyed', abortWhenDestroyed)
@@ -610,7 +620,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       await streamAIChat(
         request.messages,
         request.systemPrompt,
-        config,
+        effectiveConfig,
         (chunk, done) => {
           if (event.sender.isDestroyed()) return
           const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk, done }

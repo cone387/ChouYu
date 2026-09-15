@@ -28,12 +28,13 @@ export async function streamChat(
   config: AppConfig,
   onChunk: StreamCallback,
   signal?: AbortSignal,
-  onRequestStart?: (requestId: string) => void
+  onRequestStart?: (requestId: string) => void,
+  characterId?: string
 ): Promise<void> {
-  if (!config.apiKey.trim()) {
+  if (!characterId && !config.apiKey.trim()) {
     throw new Error('尚未配置 API Key，请先打开设置完成配置。')
   }
-  if (!config.model.trim()) {
+  if (!characterId && !config.model.trim()) {
     throw new Error('尚未配置模型，请先在设置或模型菜单中选择模型。')
   }
   if (signal?.aborted) throw createAbortError()
@@ -43,6 +44,7 @@ export async function streamChat(
   const request: AIStreamRequest = {
     requestId,
     systemPrompt,
+    characterId,
     messages: messages.map((message) => ({
       role: message.role,
       content: message.content,
