@@ -53,6 +53,31 @@ export interface TaskListResult {
   quarantinedAt: number | null
 }
 
+export type TaskDueRange = 'today' | 'week' | 'overdue' | 'none' | 'any'
+
+export interface TaskView {
+  id: string
+  name: string
+  /** 空数组表示全部项目 */
+  projectIds: string[]
+  /** 空数组表示全部优先级 */
+  priorities: TaskPriority[]
+  dueRange: TaskDueRange
+  createdAt: number
+  updatedAt: number
+}
+
+export interface TaskViewInput {
+  name: string
+  projectIds?: string[]
+  priorities?: TaskPriority[]
+  dueRange?: TaskDueRange
+}
+
+export const DUE_RANGE_LABELS: Record<TaskDueRange, string> = {
+  today: '今天和过期', week: '本周', overdue: '过期', none: '无截止', any: '不限'
+}
+
 export interface TaskReminderPayload {
   id: string
   title: string
@@ -145,6 +170,18 @@ export function compareTasks(a: TaskRecord, b: TaskRecord, now: number): number 
   return b.createdAt - a.createdAt
 }
 
+export function matchesTaskView(task: TaskRecord, view: Pick<TaskView, 'projectIds' | 'priorities' | 'dueRange'>, now: number): boolean {
+  if (view.projectIds.length > 0 && !view.projectIds.includes(task.projectId ?? '')) return false
+  if (view.priorities.length > 0 && !view.priorities.includes(task.priority)) return false
+  switch (view.dueRange) {
+    case 'today': return isDueToday(task, now) || isOverdue(task, now)
+    case 'week': return isDueThisWeek(task, now)
+    case 'overdue': return isOverdue(task, now)
+    case 'none': return task.dueAt === null
+    default: return true
+  }
+}
+
 export interface TasksAPI {
   list(): Promise<TaskListResult>
   create(input: TaskCreateInput): Promise<TaskRecord>
@@ -156,6 +193,10 @@ export interface TasksAPI {
   createProject(name: string): Promise<TaskProject>
   renameProject(id: string, name: string): Promise<TaskProject>
   archiveProject(id: string, archived: boolean): Promise<TaskProject>
+  views(): Promise<TaskView[]>
+  createView(input: TaskViewInput): Promise<TaskView>
+  updateView(id: string, patch: Partial<TaskViewInput>): Promise<TaskView>
+  deleteView(id: string): Promise<void>
   ready(): void
   onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void
   onOpenTasksPanel(callback: () => void): () => void

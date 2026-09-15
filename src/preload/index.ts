@@ -76,6 +76,10 @@ const api = {
     createProject: name => ipcRenderer.invoke('tasks:createProject', name),
     renameProject: (id, name) => ipcRenderer.invoke('tasks:renameProject', id, name),
     archiveProject: (id, archived) => ipcRenderer.invoke('tasks:archiveProject', id, archived),
+    views: () => ipcRenderer.invoke('tasks:views'),
+    createView: input => ipcRenderer.invoke('tasks:createView', input),
+    updateView: (id, patch) => ipcRenderer.invoke('tasks:updateView', id, patch),
+    deleteView: id => ipcRenderer.invoke('tasks:deleteView', id),
     ready: () => { ipcRenderer.send('tasks:ready') },
     onTasksReminder: callback => {
       const handler = (_event: unknown, payload: TasksReminderEvent) => callback(payload)

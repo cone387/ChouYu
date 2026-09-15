@@ -2,13 +2,14 @@ import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import type {
-  TaskCreateInput, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskUpdateInput, TaskRecurrence
+  TaskCreateInput, TaskDueRange, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
 } from '../../shared/tasks'
 import { nextRecurrenceDueAt } from '../../shared/tasks'
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
 const RECURRENCES: TaskRecurrence[] = ['none', 'daily', 'weekly', 'monthly']
+const DUE_RANGES: TaskDueRange[] = ['today', 'week', 'overdue', 'none', 'any']
 
 interface TaskRow {
   id: string; title: string; note: string | null; project_id: string | null; priority: string
@@ -17,6 +18,10 @@ interface TaskRow {
   created_at: number; updated_at: number; completed_at: number | null
 }
 interface ProjectRow { id: string; name: string; archived_at: number | null; created_at: number }
+interface ViewRow {
+  id: string; name: string; project_ids: string; priorities: string
+  due_range: string; created_at: number; updated_at: number
+}
 
 const assertTitle = (title: unknown): string => {
   const value = typeof title === 'string' ? title.trim() : ''
@@ -39,6 +44,35 @@ const assertRecurrence = (recurrence: unknown): TaskRecurrence => {
   if (recurrence === undefined) return 'none'
   if (typeof recurrence === 'string' && RECURRENCES.includes(recurrence as TaskRecurrence)) return recurrence as TaskRecurrence
   throw new Error('重复规则无效。')
+}
+const assertViewName = (name: unknown): string => {
+  const value = typeof name === 'string' ? name.trim() : ''
+  if (!value) throw new Error('视图名称不能为空。')
+  if (value.length > 50) throw new Error('视图名称过长。')
+  return value
+}
+const assertIdList = (value: unknown): string[] => {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new Error('项目选择无效。')
+  return value
+}
+const assertPriorityList = (value: unknown): TaskPriority[] => {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value) || value.some(item => !PRIORITIES.includes(item as TaskPriority))) throw new Error('优先级选择无效。')
+  return value as TaskPriority[]
+}
+const assertDueRange = (value: unknown): TaskDueRange => {
+  if (value === undefined || value === null) return 'any'
+  if (typeof value === 'string' && DUE_RANGES.includes(value as TaskDueRange)) return value as TaskDueRange
+  throw new Error('截止范围无效。')
+}
+const parseJsonList = (value: string): string[] => {
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.filter(item => typeof item === 'string') : []
+  } catch {
+    return []
+  }
 }
 const assertTimestamp = (value: unknown, label: string): number | null => {
   if (value === undefined || value === null) return null
@@ -75,6 +109,12 @@ function migrate(database: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS tasks_status_due ON tasks(status, due_at);
     CREATE INDEX IF NOT EXISTS tasks_remind ON tasks(status, remind_at, remind_fired_at);
+    CREATE TABLE IF NOT EXISTS task_views (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL,
+      project_ids TEXT NOT NULL DEFAULT '[]', priorities TEXT NOT NULL DEFAULT '[]',
+      due_range TEXT NOT NULL DEFAULT 'any',
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
   `)
   database.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
@@ -90,6 +130,13 @@ const toTask = (row: TaskRow): TaskRecord => ({
 })
 const toProject = (row: ProjectRow): TaskProject => ({
   id: row.id, name: row.name, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
+})
+const toView = (row: ViewRow): TaskView => ({
+  id: row.id, name: row.name,
+  projectIds: parseJsonList(row.project_ids),
+  priorities: parseJsonList(row.priorities).filter(item => PRIORITIES.includes(item as TaskPriority)) as TaskPriority[],
+  dueRange: (DUE_RANGES.includes(row.due_range as TaskDueRange) ? row.due_range : 'any') as TaskDueRange,
+  createdAt: row.created_at, updatedAt: row.updated_at
 })
 
 /** 仅确认的库损坏才允许隔离重建,被锁/磁盘满/权限等其他错误必须原样抛出。 */
@@ -182,6 +229,49 @@ export class TasksStore {
     const row = this.database.prepare('SELECT id, archived_at FROM task_projects WHERE id = ?').get(projectId) as { id: string; archived_at: number | null } | undefined
     if (!row || row.archived_at !== null) throw new Error('项目不存在或已归档。')
     return row.id
+  }
+
+  listViews(): TaskView[] {
+    const rows = this.database.prepare('SELECT * FROM task_views ORDER BY created_at, rowid').all() as ViewRow[]
+    return rows.map(toView)
+  }
+
+  createView(input: TaskViewInput): TaskView {
+    const name = assertViewName(input?.name)
+    const projectIds = assertIdList(input?.projectIds)
+    const priorities = assertPriorityList(input?.priorities)
+    const dueRange = assertDueRange(input?.dueRange)
+    const now = Date.now()
+    const row: ViewRow = {
+      id: randomUUID(), name, project_ids: JSON.stringify(projectIds), priorities: JSON.stringify(priorities),
+      due_range: dueRange, created_at: now, updated_at: now
+    }
+    this.database.prepare(`INSERT INTO task_views (id, name, project_ids, priorities, due_range, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(row.id, row.name, row.project_ids, row.priorities, row.due_range, row.created_at, row.updated_at)
+    return toView(row)
+  }
+
+  updateView(id: string, patch: Partial<TaskViewInput>): TaskView {
+    const current = this.database.prepare('SELECT * FROM task_views WHERE id = ?').get(id) as ViewRow | undefined
+    if (!current) throw new Error('视图不存在。')
+    const existing = toView(current)
+    const name = patch?.name === undefined ? existing.name : assertViewName(patch.name)
+    const projectIds = patch?.projectIds === undefined ? existing.projectIds : assertIdList(patch.projectIds)
+    const priorities = patch?.priorities === undefined ? existing.priorities : assertPriorityList(patch.priorities)
+    const dueRange = patch?.dueRange === undefined ? existing.dueRange : assertDueRange(patch.dueRange)
+    this.database.prepare('UPDATE task_views SET name = ?, project_ids = ?, priorities = ?, due_range = ?, updated_at = ? WHERE id = ?')
+      .run(name, JSON.stringify(projectIds), JSON.stringify(priorities), dueRange, Date.now(), id)
+    return this.requireView(id)
+  }
+
+  deleteView(id: string): void {
+    this.database.prepare('DELETE FROM task_views WHERE id = ?').run(id)
+  }
+
+  private requireView(id: string): TaskView {
+    const row = this.database.prepare('SELECT * FROM task_views WHERE id = ?').get(id) as ViewRow
+    if (!row) throw new Error('视图不存在。')
+    return toView(row)
   }
 
   createTask(input: TaskCreateInput): TaskRecord {

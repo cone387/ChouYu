@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import {
-  compareTasks, isDueThisWeek, isDueToday, isOverdue, nextRecurrenceDueAt, remindAtFromChoice, TASK_PRIORITY_ORDER
+  compareTasks, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, nextRecurrenceDueAt, remindAtFromChoice, TASK_PRIORITY_ORDER
 } from './tasks'
-import type { RemindChoiceId, TaskRecord } from './tasks'
+import type { RemindChoiceId, TaskRecord, TaskView } from './tasks'
 
 const base = (patch: Partial<TaskRecord> = {}): TaskRecord => ({
   id: 't', title: '任务', note: '', projectId: null, priority: 'medium', status: 'open',
@@ -85,5 +85,39 @@ describe('nextRecurrenceDueAt', () => {
     expect(nextRecurrenceDueAt(new Date(2026, 0, 1, 9, 0).getTime(), 'daily', undefined, notBefore)).toBe(new Date(2026, 2, 1, 9, 0).getTime())
     expect(nextRecurrenceDueAt(jan31, 'monthly', jan31, notBefore)).toBe(new Date(2026, 2, 31, 9, 0).getTime())
     expect(nextRecurrenceDueAt(jan31, 'monthly', jan31, -Infinity)).toBe(new Date(2026, 1, 28, 9, 0).getTime())
+  })
+})
+
+describe('matchesTaskView', () => {
+  const now = new Date('2026-09-15T12:00:00').getTime()
+  const startToday = new Date('2026-09-15T00:00:00').getTime()
+  const view = (patch: Partial<TaskView> = {}): TaskView => ({
+    id: 'v', name: '视图', projectIds: [], priorities: [], dueRange: 'any',
+    createdAt: 1, updatedAt: 1, ...patch
+  })
+
+  test('空 projectIds/priorities 表示不过滤,any 不限截止', () => {
+    const task = base({ projectId: 'p1', priority: 'low', dueAt: null })
+    expect(matchesTaskView(task, view(), now)).toBe(true)
+  })
+
+  test('项目与优先级为 AND 组合,多值为包含匹配', () => {
+    const task = base({ projectId: 'p1', priority: 'high' })
+    expect(matchesTaskView(task, view({ projectIds: ['p1'], priorities: ['high', 'low'] }), now)).toBe(true)
+    expect(matchesTaskView(task, view({ projectIds: ['p2'] }), now)).toBe(false)
+    expect(matchesTaskView(task, view({ priorities: ['medium'] }), now)).toBe(false)
+    expect(matchesTaskView(base({ projectId: null }), view({ projectIds: ['p1'] }), now)).toBe(false)
+  })
+
+  test('截止范围:今天含过期、过期、无截止', () => {
+    const overdue = base({ dueAt: startToday - 1 })
+    const today = base({ dueAt: startToday + 1 })
+    const noDue = base({ dueAt: null })
+    expect(matchesTaskView(overdue, view({ dueRange: 'today' }), now)).toBe(true)
+    expect(matchesTaskView(today, view({ dueRange: 'today' }), now)).toBe(true)
+    expect(matchesTaskView(today, view({ dueRange: 'overdue' }), now)).toBe(false)
+    expect(matchesTaskView(overdue, view({ dueRange: 'overdue' }), now)).toBe(true)
+    expect(matchesTaskView(noDue, view({ dueRange: 'none' }), now)).toBe(true)
+    expect(matchesTaskView(today, view({ dueRange: 'none' }), now)).toBe(false)
   })
 })

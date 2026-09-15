@@ -53,6 +53,10 @@ export function initializeTasks(options: TasksModuleOptions): void {
   ipcMain.handle('tasks:createProject', (_event, name: string) => store!.createProject(name))
   ipcMain.handle('tasks:renameProject', (_event, id: string, name: string) => store!.renameProject(id, name))
   ipcMain.handle('tasks:archiveProject', (_event, id: string, archived: boolean) => store!.archiveProject(id, archived))
+  ipcMain.handle('tasks:views', () => store!.listViews())
+  ipcMain.handle('tasks:createView', (_event, input) => store!.createView(input ?? {}))
+  ipcMain.handle('tasks:updateView', (_event, id: string, patch) => store!.updateView(id, patch ?? {}))
+  ipcMain.handle('tasks:deleteView', (_event, id: string) => store!.deleteView(id))
 
   ipcMain.on('tasks:ready', () => {
     if (readyDelivered) return
@@ -64,7 +68,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
 
 export function closeTasks(): void {
   shuttingDown = true
-  for (const channel of ['tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject']) ipcMain.removeHandler(channel)
+  for (const channel of ['tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView']) ipcMain.removeHandler(channel)
   ipcMain.removeAllListeners('tasks:ready')
   storeRebuilt = false
   pendingBacklog = 0
