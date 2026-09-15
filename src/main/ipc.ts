@@ -3,7 +3,7 @@ import { notifyJournalConfig } from './journal'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { getProviderProfiles, sanitizeConfigPatch, sanitizeProviderProfile } from '../shared/config'
+import { getProviderProfiles, MAX_PROVIDER_PROFILES, sanitizeConfigPatch, sanitizeProviderProfile } from '../shared/config'
 import type { ResolvedProviderProfile } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
@@ -824,6 +824,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!profile) throw new Error('档案名称和 Base URL 为必填项。')
     const config = getConfig()
     const next = [...config.providerProfiles.filter((item) => item.id !== profile.id), profile]
+    if (next.length > MAX_PROVIDER_PROFILES) throw new Error(`最多支持 ${MAX_PROVIDER_PROFILES} 个供应商档案。`)
     saveConfig({ providerProfiles: next })
     notifyJournalConfig(getConfig())
     return getProviderProfiles(getConfig())
