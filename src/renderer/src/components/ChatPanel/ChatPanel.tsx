@@ -9,6 +9,7 @@ import MessageArea from './MessageArea'
 import InputArea, { PendingAttachment } from './InputArea'
 import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
+import ContactsView from '../Contacts/ContactsView'
 import OnboardingCard from '../Onboarding/OnboardingCard'
 import ToolApprovalDialog from '../ToolApproval/ToolApprovalDialog'
 import MemoryCandidateCard from '../Memory/MemoryCandidateCard'
@@ -16,6 +17,7 @@ import MemorySettingsTab from '../Settings/MemorySettingsTab'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
 import type { MemoryConflictAction, MemoryFeedbackValue, MemoryRecord } from '../../../../shared/memory'
 import { isAIConfigured } from '../../../../shared/config'
+import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 import {
   Message,
   PetState,
@@ -131,6 +133,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     messages,
     sessions,
     activeSessionId,
+    characters,
+    activeCharacterId,
     workspaceLoaded,
     workspaceError,
     retryWorkspace,
@@ -141,6 +145,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     sessionMessagesRef,
     happyTimerRef,
     activeSessionIdRef,
+    applyWorkspace,
     updateSessionMessages,
     generateAIResponse,
     createSession,
@@ -166,6 +171,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     () => messages.filter((message) => message.role === 'user' && !message.toolData && message.content.trim()).map((message) => message.content),
     [messages]
   )
+  const activeCharacter = characters.find((character) => character.id === activeCharacterId) ?? null
+  const visibleSessions = useMemo(() => sessions.filter((session) =>
+    (session.characterId || DEFAULT_CHARACTER_ID) === activeCharacterId), [sessions, activeCharacterId])
   const {
     dimensionsLoaded,
     panelHeight,
@@ -580,6 +588,17 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     navigate('settings')
   }, [navigate])
 
+  const openCharacterChat = useCallback(async (characterId: string) => {
+    // Search the full session list: the clicked character is usually not the
+    // active one, so the sidebar-filtered list would miss its sessions.
+    const latest = [...sessions]
+      .filter((session) => (session.characterId || DEFAULT_CHARACTER_ID) === characterId)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    if (latest) await selectSession(latest.id)
+    else await createSession(characterId)
+    navigate('chat')
+  }, [sessions, selectSession, createSession, navigate])
+
   const openMemoryWorkspace = useCallback((focusId = '') => {
     setMemoryCorrectionId(focusId)
     navigate('memory')
@@ -649,7 +668,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           {sessionsVisible && narrowLayout && <button className="workspace-sessions-backdrop" aria-label="收起会话列表" onClick={toggleSessionSidebar} />}
           <div className="workspace-sessions" hidden={!sessionsVisible} style={{ width: sessionSidebarWidth }}>
             <ConversationSidebar
-              sessions={sessions} activeSessionId={activeSessionId} width={sessionSidebarWidth}
+              sessions={visibleSessions} activeSessionId={activeSessionId} width={sessionSidebarWidth}
               streamingSessionIds={streamingSessionIds} dragHandleProps={dragHandleProps}
               onCreate={async () => { await createSession(); if (narrowLayout) toggleSessionSidebar() }}
               onSelect={async (id, query) => {
@@ -666,6 +685,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             onPointerDown={handleSidebarResizeStart} onPointerMove={handleSidebarResizeMove}
             onPointerUp={handleSidebarResizeEnd} onPointerCancel={handleSidebarResizeEnd} />}
           <div className="chat-panel-main">
+            {activeCharacter && !activeCharacter.builtIn && (
+              <div className="character-context-chip" role="status" data-character-chip={activeCharacter.id}>
+                <span aria-hidden="true">{activeCharacter.avatar}</span> 正在与 {activeCharacter.name}（{activeCharacter.model}）对话
+              </div>
+            )}
             {showOnboarding && <OnboardingCard onConfigure={openAISettings} />}
             {workspaceError && <div className="memory-candidate-error" role="alert">{workspaceError}<button onClick={retryWorkspace}>重新加载</button></div>}
             {workspaceLoaded && (
@@ -719,8 +743,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               disabled={!workspaceLoaded}
               isStreaming={isStreaming}
               focusRequest={composerFocusRequest}
-              model={config.model}
+              model={activeCharacter && !activeCharacter.builtIn ? activeCharacter.model : config.model}
               onModelChange={handleModelChange}
+              fetchModels={activeCharacter && !activeCharacter.builtIn
+                ? () => window.electronAPI.characters.fetchModels(activeCharacter.providerProfileId)
+                : undefined}
               onScreenshot={onScreenshot}
               onScrollScreenshot={onScrollScreenshot}
               plugins={plugins}
@@ -741,6 +768,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 config={config} onSaveConfig={saveMemoryWorkspaceConfig} focusMemoryId={memoryCorrectionId || undefined} />
             </div>
           </>}
+        </section>
+        <section className="workspace-page workspace-contacts" hidden={activePage !== 'contacts'} aria-label="通讯录工作区">
+          {visitedPages.contacts && <ContactsView active={visible && activePage === 'contacts'} config={config}
+            onOpenChat={(characterId) => { void openCharacterChat(characterId) }}
+            onDeleted={(workspace) => applyWorkspace(workspace)} />}
         </section>
         <section className="workspace-page workspace-journal" hidden={activePage !== 'journal'} aria-label="活动工作区">
           {visitedPages.journal && <>

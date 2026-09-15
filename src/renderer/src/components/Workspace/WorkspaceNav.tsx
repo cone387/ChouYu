@@ -2,11 +2,12 @@ import type { KeyboardEvent } from 'react'
 import { PET_ICON_SVG } from '../../../../shared/pet-icon'
 import './Workspace.css'
 
-export type WorkspacePage = 'chat' | 'journal' | 'memory' | 'settings'
+export type WorkspacePage = 'chat' | 'contacts' | 'journal' | 'memory' | 'settings'
 const petIconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(PET_ICON_SVG)}`
 
 const pages: { id: WorkspacePage; label: string; path: string }[] = [
   { id: 'chat', label: '会话', path: 'M4 4h16v12H9l-5 4V4zM8 8h8M8 12h5' },
+  { id: 'contacts', label: '通讯录', path: 'M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
   { id: 'journal', label: '活动', path: 'M12 3a9 9 0 1 1-9 9 9 9 0 0 1 9-9zM12 7v5l3 2' },
   { id: 'memory', label: '记忆', path: 'M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1zM12 5v15M6 8h3M6 12h3M15 8h3M15 12h3' },
   { id: 'settings', label: '设置', path: 'M10 2h4l.6 2.2 1.4.6 2-1.1 2.3 2.3-1.1 2 .6 1.4L22 10v4l-2.2.6-.6 1.4 1.1 2-2.3 2.3-2-1.1-1.4.6L14 22h-4l-.6-2.2-1.4-.6-2 1.1L3.7 18l1.1-2-.6-1.4L2 14v-4l2.2-.6.6-1.4-1.1-2L6 3.7l2 1.1 1.4-.6L10 2zM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z' }

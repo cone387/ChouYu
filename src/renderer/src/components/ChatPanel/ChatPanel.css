@@ -1704,3 +1704,5 @@
 .status-error .tool-activity-status {
   color: var(--error);
 }
+
+.character-context-chip { display: inline-flex; align-items: center; gap: var(--space-3); align-self: flex-start; margin: var(--space-3) var(--space-4) 0; padding: var(--space-1) var(--space-4); border-radius: var(--radius-pill); font-size: var(--font-xs); background: rgba(127, 127, 127, .15); }
