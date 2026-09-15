@@ -21,6 +21,7 @@ export interface ProactiveMessage {
   readAt?: number
   snoozedUntil?: number
   kind?: ProactiveKind
+  taskId?: string
 }
 
 export interface ProactiveOptions {
@@ -122,8 +123,8 @@ export class ProactiveEngine {
     return Date.now() - this.lastProactiveTime > COOLDOWN
   }
 
-  private enqueue(message: string, kind: ProactiveKind): void {
-    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
+  private enqueue(message: string, kind: ProactiveKind, taskId?: string): void {
+    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind, ...(taskId ? { taskId } : {}) })
     this.persistMessages()
   }
 
@@ -135,8 +136,8 @@ export class ProactiveEngine {
   }
 
   /** 外部注入的确定性提醒(任务到期),不受 60 分钟冷却限制。 */
-  postExternal(message: string, kind: ProactiveKind = 'task'): void {
-    this.enqueue(message, kind)
+  postExternal(message: string, kind: ProactiveKind = 'task', taskId?: string): void {
+    this.enqueue(message, kind, taskId)
     this.callback?.(message, kind)
   }
 

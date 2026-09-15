@@ -33,6 +33,7 @@ export interface TaskCreateInput {
   priority?: TaskPriority
   dueAt?: number | null
   remindAt?: number | null
+  recurrence?: TaskRecurrence
 }
 
 export interface TaskUpdateInput {
@@ -42,6 +43,7 @@ export interface TaskUpdateInput {
   priority?: TaskPriority
   dueAt?: number | null
   remindAt?: number | null
+  recurrence?: TaskRecurrence
 }
 
 export interface TaskListResult {
@@ -71,6 +73,27 @@ export const REMIND_CHOICES = [
   { id: 'none', label: '不提醒', offsetMs: null }
 ] as const
 export type RemindChoiceId = (typeof REMIND_CHOICES)[number]['id']
+
+export const RECURRENCE_LABELS: Record<TaskRecurrence, string> = { none: '不重复', daily: '每天', weekly: '每周', monthly: '每月' }
+
+export function nextRecurrenceDueAt(dueAt: number, recurrence: TaskRecurrence, anchorAt = dueAt, notBefore?: number): number | null {
+  if (!Number.isFinite(dueAt) || recurrence === 'none') return null
+  const anchorDay = new Date(anchorAt).getDate()
+  const floor = typeof notBefore === 'number' && Number.isFinite(notBefore) ? notBefore : -Infinity
+  let date = new Date(dueAt)
+  do {
+    date = new Date(date)
+    if (recurrence === 'daily') date.setDate(date.getDate() + 1)
+    if (recurrence === 'weekly') date.setDate(date.getDate() + 7)
+    if (recurrence === 'monthly') {
+      date.setDate(1)
+      date.setMonth(date.getMonth() + 1)
+      const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+      date.setDate(Math.min(anchorDay, lastDay))
+    }
+  } while (date.getTime() <= floor)
+  return date.getTime()
+}
 
 export function remindAtFromChoice(choiceId: RemindChoiceId, dueAt: number | null): number | null {
   const choice = REMIND_CHOICES.find(item => item.id === choiceId)
@@ -127,6 +150,7 @@ export interface TasksAPI {
   create(input: TaskCreateInput): Promise<TaskRecord>
   update(id: string, patch: TaskUpdateInput): Promise<TaskRecord>
   complete(id: string): Promise<TaskRecord>
+  reopen(id: string): Promise<TaskRecord>
   remove(id: string): Promise<void>
   projects(): Promise<TaskProject[]>
   createProject(name: string): Promise<TaskProject>

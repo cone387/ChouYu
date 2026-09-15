@@ -70,6 +70,7 @@ const api = {
     create: input => ipcRenderer.invoke('tasks:create', input),
     update: (id, patch) => ipcRenderer.invoke('tasks:update', id, patch),
     complete: id => ipcRenderer.invoke('tasks:complete', id),
+    reopen: id => ipcRenderer.invoke('tasks:reopen', id),
     remove: id => ipcRenderer.invoke('tasks:delete', id),
     projects: () => ipcRenderer.invoke('tasks:projects'),
     createProject: name => ipcRenderer.invoke('tasks:createProject', name),

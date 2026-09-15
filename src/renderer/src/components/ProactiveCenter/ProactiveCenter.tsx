@@ -8,7 +8,7 @@ interface ProactiveCenterProps {
   onSnooze(id: string): void
   onRemove(id: string): void
   onClear(): void
-  onOpenTask?: () => void
+  onOpenTask?: (taskId?: string) => void
 }
 
 function formatTime(timestamp: number): string {
@@ -43,7 +43,7 @@ export default function ProactiveCenter({ messages, position, onClose, onSnooze,
           <article key={item.id} className="proactive-center-item">
             <time dateTime={new Date(item.createdAt).toISOString()}>{formatTime(item.createdAt)}</time>
             {item.kind === 'task' && onOpenTask ? (
-              <button type="button" className="proactive-center-task-link" onClick={onOpenTask}>{item.message}</button>
+              <button type="button" className="proactive-center-task-link" onClick={() => onOpenTask(item.taskId)}>{item.message}</button>
             ) : (
               <p>{item.message}</p>
             )}

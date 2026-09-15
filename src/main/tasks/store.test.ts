@@ -29,6 +29,32 @@ describe('TasksStore', () => {
     reopened.close()
   })
 
+  test('重复任务完成后生成下一实例', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    const dueAt = Date.now() + 24 * 60 * 60_000
+    const task = store.createTask({ title: '每日站会', dueAt, recurrence: 'daily' })
+    const done = store.completeTask(task.id)
+    expect(done.status).toBe('done')
+    const open = store.listTasks().open
+    expect(open).toHaveLength(1)
+    expect(open[0].title).toBe('每日站会')
+    expect(open[0].dueAt).toBe(dueAt + 24 * 60 * 60_000)
+    expect(open[0].recurrence).toBe('daily')
+    store.close()
+  })
+
+  test('迟到完成的重复任务跳过已过期周期', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    const stale = new Date(2026, 0, 15, 9, 0).getTime()
+    const task = store.createTask({ title: '周报', dueAt: stale, remindAt: stale - 60 * 60_000, recurrence: 'weekly' })
+    const done = store.completeTask(task.id)
+    const next = store.listTasks().open[0]
+    expect(next.dueAt).not.toBeNull()
+    expect(next.dueAt!).toBeGreaterThan(done.completedAt ?? 0)
+    expect(next.remindAt).toBe(next.dueAt! - 60 * 60_000)
+    store.close()
+  })
+
   test('项目名唯一,重命名与归档', () => {
     const store = openTasksStore(tempFile('tasks.db'))
     const project = store.createProject('项目 A')

@@ -47,6 +47,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
   ipcMain.handle('tasks:create', (_event, input) => store!.createTask(input ?? {}))
   ipcMain.handle('tasks:update', (_event, id: string, patch) => store!.updateTask(id, patch ?? {}))
   ipcMain.handle('tasks:complete', (_event, id: string) => store!.completeTask(id))
+  ipcMain.handle('tasks:reopen', (_event, id: string) => store!.reopenTask(id))
   ipcMain.handle('tasks:delete', (_event, id: string) => store!.deleteTask(id))
   ipcMain.handle('tasks:projects', () => store!.listProjects())
   ipcMain.handle('tasks:createProject', (_event, name: string) => store!.createProject(name))
@@ -63,7 +64,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
 
 export function closeTasks(): void {
   shuttingDown = true
-  for (const channel of ['tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject']) ipcMain.removeHandler(channel)
+  for (const channel of ['tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject']) ipcMain.removeHandler(channel)
   ipcMain.removeAllListeners('tasks:ready')
   storeRebuilt = false
   pendingBacklog = 0

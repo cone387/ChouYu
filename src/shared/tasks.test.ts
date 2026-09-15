@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  compareTasks, isDueThisWeek, isDueToday, isOverdue, remindAtFromChoice, TASK_PRIORITY_ORDER
+  compareTasks, isDueThisWeek, isDueToday, isOverdue, nextRecurrenceDueAt, remindAtFromChoice, TASK_PRIORITY_ORDER
 } from './tasks'
 import type { RemindChoiceId, TaskRecord } from './tasks'
 
@@ -66,5 +66,24 @@ describe('compareTasks', () => {
     expect(compareTasks(noDue, earlier, now)).toBeGreaterThan(0)
     const newer = base({ id: 'i', createdAt: 2_000 })
     expect(compareTasks(newer, base({ id: 'j', createdAt: 1_500 }), now)).toBeLessThan(0)
+  })
+})
+
+describe('nextRecurrenceDueAt', () => {
+  test('handles daily, weekly and month end without overflowing the month', () => {
+    const jan31 = new Date(2026, 0, 31, 9, 0).getTime()
+    expect(nextRecurrenceDueAt(jan31, 'daily')).toBe(new Date(2026, 1, 1, 9, 0).getTime())
+    expect(nextRecurrenceDueAt(jan31, 'weekly')).toBe(new Date(2026, 1, 7, 9, 0).getTime())
+    expect(nextRecurrenceDueAt(jan31, 'monthly')).toBe(new Date(2026, 1, 28, 9, 0).getTime())
+    expect(nextRecurrenceDueAt(new Date(2026, 1, 28, 9, 0).getTime(), 'monthly', jan31)).toBe(new Date(2026, 2, 31, 9, 0).getTime())
+    expect(nextRecurrenceDueAt(jan31, 'none')).toBeNull()
+  })
+
+  test('notBefore 跳过已错过的周期并保持月度锚点日', () => {
+    const jan31 = new Date(2026, 0, 31, 9, 0).getTime()
+    const notBefore = new Date(2026, 1, 28, 9, 0).getTime()
+    expect(nextRecurrenceDueAt(new Date(2026, 0, 1, 9, 0).getTime(), 'daily', undefined, notBefore)).toBe(new Date(2026, 2, 1, 9, 0).getTime())
+    expect(nextRecurrenceDueAt(jan31, 'monthly', jan31, notBefore)).toBe(new Date(2026, 2, 31, 9, 0).getTime())
+    expect(nextRecurrenceDueAt(jan31, 'monthly', jan31, -Infinity)).toBe(new Date(2026, 1, 28, 9, 0).getTime())
   })
 })

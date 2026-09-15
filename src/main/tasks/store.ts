@@ -2,11 +2,13 @@ import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import type {
-  TaskCreateInput, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskUpdateInput
+  TaskCreateInput, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskUpdateInput, TaskRecurrence
 } from '../../shared/tasks'
+import { nextRecurrenceDueAt } from '../../shared/tasks'
 
 const SCHEMA_VERSION = 1
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
+const RECURRENCES: TaskRecurrence[] = ['none', 'daily', 'weekly', 'monthly']
 
 interface TaskRow {
   id: string; title: string; note: string | null; project_id: string | null; priority: string
@@ -32,6 +34,11 @@ const assertPriority = (priority: unknown): TaskPriority => {
   if (priority === undefined) return 'medium'
   if (typeof priority === 'string' && PRIORITIES.includes(priority as TaskPriority)) return priority as TaskPriority
   throw new Error('优先级无效。')
+}
+const assertRecurrence = (recurrence: unknown): TaskRecurrence => {
+  if (recurrence === undefined) return 'none'
+  if (typeof recurrence === 'string' && RECURRENCES.includes(recurrence as TaskRecurrence)) return recurrence as TaskRecurrence
+  throw new Error('重复规则无效。')
 }
 const assertTimestamp = (value: unknown, label: string): number | null => {
   if (value === undefined || value === null) return null
@@ -184,11 +191,12 @@ export class TasksStore {
     const priority = assertPriority(input?.priority)
     const dueAt = assertTimestamp(input?.dueAt, '截止时间')
     const remindAt = assertTimestamp(input?.remindAt, '提醒时间')
+    const recurrence = assertRecurrence(input?.recurrence)
     const now = Date.now()
     const info = this.database.prepare(`INSERT INTO tasks
       (id, title, note, project_id, priority, status, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at)
-      VALUES (?, ?, ?, ?, ?, 'open', ?, ?, NULL, 'none', NULL, ?, ?, NULL)`)
-      .run(randomUUID(), title, note, projectId, priority, dueAt, remindAt, now, now)
+      VALUES (?, ?, ?, ?, ?, 'open', ?, ?, NULL, ?, ?, ?, ?, NULL)`)
+      .run(randomUUID(), title, note, projectId, priority, dueAt, remindAt, recurrence, recurrence === 'none' ? null : dueAt, now, now)
     return this.requireTaskByRowid(Number(info.lastInsertRowid))
   }
 
@@ -206,16 +214,41 @@ export class TasksStore {
     const priority = patch?.priority === undefined ? current.priority : assertPriority(patch.priority)
     const dueAt = patch?.dueAt === undefined ? current.due_at : assertTimestamp(patch.dueAt, '截止时间')
     const remindAt = patch?.remindAt === undefined ? current.remind_at : assertTimestamp(patch.remindAt, '提醒时间')
+    const recurrence = patch?.recurrence === undefined ? assertRecurrence(current.recurrence) : assertRecurrence(patch.recurrence)
     const resetFired = patch?.remindAt !== undefined && remindAt !== current.remind_at
-    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, updated_at = ? WHERE id = ?`)
-      .run(title, note, projectId, priority, dueAt, remindAt, resetFired ? null : current.remind_fired_at, Date.now(), id)
+    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, recurrence = ?, recurrence_anchor_at = ?, updated_at = ? WHERE id = ?`)
+      .run(title, note, projectId, priority, dueAt, remindAt, resetFired ? null : current.remind_fired_at, recurrence, recurrence === 'none' ? null : (current.recurrence_anchor_at ?? dueAt), Date.now(), id)
     return this.requireTask(id)
   }
 
   completeTask(id: string): TaskRecord {
+    const outcome = this.database.transaction((): TaskRecord | null => {
+      const current = this.database.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow | undefined
+      if (!current || current.status !== 'open') return null
+      const now = Date.now()
+      this.database.prepare(`UPDATE tasks SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'open'`).run(now, now, id)
+      const recurrence = assertRecurrence(current.recurrence)
+      if (recurrence !== 'none' && current.due_at !== null) {
+        // 迟到完成时跳过已错过的周期,避免下一期一出生就已过期
+        const nextDueAt = nextRecurrenceDueAt(current.due_at, recurrence, current.recurrence_anchor_at ?? current.due_at, now)
+        if (nextDueAt !== null) {
+          const reminderOffset = current.remind_at !== null ? current.due_at - current.remind_at : null
+          this.database.prepare(`INSERT INTO tasks
+            (id, title, note, project_id, priority, status, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at)
+            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, NULL, ?, ?, ?, ?, NULL)`)
+            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, nextDueAt, reminderOffset !== null ? nextDueAt - reminderOffset : null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now)
+        }
+      }
+      return this.requireTask(id)
+    })()
+    if (!outcome) throw new Error('任务不存在或已完成。')
+    return outcome
+  }
+
+  reopenTask(id: string): TaskRecord {
     const now = Date.now()
-    const result = this.database.prepare(`UPDATE tasks SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'open'`).run(now, now, id)
-    if (!result.changes) throw new Error('任务不存在或已完成。')
+    const result = this.database.prepare("UPDATE tasks SET status = 'open', completed_at = NULL, updated_at = ? WHERE id = ? AND status = 'done'").run(now, id)
+    if (!result.changes) throw new Error('任务不存在或尚未完成')
     return this.requireTask(id)
   }
 
