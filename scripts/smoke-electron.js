@@ -60,7 +60,7 @@ const cleanup = () => {
 
 const verifyMigration = () => {
   const migrated = JSON.parse(fs.readFileSync(legacyStorePath, 'utf8'))
-  if (migrated.version !== 3) throw new Error(`Expected store version 3, received ${migrated.version}`)
+  if (migrated.version !== 4) throw new Error(`Expected store version 4, received ${migrated.version}`)
   if (!Array.isArray(migrated.sessions) || migrated.sessions.length === 0) throw new Error('Migrated session list is empty')
   const active = migrated.sessions.find((session) => session.id === migrated.activeSessionId)
   if (!active) throw new Error('Migrated active session is missing')
