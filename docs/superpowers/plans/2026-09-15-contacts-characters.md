@@ -1028,18 +1028,24 @@ import { DEFAULT_CHARACTER_ID, type CharacterStats } from '../../../../shared/ch
 
 - [ ] **Step 2: 发送链路带角色**
 
-`generateAIResponse` 内 `systemPrompt` 行（L282）之前取角色，并替换 systemPrompt 构造：
+`generateAIResponse` 内 `systemPrompt` 行（L282）之前取角色，并替换 systemPrompt 构造（质量审修正 0e0103a：按**本会话**的 characterId 解析而非当前活跃会话——排队续写/重试在会话切换后会拿到错误角色的凭据与模型；需先加 `sessionsRef` 渲染镜像）：
 
 ```ts
-    const activeCharacter = charactersRef.current.find((character) => character.id === activeCharacterIdRef.current)
-    const soulMd = !activeCharacter || activeCharacter.builtIn ? config.soulMd : (activeCharacter.soulMd || config.soulMd)
+    const sessionsRef = useRef<ChatSessionSummary[]>([])
+    sessionsRef.current = sessions
+    // （refs 区，与 charactersRef 同款渲染镜像模式）
+
+    const sessionCharacterId = sessionsRef.current.find((session) => session.id === sessionId)?.characterId
+      || (sessionId === activeSessionIdRef.current ? activeCharacterIdRef.current : DEFAULT_CHARACTER_ID)
+    const character = charactersRef.current.find((item) => item.id === sessionCharacterId)
+    const soulMd = !character || character.builtIn ? config.soulMd : (character.soulMd || config.soulMd)
     const systemPrompt = buildSystemPrompt(soulMd, [memoryContext, memoryConversationPolicy, continuationPolicy].filter(Boolean).join('\n\n'))
 ```
 
 `streamChat(...)` 调用（L332-362）在最后一个实参 `(requestId) => {...}` 之后追加：
 
 ```ts
-        activeCharacter && !activeCharacter.builtIn ? activeCharacter.id : undefined
+        character && !character.builtIn ? character.id : undefined
 ```
 
 - [ ] **Step 3: 新建会话带角色**
@@ -1664,4 +1670,5 @@ git commit -m "docs: record contacts and characters phase one in roadmap"
    **Task 3 实现期修正（已镜像）**：(a) 测试文件的 electron mock 原本 `isEncryptionAvailable: () => false` 使 protect() 直通明文、`safe:v1:` 落盘断言必失败；为 hoisted mock 增加 `encryptionAvailable` 开关（默认 false 保持既有用例语义）+ 可用的 encryptString/decryptString，仅持久化用例开启。(b) `updateCharacter` 内置分支的「默认档案」守卫需先于通用档案存在性检查，否则 p9 用例抛错信息错误。(c) 质量审修正（92c2ee1）：`getCharacter` 返回浅拷贝、`findCharacterByIdOrThrow` 直接在 store.characters 上查找（updateCharacter 仍改活引用）；删除内置分支 saveConfig 后冗余的 persist()；新增真实 v3→v4 落盘迁移用例（version:3、无 characterId、无 characters 键）与契约用例（上限 12、大小写去重排除自身、未知角色回退默认、内置 stats 的 soulMd/model 恒为空串——UI 从 config 解析实时值）。
    **Task 4 实现期修正（已镜像）**：解析失败的 early-return 放在 `activeAIRequests.set` 与 destroyed 监听注册之前（失败时不注册 controller，免清理）；补充 ai-engine 测试（8426fa3）固定「带 characterId 时跳过渲染层预检并透传」。characterId 校验正则与 requestId 同族：`/^[a-zA-Z0-9_-]{1,128}$/`。
    **Task 5 实现期修正（已镜像）**：(a) `db:create-session` 保持文件既有裸调用 + `title.slice(0,80)` 形式，仅加 characterId 透传（文件中不存在 guardDatabaseErrors）。(b) `notifyJournalConfig(config)` 实签名在 `src/main/journal/index.ts`，调用传 `getConfig()`。(c) `src/renderer/src/core/session-order.test.ts` 的 ChatSessionSummary 夹具需补 `characterId`（必填字段编译修复，随任务提交）。(d) 质量审修正（8fc81cf）：`provider-profiles:save` 在 saveConfig 前加 `next.length > MAX_PROVIDER_PROFILES` 守卫并抛「最多支持 8 个供应商档案。」——否则 sanitizeProviderProfiles 静默截断时，追加在末尾的新档案会被丢弃而前端收到成功。
+   **Task 6 实现期修正（已镜像）**：质量审修正（0e0103a）：`generateAIResponse(sessionId)` 的角色解析从「当前活跃会话」改为「按 sessionId 查 sessionsRef 镜像的 characterId」（排队续写在会话切换后曾会拿到另一角色的人设/模型/API 凭据）；局部变量更名 `character`；streamChat 透传同步更新；补 3 条源断言测试固定该行为。
 3. **类型一致性**：`CharacterStats`/`CharacterDraft`/`ResolvedProviderProfile`/`DEFAULT_CHARACTER_ID='chouyu'`/`DEFAULT_PROFILE_ID='default'` 全计划一致；`createChatSession(title?, characterId?)`、`createSession(characterId?)`、`streamChat(..., characterId?)` 签名前后一致。
