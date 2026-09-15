@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { ToolApprovalRequest } from '../../../../shared/tools'
 import { formatMemoryContext } from '../../../../shared/memory'
+import { DEFAULT_CHARACTER_ID, type CharacterStats } from '../../../../shared/characters'
 import {
   Message,
   PetState,
@@ -69,6 +70,11 @@ export function useSessionWorkspace({
   const [messages, setMessages] = useState<Message[]>([])
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [activeSessionId, setActiveSessionId] = useState('')
+  const [characters, setCharacters] = useState<CharacterStats[]>([])
+  const [activeCharacterId, setActiveCharacterId] = useState(DEFAULT_CHARACTER_ID)
+  const charactersRef = useRef<CharacterStats[]>([])
+  const activeCharacterIdRef = useRef(DEFAULT_CHARACTER_ID)
+  charactersRef.current = characters
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
   const [workspaceError, setWorkspaceError] = useState('')
   const [loadRevision, setLoadRevision] = useState(0)
@@ -119,6 +125,9 @@ export function useSessionWorkspace({
     latestMessagesRef.current = activeMessages
     sessionMessagesRef.current.set(sessionId, activeMessages)
     setActiveSessionId(sessionId)
+    const characterId = workspace.activeSession.characterId || DEFAULT_CHARACTER_ID
+    activeCharacterIdRef.current = characterId
+    setActiveCharacterId(characterId)
     setMessages(activeMessages)
     setSessions((previous) => {
       if (!preserveSessionOrder || previous.length === 0) return workspace.sessions
@@ -160,9 +169,11 @@ export function useSessionWorkspace({
     setWorkspaceError('')
     Promise.all([
       loadSessionWorkspace(),
-      window.electronAPI.db.getConfig()
-    ]).then(([workspace, loadedConfig]) => {
+      window.electronAPI.db.getConfig(),
+      window.electronAPI.characters.list()
+    ]).then(([workspace, loadedConfig, characters]) => {
       if (!active) return
+      setCharacters(characters)
       applyWorkspace(workspace)
       onConfigLoaded(loadedConfig)
       initializedRef.current = true
@@ -170,6 +181,15 @@ export function useSessionWorkspace({
     }).catch(() => { if (active) setWorkspaceError('会话加载失败，请重试。') })
     return () => { active = false }
   }, [applyWorkspace, onConfigLoaded, loadRevision])
+
+  useEffect(() => {
+    let active = true
+    const load = () => {
+      void window.electronAPI.characters.list().then((list) => { if (active) setCharacters(list) }).catch(() => {})
+    }
+    const unsubscribe = window.electronAPI.characters.onChanged(load)
+    return () => { active = false; unsubscribe() }
+  }, [])
 
   useEffect(() => {
     latestMessagesRef.current = messages
@@ -196,9 +216,9 @@ export function useSessionWorkspace({
     }
   }, [])
 
-  const createSession = useCallback(async () => {
+  const createSession = useCallback(async (characterId: string = activeCharacterIdRef.current) => {
     await persistCurrentSession()
-    const workspace = await window.electronAPI.db.createSession()
+    const workspace = await window.electronAPI.db.createSession(undefined, characterId)
     applyWorkspace(workspace)
     requestComposerFocus()
   }, [applyWorkspace, persistCurrentSession, requestComposerFocus])
@@ -279,7 +299,9 @@ export function useSessionWorkspace({
     const continuationPolicy = options.appendTo
       ? '上一条回复被中断了。请从中断处自然地继续写完剩余内容，不要重复已写部分，不要重新开头。'
       : ''
-    const systemPrompt = buildSystemPrompt(config.soulMd, [memoryContext, memoryConversationPolicy, continuationPolicy].filter(Boolean).join('\n\n'))
+    const activeCharacter = charactersRef.current.find((character) => character.id === activeCharacterIdRef.current)
+    const soulMd = !activeCharacter || activeCharacter.builtIn ? config.soulMd : (activeCharacter.soulMd || config.soulMd)
+    const systemPrompt = buildSystemPrompt(soulMd, [memoryContext, memoryConversationPolicy, continuationPolicy].filter(Boolean).join('\n\n'))
     const history = buildMessages(conversation)
 
     // Buffer rendered content and flush on a cadence instead of re-rendering
@@ -358,7 +380,8 @@ export function useSessionWorkspace({
         (requestId) => {
           generation.requestId = requestId
           requestSessionRef.current.set(requestId, sessionId)
-        }
+        },
+        activeCharacter && !activeCharacter.builtIn ? activeCharacter.id : undefined
       )
     } catch (error) {
       renderAccumulated()
@@ -443,6 +466,8 @@ export function useSessionWorkspace({
     messages,
     sessions,
     activeSessionId,
+    characters,
+    activeCharacterId,
     workspaceLoaded,
     workspaceError,
     retryWorkspace: () => setLoadRevision(value => value + 1),
