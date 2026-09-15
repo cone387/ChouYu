@@ -620,11 +620,12 @@ export function listCharacters(): CharacterStats[] {
 }
 
 export function getCharacter(id: string): Character | null {
-  return store.characters.find((character) => character.id === id) ?? null
+  const character = store.characters.find((item) => item.id === id)
+  return character ? { ...character } : null
 }
 
 function findCharacterByIdOrThrow(id: string): Character {
-  const character = getCharacter(id)
+  const character = store.characters.find((item) => item.id === id)
   if (!character) throw new Error('角色不存在或已被删除。')
   return character
 }
@@ -650,21 +651,23 @@ export function updateCharacter(id: string, draft: unknown): CharacterStats {
   const character = findCharacterByIdOrThrow(id)
   const input = sanitizeCharacterDraft(draft)
   if (!input) throw new Error('角色名称和模型为必填项。')
-  if (!getProviderProfiles(store.config).some((profile) => profile.id === input.providerProfileId)) {
-    throw new Error('所选供应商档案不存在，请先到设置页创建。')
-  }
   if (store.characters.some((item) => item.id !== id && item.name.toLowerCase() === input.name.toLowerCase())) {
     throw new Error('已存在同名角色，请换一个名字。')
   }
   if (character.builtIn) {
     if (input.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置角色固定使用默认档案。')
+    if (!getProviderProfiles(store.config).some((profile) => profile.id === input.providerProfileId)) {
+      throw new Error('所选供应商档案不存在，请先到设置页创建。')
+    }
     character.name = input.name
     character.avatar = input.avatar
     character.updatedAt = Date.now()
-    // 内置角色的人设与模型写入全局配置，保持单一数据源。
+    // 内置角色的人设与模型写入全局配置，保持单一数据源（saveConfig 自带 persist）。
     saveConfig({ soulMd: input.soulMd, model: input.model })
-    persist()
     return listCharacters().find((item) => item.id === id)!
+  }
+  if (!getProviderProfiles(store.config).some((profile) => profile.id === input.providerProfileId)) {
+    throw new Error('所选供应商档案不存在，请先到设置页创建。')
   }
   Object.assign(character, input, { updatedAt: Date.now() })
   persist()
@@ -1658,4 +1661,5 @@ git commit -m "docs: record contacts and characters phase one in roadmap"
 1. **Spec 覆盖**：档案类型与合成（Task 1）、角色模型/解析（Task 2）、存储/迁移/级联（Task 3）、聊天链路（Task 4）、IPC（Task 5）、渲染接线与 soulMd（Task 6）、通讯录页+导航+点击开聊+删除确认（Task 7）、档案管理 UI（Task 8）、冒烟+门禁+roadmap（Task 9/10）。Spec 的「每角色会话列表过滤」由 Task 7 Step 4(3) 覆盖；「解析失败不静默回退」由 Task 2 错误分支 + Task 4 返回 `{ok:false,error}` 覆盖。
 2. **占位符**：Task 3/7/9 中标注「实现期修正」的三处代码笔误已显式给出修正说明，无 TBD。
    **Task 2 实现期修正（已镜像）**：(a) 原测试第 8 例用 `providerProfileId:'default'` 断言档案缺失——但 Task 1 的 `getProviderProfiles` 会从已配置全局字段无条件合成可用的 default 档案，该断言与第 10 例（同输入期待 ok:true）自相矛盾；夹具改为 `'p1'`。(b) 原 `normalizeCharacters` 声明了 `ids` 却未查重（重复 id 会多出一个角色），后缀公式 `filter(...).length + 2` 首个冲突即得「小猫 3」；改为 ids 查重 + while 循环后缀（与 sanitizeProviderProfiles 同构）。(c) 原实现每次 normalize 用 `Date.now()` 覆盖 createdAt/updatedAt，Task 3 落库后每次重启都会重置时间戳；改为保留有限持久值、缺失时回退。(d) 质量审修正（f77f5ca）：名称查重种子改用「解析后的默认角色名」而非常量「丑鱼」（两遍扫描，消除默认角色改名后的重名漏网与顺序依赖）；新增 `clampCodePoints` 按码点截断名字/头像、头像回退取首个完整码点（防 emoji 代理对截断）；默认分支复用 `isAIConfigured`。
+   **Task 3 实现期修正（已镜像）**：(a) 测试文件的 electron mock 原本 `isEncryptionAvailable: () => false` 使 protect() 直通明文、`safe:v1:` 落盘断言必失败；为 hoisted mock 增加 `encryptionAvailable` 开关（默认 false 保持既有用例语义）+ 可用的 encryptString/decryptString，仅持久化用例开启。(b) `updateCharacter` 内置分支的「默认档案」守卫需先于通用档案存在性检查，否则 p9 用例抛错信息错误。(c) 质量审修正（92c2ee1）：`getCharacter` 返回浅拷贝、`findCharacterByIdOrThrow` 直接在 store.characters 上查找（updateCharacter 仍改活引用）；删除内置分支 saveConfig 后冗余的 persist()；新增真实 v3→v4 落盘迁移用例（version:3、无 characterId、无 characters 键）与契约用例（上限 12、大小写去重排除自身、未知角色回退默认、内置 stats 的 soulMd/model 恒为空串——UI 从 config 解析实时值）。
 3. **类型一致性**：`CharacterStats`/`CharacterDraft`/`ResolvedProviderProfile`/`DEFAULT_CHARACTER_ID='chouyu'`/`DEFAULT_PROFILE_ID='default'` 全计划一致；`createChatSession(title?, characterId?)`、`createSession(characterId?)`、`streamChat(..., characterId?)` 签名前后一致。
