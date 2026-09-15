@@ -17,7 +17,7 @@
 
 - `:root` 保持 purple 为默认值（旧配置零迁移，JS 加载前不闪错色）。
 - 每个配色两组覆盖块：`[data-palette='x']`（亮色）与 `[data-theme='dark'][data-palette='x']`（暗色）。不进 `prefers-color-scheme` 回退块 —— palette 无纯 CSS 信号，属性由 JS 设置后显式块自然接管。
-- 跟随配色的变量：`--accent`、`--accent-hover`、`--focus-ring`、`--user-msg-bg`、`--hover-bg`、`--hljs-keyword`，新增 `--accent-glow`（替换 ChatPanel 两处硬编码紫色阴影）。中性色（bg/text/border）与语义色（error/success/warning）不动，仍由亮暗控制。
+- 跟随配色的变量：`--accent`、`--accent-hover`、`--focus-ring`、`--user-msg-bg`、`--hover-bg`、`--hljs-keyword`，新增 `--accent-glow`（替换 ChatPanel 两处硬编码紫色阴影）。中性色（bg/text/border）、语义色（error/success/warning）与 `--on-accent`（亮色白字/暗色深字，对五个配色均成立）不动，仍由亮暗控制。
 
 | palette | 亮色 accent | 暗色 accent |
 |---|---|---|
@@ -29,7 +29,7 @@
 
 派生变量（hover/focus-ring/glow 等）取对应 accent 的明暗变体，具体色值实现时微调。
 
-### 硬编码紫色清理（8 处）
+### 硬编码紫色清理（7 处）
 
 - `PetSvg.tsx:53`、`MessageArea.tsx:212,360`、`Settings.tsx:725`：`fill="#6C5CE7"` → `fill="var(--accent)"`。
 - `ChatPanel.css:678,773`：`rgba(108, 92, 231, …)` 阴影 → `var(--accent-glow)`。
@@ -38,7 +38,7 @@
 
 ### 配置与 core/theme.ts
 
-- `src/shared/config.ts`：`AppConfig` 新增 `palette: PaletteId`（类型定义放 shared，两进程共用），`DEFAULT_APP_CONFIG` 默认 `'purple'`；旧配置缺字段时按默认合并（实现计划中确认现有 merge 机制）。
+- `src/shared/config.ts`：`AppConfig` 新增 `palette: PaletteId`（类型定义放 shared，两进程共用），`DEFAULT_APP_CONFIG` 默认 `'purple'`。已确认向后兼容机制：`normalizeConfig`（`shared/config.ts:138`）在加载（`database.ts:277`）与保存（`database.ts:364`）时以 `{...DEFAULT_APP_CONFIG, ...source}` 兜底，照 `theme` 字段模式（`config.ts:159`）加一行校验即可让旧配置回落 `'purple'`。
 - `core/theme.ts`：`apply()` 同时写 `dataset.theme` 与 `dataset.palette`；`onConfigChanged` 广播时两者同步；未知 palette 值回落 purple（不设属性即默认）。
 
 ### 设置 UI
