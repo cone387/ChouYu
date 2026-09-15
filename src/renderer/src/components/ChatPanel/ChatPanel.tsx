@@ -174,6 +174,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     [messages]
   )
   const activeCharacter = characters.find((character) => character.id === activeCharacterId) ?? null
+  // 自定义角色自带 Provider 配置（主进程 resolveCharacterConfig 解析），
+  // 全局 AI 配置为空时也允许对话；内置角色仍依赖设置页的全局配置。
+  const customCharacterActive = Boolean(activeCharacter && !activeCharacter.builtIn)
   const visibleSessions = useMemo(() => sessions.filter((session) =>
     (session.characterId || DEFAULT_CHARACTER_ID) === activeCharacterId), [sessions, activeCharacterId])
   const {
@@ -536,7 +539,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       return
     }
 
-    if (!isAIConfigured(config)) {
+    if (!customCharacterActive && !isAIConfigured(config)) {
       setShowOnboarding(true)
       updateSessionMessages(originatingSessionId, (previous) => [...previous, { id: Date.now().toString(), role: 'assistant', content: '尚未完成 AI Provider 配置。请填写 Base URL、API Key 和模型并通过连接检测后再开始对话。', timestamp: Date.now() }])
       return
@@ -714,7 +717,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 <span aria-hidden="true">{activeCharacter.avatar}</span> 正在与 {activeCharacter.name}（{activeCharacter.model}）对话
               </div>
             )}
-            {showOnboarding && <OnboardingCard onConfigure={openAISettings} />}
+            {showOnboarding && !customCharacterActive && <OnboardingCard onConfigure={openAISettings} />}
             {workspaceError && <div className="memory-candidate-error" role="alert">{workspaceError}<button onClick={retryWorkspace}>重新加载</button></div>}
             {workspaceLoaded && (
               <MessageArea

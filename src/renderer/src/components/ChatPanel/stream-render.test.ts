@@ -75,6 +75,19 @@ describe('per-session character resolution', () => {
     expect(panelSource).toContain('model={activeCharacter && !activeCharacter.builtIn ? activeCharacter.model : config.model}')
     expect(panelSource).toContain('characters.update(activeCharacter.id, {')
   })
+
+  it('derives customCharacterActive instead of re-testing the builtIn flag inline', () => {
+    expect(panelSource).toContain('const customCharacterActive = Boolean(activeCharacter && !activeCharacter.builtIn)')
+  })
+
+  it('does not gate sending on the global AI config while a custom character is active', () => {
+    expect(panelSource).toContain('if (!customCharacterActive && !isAIConfigured(config)) {')
+    expect(panelSource).not.toContain('if (!isAIConfigured(config)) {')
+  })
+
+  it('suppresses the global-config onboarding card for custom characters', () => {
+    expect(panelSource).toContain('{showOnboarding && !customCharacterActive && <OnboardingCard')
+  })
 })
 
 describe('message windowing', () => {
