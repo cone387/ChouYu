@@ -122,4 +122,10 @@ describe('settings field search', () => {
     expect(settingsSource).toContain('settings-field-flash')
     expect(settingsSource).toContain('settings-theme-option')
   })
+
+  it('surfaces the palette picker through settings search', () => {
+    expect(searchSettings('配色').some((entry) => entry.fieldId === 'settings-theme-label')).toBe(true)
+    expect(settingsSource).toContain('settings-palette-swatch')
+    expect(settingsSource).toContain('PALETTE_SWATCHES')
+  })
 })

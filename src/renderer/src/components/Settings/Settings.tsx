@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { AppConfig, PluginInfo } from '../../shared/types'
+import { AppConfig, PaletteId, PluginInfo } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
 import { DEFAULT_SOUL_MD, isAIConfigured } from '../../../../shared/config'
 import type { AIModelListResult, ProviderDiagnostics } from '../../../../shared/ai'
@@ -13,6 +13,14 @@ import './Settings.css'
 
 const SOUL_HISTORY_STATE_KEY = 'soul-history'
 const MAX_SOUL_VERSIONS = 30
+
+const PALETTE_SWATCHES = [
+  { id: 'purple', label: '紫色', color: '#6c5ce7' },
+  { id: 'pink', label: '粉色', color: '#d6336c' },
+  { id: 'blue', label: '蓝色', color: '#2563eb' },
+  { id: 'green', label: '绿色', color: '#16a34a' },
+  { id: 'orange', label: '橙色', color: '#ea580c' }
+] as const satisfies ReadonlyArray<{ id: PaletteId; label: string; color: string }>
 
 interface SoulVersion {
   id: string
@@ -634,6 +642,24 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                   ))}
                 </div>
                 <div className="settings-help">「跟随系统」会随 Windows 亮暗模式自动切换。</div>
+              </div>
+              <div className="settings-field">
+                <label id="settings-palette-label">配色主题</label>
+                <div className="settings-palette-options" role="radiogroup" aria-labelledby="settings-palette-label">
+                  {PALETTE_SWATCHES.map(({ id, label, color }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="radio"
+                      aria-checked={config.palette === id}
+                      aria-label={label}
+                      className={`settings-palette-swatch${config.palette === id ? ' active' : ''}`}
+                      style={{ background: color }}
+                      onClick={() => { void save({ palette: id }) }}
+                    />
+                  ))}
+                </div>
+                <div className="settings-help">切换界面与宠物的主题色，与亮暗模式自由组合。</div>
               </div>
               <div className="settings-field settings-field-row">
                 <label htmlFor="settings-hotkey">唤出面板</label>

@@ -922,6 +922,23 @@
   box-shadow: var(--shadow-sm);
 }
 
+.settings-palette-options {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.settings-palette-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-round);
+  border: 2px solid var(--border);
+  cursor: pointer;
+}
+
+.settings-palette-swatch.active {
+  border-color: var(--text-primary);
+}
+
 .settings-secondary-btn {
   flex: 0 0 auto;
   padding: var(--space-3) var(--space-4);
