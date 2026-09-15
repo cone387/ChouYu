@@ -50,7 +50,7 @@ export default function PetSvg({ state }: PetSvgProps) {
 
   return (
     <svg width="80" height="80" viewBox="0 0 80 80" className="pet-svg">
-      <circle cx="40" cy="44" r="28" fill="#6C5CE7" />
+      <circle cx="40" cy="44" r="28" fill="var(--accent)" />
       {getEyes()}
       {getMouth()}
       <circle cx="24" cy="48" r="4" fill="rgba(255,100,100,0.3)" />
