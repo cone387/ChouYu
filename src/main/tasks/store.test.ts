@@ -10,7 +10,13 @@ const tempFile = (name: string) => {
   directories.push(directory)
   return join(directory, name)
 }
-afterEach(() => { for (const directory of directories) rmSync(directory, { recursive: true, force: true }) })
+// 断言失败时 store 未 close,Windows 句柄延迟释放会让 rmSync 抛 EPERM;逐目录容错避免级联拖垮后续测试
+afterEach(() => {
+  while (directories.length > 0) {
+    const directory = directories.pop()!
+    try { rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }) } catch { /* 留给系统临时目录清理 */ }
+  }
+})
 
 describe('TasksStore', () => {
   test('打开即建表,重复打开保留数据', () => {
@@ -175,6 +181,71 @@ describe('TasksStore', () => {
     expect(upgraded.listProjects().map(item => item.name)).toEqual(['项目 A'])
     const view = upgraded.createView({ name: '升级后新建', projectIds: [project.id] })
     expect(upgraded.listViews().map(item => item.id)).toEqual([view.id])
+    upgraded.close()
+  })
+
+  test('任务 customFields 持久化、合并更新与无效引用过滤', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    const field = store.createField({ name: '阶段', options: ['待办', '进行中'] })
+    const doing = field.options[1]
+    const task = store.createTask({ title: '带字段', customFields: { [field.id]: doing.id, missing: 'x' } })
+    expect(task.customFields).toEqual({ [field.id]: doing.id })
+    const updated = store.updateTask(task.id, { customFields: { [field.id]: field.options[0].id } })
+    expect(updated.customFields).toEqual({ [field.id]: field.options[0].id })
+    const cleared = store.updateTask(task.id, { customFields: { [field.id]: null } })
+    expect(cleared.customFields).toEqual({})
+    expect(() => store.updateTask(task.id, { customFields: 'bad' as never })).toThrow('自定义字段')
+    store.close()
+  })
+
+  test('自定义字段 CRUD:改名、选项按名保 id、删选项清理任务值', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    const field = store.createField({ name: '阶段', options: ['待办', '进行中'] })
+    const todo = field.options[0]
+    const doing = field.options[1]
+    const task = store.createTask({ title: '任务', customFields: { [field.id]: doing.id } })
+
+    const renamed = store.updateField(field.id, { name: '流程' })
+    expect(renamed.name).toBe('流程')
+    expect(renamed.options.map(option => option.id)).toEqual([todo.id, doing.id])
+
+    const withNew = store.updateField(field.id, { options: ['待办', '阻塞'] })
+    expect(withNew.options.map(option => option.name)).toEqual(['待办', '阻塞'])
+    expect(withNew.options[0].id).toBe(todo.id)
+    expect(store.listTasks().open[0].customFields[field.id]).toBeUndefined()
+
+    expect(() => store.updateField('missing', { name: 'x' })).toThrow('字段不存在')
+    store.deleteField(field.id)
+    expect(store.listFields()).toHaveLength(0)
+    expect(store.listTasks().open[0].customFields).toEqual({})
+    store.close()
+  })
+
+  test('字段输入校验:空名、非法选项、重复选项去重', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    expect(() => store.createField({ name: ' ' })).toThrow('字段名称')
+    expect(() => store.createField({ name: 'x', options: [1 as never] })).toThrow('选项')
+    expect(store.createField({ name: 'x', options: ['a', ' a ', 'b'] }).options.map(option => option.name)).toEqual(['a', 'b'])
+    store.close()
+  })
+
+  test('v2 库升级到 v3 补 custom_fields 列并保留数据', async () => {
+    const file = tempFile('tasks.db')
+    const store = openTasksStore(file)
+    const task = store.createTask({ title: '存量任务' })
+    store.close()
+    const Database = (await import('better-sqlite3')).default
+    const raw = new Database(file)
+    raw.pragma('user_version = 2')
+    raw.exec("ALTER TABLE tasks DROP COLUMN custom_fields")
+    raw.exec('DROP TABLE task_fields')
+    raw.close()
+    const upgraded = openTasksStore(file)
+    expect(upgraded.listTasks().open.map(item => item.id)).toEqual([task.id])
+    expect(upgraded.listTasks().open[0].customFields).toEqual({})
+    const field = upgraded.createField({ name: '阶段', options: ['待办'] })
+    expect(upgraded.updateTask(task.id, { customFields: { [field.id]: field.options[0].id } }).customFields)
+      .toEqual({ [field.id]: field.options[0].id })
     upgraded.close()
   })
 

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import type { RemindChoiceId, TaskDueRange, TaskPriority, TaskProject, TaskRecord, TaskView } from '../../../../shared/tasks'
+import type { RemindChoiceId, TaskDueRange, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskView } from '../../../../shared/tasks'
 import {
   DUE_RANGE_LABELS, PRIORITY_LABELS, RECURRENCE_LABELS, REMIND_CHOICES, compareTasks, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, remindAtFromChoice
 } from '../../../../shared/tasks'
+import TasksBoard, { type BoardGroupMode } from './TasksBoard'
+import TaskFieldsDialog from './TaskFieldsDialog'
 import './Tasks.css'
 
 type SmartView = 'today' | 'week' | 'overdue' | 'all'
@@ -25,9 +27,10 @@ interface Draft {
   dueTime: string
   remind: RemindChoiceId
   recurrence: TaskRecord['recurrence']
+  customFields: Record<string, string>
 }
 
-const emptyDraft: Draft = { id: '', title: '', note: '', projectId: '', priority: 'medium', dueDate: '', dueTime: '09:00', remind: 'due', recurrence: 'none' }
+const emptyDraft: Draft = { id: '', title: '', note: '', projectId: '', priority: 'medium', dueDate: '', dueTime: '09:00', remind: 'due', recurrence: 'none', customFields: {} }
 
 interface ViewDraft {
   id: string
@@ -62,7 +65,7 @@ const draftFromTask = (task: TaskRecord): Draft => ({
   priority: task.priority,
   dueDate: task.dueAt ? toInputDate(task.dueAt) : '',
   dueTime: task.dueAt ? new Date(task.dueAt).toTimeString().slice(0, 5) : '09:00',
-  remind: remindChoiceFromTask(task), recurrence: task.recurrence
+  remind: remindChoiceFromTask(task), recurrence: task.recurrence, customFields: { ...task.customFields }
 })
 const dueLabel = (at: number): string =>
   new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at)
@@ -75,6 +78,10 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
   const [totalDone, setTotalDone] = useState(0)
   const [projects, setProjects] = useState<TaskProject[]>([])
   const [views, setViews] = useState<TaskView[]>([])
+  const [fields, setFields] = useState<TaskSelectField[]>([])
+  const [mode, setMode] = useState<'list' | 'board'>('list')
+  const [groupMode, setGroupMode] = useState<BoardGroupMode>('priority')
+  const [groupFieldId, setGroupFieldId] = useState<string | null>(null)
   const [viewDraft, setViewDraft] = useState<ViewDraft | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [error, setError] = useState('')
@@ -83,16 +90,18 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
   const [quarantineNotice, setQuarantineNotice] = useState('')
   const [newProject, setNewProject] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<{ id: string; name: string; original: string } | null>(null)
+  const [fieldsOpen, setFieldsOpen] = useState(false)
   const taskRefs = useRef<Record<string, HTMLLIElement | null>>({})
 
   const reload = useCallback(() => {
-    void Promise.all([window.electronAPI.tasks.list(), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views()])
-      .then(([list, projectList, viewList]) => {
+    void Promise.all([window.electronAPI.tasks.list(), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views(), window.electronAPI.tasks.fields()])
+      .then(([list, projectList, viewList, fieldList]) => {
         setTasks(list.open)
         setDoneTasks(list.done)
         setTotalDone(list.totalDone)
         setProjects(projectList)
         setViews(viewList)
+        setFields(fieldList)
         window.dispatchEvent(new Event('chouyu:tasks-changed'))
         setQuarantineNotice(list.quarantinedAt ? '任务数据文件曾无法读取，已重建空库，原文件已隔离保存。' : '')
       })
@@ -101,11 +110,11 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
 
   useEffect(() => { if (active) reload() }, [active, reload])
   useEffect(() => {
-    if (!draft && !viewDraft) return
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setDraft(null); setViewDraft(null) } }
+    if (!draft && !viewDraft && !fieldsOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setDraft(null); setViewDraft(null); setFieldsOpen(false) } }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [draft, viewDraft])
+  }, [draft, viewDraft, fieldsOpen])
   useEffect(() => { if (focusTaskId) { setSelection('all'); setQuery('') } }, [focusTaskId])
   useEffect(() => {
     if (!focusTaskId || !tasks.length) return
@@ -132,6 +141,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
     (!keyword || `${task.title} ${task.note}`.toLocaleLowerCase().includes(keyword)) && matchesSelection(task, selection))
     .sort((a, b) => compareTasks(a, b, now))
   const countFor = (target: Selection) => tasks.filter(task => matchesSelection(task, target)).length
+  const boardGroupMode: BoardGroupMode = groupMode === 'field' && !fields.some(field => field.id === groupFieldId) ? 'priority' : groupMode
 
   const submitDraft = (event: FormEvent) => {
     event.preventDefault()
@@ -140,10 +150,11 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
     if (!title) { setError('任务标题不能为空。'); return }
     const dueAt = draftDueAt(draft)
     const remindAt = remindAtFromChoice(draft.remind, dueAt)
+    const customFields = Object.fromEntries(fields.map(field => [field.id, draft.customFields[field.id] ?? null]))
     setBusy(true); setError('')
     const request = draft.id
-      ? window.electronAPI.tasks.update(draft.id, { title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, dueAt, remindAt, recurrence: draft.recurrence })
-      : window.electronAPI.tasks.create({ title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, dueAt, remindAt, recurrence: draft.recurrence })
+      ? window.electronAPI.tasks.update(draft.id, { title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, dueAt, remindAt, recurrence: draft.recurrence, customFields })
+      : window.electronAPI.tasks.create({ title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, dueAt, remindAt, recurrence: draft.recurrence, customFields })
     void request
       .then(() => { setDraft(null); reload() })
       .catch(reason => setError(String(reason)))
@@ -191,6 +202,15 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
     if (!window.confirm(`删除视图「${view.name}」？任务本身不受影响。`)) return
     if (selection === `view:${view.id}`) setSelection('today')
     void window.electronAPI.tasks.deleteView(view.id).then(reload).catch(reason => setError(String(reason)))
+  }
+  const saveField = (id: string | null, input: { name: string; options?: string[] }) => {
+    setBusy(true); setError('')
+    const request = id ? window.electronAPI.tasks.updateField(id, input) : window.electronAPI.tasks.createField(input)
+    void request.then(reload).catch(reason => setError(String(reason))).finally(() => setBusy(false))
+  }
+  const removeField = (field: TaskSelectField) => {
+    if (groupFieldId === field.id) setGroupFieldId(null)
+    void window.electronAPI.tasks.deleteField(field.id).then(reload).catch(reason => setError(String(reason)))
   }
 
   return <div className="tasks-view">
@@ -257,6 +277,25 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
       {quarantineNotice && <p role="alert" className="tasks-quarantine">{quarantineNotice}</p>}
       {error && <p role="alert" className="tasks-error">{error}</p>}
       <div className="tasks-toolbar">
+        <div className="tasks-toolbar-group">
+          <div className="tasks-mode" role="group" aria-label="展示方式">
+            <button type="button" aria-pressed={mode === 'list'} onClick={() => setMode('list')}>列表</button>
+            <button type="button" aria-pressed={mode === 'board'} onClick={() => setMode('board')}>看板</button>
+          </div>
+          {mode === 'board' && <label className="tasks-group">分组
+            <select value={groupMode === 'field' ? `field:${groupFieldId ?? ''}` : groupMode} aria-label="看板分组方式"
+              onChange={e => {
+                const value = e.target.value
+                if (value.startsWith('field:')) { setGroupMode('field'); setGroupFieldId(value.slice('field:'.length) || null) }
+                else { setGroupMode(value as BoardGroupMode); setGroupFieldId(null) }
+              }}>
+              <option value="priority">按优先级</option>
+              <option value="project">按项目</option>
+              {fields.map(field => <option key={field.id} value={`field:${field.id}`}>按{field.name}</option>)}
+            </select>
+          </label>}
+          <button type="button" className="tasks-fields-toggle" onClick={() => setFieldsOpen(true)}>字段</button>
+        </div>
         <label className="tasks-search"><span className="sr-only">搜索任务</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索任务或备注" />{query && <button type="button" aria-label="清空搜索" onClick={() => setQuery('')}>×</button>}</label>
         <p>{visible.length} 个进行中{totalDone > 0 ? ` · ${totalDone} 个已完成` : ''}</p>
         <button type="button" className="tasks-create" onClick={() => setDraft({ ...emptyDraft })}>新建任务</button>
@@ -327,6 +366,16 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
             </select>
           </label>
         </div>
+        {fields.length > 0 && <div className="tasks-form-row" role="group" aria-label="自定义字段">
+          {fields.map(field => <label key={field.id}>
+            {field.name}
+            <select value={draft.customFields[field.id] ?? ''} aria-label={`任务 ${field.name}`}
+              onChange={e => setDraft({ ...draft, customFields: { ...draft.customFields, [field.id]: e.target.value } })}>
+              <option value="">未设置</option>
+              {field.options.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+            </select>
+          </label>)}
+        </div>}
         <div className="tasks-form-actions">
           <button type="submit" disabled={busy}>{draft.id ? '保存' : '创建'}</button>
           <button type="button" onClick={() => setDraft(null)}>取消</button>
@@ -383,7 +432,14 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
         </div>
       </div>}
 
-      <ul role="list" className="tasks-list">
+      {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
+
+      {mode === 'board'
+        ? <TasksBoard tasks={visible} projects={projects} fields={fields} groupMode={boardGroupMode} groupFieldId={groupFieldId}
+            onEdit={task => setDraft(draftFromTask(task))}
+            onComplete={complete}
+            onMove={(id, patch) => void window.electronAPI.tasks.update(id, patch).then(reload).catch(reason => setError(String(reason)))} />
+        : <ul role="list" className="tasks-list">
         {visible.map(task => <li key={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={task.id === focusTaskId ? -1 : undefined} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority}>
           <button type="button" className="tasks-complete" aria-label={`完成 ${task.title}`} onClick={() => complete(task.id)} />
           <div className="tasks-item-body">
@@ -403,6 +459,12 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
                 {isOverdue(task, Date.now()) ? '已过期 · ' : ''}{dueLabel(task.dueAt)}
               </span>}
               <span className={`tasks-chip tasks-chip-priority-${task.priority}`}>{PRIORITY_LABELS[task.priority]}优先级</span>
+              {fields.map(field => {
+                const optionId = task.customFields[field.id]
+                if (!optionId) return null
+                const optionName = field.options.find(option => option.id === optionId)?.name
+                return optionName ? <span key={field.id} className="tasks-chip">{field.name}：{optionName}</span> : null
+              })}
               {task.recurrence !== 'none' && <span className="tasks-chip">{RECURRENCE_LABELS[task.recurrence]}</span>}
               {task.remindAt !== null && <span className="tasks-chip">{task.remindFiredAt !== null ? '已提醒' : '已设置提醒'}</span>}
             </span>
@@ -410,7 +472,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
             <span className="tasks-item-created">创建于 {dueLabel(task.createdAt)}</span>
           </div>
         </li>)}
-      </ul>
+      </ul>}
 
       {doneTasks.length > 0 && <div className="tasks-done">
         <button type="button" aria-expanded={showDone} onClick={() => setShowDone(value => !value)}>

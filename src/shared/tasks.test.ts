@@ -7,7 +7,7 @@ import type { RemindChoiceId, TaskRecord, TaskView } from './tasks'
 const base = (patch: Partial<TaskRecord> = {}): TaskRecord => ({
   id: 't', title: '任务', note: '', projectId: null, priority: 'medium', status: 'open',
   dueAt: null, remindAt: null, remindFiredAt: null, recurrence: 'none', recurrenceAnchorAt: null,
-  createdAt: 1_000, updatedAt: 1_000, completedAt: null, ...patch
+  customFields: {}, createdAt: 1_000, updatedAt: 1_000, completedAt: null, ...patch
 })
 
 describe('remindAtFromChoice', () => {

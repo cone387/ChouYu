@@ -21,6 +21,8 @@ export interface TaskRecord {
   remindFiredAt: number | null
   recurrence: TaskRecurrence
   recurrenceAnchorAt: number | null
+  /** 字段 id → 选项 id */
+  customFields: Record<string, string>
   createdAt: number
   updatedAt: number
   completedAt: number | null
@@ -34,6 +36,7 @@ export interface TaskCreateInput {
   dueAt?: number | null
   remindAt?: number | null
   recurrence?: TaskRecurrence
+  customFields?: Record<string, string | null>
 }
 
 export interface TaskUpdateInput {
@@ -44,6 +47,8 @@ export interface TaskUpdateInput {
   dueAt?: number | null
   remindAt?: number | null
   recurrence?: TaskRecurrence
+  /** 与存量合并:值 null 表示清除该字段 */
+  customFields?: Record<string, string | null>
 }
 
 export interface TaskListResult {
@@ -86,6 +91,25 @@ export interface TaskReminderPayload {
 }
 
 export type TasksReminderEvent = { task: TaskReminderPayload } | { backlog: number }
+
+export interface TaskFieldOption {
+  id: string
+  name: string
+}
+
+/** 单选自定义字段:任务通过 customFields[fieldId] = optionId 关联选项。 */
+export interface TaskSelectField {
+  id: string
+  name: string
+  options: TaskFieldOption[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface TaskSelectFieldInput {
+  name: string
+  options?: string[]
+}
 
 export const TASK_PRIORITY_ORDER: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 }
 export const PRIORITY_LABELS: Record<TaskPriority, string> = { high: '高', medium: '中', low: '低' }
@@ -182,6 +206,10 @@ export function matchesTaskView(task: TaskRecord, view: Pick<TaskView, 'projectI
   }
 }
 
+export function formatTaskDue(at: number): string {
+  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at)
+}
+
 export interface TasksAPI {
   list(): Promise<TaskListResult>
   create(input: TaskCreateInput): Promise<TaskRecord>
@@ -197,6 +225,10 @@ export interface TasksAPI {
   createView(input: TaskViewInput): Promise<TaskView>
   updateView(id: string, patch: Partial<TaskViewInput>): Promise<TaskView>
   deleteView(id: string): Promise<void>
+  fields(): Promise<TaskSelectField[]>
+  createField(input: TaskSelectFieldInput): Promise<TaskSelectField>
+  updateField(id: string, patch: Partial<TaskSelectFieldInput>): Promise<TaskSelectField>
+  deleteField(id: string): Promise<void>
   ready(): void
   onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void
   onOpenTasksPanel(callback: () => void): () => void

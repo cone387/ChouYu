@@ -2,11 +2,11 @@ import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import type {
-  TaskCreateInput, TaskDueRange, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
+  TaskCreateInput, TaskDueRange, TaskFieldOption, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldInput, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
 } from '../../shared/tasks'
 import { nextRecurrenceDueAt } from '../../shared/tasks'
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
 const RECURRENCES: TaskRecurrence[] = ['none', 'daily', 'weekly', 'monthly']
 const DUE_RANGES: TaskDueRange[] = ['today', 'week', 'overdue', 'none', 'any']
@@ -16,11 +16,15 @@ interface TaskRow {
   status: string; due_at: number | null; remind_at: number | null; remind_fired_at: number | null
   recurrence: string; recurrence_anchor_at: number | null
   created_at: number; updated_at: number; completed_at: number | null
+  custom_fields?: string
 }
 interface ProjectRow { id: string; name: string; archived_at: number | null; created_at: number }
 interface ViewRow {
   id: string; name: string; project_ids: string; priorities: string
   due_range: string; created_at: number; updated_at: number
+}
+interface FieldRow {
+  id: string; name: string; options: string; created_at: number; updated_at: number
 }
 
 const assertTitle = (title: unknown): string => {
@@ -66,10 +70,48 @@ const assertDueRange = (value: unknown): TaskDueRange => {
   if (typeof value === 'string' && DUE_RANGES.includes(value as TaskDueRange)) return value as TaskDueRange
   throw new Error('截止范围无效。')
 }
+const assertCustomFieldValues = (value: unknown): Record<string, string | null> => {
+  if (value === undefined || value === null) return {}
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('自定义字段无效。')
+  return value as Record<string, string | null>
+}
 const parseJsonList = (value: string): string[] => {
   try {
     const parsed = JSON.parse(value)
     return Array.isArray(parsed) ? parsed.filter(item => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+const assertFieldName = (name: unknown): string => {
+  const value = typeof name === 'string' ? name.trim() : ''
+  if (!value) throw new Error('字段名称不能为空。')
+  if (value.length > 50) throw new Error('字段名称过长。')
+  return value
+}
+const assertOptionNames = (value: unknown): string[] => {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new Error('选项无效。')
+  const names = value.map(item => item.trim()).filter(item => item.length > 0)
+  if (names.length > 30) throw new Error('选项过多。')
+  return [...new Set(names)]
+}
+const parseCustomFields = (value: string | null | undefined): Record<string, string> => {
+  if (!value) return {}
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+  } catch {
+    return {}
+  }
+}
+const parseFieldOptions = (value: string): TaskFieldOption[] => {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is TaskFieldOption =>
+      Boolean(item) && typeof item === 'object' && typeof (item as TaskFieldOption).id === 'string' && typeof (item as TaskFieldOption).name === 'string')
   } catch {
     return []
   }
@@ -105,7 +147,8 @@ function migrate(database: Database.Database): void {
       priority TEXT NOT NULL DEFAULT 'medium', status TEXT NOT NULL DEFAULT 'open',
       due_at INTEGER, remind_at INTEGER, remind_fired_at INTEGER,
       recurrence TEXT NOT NULL DEFAULT 'none', recurrence_anchor_at INTEGER,
-      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, completed_at INTEGER
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, completed_at INTEGER,
+      custom_fields TEXT NOT NULL DEFAULT '{}'
     );
     CREATE INDEX IF NOT EXISTS tasks_status_due ON tasks(status, due_at);
     CREATE INDEX IF NOT EXISTS tasks_remind ON tasks(status, remind_at, remind_fired_at);
@@ -115,7 +158,16 @@ function migrate(database: Database.Database): void {
       due_range TEXT NOT NULL DEFAULT 'any',
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS task_fields (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL,
+      options TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
   `)
+  const columns = database.pragma('table_info(tasks)') as { name?: unknown }[]
+  if (columns.length > 0 && !columns.some(column => column.name === 'custom_fields')) {
+    database.exec("ALTER TABLE tasks ADD COLUMN custom_fields TEXT NOT NULL DEFAULT '{}'")
+  }
   database.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
 
@@ -126,6 +178,7 @@ const toTask = (row: TaskRow): TaskRecord => ({
   dueAt: row.due_at, remindAt: row.remind_at, remindFiredAt: row.remind_fired_at,
   recurrence: (['daily', 'weekly', 'monthly'].includes(row.recurrence) ? row.recurrence : 'none') as TaskRecord['recurrence'],
   recurrenceAnchorAt: row.recurrence_anchor_at,
+  customFields: parseCustomFields(row.custom_fields),
   createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at
 })
 const toProject = (row: ProjectRow): TaskProject => ({
@@ -137,6 +190,10 @@ const toView = (row: ViewRow): TaskView => ({
   priorities: parseJsonList(row.priorities).filter(item => PRIORITIES.includes(item as TaskPriority)) as TaskPriority[],
   dueRange: (DUE_RANGES.includes(row.due_range as TaskDueRange) ? row.due_range : 'any') as TaskDueRange,
   createdAt: row.created_at, updatedAt: row.updated_at
+})
+
+const toField = (row: FieldRow): TaskSelectField => ({
+  id: row.id, name: row.name, options: parseFieldOptions(row.options), createdAt: row.created_at, updatedAt: row.updated_at
 })
 
 /** 仅确认的库损坏才允许隔离重建,被锁/磁盘满/权限等其他错误必须原样抛出。 */
@@ -274,6 +331,76 @@ export class TasksStore {
     return toView(row)
   }
 
+  listFields(): TaskSelectField[] {
+    const rows = this.database.prepare('SELECT * FROM task_fields ORDER BY created_at, rowid').all() as FieldRow[]
+    return rows.map(toField)
+  }
+
+  createField(input: TaskSelectFieldInput): TaskSelectField {
+    const name = assertFieldName(input?.name)
+    const optionNames = assertOptionNames(input?.options)
+    const now = Date.now()
+    const row: FieldRow = {
+      id: randomUUID(), name,
+      options: JSON.stringify(optionNames.map(optionName => ({ id: randomUUID(), name: optionName }))),
+      created_at: now, updated_at: now
+    }
+    this.database.prepare('INSERT INTO task_fields (id, name, options, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .run(row.id, row.name, row.options, row.created_at, row.updated_at)
+    return toField(row)
+  }
+
+  updateField(id: string, patch: Partial<TaskSelectFieldInput>): TaskSelectField {
+    const outcome = this.database.transaction((): TaskSelectField | null => {
+      const current = this.database.prepare('SELECT * FROM task_fields WHERE id = ?').get(id) as FieldRow | undefined
+      if (!current) return null
+      const existing = toField(current)
+      const name = patch?.name === undefined ? existing.name : assertFieldName(patch.name)
+      // 选项按名字匹配保留原 id,改名等于换选项;被移除的选项同步清理任务上的引用
+      const options = patch?.options === undefined ? existing.options : this.mergeOptions(existing.options, assertOptionNames(patch.options))
+      this.database.prepare('UPDATE task_fields SET name = ?, options = ?, updated_at = ? WHERE id = ?')
+        .run(name, JSON.stringify(options), Date.now(), id)
+      if (patch?.options !== undefined) this.pruneFieldValues(id, new Set(options.map(option => option.id)))
+      return this.requireField(id)
+    })()
+    if (!outcome) throw new Error('字段不存在。')
+    return outcome
+  }
+
+  private mergeOptions(existing: TaskFieldOption[], names: string[]): TaskFieldOption[] {
+    const unused = new Map(existing.map(option => [option.name, option.id]))
+    return names.map(optionName => {
+      const previous = unused.get(optionName)
+      if (previous !== undefined) return { id: previous, name: optionName }
+      return { id: randomUUID(), name: optionName }
+    })
+  }
+
+  deleteField(id: string): void {
+    this.database.transaction(() => {
+      this.database.prepare('DELETE FROM task_fields WHERE id = ?').run(id)
+      this.pruneFieldValues(id, new Set())
+    })()
+  }
+
+  /** 移除任务 custom_fields 中指向 fieldId 的值(keep 为空即全部移除)。 */
+  private pruneFieldValues(fieldId: string, keepOptionIds: Set<string>): void {
+    const rows = this.database.prepare("SELECT id, custom_fields FROM tasks WHERE custom_fields <> '{}'").all() as { id: string; custom_fields: string }[]
+    for (const row of rows) {
+      const values = parseCustomFields(row.custom_fields)
+      const value = values[fieldId]
+      if (value === undefined || keepOptionIds.has(value)) continue
+      delete values[fieldId]
+      this.database.prepare('UPDATE tasks SET custom_fields = ? WHERE id = ?').run(JSON.stringify(values), row.id)
+    }
+  }
+
+  private requireField(id: string): TaskSelectField {
+    const row = this.database.prepare('SELECT * FROM task_fields WHERE id = ?').get(id) as FieldRow
+    if (!row) throw new Error('字段不存在。')
+    return toField(row)
+  }
+
   createTask(input: TaskCreateInput): TaskRecord {
     const title = assertTitle(input?.title)
     const note = assertText(input?.note, 2_000)
@@ -282,11 +409,12 @@ export class TasksStore {
     const dueAt = assertTimestamp(input?.dueAt, '截止时间')
     const remindAt = assertTimestamp(input?.remindAt, '提醒时间')
     const recurrence = assertRecurrence(input?.recurrence)
+    const customFields = this.cleanCustomFieldValues(assertCustomFieldValues(input?.customFields))
     const now = Date.now()
     const info = this.database.prepare(`INSERT INTO tasks
-      (id, title, note, project_id, priority, status, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at)
-      VALUES (?, ?, ?, ?, ?, 'open', ?, ?, NULL, ?, ?, ?, ?, NULL)`)
-      .run(randomUUID(), title, note, projectId, priority, dueAt, remindAt, recurrence, recurrence === 'none' ? null : dueAt, now, now)
+      (id, title, note, project_id, priority, status, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields)
+      VALUES (?, ?, ?, ?, ?, 'open', ?, ?, NULL, ?, ?, ?, ?, NULL, ?)`)
+      .run(randomUUID(), title, note, projectId, priority, dueAt, remindAt, recurrence, recurrence === 'none' ? null : dueAt, now, now, JSON.stringify(customFields))
     return this.requireTaskByRowid(Number(info.lastInsertRowid))
   }
 
@@ -306,9 +434,26 @@ export class TasksStore {
     const remindAt = patch?.remindAt === undefined ? current.remind_at : assertTimestamp(patch.remindAt, '提醒时间')
     const recurrence = patch?.recurrence === undefined ? assertRecurrence(current.recurrence) : assertRecurrence(patch.recurrence)
     const resetFired = patch?.remindAt !== undefined && remindAt !== current.remind_at
-    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, recurrence = ?, recurrence_anchor_at = ?, updated_at = ? WHERE id = ?`)
-      .run(title, note, projectId, priority, dueAt, remindAt, resetFired ? null : current.remind_fired_at, recurrence, recurrence === 'none' ? null : (current.recurrence_anchor_at ?? dueAt), Date.now(), id)
+    const customFields = patch?.customFields === undefined
+      ? parseCustomFields(current.custom_fields)
+      : this.cleanCustomFieldValues({ ...parseCustomFields(current.custom_fields), ...assertCustomFieldValues(patch.customFields) })
+    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, recurrence = ?, recurrence_anchor_at = ?, updated_at = ?, custom_fields = ? WHERE id = ?`)
+      .run(title, note, projectId, priority, dueAt, remindAt, resetFired ? null : current.remind_fired_at, recurrence, recurrence === 'none' ? null : (current.recurrence_anchor_at ?? dueAt), Date.now(), JSON.stringify(customFields), id)
     return this.requireTask(id)
+  }
+
+  /** 过滤空值与字段/选项不存在的引用,顺带清理失效数据。 */
+  private cleanCustomFieldValues(values: Record<string, string | null>): Record<string, string> {
+    const fields = this.database.prepare('SELECT id, options FROM task_fields').all() as FieldRow[]
+    const optionsByField = new Map(fields.map(field => [field.id, new Set(parseFieldOptions(field.options).map(option => option.id))]))
+    const result: Record<string, string> = {}
+    for (const [fieldId, optionId] of Object.entries(values)) {
+      if (typeof optionId !== 'string' || optionId === '') continue
+      const options = optionsByField.get(fieldId)
+      if (!options || !options.has(optionId)) continue
+      result[fieldId] = optionId
+    }
+    return result
   }
 
   completeTask(id: string): TaskRecord {
@@ -324,9 +469,9 @@ export class TasksStore {
         if (nextDueAt !== null) {
           const reminderOffset = current.remind_at !== null ? current.due_at - current.remind_at : null
           this.database.prepare(`INSERT INTO tasks
-            (id, title, note, project_id, priority, status, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at)
-            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, NULL, ?, ?, ?, ?, NULL)`)
-            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, nextDueAt, reminderOffset !== null ? nextDueAt - reminderOffset : null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now)
+            (id, title, note, project_id, priority, status, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields)
+            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, NULL, ?, ?, ?, ?, NULL, ?)`)
+            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, nextDueAt, reminderOffset !== null ? nextDueAt - reminderOffset : null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now, current.custom_fields ?? '{}')
         }
       }
       return this.requireTask(id)

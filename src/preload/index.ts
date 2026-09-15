@@ -80,6 +80,10 @@ const api = {
     createView: input => ipcRenderer.invoke('tasks:createView', input),
     updateView: (id, patch) => ipcRenderer.invoke('tasks:updateView', id, patch),
     deleteView: id => ipcRenderer.invoke('tasks:deleteView', id),
+    fields: () => ipcRenderer.invoke('tasks:fields'),
+    createField: input => ipcRenderer.invoke('tasks:createField', input),
+    updateField: (id, patch) => ipcRenderer.invoke('tasks:updateField', id, patch),
+    deleteField: id => ipcRenderer.invoke('tasks:deleteField', id),
     ready: () => { ipcRenderer.send('tasks:ready') },
     onTasksReminder: callback => {
       const handler = (_event: unknown, payload: TasksReminderEvent) => callback(payload)

@@ -57,6 +57,10 @@ export function initializeTasks(options: TasksModuleOptions): void {
   ipcMain.handle('tasks:createView', (_event, input) => store!.createView(input ?? {}))
   ipcMain.handle('tasks:updateView', (_event, id: string, patch) => store!.updateView(id, patch ?? {}))
   ipcMain.handle('tasks:deleteView', (_event, id: string) => store!.deleteView(id))
+  ipcMain.handle('tasks:fields', () => store!.listFields())
+  ipcMain.handle('tasks:createField', (_event, input) => store!.createField(input ?? {}))
+  ipcMain.handle('tasks:updateField', (_event, id: string, patch) => store!.updateField(id, patch ?? {}))
+  ipcMain.handle('tasks:deleteField', (_event, id: string) => store!.deleteField(id))
 
   ipcMain.on('tasks:ready', () => {
     if (readyDelivered) return
@@ -68,7 +72,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
 
 export function closeTasks(): void {
   shuttingDown = true
-  for (const channel of ['tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView']) ipcMain.removeHandler(channel)
+  for (const channel of ['tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView', 'tasks:fields', 'tasks:createField', 'tasks:updateField', 'tasks:deleteField']) ipcMain.removeHandler(channel)
   ipcMain.removeAllListeners('tasks:ready')
   storeRebuilt = false
   pendingBacklog = 0
