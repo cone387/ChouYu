@@ -127,5 +127,8 @@ describe('settings field search', () => {
     expect(searchSettings('配色').some((entry) => entry.fieldId === 'settings-theme-label')).toBe(true)
     expect(settingsSource).toContain('settings-palette-swatch')
     expect(settingsSource).toContain('PALETTE_SWATCHES')
+    for (const id of PALETTE_IDS) {
+      expect(settingsSource, `swatch for ${id}`).toContain(`{ id: '${id}'`)
+    }
   })
 })

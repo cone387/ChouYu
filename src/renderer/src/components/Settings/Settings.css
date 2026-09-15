@@ -935,6 +935,10 @@
   cursor: pointer;
 }
 
+.settings-palette-swatch:hover {
+  transform: scale(1.1);
+}
+
 .settings-palette-swatch.active {
   border-color: var(--text-primary);
 }
