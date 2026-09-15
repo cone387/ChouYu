@@ -207,6 +207,22 @@ const api = {
     ipcRenderer.on('config:changed', handler)
     return () => { ipcRenderer.removeListener('config:changed', handler) }
   },
+  characters: {
+    list: () => ipcRenderer.invoke('characters:list'),
+    create: (draft: unknown) => ipcRenderer.invoke('characters:create', draft),
+    update: (id: string, draft: unknown) => ipcRenderer.invoke('characters:update', id, draft),
+    remove: (id: string) => ipcRenderer.invoke('characters:delete', id),
+    fetchModels: (profileId: string) => ipcRenderer.invoke('characters:fetch-models', profileId) as Promise<AIModelListResult>,
+    onChanged: (callback: () => void) => {
+      ipcRenderer.on('characters:changed', callback)
+      return () => { ipcRenderer.removeListener('characters:changed', callback) }
+    }
+  },
+  providerProfiles: {
+    list: () => ipcRenderer.invoke('provider-profiles:list'),
+    save: (profile: unknown) => ipcRenderer.invoke('provider-profiles:save', profile),
+    remove: (id: string) => ipcRenderer.invoke('provider-profiles:delete', id)
+  },
   db: {
     getStorageStatus: () => ipcRenderer.invoke('db:storage-status') as Promise<StorageStatus>,
     retrySave: () => ipcRenderer.invoke('db:retry-save') as Promise<StorageStatus>,
@@ -224,7 +240,7 @@ const api = {
     clearMessages: () => ipcRenderer.invoke('db:clear-messages'),
     getSessionWorkspace: () => ipcRenderer.invoke('db:get-session-workspace'),
     searchSessions: (query: string) => ipcRenderer.invoke('db:search-sessions', query),
-    createSession: (title?: string) => ipcRenderer.invoke('db:create-session', title),
+    createSession: (title?: string, characterId?: string) => ipcRenderer.invoke('db:create-session', title, characterId),
     selectSession: (id: string) => ipcRenderer.invoke('db:select-session', id),
     renameSession: (id: string, title: string) => ipcRenderer.invoke('db:rename-session', id, title),
     deleteSession: (id: string) => ipcRenderer.invoke('db:delete-session', id),

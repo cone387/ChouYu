@@ -3,7 +3,8 @@ import { notifyJournalConfig } from './journal'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { sanitizeConfigPatch } from '../shared/config'
+import { getProviderProfiles, sanitizeConfigPatch, sanitizeProviderProfile } from '../shared/config'
+import type { ResolvedProviderProfile } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
 import { resolveCharacterConfig } from '../shared/characters'
@@ -74,6 +75,10 @@ import {
   getConfig,
   saveConfig,
   getCharacter,
+  listCharacters,
+  createCharacter,
+  updateCharacter,
+  deleteCharacter,
   getMessages,
   saveMessages,
   clearMessages,
@@ -776,8 +781,63 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (typeof query !== 'string' || query.length > 500) throw new Error('Invalid search query')
     return searchSessions(query)
   })
-  ipcMain.handle('db:create-session', (_event, title?: string) =>
-    createChatSession(typeof title === 'string' ? title.slice(0, 80) : undefined))
+  ipcMain.handle('db:create-session', (_event, title?: string, characterId?: string) =>
+    createChatSession(typeof title === 'string' ? title.slice(0, 80) : undefined, characterId))
+
+  const notifyCharactersChanged = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('characters:changed')
+  }
+
+  ipcMain.handle('characters:list', () => listCharacters())
+  ipcMain.handle('characters:create', (_event, draft: unknown) => {
+    const result = createCharacter(draft)
+    notifyCharactersChanged()
+    return result
+  })
+  ipcMain.handle('characters:update', (_event, id: string, draft: unknown) => {
+    const result = updateCharacter(id, draft)
+    notifyCharactersChanged()
+    if (result.builtIn) {
+      const config = getConfig()
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('config:changed', config)
+      notifyJournalConfig(config)
+    }
+    return result
+  })
+  ipcMain.handle('characters:delete', (_event, id: string) => {
+    const workspace = deleteCharacter(id)
+    notifyCharactersChanged()
+    return workspace
+  })
+  ipcMain.handle('characters:fetch-models', async (_event, profileId: string): Promise<AIModelListResult> => {
+    const profile = getProviderProfiles(getConfig()).find((item) => item.id === profileId)
+    if (!profile) {
+      return { ok: false, models: [], baseUrl: '', baseUrlAdjusted: false, configuredModelValid: false, errorCode: 'invalid-url', message: '供应商档案不存在。' }
+    }
+    // 档案级模型列表只读，不回写 baseUrl（区别于全局 fetch-models 的自动修正）。
+    return fetchProviderModels({ ...getConfig(), provider: profile.provider, baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: '' })
+  })
+
+  ipcMain.handle('provider-profiles:list', (): ResolvedProviderProfile[] => getProviderProfiles(getConfig()))
+  ipcMain.handle('provider-profiles:save', (_event, rawProfile: unknown): ResolvedProviderProfile[] => {
+    const profile = sanitizeProviderProfile(rawProfile)
+    if (!profile) throw new Error('档案名称和 Base URL 为必填项。')
+    const config = getConfig()
+    const next = [...config.providerProfiles.filter((item) => item.id !== profile.id), profile]
+    saveConfig({ providerProfiles: next })
+    notifyJournalConfig(getConfig())
+    return getProviderProfiles(getConfig())
+  })
+  ipcMain.handle('provider-profiles:delete', (_event, profileId: string): ResolvedProviderProfile[] => {
+    const config = getConfig()
+    if (!config.providerProfiles.some((item) => item.id === profileId)) throw new Error('档案不存在或已被删除。')
+    const referencing = listCharacters().filter((character) => character.providerProfileId === profileId)
+    if (referencing.length > 0) {
+      throw new Error(`档案正被角色「${referencing.map((character) => character.name).join('、')}」使用，请先调整这些角色。`)
+    }
+    saveConfig({ providerProfiles: config.providerProfiles.filter((item) => item.id !== profileId) })
+    return getProviderProfiles(getConfig())
+  })
   ipcMain.handle('db:select-session', (_event, id: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
     return selectChatSession(id)
