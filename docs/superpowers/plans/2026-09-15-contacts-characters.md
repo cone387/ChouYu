@@ -257,10 +257,10 @@ describe('resolveCharacterConfig', () => {
     })
   })
   it('errors when the referenced profile is missing or incomplete', () => {
-    const missing = resolveCharacterConfig(customCharacter, baseConfig)
+    const missing = resolveCharacterConfig({ ...customCharacter, providerProfileId: 'p1' }, baseConfig)
     expect(missing.ok).toBe(false)
     expect((missing as { error: string }).error).toContain('供应商档案')
-    const emptyProfile = resolveCharacterConfig(customCharacter, { ...baseConfig, providerProfiles: [{ id: 'default', name: 'x', provider: 'openai', baseUrl: '', apiKey: '' }] })
+    const emptyProfile = resolveCharacterConfig({ ...customCharacter, providerProfileId: 'p1' }, { ...baseConfig, providerProfiles: [{ id: 'p1', name: 'x', provider: 'openai', baseUrl: '', apiKey: '' }] })
     expect(emptyProfile.ok).toBe(false)
   })
   it('falls back to the default soul when a custom character has none', () => {
@@ -356,6 +356,7 @@ export function normalizeCharacters(value: unknown): Character[] {
   const names = new Set<string>([DEFAULT_CHARACTER_NAME])
   const ids = new Set<string>([DEFAULT_CHARACTER_ID])
   const custom: Character[] = []
+  const now = Date.now()
   if (Array.isArray(value)) {
     for (const item of value) {
       if (!item || typeof item !== 'object') continue
@@ -368,11 +369,17 @@ export function normalizeCharacters(value: unknown): Character[] {
         defaultCharacter = { ...defaultCharacter, name, avatar }
         continue
       }
+      if (ids.has(id)) continue
       const draft = sanitizeCharacterDraft(input)
       if (!draft) continue
-      const characterName = names.has(draft.name) ? `${draft.name} ${custom.filter((c) => c.name.startsWith(draft.name)).length + 2}` : draft.name
+      let characterName = draft.name
+      let suffix = 2
+      while (names.has(characterName)) characterName = `${draft.name} ${suffix++}`
       names.add(characterName)
-      custom.push({ id, ...draft, name: characterName, builtIn: false, createdAt: Date.now(), updatedAt: Date.now() })
+      ids.add(id)
+      const createdAt = typeof input.createdAt === 'number' && Number.isFinite(input.createdAt) ? input.createdAt : now
+      const updatedAt = typeof input.updatedAt === 'number' && Number.isFinite(input.updatedAt) ? input.updatedAt : createdAt
+      custom.push({ id, ...draft, name: characterName, builtIn: false, createdAt, updatedAt })
       if (custom.length >= MAX_CHARACTER_COUNT - 1) break
     }
   }
@@ -1640,4 +1647,5 @@ git commit -m "docs: record contacts and characters phase one in roadmap"
 
 1. **Spec 覆盖**：档案类型与合成（Task 1）、角色模型/解析（Task 2）、存储/迁移/级联（Task 3）、聊天链路（Task 4）、IPC（Task 5）、渲染接线与 soulMd（Task 6）、通讯录页+导航+点击开聊+删除确认（Task 7）、档案管理 UI（Task 8）、冒烟+门禁+roadmap（Task 9/10）。Spec 的「每角色会话列表过滤」由 Task 7 Step 4(3) 覆盖；「解析失败不静默回退」由 Task 2 错误分支 + Task 4 返回 `{ok:false,error}` 覆盖。
 2. **占位符**：Task 3/7/9 中标注「实现期修正」的三处代码笔误已显式给出修正说明，无 TBD。
+   **Task 2 实现期修正（已镜像）**：(a) 原测试第 8 例用 `providerProfileId:'default'` 断言档案缺失——但 Task 1 的 `getProviderProfiles` 会从已配置全局字段无条件合成可用的 default 档案，该断言与第 10 例（同输入期待 ok:true）自相矛盾；夹具改为 `'p1'`。(b) 原 `normalizeCharacters` 声明了 `ids` 却未查重（重复 id 会多出一个角色），后缀公式 `filter(...).length + 2` 首个冲突即得「小猫 3」；改为 ids 查重 + while 循环后缀（与 sanitizeProviderProfiles 同构）。(c) 原实现每次 normalize 用 `Date.now()` 覆盖 createdAt/updatedAt，Task 3 落库后每次重启都会重置时间戳；改为保留有限持久值、缺失时回退。
 3. **类型一致性**：`CharacterStats`/`CharacterDraft`/`ResolvedProviderProfile`/`DEFAULT_CHARACTER_ID='chouyu'`/`DEFAULT_PROFILE_ID='default'` 全计划一致；`createChatSession(title?, characterId?)`、`createSession(characterId?)`、`streamChat(..., characterId?)` 签名前后一致。
