@@ -276,12 +276,16 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
     <section className="tasks-main" aria-label="任务列表">
       {quarantineNotice && <p role="alert" className="tasks-quarantine">{quarantineNotice}</p>}
       {error && <p role="alert" className="tasks-error">{error}</p>}
+      <div className="tasks-tabs" role="group" aria-label="展示方式">
+        <button type="button" className="tasks-tab" aria-pressed={mode === 'list'} onClick={() => setMode('list')}>列表</button>
+        <button type="button" className="tasks-tab" aria-pressed={mode === 'board'} onClick={() => setMode('board')}>看板</button>
+      </div>
       <div className="tasks-toolbar">
         <div className="tasks-toolbar-group">
-          <div className="tasks-mode" role="group" aria-label="展示方式">
-            <button type="button" aria-pressed={mode === 'list'} onClick={() => setMode('list')}>列表</button>
-            <button type="button" aria-pressed={mode === 'board'} onClick={() => setMode('board')}>看板</button>
-          </div>
+          <button type="button" className="tasks-create" onClick={() => setDraft({ ...emptyDraft })}>新建任务</button>
+          <p>{visible.length} 个进行中{totalDone > 0 ? ` · ${totalDone} 个已完成` : ''}</p>
+        </div>
+        <div className="tasks-toolbar-group">
           {mode === 'board' && <label className="tasks-group">分组
             <select value={groupMode === 'field' ? `field:${groupFieldId ?? ''}` : groupMode} aria-label="看板分组方式"
               onChange={e => {
@@ -295,10 +299,8 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
             </select>
           </label>}
           <button type="button" className="tasks-fields-toggle" onClick={() => setFieldsOpen(true)}>字段</button>
+          <label className="tasks-search"><span className="sr-only">搜索任务</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索任务或备注" />{query && <button type="button" aria-label="清空搜索" onClick={() => setQuery('')}>×</button>}</label>
         </div>
-        <label className="tasks-search"><span className="sr-only">搜索任务</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索任务或备注" />{query && <button type="button" aria-label="清空搜索" onClick={() => setQuery('')}>×</button>}</label>
-        <p>{visible.length} 个进行中{totalDone > 0 ? ` · ${totalDone} 个已完成` : ''}</p>
-        <button type="button" className="tasks-create" onClick={() => setDraft({ ...emptyDraft })}>新建任务</button>
       </div>
 
       {visible.length === 0 && !draft && <div className="tasks-empty">

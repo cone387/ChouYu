@@ -42,6 +42,8 @@ describe('Tasks 视图源守卫', () => {
   test('看板:模式切换、分组选择、拖拽与卡片可达性', () => {
     const view = read('TasksView.tsx')
     expect(view).toContain("from './TasksBoard'")
+    expect(view).toContain('tasks-tabs')
+    expect(view).toContain('tasks-tab')
     expect(view).toContain('aria-pressed')
     expect(view).toContain('看板分组方式')
     expect(view).toContain('tasks.update(id, patch)')
@@ -53,6 +55,11 @@ describe('Tasks 视图源守卫', () => {
     expect(board).toContain('role="list"')
     expect(board).toContain('aria-label')
     expect(board).toContain('preventDefault')
+    expect(board).toContain('tasks-board-card-dot')
+    expect(board).toContain('tasks-board-card-chips')
+    const css = read('Tasks.css')
+    expect(css).toContain('.tasks-tab[aria-pressed=')
+    expect(css).toContain('.tasks-board-card-dot')
   })
   test('字段管理:弹窗可达性、表单集成与列表 chip', () => {
     const dialog = read('TaskFieldsDialog.tsx')
