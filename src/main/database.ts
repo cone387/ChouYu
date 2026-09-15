@@ -462,11 +462,12 @@ export function listCharacters(): CharacterStats[] {
 }
 
 export function getCharacter(id: string): Character | null {
-  return store.characters.find((character) => character.id === id) ?? null
+  const character = store.characters.find((item) => item.id === id)
+  return character ? { ...character } : null
 }
 
 function findCharacterByIdOrThrow(id: string): Character {
-  const character = getCharacter(id)
+  const character = store.characters.find((item) => item.id === id)
   if (!character) throw new Error('角色不存在或已被删除。')
   return character
 }
@@ -505,7 +506,6 @@ export function updateCharacter(id: string, draft: unknown): CharacterStats {
     character.updatedAt = Date.now()
     // 内置角色的人设与模型写入全局配置，保持单一数据源。
     saveConfig({ soulMd: input.soulMd, model: input.model })
-    persist()
     return listCharacters().find((item) => item.id === id)!
   }
   Object.assign(character, input, { updatedAt: Date.now() })

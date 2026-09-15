@@ -22,6 +22,7 @@ import {
   saveSessionMessages, setState, searchSessions, updateCharacter
 } from './database'
 import { DEFAULT_CHARACTER_ID } from '../shared/characters'
+import { DEFAULT_APP_CONFIG } from '../shared/config'
 import { AttachmentStore } from './attachment-store'
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aP1kAAAAASUVORK5CYII='
@@ -239,7 +240,7 @@ describe('characters', () => {
 
   it('always exposes the built-in default character with live-view fields', () => {
     const characters = listCharacters()
-    expect(characters[0]).toMatchObject({ id: DEFAULT_CHARACTER_ID, name: '丑鱼', builtIn: true, providerProfileId: 'default' })
+    expect(characters[0]).toMatchObject({ id: DEFAULT_CHARACTER_ID, name: '丑鱼', builtIn: true, providerProfileId: 'default', soulMd: '', model: '' })
   })
 
   it('assigns existing sessions to the default character on migration', () => {
@@ -249,6 +250,23 @@ describe('characters', () => {
     const workspace = getSessionWorkspace()
     expect(workspace.sessions.every((session) => session.characterId === DEFAULT_CHARACTER_ID)).toBe(true)
     expect(getSession(id)?.characterId).toBe(DEFAULT_CHARACTER_ID)
+  })
+
+  it('migrates a v3 store by assigning legacy sessions to the built-in character', () => {
+    fs.writeFileSync(storePath(), JSON.stringify({
+      version: 3,
+      config: { ...DEFAULT_APP_CONFIG },
+      sessions: [{ id: 'legacy-1', title: '旧会话', messages: [], createdAt: 1, updatedAt: 2 }],
+      activeSessionId: 'legacy-1',
+      state: {}
+    }))
+    initDatabase()
+    const workspace = getSessionWorkspace()
+    expect(workspace.sessions.find((session) => session.id === 'legacy-1')?.characterId).toBe(DEFAULT_CHARACTER_ID)
+    expect(workspace.activeSession.characterId).toBe(DEFAULT_CHARACTER_ID)
+    const characters = listCharacters()
+    expect(characters).toHaveLength(1)
+    expect(characters[0].id).toBe(DEFAULT_CHARACTER_ID)
   })
 
   it('creates characters, binds sessions and counts stats', () => {
@@ -261,10 +279,23 @@ describe('characters', () => {
     expect(stats?.lastActiveAt).toBeGreaterThan(0)
   })
 
+  it('falls back to the default character when creating a session for an unknown character', () => {
+    const workspace = createChatSession('t', 'unknown-id')
+    expect(workspace.activeSession.characterId).toBe(DEFAULT_CHARACTER_ID)
+  })
+
   it('rejects duplicate names, unknown profiles and default deletion', () => {
     expect(() => createCharacter({ ...draft, name: '丑鱼' })).toThrow('同名')
     expect(() => createCharacter({ ...draft, name: '坏档案', providerProfileId: 'missing' })).toThrow('档案')
     expect(() => deleteCharacter(DEFAULT_CHARACTER_ID)).toThrow('不可删除')
+  })
+
+  it('caps characters at the built-in plus eleven customs', () => {
+    for (let index = 1; index <= 11; index++) {
+      createCharacter({ ...draft, name: `角色${index}` })
+    }
+    expect(listCharacters()).toHaveLength(12)
+    expect(() => createCharacter({ ...draft, name: '角色12' })).toThrow(/最多支持/)
   })
 
   it('updates characters and write-through default persona/model to config', () => {
@@ -275,6 +306,13 @@ describe('characters', () => {
     expect(getConfig().soulMd).toBe('# 新人设')
     expect(getConfig().model).toBe('live-model')
     expect(() => updateCharacter(DEFAULT_CHARACTER_ID, { name: '丑鱼', avatar: '🐟', soulMd: '', providerProfileId: 'p9', model: 'm' })).toThrow('默认档案')
+  })
+
+  it('rejects duplicate names case-insensitively while allowing same-character case renames', () => {
+    createCharacter({ ...draft, name: 'Alpha' })
+    const beta = createCharacter({ ...draft, name: 'Beta' })
+    expect(() => updateCharacter(beta.id, { ...draft, name: 'ALPHA' })).toThrow(/同名/)
+    expect(updateCharacter(beta.id, { ...draft, name: 'BETA' }).name).toBe('BETA')
   })
 
   it('deleting a character cascades its sessions and repairs the active session', () => {
