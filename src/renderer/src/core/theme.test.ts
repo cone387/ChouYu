@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { resolveTheme } from './theme'
+import { resolvePalette, resolveTheme } from './theme'
 import { searchSettings, SETTINGS_SEARCH_INDEX } from '../components/Settings/settings-search-index'
 
 const stylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/styles/index.css'), 'utf8')
@@ -51,6 +51,12 @@ describe('theme preference', () => {
     expect(countVars(mediaBlock)).toBeGreaterThan(20)
     // The two dark blocks must stay in sync.
     expect(countVars(mediaBlock)).toBe(countVars(manualBlock))
+  })
+
+  it('resolves the palette with a purple fallback for unknown values', () => {
+    expect(resolvePalette('pink')).toBe('pink')
+    expect(resolvePalette(undefined)).toBe('purple')
+    expect(resolvePalette('gold')).toBe('purple')
   })
 })
 
