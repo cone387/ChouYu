@@ -3,16 +3,25 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const environment = vi.hoisted(() => ({ directory: '' }))
+const environment = vi.hoisted(() => ({ directory: '', encryptionAvailable: false }))
 vi.mock('electron', () => ({
   app: { getPath: () => environment.directory },
-  safeStorage: { isEncryptionAvailable: () => false }
+  safeStorage: {
+    isEncryptionAvailable: () => environment.encryptionAvailable,
+    encryptString: (value: string) => Buffer.from(`s:${value}`, 'utf8'),
+    decryptString: (buffer: Buffer) => {
+      const text = buffer.toString('utf8')
+      return text.startsWith('s:') ? text.slice(2) : ''
+    }
+  }
 }))
 
 import {
-  createChatSession, flushDatabase, getActiveSession, getSession, getSessions,
-  getStorageStatus, initDatabase, onStorageStatus, saveConfig, saveSessionMessages, setState, searchSessions
+  createCharacter, createChatSession, deleteCharacter, flushDatabase, getActiveSession, getConfig, getSession,
+  getSessionWorkspace, getSessions, getStorageStatus, initDatabase, listCharacters, onStorageStatus, saveConfig,
+  saveSessionMessages, setState, searchSessions, updateCharacter
 } from './database'
+import { DEFAULT_CHARACTER_ID } from '../shared/characters'
 import { AttachmentStore } from './attachment-store'
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aP1kAAAAASUVORK5CYII='
@@ -21,6 +30,7 @@ const storePath = () => path.join(environment.directory, 'chouyu-data.json')
 
 beforeEach(() => {
   vi.useFakeTimers()
+  environment.encryptionAvailable = false
   environment.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'chouyu-database-test-'))
   initDatabase()
 })
@@ -221,5 +231,75 @@ describe('durable conversations', () => {
     const reference = attachments.persist(image)
     fs.writeFileSync(path.join(directory, fs.readdirSync(directory)[0]), 'damaged')
     expect(() => attachments.read(reference)).toThrow('Damaged attachment')
+  })
+})
+
+describe('characters', () => {
+  const draft = { name: '小猫', avatar: '🐱', soulMd: '# 小猫', providerProfileId: 'default', model: 'm1' }
+
+  it('always exposes the built-in default character with live-view fields', () => {
+    const characters = listCharacters()
+    expect(characters[0]).toMatchObject({ id: DEFAULT_CHARACTER_ID, name: '丑鱼', builtIn: true, providerProfileId: 'default' })
+  })
+
+  it('assigns existing sessions to the default character on migration', () => {
+    const id = getActiveSession().id
+    flushDatabase()
+    initDatabase()
+    const workspace = getSessionWorkspace()
+    expect(workspace.sessions.every((session) => session.characterId === DEFAULT_CHARACTER_ID)).toBe(true)
+    expect(getSession(id)?.characterId).toBe(DEFAULT_CHARACTER_ID)
+  })
+
+  it('creates characters, binds sessions and counts stats', () => {
+    const created = createCharacter(draft)
+    expect(created).toMatchObject({ name: '小猫', model: 'm1', sessionCount: 0 })
+    const workspace = createChatSession(undefined, created.id)
+    expect(workspace.activeSession.characterId).toBe(created.id)
+    const stats = listCharacters().find((character) => character.id === created.id)
+    expect(stats?.sessionCount).toBe(1)
+    expect(stats?.lastActiveAt).toBeGreaterThan(0)
+  })
+
+  it('rejects duplicate names, unknown profiles and default deletion', () => {
+    expect(() => createCharacter({ ...draft, name: '丑鱼' })).toThrow('同名')
+    expect(() => createCharacter({ ...draft, name: '坏档案', providerProfileId: 'missing' })).toThrow('档案')
+    expect(() => deleteCharacter(DEFAULT_CHARACTER_ID)).toThrow('不可删除')
+  })
+
+  it('updates characters and write-through default persona/model to config', () => {
+    const created = createCharacter(draft)
+    const updated = updateCharacter(created.id, { ...draft, model: 'm2' })
+    expect(updated.model).toBe('m2')
+    updateCharacter(DEFAULT_CHARACTER_ID, { name: '丑鱼', avatar: '🐟', soulMd: '# 新人设', providerProfileId: 'default', model: 'live-model' })
+    expect(getConfig().soulMd).toBe('# 新人设')
+    expect(getConfig().model).toBe('live-model')
+    expect(() => updateCharacter(DEFAULT_CHARACTER_ID, { name: '丑鱼', avatar: '🐟', soulMd: '', providerProfileId: 'p9', model: 'm' })).toThrow('默认档案')
+  })
+
+  it('deleting a character cascades its sessions and repairs the active session', () => {
+    const created = createCharacter(draft)
+    const owned = createChatSession('猫会话', created.id)
+    expect(owned.activeSession.characterId).toBe(created.id)
+    const workspace = deleteCharacter(created.id)
+    expect(listCharacters().some((character) => character.id === created.id)).toBe(false)
+    expect(workspace.sessions.some((session) => session.id === owned.activeSession.id)).toBe(false)
+    expect(workspace.activeSession.id).toBeTruthy()
+  })
+
+  it('persists characters and profile api keys across restart', () => {
+    environment.encryptionAvailable = true
+    saveConfig({ providerProfiles: [{ id: 'p1', name: '中转', provider: 'claude', baseUrl: 'https://relay', apiKey: 'secret-key' }] })
+    createCharacter(draft)
+    const created = listCharacters().find((character) => character.name === '小猫')!
+    updateCharacter(created.id, { ...draft, providerProfileId: 'p1' })
+    flushDatabase()
+    initDatabase()
+    const persisted = listCharacters().find((character) => character.name === '小猫')
+    expect(persisted?.providerProfileId).toBe('p1')
+    expect(getConfig().providerProfiles[0]).toMatchObject({ id: 'p1', apiKey: 'secret-key' })
+    const raw = JSON.parse(fs.readFileSync(storePath(), 'utf-8'))
+    expect(raw.config.providerProfiles[0].apiKey).toMatch(/^safe:v1:/)
+    expect(Array.isArray(raw.characters)).toBe(true)
   })
 })
