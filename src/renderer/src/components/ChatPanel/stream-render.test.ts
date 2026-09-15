@@ -70,6 +70,11 @@ describe('per-session character resolution', () => {
   it('forwards the session character id into streamChat', () => {
     expect(workspaceSource).toContain('character && !character.builtIn ? character.id : undefined')
   })
+
+  it('displays the character model and routes model changes through characters.update', () => {
+    expect(panelSource).toContain('model={activeCharacter && !activeCharacter.builtIn ? activeCharacter.model : config.model}')
+    expect(panelSource).toContain('characters.update(activeCharacter.id, {')
+  })
 })
 
 describe('message windowing', () => {

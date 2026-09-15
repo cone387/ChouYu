@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CharacterStats } from '../../../../shared/characters'
+import { DEFAULT_CHARACTER_ID, type CharacterStats } from '../../../../shared/characters'
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
 import './Contacts.css'
@@ -142,7 +142,7 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
       <p>删除角色「{confirmDelete.name}」将同时删除它的 {confirmDelete.sessionCount} 个会话，无法恢复。</p>
       <div>
         <button type="button" autoFocus onClick={() => setConfirmDelete(null)}>取消</button>
-        <button type="button" className="danger" data-contacts-confirm-delete onClick={() => { void deleteCharacter() }}>确认删除</button>
+        <button type="button" className="danger" data-contacts-confirm-delete disabled={busy} onClick={() => { void deleteCharacter() }}>确认删除</button>
       </div>
     </div>}
     {form && <form className="contacts-form" data-contacts-form onSubmit={(event) => { event.preventDefault(); void saveForm() }}>
@@ -150,12 +150,12 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
       <label>名字<input data-contacts-name value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={24} /></label>
       <label>头像（emoji 或单字）<input data-contacts-avatar value={form.avatar} onChange={(event) => setForm({ ...form, avatar: event.target.value })} maxLength={8} placeholder="留空用名字首字" /></label>
       <label>供应商档案
-        <select data-contacts-profile value={form.providerProfileId} disabled={form.id === 'chouyu'}
+        <select data-contacts-profile value={form.providerProfileId} disabled={form.id === DEFAULT_CHARACTER_ID}
           onChange={(event) => setForm({ ...form, providerProfileId: event.target.value })}>
           {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.builtIn ? '（设置页默认）' : ''}</option>)}
         </select>
       </label>
-      {form.id === 'chouyu' && <p className="contacts-hint">内置角色的人设与模型会写回设置页的全局配置。</p>}
+      {form.id === DEFAULT_CHARACTER_ID && <p className="contacts-hint">内置角色的人设与模型会写回设置页的全局配置。</p>}
       <label>模型<input data-contacts-model value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} required list="contacts-model-options" />
         <datalist id="contacts-model-options">{models.map((model) => <option key={model} value={model} />)}</datalist>
       </label>

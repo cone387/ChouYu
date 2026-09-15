@@ -23,7 +23,8 @@ import {
   PetState,
   AppConfig,
   PluginInfo,
-  PluginMessageData
+  PluginMessageData,
+  SessionWorkspace
 } from '../../shared/types'
 import {
   DEFAULT_CONFIG,
@@ -147,6 +148,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     activeSessionIdRef,
     applyWorkspace,
     updateSessionMessages,
+    stopSessionResponse,
     generateAIResponse,
     createSession,
     selectSession,
@@ -515,12 +517,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         return
       }
       try {
-        const saved = await window.electronAPI.db.saveConfig({ model: requestedModel })
-        setConfig(saved)
+        const savedModel = await handleModelChange(requestedModel)
         updateSessionMessages(originatingSessionId, (previous) => [...previous, {
           id: Date.now().toString(),
           role: 'assistant',
-          content: `已切换到模型 \`${saved.model}\`。`,
+          content: `已切换到模型 \`${savedModel}\`。`,
           timestamp: Date.now()
         }])
       } catch (error) {
@@ -578,10 +579,23 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     return '在线'
   }
 
-  const handleModelChange = useCallback((newModel: string) => {
-    setConfig((previous) => ({ ...previous, model: newModel }))
-    void window.electronAPI.db.saveConfig({ model: newModel })
-  }, [])
+  // 模型切换的唯一入口：自定义角色的模型属于角色本身（characters.update 全量草稿），
+  // 内置角色仍写回设置页的全局配置。返回实际落库的模型供反馈文案使用。
+  const handleModelChange = useCallback(async (newModel: string): Promise<string> => {
+    if (activeCharacter && !activeCharacter.builtIn) {
+      const updated = await window.electronAPI.characters.update(activeCharacter.id, {
+        name: activeCharacter.name,
+        avatar: activeCharacter.avatar,
+        soulMd: activeCharacter.soulMd,
+        providerProfileId: activeCharacter.providerProfileId,
+        model: newModel
+      })
+      return updated.model
+    }
+    const saved = await window.electronAPI.db.saveConfig({ model: newModel })
+    setConfig(saved)
+    return saved.model
+  }, [activeCharacter])
 
   const openAISettings = useCallback(() => {
     setShowOnboarding(false)
@@ -598,6 +612,16 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     else await createSession(characterId)
     navigate('chat')
   }, [sessions, selectSession, createSession, navigate])
+
+  // 删除角色会连带删除其会话：先停掉这些会话的在途生成（对齐 deleteSession 的先例），
+  // 再按保留侧栏顺序的方式应用新工作区。
+  const handleCharactersDeleted = useCallback((workspace: SessionWorkspace) => {
+    sessions.filter((session) => !workspace.sessions.some((item) => item.id === session.id))
+      .forEach((session) => {
+        try { stopSessionResponse(session.id) } catch { /* 中止尽力而为，删除流程继续。 */ }
+      })
+    applyWorkspace(workspace, true)
+  }, [sessions, stopSessionResponse, applyWorkspace])
 
   const openMemoryWorkspace = useCallback((focusId = '') => {
     setMemoryCorrectionId(focusId)
@@ -772,7 +796,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         <section className="workspace-page workspace-contacts" hidden={activePage !== 'contacts'} aria-label="通讯录工作区">
           {visitedPages.contacts && <ContactsView active={visible && activePage === 'contacts'} config={config}
             onOpenChat={(characterId) => { void openCharacterChat(characterId) }}
-            onDeleted={(workspace) => applyWorkspace(workspace)} />}
+            onDeleted={handleCharactersDeleted} />}
         </section>
         <section className="workspace-page workspace-journal" hidden={activePage !== 'journal'} aria-label="活动工作区">
           {visitedPages.journal && <>

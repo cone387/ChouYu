@@ -158,12 +158,14 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
     }
   }, [])
 
+  // 切换会话可能同时切换角色（fetchModels 来源变化），跟随 sessionId 重取模型列表，
+  // 避免沿用上一个角色的档案列表误报 configuredModelInvalid。
   useEffect(() => {
     void refreshModels()
     return window.electronAPI.onConfigChanged(() => {
       void refreshModels()
     })
-  }, [refreshModels])
+  }, [refreshModels, sessionId])
 
   const restoreComposerFocus = useCallback(() => {
     focusAfterSendRef.current = true
@@ -726,7 +728,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
               models={modelOptions}
               status={modelListStatus}
               statusMessage={modelListMessage}
-              onChange={(nextModel) => onModelChange?.(nextModel)}
+              onChange={(nextModel) => { void Promise.resolve(onModelChange?.(nextModel)).catch(() => { /* 落库失败时模型菜单仍可重试。 */ }) }}
               onRefresh={() => { void refreshModels() }}
               invalid={configuredModelInvalid}
               placement="top"

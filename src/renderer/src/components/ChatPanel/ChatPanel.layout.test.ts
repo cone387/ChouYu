@@ -144,3 +144,18 @@ describe('chat layout guardrails', () => {
     expect(workspaceSource).toContain('记忆写入由系统单独分析并反馈')
   })
 })
+
+describe('contacts workspace wiring', () => {
+  it('filters the session sidebar by the active character with the default fallback', () => {
+    expect(panelSource).toContain('(session.characterId || DEFAULT_CHARACTER_ID)')
+  })
+
+  it('aborts generations of sessions removed with their character and keeps sidebar order', () => {
+    expect(panelSource).toContain('stopSessionResponse(session.id)')
+    expect(panelSource).toContain('applyWorkspace(workspace, true)')
+  })
+
+  it('refetches the model list whenever the active session changes provider context', () => {
+    expect(inputSource).toContain('}, [refreshModels, sessionId])')
+  })
+})
