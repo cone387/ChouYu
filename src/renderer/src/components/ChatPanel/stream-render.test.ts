@@ -55,6 +55,23 @@ describe('stream render throttling', () => {
   })
 })
 
+describe('per-session character resolution', () => {
+  it('mirrors the session list so generations resolve characters without state churn', () => {
+    expect(workspaceSource).toContain('const sessionsRef = useRef<ChatSessionSummary[]>([])')
+    expect(workspaceSource).toContain('sessionsRef.current = sessions')
+  })
+
+  it('resolves the character from the session being generated, not the active one', () => {
+    expect(workspaceSource).toContain('sessionsRef.current.find((session) => session.id === sessionId)?.characterId')
+    expect(workspaceSource).toContain('character.soulMd || config.soulMd')
+    expect(workspaceSource).not.toContain('charactersRef.current.find((character) => character.id === activeCharacterIdRef.current)')
+  })
+
+  it('forwards the session character id into streamChat', () => {
+    expect(workspaceSource).toContain('character && !character.builtIn ? character.id : undefined')
+  })
+})
+
 describe('message windowing', () => {
   it('only windows long sessions and keys the reset on the session, not the length', () => {
     expect(messageAreaSource).toContain('messages.length > 40')

@@ -74,7 +74,9 @@ export function useSessionWorkspace({
   const [activeCharacterId, setActiveCharacterId] = useState(DEFAULT_CHARACTER_ID)
   const charactersRef = useRef<CharacterStats[]>([])
   const activeCharacterIdRef = useRef(DEFAULT_CHARACTER_ID)
+  const sessionsRef = useRef<ChatSessionSummary[]>([])
   charactersRef.current = characters
+  sessionsRef.current = sessions
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
   const [workspaceError, setWorkspaceError] = useState('')
   const [loadRevision, setLoadRevision] = useState(0)
@@ -299,8 +301,13 @@ export function useSessionWorkspace({
     const continuationPolicy = options.appendTo
       ? '上一条回复被中断了。请从中断处自然地继续写完剩余内容，不要重复已写部分，不要重新开头。'
       : ''
-    const activeCharacter = charactersRef.current.find((character) => character.id === activeCharacterIdRef.current)
-    const soulMd = !activeCharacter || activeCharacter.builtIn ? config.soulMd : (activeCharacter.soulMd || config.soulMd)
+    // Background generations (queued follow-ups, retries) target a session that
+    // may no longer be active; resolve the character from the session itself so
+    // switching sessions mid-stream cannot leak another persona's credentials.
+    const sessionCharacterId = sessionsRef.current.find((session) => session.id === sessionId)?.characterId
+      || (sessionId === activeSessionIdRef.current ? activeCharacterIdRef.current : DEFAULT_CHARACTER_ID)
+    const character = charactersRef.current.find((item) => item.id === sessionCharacterId)
+    const soulMd = !character || character.builtIn ? config.soulMd : (character.soulMd || config.soulMd)
     const systemPrompt = buildSystemPrompt(soulMd, [memoryContext, memoryConversationPolicy, continuationPolicy].filter(Boolean).join('\n\n'))
     const history = buildMessages(conversation)
 
@@ -381,7 +388,7 @@ export function useSessionWorkspace({
           generation.requestId = requestId
           requestSessionRef.current.set(requestId, sessionId)
         },
-        activeCharacter && !activeCharacter.builtIn ? activeCharacter.id : undefined
+        character && !character.builtIn ? character.id : undefined
       )
     } catch (error) {
       renderAccumulated()
