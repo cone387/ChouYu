@@ -12,6 +12,7 @@ const themeSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/core/t
 const petSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Pet/PetSvg.tsx'), 'utf8')
 const messageAreaSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/MessageArea.tsx'), 'utf8')
 const chatPanelCss = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.css'), 'utf8')
+const workspaceNavSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Workspace/WorkspaceNav.tsx'), 'utf8')
 
 function darkVarBlock(source: string, selector: string): string {
   const start = source.indexOf(selector)
@@ -87,6 +88,8 @@ describe('theme preference', () => {
     expect(petSource).not.toContain('#6C5CE7')
     expect(messageAreaSource).not.toContain('#6C5CE7')
     expect(settingsSource).not.toContain('#6C5CE7')
+    expect(workspaceNavSource).toContain('fill="var(--accent)"')
+    expect(workspaceNavSource).not.toContain('PET_ICON_SVG')
   })
 
   it('derives chat shadows from the accent color', () => {
