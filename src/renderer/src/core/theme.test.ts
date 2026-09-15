@@ -7,6 +7,7 @@ import { searchSettings, SETTINGS_SEARCH_INDEX } from '../components/Settings/se
 const stylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/styles/index.css'), 'utf8')
 const settingsSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Settings/Settings.tsx'), 'utf8')
 const configSource = readFileSync(resolve(process.cwd(), 'src/shared/config.ts'), 'utf8')
+const themeSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/core/theme.ts'), 'utf8')
 
 function darkVarBlock(source: string, selector: string): string {
   const start = source.indexOf(selector)
@@ -57,6 +58,24 @@ describe('theme preference', () => {
     expect(resolvePalette('pink')).toBe('pink')
     expect(resolvePalette(undefined)).toBe('purple')
     expect(resolvePalette('gold')).toBe('purple')
+  })
+
+  it('defines light and dark accent overrides for every non-default palette', () => {
+    const accentVars = ['--accent:', '--accent-hover:', '--focus-ring:', '--user-msg-bg:', '--hover-bg:', '--hljs-keyword:']
+    for (const palette of ['pink', 'blue', 'green', 'orange']) {
+      const light = darkVarBlock(stylesheet, `:root[data-palette='${palette}']`)
+      const dark = darkVarBlock(stylesheet, `:root[data-theme='dark'][data-palette='${palette}']`)
+      expect(light, `${palette} light block`).not.toBe('')
+      expect(dark, `${palette} dark block`).not.toBe('')
+      for (const token of accentVars) {
+        expect(light, `${palette} light ${token}`).toContain(token)
+        expect(dark, `${palette} dark ${token}`).toContain(token)
+      }
+    }
+  })
+
+  it('wires the config palette into the html attribute', () => {
+    expect(themeSource).toContain('dataset.palette = resolvePalette(palettePreference)')
   })
 })
 
