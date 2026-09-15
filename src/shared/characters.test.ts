@@ -24,6 +24,11 @@ describe('sanitizeCharacterDraft', () => {
     expect(sanitizeCharacterDraft({ name: 'a', model: '' })).toBeNull()
     expect(sanitizeCharacterDraft('junk')).toBeNull()
   })
+  it('keeps the full emoji when deriving the avatar from an astral name', () => {
+    const draft = sanitizeCharacterDraft({ name: '🐱猫', model: 'm' })
+    expect(draft?.avatar).toBe('🐱')
+    expect(draft?.avatar.length).toBe(2)
+  })
 })
 
 describe('normalizeCharacters', () => {
@@ -42,6 +47,21 @@ describe('normalizeCharacters', () => {
       id: `c${index}`, name: `角色${index}`, model: 'm', providerProfileId: 'default'
     }))
     expect(normalizeCharacters(many)).toHaveLength(MAX_CHARACTER_COUNT)
+  })
+  it('suffixes a custom name colliding with a renamed default, in either order', () => {
+    const renamedDefault = { id: DEFAULT_CHARACTER_ID, name: '小鱼干', avatar: '🐠', model: 'ignored', providerProfileId: 'default' }
+    const sameNameCustom = { id: 'c1', name: '小鱼干', model: 'm', providerProfileId: 'default' }
+    const defaultLast = normalizeCharacters([sameNameCustom, renamedDefault])
+    expect(defaultLast.map((c) => c.name)).toEqual(['小鱼干', '小鱼干 2'])
+    const defaultFirst = normalizeCharacters([renamedDefault, sameNameCustom])
+    expect(defaultFirst.map((c) => c.name)).toEqual(['小鱼干', '小鱼干 2'])
+  })
+  it('returns a single default entry for non-array input', () => {
+    for (const junk of [undefined, 'junk']) {
+      const characters = normalizeCharacters(junk)
+      expect(characters).toHaveLength(1)
+      expect(characters[0]).toMatchObject({ id: DEFAULT_CHARACTER_ID, builtIn: true })
+    }
   })
 })
 
@@ -77,6 +97,11 @@ describe('resolveCharacterConfig', () => {
   it('falls back to the default soul when a custom character has none', () => {
     const result = resolveCharacterConfig({ ...customCharacter, soulMd: '' }, baseConfig)
     expect(result.ok && result.config.soulMd).toBe(DEFAULT_SOUL_MD)
+  })
+  it('errors when a custom character has a blank model', () => {
+    const result = resolveCharacterConfig({ ...customCharacter, model: '   ' }, baseConfig)
+    expect(result.ok).toBe(false)
+    expect((result as { error: string }).error).toContain('尚未设置模型')
   })
   it('isDefaultCharacter matches only the built-in id', () => {
     expect(isDefaultCharacter(DEFAULT_CHARACTER_ID)).toBe(true)
