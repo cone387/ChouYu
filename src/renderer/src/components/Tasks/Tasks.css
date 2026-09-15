@@ -61,6 +61,18 @@
 .tasks-group select { font: inherit; font-size: 12px; color: var(--text-primary); background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 8px; padding: 5px 8px; }
 .tasks-fields-toggle { appearance: none; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-secondary); border-radius: 8px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
 .tasks-fields-toggle:hover { background: var(--hover-bg); color: var(--text-primary); }
+.tasks-tool-menu { position: relative; }
+.tasks-tool-menu summary {
+  list-style: none; display: inline-flex; align-items: center; gap: 2px;
+  appearance: none; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-secondary);
+  border-radius: 8px; padding: 5px 12px; font-size: 12px; cursor: pointer;
+}
+.tasks-tool-menu summary::-webkit-details-marker { display: none; }
+.tasks-tool-menu summary:hover, .tasks-tool-menu[open] summary { background: var(--hover-bg); color: var(--text-primary); }
+.tasks-tool-popover { top: 32px; right: 0; min-width: 148px; gap: 2px; padding: 8px; }
+.tasks-tool-title { margin: 0 0 2px; padding: 0 9px; font-size: 11px; color: var(--text-muted); }
+.tasks-tool-popover .tasks-view-check { padding: 5px 9px; border-radius: 5px; }
+.tasks-tool-popover button[aria-current] { color: var(--accent); font-weight: 600; }
 
 .tasks-board { flex: 1; min-height: 0; display: flex; gap: 12px; overflow-x: auto; align-items: flex-start; padding-bottom: 8px; }
 .tasks-board-column { flex: 0 0 236px; max-width: 236px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-secondary); padding: 10px; min-height: 120px; }
@@ -113,7 +125,7 @@
   background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 8px; padding: 6px 10px;
 }
 .tasks-form input:focus-visible, .tasks-form textarea:focus-visible, .tasks-form select:focus-visible,
-.tasks-form button:focus-visible, .tasks-view button:focus-visible {
+.tasks-form button:focus-visible, .tasks-view button:focus-visible, .tasks-view summary:focus-visible {
   outline: 2px solid var(--focus-ring); outline-offset: 1px;
 }
 .tasks-form input:focus-visible, .tasks-form textarea:focus-visible, .tasks-form select:focus-visible { outline: 2px solid color-mix(in srgb, var(--text-primary) 22%, transparent); border-color: var(--input-border); }
@@ -167,10 +179,6 @@
   font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 6px;
 }
 .tasks-item-actions button:hover { background: var(--hover-bg); color: var(--text-primary); }
-.tasks-done > button {
-  appearance: none; border: none; background: none; color: var(--text-secondary);
-  font-size: 13px; cursor: pointer; padding: 6px 0;
-}
 .tasks-list-done { opacity: 0.75; }
 .tasks-list-done .tasks-item { align-items: center; }
 .tasks-list-done .tasks-item > button { margin-left: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-secondary); padding: 3px 8px; cursor: pointer; }

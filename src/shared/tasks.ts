@@ -194,6 +194,37 @@ export function compareTasks(a: TaskRecord, b: TaskRecord, now: number): number 
   return b.createdAt - a.createdAt
 }
 
+export type TaskSortMode = 'smart' | 'due' | 'priority' | 'created' | 'title'
+export const TASK_SORT_LABELS: Record<TaskSortMode, string> = {
+  smart: '智能排序', due: '按截止时间', priority: '按优先级', created: '按创建时间', title: '按标题'
+}
+
+export function sortTasks(tasks: TaskRecord[], mode: TaskSortMode, now: number): TaskRecord[] {
+  const copy = [...tasks]
+  switch (mode) {
+    case 'due':
+      copy.sort((a, b) => {
+        if (a.dueAt === b.dueAt) return compareTasks(a, b, now)
+        if (a.dueAt === null) return 1
+        if (b.dueAt === null) return -1
+        return a.dueAt - b.dueAt
+      })
+      break
+    case 'priority':
+      copy.sort((a, b) => TASK_PRIORITY_ORDER[a.priority] - TASK_PRIORITY_ORDER[b.priority] || compareTasks(a, b, now))
+      break
+    case 'created':
+      copy.sort((a, b) => b.createdAt - a.createdAt)
+      break
+    case 'title':
+      copy.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN') || compareTasks(a, b, now))
+      break
+    default:
+      copy.sort((a, b) => compareTasks(a, b, now))
+  }
+  return copy
+}
+
 export function matchesTaskView(task: TaskRecord, view: Pick<TaskView, 'projectIds' | 'priorities' | 'dueRange'>, now: number): boolean {
   if (view.projectIds.length > 0 && !view.projectIds.includes(task.projectId ?? '')) return false
   if (view.priorities.length > 0 && !view.priorities.includes(task.priority)) return false

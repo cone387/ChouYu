@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  compareTasks, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, nextRecurrenceDueAt, remindAtFromChoice, TASK_PRIORITY_ORDER
+  compareTasks, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, nextRecurrenceDueAt, remindAtFromChoice, sortTasks, TASK_PRIORITY_ORDER
 } from './tasks'
 import type { RemindChoiceId, TaskRecord, TaskView } from './tasks'
 
@@ -66,6 +66,39 @@ describe('compareTasks', () => {
     expect(compareTasks(noDue, earlier, now)).toBeGreaterThan(0)
     const newer = base({ id: 'i', createdAt: 2_000 })
     expect(compareTasks(newer, base({ id: 'j', createdAt: 1_500 }), now)).toBeLessThan(0)
+  })
+})
+
+describe('sortTasks', () => {
+  const now = new Date('2026-09-15T12:00:00').getTime()
+  const ids = (tasks: TaskRecord[]) => tasks.map(task => task.id)
+
+  test('按截止时间升序,无截止排最后,同截止回退智能排序', () => {
+    const noDue = base({ id: 'none' })
+    const far = base({ id: 'far', dueAt: 30_000 })
+    const near = base({ id: 'near', dueAt: 20_000 })
+    expect(ids(sortTasks([noDue, far, near], 'due', now))).toEqual(['near', 'far', 'none'])
+    const a = base({ id: 'a', dueAt: 20_000, priority: 'low' })
+    const b = base({ id: 'b', dueAt: 20_000, priority: 'high' })
+    expect(ids(sortTasks([a, b], 'due', now))).toEqual(['b', 'a'])
+  })
+
+  test('按优先级高到低,同级回退智能排序', () => {
+    const high = base({ id: 'high', priority: 'high' })
+    const low = base({ id: 'low', priority: 'low' })
+    const medium = base({ id: 'medium', priority: 'medium' })
+    expect(ids(sortTasks([low, high, medium], 'priority', now))).toEqual(['high', 'medium', 'low'])
+  })
+
+  test('按创建时间倒序,按标题本地化比较,smart 走 compareTasks', () => {
+    const older = base({ id: 'older', createdAt: 1_000 })
+    const newer = base({ id: 'newer', createdAt: 2_000 })
+    expect(ids(sortTasks([older, newer], 'created', now))).toEqual(['newer', 'older'])
+    const bTask = base({ id: 'b', title: '备份' })
+    const aTask = base({ id: 'a', title: '安装' })
+    expect(ids(sortTasks([bTask, aTask], 'title', now))).toEqual(['a', 'b'])
+    const input = [base({ id: 'x' }), base({ id: 'y' })]
+    expect(sortTasks(input, 'smart', now)).not.toBe(input)
   })
 })
 
