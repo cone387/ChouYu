@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
-import { DEFAULT_APP_CONFIG, isAIConfigured, normalizeConfig, sanitizeConfigPatch } from './config'
+import {
+  DEFAULT_APP_CONFIG,
+  DEFAULT_PROFILE_ID,
+  getProviderProfiles,
+  isAIConfigured,
+  normalizeConfig,
+  sanitizeConfigPatch,
+  sanitizeProviderProfiles,
+  type ProviderProfile
+} from './config'
 
 describe('config', () => {
   it('keeps the bundled SOUL.md aligned with the default persona', () => {
@@ -94,5 +103,44 @@ describe('config', () => {
     })
 
     expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, toolPermissionMode: 'full', memoryEnabled: false, memoryWriteMode: 'confirm', memoryAutoWriteConfidence: 0.9, memoryEngineProvider: 'chouyu-sqlite', memoryCompressionEnabled: false, memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true, embeddingProvider: 'openai-compatible' })
+  })
+})
+
+describe('provider profiles', () => {
+  const validProfile = { id: 'p1', name: '公司中转', provider: 'openai' as const, baseUrl: 'https://relay.example.com/v1', apiKey: 'sk-1' }
+
+  it('sanitizes profiles and drops invalid entries', () => {
+    expect(sanitizeProviderProfiles([
+      validProfile,
+      { id: '', name: 'x', baseUrl: 'https://a', provider: 'openai', apiKey: '' },
+      'junk',
+      { id: 'p1', name: 'dup id', baseUrl: 'https://a', provider: 'claude', apiKey: '' },
+      { id: 'p2', name: '公司中转', baseUrl: 'https://b', provider: 'openai', apiKey: '' }
+    ])).toEqual([
+      validProfile,
+      { id: 'p2', name: '公司中转 2', provider: 'openai', baseUrl: 'https://b', apiKey: '' }
+    ])
+  })
+
+  it('caps profile count at 8', () => {
+    const many = Array.from({ length: 10 }, (_, index) => ({ id: `p${index}`, name: `档案${index}`, baseUrl: 'https://a', provider: 'openai' as const, apiKey: '' }))
+    expect(sanitizeProviderProfiles(many)).toHaveLength(8)
+  })
+
+  it('normalizeConfig sanitizes providerProfiles and defaults to empty', () => {
+    expect(normalizeConfig(null).providerProfiles).toEqual([])
+    const normalized = normalizeConfig({ providerProfiles: [validProfile, { id: 'p1', name: 'dup', baseUrl: '', provider: 'openai', apiKey: '' }] })
+    expect(normalized.providerProfiles).toEqual([validProfile])
+  })
+
+  it('sanitizeConfigPatch accepts a validated providerProfiles array', () => {
+    expect(sanitizeConfigPatch({ providerProfiles: [validProfile] }).providerProfiles).toEqual([validProfile])
+    expect(sanitizeConfigPatch({ providerProfiles: 'junk' }).providerProfiles).toBeUndefined()
+  })
+
+  it('synthesizes the built-in default profile from legacy config fields', () => {
+    const profiles = getProviderProfiles({ provider: 'claude', baseUrl: 'https://api.anthropic.com', apiKey: 'k', providerProfiles: [validProfile] })
+    expect(profiles[0]).toEqual({ id: DEFAULT_PROFILE_ID, name: '默认', provider: 'claude', baseUrl: 'https://api.anthropic.com', apiKey: 'k', builtIn: true })
+    expect(profiles[1]).toEqual({ ...validProfile, builtIn: false })
   })
 })

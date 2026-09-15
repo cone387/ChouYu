@@ -65,6 +65,21 @@ const LEGACY_DEFAULT_SOUL_MD = `# 角色设定
 - 可以表达情绪和态度
 `
 
+export interface ProviderProfile {
+  id: string
+  name: string
+  provider: 'openai' | 'claude'
+  baseUrl: string
+  apiKey: string
+}
+
+export const DEFAULT_PROFILE_ID = 'default'
+export const MAX_PROVIDER_PROFILES = 8
+
+export interface ResolvedProviderProfile extends ProviderProfile {
+  builtIn: boolean
+}
+
 export interface AppConfig {
   provider: 'openai' | 'claude'
   baseUrl: string
@@ -94,6 +109,7 @@ export interface AppConfig {
   embeddingBaseUrl: string
   embeddingApiKey: string
   embeddingModel: string
+  providerProfiles: ProviderProfile[]
   soulMd: string
 }
 
@@ -126,7 +142,50 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   embeddingBaseUrl: '',
   embeddingApiKey: '',
   embeddingModel: 'text-embedding-v3',
+  providerProfiles: [],
   soulMd: DEFAULT_SOUL_MD
+}
+
+export function sanitizeProviderProfile(value: unknown): ProviderProfile | null {
+  if (!value || typeof value !== 'object') return null
+  const input = value as Record<string, unknown>
+  const id = typeof input.id === 'string' ? input.id.trim().slice(0, 128) : ''
+  const name = typeof input.name === 'string' ? input.name.trim().slice(0, 64) : ''
+  const baseUrl = typeof input.baseUrl === 'string' ? input.baseUrl.trim().slice(0, 2048) : ''
+  if (!id || id === DEFAULT_PROFILE_ID || !name || !baseUrl) return null
+  return {
+    id,
+    name,
+    provider: input.provider === 'claude' ? 'claude' : 'openai',
+    baseUrl,
+    apiKey: typeof input.apiKey === 'string' ? input.apiKey.slice(0, 8192) : ''
+  }
+}
+
+export function sanitizeProviderProfiles(value: unknown): ProviderProfile[] {
+  if (!Array.isArray(value)) return []
+  const ids = new Set<string>([DEFAULT_PROFILE_ID])
+  const names = new Set<string>()
+  const profiles: ProviderProfile[] = []
+  for (const item of value) {
+    const profile = sanitizeProviderProfile(item)
+    if (!profile || ids.has(profile.id)) continue
+    let name = profile.name
+    let suffix = 2
+    while (names.has(name)) name = `${profile.name} ${suffix++}`
+    ids.add(profile.id)
+    names.add(name)
+    profiles.push({ ...profile, name })
+    if (profiles.length >= MAX_PROVIDER_PROFILES) break
+  }
+  return profiles
+}
+
+export function getProviderProfiles(config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'providerProfiles'>): ResolvedProviderProfile[] {
+  return [
+    { id: DEFAULT_PROFILE_ID, name: '默认', provider: config.provider, baseUrl: config.baseUrl, apiKey: config.apiKey, builtIn: true },
+    ...config.providerProfiles.map((profile) => ({ ...profile, builtIn: false }))
+  ]
 }
 
 export function isAIConfigured(config: Pick<AppConfig, 'baseUrl' | 'apiKey' | 'model'>): boolean {
@@ -183,7 +242,8 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     embeddingBaseUrl: typeof source.embeddingBaseUrl === 'string' ? source.embeddingBaseUrl.trim() : '',
     embeddingApiKey: typeof source.embeddingApiKey === 'string' ? source.embeddingApiKey : '',
     embeddingModel: typeof source.embeddingModel === 'string' && source.embeddingModel.trim() ? source.embeddingModel.trim() : 'text-embedding-v3',
-    soulMd
+    soulMd,
+    providerProfiles: sanitizeProviderProfiles(source.providerProfiles)
   }
 }
 
@@ -221,6 +281,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.embeddingApiKey === 'string') patch.embeddingApiKey = input.embeddingApiKey.slice(0, 8192)
   if (typeof input.embeddingModel === 'string') patch.embeddingModel = input.embeddingModel.trim().slice(0, 256)
   if (typeof input.soulMd === 'string') patch.soulMd = input.soulMd.slice(0, 50_000)
+  if (Array.isArray(input.providerProfiles)) patch.providerProfiles = sanitizeProviderProfiles(input.providerProfiles)
 
   return patch
 }
