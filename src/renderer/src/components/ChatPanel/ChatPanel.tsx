@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import GlobalSearch, { type SearchSnapshot } from '../Workspace/GlobalSearch'
 import Journal from '../Journal/Journal'
+import TasksView from '../Tasks/TasksView'
 import WorkspaceNav, { type WorkspacePage } from '../Workspace/WorkspaceNav'
 import WorkspaceHeader from '../Workspace/WorkspaceHeader'
 import { useWorkspacePresentation } from '../Workspace/useWorkspacePresentation'
@@ -50,7 +51,7 @@ interface ChatPanelProps {
   petVisible: boolean
   onPetVisibleChange: (visible: boolean) => void
   initialShowSettings?: boolean
-  workspaceRequest?: { page: WorkspacePage; id: number }
+  workspaceRequest?: { page: WorkspacePage; id: number; taskId?: string }
   onSettingsClose?: () => void
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
   onScrollScreenshot?: (callback: (dataUrl: string) => void) => void
@@ -65,6 +66,7 @@ interface ChatPanelProps {
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
   const [activePage, setActivePage] = useState<WorkspacePage>(initialShowSettings ? 'settings' : 'chat')
   const [visitedPages, setVisitedPages] = useState<Partial<Record<WorkspacePage, boolean>>>({ settings: initialShowSettings })
+  const [taskFocusId, setTaskFocusId] = useState<string | undefined>()
   const showSettings = activePage === 'settings'
   const showMemoryWorkspace = activePage === 'memory'
   const isChat = activePage === 'chat'
@@ -277,7 +279,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [initialShowSettings, navigate])
 
   useEffect(() => {
-    if (workspaceRequest) navigate(workspaceRequest.page)
+    if (workspaceRequest) { navigate(workspaceRequest.page); setTaskFocusId(workspaceRequest.taskId) }
   }, [workspaceRequest, navigate])
 
   useEffect(() => {
@@ -824,6 +826,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         <section className="workspace-page workspace-journal" hidden={activePage !== 'journal'} aria-label="活动工作区">
           {visitedPages.journal && <>
             <Journal active={visible && activePage === 'journal'} searchRequest={journalSearch} />
+          </>}
+        </section>
+        <section className="workspace-page workspace-tasks" hidden={activePage !== 'tasks'} aria-label="任务工作区">
+          {visitedPages.tasks && <>
+            <TasksView active={visible && activePage === 'tasks'} focusTaskId={taskFocusId} />
           </>}
         </section>
         <section className="workspace-page workspace-settings" hidden={!showSettings} aria-label="设置工作区">

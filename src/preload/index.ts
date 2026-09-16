@@ -1,6 +1,7 @@
 import type { StorageStatus } from '../shared/storage'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { JournalAPI } from '../shared/journal'
+import type { TasksAPI, TasksReminderEvent } from '../shared/tasks'
 import type { AppConfig } from '../shared/config'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../shared/ai'
 import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from '../shared/capture'
@@ -64,6 +65,40 @@ const api = {
     ask: (input) => ipcRenderer.invoke('journal:ask', input),
     cancelAnalysis: () => ipcRenderer.invoke('journal:cancel-analysis')
   } satisfies JournalAPI,
+  tasks: {
+    list: () => ipcRenderer.invoke('tasks:list'),
+    create: input => ipcRenderer.invoke('tasks:create', input),
+    update: (id, patch) => ipcRenderer.invoke('tasks:update', id, patch),
+    complete: id => ipcRenderer.invoke('tasks:complete', id),
+    reopen: id => ipcRenderer.invoke('tasks:reopen', id),
+    remove: id => ipcRenderer.invoke('tasks:delete', id),
+    projects: () => ipcRenderer.invoke('tasks:projects'),
+    createProject: name => ipcRenderer.invoke('tasks:createProject', name),
+    renameProject: (id, name) => ipcRenderer.invoke('tasks:renameProject', id, name),
+    archiveProject: (id, archived) => ipcRenderer.invoke('tasks:archiveProject', id, archived),
+    views: () => ipcRenderer.invoke('tasks:views'),
+    createView: input => ipcRenderer.invoke('tasks:createView', input),
+    updateView: (id, patch) => ipcRenderer.invoke('tasks:updateView', id, patch),
+    deleteView: id => ipcRenderer.invoke('tasks:deleteView', id),
+    fields: () => ipcRenderer.invoke('tasks:fields'),
+    createField: input => ipcRenderer.invoke('tasks:createField', input),
+    updateField: (id, patch) => ipcRenderer.invoke('tasks:updateField', id, patch),
+    deleteField: id => ipcRenderer.invoke('tasks:deleteField', id),
+    ready: () => { ipcRenderer.send('tasks:ready') },
+    onTasksReminder: callback => {
+      const handler = (_event: unknown, payload: TasksReminderEvent) => callback(payload)
+      ipcRenderer.on('tasks:reminder', handler)
+      return () => { ipcRenderer.removeListener('tasks:reminder', handler) }
+    },
+    onOpenTasksPanel: callback => {
+      ipcRenderer.on('open-tasks-panel', callback)
+      return () => { ipcRenderer.removeListener('open-tasks-panel', callback) }
+    },
+    onTasksStoreRebuilt: callback => {
+      ipcRenderer.on('tasks:store-rebuilt', callback)
+      return () => { ipcRenderer.removeListener('tasks:store-rebuilt', callback) }
+    }
+  } satisfies TasksAPI,
   recognizeOfflineImage: (dataUrl: string) => ipcRenderer.invoke('ocr:offline', dataUrl) as Promise<import('../shared/ocr').OfflineOcrResult>,
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getSystemIdleSeconds: () => ipcRenderer.invoke('system-idle-seconds') as Promise<number>,

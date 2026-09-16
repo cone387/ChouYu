@@ -6,6 +6,8 @@ import { app, BrowserWindow, screen, shell, globalShortcut, dialog } from 'elect
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
+import { initializeTasks, closeTasks } from './tasks'
+import { runTasksSmoke } from './smoke/tasks-smoke'
 import { setupTray } from './tray'
 import { registerHotkey } from './hotkey'
 import { initDatabase, getConfig, flushDatabase } from './database'
@@ -253,6 +255,7 @@ app.whenReady().then(async () => {
       runJournalWeeklySmoke()
       runJournalSemanticCacheSmoke()
       await runJournalMigrationSmoke()
+      await runTasksSmoke()
     } catch (error) {
       console.error(`CHOUYU_SMOKE_FAILED stage=main message=${error instanceof Error ? error.message : String(error)}`)
       app.exit(1)
@@ -272,6 +275,16 @@ app.whenReady().then(async () => {
     mainWindow.focus()
     mainWindow.webContents.send('open-journal-panel')
   } })
+  initializeTasks({
+    notificationsEnabled: () => getConfig().taskNotifications !== false,
+    openTasksWorkspace: () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+      mainWindow.webContents.send('open-tasks-panel')
+    }
+  })
   createWindow()
 
   // Register IPC handlers immediately after window creation
@@ -331,6 +344,7 @@ app.on('before-quit', (event) => {
     return
   }
   stopClipboardWatcher()
+  closeTasks()
   closeMemory()
   globalShortcut.unregisterAll()
 })

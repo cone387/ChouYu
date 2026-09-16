@@ -99,6 +99,7 @@ export interface AppConfig {
   palette: PaletteId
   proactiveGreeting: boolean
   proactiveRestReminder: boolean
+  taskNotifications: boolean
   clipboardWatch: boolean
   aiToolsEnabled: boolean
   toolPermissionMode: 'confirm' | 'auto' | 'full'
@@ -133,6 +134,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   palette: 'purple',
   proactiveGreeting: true,
   proactiveRestReminder: true,
+  taskNotifications: true,
   clipboardWatch: false,
   aiToolsEnabled: true,
   toolPermissionMode: 'confirm',
@@ -226,6 +228,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     palette: isPaletteId(source.palette) ? source.palette : 'purple',
     proactiveGreeting: source.proactiveGreeting !== false,
     proactiveRestReminder: source.proactiveRestReminder !== false,
+    taskNotifications: source.taskNotifications !== false,
     clipboardWatch: source.clipboardWatch === true,
     aiToolsEnabled: source.aiToolsEnabled !== false,
     toolPermissionMode: source.toolPermissionMode === 'auto' || source.toolPermissionMode === 'full' ? source.toolPermissionMode : 'confirm',
@@ -273,6 +276,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.petSize === 'number' && Number.isFinite(input.petSize)) patch.petSize = input.petSize
   if (typeof input.proactiveGreeting === 'boolean') patch.proactiveGreeting = input.proactiveGreeting
   if (typeof input.proactiveRestReminder === 'boolean') patch.proactiveRestReminder = input.proactiveRestReminder
+  if (typeof input.taskNotifications === 'boolean') patch.taskNotifications = input.taskNotifications
   if (typeof input.clipboardWatch === 'boolean') patch.clipboardWatch = input.clipboardWatch
   if (typeof input.aiToolsEnabled === 'boolean') patch.aiToolsEnabled = input.aiToolsEnabled
   if (input.toolPermissionMode === 'confirm' || input.toolPermissionMode === 'auto' || input.toolPermissionMode === 'full') patch.toolPermissionMode = input.toolPermissionMode

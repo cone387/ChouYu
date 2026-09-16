@@ -8,6 +8,7 @@ interface ProactiveCenterProps {
   onSnooze(id: string): void
   onRemove(id: string): void
   onClear(): void
+  onOpenTask?: (taskId?: string) => void
 }
 
 function formatTime(timestamp: number): string {
@@ -20,7 +21,7 @@ function formatTime(timestamp: number): string {
   ).format(date)
 }
 
-export default function ProactiveCenter({ messages, position, onClose, onSnooze, onRemove, onClear }: ProactiveCenterProps) {
+export default function ProactiveCenter({ messages, position, onClose, onSnooze, onRemove, onClear, onOpenTask }: ProactiveCenterProps) {
   return (
     <aside data-interactive className="proactive-center" style={position} aria-label="助手消息" aria-live="polite">
       <header>
@@ -41,7 +42,11 @@ export default function ProactiveCenter({ messages, position, onClose, onSnooze,
         ) : messages.map(item => (
           <article key={item.id} className="proactive-center-item">
             <time dateTime={new Date(item.createdAt).toISOString()}>{formatTime(item.createdAt)}</time>
-            <p>{item.message}</p>
+            {item.kind === 'task' && onOpenTask ? (
+              <button type="button" className="proactive-center-task-link" onClick={() => onOpenTask(item.taskId)}>{item.message}</button>
+            ) : (
+              <p>{item.message}</p>
+            )}
             {item.snoozedUntil && item.snoozedUntil > Date.now() && (
               <small>将在 {formatTime(item.snoozedUntil)} 再提醒</small>
             )}

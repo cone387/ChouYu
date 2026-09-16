@@ -11,7 +11,7 @@
 const COOLDOWN = 60 * 60 * 1000 // 60 minutes
 const REST_REMINDER_INTERVAL = 60 * 60 * 1000 // 60 minutes
 
-export type ProactiveKind = 'greeting' | 'rest' | 'return'
+export type ProactiveKind = 'greeting' | 'rest' | 'return' | 'task'
 type ProactiveCallback = (message: string, kind?: ProactiveKind) => void
 
 export interface ProactiveMessage {
@@ -21,6 +21,7 @@ export interface ProactiveMessage {
   readAt?: number
   snoozedUntil?: number
   kind?: ProactiveKind
+  taskId?: string
 }
 
 export interface ProactiveOptions {
@@ -28,7 +29,7 @@ export interface ProactiveOptions {
   restReminder: boolean
 }
 
-class ProactiveEngine {
+export class ProactiveEngine {
   private lastProactiveTime = 0
   private restTimer: ReturnType<typeof setTimeout> | null = null
   private callback: ProactiveCallback | null = null
@@ -122,12 +123,22 @@ class ProactiveEngine {
     return Date.now() - this.lastProactiveTime > COOLDOWN
   }
 
+  private enqueue(message: string, kind: ProactiveKind, taskId?: string): void {
+    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind, ...(taskId ? { taskId } : {}) })
+    this.persistMessages()
+  }
+
   private speak(message: string, kind: ProactiveKind = 'rest'): void {
     if (!this.callback) return
     this.lastProactiveTime = Date.now()
-    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
-    this.persistMessages()
+    this.enqueue(message, kind)
     this.callback(message)
+  }
+
+  /** 外部注入的确定性提醒(任务到期),不受 60 分钟冷却限制。 */
+  postExternal(message: string, kind: ProactiveKind = 'task', taskId?: string): void {
+    this.enqueue(message, kind, taskId)
+    this.callback?.(message, kind)
   }
 
   private readMessages(): ProactiveMessage[] {

@@ -52,7 +52,7 @@ import { describe, expect, test } from 'vitest'
 import {
   compareTasks, isDueThisWeek, isDueToday, isOverdue, remindAtFromChoice, TASK_PRIORITY_ORDER
 } from './tasks'
-import type { TaskRecord } from './tasks'
+import type { RemindChoiceId, TaskRecord } from './tasks'
 
 const base = (patch: Partial<TaskRecord> = {}): TaskRecord => ({
   id: 't', title: '任务', note: '', projectId: null, priority: 'medium', status: 'open',
@@ -66,6 +66,7 @@ describe('remindAtFromChoice', () => {
     expect(remindAtFromChoice('m30', 5_000)).toBe(5_000 - 30 * 60_000)
     expect(remindAtFromChoice('none', 5_000)).toBeNull()
     expect(remindAtFromChoice('due', null)).toBeNull()
+    expect(remindAtFromChoice('bogus' as RemindChoiceId, 5_000)).toBeNull()
   })
 })
 
@@ -213,6 +214,12 @@ function startOfDay(at: number): number {
   return date.getTime()
 }
 
+function addDays(at: number, days: number): number {
+  const date = new Date(at)
+  date.setDate(date.getDate() + days)
+  return date.getTime()
+}
+
 export function isOverdue(task: TaskRecord, now: number): boolean {
   return task.status === 'open' && task.dueAt !== null && task.dueAt < startOfDay(now)
 }
@@ -220,15 +227,15 @@ export function isOverdue(task: TaskRecord, now: number): boolean {
 export function isDueToday(task: TaskRecord, now: number): boolean {
   if (task.dueAt === null) return false
   const start = startOfDay(now)
-  return task.dueAt >= start && task.dueAt < start + 86_400_000
+  return task.dueAt >= start && task.dueAt < addDays(start, 1)
 }
 
 export function isDueThisWeek(task: TaskRecord, now: number): boolean {
   if (task.dueAt === null) return false
   const current = new Date(startOfDay(now))
   const weekday = (current.getDay() + 6) % 7 // 周一为 0
-  const monday = current.getTime() - weekday * 86_400_000
-  return task.dueAt >= monday && task.dueAt < monday + 7 * 86_400_000
+  const monday = addDays(current.getTime(), -weekday)
+  return task.dueAt >= monday && task.dueAt < addDays(monday, 7)
 }
 
 export function compareTasks(a: TaskRecord, b: TaskRecord, now: number): number {
@@ -379,6 +386,16 @@ describe('TasksStore', () => {
     store.close()
   })
 
+  test('修改提醒时间会重置已触发标记', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    const task = store.createTask({ title: '改期', remindAt: 1_000 })
+    expect(store.claimDueReminders(2_000).map(item => item.id)).toEqual([task.id])
+    const updated = store.updateTask(task.id, { remindAt: 10_000 })
+    expect(updated.remindFiredAt).toBeNull()
+    expect(store.claimDueReminders(11_000).map(item => item.id)).toEqual([task.id])
+    store.close()
+  })
+
   test('拒绝高于当前支持的数据库版本', () => {
     const file = tempFile('tasks.db')
     const store = openTasksStore(file)
@@ -390,16 +407,26 @@ describe('TasksStore', () => {
     expect(() => openTasksStore(file)).toThrow('版本')
   })
 
-  test('损坏文件被隔离并重建空库', () => {
+  test('损坏文件被隔离并重建空库,WAL 侧文件不残留', () => {
     const file = tempFile('tasks.db')
     writeFileSync(file, 'this is definitely not a sqlite database')
+    writeFileSync(`${file}-wal`, 'stale wal')
+    writeFileSync(`${file}-shm`, 'stale shm')
     const store = openTasksStore(file)
-    const result = store.listTasks({})
+    const result = store.listTasks()
     expect(result.open).toHaveLength(0)
     expect(result.quarantinedAt).toBeGreaterThan(0)
-    const siblings = readdirSync(join(file, '..')).filter(name => name.includes('corrupt'))
-    expect(siblings.length).toBeGreaterThan(0)
     store.close()
+    const siblings = readdirSync(join(file, '..'))
+    expect(siblings.filter(name => name.includes('corrupt')).length).toBeGreaterThan(0)
+    expect(siblings.includes('tasks.db-wal')).toBe(false)
+    expect(siblings.includes('tasks.db-shm')).toBe(false)
+  })
+
+  test('非损坏的打开失败原样抛出,不隔离不重建', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'chouyu-tasks-block-'))
+    directories.push(directory)
+    expect(() => openTasksStore(directory)).toThrow()
   })
 })
 ```
@@ -501,6 +528,12 @@ const toProject = (row: ProjectRow): TaskProject => ({
   id: row.id, name: row.name, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
 })
 
+/** 仅确认的库损坏才允许隔离重建,被锁/磁盘满/权限等其他错误必须原样抛出。 */
+const isCorruptionError = (error: unknown): boolean => {
+  const code = (error as { code?: unknown } | null | undefined)?.code
+  return code === 'SQLITE_NOTADB' || code === 'SQLITE_CORRUPT'
+}
+
 export class TasksStore {
   readonly quarantinedAt: number | null = null
   private constructor(private readonly database: Database.Database, quarantinedAt: number | null) {
@@ -514,20 +547,27 @@ export class TasksStore {
       migrate(database)
       return new TasksStore(database, null)
     } catch (error) {
-      // 版本过新属于正常拒绝,不能把健康库当损坏隔离
-      if (error instanceof TasksSchemaVersionError) {
-        try { database?.close() } catch { /* 尽力关闭 */ }
-        throw error
-      }
-      // 打开或迁移失败:先关句柄(Windows 上不关无法重命名),再隔离原文件重建空库
       try { database?.close() } catch { /* 尽力关闭 */ }
+      // 版本过新与非损坏错误原样抛出,只有确认损坏才隔离重建
+      if (error instanceof TasksSchemaVersionError || !isCorruptionError(error)) throw error
       const quarantinedAt = Date.now()
       const quarantine = `${filePath}.corrupt-${quarantinedAt}`
       if (existsSync(filePath)) {
         try { renameSync(filePath, quarantine) } catch { /* 隔离失败则直接覆盖重建 */ }
       }
-      database = new Database(filePath)
-      migrate(database)
+      for (const suffix of ['-wal', '-shm']) {
+        const side = `${filePath}${suffix}`
+        if (existsSync(side)) {
+          try { renameSync(side, `${quarantine}${suffix}`) } catch { /* 尽力隔离侧文件 */ }
+        }
+      }
+      try {
+        database = new Database(filePath)
+        migrate(database)
+      } catch (rebuildError) {
+        try { database?.close() } catch { /* 尽力关闭 */ }
+        throw rebuildError
+      }
       return new TasksStore(database, quarantinedAt)
     }
   }
@@ -609,8 +649,9 @@ export class TasksStore {
     const priority = patch?.priority === undefined ? current.priority : assertPriority(patch.priority)
     const dueAt = patch?.dueAt === undefined ? current.due_at : assertTimestamp(patch.dueAt, '截止时间')
     const remindAt = patch?.remindAt === undefined ? current.remind_at : assertTimestamp(patch.remindAt, '提醒时间')
-    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, updated_at = ? WHERE id = ?`)
-      .run(title, note, projectId, priority, dueAt, remindAt, Date.now(), id)
+    const resetFired = patch?.remindAt !== undefined && remindAt !== current.remind_at
+    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, updated_at = ? WHERE id = ?`)
+      .run(title, note, projectId, priority, dueAt, remindAt, resetFired ? null : current.remind_fired_at, Date.now(), id)
     return this.requireTask(id)
   }
 
@@ -656,9 +697,9 @@ export function openTasksStore(filePath: string): TasksStore {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `npx vitest --run src/main/tasks/store.test.ts`
-Expected: PASS(8 个测试全绿)
+Expected: PASS(10 个测试全绿)
 
-注意:如果「损坏文件被隔离」用例失败,原因通常是 `new Database(file)` 对垃圾字节懒打开成功、`migrate` 才抛错——实现已按「构造+迁移整体 try/catch」处理,隔离文件名以 `.corrupt-` 落盘为准。
+注意:如果「损坏文件被隔离」用例失败,原因通常是 `new Database(file)` 对垃圾字节懒打开成功、`migrate` 才抛错——实现已按「构造+迁移整体 try/catch」处理,隔离文件名以 `.corrupt-` 落盘为准。实测 SQLite close() 会自行删除 -wal/-shm(含损坏库),侧文件 rename 循环是 close 失败时的防御,测试断言的是「重建后原路径无侧文件残留」不变量。
 
 - [ ] **Step 5: 提交**
 
@@ -743,8 +784,10 @@ describe('startTaskScheduler', () => {
   test('领取抛错时不回调且不中断后续 tick', () => {
     vi.useFakeTimers()
     let failures = 0
+    let calls = 0
     let healthy = false
     const claim = () => {
+      calls += 1
       if (!healthy) { failures += 1; throw new Error('db busy') }
       return []
     }
@@ -752,8 +795,36 @@ describe('startTaskScheduler', () => {
     expect(failures).toBe(1) // 启动积压即失败
     healthy = true
     vi.advanceTimersByTime(1_000)
-    expect(failures).toBe(1) // 恢复后不再失败,调度仍在运行
+    expect(failures).toBe(1)
+    expect(calls).toBe(2) // 恢复后 tick 仍在执行
     scheduler.stop()
+  })
+
+  test('onReminder 抛错不影响同批其余提醒与后续 tick', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const store = openTasksStore(tempFile())
+    store.createTask({ title: '第一条', remindAt: 10_500 })
+    store.createTask({ title: '第二条', remindAt: 10_600 })
+    const seen: string[] = []
+    let willThrow = true
+    const scheduler = startTaskScheduler(
+      now => store.claimDueReminders(now),
+      {
+        onReminder: task => {
+          if (willThrow && task.title === '第一条') { willThrow = false; throw new Error('notify failed') }
+          seen.push(task.title)
+        },
+        onBacklog: () => {}
+      },
+      { intervalMs: 1_000, now: () => Date.now() }
+    )
+    vi.advanceTimersByTime(1_000)
+    expect(seen).toEqual(['第二条']) // 第一条抛错不吞掉第二条
+    vi.advanceTimersByTime(1_000)
+    expect(seen).toEqual(['第二条']) // 已领取的不重发
+    scheduler.stop()
+    store.close()
   })
 
   test('stop 后不再 tick', () => {
@@ -809,11 +880,14 @@ export function startTaskScheduler(
   let timer: ReturnType<typeof setInterval> | null = null
 
   // 启动积压:应用没开时错过的提醒合并成一条,不逐条轰炸
+  let backlog: TaskRecord[] = []
   try {
-    const backlog = claim(now())
-    if (backlog.length > 0) handlers.onBacklog(backlog.length)
+    backlog = claim(now())
   } catch (error) {
     console.error('tasks scheduler backlog failed:', error)
+  }
+  if (backlog.length > 0) {
+    try { handlers.onBacklog(backlog.length) } catch (error) { console.error('tasks scheduler backlog handler failed:', error) }
   }
 
   const tick = (): void => {
@@ -825,7 +899,9 @@ export function startTaskScheduler(
       console.error('tasks scheduler tick failed:', error)
       return
     }
-    for (const task of due) handlers.onReminder(toReminderPayload(task))
+    for (const task of due) {
+      try { handlers.onReminder(toReminderPayload(task)) } catch (error) { console.error('tasks scheduler reminder handler failed:', error) }
+    }
   }
 
   timer = setInterval(tick, intervalMs)
@@ -842,7 +918,7 @@ export function startTaskScheduler(
 - [ ] **Step 4: 运行确认通过**
 
 Run: `npx vitest --run src/main/tasks/scheduler.test.ts`
-Expected: PASS(4 个测试全绿)
+Expected: PASS(5 个测试全绿)
 
 - [ ] **Step 5: 提交**
 
@@ -880,6 +956,14 @@ git commit -m "feat(tasks): add due reminder scheduler with merged backlog"
     taskNotifications: source.taskNotifications !== false,
 ```
 
+`sanitizeConfigPatch`(与 `proactiveRestReminder` 白名单行相邻)加:
+
+```ts
+  if (typeof input.taskNotifications === 'boolean') patch.taskNotifications = input.taskNotifications
+```
+
+并在 `src/shared/config.test.ts` 的「accepts only known patch fields」用例 input 里加 `taskNotifications: false,`、断言 `patch.taskNotifications` 为 `false`(否则 T8 设置页保存的开关会被 sanitize 静默丢弃)。
+
 - [ ] **Step 2: 实现 src/main/tasks/index.ts**
 
 ```ts
@@ -891,6 +975,9 @@ import { startTaskScheduler } from './scheduler'
 let store: TasksStore | undefined
 let scheduler: { stop(): void } | undefined
 let shuttingDown = false
+let storeRebuilt = false
+let pendingBacklog = 0
+let readyDelivered = false
 
 const broadcast = (channel: string, payload?: unknown): void => {
   if (shuttingDown) return
@@ -908,11 +995,11 @@ export function initializeTasks(options: TasksModuleOptions): void {
   if (store) return
   shuttingDown = false
   store = openTasksStore(join(app.getPath('userData'), 'tasks.db'))
-  if (store.quarantinedAt) broadcast('tasks:store-rebuilt')
+  if (store.quarantinedAt) storeRebuilt = true
   scheduler = startTaskScheduler(
     now => store!.claimDueReminders(now),
     {
-      onBacklog: count => { broadcast('tasks:reminder', { backlog: count }) },
+      onBacklog: count => { pendingBacklog = count },
       onReminder: task => {
         if (options.notificationsEnabled() && Notification.isSupported()) {
           try {
@@ -934,10 +1021,22 @@ export function initializeTasks(options: TasksModuleOptions): void {
   ipcMain.handle('tasks:createProject', (_event, name: string) => store!.createProject(name))
   ipcMain.handle('tasks:renameProject', (_event, id: string, name: string) => store!.renameProject(id, name))
   ipcMain.handle('tasks:archiveProject', (_event, id: string, archived: boolean) => store!.archiveProject(id, archived))
+  // initializeTasks 在 createWindow 之前执行,启动期事件必须暂存,等渲染端 ready 后一次性投递
+  ipcMain.on('tasks:ready', () => {
+    if (readyDelivered) return
+    readyDelivered = true
+    if (storeRebuilt) broadcast('tasks:store-rebuilt')
+    if (pendingBacklog > 0) broadcast('tasks:reminder', { backlog: pendingBacklog })
+  })
 }
 
 export function closeTasks(): void {
   shuttingDown = true
+  for (const channel of ['tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject']) ipcMain.removeHandler(channel)
+  ipcMain.removeAllListeners('tasks:ready')
+  storeRebuilt = false
+  pendingBacklog = 0
+  readyDelivered = false
   scheduler?.stop()
   scheduler = undefined
   try { store?.close() } catch { /* 退出路径上尽力关闭 */ }
@@ -1028,13 +1127,24 @@ git commit -m "feat(tasks): wire task module into main process lifecycle and con
 **Files:**
 - Modify: `src/preload/index.ts`
 - Modify: `src/renderer/src/shared/types.ts`
+- Modify: `src/shared/tasks.ts`(TasksAPI 加 ready)
+
+- [ ] **Step 0: TasksAPI 加 ready**
+
+`src/shared/tasks.ts` 的 `TasksAPI` 接口里加:
+
+```ts
+  ready(): void
+```
+
+(渲染端挂载完成后调用,通知主进程可以投递暂存的启动期任务事件。)
 
 - [ ] **Step 1: preload 增加 tasks 命名空间**
 
 `src/preload/index.ts` 顶部加 import:
 
 ```ts
-import type { TasksAPI } from '../shared/tasks'
+import type { TasksAPI, TasksReminderEvent } from '../shared/tasks'
 ```
 
 `const api = {` 内 `journal: {...} satisfies JournalAPI,` 之后加:
@@ -1050,8 +1160,9 @@ import type { TasksAPI } from '../shared/tasks'
     createProject: name => ipcRenderer.invoke('tasks:createProject', name),
     renameProject: (id, name) => ipcRenderer.invoke('tasks:renameProject', id, name),
     archiveProject: (id, archived) => ipcRenderer.invoke('tasks:archiveProject', id, archived),
+    ready: () => { ipcRenderer.send('tasks:ready') },
     onTasksReminder: callback => {
-      const handler = (_event: unknown, payload: import('../shared/tasks').TasksReminderEvent) => callback(payload)
+      const handler = (_event: unknown, payload: TasksReminderEvent) => callback(payload)
       ipcRenderer.on('tasks:reminder', handler)
       return () => { ipcRenderer.removeListener('tasks:reminder', handler) }
     },
@@ -1068,29 +1179,10 @@ import type { TasksAPI } from '../shared/tasks'
 
 - [ ] **Step 2: ElectronAPI 镜像**
 
-`src/renderer/src/shared/types.ts` 顶部 import 区加:
+`src/renderer/src/shared/types.ts` 的 `ElectronAPI` 接口内(与 `journal` 同级,`memory` 之前)加一行,与 journal 的内联 import 类型惯例完全同构(不手写镜像,避免与 TasksAPI 漂移):
 
 ```ts
-import type { TaskListResult, TaskProject, TaskRecord, TaskCreateInput, TaskUpdateInput, TasksReminderEvent } from '../../../../shared/tasks'
-```
-
-`ElectronAPI` 接口内(与 `journal` 同级,`memory` 之前)加:
-
-```ts
-  tasks: {
-    list(): Promise<TaskListResult>
-    create(input: TaskCreateInput): Promise<TaskRecord>
-    update(id: string, patch: TaskUpdateInput): Promise<TaskRecord>
-    complete(id: string): Promise<TaskRecord>
-    remove(id: string): Promise<void>
-    projects(): Promise<TaskProject[]>
-    createProject(name: string): Promise<TaskProject>
-    renameProject(id: string, name: string): Promise<TaskProject>
-    archiveProject(id: string, archived: boolean): Promise<TaskProject>
-    onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void
-    onOpenTasksPanel(callback: () => void): () => void
-    onTasksStoreRebuilt(callback: () => void): () => void
-  }
+  tasks: import('../../../shared/tasks').TasksAPI
 ```
 
 - [ ] **Step 3: 类型检查**
@@ -1124,7 +1216,7 @@ describe('ProactiveEngine.postExternal', () => {
   test('外部消息绕过冷却直接入列并回调,最新在前', () => {
     const engine = new ProactiveEngine()
     const seen: Array<{ message: string; kind?: string }> = []
-    engine.start(message => { seen.push({ message, kind: 'rest' }) }, { greeting: false, restReminder: false })
+    engine.start((message, kind) => { seen.push({ message, kind }) }, { greeting: false, restReminder: false })
     engine.postExternal('任务提醒：写周报', 'task')
     engine.postExternal('错过了 2 条任务提醒', 'task')
     const messages = engine.getMessages()
@@ -1132,6 +1224,7 @@ describe('ProactiveEngine.postExternal', () => {
     expect(messages[0].message).toBe('错过了 2 条任务提醒')
     expect(messages.every(item => item.kind === 'task')).toBe(true)
     expect(seen).toHaveLength(2)
+    expect(seen.every(item => item.kind === 'task')).toBe(true)
     engine.stop()
   })
 
@@ -1162,13 +1255,21 @@ Expected: FAIL(`postExternal is not a function` / `ProactiveEngine` 未导出)
 export type ProactiveKind = 'greeting' | 'rest' | 'return' | 'task'
 ```
 
-`class ProactiveEngine` 改为 `export class ProactiveEngine`,并在 `speak` 方法旁新增公开方法:
+`class ProactiveEngine` 改为 `export class ProactiveEngine`;`speak()` 里「unshift 消息 + persistMessages」两行抽成私有方法(放在 `speak` 之前),`speak` 与新方法共用:
+
+```ts
+  private enqueue(message: string, kind: ProactiveKind): void {
+    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
+    this.persistMessages()
+  }
+```
+
+并在 `speak` 方法旁新增公开方法:
 
 ```ts
   /** 外部注入的确定性提醒(任务到期),不受 60 分钟冷却限制。 */
   postExternal(message: string, kind: ProactiveKind = 'task'): void {
-    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind })
-    this.persistMessages()
+    this.enqueue(message, kind)
     this.callback?.(message, kind)
   }
 ```
@@ -1216,6 +1317,9 @@ describe('Tasks 视图源守卫', () => {
     expect(source).toContain('aria-label')
     expect(source).toContain('role="list"')
     expect(source).toContain('data-priority')
+    expect(source).not.toContain('window.prompt')
+    expect(source).toContain('tasks-new-project-form')
+    expect(source).toContain('remindChoiceFromTask')
   })
   test('样式:使用全局 token、窄屏断点与减少动画', () => {
     const css = read('Tasks.css')
@@ -1279,6 +1383,13 @@ const draftDueAt = (draft: Draft): number | null => {
   if (!draft.dueDate) return null
   return new Date(`${draft.dueDate}T${draft.dueTime || '09:00'}`).getTime() || null
 }
+const remindChoiceFromTask = (task: TaskRecord): RemindChoiceId => {
+  if (task.remindAt === null || task.dueAt === null) return 'none'
+  for (const choice of REMIND_CHOICES) {
+    if (remindAtFromChoice(choice.id, task.dueAt) === task.remindAt) return choice.id
+  }
+  return 'none'
+}
 const draftFromTask = (task: TaskRecord): Draft => ({
   id: task.id,
   title: task.title,
@@ -1287,27 +1398,30 @@ const draftFromTask = (task: TaskRecord): Draft => ({
   priority: task.priority,
   dueDate: task.dueAt ? toInputDate(task.dueAt) : '',
   dueTime: task.dueAt ? new Date(task.dueAt).toTimeString().slice(0, 5) : '09:00',
-  remind: 'none'
+  remind: remindChoiceFromTask(task)
 })
 const dueLabel = (at: number): string =>
   new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at)
 
 export default function TasksView({ active }: { active: boolean }) {
-  const [selection, setSelection] = useState<SmartView>('today')
+  const [selection, setSelection] = useState<Selection>('today')
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [doneTasks, setDoneTasks] = useState<TaskRecord[]>([])
+  const [totalDone, setTotalDone] = useState(0)
   const [projects, setProjects] = useState<TaskProject[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [showDone, setShowDone] = useState(false)
   const [quarantineNotice, setQuarantineNotice] = useState('')
+  const [newProject, setNewProject] = useState<string | null>(null)
 
   const reload = useCallback(() => {
     void Promise.all([window.electronAPI.tasks.list(), window.electronAPI.tasks.projects()])
       .then(([list, projectList]) => {
         setTasks(list.open)
         setDoneTasks(list.done)
+        setTotalDone(list.totalDone)
         setProjects(projectList)
         setQuarantineNotice(list.quarantinedAt ? '任务数据文件曾无法读取，已重建空库，原文件已隔离保存。' : '')
       })
@@ -1348,8 +1462,10 @@ export default function TasksView({ active }: { active: boolean }) {
     if (!window.confirm('删除这个任务？此操作无法撤销。')) return
     void window.electronAPI.tasks.remove(id).then(reload).catch(reason => setError(String(reason)))
   }
-  const createProjectInline = () => {
-    const name = window.prompt('项目名称')?.trim()
+  const submitProject = (event: FormEvent) => {
+    event.preventDefault()
+    const name = newProject?.trim()
+    setNewProject(null)
     if (!name) return
     void window.electronAPI.tasks.createProject(name).then(reload).catch(reason => setError(String(reason)))
   }
@@ -1370,7 +1486,15 @@ export default function TasksView({ active }: { active: boolean }) {
               <button type="button" aria-current={selection === id || undefined} onClick={() => setSelection(id)}>{project.name}</button>
             </li>
           })}
-          <li><button type="button" className="tasks-new-project" onClick={createProjectInline}>新建项目 +</button></li>
+          {newProject === null
+            ? <li><button type="button" className="tasks-new-project" onClick={() => setNewProject('')}>新建项目 +</button></li>
+            : <li>
+                <form className="tasks-new-project-form" onSubmit={submitProject}>
+                  <input value={newProject} autoFocus aria-label="新项目名称" placeholder="项目名称"
+                    onChange={e => setNewProject(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Escape') setNewProject(null) }} />
+                </form>
+              </li>}
         </ul>
         {projects.some(project => project.archivedAt) && <details className="tasks-archived">
           <summary>已归档项目</summary>
@@ -1383,7 +1507,7 @@ export default function TasksView({ active }: { active: boolean }) {
       {quarantineNotice && <p role="alert" className="tasks-quarantine">{quarantineNotice}</p>}
       {error && <p role="alert" className="tasks-error">{error}</p>}
       <div className="tasks-toolbar">
-        <p>{visible.length} 个进行中{doneTasks.length > 0 ? ` · ${doneTasks.length} 个已完成` : ''}</p>
+        <p>{visible.length} 个进行中{totalDone > 0 ? ` · ${totalDone} 个已完成` : ''}</p>
         <button type="button" className="tasks-create" onClick={() => setDraft({ ...emptyDraft })}>新建任务</button>
       </div>
 
@@ -1509,6 +1633,11 @@ export default function TasksView({ active }: { active: boolean }) {
 .tasks-new-project { color: var(--text-muted) !important; }
 .tasks-archived summary { font-size: 12px; color: var(--text-muted); cursor: pointer; padding: 6px 10px; }
 .tasks-archived li { font-size: 12px; color: var(--text-muted); padding: 4px 10px; }
+.tasks-new-project-form input {
+  font: inherit; font-size: 12px; color: var(--text-primary);
+  background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 4px 8px; width: 100%;
+}
+.tasks-new-project-form input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
 .tasks-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
 .tasks-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -1661,19 +1790,19 @@ git commit -m "feat(tasks): add tasks workspace page with list, form and smart v
     window.focus()
   }, [ensurePanelPosition])
 
-  useEffect(() => window.electronAPI.onOpenTasksPanel(openTasksPage), [openTasksPage])
+  useEffect(() => window.electronAPI.tasks.onOpenTasksPanel(openTasksPage), [openTasksPage])
 
   useEffect(() => {
-    const cleanup = window.electronAPI.onTasksReminder(payload => {
+    const cleanup = window.electronAPI.tasks.onTasksReminder(payload => {
       if ('task' in payload) proactiveEngine.postExternal(`任务提醒：${payload.task.title}`, 'task')
       else if (payload.backlog > 0) proactiveEngine.postExternal(`错过了 ${payload.backlog} 条任务提醒`, 'task')
     })
-    return cleanup
+    const rebuiltCleanup = window.electronAPI.tasks.onTasksStoreRebuilt(() => {
+      proactiveEngine.postExternal('任务数据文件无法读取，已重建空库，原文件已隔离保存。', 'task')
+    })
+    window.electronAPI.tasks.ready()
+    return () => { cleanup(); rebuiltCleanup() }
   }, [])
-
-  useEffect(() => window.electronAPI.onTasksStoreRebuilt(() => {
-    proactiveEngine.postExternal('任务数据文件无法读取，已重建空库，原文件已隔离保存。', 'task')
-  }), [])
 ```
 
 `ProactiveCenter` 调用处(props 列表)加:
@@ -1709,6 +1838,7 @@ Props 接口加:
   appearance: none; border: none; background: none; padding: 0; margin: 0;
   text-align: left; font: inherit; color: var(--accent); cursor: pointer;
 }
+.proactive-center-item > .proactive-center-task-link { display: block; margin-top: var(--space-3); font-size: var(--font-md); line-height: var(--leading-normal); white-space: pre-wrap; }
 .proactive-center-task-link:hover { text-decoration: underline; }
 ```
 
@@ -1768,21 +1898,24 @@ export async function runTasksSmoke(): Promise<void> {
   const store = openTasksStore(file)
   const reminders: string[] = []
   let backlog = 0
-  const scheduler = startTaskScheduler(
-    now => store.claimDueReminders(now),
-    {
-      onReminder: task => { reminders.push(task.id) },
-      onBacklog: count => { backlog += count }
-    },
-    { intervalMs: 50 }
-  )
+  let scheduler: { stop(): void } | null = null
   try {
     const project = store.createProject('冒烟项目')
     let rejected = false
     try { store.createProject('冒烟项目') } catch { rejected = true }
     if (!rejected) throw new Error('Duplicate task project name was accepted')
 
+    // 启动调度器前先落下一条过期提醒,模拟应用未运行期间错过的积压
     const overdue = store.createTask({ title: '过期任务', priority: 'high', dueAt: Date.now() - 3_600_000, remindAt: Date.now() - 1_800_000 })
+    scheduler = startTaskScheduler(
+      now => store.claimDueReminders(now),
+      {
+        onReminder: task => { reminders.push(task.id) },
+        onBacklog: count => { backlog += count }
+      },
+      { intervalMs: 50 }
+    )
+
     const due = store.createTask({ title: '即将到期', dueAt: Date.now() + 400, remindAt: Date.now() + 120 })
     const toComplete = store.createTask({ title: '先完成', dueAt: Date.now() + 400, remindAt: Date.now() + 120 })
     store.completeTask(toComplete.id)
@@ -1803,11 +1936,13 @@ export async function runTasksSmoke(): Promise<void> {
     reopened.close()
     console.log('CHOUYU_TASKS_SMOKE_PASSED backlog merge, fire-once, complete cancels, persistence')
   } finally {
-    scheduler.stop()
+    scheduler?.stop()
     try { store.close() } catch { /* 已在用例内关闭 */ }
   }
 }
 ```
+
+注意顺序:过期任务必须在 `startTaskScheduler` **之前**入库,否则调度器启动时库为空、积压恒为 0。
 
 - [ ] **Step 2: 全量门禁**
 

@@ -105,6 +105,7 @@ export interface ElectronAPI {
   capabilities: {
     list: () => Promise<CapabilityInfo[]>
   }
+  tasks: import('../../../shared/tasks').TasksAPI
   memory: {
     list: (options?: MemoryListOptions) => Promise<MemoryRecord[]>
     listPage: (options?: MemoryListOptions) => Promise<import('../../../shared/memory').MemoryListPage>
