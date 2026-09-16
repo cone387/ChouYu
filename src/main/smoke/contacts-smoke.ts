@@ -69,13 +69,13 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     const character = listCharacters().find((item) => item.name === '冒烟猫')
     if (!character) throw new Error('Character was not created')
 
-    // 5) 点击角色卡片弹详情面板，从面板进入会话页，chip 可见（等列表异步刷新渲染出该角色的卡片再点）
+    // 5) 点击角色卡片弹详情面板，从面板进入会话页，联系人信息条可见（等列表异步刷新渲染出该角色的卡片再点）
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-item="${character.id}"]'))`)
     await click(window, `[data-contacts-item="${character.id}"]`)
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))`)
     await click(window, `[data-contacts-start-chat="${character.id}"]`)
     await waitForRenderer(window, `document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'chat'`)
-    await waitForRenderer(window, `Boolean(document.querySelector('[data-character-chip="${character.id}"]'))`)
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-character-bar="${character.id}"]'))`)
 
     // 6) 角色流解析：请求命中 loopback 且使用角色模型
     const streamResult = await window.webContents.executeJavaScript(`window.electronAPI.ai.startStream({

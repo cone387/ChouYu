@@ -159,3 +159,35 @@ describe('contacts workspace wiring', () => {
     expect(inputSource).toContain('}, [refreshModels, sessionId])')
   })
 })
+
+describe('contacts presence in the chat surface', () => {
+  it('carries the character category through chat-side model switches', () => {
+    expect(panelSource).toMatch(/characters\.update\(activeCharacter\.id, \{[\s\S]*?category: activeCharacter\.category/)
+  })
+
+  it('renders a clickable contact info bar for every character including the built-in', () => {
+    expect(panelSource).not.toContain('character-context-chip')
+    expect(panelSource).toContain('character-context-bar')
+    expect(panelSource).toContain('data-character-bar={activeCharacter.id}')
+    expect(panelSource).toContain('openContactsDetail(activeCharacter.id)')
+    expect(panelSource).toContain('focusCharacterId={contactsFocusId}')
+    expect(panelSource).toContain('onFocusConsumed={clearContactsFocus}')
+    expect(panelSource).toMatch(/activeCharacter\.category && <span className="character-context-category">/)
+    expect(panelSource).toContain('!(showOnboarding && !customCharacterActive)')
+    expect(stylesheet).toMatch(/\.character-context-main\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\)/)
+    expect(stylesheet).toMatch(/\.character-context-avatar\s*\{[\s\S]*?border-radius:\s*50%/)
+    expect(stylesheet).toMatch(/\.character-context-main:hover\s*\{[\s\S]*?border-color/)
+  })
+
+  it('shows the character avatar and name on session cards', () => {
+    expect(sidebarSource).toContain('characters.find((item) => item.id === (session.characterId || DEFAULT_CHARACTER_ID))')
+    expect(sidebarSource).toContain('conversation-item-avatar')
+    expect(sidebarSource).toContain('conversation-item-character')
+    expect(sidebarSource).toContain('DEFAULT_CHARACTER_NAME')
+    expect(sidebarSource).toContain("{character?.avatar || '🐟'}")
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-main\s*\{[\s\S]*?flex-direction:\s*row/)
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-avatar\s*\{[\s\S]*?border-radius:\s*50%/)
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-body\s*\{[\s\S]*?min-width:\s*0/)
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-character\s*\{[\s\S]*?text-overflow:\s*ellipsis/)
+  })
+})

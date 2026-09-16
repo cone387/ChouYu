@@ -118,8 +118,9 @@
   display: flex;
   width: 100%;
   min-height: 66px;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-start;
+  gap: var(--space-3);
   border: 0;
   border-radius: var(--radius-lg);
   padding: var(--space-4) var(--space-4) var(--space-3);
@@ -127,6 +128,31 @@
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
+}
+
+/* 会话卡片左侧的联系人圆头像，与通讯录卡片的头像语言一致。 */
+.conversation-item-avatar {
+  flex: none;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.conversation-item-avatar-default {
+  background: var(--accent);
+}
+
+.conversation-item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .conversation-item-title-row,
@@ -176,9 +202,19 @@
   display: flex;
   width: 100%;
   justify-content: space-between;
+  gap: var(--space-3);
   margin-top: var(--space-3);
   color: var(--text-muted);
   font-size: var(--font-sm);
+}
+
+/* 联系人名占据剩余宽度并截断，条数与时间固定在右侧。 */
+.conversation-item-character {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .conversation-item-menu {

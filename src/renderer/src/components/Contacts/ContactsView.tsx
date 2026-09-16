@@ -7,6 +7,8 @@ import './Contacts.css'
 interface ContactsViewProps {
   active: boolean
   config: AppConfig
+  focusCharacterId?: string | null
+  onFocusConsumed?: () => void
   onOpenChat: (characterId: string) => void
   onDeleted: (workspace: SessionWorkspace) => void
 }
@@ -161,7 +163,7 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
   </div>
 }
 
-export default function ContactsView({ active, config, onOpenChat, onDeleted }: ContactsViewProps) {
+export default function ContactsView({ active, config, focusCharacterId, onFocusConsumed, onOpenChat, onDeleted }: ContactsViewProps) {
   const [characters, setCharacters] = useState<CharacterStats[]>([])
   const [profiles, setProfiles] = useState<ResolvedProviderProfile[]>([])
   const [query, setQuery] = useState('')
@@ -186,6 +188,16 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
     refresh()
     return window.electronAPI.characters.onChanged(refresh)
   }, [active, refresh])
+
+  // 聊天页信息条跳转过来：打开对应角色详情后消费焦点，再次点击可重新触发。
+  // 角色列表异步加载，找不到时先等待，加载完成后依赖变化会再次进入。
+  useEffect(() => {
+    if (!active || !focusCharacterId) return
+    const character = characters.find((item) => item.id === focusCharacterId)
+    if (!character) return
+    setDetail(character)
+    onFocusConsumed?.()
+  }, [active, focusCharacterId, characters, onFocusConsumed])
 
   const distinctModels = useMemo(
     () => [...new Set(characters.map((character) => character.model).filter(Boolean))]

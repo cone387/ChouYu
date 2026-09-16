@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type HTMLAttributes } from 'react'
+import { DEFAULT_CHARACTER_ID, DEFAULT_CHARACTER_NAME, type CharacterStats } from '../../../../shared/characters'
 import type { ChatSessionSummary } from '../../shared/types'
 import './ConversationSidebar.css'
 
 interface ConversationSidebarProps {
   sessions: ChatSessionSummary[]
+  characters: CharacterStats[]
   activeSessionId: string
   width: number
   streamingSessionIds: Set<string>
@@ -26,6 +28,7 @@ function formatSessionTime(timestamp: number): string {
 
 export default function ConversationSidebar({
   sessions,
+  characters,
   activeSessionId,
   width,
   streamingSessionIds,
@@ -141,6 +144,7 @@ export default function ConversationSidebar({
         {sessions.map((session) => {
           const active = session.id === activeSessionId
           const editing = editingId === session.id
+          const character = characters.find((item) => item.id === (session.characterId || DEFAULT_CHARACTER_ID))
           return (
             <div key={session.id} className={`conversation-item${active ? ' active' : ''}`}>
               {editing ? (
@@ -177,14 +181,18 @@ export default function ConversationSidebar({
                   aria-selected={active}
                   disabled={busyId === session.id}
                 >
-                  <span className="conversation-item-title-row">
-                    <span className="conversation-item-title">{session.title}</span>
-                    {streamingSessionIds.has(session.id) && <span className="conversation-item-streaming" role="status">回复中</span>}
-                  </span>
-                  <span className="conversation-item-preview">{session.preview}</span>
-                  <span className="conversation-item-meta">
-                    <span>{session.messageCount} 条</span>
-                    <time dateTime={new Date(session.updatedAt).toISOString()}>{formatSessionTime(session.updatedAt)}</time>
+                  <span className={`conversation-item-avatar${character?.builtIn ? ' conversation-item-avatar-default' : ''}`} aria-hidden="true">{character?.avatar || '🐟'}</span>
+                  <span className="conversation-item-body">
+                    <span className="conversation-item-title-row">
+                      <span className="conversation-item-title">{session.title}</span>
+                      {streamingSessionIds.has(session.id) && <span className="conversation-item-streaming" role="status">回复中</span>}
+                    </span>
+                    <span className="conversation-item-preview">{session.preview}</span>
+                    <span className="conversation-item-meta">
+                      <span className="conversation-item-character">{character?.name ?? DEFAULT_CHARACTER_NAME}</span>
+                      <span>{session.messageCount} 条</span>
+                      <time dateTime={new Date(session.updatedAt).toISOString()}>{formatSessionTime(session.updatedAt)}</time>
+                    </span>
                   </span>
                 </button>
               )}
