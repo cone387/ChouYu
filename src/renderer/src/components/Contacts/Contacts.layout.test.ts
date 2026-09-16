@@ -6,26 +6,48 @@ const viewSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/compone
 const cssSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Contacts/Contacts.css'), 'utf8')
 
 describe('contacts layout', () => {
-  it('derives pinyin initials locally without a pinyin dependency', () => {
-    expect(viewSource).toContain('PINYIN_BOUNDARIES')
+  it('sorts cards by pinyin locally without a pinyin dependency', () => {
     expect(viewSource).toContain("new Intl.Collator('zh-Hans-CN-u-co-pinyin'")
-    expect(viewSource).toMatch(/function initialOf\(name: string\): string/)
+    expect(viewSource).toMatch(/function sortByName/)
   })
 
-  it('groups custom characters into letter sections with # sorted last', () => {
-    expect(viewSource).toContain('data-contacts-section')
-    expect(viewSource).toMatch(/a\.letter === '#' \? 1 : b\.letter === '#' \? -1/)
-    expect(viewSource).toContain('contacts-letter')
+  it('lays filter options flat as toggle chips', () => {
+    expect(viewSource).toContain('data-contacts-filter-category')
+    expect(viewSource).toContain('data-contacts-filter-model')
+    expect(viewSource).toContain('aria-pressed={category === option.value}')
+    expect(cssSource).toMatch(/\.contacts-chip\[aria-pressed="true"\]/)
+    expect(cssSource).toMatch(/\.contacts-filter-options \{[^}]*flex-wrap: wrap/)
   })
 
-  it('renders the A-Z index rail with jump and bubble feedback', () => {
-    expect(viewSource).toContain('data-contacts-index')
-    expect(viewSource).toContain('jumpToLetter')
-    expect(viewSource).toContain('contacts-bubble')
+  it('renders contacts as a multi-per-row card grid', () => {
+    expect(viewSource).toContain('contacts-grid')
+    expect(cssSource).toMatch(/\.contacts-grid \{[^}]*display: grid/)
+    expect(cssSource).toMatch(/repeat\(auto-fill, minmax\(/)
+    expect(viewSource).toMatch(/className="contacts-card"/)
+    expect(cssSource).toMatch(/\.contacts-card \{[^}]*border: 1px solid var\(--border\)/)
+    expect(cssSource).toContain('.contacts-card:hover')
   })
 
-  it('honors reduced motion when jumping to a letter', () => {
-    expect(viewSource).toContain('(prefers-reduced-motion: reduce)')
+  it('offers the new-character action as a dashed card in the grid', () => {
+    expect(viewSource).toContain('contacts-new-card')
+    expect(cssSource).toMatch(/\.contacts-new-card \{[^}]*border: 1px dashed/)
+  })
+
+  it('opens a detail panel on card click with chat, edit and delete actions', () => {
+    expect(viewSource).toContain('data-contacts-detail=')
+    expect(viewSource).toContain('data-contacts-start-chat=')
+    expect(viewSource).toMatch(/data-contacts-edit=\{detail\.id\}/)
+    expect(viewSource).toMatch(/data-contacts-delete=\{detail\.id\}/)
+    expect(viewSource).toContain('contacts-detail-actions')
+    expect(cssSource).toMatch(/\.contacts-detail \{/)
+  })
+
+  it('drops the letter sections, index rail and bubble from the list layout', () => {
+    expect(viewSource).not.toContain('data-contacts-section')
+    expect(viewSource).not.toContain('jumpToLetter')
+    expect(viewSource).not.toContain('contacts-bubble')
+    expect(viewSource).not.toContain('contacts-letter')
+    expect(cssSource).not.toContain('.contacts-index')
   })
 
   it('keeps every contacts-smoke hook wired', () => {
@@ -36,24 +58,6 @@ describe('contacts layout', () => {
       'data-contacts-soulmd', 'data-contacts-save', 'data-contacts-fetch-models'
     ]
     for (const hook of hooks) expect(viewSource).toContain(hook)
-  })
-
-  it('styles the list as a continuous white WeChat 4.0 panel without row dividers', () => {
-    expect(cssSource).toContain('var(--bg-secondary)')
-    expect(cssSource).toContain('var(--bg-primary)')
-    expect(cssSource).toContain('var(--accent)')
-    expect(cssSource).toMatch(/\.contacts-letter \{ position: sticky[^}]*background: var\(--bg-primary\)/)
-    expect(cssSource).toMatch(/\.contacts-item \{[^}]*border: none/)
-    expect(cssSource).not.toContain('.contacts-row + .contacts-row')
-    expect(cssSource).toMatch(/\.contacts-new-row \{[^}]*background: color-mix/)
-    expect(cssSource).toMatch(/\.contacts-row-actions \{[^}]*opacity: 0/)
-    expect(cssSource).toContain('.contacts-row:hover .contacts-row-actions')
-  })
-
-  it('keeps rows minimal like WeChat: avatar + name only', () => {
-    expect(viewSource).not.toContain('contacts-sub')
-    expect(viewSource).not.toContain('contacts-chevron')
-    expect(viewSource).not.toContain('contacts-meta')
   })
 
   it('disables transitions under reduced motion', () => {

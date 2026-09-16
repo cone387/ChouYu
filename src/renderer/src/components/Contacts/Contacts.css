@@ -1,58 +1,72 @@
-/* 微信 4.0 PC 通讯录结构：整列纯白（搜索区与列表相连同色）、浅灰搜索胶囊、通栏灰色「新建角色」按钮、白底灰字字母头、行间无分隔线。颜色全走主题变量。 */
+/* 通讯录：顶部搜索 + 平铺过滤区（分类/模型），下方联系人矩形卡片网格（一行多个），点击卡片弹出详情面板。颜色全走主题变量。 */
 .contacts-view { position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; background: var(--bg-primary); }
 
-/* 顶部：白底上的浅灰搜索胶囊（微信 4.0） */
-.contacts-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; background: var(--bg-primary); }
+/* 顶部：白底上的浅灰搜索胶囊 */
+.contacts-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; background: var(--bg-primary); }
 .contacts-search-box { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 8px; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); transition: box-shadow .18s ease; }
 .contacts-search-box:focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
 .contacts-search { flex: 1; min-width: 0; border: none; background: transparent; color: var(--text-primary); font-size: 14px; outline: none; }
 .contacts-search::placeholder { color: var(--text-muted); }
 
+/* 过滤区：条件直接平铺成筛选片 */
+.contacts-filters { display: flex; flex-direction: column; gap: 6px; padding: 0 12px 10px; background: var(--bg-primary); }
+.contacts-filter-group { display: flex; align-items: flex-start; gap: 10px; }
+.contacts-filter-label { flex: none; padding: 4px 0; font-size: 12px; color: var(--text-muted); }
+.contacts-filter-options { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.contacts-chip { min-height: 26px; padding: 0 12px; border: none; border-radius: 13px; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-secondary); font-size: 12px; line-height: 1; cursor: pointer; transition: background-color .16s ease, color .16s ease; }
+.contacts-chip:hover { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-primary); }
+.contacts-chip[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 500; }
+
 .contacts-error { margin: 0 12px 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--error-border); color: var(--error); font-size: 12px; background: var(--bg-primary); }
 
-/* 列表主体：纯白连续滚动区 + 右侧索引条 */
-.contacts-body { position: relative; flex: 1; min-height: 0; display: flex; }
-.contacts-scroll { flex: 1; min-width: 0; overflow-y: auto; background: var(--bg-primary); }
+/* 卡片网格：一行多个 */
+.contacts-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 12px 16px; background: var(--bg-primary); }
+.contacts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start; }
 
-/* 通栏灰色「新建角色」按钮（对应微信「通讯录管理」槽位） */
-.contacts-new-row { display: flex; align-items: center; justify-content: center; gap: 8px; width: calc(100% - 24px); min-height: 42px; margin: 4px 12px 12px; padding: 0; border: none; border-radius: 8px; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-primary); font-size: 15px; font-weight: 400; cursor: pointer; transition: background-color .16s ease; }
-.contacts-new-row:hover { background: color-mix(in srgb, var(--text-muted) 16%, transparent); }
+/* 「新建角色」虚线卡 */
+.contacts-new-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 138px; padding: 14px 10px; border: 1px dashed color-mix(in srgb, var(--text-muted) 45%, transparent); border-radius: 12px; background: transparent; color: var(--text-muted); font-size: 13px; cursor: pointer; transition: color .16s ease, border-color .16s ease; }
+.contacts-new-card:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.contacts-new-card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* 字母头：白底小灰字，随滚动吸附（视觉上融入白底） */
-.contacts-section { background: transparent; margin: 0; }
-.contacts-letter { position: sticky; top: 0; z-index: 2; margin: 0; padding: 6px 24px; font-size: 13px; font-weight: 400; color: var(--text-muted); background: var(--bg-primary); }
-.contacts-section ul { list-style: none; margin: 0; padding: 0; }
-
-/* 行间无分隔线，靠留白区分；悬停整行浅灰 */
-.contacts-row { position: relative; display: flex; align-items: stretch; }
-.contacts-row-actions { position: absolute; top: 0; right: 4px; bottom: 0; z-index: 1; display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity .18s ease; }
-.contacts-row:hover .contacts-row-actions, .contacts-row:focus-within .contacts-row-actions { opacity: 1; }
-.contacts-action { width: 34px; height: 44px; display: grid; place-items: center; padding: 0; border: none; background: transparent; color: var(--text-secondary); border-radius: 8px; cursor: pointer; transition: color .18s ease, background-color .18s ease; }
-.contacts-action:hover { color: var(--text-primary); background: var(--bg-secondary); }
-.contacts-action-danger:hover { color: var(--error); }
-
-/* 微信行结构：头像 + 昵称，仅此而已 */
-.contacts-item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 16px 8px 24px; border: none; text-align: left; background: transparent; cursor: pointer; transition: background-color .16s ease; }
-.contacts-item:hover { background: var(--bg-secondary); }
-.contacts-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.contacts-avatar { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 17px; line-height: 1; }
-.contacts-avatar-default { background: var(--accent); }
-.contacts-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 400; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 76px; }
+/* 联系人矩形卡片：居中头像 + 名字 + 元信息 */
+.contacts-card { display: flex; flex-direction: column; align-items: center; gap: 5px; min-height: 138px; padding: 16px 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); text-align: center; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease; }
+.contacts-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 4px 14px rgba(0, 0, 0, .06); }
+.contacts-card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.contacts-card-avatar { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 12px; background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 22px; line-height: 1; }
+.contacts-card-avatar-default { background: var(--accent); }
+.contacts-card-name { max-width: 100%; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contacts-card-meta, .contacts-card-sub { max-width: 100%; font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contacts-builtin { margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-style: normal; font-weight: 500; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .contacts-empty { margin: 32px 0; text-align: center; font-size: 13px; color: var(--text-muted); }
 
-/* 右侧 A-Z 索引条：透明底，点击跳组 */
-.contacts-index { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px; background: transparent; }
-.contacts-index-item { width: 18px; height: 17px; display: grid; place-items: center; padding: 0; border: none; background: transparent; color: var(--text-muted); font-size: 10px; line-height: 1; border-radius: 6px; cursor: pointer; transition: color .16s ease, background-color .16s ease; }
-.contacts-index-item:hover, .contacts-index-item.active { color: var(--accent); font-weight: 700; }
-.contacts-index-item.active { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-
-/* 跳组时中央大字母气泡（微信式反馈） */
-.contacts-bubble { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%); z-index: 3; width: 60px; height: 60px; display: grid; place-items: center; border-radius: 14px; background: color-mix(in srgb, var(--accent) 88%, transparent); color: var(--on-accent); font-size: 28px; font-weight: 700; pointer-events: none; }
-
-/* 居中模态：确认删除 / 角色表单 */
+/* 居中模态：详情面板 / 确认删除 / 角色表单 */
 .contacts-scrim { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--bg-secondary) 55%, transparent); backdrop-filter: blur(2px); }
+
+/* 联系人详情面板 */
+.contacts-detail { width: min(360px, 100%); max-height: 100%; overflow-y: auto; padding: 18px 18px 16px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
+.contacts-detail-head { display: flex; align-items: center; gap: 12px; }
+.contacts-detail-avatar { flex: none; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 14px; background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 24px; line-height: 1; }
+.contacts-detail-avatar-default { background: var(--accent); }
+.contacts-detail-title { margin: 0; font-size: 16px; font-weight: 600; }
+.contacts-detail-subtitle { margin: 2px 0 0; font-size: 12px; color: var(--text-muted); }
+.contacts-detail-fields { margin-top: 12px; }
+.contacts-detail-fields .contacts-field { border-top: 1px solid var(--border); }
+.contacts-detail-fields .contacts-field:first-of-type { border-top: none; }
+.contacts-field { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 0; font-size: 13px; }
+.contacts-field-name { flex: none; width: 44px; color: var(--text-secondary); }
+.contacts-detail-value { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contacts-detail-soul-title { margin: 10px 0 6px; font-size: 12px; color: var(--text-muted); }
+.contacts-detail-soul { max-height: 160px; overflow-y: auto; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.contacts-detail-actions { display: flex; gap: 8px; margin-top: 14px; }
+.contacts-detail-actions button { flex: 1; min-height: 34px; padding: 0 12px; border: none; border-radius: 9px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; cursor: pointer; transition: background-color .16s ease; }
+.contacts-detail-actions button:hover:not(:disabled) { background: color-mix(in srgb, var(--text-muted) 18%, transparent); }
+.contacts-detail-actions button.primary { background: var(--accent); color: var(--on-accent); }
+.contacts-detail-actions button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+.contacts-detail-actions button.danger { background: var(--error); color: #fff; }
+.contacts-detail-actions button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 85%, #000); }
+.contacts-detail-actions button:disabled { opacity: .5; cursor: default; }
+
 .contacts-confirm { width: min(320px, 100%); padding: 18px 18px 12px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); font-size: 13px; line-height: 1.6; box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
 .contacts-confirm-title { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
 .contacts-confirm p { margin: 0; }
@@ -65,9 +79,8 @@
 
 .contacts-form { width: min(420px, 100%); max-height: 100%; overflow-y: auto; padding: 16px 16px 12px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
 .contacts-form h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
-.contacts-field { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
-.contacts-field:first-of-type { border-top: none; }
-.contacts-field-name { flex: none; width: 44px; color: var(--text-secondary); }
+.contacts-form .contacts-field { border-top: 1px solid var(--border); }
+.contacts-form .contacts-field:first-of-type { border-top: none; }
 .contacts-field input, .contacts-field select { flex: 1; min-width: 0; border: none; background: transparent; color: var(--text-primary); font-size: 13px; outline: none; padding: 4px 0; }
 .contacts-field input:focus-visible, .contacts-field select:focus-visible, .contacts-field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .contacts-field input::placeholder { color: var(--text-muted); }

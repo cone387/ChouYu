@@ -69,9 +69,11 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     const character = listCharacters().find((item) => item.name === '冒烟猫')
     if (!character) throw new Error('Character was not created')
 
-    // 5) 点击角色进入会话页，chip 可见（等列表异步刷新渲染出该角色的条目再点）
+    // 5) 点击角色卡片弹详情面板，从面板进入会话页，chip 可见（等列表异步刷新渲染出该角色的卡片再点）
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-item="${character.id}"]'))`)
     await click(window, `[data-contacts-item="${character.id}"]`)
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))`)
+    await click(window, `[data-contacts-start-chat="${character.id}"]`)
     await waitForRenderer(window, `document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'chat'`)
     await waitForRenderer(window, `Boolean(document.querySelector('[data-character-chip="${character.id}"]'))`)
 
@@ -87,8 +89,9 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 300))
     if (!chatBody || chatBody['model'] !== 'cat-model') throw new Error(`Expected character model on loopback, got ${JSON.stringify(chatBody?.['model'])}`)
 
-    // 7) 删除角色并确认（级联删除其会话）
+    // 7) 从详情面板删除角色并确认（级联删除其会话）
     await click(window, '[data-workspace-nav="contacts"]')
+    await click(window, `[data-contacts-item="${character.id}"]`)
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-delete="${character.id}"]'))`)
     await click(window, `[data-contacts-delete="${character.id}"]`)
     await click(window, '[data-contacts-confirm-delete]')
