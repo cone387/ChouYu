@@ -9,6 +9,7 @@ import {
   normalizeConfig,
   sanitizeConfigPatch,
   sanitizeProviderProfiles,
+  type AppConfig,
   type ProviderProfile
 } from './config'
 
@@ -103,6 +104,14 @@ describe('config', () => {
     })
 
     expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, toolPermissionMode: 'full', memoryEnabled: false, memoryWriteMode: 'confirm', memoryAutoWriteConfidence: 0.9, memoryEngineProvider: 'chouyu-sqlite', memoryCompressionEnabled: false, memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true, embeddingProvider: 'openai-compatible' })
+  })
+
+  it('defaults the palette to purple and accepts only known ids', () => {
+    expect(normalizeConfig({}).palette).toBe('purple')
+    expect(normalizeConfig({ palette: 'pink' }).palette).toBe('pink')
+    expect(normalizeConfig({ palette: 'gold' } as unknown as Partial<AppConfig>).palette).toBe('purple')
+    expect(sanitizeConfigPatch({ palette: 'blue' })).toEqual({ palette: 'blue' })
+    expect(sanitizeConfigPatch({ palette: 'neon' })).toEqual({})
   })
 })
 

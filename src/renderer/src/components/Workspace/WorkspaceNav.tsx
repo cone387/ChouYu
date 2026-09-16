@@ -1,9 +1,7 @@
 import type { KeyboardEvent } from 'react'
-import { PET_ICON_SVG } from '../../../../shared/pet-icon'
 import './Workspace.css'
 
 export type WorkspacePage = 'chat' | 'contacts' | 'journal' | 'memory' | 'settings'
-const petIconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(PET_ICON_SVG)}`
 
 const pages: { id: WorkspacePage; label: string; path: string }[] = [
   { id: 'chat', label: '会话', path: 'M4 4h16v12H9l-5 4V4zM8 8h8M8 12h5' },
@@ -26,7 +24,14 @@ export default function WorkspaceNav({ activePage, onNavigate, status }: { activ
 
   return <nav className="workspace-nav" aria-label="全局导航" onKeyDown={handleKeyDown}>
     <div className="workspace-brand" title={`ChouYu · ${status}`} aria-label={`ChouYu · ${status}`} role="status">
-      <img width="36" height="36" src={petIconUrl} alt="" />
+      <svg width="36" height="36" viewBox="0 0 80 80" aria-hidden="true">
+        <circle cx="40" cy="44" r="28" fill="var(--accent)" />
+        <ellipse cx="30" cy="38" rx="4" ry="5" fill="white" />
+        <ellipse cx="50" cy="38" rx="4" ry="5" fill="white" />
+        <circle cx="30" cy="39" r="2.5" fill="#2d2d2d" />
+        <circle cx="50" cy="39" r="2.5" fill="#2d2d2d" />
+        <path d="M 32 52 Q 40 58 48 52" stroke="#2d2d2d" fill="none" strokeWidth="2" strokeLinecap="round" />
+      </svg>
     </div>
     {pages.map(page => <button key={page.id} type="button" className={`workspace-nav-item${page.id === 'settings' ? ' workspace-nav-bottom' : ''}`}
       data-workspace-nav={page.id} aria-label={page.label} title={page.label}

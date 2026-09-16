@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { PET_ICON_PNG_BASE64, PET_ICON_SVG } from './pet-icon'
 
 describe('pet icon consistency', () => {
-  it('uses the shared purple face for the tray and workspace navigation', () => {
+  it('keeps the purple face for the tray while workspace navigation follows the accent palette', () => {
     const traySource = readFileSync(resolve(process.cwd(), 'src/main/tray.ts'), 'utf8')
     const navigationSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Workspace/WorkspaceNav.tsx'), 'utf8')
 
@@ -18,7 +18,8 @@ describe('pet icon consistency', () => {
     expect(traySource).toContain('tray.on(\'click\', openChatPanel)')
     expect(traySource).toContain('mainWindow.focus()')
     expect(traySource).toContain('mainWindow.moveTop()')
-    expect(navigationSource).toContain("import { PET_ICON_SVG }")
-    expect(navigationSource).toContain('encodeURIComponent(PET_ICON_SVG)')
+    // Data-URL images cannot inherit CSS variables, so the workspace logo inlines a themed svg.
+    expect(navigationSource).toContain('fill="var(--accent)"')
+    expect(navigationSource).not.toContain('PET_ICON_SVG')
   })
 })
