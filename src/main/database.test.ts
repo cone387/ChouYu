@@ -298,6 +298,41 @@ describe('characters', () => {
     expect(() => createCharacter({ ...draft, name: '超限角色' })).toThrow(/最多支持/)
   })
 
+  it('stores the industry category on create and update, defaulting to none', () => {
+    const created = createCharacter({ ...draft, category: 'tech' })
+    expect(created.category).toBe('tech')
+    expect(updateCharacter(created.id, { ...draft, category: 'legal' }).category).toBe('legal')
+    expect(createCharacter({ ...draft, name: '无分类' }).category).toBe('')
+    expect(createCharacter({ ...draft, name: '坏分类', category: 'nope' }).category).toBe('')
+  })
+
+  it('backfills preset categories on legacy stores and keeps manual re-categorization', () => {
+    // 旧版本播种的预设没有 category：按 id 幂等补齐。
+    const legacy = JSON.parse(fs.readFileSync(storePath(), 'utf8'))
+    for (const character of legacy.characters) delete character.category
+    fs.writeFileSync(storePath(), JSON.stringify(legacy))
+    initDatabase()
+    let current = listCharacters()
+    for (const preset of PRESET_CHARACTERS) {
+      expect(current.find((character) => character.id === preset.id)?.category).toBe(preset.category)
+    }
+    // 手动改过行业的预设不被回填覆盖。
+    const manual = current.find((character) => character.id === PRESET_CHARACTERS[0].id)!
+    updateCharacter(manual.id, { name: manual.name, avatar: manual.avatar, soulMd: manual.soulMd, providerProfileId: manual.providerProfileId, model: manual.model, category: 'writing' })
+    const rewritten = JSON.parse(fs.readFileSync(storePath(), 'utf8'))
+    for (const character of rewritten.characters) {
+      if (character.id !== manual.id) delete character.category
+    }
+    fs.writeFileSync(storePath(), JSON.stringify(rewritten))
+    initDatabase()
+    current = listCharacters()
+    expect(current.find((character) => character.id === manual.id)?.category).toBe('writing')
+    for (const preset of PRESET_CHARACTERS) {
+      if (preset.id === manual.id) continue
+      expect(current.find((character) => character.id === preset.id)?.category).toBe(preset.category)
+    }
+  })
+
   it('updates characters and write-through default persona/model to config', () => {
     const created = createCharacter(draft)
     const updated = updateCharacter(created.id, { ...draft, model: 'm2' })
