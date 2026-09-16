@@ -147,4 +147,11 @@ describe('contacts layout', () => {
   it('disables transitions under reduced motion', () => {
     expect(cssSource).toContain('@media (prefers-reduced-motion: reduce)')
   })
+
+  it('opens the focused character detail when jumped from the chat info bar', () => {
+    expect(viewSource).toContain('focusCharacterId?: string | null')
+    expect(viewSource).toMatch(/if \(!active \|\| !focusCharacterId\) return/)
+    expect(viewSource).toContain('onFocusConsumed?.()')
+    expect(viewSource).toContain('setDetail(character)')
+  })
 })

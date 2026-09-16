@@ -1705,4 +1705,14 @@
   color: var(--error);
 }
 
-.character-context-chip { display: inline-flex; align-items: center; gap: var(--space-3); align-self: flex-start; margin: var(--space-3) var(--space-4) 0; padding: var(--space-1) var(--space-4); border-radius: var(--radius-pill); font-size: var(--font-xs); background: rgba(127, 127, 127, .15); }
+/* 联系人信息条：头像 + 名字 + 模型 + 行业，点击跳转通讯录详情；内置角色也显示。 */
+.character-context-bar { display: flex; margin: var(--space-3) var(--space-4) 0; }
+.character-context-main { display: inline-flex; align-items: center; gap: var(--space-3); max-width: 100%; padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2); border: 1px solid transparent; border-radius: var(--radius-pill); background: rgba(127, 127, 127, .15); color: var(--text-secondary); font-size: var(--font-xs); cursor: pointer; transition: border-color .16s ease; }
+.character-context-main:hover { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.character-context-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.character-context-avatar { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 14px; line-height: 1; }
+.character-context-avatar-default { background: var(--accent); }
+.character-context-name { color: var(--text-primary); font-weight: 500; white-space: nowrap; }
+.character-context-badge { margin-left: var(--space-1); padding: 0 var(--space-2); border-radius: var(--radius-sm); font-size: 10px; font-style: normal; font-weight: 500; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.character-context-model { min-width: 0; max-width: 200px; overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.character-context-category { flex: none; padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); }

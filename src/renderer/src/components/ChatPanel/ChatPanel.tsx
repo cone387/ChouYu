@@ -17,7 +17,7 @@ import MemorySettingsTab from '../Settings/MemorySettingsTab'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
 import type { MemoryConflictAction, MemoryFeedbackValue, MemoryRecord } from '../../../../shared/memory'
 import { isAIConfigured } from '../../../../shared/config'
-import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
+import { DEFAULT_CHARACTER_ID, INDUSTRY_LABELS } from '../../../../shared/characters'
 import {
   Message,
   PetState,
@@ -104,6 +104,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [memoryCandidateError, setMemoryCandidateError] = useState('')
   const [memoryWriteNotice, setMemoryWriteNotice] = useState('')
   const [memoryCorrectionId, setMemoryCorrectionId] = useState('')
+  const [contactsFocusId, setContactsFocusId] = useState<string | null>(null)
   const memoryNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
@@ -582,8 +583,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     return '在线'
   }
 
-  // 模型切换的唯一入口：自定义角色的模型属于角色本身（characters.update 全量草稿），
-  // 内置角色仍写回设置页的全局配置。返回实际落库的模型供反馈文案使用。
+  // 模型切换的唯一入口：自定义角色的模型属于角色本身（characters.update 全量草稿，
+  // 其余字段必须原样带回——漏掉 category 会抹掉行业分类），内置角色仍写回设置页的全局配置。
+  // 返回实际落库的模型供反馈文案使用。
   const handleModelChange = useCallback(async (newModel: string): Promise<string> => {
     if (activeCharacter && !activeCharacter.builtIn) {
       const updated = await window.electronAPI.characters.update(activeCharacter.id, {
@@ -591,6 +593,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         avatar: activeCharacter.avatar,
         soulMd: activeCharacter.soulMd,
         providerProfileId: activeCharacter.providerProfileId,
+        category: activeCharacter.category,
         model: newModel
       })
       return updated.model
@@ -603,6 +606,13 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const openAISettings = useCallback(() => {
     setShowOnboarding(false)
     navigate('settings')
+  }, [navigate])
+
+  const clearContactsFocus = useCallback(() => setContactsFocusId(null), [])
+
+  const openContactsDetail = useCallback((characterId: string) => {
+    setContactsFocusId(characterId)
+    navigate('contacts')
   }, [navigate])
 
   const openCharacterChat = useCallback(async (characterId: string) => {
@@ -696,6 +706,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           <div className="workspace-sessions" hidden={!sessionsVisible} style={{ width: sessionSidebarWidth }}>
             <ConversationSidebar
               sessions={visibleSessions} activeSessionId={activeSessionId} width={sessionSidebarWidth}
+              characters={characters}
               streamingSessionIds={streamingSessionIds} dragHandleProps={dragHandleProps}
               onCreate={async () => { await createSession(); if (narrowLayout) toggleSessionSidebar() }}
               onSelect={async (id, query) => {
@@ -712,9 +723,17 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             onPointerDown={handleSidebarResizeStart} onPointerMove={handleSidebarResizeMove}
             onPointerUp={handleSidebarResizeEnd} onPointerCancel={handleSidebarResizeEnd} />}
           <div className="chat-panel-main">
-            {activeCharacter && !activeCharacter.builtIn && (
-              <div className="character-context-chip" role="status" data-character-chip={activeCharacter.id}>
-                <span aria-hidden="true">{activeCharacter.avatar}</span> 正在与 {activeCharacter.name}（{activeCharacter.model}）对话
+            {/* 引导卡 overflow:hidden 且可被 flex 压缩，信息条占位会把它挤出可用高度裁掉按钮，故首次运行引导期间不渲染。 */}
+            {activeCharacter && !(showOnboarding && !customCharacterActive) && (
+              <div className="character-context-bar" role="status">
+                <button type="button" className="character-context-main" data-character-bar={activeCharacter.id}
+                  onClick={() => openContactsDetail(activeCharacter.id)} title="查看联系人详情">
+                  <span className={`character-context-avatar${activeCharacter.builtIn ? ' character-context-avatar-default' : ''}`} aria-hidden="true">{activeCharacter.avatar || '🐟'}</span>
+                  <span className="character-context-name">{activeCharacter.name}</span>
+                  {activeCharacter.builtIn && <em className="character-context-badge">内置</em>}
+                  <span className="character-context-model">{activeCharacter.builtIn ? config.model : activeCharacter.model}</span>
+                  {activeCharacter.category && <span className="character-context-category">{INDUSTRY_LABELS[activeCharacter.category] ?? activeCharacter.category}</span>}
+                </button>
               </div>
             )}
             {showOnboarding && !customCharacterActive && <OnboardingCard onConfigure={openAISettings} />}
@@ -798,6 +817,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         </section>
         <section className="workspace-page workspace-contacts" hidden={activePage !== 'contacts'} aria-label="通讯录工作区">
           {visitedPages.contacts && <ContactsView active={visible && activePage === 'contacts'} config={config}
+            focusCharacterId={contactsFocusId} onFocusConsumed={clearContactsFocus}
             onOpenChat={(characterId) => { void openCharacterChat(characterId) }}
             onDeleted={handleCharactersDeleted} />}
         </section>

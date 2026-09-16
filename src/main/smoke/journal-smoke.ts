@@ -94,6 +94,8 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await main.webContents.executeJavaScript('window.electronAPI.journal.open()')
     journal = main
     await waitForRenderer(journal, "document.querySelector('[data-workspace-page=journal]')")
+    // 打开后默认停在概览视图，模式切换与任务卡片只在活动轨迹视图渲染。
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-mode-switch button:last-child')")
     await waitForRenderer(journal, "document.querySelectorAll('.journal-task-card').length === 2")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-mode-switch button:last-child').click()")
@@ -155,7 +157,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     const evidence = await request('summaryInput', { from, to })
     const summary = { from, to, createdAt: now, model: 'synthetic-smoke', items: [{ text: '阅读和设计工作日志原型（合成测试）。', sourceIds: [`capture:${saved.id}`] }], sources: evidence.sources, truncated: false }
     await request('summarySave', { generation: evidence.generation, summary })
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[1].click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '关键画面').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-capture-card')")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-capture-card').scrollIntoView({block:'center'})")
     try { await waitForRenderer(journal, "document.querySelector('.journal-capture-card img')") } catch (error) {
@@ -167,7 +169,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await journal.webContents.executeJavaScript("document.querySelector('.journal-capture-card').click()")
     await waitForRenderer(journal, "document.querySelector('dialog[open] img') && document.querySelector('dialog pre')")
     await journal.webContents.executeJavaScript("document.querySelector('dialog header button').click()")
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[2].click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志总结').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-summary-items li')")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-summary-intro button').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-summary-items h3') && document.querySelector('.journal-next-step')")
@@ -177,7 +179,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await journal.webContents.executeJavaScript("document.querySelector('.journal-source-links button').click()")
     await waitForRenderer(journal, "document.querySelector('dialog[open] img')")
     await journal.webContents.executeJavaScript("document.querySelector('dialog header button').click()")
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[3].click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志问答').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-question-examples button')")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-question-examples button').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-ask textarea').value.length > 0")
@@ -187,11 +189,11 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     const usageRecords = await request('analysisRecords', { from, to })
     if (usageRecords.length !== 2 || usageRecords.some((record: any) => record.model !== 'journal-smoke-resolved' || record.requestedModel !== 'journal-smoke' || record.usage?.totalTokens !== 160 || record.state !== 'success')) throw new Error('Journal model and token history did not persist')
     if ((await request('summary', { from, to })).usage?.inputTokens !== 120) throw new Error('Summary lost token usage')
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[4].click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === 'AI 用量').click()")
     await waitForRenderer(journal, "document.querySelectorAll('.journal-usage-list li').length === 2 && document.querySelector('.journal-usage-history').textContent.includes('320')")
     // Question and draft survive both tab navigation and a round trip to another date.
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[0].click()")
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[3].click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志问答').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-answer') && document.querySelector('.journal-ask textarea').value.length > 0")
     await journal.webContents.executeJavaScript("document.querySelector('[aria-label=前一天]').click()")
     await waitForRenderer(journal, "!document.querySelector('.journal-answer') && !document.querySelector('.journal-ask textarea').value")
@@ -218,7 +220,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await waitForRenderer(journal, "!document.querySelector('.journal-answer') && !document.querySelector('.journal-ask textarea').value")
     const secondFrame = await request('capture', { ...imagePayload, at: at + 1000, bytes: picture.resize({ width: Math.max(1, picture.getSize().width - 1) }).toJPEG(80) })
     await request('ocrDone', { id: secondFrame.id, text: '第二张合成画面' })
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[0].click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find(button=>button.textContent==='活动轨迹').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-mode-switch button:first-child')")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-mode-switch button:first-child').click()")
     await waitForRenderer(journal, "document.querySelectorAll('.journal-task-card').length === 2")
@@ -278,7 +280,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await journal.webContents.executeJavaScript(`window.electronAPI.journal.summarize(${JSON.stringify({ from, to })})`)
     if (!(await request('tasks', { from, to })).items.some((task: any) => task.title === '手动修正：登录排查')) throw new Error('Regeneration discarded task correction')
     if ((await request('summary', { from, to })).items[0].title !== '手动修正：登录排查') throw new Error('Summary did not reflect the corrected title')
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[2].click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志总结').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-summary-items h3')")
     const directory = process.env.CHOUYU_JOURNAL_ARTIFACTS || process.env.CHOUYU_SMOKE_ARTIFACTS
     if (directory) {
@@ -299,15 +301,15 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
           journal.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
           journal.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
           await waitForRenderer(journal, "!document.querySelector('.journal-settings-dialog')")
-          await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[4].click()")
+          await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === 'AI 用量').click()")
           await waitForRenderer(journal, "document.querySelectorAll('.journal-usage-list li').length === 4")
           writeFileSync(join(directory, `journal-usage-${theme}-${width}.png`), (await journal.webContents.capturePage()).toPNG())
-          await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[1].click()")
+          await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '关键画面').click()")
           await waitForRenderer(journal, "document.querySelector('.journal-capture-card')")
           await journal.webContents.executeJavaScript("document.querySelector('.journal-capture-card').scrollIntoView({block:'center'})")
           await waitForRenderer(journal, "document.querySelector('.journal-capture-card img')")
           writeFileSync(join(directory, `journal-captures-${theme}-${width}.png`), (await journal.webContents.capturePage()).toPNG())
-          await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[0].click()")
+          await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
           await waitForRenderer(journal, "document.querySelector('.journal-task-card')")
           writeFileSync(join(directory, `journal-tasks-${theme}-${width}.png`), (await journal.webContents.capturePage()).toPNG())
           await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-task-card')].find(button => button.textContent.includes('手动修正')).click()")
@@ -319,15 +321,15 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
           if (await journal.webContents.executeJavaScript("document.querySelector('.journal-detail-panel').scrollWidth > document.querySelector('.journal-detail-panel').clientWidth + 1")) throw new Error('Journal editor horizontal overflow')
           writeFileSync(join(directory, `journal-edit-${theme}-${width}.png`), (await journal.webContents.capturePage()).toPNG())
           await journal.webContents.executeJavaScript("document.querySelector('.journal-detail-panel header button').click()")
-          await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[2].click()")
+          await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志总结').click()")
           await waitForRenderer(journal, "document.querySelector('.journal-summary-items li')")
         }
       }
     }
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[0].click()")
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[3].click(); [...document.querySelectorAll('.journal-ask > button')].find(button=>button.textContent==='开始新问答').click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志问答').click(); [...document.querySelectorAll('.journal-ask > button')].find(button=>button.textContent==='开始新问答').click()")
     await waitForRenderer(journal, "!document.querySelector('.journal-answer') && !document.querySelector('.journal-ask textarea').value")
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[0].click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
     // Delete through the actual UI, including its explicit confirmation.
     await journal.webContents.executeJavaScript("document.querySelector('.journal-more').open = true; document.querySelector('.journal-more button').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-delete')")
@@ -360,6 +362,9 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await new Promise<void>(resolve => { journal!.webContents.once('did-finish-load', () => resolve()); journal!.webContents.reload() })
     await waitForRenderer(journal, "document.querySelector('.app-container')")
     await journal.webContents.executeJavaScript('window.electronAPI.journal.open()')
+    await waitForRenderer(journal, "document.querySelector('[data-workspace-page=journal]')")
+    // 重载后回到默认概览视图，单条删除断言需要活动轨迹的任务卡片。
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-task-card')?.textContent.includes('单条删除测试')")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-task-card').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-detail-activities article button:last-child')")
@@ -376,14 +381,19 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await new Promise<void>(resolve => { journal!.webContents.once('did-finish-load', () => resolve()); journal!.webContents.reload() })
     await waitForRenderer(journal, "document.querySelector('.app-container')")
     await journal.webContents.executeJavaScript('window.electronAPI.journal.open()')
-    await waitForRenderer(journal, "document.querySelectorAll('.journal-task-list li').length === 100")
+    await waitForRenderer(journal, "document.querySelector('[data-workspace-page=journal]')")
+    // 重载后回到默认概览视图，分页断言需要活动轨迹的事项列表。
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
+    // 后端 list/tasks 页大小为 50，101 条记录首页渲染 50 条。
+    await waitForRenderer(journal, "document.querySelectorAll('.journal-task-list li').length === 50", 15000)
     const verifyScroll = async () => {
-      const scrollable = await journal!.webContents.executeJavaScript("(() => { const list=document.querySelector('.journal-list-scroll'); list.scrollTop=80; return list.scrollHeight>list.clientHeight && list.scrollTop>0 && getComputedStyle(list,'::-webkit-scrollbar').width==='8px' })()")
-      if (!scrollable) throw new Error('Journal list has no visible independently scrollable scrollbar')
+      // ed62661 起活动列表不再内嵌独立滚动区，整页由 .journal-shell 滚动（6px 滚动条）。
+      const scrollable = await journal!.webContents.executeJavaScript("(() => { const shell=document.querySelector('.journal-shell'); shell.scrollTop=80; return shell.scrollHeight>shell.clientHeight && shell.scrollTop>0 && getComputedStyle(shell,'::-webkit-scrollbar').width==='6px' })()")
+      if (!scrollable) throw new Error('Journal activity list has no scrollable shell with a visible scrollbar')
     }
     await verifyScroll()
     await journal.webContents.executeJavaScript("document.querySelector('.journal-mode-switch button:last-child').click()")
-    await waitForRenderer(journal, "document.querySelectorAll('.journal-timeline li').length === 100")
+    await waitForRenderer(journal, "document.querySelectorAll('.journal-timeline li').length === 50", 15000)
     await verifyScroll()
     for (let index = 101; index < 450; index++) await request('sample', { app: 'editor.exe', title: `sample ${index}`, at: from + index * 1000 })
     const sampled = await request('summaryInput', { from, to })
@@ -543,7 +553,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
       crossDayIds.push(`capture:${capture.id}`)
     }
     await inputSearch('.journal-date input', todayKey)
-    await journal.webContents.executeJavaScript("document.querySelectorAll('.journal-view-nav button')[3].click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志问答').click()")
     await waitForRenderer(journal, "document.querySelector('[aria-label=问答开始日期]')")
     await inputSearch('[aria-label=问答开始日期]', prior.toLocaleDateString('sv-SE'))
     const askCrossDay = async (question: string, count: number) => {
