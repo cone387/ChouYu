@@ -272,6 +272,9 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await click(window, '[data-workspace-nav="journal"]')
     await waitForRenderer(window, "document.querySelector('[data-workspace-page=journal]') && document.querySelector('.journal-date input')")
     await input(window, '.journal-date input', '2001-01-02')
+    // 搜索框只在活动轨迹/关键画面视图渲染，先切到活动轨迹再填写。
+    await window.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.journal-search input'))")
     await input(window, '.journal-search input', '导航保留活动')
     await waitForRenderer(window, "document.querySelector('.journal-status') && document.querySelector('.journal-status').textContent !== '正在加载' && !document.querySelector('.journal-day-panel')?.textContent.includes('正在读取')")
     await window.webContents.executeJavaScript(`(async () => {
@@ -294,6 +297,8 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('[data-workspace-page=memory]') && document.querySelector('[aria-label=搜索记忆]').value === '导航保留筛选'")
     await input(window, '[aria-label="搜索记忆"]', '')
     await click(window, '[data-workspace-nav="journal"]')
+    // 视图标签循环结束后回到概览，切回活动轨迹后才能断言搜索词保留。
+    await window.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
     await waitForRenderer(window, "document.querySelector('.journal-date input').value === '2001-01-02' && document.querySelector('.journal-search input').value === '导航保留活动'")
     const now = new Date()
     await input(window, '.journal-date input', `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`)
