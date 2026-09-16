@@ -38,12 +38,14 @@ describe('contacts layout', () => {
     for (const hook of hooks) expect(viewSource).toContain(hook)
   })
 
-  it('styles the list as one continuous WeChat panel with inset row dividers', () => {
+  it('styles the list as a continuous white WeChat 4.0 panel without row dividers', () => {
     expect(cssSource).toContain('var(--bg-secondary)')
     expect(cssSource).toContain('var(--bg-primary)')
     expect(cssSource).toContain('var(--accent)')
-    expect(cssSource).toMatch(/\.contacts-letter \{ position: sticky/)
-    expect(cssSource).toMatch(/\.contacts-row \+ \.contacts-row::before/)
+    expect(cssSource).toMatch(/\.contacts-letter \{ position: sticky[^}]*background: var\(--bg-primary\)/)
+    expect(cssSource).toMatch(/\.contacts-item \{[^}]*border: none/)
+    expect(cssSource).not.toContain('.contacts-row + .contacts-row')
+    expect(cssSource).toMatch(/\.contacts-new-row \{[^}]*background: color-mix/)
     expect(cssSource).toMatch(/\.contacts-row-actions \{[^}]*opacity: 0/)
     expect(cssSource).toContain('.contacts-row:hover .contacts-row-actions')
   })
