@@ -263,7 +263,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
       buttons[0].focus();
       buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
       if (document.activeElement !== buttons[1]) throw new Error('Navigation arrow keys did not move focus');
-      if (buttons.length !== 5 || buttons.some(button => button.textContent.trim() || !button.title || !button.getAttribute('aria-label'))) throw new Error('Navigation must have five labelled icon-only controls');
+      if (buttons.length !== 6 || buttons.some(button => button.textContent.trim() || !button.title || !button.getAttribute('aria-label'))) throw new Error('Navigation must have six labelled icon-only controls');
       if (buttons.some(button => !['none', 'normal'].includes(getComputedStyle(button, '::before').content))) throw new Error('Navigation must not have a colored edge marker');
     })()`)
     await click(window, '[data-workspace-nav="memory"]')
