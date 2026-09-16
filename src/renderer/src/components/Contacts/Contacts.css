@@ -1,23 +1,91 @@
-.contacts-view { display: flex; flex-direction: column; gap: 10px; height: 100%; overflow-y: auto; padding: 12px; min-width: 0; }
-.contacts-toolbar { display: flex; gap: 8px; }
-.contacts-search { flex: 1; min-width: 0; }
-.contacts-new { white-space: nowrap; }
-.contacts-error { color: var(--error); }
-.contacts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.contacts-list li { display: flex; align-items: center; gap: 6px; }
-.contacts-item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; text-align: left; }
-.contacts-avatar { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: rgba(127, 127, 127, .15); font-size: 18px; }
-.contacts-meta { min-width: 0; display: flex; flex-direction: column; }
-.contacts-name { font-weight: 600; }
-.contacts-builtin { margin-left: 6px; font-size: 11px; font-style: normal; opacity: .7; }
-.contacts-sub { font-size: 12px; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.contacts-empty { opacity: .7; }
-.contacts-confirm { border: 1px solid var(--error-border); border-radius: 8px; padding: 10px 12px; }
-.contacts-confirm > div { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
-.contacts-form { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid rgba(127, 127, 127, .3); padding-top: 10px; }
-.contacts-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.contacts-form input, .contacts-form textarea, .contacts-form select { width: 100%; box-sizing: border-box; }
-.contacts-hint { font-size: 12px; opacity: .7; }
-.contacts-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.contacts-view button.danger, .contacts-confirm button.danger { color: var(--error); }
-@media (prefers-reduced-motion: reduce) { .contacts-view * { transition: none; } }
+/* 微信通讯录风格：灰底列表 + 白色单元行 + 粘性字母组头 + 右侧字母索引。颜色全部走主题变量。 */
+.contacts-view { position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; padding: 10px 0 0; background: var(--bg-secondary); }
+
+/* 顶部：搜索条 + 圆形加号（微信通讯录顶栏） */
+.contacts-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 12px 10px; }
+.contacts-search-box { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 8px; background: var(--bg-primary); color: var(--text-muted); transition: box-shadow .18s ease, color .18s ease; }
+.contacts-search-box:focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); color: var(--text-primary); }
+.contacts-search { flex: 1; min-width: 0; border: none; background: transparent; color: var(--text-primary); font-size: 13px; outline: none; }
+.contacts-search::placeholder { color: var(--text-muted); }
+.contacts-add { flex: none; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: none; border-radius: 50%; background: var(--accent); color: var(--on-accent); cursor: pointer; transition: background-color .18s ease; }
+.contacts-add:hover { background: var(--accent-hover); }
+.contacts-add:disabled { opacity: .5; cursor: default; }
+
+.contacts-error { margin: 0 12px 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--error-border); color: var(--error); font-size: 12px; background: var(--bg-primary); }
+
+/* 列表主体：滚动区 + 右侧索引条 */
+.contacts-body { position: relative; flex: 1; min-height: 0; display: flex; }
+.contacts-scroll { flex: 1; min-width: 0; overflow-y: auto; padding-bottom: 12px; }
+
+.contacts-section { background: var(--bg-primary); border-radius: 10px; margin: 0 12px 8px; overflow: hidden; }
+.contacts-section-pinned { margin-bottom: 10px; }
+.contacts-letter { position: sticky; top: 0; z-index: 2; margin: 0; padding: 3px 12px 2px; font-size: 12px; font-weight: 600; color: var(--text-muted); background: var(--bg-secondary); }
+.contacts-section ul { list-style: none; margin: 0; padding: 0; }
+
+.contacts-row { position: relative; display: flex; align-items: stretch; }
+.contacts-row + .contacts-row { border-top: 1px solid var(--border); }
+.contacts-row-actions { position: absolute; top: 0; right: 4px; bottom: 0; z-index: 1; display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity .18s ease; }
+.contacts-row:hover .contacts-row-actions, .contacts-row:focus-within .contacts-row-actions { opacity: 1; }
+.contacts-action { width: 34px; height: 44px; display: grid; place-items: center; padding: 0; border: none; background: transparent; color: var(--text-secondary); border-radius: 8px; cursor: pointer; transition: color .18s ease, background-color .18s ease; }
+.contacts-action:hover { color: var(--text-primary); background: var(--bg-secondary); }
+.contacts-action-danger:hover { color: var(--error); }
+
+.contacts-item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 12px; text-align: left; background: transparent; cursor: pointer; transition: background-color .16s ease; }
+.contacts-item:hover { background: var(--bg-secondary); }
+.contacts-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.contacts-avatar { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 9px; background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 20px; line-height: 1; }
+.contacts-avatar-default { background: var(--accent); }
+.contacts-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.contacts-name { font-size: 14px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 76px; }
+.contacts-builtin { margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-style: normal; font-weight: 500; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.contacts-sub { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contacts-chevron { flex: none; color: var(--text-muted); opacity: .5; }
+
+.contacts-empty { margin: 32px 0; text-align: center; font-size: 13px; color: var(--text-muted); }
+
+/* 右侧 A-Z 索引条：点击跳组，悬停放大命中 */
+.contacts-index { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 4px; }
+.contacts-index-item { width: 18px; height: 17px; display: grid; place-items: center; padding: 0; border: none; background: transparent; color: var(--text-muted); font-size: 10px; line-height: 1; border-radius: 6px; cursor: pointer; transition: color .16s ease, background-color .16s ease; }
+.contacts-index-item:hover, .contacts-index-item.active { color: var(--accent); font-weight: 700; }
+.contacts-index-item.active { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* 跳组时中央大字母气泡（微信式反馈） */
+.contacts-bubble { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%); z-index: 3; width: 60px; height: 60px; display: grid; place-items: center; border-radius: 14px; background: color-mix(in srgb, var(--accent) 88%, transparent); color: var(--on-accent); font-size: 28px; font-weight: 700; pointer-events: none; }
+
+/* 居中模态：确认删除 / 角色表单 */
+.contacts-scrim { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--bg-secondary) 55%, transparent); backdrop-filter: blur(2px); }
+.contacts-confirm { width: min(320px, 100%); padding: 18px 18px 12px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); font-size: 13px; line-height: 1.6; box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
+.contacts-confirm-title { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.contacts-confirm p { margin: 0; }
+.contacts-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.contacts-confirm-actions button { min-width: 64px; min-height: 32px; padding: 0 14px; border-radius: 8px; border: none; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; cursor: pointer; transition: background-color .16s ease; }
+.contacts-confirm-actions button:hover { background: color-mix(in srgb, var(--text-muted) 18%, transparent); }
+.contacts-confirm-actions button.danger { background: var(--error); color: #fff; }
+.contacts-confirm-actions button.danger:hover { background: color-mix(in srgb, var(--error) 85%, #000); }
+.contacts-confirm-actions button:disabled { opacity: .5; cursor: default; }
+
+.contacts-form { width: min(420px, 100%); max-height: 100%; overflow-y: auto; padding: 16px 16px 12px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
+.contacts-form h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+.contacts-field { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.contacts-field:first-of-type { border-top: none; }
+.contacts-field-name { flex: none; width: 44px; color: var(--text-secondary); }
+.contacts-field input, .contacts-field select { flex: 1; min-width: 0; border: none; background: transparent; color: var(--text-primary); font-size: 13px; outline: none; padding: 4px 0; }
+.contacts-field input:focus-visible, .contacts-field select:focus-visible, .contacts-field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.contacts-field input::placeholder { color: var(--text-muted); }
+.contacts-field-multiline { align-items: flex-start; }
+.contacts-field-multiline .contacts-field-name { padding-top: 6px; }
+.contacts-field textarea { flex: 1; min-width: 0; resize: vertical; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; line-height: 1.6; padding: 8px; outline: none; }
+.contacts-fetch { margin: 10px 0 0; min-height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: color .16s ease, border-color .16s ease; }
+.contacts-fetch:hover:not(:disabled) { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.contacts-fetch:disabled { opacity: .5; cursor: default; }
+.contacts-hint { margin: 6px 0 0; font-size: 12px; color: var(--text-muted); }
+.contacts-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.contacts-form-actions button { min-width: 72px; min-height: 34px; padding: 0 16px; border-radius: 9px; border: none; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; cursor: pointer; transition: background-color .16s ease; }
+.contacts-form-actions button:hover:not(:disabled) { background: color-mix(in srgb, var(--text-muted) 18%, transparent); }
+.contacts-form-actions button.primary { background: var(--accent); color: var(--on-accent); }
+.contacts-form-actions button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+.contacts-form-actions button:disabled { opacity: .5; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  .contacts-view *, .contacts-view { transition: none !important; scroll-behavior: auto !important; }
+}
