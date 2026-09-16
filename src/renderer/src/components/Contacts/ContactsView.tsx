@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DEFAULT_CHARACTER_ID, type CharacterStats } from '../../../../shared/characters'
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
@@ -20,52 +20,35 @@ interface FormState {
   model: string
 }
 
-interface ContactSection {
-  letter: string
-  items: CharacterStats[]
-}
+type CategoryFilter = 'all' | 'builtIn' | 'custom'
 
 const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '' }
 
-// GB2312 一级汉字按拼音分区的边界字（无 I/U/V 声母），配合 zh 拼音 Collator 推断首字母。
-const PINYIN_BOUNDARIES: readonly (readonly [string, string])[] = [
-  ['A', '阿'], ['B', '芭'], ['C', '擦'], ['D', '搭'], ['E', '蛾'], ['F', '发'], ['G', '噶'], ['H', '哈'],
-  ['J', '击'], ['K', '喀'], ['L', '垃'], ['M', '妈'], ['N', '拿'], ['O', '哦'], ['P', '啪'], ['Q', '期'],
-  ['R', '然'], ['S', '撒'], ['T', '塌'], ['W', '挖'], ['X', '希'], ['Y', '压'], ['Z', '匝']
-]
 const PINYIN_COLLATOR = new Intl.Collator('zh-Hans-CN-u-co-pinyin', { sensitivity: 'base' })
-
-function initialOf(name: string): string {
-  const first = Array.from(name.trim())[0] ?? ''
-  if (!first) return '#'
-  if (/[a-z]/i.test(first)) return first.toUpperCase()
-  if (!/[一-鿿]/.test(first)) return '#'
-  let current = '#'
-  for (const [letter, boundary] of PINYIN_BOUNDARIES) {
-    if (PINYIN_COLLATOR.compare(first, boundary) >= 0) current = letter
-    else break
-  }
-  return current
-}
 
 function sortByName(a: CharacterStats, b: CharacterStats): number {
   return PINYIN_COLLATOR.compare(a.name, b.name)
 }
 
+const CATEGORY_OPTIONS: readonly { value: CategoryFilter; label: string }[] = [
+  { value: 'all', label: '全部' },
+  { value: 'builtIn', label: '内置' },
+  { value: 'custom', label: '自定义' }
+]
+
 export default function ContactsView({ active, config, onOpenChat, onDeleted }: ContactsViewProps) {
   const [characters, setCharacters] = useState<CharacterStats[]>([])
   const [profiles, setProfiles] = useState<ResolvedProviderProfile[]>([])
   const [query, setQuery] = useState('')
+  const [category, setCategory] = useState<CategoryFilter>('all')
+  const [modelFilter, setModelFilter] = useState('all')
+  const [detail, setDetail] = useState<CharacterStats | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [modelStatus, setModelStatus] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<CharacterStats | null>(null)
-  const [activeLetter, setActiveLetter] = useState('')
-  const [letterBubble, setLetterBubble] = useState('')
-  const scrollRef = useRef<HTMLDivElement | null>(null)
-  const bubbleTimer = useRef<number | undefined>(undefined)
 
   const refresh = useCallback(() => {
     void window.electronAPI.characters.list().then(setCharacters).catch(() => {})
@@ -78,58 +61,29 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
     return window.electronAPI.characters.onChanged(refresh)
   }, [active, refresh])
 
-  useEffect(() => () => window.clearTimeout(bubbleTimer.current), [])
+  const distinctModels = useMemo(
+    () => [...new Set(characters.map((character) => character.model).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b)),
+    [characters])
 
-  const searching = query.trim().length > 0
   const filtered = useMemo(() => {
-    if (!searching) return characters
     const normalized = query.trim().toLowerCase()
-    return characters.filter((character) =>
-      character.name.toLowerCase().includes(normalized) || character.model.toLowerCase().includes(normalized))
-  }, [characters, query, searching])
+    return characters
+      .filter((character) => category === 'all'
+        || (category === 'builtIn' ? character.builtIn : !character.builtIn))
+      .filter((character) => modelFilter === 'all' || character.model === modelFilter)
+      .filter((character) => !normalized
+        || character.name.toLowerCase().includes(normalized)
+        || character.model.toLowerCase().includes(normalized))
+      .sort(sortByName)
+  }, [characters, query, category, modelFilter])
 
-  const builtIn = useMemo(() => filtered.filter((character) => character.builtIn), [filtered])
-  const custom = useMemo(() => filtered.filter((character) => !character.builtIn), [filtered])
-
-  // 搜索态按微信行为打平展示；默认态按拼音首字母分组，'#' 垫底。
-  const sections = useMemo<ContactSection[]>(() => {
-    if (searching) return [{ letter: '', items: custom.sort(sortByName) }]
-    const grouped = new Map<string, CharacterStats[]>()
-    for (const character of custom) {
-      const letter = initialOf(character.name)
-      const bucket = grouped.get(letter)
-      if (bucket) bucket.push(character)
-      else grouped.set(letter, [character])
-    }
-    return [...grouped.entries()]
-      .map(([letter, items]) => ({ letter, items: items.sort(sortByName) }))
-      .sort((a, b) => (a.letter === '#' ? 1 : b.letter === '#' ? -1 : a.letter.localeCompare(b.letter)))
-  }, [custom, searching])
-  const letters = useMemo(() => sections.map((section) => section.letter).filter(Boolean), [sections])
-
-  const handleScroll = useCallback(() => {
-    const container = scrollRef.current
-    if (!container || searching || letters.length === 0) return
-    const marker = container.scrollTop + container.clientHeight * 0.25
-    let current = letters[0]
-    for (const letter of letters) {
-      const section = container.querySelector<HTMLElement>(`[data-contacts-section="${letter}"]`)
-      if (section && section.offsetTop <= marker) current = letter
-    }
-    setActiveLetter(current)
-  }, [letters, searching])
-
-  const jumpToLetter = useCallback((letter: string) => {
-    const container = scrollRef.current
-    const section = container?.querySelector<HTMLElement>(`[data-contacts-section="${letter}"]`)
-    if (!container || !section) return
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    container.scrollTo({ top: section.offsetTop - container.offsetTop, behavior: reduced ? 'auto' : 'smooth' })
-    setActiveLetter(letter)
-    setLetterBubble(letter)
-    window.clearTimeout(bubbleTimer.current)
-    bubbleTimer.current = window.setTimeout(() => setLetterBubble(''), 600)
-  }, [])
+  const profileNameOf = useCallback((character: CharacterStats): string => {
+    const id = character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId
+    const profile = profiles.find((item) => item.id === id)
+    if (!profile) return id
+    return profile.builtIn ? `${profile.name}（设置页默认）` : profile.name
+  }, [profiles])
 
   const openForm = useCallback((character?: CharacterStats) => {
     setError('')
@@ -194,24 +148,6 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
     }
   }, [confirmDelete, onDeleted])
 
-  const renderRow = (character: CharacterStats) => <li key={character.id} className="contacts-row">
-    <button type="button" data-contacts-item={character.id} className="contacts-item"
-      onClick={() => onOpenChat(character.id)}>
-      <span className={`contacts-avatar${character.builtIn ? ' contacts-avatar-default' : ''}`} aria-hidden="true">{character.avatar}</span>
-      <span className="contacts-name">{character.name}{character.builtIn && <em className="contacts-builtin">内置</em>}</span>
-    </button>
-    <span className="contacts-row-actions">
-      <button type="button" data-contacts-edit={character.id} className="contacts-action" aria-label={`编辑 ${character.name}`}
-        onClick={() => openForm(character)}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
-      </button>
-      {!character.builtIn && <button type="button" data-contacts-delete={character.id} className="contacts-action contacts-action-danger"
-        aria-label={`删除 ${character.name}`} onClick={() => { setError(''); setConfirmDelete(character) }}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
-      </button>}
-    </span>
-  </li>
-
   return <div className="contacts-view" data-contacts-root>
     <div className="contacts-toolbar">
       <div className="contacts-search-box">
@@ -220,29 +156,73 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
           value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索角色" />
       </div>
     </div>
-    {error && <div className="contacts-error" role="alert">{error}</div>}
-    <div className="contacts-body">
-      <div className="contacts-scroll" ref={scrollRef} onScroll={handleScroll}>
-        {!searching && <button type="button" data-contacts-new className="contacts-new-row" onClick={() => openForm()}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M19 8v6M22 11h-6" /></svg>
-          <span>新建角色</span>
-        </button>}
-        {builtIn.length > 0 && <section className="contacts-section" aria-label="内置角色">
-          <ul role="list">{builtIn.map(renderRow)}</ul>
-        </section>}
-        {sections.map((section) => <section key={section.letter || 'search'} className="contacts-section"
-          data-contacts-section={section.letter || undefined}>
-          {!searching && <h4 className="contacts-letter" aria-hidden="true">{section.letter}</h4>}
-          <ul role="list">{section.items.map(renderRow)}</ul>
-        </section>)}
-        {filtered.length === 0 && <p className="contacts-empty">没有匹配的角色</p>}
+    <div className="contacts-filters">
+      <div className="contacts-filter-group" data-contacts-filter-category>
+        <span className="contacts-filter-label">分类</span>
+        <div className="contacts-filter-options" role="group" aria-label="按分类筛选">
+          {CATEGORY_OPTIONS.map((option) => <button key={option.value} type="button"
+            className="contacts-chip" aria-pressed={category === option.value}
+            onClick={() => setCategory(option.value)}>{option.label}</button>)}
+        </div>
       </div>
-      {!searching && letters.length > 0 && <nav className="contacts-index" aria-label="角色字母索引" data-contacts-index>
-        {letters.map((letter) => <button key={letter} type="button" className={`contacts-index-item${activeLetter === letter ? ' active' : ''}`}
-          data-contacts-index-item={letter} aria-label={`跳转到 ${letter}`} onClick={() => jumpToLetter(letter)}>{letter}</button>)}
-      </nav>}
-      {letterBubble && <div className="contacts-bubble" role="status" aria-hidden="true">{letterBubble}</div>}
+      {distinctModels.length > 0 && <div className="contacts-filter-group" data-contacts-filter-model>
+        <span className="contacts-filter-label">模型</span>
+        <div className="contacts-filter-options" role="group" aria-label="按模型筛选">
+          <button type="button" className="contacts-chip" aria-pressed={modelFilter === 'all'}
+            onClick={() => setModelFilter('all')}>全部</button>
+          {distinctModels.map((model) => <button key={model} type="button" className="contacts-chip"
+            aria-pressed={modelFilter === model} onClick={() => setModelFilter(model)}>{model}</button>)}
+        </div>
+      </div>}
     </div>
+    {error && <div className="contacts-error" role="alert">{error}</div>}
+    <div className="contacts-scroll">
+      <div className="contacts-grid">
+        <button type="button" data-contacts-new className="contacts-new-card" onClick={() => openForm()}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M19 8v6M22 11h-6" /></svg>
+          <span>新建角色</span>
+        </button>
+        {filtered.map((character) => <button key={character.id} type="button"
+          data-contacts-item={character.id} className="contacts-card" onClick={() => setDetail(character)}>
+          <span className={`contacts-card-avatar${character.builtIn ? ' contacts-card-avatar-default' : ''}`} aria-hidden="true">{character.avatar}</span>
+          <span className="contacts-card-name">{character.name}{character.builtIn && <em className="contacts-builtin">内置</em>}</span>
+          <span className="contacts-card-meta">{character.model}</span>
+          <span className="contacts-card-sub">{character.sessionCount} 个会话</span>
+        </button>)}
+      </div>
+      {filtered.length === 0 && <p className="contacts-empty">没有匹配的角色</p>}
+    </div>
+    {detail && <div className="contacts-scrim" role="presentation">
+      <div className="contacts-detail" role="dialog" aria-modal="true" aria-label={`角色详情 ${detail.name}`}
+        data-contacts-detail={detail.id}>
+        <div className="contacts-detail-head">
+          <span className={`contacts-detail-avatar${detail.builtIn ? ' contacts-detail-avatar-default' : ''}`} aria-hidden="true">{detail.avatar}</span>
+          <div>
+            <p className="contacts-detail-title">{detail.name}{detail.builtIn && <em className="contacts-builtin">内置</em>}</p>
+            <p className="contacts-detail-subtitle">{detail.builtIn ? '内置角色' : '自定义角色'}</p>
+          </div>
+        </div>
+        <div className="contacts-detail-fields">
+          <label className="contacts-field"><span className="contacts-field-name">模型</span>
+            <span className="contacts-detail-value">{detail.builtIn ? config.model : detail.model}</span></label>
+          <label className="contacts-field"><span className="contacts-field-name">档案</span>
+            <span className="contacts-detail-value">{profileNameOf(detail)}</span></label>
+          <label className="contacts-field"><span className="contacts-field-name">会话</span>
+            <span className="contacts-detail-value">{detail.sessionCount} 个</span></label>
+          <label className="contacts-field"><span className="contacts-field-name">最近活跃</span>
+            <span className="contacts-detail-value">{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</span></label>
+        </div>
+        <p className="contacts-detail-soul-title">人设</p>
+        <div className="contacts-detail-soul">{(detail.builtIn ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
+        <div className="contacts-detail-actions">
+          <button type="button" className="primary" data-contacts-start-chat={detail.id}
+            onClick={() => { onOpenChat(detail.id); setDetail(null) }}>开始对话</button>
+          <button type="button" data-contacts-edit={detail.id} onClick={() => { setDetail(null); openForm(detail) }}>编辑</button>
+          {!detail.builtIn && <button type="button" className="danger" data-contacts-delete={detail.id}
+            onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
+        </div>
+      </div>
+    </div>}
     {confirmDelete && <div className="contacts-scrim" role="presentation">
       <div className="contacts-confirm" role="alertdialog" aria-modal="true" aria-label="删除角色确认">
         <p className="contacts-confirm-title">删除角色</p>
