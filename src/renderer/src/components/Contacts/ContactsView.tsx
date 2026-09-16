@@ -178,33 +178,27 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
           className="contacts-sort-option" aria-pressed={sort === option.value}
           onClick={() => setSort(option.value)}>{option.label}</button>)}
       </div>
+      <button type="button" data-contacts-new className="contacts-new" onClick={() => openForm()}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        <span>新建</span>
+      </button>
     </div>
-    <div className="contacts-filters">
-      <div className="contacts-filter-group" data-contacts-filter-category>
-        <span className="contacts-filter-label">分类</span>
-        <div className="contacts-filter-options" role="group" aria-label="按分类筛选">
-          {CATEGORY_OPTIONS.map((option) => <button key={option.value} type="button"
-            className="contacts-chip" aria-pressed={category === option.value}
-            onClick={() => setCategory(option.value)}>{option.label}</button>)}
-        </div>
+    <div className="contacts-tabs">
+      <div className="contacts-tab-list" data-contacts-filter-category role="group" aria-label="按分类筛选">
+        {CATEGORY_OPTIONS.map((option) => <button key={option.value} type="button"
+          className="contacts-tab" aria-pressed={category === option.value}
+          onClick={() => setCategory(option.value)}>{option.label}</button>)}
       </div>
-      {distinctModels.length > 0 && <div className="contacts-filter-group" data-contacts-filter-model>
-        <span className="contacts-filter-label">模型</span>
-        <div className="contacts-filter-options" role="group" aria-label="按模型筛选">
-          <button type="button" className="contacts-chip" aria-pressed={modelFilter === 'all'}
-            onClick={() => setModelFilter('all')}>全部</button>
-          {distinctModels.map((model) => <button key={model} type="button" className="contacts-chip"
-            aria-pressed={modelFilter === model} onClick={() => setModelFilter(model)}>{model}</button>)}
-        </div>
+      {distinctModels.length > 0 && <div className="contacts-tab-models" data-contacts-filter-model role="group" aria-label="按模型筛选">
+        <button type="button" className="contacts-chip" aria-pressed={modelFilter === 'all'}
+          onClick={() => setModelFilter('all')}>全部模型</button>
+        {distinctModels.map((model) => <button key={model} type="button" className="contacts-chip"
+          aria-pressed={modelFilter === model} onClick={() => setModelFilter(model)}>{model}</button>)}
       </div>}
     </div>
     {error && <div className="contacts-error" role="alert">{error}</div>}
     <div className="contacts-scroll">
       <div className="contacts-grid">
-        <button type="button" data-contacts-new className="contacts-new-card" onClick={() => openForm()}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M19 8v6M22 11h-6" /></svg>
-          <span>新建角色</span>
-        </button>
         {filtered.map((character) => {
           const model = character.builtIn ? config.model : character.model
           const soulSummary = summarizeSoulMd(character.builtIn ? config.soulMd : character.soulMd)

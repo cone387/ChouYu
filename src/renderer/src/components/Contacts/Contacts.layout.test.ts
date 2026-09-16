@@ -11,12 +11,17 @@ describe('contacts layout', () => {
     expect(viewSource).toMatch(/function sortByName/)
   })
 
-  it('lays filter options flat as toggle chips', () => {
+  it('turns categories into a label-free tab strip with model chips beside it', () => {
     expect(viewSource).toContain('data-contacts-filter-category')
     expect(viewSource).toContain('data-contacts-filter-model')
+    expect(viewSource).not.toContain('contacts-filter-label')
     expect(viewSource).toContain('aria-pressed={category === option.value}')
+    expect(viewSource).toContain('>全部模型</button>')
+    expect(cssSource).toMatch(/\.contacts-tab-list \{/)
+    expect(cssSource).toMatch(/\.contacts-tab\[aria-pressed="true"\]/)
+    expect(cssSource).toMatch(/\.contacts-tab\[aria-pressed="true"\]::after/)
+    expect(cssSource).toMatch(/\.contacts-tab-models \{[^}]*flex-wrap: wrap/)
     expect(cssSource).toMatch(/\.contacts-chip\[aria-pressed="true"\]/)
-    expect(cssSource).toMatch(/\.contacts-filter-options \{[^}]*flex-wrap: wrap/)
   })
 
   it('renders contacts as marketplace cards on a light gray grid', () => {
@@ -49,9 +54,17 @@ describe('contacts layout', () => {
     expect(cssSource).toMatch(/\.contacts-sort-option\[aria-pressed="true"\]/)
   })
 
-  it('offers the new-character action as a dashed card in the grid', () => {
-    expect(viewSource).toContain('contacts-new-card')
-    expect(cssSource).toMatch(/\.contacts-new-card \{[^}]*border: 1px dashed/)
+  it('moves the new-character action into the search toolbar row', () => {
+    expect(viewSource).toMatch(/data-contacts-new className="contacts-new"/)
+    expect(viewSource).not.toContain('contacts-new-card')
+    expect(cssSource).toMatch(/\.contacts-new \{[^}]*background: var\(--accent\)/)
+    expect(cssSource).toMatch(/\.contacts-toolbar \{[^}]*display: flex/)
+  })
+
+  it('lets the detail panel and character form be resized freely', () => {
+    expect(cssSource).toMatch(/\.contacts-detail \{[^}]*resize: both/)
+    expect(cssSource).toMatch(/\.contacts-form \{[^}]*resize: both/)
+    expect(cssSource).toMatch(/\.contacts-detail \{[^}]*width: min\(460px, 100%\)/)
   })
 
   it('opens a detail panel on card click with chat, edit and delete actions', () => {
