@@ -22,10 +22,10 @@
 /* 分类标签页：下划线高亮，无文字 label；模型条件以筛选片并列右侧 */
 .contacts-tabs { display: flex; align-items: stretch; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; padding: 0 12px; background: var(--bg-primary); border-bottom: 1px solid var(--border); }
 .contacts-tab-list { display: flex; gap: 4px; min-width: 0; }
-.contacts-tab { position: relative; min-height: 34px; padding: 0 12px; border: none; background: transparent; color: var(--text-secondary); font-size: 13px; cursor: pointer; transition: color .16s ease; }
+.contacts-tab { position: relative; min-height: 34px; padding: 0 10px; border: none; background: transparent; color: var(--text-secondary); font-size: 13px; cursor: pointer; transition: color .16s ease; }
 .contacts-tab:hover { color: var(--text-primary); }
 .contacts-tab[aria-pressed="true"] { color: var(--accent); font-weight: 600; }
-.contacts-tab[aria-pressed="true"]::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; border-radius: 1px; background: var(--accent); }
+.contacts-tab[aria-pressed="true"]::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 1px; background: var(--accent); }
 .contacts-tab-models { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 0; }
 .contacts-chip { min-height: 26px; padding: 0 12px; border: none; border-radius: 13px; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-secondary); font-size: 12px; line-height: 1; cursor: pointer; transition: background-color .16s ease, color .16s ease; }
 .contacts-chip:hover { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-primary); }
@@ -67,7 +67,7 @@
 .contacts-detail-fields { margin-top: 8px; }
 .contacts-detail-fields .contacts-field { border-top: 1px solid var(--border); }
 .contacts-detail-fields .contacts-field:first-of-type { border-top: none; }
-.contacts-field { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 4px 0; font-size: 13px; }
+.contacts-field { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 0; font-size: 13px; }
 .contacts-field-name { flex: none; width: 44px; color: var(--text-secondary); }
 .contacts-detail-value { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contacts-detail-soul-title { margin: 8px 0 5px; font-size: 12px; color: var(--text-muted); }
@@ -91,9 +91,9 @@
 .contacts-confirm-actions button.danger:hover { background: color-mix(in srgb, var(--error) 85%, #000); }
 .contacts-confirm-actions button:disabled { opacity: .5; cursor: default; }
 
-.contacts-form { position: absolute; min-width: 340px; min-height: 220px; overflow: auto; padding: 12px 16px 10px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
+.contacts-form { position: absolute; min-width: 340px; min-height: 220px; overflow: auto; padding: 12px 16px 8px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
 .contacts-form form { display: flex; flex-direction: column; }
-.contacts-form h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.contacts-form h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
 /* 模态边框拖拽把手：8px 命中区，光标提示方向 */
 .contacts-resize { position: absolute; z-index: 2; touch-action: none; }
 .contacts-resize-n { top: 0; left: 0; right: 0; height: 8px; cursor: ns-resize; }
@@ -109,8 +109,8 @@
 .contacts-field-multiline .contacts-field-name { padding-top: 6px; }
 /* 头像：行内实时预览 + emoji 快选 */
 .contacts-avatar-preview { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 18px; line-height: 1; }
-.contacts-avatar-palette { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; padding-left: 54px; }
-.contacts-avatar-option { width: 30px; height: 30px; display: grid; place-items: center; border: none; border-radius: 8px; background: color-mix(in srgb, var(--text-muted) 8%, transparent); font-size: 16px; line-height: 1; cursor: pointer; transition: background-color .16s ease; }
+.contacts-avatar-palette { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 54px; }
+.contacts-avatar-option { width: 28px; height: 28px; display: grid; place-items: center; border: none; border-radius: 8px; background: color-mix(in srgb, var(--text-muted) 8%, transparent); font-size: 16px; line-height: 1; cursor: pointer; transition: background-color .16s ease; }
 .contacts-avatar-option:hover { background: color-mix(in srgb, var(--text-muted) 16%, transparent); }
 .contacts-avatar-option[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
 .contacts-field textarea { flex: 1; min-width: 0; resize: vertical; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; line-height: 1.6; padding: 8px; outline: none; }

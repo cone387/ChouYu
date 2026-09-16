@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_APP_CONFIG, DEFAULT_SOUL_MD, type AppConfig } from './config'
 import {
-  DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS, Character, CharacterDraft,
+  DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABELS, MAX_CHARACTER_COUNT, PRESET_CHARACTERS, Character, CharacterDraft,
   createDefaultCharacter, isDefaultCharacter, normalizeCharacters,
   resolveCharacterConfig, sanitizeCharacterDraft
 } from './characters'
@@ -9,7 +9,7 @@ import {
 const baseConfig: AppConfig = { ...DEFAULT_APP_CONFIG, baseUrl: 'https://api.example.com/v1', apiKey: 'sk-x', model: 'gpt-test' }
 
 const customCharacter: Character = {
-  id: 'c1', name: '小猫', avatar: '🐱', soulMd: '# 小猫人设',
+  id: 'c1', name: '小猫', avatar: '🐱', category: '', soulMd: '# 小猫人设',
   providerProfileId: 'default', model: 'claude-test', builtIn: false,
   createdAt: 1, updatedAt: 2
 }
@@ -17,7 +17,7 @@ const customCharacter: Character = {
 describe('sanitizeCharacterDraft', () => {
   it('requires name and model and fills defaults', () => {
     expect(sanitizeCharacterDraft({ name: ' 小猫 ', model: ' m1 ', soulMd: 'x', providerProfileId: 'default' }))
-      .toEqual({ name: '小猫', avatar: '小', soulMd: 'x', providerProfileId: 'default', model: 'm1' })
+      .toEqual({ name: '小猫', avatar: '小', category: '', soulMd: 'x', providerProfileId: 'default', model: 'm1' })
   })
   it('rejects missing name or model', () => {
     expect(sanitizeCharacterDraft({ name: '', model: 'm' })).toBeNull()
@@ -28,6 +28,24 @@ describe('sanitizeCharacterDraft', () => {
     const draft = sanitizeCharacterDraft({ name: '🐱猫', model: 'm' })
     expect(draft?.avatar).toBe('🐱')
     expect(draft?.avatar.length).toBe(2)
+  })
+  it('keeps a known industry category and drops unknown values', () => {
+    expect(sanitizeCharacterDraft({ name: '小猫', model: 'm', category: 'tech' })?.category).toBe('tech')
+    expect(sanitizeCharacterDraft({ name: '小猫', model: 'm', category: 'nope' })?.category).toBe('')
+    expect(sanitizeCharacterDraft({ name: '小猫', model: 'm' })?.category).toBe('')
+  })
+})
+
+describe('industries', () => {
+  it('offers a multi-industry catalog with unique ids and labels', () => {
+    expect(INDUSTRIES.length).toBeGreaterThanOrEqual(8)
+    expect(new Set(INDUSTRIES.map((industry) => industry.id)).size).toBe(INDUSTRIES.length)
+    expect(new Set(INDUSTRIES.map((industry) => industry.label)).size).toBe(INDUSTRIES.length)
+    for (const industry of INDUSTRIES) {
+      expect(industry.id).toMatch(/^[a-z]+$/)
+      expect(industry.label.length).toBeGreaterThanOrEqual(2)
+      expect(INDUSTRY_LABELS[industry.id]).toBe(industry.label)
+    }
   })
 })
 
@@ -43,6 +61,11 @@ describe('preset characters', () => {
       expect(Array.from(preset.avatar).length).toBeGreaterThanOrEqual(1)
       expect(preset.name.length).toBeLessThanOrEqual(24)
       expect(preset.soulMd.trim().length).toBeGreaterThan(10)
+      expect(preset.category in INDUSTRY_LABELS).toBe(true)
+    }
+    // 每个行业至少有一个预设，保证行业 tab 不落空。
+    for (const industry of INDUSTRIES) {
+      expect(PRESET_CHARACTERS.some((preset) => preset.category === industry.id)).toBe(true)
     }
   })
   it('normalizes seeded presets as regular editable characters', () => {
@@ -54,7 +77,7 @@ describe('preset characters', () => {
     expect(characters).toHaveLength(PRESET_CHARACTERS.length + 1)
     for (const preset of PRESET_CHARACTERS) {
       const match = characters.find((character) => character.id === preset.id)
-      expect(match).toMatchObject({ name: preset.name, avatar: preset.avatar, soulMd: preset.soulMd, builtIn: false })
+      expect(match).toMatchObject({ name: preset.name, avatar: preset.avatar, category: preset.category, soulMd: preset.soulMd, builtIn: false })
     }
   })
 })

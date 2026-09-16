@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { DEFAULT_CHARACTER_ID, type CharacterStats } from '../../../../shared/characters'
+import { DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABELS, type CharacterStats } from '../../../../shared/characters'
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
 import './Contacts.css'
@@ -15,15 +15,16 @@ interface FormState {
   id: string | null
   name: string
   avatar: string
+  category: string
   soulMd: string
   providerProfileId: string
   model: string
 }
 
-type CategoryFilter = 'all' | 'builtIn' | 'custom'
+type CategoryFilter = 'all' | 'other' | string
 type SortKey = 'pinyin' | 'popular' | 'recent'
 
-const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '' }
+const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '' }
 
 const PINYIN_COLLATOR = new Intl.Collator('zh-Hans-CN-u-co-pinyin', { sensitivity: 'base' })
 
@@ -40,12 +41,6 @@ function compareBySort(a: CharacterStats, b: CharacterStats, key: SortKey): numb
 function summarizeSoulMd(soulMd: string): string {
   return soulMd.replace(/^#{1,6}\s*/gm, '').replace(/\*\*/g, '').trim()
 }
-
-const CATEGORY_OPTIONS: readonly { value: CategoryFilter; label: string }[] = [
-  { value: 'all', label: '全部' },
-  { value: 'builtIn', label: '内置' },
-  { value: 'custom', label: '自定义' }
-]
 
 const SORT_OPTIONS: readonly { value: SortKey; label: string }[] = [
   { value: 'pinyin', label: '拼音' },
@@ -197,11 +192,16 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
       .sort((a, b) => a.localeCompare(b)),
     [characters])
 
+  // 行业 tab：只列出已有角色的行业，顺序固定；未归类的角色落在「其他」。
+  const industryTabs = useMemo(
+    () => INDUSTRIES.filter((industry) => characters.some((character) => character.category === industry.id)),
+    [characters])
+
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return characters
       .filter((character) => category === 'all'
-        || (category === 'builtIn' ? character.builtIn : !character.builtIn))
+        || (category === 'other' ? !character.category : character.category === category))
       .filter((character) => modelFilter === 'all' || character.model === modelFilter)
       .filter((character) => !normalized
         || character.name.toLowerCase().includes(normalized)
@@ -228,6 +228,7 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
       id: character.id,
       name: character.name,
       avatar: character.avatar,
+      category: character.category,
       soulMd: character.builtIn ? config.soulMd : character.soulMd,
       providerProfileId: character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId,
       model: character.builtIn ? config.model : character.model
@@ -312,10 +313,14 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
       </button>
     </div>
     <div className="contacts-tabs">
-      <div className="contacts-tab-list" data-contacts-filter-category role="group" aria-label="按分类筛选">
-        {CATEGORY_OPTIONS.map((option) => <button key={option.value} type="button"
-          className="contacts-tab" aria-pressed={category === option.value}
-          onClick={() => setCategory(option.value)}>{option.label}</button>)}
+      <div className="contacts-tab-list" data-contacts-filter-category role="group" aria-label="按行业筛选">
+        <button type="button" className="contacts-tab" aria-pressed={category === 'all'}
+          onClick={() => setCategory('all')}>全部</button>
+        {industryTabs.map((industry) => <button key={industry.id} type="button"
+          className="contacts-tab" aria-pressed={category === industry.id}
+          onClick={() => setCategory(industry.id)}>{industry.label}</button>)}
+        <button type="button" className="contacts-tab" aria-pressed={category === 'other'}
+          onClick={() => setCategory('other')}>其他</button>
       </div>
       {distinctModels.length > 0 && <div className="contacts-tab-models" data-contacts-filter-model role="group" aria-label="按模型筛选">
         <button type="button" className="contacts-chip" aria-pressed={modelFilter === 'all'}
@@ -341,6 +346,7 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
             </span>
             <span className="contacts-card-desc">{soulSummary || '未设置人设，使用默认丑鱼人格'}</span>
             <span className="contacts-card-tags">
+              {character.category && <span className="contacts-card-tag">{INDUSTRY_LABELS[character.category]}</span>}
               <span className="contacts-card-tag">{profileNameOf(character)}</span>
               <span className="contacts-card-tag">{character.sessionCount} 个会话</span>
             </span>
@@ -362,6 +368,8 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
         <div className="contacts-detail-fields">
           <label className="contacts-field"><span className="contacts-field-name">模型</span>
             <span className="contacts-detail-value">{detail.builtIn ? config.model : detail.model}</span></label>
+          <label className="contacts-field"><span className="contacts-field-name">行业</span>
+            <span className="contacts-detail-value">{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</span></label>
           <label className="contacts-field"><span className="contacts-field-name">档案</span>
             <span className="contacts-detail-value">{profileNameOf(detail)}</span></label>
           <label className="contacts-field"><span className="contacts-field-name">会话</span>
@@ -408,6 +416,12 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
             onChange={(event) => setForm({ ...form, providerProfileId: event.target.value })}>
             {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.builtIn ? '（设置页默认）' : ''}</option>)}
           </select></label>
+        <label className="contacts-field"><span className="contacts-field-name">行业</span>
+          <select data-contacts-category value={form.category}
+            onChange={(event) => setForm({ ...form, category: event.target.value })}>
+            <option value="">未分类</option>
+            {INDUSTRIES.map((industry) => <option key={industry.id} value={industry.id}>{industry.label}</option>)}
+          </select></label>
         <label className="contacts-field"><span className="contacts-field-name">模型</span>
           <input data-contacts-model value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} required list="contacts-model-options" />
           <button type="button" className="contacts-fetch" data-contacts-fetch-models onClick={() => { void loadModels() }} disabled={busy}>获取模型</button>
@@ -416,7 +430,7 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
         {modelStatus && <p className="contacts-hint" role="status">{modelStatus}</p>}
         {form.id === DEFAULT_CHARACTER_ID && <p className="contacts-hint">内置角色的人设与模型会写回设置页的全局配置。</p>}
         <label className="contacts-field contacts-field-multiline"><span className="contacts-field-name">人设</span>
-          <textarea data-contacts-soulmd rows={4} value={form.soulMd}
+          <textarea data-contacts-soulmd rows={3} value={form.soulMd}
             onChange={(event) => setForm({ ...form, soulMd: event.target.value })} placeholder="系统提示词，留空使用默认丑鱼人格" /></label>
         <div className="contacts-form-actions">
           <button type="button" onClick={() => setForm(null)}>取消</button>

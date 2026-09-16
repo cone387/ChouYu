@@ -379,7 +379,7 @@ function seedPresetCharacters(): void {
     if (store.characters.length >= MAX_CHARACTER_COUNT) break
     if (store.characters.some((item) => item.id === preset.id) || names.has(preset.name.toLowerCase())) continue
     store.characters.push({
-      id: preset.id, name: preset.name, avatar: preset.avatar, soulMd: preset.soulMd,
+      id: preset.id, name: preset.name, avatar: preset.avatar, category: preset.category, soulMd: preset.soulMd,
       providerProfileId: DEFAULT_PROFILE_ID, model, builtIn: false, createdAt: now, updatedAt: now
     })
     names.add(preset.name.toLowerCase())
@@ -389,6 +389,19 @@ function seedPresetCharacters(): void {
   if (seeded > 0) persist(false)
 }
 
+/** 旧版本播种的预设没有行业分类：按 id 幂等补齐，已手动归类或已删除的不动。 */
+function backfillPresetCategories(): void {
+  const categoryById = new Map(PRESET_CHARACTERS.map((preset) => [preset.id, preset.category]))
+  let changed = false
+  for (const character of store.characters) {
+    const category = categoryById.get(character.id)
+    if (!category || character.category) continue
+    character.category = category
+    changed = true
+  }
+  if (changed) persist(false)
+}
+
 export function initDatabase(): void {
   filePath = path.join(app.getPath('userData'), 'chouyu-data.json')
   if (persistTimer) clearTimeout(persistTimer)
@@ -396,6 +409,7 @@ export function initDatabase(): void {
   attachments = new AttachmentStore(path.join(app.getPath('userData'), 'attachments'))
   store = load()
   seedPresetCharacters()
+  backfillPresetCategories()
   persist(false)
 }
 

@@ -11,17 +11,29 @@ describe('contacts layout', () => {
     expect(viewSource).toMatch(/function sortByName/)
   })
 
-  it('turns categories into a label-free tab strip with model chips beside it', () => {
+  it('turns industries into a label-free tab strip with model chips beside it', () => {
     expect(viewSource).toContain('data-contacts-filter-category')
     expect(viewSource).toContain('data-contacts-filter-model')
     expect(viewSource).not.toContain('contacts-filter-label')
-    expect(viewSource).toContain('aria-pressed={category === option.value}')
+    expect(viewSource).toContain('INDUSTRIES.filter((industry) => characters.some((character) => character.category === industry.id))')
+    expect(viewSource).toContain('aria-pressed={category === industry.id}')
+    expect(viewSource).toContain("onClick={() => setCategory('all')}>全部</button>")
+    expect(viewSource).toContain("onClick={() => setCategory('other')}>其他</button>")
+    expect(viewSource).toContain("(category === 'other' ? !character.category : character.category === category)")
     expect(viewSource).toContain('>全部模型</button>')
     expect(cssSource).toMatch(/\.contacts-tab-list \{/)
     expect(cssSource).toMatch(/\.contacts-tab\[aria-pressed="true"\]/)
     expect(cssSource).toMatch(/\.contacts-tab\[aria-pressed="true"\]::after/)
     expect(cssSource).toMatch(/\.contacts-tab-models \{[^}]*flex-wrap: wrap/)
     expect(cssSource).toMatch(/\.contacts-chip\[aria-pressed="true"\]/)
+  })
+
+  it('lets the industry follow the character across card tag, detail row and form select', () => {
+    expect(viewSource).toContain('INDUSTRY_LABELS[character.category]')
+    expect(viewSource).toContain('{detail.category ? INDUSTRY_LABELS[detail.category] :')
+    expect(viewSource).toMatch(/data-contacts-category value=\{form\.category\}/)
+    expect(viewSource).toContain('<option value="">未分类</option>')
+    expect(viewSource).toContain('INDUSTRIES.map((industry) => <option key={industry.id}')
   })
 
   it('renders contacts as marketplace cards on a light gray grid', () => {
@@ -85,7 +97,7 @@ describe('contacts layout', () => {
 
   it('keeps the detail panel compact so it fits without an outer scrollbar', () => {
     expect(cssSource).toMatch(/\.contacts-detail-soul \{[^}]*max-height: 120px/)
-    expect(cssSource).toMatch(/\.contacts-field \{[^}]*min-height: 38px/)
+    expect(cssSource).toMatch(/\.contacts-field \{[^}]*min-height: 36px/)
     expect(cssSource).toMatch(/\.contacts-detail-actions button \{[^}]*min-height: 30px/)
   })
 
