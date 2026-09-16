@@ -21,6 +21,7 @@ interface FormState {
 }
 
 type CategoryFilter = 'all' | 'builtIn' | 'custom'
+type SortKey = 'pinyin' | 'popular' | 'recent'
 
 const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '' }
 
@@ -30,10 +31,26 @@ function sortByName(a: CharacterStats, b: CharacterStats): number {
   return PINYIN_COLLATOR.compare(a.name, b.name)
 }
 
+function compareBySort(a: CharacterStats, b: CharacterStats, key: SortKey): number {
+  if (key === 'popular') return b.sessionCount - a.sessionCount || sortByName(a, b)
+  if (key === 'recent') return (b.lastActiveAt || 0) - (a.lastActiveAt || 0) || sortByName(a, b)
+  return sortByName(a, b)
+}
+
+function summarizeSoulMd(soulMd: string): string {
+  return soulMd.replace(/^#{1,6}\s*/gm, '').replace(/\*\*/g, '').trim()
+}
+
 const CATEGORY_OPTIONS: readonly { value: CategoryFilter; label: string }[] = [
   { value: 'all', label: '全部' },
   { value: 'builtIn', label: '内置' },
   { value: 'custom', label: '自定义' }
+]
+
+const SORT_OPTIONS: readonly { value: SortKey; label: string }[] = [
+  { value: 'pinyin', label: '拼音' },
+  { value: 'popular', label: '最热' },
+  { value: 'recent', label: '最新' }
 ]
 
 export default function ContactsView({ active, config, onOpenChat, onDeleted }: ContactsViewProps) {
@@ -42,6 +59,7 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [modelFilter, setModelFilter] = useState('all')
+  const [sort, setSort] = useState<SortKey>('pinyin')
   const [detail, setDetail] = useState<CharacterStats | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [error, setError] = useState('')
@@ -75,8 +93,8 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
       .filter((character) => !normalized
         || character.name.toLowerCase().includes(normalized)
         || character.model.toLowerCase().includes(normalized))
-      .sort(sortByName)
-  }, [characters, query, category, modelFilter])
+      .sort((a, b) => compareBySort(a, b, sort))
+  }, [characters, query, category, modelFilter, sort])
 
   const profileNameOf = useCallback((character: CharacterStats): string => {
     const id = character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId
@@ -155,6 +173,11 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
         <input data-contacts-search className="contacts-search" type="search" placeholder="搜索"
           value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索角色" />
       </div>
+      <div className="contacts-sort" data-contacts-sort role="group" aria-label="排序方式">
+        {SORT_OPTIONS.map((option) => <button key={option.value} type="button"
+          className="contacts-sort-option" aria-pressed={sort === option.value}
+          onClick={() => setSort(option.value)}>{option.label}</button>)}
+      </div>
     </div>
     <div className="contacts-filters">
       <div className="contacts-filter-group" data-contacts-filter-category>
@@ -182,13 +205,25 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M19 8v6M22 11h-6" /></svg>
           <span>新建角色</span>
         </button>
-        {filtered.map((character) => <button key={character.id} type="button"
-          data-contacts-item={character.id} className="contacts-card" onClick={() => setDetail(character)}>
-          <span className={`contacts-card-avatar${character.builtIn ? ' contacts-card-avatar-default' : ''}`} aria-hidden="true">{character.avatar}</span>
-          <span className="contacts-card-name">{character.name}{character.builtIn && <em className="contacts-builtin">内置</em>}</span>
-          <span className="contacts-card-meta">{character.model}</span>
-          <span className="contacts-card-sub">{character.sessionCount} 个会话</span>
-        </button>)}
+        {filtered.map((character) => {
+          const model = character.builtIn ? config.model : character.model
+          const soulSummary = summarizeSoulMd(character.builtIn ? config.soulMd : character.soulMd)
+          return <button key={character.id} type="button" data-contacts-item={character.id}
+            className="contacts-card" onClick={() => setDetail(character)}>
+            <span className="contacts-card-head">
+              <span className={`contacts-card-avatar${character.builtIn ? ' contacts-card-avatar-default' : ''}`} aria-hidden="true">{character.avatar}</span>
+              <span className="contacts-card-title">
+                <span className="contacts-card-name">{character.name}{character.builtIn && <em className="contacts-builtin">内置</em>}</span>
+                <span className="contacts-card-subtitle">{model}</span>
+              </span>
+            </span>
+            <span className="contacts-card-desc">{soulSummary || '未设置人设，使用默认丑鱼人格'}</span>
+            <span className="contacts-card-tags">
+              <span className="contacts-card-tag">{profileNameOf(character)}</span>
+              <span className="contacts-card-tag">{character.sessionCount} 个会话</span>
+            </span>
+          </button>
+        })}
       </div>
       {filtered.length === 0 && <p className="contacts-empty">没有匹配的角色</p>}
     </div>

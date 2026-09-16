@@ -19,13 +19,34 @@ describe('contacts layout', () => {
     expect(cssSource).toMatch(/\.contacts-filter-options \{[^}]*flex-wrap: wrap/)
   })
 
-  it('renders contacts as a multi-per-row card grid', () => {
+  it('renders contacts as marketplace cards on a light gray grid', () => {
     expect(viewSource).toContain('contacts-grid')
     expect(cssSource).toMatch(/\.contacts-grid \{[^}]*display: grid/)
     expect(cssSource).toMatch(/repeat\(auto-fill, minmax\(/)
+    expect(cssSource).toMatch(/\.contacts-scroll \{[^}]*background: var\(--bg-secondary\)/)
     expect(viewSource).toMatch(/className="contacts-card"/)
-    expect(cssSource).toMatch(/\.contacts-card \{[^}]*border: 1px solid var\(--border\)/)
+    expect(cssSource).toMatch(/\.contacts-card \{[^}]*background: var\(--bg-primary\)/)
     expect(cssSource).toContain('.contacts-card:hover')
+  })
+
+  it('structures each card as head row, clamped summary and tag row', () => {
+    expect(viewSource).toContain('contacts-card-head')
+    expect(viewSource).toContain('contacts-card-title')
+    expect(viewSource).toContain('contacts-card-desc')
+    expect(viewSource).toContain('contacts-card-tags')
+    expect(cssSource).toMatch(/\.contacts-card-avatar \{[^}]*border-radius: 50%/)
+    expect(cssSource).toMatch(/\.contacts-card-desc \{[^}]*-webkit-line-clamp: 2/)
+    expect(cssSource).toMatch(/\.contacts-card-tag \{/)
+    expect(cssSource).toMatch(/\.contacts-card-tags \{[^}]*margin-top: auto/)
+  })
+
+  it('offers a pinyin/popular/recent segmented sort next to the search', () => {
+    expect(viewSource).toContain('data-contacts-sort')
+    expect(viewSource).toContain("value: 'pinyin', label: '拼音'")
+    expect(viewSource).toContain("value: 'popular', label: '最热'")
+    expect(viewSource).toContain("value: 'recent', label: '最新'")
+    expect(viewSource).toContain('aria-pressed={sort === option.value}')
+    expect(cssSource).toMatch(/\.contacts-sort-option\[aria-pressed="true"\]/)
   })
 
   it('offers the new-character action as a dashed card in the grid', () => {
