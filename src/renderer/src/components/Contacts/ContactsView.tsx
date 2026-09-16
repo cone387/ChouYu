@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DEFAULT_CHARACTER_ID, type CharacterStats } from '../../../../shared/characters'
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
@@ -52,6 +52,119 @@ const SORT_OPTIONS: readonly { value: SortKey; label: string }[] = [
   { value: 'popular', label: '最热' },
   { value: 'recent', label: '最新' }
 ]
+
+const AVATAR_CHOICES: readonly string[] = ['🐟', '🦊', '🐱', '🐶', '🐼', '🦉', '🐧', '🍀', '🌙', '⚡', '💡', '🎯', '🩺', '⚖️', '🎨', '🧭']
+
+type PanelRect = { left: number; top: number; width: number; height: number | null }
+type ResizeEdge = 'n' | 's' | 'e' | 'w'
+
+interface ResizableModalProps {
+  initialWidth: number
+  minWidth: number
+  minHeight: number
+  className: string
+  role: string
+  label: string
+  dataAttributes?: Record<string, string>
+  children: ReactNode
+}
+
+/** 居中模态：默认内容自适应高度；拖上/下/左/右边框自然拉伸，不用右下角把手。 */
+function ResizableModal({ initialWidth, minWidth, minHeight, className, role, label, dataAttributes, children }: ResizableModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ edge: ResizeEdge; x: number; y: number; base: { left: number; top: number; width: number; height: number } } | null>(null)
+  const [rect, setRect] = useState<PanelRect | null>(null)
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    const parent = panel?.offsetParent as HTMLElement | null
+    if (!panel || !parent) return
+    const width = Math.min(initialWidth, parent.clientWidth - 16)
+    panel.style.width = `${width}px`
+    const naturalHeight = panel.offsetHeight
+    const capped = naturalHeight > parent.clientHeight - 16
+    setRect({
+      left: Math.round((parent.clientWidth - width) / 2),
+      top: Math.round((parent.clientHeight - Math.min(naturalHeight, parent.clientHeight - 16)) / 2),
+      width,
+      height: capped ? parent.clientHeight - 16 : null
+    })
+  }, [initialWidth])
+
+  // 未手动定高时跟随内容高度，保持垂直居中。
+  useEffect(() => {
+    const panel = panelRef.current
+    const parent = panel?.offsetParent as HTMLElement | null
+    if (!panel || !parent) return
+    const observer = new ResizeObserver(() => {
+      setRect((current) => {
+        if (!current || current.height !== null) return current
+        const top = Math.max(8, Math.round((parent.clientHeight - panel.offsetHeight) / 2))
+        return top === current.top ? current : { ...current, top }
+      })
+    })
+    observer.observe(panel)
+    return () => observer.disconnect()
+  }, [rect?.width])
+
+  const beginDrag = (edge: ResizeEdge) => (event: React.PointerEvent<HTMLDivElement>) => {
+    const panel = panelRef.current
+    const parent = panel?.offsetParent as HTMLElement | null
+    if (!panel || !parent || event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = {
+      edge,
+      x: event.clientX,
+      y: event.clientY,
+      base: {
+        left: rect?.left ?? panel.offsetLeft,
+        top: rect?.top ?? panel.offsetTop,
+        width: rect?.width ?? panel.offsetWidth,
+        height: rect?.height ?? panel.offsetHeight
+      }
+    }
+  }
+
+  const dragMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    const panel = panelRef.current
+    const parent = panel?.offsetParent as HTMLElement | null
+    if (!drag || !panel || !parent) return
+    const dx = event.clientX - drag.x
+    const dy = event.clientY - drag.y
+    let { left, top, width, height } = drag.base
+    if (drag.edge === 'e') width = Math.max(minWidth, Math.min(drag.base.width + dx, parent.clientWidth - drag.base.left - 8))
+    if (drag.edge === 'w') {
+      width = Math.max(minWidth, Math.min(drag.base.width - dx, drag.base.left + drag.base.width - 8))
+      left = drag.base.left + drag.base.width - width
+    }
+    if (drag.edge === 's') height = Math.max(minHeight, Math.min(drag.base.height + dy, parent.clientHeight - drag.base.top - 8))
+    if (drag.edge === 'n') {
+      height = Math.max(minHeight, Math.min(drag.base.height - dy, drag.base.top + drag.base.height - 8))
+      top = drag.base.top + drag.base.height - height
+    }
+    setRect({ left, top, width, height })
+  }
+
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  return <div className="contacts-scrim" role="presentation">
+    <div ref={panelRef} className={className} role={role} aria-modal="true" aria-label={label}
+      {...dataAttributes}
+      style={rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height ?? undefined } : undefined}>
+      {children}
+      {(['n', 's', 'e', 'w'] as const).map((edge) => (
+        <div key={edge} className={`contacts-resize contacts-resize-${edge}`} aria-hidden="true"
+          onPointerDown={beginDrag(edge)} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={endDrag} />
+      ))}
+    </div>
+  </div>
+}
 
 export default function ContactsView({ active, config, onOpenChat, onDeleted }: ContactsViewProps) {
   const [characters, setCharacters] = useState<CharacterStats[]>([])
@@ -236,9 +349,9 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
       </div>
       {filtered.length === 0 && <p className="contacts-empty">没有匹配的角色</p>}
     </div>
-    {detail && <div className="contacts-scrim" role="presentation">
-      <div className="contacts-detail" role="dialog" aria-modal="true" aria-label={`角色详情 ${detail.name}`}
-        data-contacts-detail={detail.id}>
+    {detail && <ResizableModal className="contacts-detail" role="dialog" label={`角色详情 ${detail.name}`}
+      initialWidth={460} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
+      <div>
         <div className="contacts-detail-head">
           <span className={`contacts-detail-avatar${detail.builtIn ? ' contacts-detail-avatar-default' : ''}`} aria-hidden="true">{detail.avatar}</span>
           <div>
@@ -266,7 +379,7 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
             onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
         </div>
       </div>
-    </div>}
+    </ResizableModal>}
     {confirmDelete && <div className="contacts-scrim" role="presentation">
       <div className="contacts-confirm" role="alertdialog" aria-modal="true" aria-label="删除角色确认">
         <p className="contacts-confirm-title">删除角色</p>
@@ -277,13 +390,19 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
         </div>
       </div>
     </div>}
-    {form && <div className="contacts-scrim" role="presentation">
-      <form className="contacts-form" data-contacts-form onSubmit={(event) => { event.preventDefault(); void saveForm() }}>
+    {form && <ResizableModal className="contacts-form" role="dialog" label={form.id ? '编辑角色' : '新建角色'}
+      initialWidth={520} minWidth={340} minHeight={220} dataAttributes={{ 'data-contacts-form': '' }}>
+      <form onSubmit={(event) => { event.preventDefault(); void saveForm() }}>
         <h3>{form.id ? '编辑角色' : '新建角色'}</h3>
         <label className="contacts-field"><span className="contacts-field-name">名字</span>
           <input data-contacts-name value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={24} /></label>
-        <label className="contacts-field"><span className="contacts-field-name">头像</span>
+        <label className="contacts-field contacts-field-avatar"><span className="contacts-field-name">头像</span>
+          <span className="contacts-avatar-preview" aria-hidden="true">{form.avatar || Array.from(form.name)[0] || '鱼'}</span>
           <input data-contacts-avatar value={form.avatar} onChange={(event) => setForm({ ...form, avatar: event.target.value })} maxLength={8} placeholder="emoji 或单字，留空取首字" /></label>
+        <div className="contacts-avatar-palette" role="group" aria-label="快速选择头像">
+          {AVATAR_CHOICES.map((emoji) => <button key={emoji} type="button" className="contacts-avatar-option"
+            aria-pressed={form.avatar === emoji} onClick={() => setForm({ ...form, avatar: emoji })}>{emoji}</button>)}
+        </div>
         <label className="contacts-field"><span className="contacts-field-name">档案</span>
           <select data-contacts-profile value={form.providerProfileId} disabled={form.id === DEFAULT_CHARACTER_ID}
             onChange={(event) => setForm({ ...form, providerProfileId: event.target.value })}>
@@ -297,13 +416,13 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
         {modelStatus && <p className="contacts-hint" role="status">{modelStatus}</p>}
         {form.id === DEFAULT_CHARACTER_ID && <p className="contacts-hint">内置角色的人设与模型会写回设置页的全局配置。</p>}
         <label className="contacts-field contacts-field-multiline"><span className="contacts-field-name">人设</span>
-          <textarea data-contacts-soulmd rows={6} value={form.soulMd}
+          <textarea data-contacts-soulmd rows={4} value={form.soulMd}
             onChange={(event) => setForm({ ...form, soulMd: event.target.value })} placeholder="系统提示词，留空使用默认丑鱼人格" /></label>
         <div className="contacts-form-actions">
           <button type="button" onClick={() => setForm(null)}>取消</button>
           <button type="submit" className="primary" data-contacts-save disabled={busy}>保存</button>
         </div>
       </form>
-    </div>}
+    </ResizableModal>}
   </div>
 }

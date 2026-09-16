@@ -63,10 +63,24 @@ describe('contacts layout', () => {
     expect(cssSource).toMatch(/\.contacts-toolbar \{[^}]*display: flex/)
   })
 
-  it('lets the detail panel and character form be resized freely', () => {
-    expect(cssSource).toMatch(/\.contacts-detail \{[^}]*resize: both/)
-    expect(cssSource).toMatch(/\.contacts-form \{[^}]*resize: both/)
-    expect(cssSource).toMatch(/\.contacts-detail \{[^}]*width: min\(460px, 100%\)/)
+  it('resizes detail and form by dragging their borders instead of a corner handle', () => {
+    expect(viewSource).toContain("(['n', 's', 'e', 'w'] as const)")
+    expect(viewSource).toContain('contacts-resize-${edge}')
+    expect(viewSource).toContain('onPointerDown={beginDrag(edge)}')
+    expect(cssSource).toMatch(/\.contacts-resize-n \{[^}]*cursor: ns-resize/)
+    expect(cssSource).toMatch(/\.contacts-resize-e \{[^}]*cursor: ew-resize/)
+    expect(cssSource).not.toContain('resize: both')
+    expect(cssSource).toMatch(/\.contacts-detail \{[^}]*position: absolute/)
+    expect(cssSource).toMatch(/\.contacts-form \{[^}]*position: absolute/)
+  })
+
+  it('makes the avatar editable with a live preview and emoji quick picks', () => {
+    expect(viewSource).toContain('contacts-avatar-preview')
+    expect(viewSource).toContain('contacts-avatar-palette')
+    expect(viewSource).toContain('contacts-avatar-option')
+    expect(viewSource).toContain("aria-pressed={form.avatar === emoji}")
+    expect(cssSource).toMatch(/\.contacts-avatar-preview \{[^}]*border-radius: 50%/)
+    expect(cssSource).toMatch(/\.contacts-avatar-option\[aria-pressed="true"\]/)
   })
 
   it('keeps the detail panel compact so it fits without an outer scrollbar', () => {
@@ -92,7 +106,7 @@ describe('contacts layout', () => {
   })
 
   it('opens a detail panel on card click with chat, edit and delete actions', () => {
-    expect(viewSource).toContain('data-contacts-detail=')
+    expect(viewSource).toContain("'data-contacts-detail': detail.id")
     expect(viewSource).toContain('data-contacts-start-chat=')
     expect(viewSource).toMatch(/data-contacts-edit=\{detail\.id\}/)
     expect(viewSource).toMatch(/data-contacts-delete=\{detail\.id\}/)

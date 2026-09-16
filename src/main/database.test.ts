@@ -21,7 +21,7 @@ import {
   getSessionWorkspace, getSessions, getStorageStatus, initDatabase, listCharacters, onStorageStatus, saveConfig,
   saveSessionMessages, setState, searchSessions, updateCharacter
 } from './database'
-import { DEFAULT_CHARACTER_ID } from '../shared/characters'
+import { DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS } from '../shared/characters'
 import { DEFAULT_APP_CONFIG } from '../shared/config'
 import { AttachmentStore } from './attachment-store'
 
@@ -265,7 +265,7 @@ describe('characters', () => {
     expect(workspace.sessions.find((session) => session.id === 'legacy-1')?.characterId).toBe(DEFAULT_CHARACTER_ID)
     expect(workspace.activeSession.characterId).toBe(DEFAULT_CHARACTER_ID)
     const characters = listCharacters()
-    expect(characters).toHaveLength(1)
+    expect(characters).toHaveLength(PRESET_CHARACTERS.length + 1)
     expect(characters[0].id).toBe(DEFAULT_CHARACTER_ID)
   })
 
@@ -290,12 +290,12 @@ describe('characters', () => {
     expect(() => deleteCharacter(DEFAULT_CHARACTER_ID)).toThrow('不可删除')
   })
 
-  it('caps characters at the built-in plus eleven customs', () => {
-    for (let index = 1; index <= 11; index++) {
+  it('caps characters at the limit once presets are seeded', () => {
+    for (let index = 1; index <= MAX_CHARACTER_COUNT - 1 - PRESET_CHARACTERS.length; index++) {
       createCharacter({ ...draft, name: `角色${index}` })
     }
-    expect(listCharacters()).toHaveLength(12)
-    expect(() => createCharacter({ ...draft, name: '角色12' })).toThrow(/最多支持/)
+    expect(listCharacters()).toHaveLength(MAX_CHARACTER_COUNT)
+    expect(() => createCharacter({ ...draft, name: '超限角色' })).toThrow(/最多支持/)
   })
 
   it('updates characters and write-through default persona/model to config', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_APP_CONFIG, DEFAULT_SOUL_MD, type AppConfig } from './config'
 import {
-  DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, Character, CharacterDraft,
+  DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS, Character, CharacterDraft,
   createDefaultCharacter, isDefaultCharacter, normalizeCharacters,
   resolveCharacterConfig, sanitizeCharacterDraft
 } from './characters'
@@ -28,6 +28,34 @@ describe('sanitizeCharacterDraft', () => {
     const draft = sanitizeCharacterDraft({ name: '🐱猫', model: 'm' })
     expect(draft?.avatar).toBe('🐱')
     expect(draft?.avatar.length).toBe(2)
+  })
+})
+
+describe('preset characters', () => {
+  it('ships ten-plus industry presets with unique ids, names, avatars and personas', () => {
+    expect(PRESET_CHARACTERS.length).toBeGreaterThanOrEqual(10)
+    const ids = new Set(PRESET_CHARACTERS.map((preset) => preset.id))
+    const names = new Set(PRESET_CHARACTERS.map((preset) => preset.name))
+    expect(ids.size).toBe(PRESET_CHARACTERS.length)
+    expect(names.size).toBe(PRESET_CHARACTERS.length)
+    for (const preset of PRESET_CHARACTERS) {
+      expect(preset.id).toMatch(/^preset-/)
+      expect(Array.from(preset.avatar).length).toBeGreaterThanOrEqual(1)
+      expect(preset.name.length).toBeLessThanOrEqual(24)
+      expect(preset.soulMd.trim().length).toBeGreaterThan(10)
+    }
+  })
+  it('normalizes seeded presets as regular editable characters', () => {
+    const seeded = PRESET_CHARACTERS.map((preset) => ({
+      ...preset, model: 'gpt-test', providerProfileId: 'default', builtIn: false, createdAt: 1, updatedAt: 1
+    }))
+    const characters = normalizeCharacters(seeded)
+    expect(characters[0]?.id).toBe(DEFAULT_CHARACTER_ID)
+    expect(characters).toHaveLength(PRESET_CHARACTERS.length + 1)
+    for (const preset of PRESET_CHARACTERS) {
+      const match = characters.find((character) => character.id === preset.id)
+      expect(match).toMatchObject({ name: preset.name, avatar: preset.avatar, soulMd: preset.soulMd, builtIn: false })
+    }
   })
 })
 
