@@ -38,13 +38,20 @@ describe('contacts layout', () => {
     for (const hook of hooks) expect(viewSource).toContain(hook)
   })
 
-  it('styles the list with theme tokens on the WeChat gray-page scheme', () => {
+  it('styles the list as one continuous WeChat panel with inset row dividers', () => {
     expect(cssSource).toContain('var(--bg-secondary)')
     expect(cssSource).toContain('var(--bg-primary)')
     expect(cssSource).toContain('var(--accent)')
     expect(cssSource).toMatch(/\.contacts-letter \{ position: sticky/)
+    expect(cssSource).toMatch(/\.contacts-row \+ \.contacts-row::before/)
     expect(cssSource).toMatch(/\.contacts-row-actions \{[^}]*opacity: 0/)
     expect(cssSource).toContain('.contacts-row:hover .contacts-row-actions')
+  })
+
+  it('keeps rows minimal like WeChat: avatar + name only', () => {
+    expect(viewSource).not.toContain('contacts-sub')
+    expect(viewSource).not.toContain('contacts-chevron')
+    expect(viewSource).not.toContain('contacts-meta')
   })
 
   it('disables transitions under reduced motion', () => {

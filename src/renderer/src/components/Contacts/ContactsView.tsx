@@ -198,11 +198,7 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
     <button type="button" data-contacts-item={character.id} className="contacts-item"
       onClick={() => onOpenChat(character.id)}>
       <span className={`contacts-avatar${character.builtIn ? ' contacts-avatar-default' : ''}`} aria-hidden="true">{character.avatar}</span>
-      <span className="contacts-meta">
-        <span className="contacts-name">{character.name}{character.builtIn && <em className="contacts-builtin">内置</em>}</span>
-        <span className="contacts-sub">{character.model || '跟随设置页默认模型'} · {character.sessionCount} 个会话</span>
-      </span>
-      <svg className="contacts-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+      <span className="contacts-name">{character.name}{character.builtIn && <em className="contacts-builtin">内置</em>}</span>
     </button>
     <span className="contacts-row-actions">
       <button type="button" data-contacts-edit={character.id} className="contacts-action" aria-label={`编辑 ${character.name}`}
@@ -224,13 +220,13 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
           value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索角色" />
       </div>
       <button type="button" data-contacts-new className="contacts-add" aria-label="新建角色" title="新建角色" onClick={() => openForm()}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M19 8v6M22 11h-6" /></svg>
       </button>
     </div>
     {error && <div className="contacts-error" role="alert">{error}</div>}
     <div className="contacts-body">
       <div className="contacts-scroll" ref={scrollRef} onScroll={handleScroll}>
-        {builtIn.length > 0 && <section className="contacts-section contacts-section-pinned" aria-label="内置角色">
+        {builtIn.length > 0 && <section className="contacts-section" aria-label="内置角色">
           <ul role="list">{builtIn.map(renderRow)}</ul>
         </section>}
         {sections.map((section) => <section key={section.letter || 'search'} className="contacts-section"
