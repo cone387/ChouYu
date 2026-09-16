@@ -9,7 +9,7 @@ import { readStoreFile, writeStoreFile } from './store-file'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/conversation-search'
 import { AppConfig, DEFAULT_APP_CONFIG, DEFAULT_PROFILE_ID, getProviderProfiles, normalizeConfig } from '../shared/config'
 import {
-  Character, CharacterStats, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT,
+  Character, CharacterStats, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS,
   normalizeCharacters, sanitizeCharacterDraft
 } from '../shared/characters'
 import {
@@ -368,12 +368,34 @@ function schedulePersist(): void {
   persistTimer = setTimeout(() => persist(false), 500)
 }
 
+/** 首次启动播种各行业预设联系人：一次性 flag 保证删除后不会复活。 */
+function seedPresetCharacters(): void {
+  if (store.state['presetCharactersSeeded']) return
+  const names = new Set(store.characters.map((item) => item.name.toLowerCase()))
+  const model = store.config.model.trim() || 'gpt-4o'
+  const now = Date.now()
+  let seeded = 0
+  for (const preset of PRESET_CHARACTERS) {
+    if (store.characters.length >= MAX_CHARACTER_COUNT) break
+    if (store.characters.some((item) => item.id === preset.id) || names.has(preset.name.toLowerCase())) continue
+    store.characters.push({
+      id: preset.id, name: preset.name, avatar: preset.avatar, soulMd: preset.soulMd,
+      providerProfileId: DEFAULT_PROFILE_ID, model, builtIn: false, createdAt: now, updatedAt: now
+    })
+    names.add(preset.name.toLowerCase())
+    seeded += 1
+  }
+  store.state['presetCharactersSeeded'] = String(Date.now())
+  if (seeded > 0) persist(false)
+}
+
 export function initDatabase(): void {
   filePath = path.join(app.getPath('userData'), 'chouyu-data.json')
   if (persistTimer) clearTimeout(persistTimer)
   persistTimer = null
   attachments = new AttachmentStore(path.join(app.getPath('userData'), 'attachments'))
   store = load()
+  seedPresetCharacters()
   persist(false)
 }
 
