@@ -6,6 +6,7 @@ import WindowCapturePicker, { CaptureAction } from '../WindowCapturePicker/Windo
 import { PluginInfo } from '../../shared/types'
 import type { CaptureSourceInfo, VisualQuickAction } from '../../../../shared/capture'
 import { VISUAL_ACTION_PROMPTS } from '../../../../shared/capture'
+import type { AIModelListResult } from '../../../../shared/ai'
 import {
   getAttachmentValidationError,
   MAX_ATTACHMENT_COUNT,
@@ -25,6 +26,8 @@ interface InputAreaProps {
   focusRequest?: number
   model?: string
   onModelChange?: (model: string) => void
+  /** 按当前角色的供应商档案取模型列表；缺省走设置页默认 Provider。 */
+  fetchModels?: () => Promise<AIModelListResult>
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
   onScrollScreenshot?: (callback: (dataUrl: string) => void) => void
   plugins?: PluginInfo[]
@@ -37,7 +40,7 @@ interface InputAreaProps {
   history?: string[]
 }
 
-export default function InputArea({ sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
+export default function InputArea({ sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, fetchModels, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
@@ -134,11 +137,17 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
     return () => document.removeEventListener('mousedown', dismiss)
   }, [showPluginOverflow])
 
+  // The override arrives as an inline closure from ChatPanel, so reading it
+  // through a ref keeps refreshModels (and its config-change subscription)
+  // from re-running on every parent render.
+  const fetchModelsRef = useRef(fetchModels)
+  fetchModelsRef.current = fetchModels
+
   const refreshModels = useCallback(async () => {
     setModelListStatus('loading')
     setModelListMessage('正在检测 Provider 连接…')
     try {
-      const result = await window.electronAPI.fetchModels()
+      const result = await (fetchModelsRef.current ?? window.electronAPI.fetchModels)()
       setModelOptions(result.models)
       setModelListMessage(result.message)
       setModelListStatus(result.ok ? 'ready' : 'unavailable')
@@ -149,12 +158,14 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
     }
   }, [])
 
+  // 切换会话可能同时切换角色（fetchModels 来源变化），跟随 sessionId 重取模型列表，
+  // 避免沿用上一个角色的档案列表误报 configuredModelInvalid。
   useEffect(() => {
     void refreshModels()
     return window.electronAPI.onConfigChanged(() => {
       void refreshModels()
     })
-  }, [refreshModels])
+  }, [refreshModels, sessionId])
 
   const restoreComposerFocus = useCallback(() => {
     focusAfterSendRef.current = true
@@ -717,7 +728,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
               models={modelOptions}
               status={modelListStatus}
               statusMessage={modelListMessage}
-              onChange={(nextModel) => onModelChange?.(nextModel)}
+              onChange={(nextModel) => { void Promise.resolve(onModelChange?.(nextModel)).catch(() => { /* 落库失败时模型菜单仍可重试。 */ }) }}
               onRefresh={() => { void refreshModels() }}
               invalid={configuredModelInvalid}
               placement="top"

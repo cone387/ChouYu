@@ -7,7 +7,11 @@ import type { StorageStatus } from '../shared/storage'
 import { AttachmentStore, isAttachmentReference } from './attachment-store'
 import { readStoreFile, writeStoreFile } from './store-file'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/conversation-search'
-import { AppConfig, DEFAULT_APP_CONFIG, normalizeConfig } from '../shared/config'
+import { AppConfig, DEFAULT_APP_CONFIG, DEFAULT_PROFILE_ID, getProviderProfiles, normalizeConfig } from '../shared/config'
+import {
+  Character, CharacterStats, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT,
+  normalizeCharacters, sanitizeCharacterDraft
+} from '../shared/characters'
 import {
   DEFAULT_SESSION_TITLE,
   buildSessionPreview,
@@ -33,6 +37,7 @@ export interface ChatSession {
   id: string
   title: string
   messages: Message[]
+  characterId: string
   createdAt: number
   updatedAt: number
 }
@@ -42,6 +47,7 @@ export interface ChatSessionSummary {
   title: string
   preview: string
   messageCount: number
+  characterId: string
   createdAt: number
   updatedAt: number
 }
@@ -54,6 +60,7 @@ export interface SessionWorkspace {
 interface StoreData {
   version: number
   config: AppConfig
+  characters: Character[]
   sessions: ChatSession[]
   activeSessionId: string
   state: Record<string, string>
@@ -63,7 +70,7 @@ interface PersistedStoreData extends Partial<StoreData> {
   messages?: Message[]
 }
 
-const STORE_VERSION = 3
+const STORE_VERSION = 4
 const ENCRYPTED_PREFIX = 'safe:v1:'
 
 let store: StoreData
@@ -172,11 +179,12 @@ function sanitizeMessages(value: unknown): Message[] {
     }))
 }
 
-function createSession(messages: Message[] = [], title?: string, now = Date.now()): ChatSession {
+function createSession(messages: Message[] = [], title?: string, now = Date.now(), characterId: string = DEFAULT_CHARACTER_ID): ChatSession {
   return {
     id: randomUUID(),
     title: title ? normalizeSessionTitle(title) : deriveSessionTitle(messages),
     messages: sanitizeMessages(messages),
+    characterId,
     createdAt: now,
     updatedAt: now
   }
@@ -198,6 +206,7 @@ function normalizeSessions(value: unknown): ChatSession[] {
         id,
         title: normalizeSessionTitle(typeof input.title === 'string' ? input.title : deriveSessionTitle(messages)),
         messages,
+        characterId: typeof input.characterId === 'string' && input.characterId.trim() ? input.characterId.trim().slice(0, 128) : DEFAULT_CHARACTER_ID,
         createdAt,
         updatedAt
       }
@@ -222,6 +231,7 @@ function toSummary(session: ChatSession): ChatSessionSummary {
     title: session.title,
     preview: buildSessionPreview(session.messages),
     messageCount: session.messages.length,
+    characterId: session.characterId,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt
   }
@@ -272,14 +282,22 @@ function load(): StoreData {
       ? requestedActiveId
       : sessions[0].id
 
+    const persistedProfiles: Partial<AppConfig> = {
+      ...persistedConfig,
+      providerProfiles: Array.isArray(persistedConfig.providerProfiles)
+        ? persistedConfig.providerProfiles.map((profile) => ({ ...profile, apiKey: unprotect(profile.apiKey) }))
+        : []
+    }
+
     return {
       version: STORE_VERSION,
       config: normalizeConfig({
-        ...persistedConfig,
+        ...persistedProfiles,
         apiKey: unprotect(persistedConfig.apiKey),
         embeddingApiKey: unprotect(persistedConfig.embeddingApiKey),
         memorySyncApiKey: unprotect(persistedConfig.memorySyncApiKey)
       }),
+      characters: normalizeCharacters(data.characters),
       sessions,
       activeSessionId,
       state: Object.fromEntries(
@@ -292,6 +310,7 @@ function load(): StoreData {
   return {
     version: STORE_VERSION,
     config: { ...DEFAULT_APP_CONFIG },
+    characters: normalizeCharacters(undefined),
     sessions: [session],
     activeSessionId: session.id,
     state: {}
@@ -305,8 +324,10 @@ function serializeStore(): StoreData {
       ...store.config,
       apiKey: protect(store.config.apiKey),
       embeddingApiKey: protect(store.config.embeddingApiKey),
-      memorySyncApiKey: protect(store.config.memorySyncApiKey)
+      memorySyncApiKey: protect(store.config.memorySyncApiKey),
+      providerProfiles: store.config.providerProfiles.map((profile) => ({ ...profile, apiKey: protect(profile.apiKey) }))
     },
+    characters: store.characters,
     sessions: store.sessions.map((session) => ({
       ...session,
       messages: session.messages.map((message) => ({ ...message, imageUrl: attachments.persist(message.imageUrl) }))
@@ -393,8 +414,9 @@ export function getSessionWorkspace(): SessionWorkspace {
   return { sessions: getSessions(), activeSession: getActiveSession() }
 }
 
-export function createChatSession(title?: string): SessionWorkspace {
-  const session = createSession([], title)
+export function createChatSession(title?: string, characterId: string = DEFAULT_CHARACTER_ID): SessionWorkspace {
+  const owner = getCharacter(characterId) ? characterId : DEFAULT_CHARACTER_ID
+  const session = createSession([], title, Date.now(), owner)
   store.sessions.unshift(session)
   store.activeSessionId = session.id
   persist()
@@ -424,6 +446,83 @@ export function deleteChatSession(id: string): SessionWorkspace {
   store.sessions.splice(index, 1)
   if (store.sessions.length === 0) store.sessions.push(createSession())
   if (deletingActive) store.activeSessionId = store.sessions[Math.min(index, store.sessions.length - 1)].id
+  persist()
+  return getSessionWorkspace()
+}
+
+export function listCharacters(): CharacterStats[] {
+  return store.characters.map((character) => {
+    const sessions = store.sessions.filter((session) => session.characterId === character.id)
+    return {
+      ...character,
+      sessionCount: sessions.length,
+      lastActiveAt: sessions.reduce((latest, session) => Math.max(latest, session.updatedAt), character.createdAt)
+    }
+  })
+}
+
+export function getCharacter(id: string): Character | null {
+  const character = store.characters.find((item) => item.id === id)
+  return character ? { ...character } : null
+}
+
+function findCharacterByIdOrThrow(id: string): Character {
+  const character = store.characters.find((item) => item.id === id)
+  if (!character) throw new Error('角色不存在或已被删除。')
+  return character
+}
+
+export function createCharacter(draft: unknown): CharacterStats {
+  const input = sanitizeCharacterDraft(draft)
+  if (!input) throw new Error('角色名称和模型为必填项。')
+  if (store.characters.length >= MAX_CHARACTER_COUNT) throw new Error(`最多支持 ${MAX_CHARACTER_COUNT} 个角色。`)
+  if (!getProviderProfiles(store.config).some((profile) => profile.id === input.providerProfileId)) {
+    throw new Error('所选供应商档案不存在，请先到设置页创建。')
+  }
+  if (store.characters.some((character) => character.name.toLowerCase() === input.name.toLowerCase())) {
+    throw new Error('已存在同名角色，请换一个名字。')
+  }
+  const now = Date.now()
+  const character: Character = { id: randomUUID(), ...input, builtIn: false, createdAt: now, updatedAt: now }
+  store.characters.push(character)
+  persist()
+  return listCharacters().find((item) => item.id === character.id)!
+}
+
+export function updateCharacter(id: string, draft: unknown): CharacterStats {
+  const character = findCharacterByIdOrThrow(id)
+  const input = sanitizeCharacterDraft(draft)
+  if (!input) throw new Error('角色名称和模型为必填项。')
+  if (character.builtIn && input.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置角色固定使用默认档案。')
+  if (!getProviderProfiles(store.config).some((profile) => profile.id === input.providerProfileId)) {
+    throw new Error('所选供应商档案不存在，请先到设置页创建。')
+  }
+  if (store.characters.some((item) => item.id !== id && item.name.toLowerCase() === input.name.toLowerCase())) {
+    throw new Error('已存在同名角色，请换一个名字。')
+  }
+  if (character.builtIn) {
+    character.name = input.name
+    character.avatar = input.avatar
+    character.updatedAt = Date.now()
+    // 内置角色的人设与模型写入全局配置，保持单一数据源。
+    saveConfig({ soulMd: input.soulMd, model: input.model })
+    return listCharacters().find((item) => item.id === id)!
+  }
+  Object.assign(character, input, { updatedAt: Date.now() })
+  persist()
+  return listCharacters().find((item) => item.id === id)!
+}
+
+export function deleteCharacter(id: string): SessionWorkspace {
+  const character = findCharacterByIdOrThrow(id)
+  if (character.builtIn) throw new Error('内置角色不可删除。')
+  const hadActive = store.sessions.some((session) => session.characterId === id && session.id === store.activeSessionId)
+  store.sessions = store.sessions.filter((session) => session.characterId !== id)
+  store.characters = store.characters.filter((item) => item.id !== id)
+  if (store.sessions.length === 0) store.sessions.push(createSession())
+  if (hadActive || !store.sessions.some((session) => session.id === store.activeSessionId)) {
+    store.activeSessionId = store.sessions[0].id
+  }
   persist()
   return getSessionWorkspace()
 }

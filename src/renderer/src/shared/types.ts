@@ -1,11 +1,13 @@
 import type { StorageStatus } from '../../../shared/storage'
-import type { AppConfig, PaletteId } from '../../../shared/config'
+import type { AppConfig, PaletteId, ResolvedProviderProfile } from '../../../shared/config'
+import type { CharacterStats } from '../../../shared/characters'
 import type { AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult, ProviderDiagnostics } from '../../../shared/ai'
 import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from '../../../shared/capture'
 import type { ToolActivityData, ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../../../shared/tools'
 import type { CapabilityInfo } from '../../../shared/capabilities'
 import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncStatus, MemoryType } from '../../../shared/memory'
-export type { AppConfig, PaletteId } from '../../../shared/config'
+export type { AppConfig, PaletteId, ProviderProfile, ResolvedProviderProfile } from '../../../shared/config'
+export type { Character, CharacterStats } from '../../../shared/characters'
 
 /** 插件执行结果 - 插件 execute() 返回此类型，无需 ok 字段 */
 export interface ExecuteResult {
@@ -147,6 +149,19 @@ export interface ElectronAPI {
   onPluginHotkey: (callback: (pluginId: string) => void) => () => void
   onClipboardChange: (callback: (text: string) => void) => () => void
   onConfigChanged: (callback: (config: AppConfig) => void) => () => void
+  characters: {
+    list: () => Promise<CharacterStats[]>
+    create: (draft: unknown) => Promise<CharacterStats>
+    update: (id: string, draft: unknown) => Promise<CharacterStats>
+    remove: (id: string) => Promise<SessionWorkspace>
+    fetchModels: (profileId: string) => Promise<AIModelListResult>
+    onChanged: (callback: () => void) => () => void
+  }
+  providerProfiles: {
+    list: () => Promise<ResolvedProviderProfile[]>
+    save: (profile: unknown) => Promise<ResolvedProviderProfile[]>
+    remove: (id: string) => Promise<ResolvedProviderProfile[]>
+  }
   db: {
     getStorageStatus: () => Promise<StorageStatus>
     retrySave: () => Promise<StorageStatus>
@@ -160,7 +175,7 @@ export interface ElectronAPI {
     clearMessages: () => Promise<void>
     getSessionWorkspace: () => Promise<SessionWorkspace>
     searchSessions: (query: string) => Promise<ChatSessionSummary[]>
-    createSession: (title?: string) => Promise<SessionWorkspace>
+    createSession: (title?: string, characterId?: string) => Promise<SessionWorkspace>
     selectSession: (id: string) => Promise<SessionWorkspace>
     renameSession: (id: string, title: string) => Promise<ChatSessionSummary[]>
     deleteSession: (id: string) => Promise<SessionWorkspace>
@@ -211,6 +226,7 @@ export interface ChatSession {
   id: string
   title: string
   messages: Message[]
+  characterId: string
   createdAt: number
   updatedAt: number
 }
@@ -220,6 +236,7 @@ export interface ChatSessionSummary {
   title: string
   preview: string
   messageCount: number
+  characterId: string
   createdAt: number
   updatedAt: number
 }

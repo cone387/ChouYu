@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { AIStreamRequest } from '../../../shared/ai'
 import { DEFAULT_APP_CONFIG } from '../../../shared/config'
+import type { Message } from '../shared/types'
 import { joinApiUrl, parseClaudeStreamLine, parseOpenAIStreamLine, streamChat } from './ai-engine'
 
 describe('AI stream parsers', () => {
@@ -61,6 +63,42 @@ describe('AI stream parsers', () => {
     expect(onRequestStart).toHaveBeenCalledOnce()
     expect(onChunk).toHaveBeenCalledWith('好', false)
     expect(onChunk).toHaveBeenCalledWith('', true)
+    vi.unstubAllGlobals()
+  })
+
+  it('skips credential prechecks and forwards characterId when a character is set', async () => {
+    let capturedRequest: AIStreamRequest | undefined
+    const messages: Message[] = [{ id: 'm1', role: 'user', content: '你好', timestamp: 0 }]
+    vi.stubGlobal('window', {
+      electronAPI: {
+        ai: {
+          onStreamEvent: vi.fn(() => () => {}),
+          cancelStream: vi.fn(),
+          async startStream(request: AIStreamRequest) {
+            capturedRequest = request
+            return { ok: true }
+          }
+        }
+      }
+    })
+
+    await expect(
+      streamChat(
+        messages,
+        '系统提示',
+        { ...DEFAULT_APP_CONFIG, apiKey: '', model: '' },
+        vi.fn(),
+        undefined,
+        undefined,
+        'c1'
+      )
+    ).resolves.toBeUndefined()
+
+    expect(capturedRequest).toBeDefined()
+    expect(capturedRequest?.requestId).toMatch(/^chat_/)
+    expect(capturedRequest?.characterId).toBe('c1')
+    expect(capturedRequest?.systemPrompt).toBe('系统提示')
+    expect(capturedRequest?.messages).toEqual([{ role: 'user', content: '你好', imageUrl: undefined }])
     vi.unstubAllGlobals()
   })
 })

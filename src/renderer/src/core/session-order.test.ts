@@ -3,7 +3,7 @@ import type { ChatSessionSummary } from '../shared/types'
 import { mergeSessionsInCurrentOrder } from './session-order'
 
 function session(id: string, title: string, updatedAt: number): ChatSessionSummary {
-  return { id, title, preview: title, messageCount: 1, createdAt: 1, updatedAt }
+  return { id, title, preview: title, messageCount: 1, characterId: 'chouyu', createdAt: 1, updatedAt }
 }
 
 describe('visible session order', () => {

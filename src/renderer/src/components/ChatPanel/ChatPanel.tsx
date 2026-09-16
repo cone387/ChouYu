@@ -9,6 +9,7 @@ import MessageArea from './MessageArea'
 import InputArea, { PendingAttachment } from './InputArea'
 import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
+import ContactsView from '../Contacts/ContactsView'
 import OnboardingCard from '../Onboarding/OnboardingCard'
 import ToolApprovalDialog from '../ToolApproval/ToolApprovalDialog'
 import MemoryCandidateCard from '../Memory/MemoryCandidateCard'
@@ -16,12 +17,14 @@ import MemorySettingsTab from '../Settings/MemorySettingsTab'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
 import type { MemoryConflictAction, MemoryFeedbackValue, MemoryRecord } from '../../../../shared/memory'
 import { isAIConfigured } from '../../../../shared/config'
+import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 import {
   Message,
   PetState,
   AppConfig,
   PluginInfo,
-  PluginMessageData
+  PluginMessageData,
+  SessionWorkspace
 } from '../../shared/types'
 import {
   DEFAULT_CONFIG,
@@ -131,6 +134,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     messages,
     sessions,
     activeSessionId,
+    characters,
+    activeCharacterId,
     workspaceLoaded,
     workspaceError,
     retryWorkspace,
@@ -141,7 +146,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     sessionMessagesRef,
     happyTimerRef,
     activeSessionIdRef,
+    applyWorkspace,
     updateSessionMessages,
+    stopSessionResponse,
     generateAIResponse,
     createSession,
     selectSession,
@@ -166,6 +173,12 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     () => messages.filter((message) => message.role === 'user' && !message.toolData && message.content.trim()).map((message) => message.content),
     [messages]
   )
+  const activeCharacter = characters.find((character) => character.id === activeCharacterId) ?? null
+  // 自定义角色自带 Provider 配置（主进程 resolveCharacterConfig 解析），
+  // 全局 AI 配置为空时也允许对话；内置角色仍依赖设置页的全局配置。
+  const customCharacterActive = Boolean(activeCharacter && !activeCharacter.builtIn)
+  const visibleSessions = useMemo(() => sessions.filter((session) =>
+    (session.characterId || DEFAULT_CHARACTER_ID) === activeCharacterId), [sessions, activeCharacterId])
   const {
     dimensionsLoaded,
     panelHeight,
@@ -507,12 +520,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         return
       }
       try {
-        const saved = await window.electronAPI.db.saveConfig({ model: requestedModel })
-        setConfig(saved)
+        const savedModel = await handleModelChange(requestedModel)
         updateSessionMessages(originatingSessionId, (previous) => [...previous, {
           id: Date.now().toString(),
           role: 'assistant',
-          content: `已切换到模型 \`${saved.model}\`。`,
+          content: `已切换到模型 \`${savedModel}\`。`,
           timestamp: Date.now()
         }])
       } catch (error) {
@@ -527,7 +539,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       return
     }
 
-    if (!isAIConfigured(config)) {
+    if (!customCharacterActive && !isAIConfigured(config)) {
       setShowOnboarding(true)
       updateSessionMessages(originatingSessionId, (previous) => [...previous, { id: Date.now().toString(), role: 'assistant', content: '尚未完成 AI Provider 配置。请填写 Base URL、API Key 和模型并通过连接检测后再开始对话。', timestamp: Date.now() }])
       return
@@ -570,15 +582,49 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     return '在线'
   }
 
-  const handleModelChange = useCallback((newModel: string) => {
-    setConfig((previous) => ({ ...previous, model: newModel }))
-    void window.electronAPI.db.saveConfig({ model: newModel })
-  }, [])
+  // 模型切换的唯一入口：自定义角色的模型属于角色本身（characters.update 全量草稿），
+  // 内置角色仍写回设置页的全局配置。返回实际落库的模型供反馈文案使用。
+  const handleModelChange = useCallback(async (newModel: string): Promise<string> => {
+    if (activeCharacter && !activeCharacter.builtIn) {
+      const updated = await window.electronAPI.characters.update(activeCharacter.id, {
+        name: activeCharacter.name,
+        avatar: activeCharacter.avatar,
+        soulMd: activeCharacter.soulMd,
+        providerProfileId: activeCharacter.providerProfileId,
+        model: newModel
+      })
+      return updated.model
+    }
+    const saved = await window.electronAPI.db.saveConfig({ model: newModel })
+    setConfig(saved)
+    return saved.model
+  }, [activeCharacter])
 
   const openAISettings = useCallback(() => {
     setShowOnboarding(false)
     navigate('settings')
   }, [navigate])
+
+  const openCharacterChat = useCallback(async (characterId: string) => {
+    // Search the full session list: the clicked character is usually not the
+    // active one, so the sidebar-filtered list would miss its sessions.
+    const latest = [...sessions]
+      .filter((session) => (session.characterId || DEFAULT_CHARACTER_ID) === characterId)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    if (latest) await selectSession(latest.id)
+    else await createSession(characterId)
+    navigate('chat')
+  }, [sessions, selectSession, createSession, navigate])
+
+  // 删除角色会连带删除其会话：先停掉这些会话的在途生成（对齐 deleteSession 的先例），
+  // 再按保留侧栏顺序的方式应用新工作区。
+  const handleCharactersDeleted = useCallback((workspace: SessionWorkspace) => {
+    sessions.filter((session) => !workspace.sessions.some((item) => item.id === session.id))
+      .forEach((session) => {
+        try { stopSessionResponse(session.id) } catch { /* 中止尽力而为，删除流程继续。 */ }
+      })
+    applyWorkspace(workspace, true)
+  }, [sessions, stopSessionResponse, applyWorkspace])
 
   const openMemoryWorkspace = useCallback((focusId = '') => {
     setMemoryCorrectionId(focusId)
@@ -649,7 +695,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           {sessionsVisible && narrowLayout && <button className="workspace-sessions-backdrop" aria-label="收起会话列表" onClick={toggleSessionSidebar} />}
           <div className="workspace-sessions" hidden={!sessionsVisible} style={{ width: sessionSidebarWidth }}>
             <ConversationSidebar
-              sessions={sessions} activeSessionId={activeSessionId} width={sessionSidebarWidth}
+              sessions={visibleSessions} activeSessionId={activeSessionId} width={sessionSidebarWidth}
               streamingSessionIds={streamingSessionIds} dragHandleProps={dragHandleProps}
               onCreate={async () => { await createSession(); if (narrowLayout) toggleSessionSidebar() }}
               onSelect={async (id, query) => {
@@ -666,7 +712,12 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             onPointerDown={handleSidebarResizeStart} onPointerMove={handleSidebarResizeMove}
             onPointerUp={handleSidebarResizeEnd} onPointerCancel={handleSidebarResizeEnd} />}
           <div className="chat-panel-main">
-            {showOnboarding && <OnboardingCard onConfigure={openAISettings} />}
+            {activeCharacter && !activeCharacter.builtIn && (
+              <div className="character-context-chip" role="status" data-character-chip={activeCharacter.id}>
+                <span aria-hidden="true">{activeCharacter.avatar}</span> 正在与 {activeCharacter.name}（{activeCharacter.model}）对话
+              </div>
+            )}
+            {showOnboarding && !customCharacterActive && <OnboardingCard onConfigure={openAISettings} />}
             {workspaceError && <div className="memory-candidate-error" role="alert">{workspaceError}<button onClick={retryWorkspace}>重新加载</button></div>}
             {workspaceLoaded && (
               <MessageArea
@@ -719,8 +770,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               disabled={!workspaceLoaded}
               isStreaming={isStreaming}
               focusRequest={composerFocusRequest}
-              model={config.model}
+              model={activeCharacter && !activeCharacter.builtIn ? activeCharacter.model : config.model}
               onModelChange={handleModelChange}
+              fetchModels={activeCharacter && !activeCharacter.builtIn
+                ? () => window.electronAPI.characters.fetchModels(activeCharacter.providerProfileId)
+                : undefined}
               onScreenshot={onScreenshot}
               onScrollScreenshot={onScrollScreenshot}
               plugins={plugins}
@@ -741,6 +795,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 config={config} onSaveConfig={saveMemoryWorkspaceConfig} focusMemoryId={memoryCorrectionId || undefined} />
             </div>
           </>}
+        </section>
+        <section className="workspace-page workspace-contacts" hidden={activePage !== 'contacts'} aria-label="通讯录工作区">
+          {visitedPages.contacts && <ContactsView active={visible && activePage === 'contacts'} config={config}
+            onOpenChat={(characterId) => { void openCharacterChat(characterId) }}
+            onDeleted={handleCharactersDeleted} />}
         </section>
         <section className="workspace-page workspace-journal" hidden={activePage !== 'journal'} aria-label="活动工作区">
           {visitedPages.journal && <>

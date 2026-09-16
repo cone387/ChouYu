@@ -8,6 +8,7 @@ import ModelPicker from '../ModelPicker/ModelPicker'
 import ToolsSettingsTab from './ToolsSettingsTab'
 import MemorySettingsTab from './MemorySettingsTab'
 import CapabilitySettingsTab from './CapabilitySettingsTab'
+import ProviderProfilesCard from './ProviderProfilesCard'
 import { searchSettings, type SettingsSearchEntry } from './settings-search-index'
 import './Settings.css'
 
@@ -494,6 +495,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                   {saveStatus || '设置会自动保存，并在下一次对话时生效。'}
                 </div>
               </div>
+              <ProviderProfilesCard />
               </div>
             </div>
           )}

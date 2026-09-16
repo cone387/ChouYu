@@ -22,6 +22,7 @@ import { runMem0V3Smoke } from './smoke/mem0-v3-smoke'
 import { runJournalProjectSmoke } from './smoke/journal-project-smoke'
 import { runJournalPlaybookSmoke } from './smoke/journal-playbook-smoke'
 import { runStorageRuntimeSmoke } from './smoke/storage-smoke'
+import { runContactsSmoke } from './smoke/contacts-smoke'
 import { runChatRuntimeSmoke } from './smoke/chat-smoke'
 import { runJournalSmoke } from './smoke/journal-smoke'
 
@@ -84,6 +85,7 @@ function createWindow(): void {
     mainWindow.webContents.once('did-finish-load', async () => {
       try {
         await runStorageRuntimeSmoke(mainWindow!)
+        await runContactsSmoke(mainWindow!)
         await runChatRuntimeSmoke(mainWindow!)
         await runJournalSmoke(mainWindow!)
         console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)

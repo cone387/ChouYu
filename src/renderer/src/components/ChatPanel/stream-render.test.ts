@@ -55,6 +55,41 @@ describe('stream render throttling', () => {
   })
 })
 
+describe('per-session character resolution', () => {
+  it('mirrors the session list so generations resolve characters without state churn', () => {
+    expect(workspaceSource).toContain('const sessionsRef = useRef<ChatSessionSummary[]>([])')
+    expect(workspaceSource).toContain('sessionsRef.current = sessions')
+  })
+
+  it('resolves the character from the session being generated, not the active one', () => {
+    expect(workspaceSource).toContain('sessionsRef.current.find((session) => session.id === sessionId)?.characterId')
+    expect(workspaceSource).toContain('character.soulMd || config.soulMd')
+    expect(workspaceSource).not.toContain('charactersRef.current.find((character) => character.id === activeCharacterIdRef.current)')
+  })
+
+  it('forwards the session character id into streamChat', () => {
+    expect(workspaceSource).toContain('character && !character.builtIn ? character.id : undefined')
+  })
+
+  it('displays the character model and routes model changes through characters.update', () => {
+    expect(panelSource).toContain('model={activeCharacter && !activeCharacter.builtIn ? activeCharacter.model : config.model}')
+    expect(panelSource).toContain('characters.update(activeCharacter.id, {')
+  })
+
+  it('derives customCharacterActive instead of re-testing the builtIn flag inline', () => {
+    expect(panelSource).toContain('const customCharacterActive = Boolean(activeCharacter && !activeCharacter.builtIn)')
+  })
+
+  it('does not gate sending on the global AI config while a custom character is active', () => {
+    expect(panelSource).toContain('if (!customCharacterActive && !isAIConfigured(config)) {')
+    expect(panelSource).not.toContain('if (!isAIConfigured(config)) {')
+  })
+
+  it('suppresses the global-config onboarding card for custom characters', () => {
+    expect(panelSource).toContain('{showOnboarding && !customCharacterActive && <OnboardingCard')
+  })
+})
+
 describe('message windowing', () => {
   it('only windows long sessions and keys the reset on the session, not the length', () => {
     expect(messageAreaSource).toContain('messages.length > 40')
