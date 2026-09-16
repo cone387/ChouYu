@@ -65,6 +65,13 @@ const LEGACY_DEFAULT_SOUL_MD = `# 角色设定
 - 可以表达情绪和态度
 `
 
+export const PALETTE_IDS = ['purple', 'pink', 'blue', 'green', 'orange'] as const
+export type PaletteId = (typeof PALETTE_IDS)[number]
+
+export function isPaletteId(value: unknown): value is PaletteId {
+  return typeof value === 'string' && (PALETTE_IDS as readonly string[]).includes(value)
+}
+
 export interface AppConfig {
   provider: 'openai' | 'claude'
   baseUrl: string
@@ -74,6 +81,7 @@ export interface AppConfig {
   autoStart: boolean
   petSize: number
   theme: 'system' | 'light' | 'dark'
+  palette: PaletteId
   proactiveGreeting: boolean
   proactiveRestReminder: boolean
   clipboardWatch: boolean
@@ -106,6 +114,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   autoStart: false,
   petSize: 80,
   theme: 'system',
+  palette: 'purple',
   proactiveGreeting: true,
   proactiveRestReminder: true,
   clipboardWatch: false,
@@ -155,6 +164,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     hotkey: typeof source.hotkey === 'string' && source.hotkey.trim() ? source.hotkey.trim() : DEFAULT_APP_CONFIG.hotkey,
     autoStart: source.autoStart === true,
     theme: source.theme === 'light' || source.theme === 'dark' ? source.theme : 'system',
+    palette: isPaletteId(source.palette) ? source.palette : 'purple',
     proactiveGreeting: source.proactiveGreeting !== false,
     proactiveRestReminder: source.proactiveRestReminder !== false,
     clipboardWatch: source.clipboardWatch === true,
@@ -199,6 +209,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.hotkey === 'string') patch.hotkey = input.hotkey.trim().slice(0, 128)
   if (typeof input.autoStart === 'boolean') patch.autoStart = input.autoStart
   if (input.theme === 'system' || input.theme === 'light' || input.theme === 'dark') patch.theme = input.theme
+  if (isPaletteId(input.palette)) patch.palette = input.palette
   if (typeof input.petSize === 'number' && Number.isFinite(input.petSize)) patch.petSize = input.petSize
   if (typeof input.proactiveGreeting === 'boolean') patch.proactiveGreeting = input.proactiveGreeting
   if (typeof input.proactiveRestReminder === 'boolean') patch.proactiveRestReminder = input.proactiveRestReminder
