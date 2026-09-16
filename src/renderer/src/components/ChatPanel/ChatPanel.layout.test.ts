@@ -146,8 +146,9 @@ describe('chat layout guardrails', () => {
 })
 
 describe('contacts workspace wiring', () => {
-  it('filters the session sidebar by the active character with the default fallback', () => {
-    expect(panelSource).toContain('(session.characterId || DEFAULT_CHARACTER_ID)')
+  it('mixes every character’s sessions in the sidebar ordered by recency', () => {
+    expect(panelSource).toContain('[...sessions].sort((a, b) => b.updatedAt - a.updatedAt), [sessions])')
+    expect(panelSource).not.toContain('visibleSessions = useMemo(() => sessions.filter')
   })
 
   it('aborts generations of sessions removed with their character and keeps sidebar order', () => {

@@ -178,8 +178,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   // 自定义角色自带 Provider 配置（主进程 resolveCharacterConfig 解析），
   // 全局 AI 配置为空时也允许对话；内置角色仍依赖设置页的全局配置。
   const customCharacterActive = Boolean(activeCharacter && !activeCharacter.builtIn)
-  const visibleSessions = useMemo(() => sessions.filter((session) =>
-    (session.characterId || DEFAULT_CHARACTER_ID) === activeCharacterId), [sessions, activeCharacterId])
+  // 会话列表混合展示所有联系人的会话并按最近活跃排序（微信式）；
+  // 存储里的会话顺序是插入序，更新不重排，不能直接当最近序用。
+  const visibleSessions = useMemo(() =>
+    [...sessions].sort((a, b) => b.updatedAt - a.updatedAt), [sessions])
   const {
     dimensionsLoaded,
     panelHeight,
@@ -616,8 +618,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [navigate])
 
   const openCharacterChat = useCallback(async (characterId: string) => {
-    // Search the full session list: the clicked character is usually not the
-    // active one, so the sidebar-filtered list would miss its sessions.
     const latest = [...sessions]
       .filter((session) => (session.characterId || DEFAULT_CHARACTER_ID) === characterId)
       .sort((a, b) => b.updatedAt - a.updatedAt)[0]
