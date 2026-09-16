@@ -166,6 +166,21 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
     }
   }, [confirmDelete, onDeleted])
 
+  // 捕获阶段拦截 Escape，避免冒泡到 ChatPanel 把整个面板收起。
+  useEffect(() => {
+    if (!detail && !form && !confirmDelete) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      if (form) setForm(null)
+      else if (confirmDelete) setConfirmDelete(null)
+      else setDetail(null)
+    }
+    window.addEventListener('keydown', closeOnEscape, true)
+    return () => window.removeEventListener('keydown', closeOnEscape, true)
+  }, [detail, form, confirmDelete])
+
   return <div className="contacts-view" data-contacts-root>
     <div className="contacts-toolbar">
       <div className="contacts-search-box">
@@ -179,7 +194,7 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
           onClick={() => setSort(option.value)}>{option.label}</button>)}
       </div>
       <button type="button" data-contacts-new className="contacts-new" onClick={() => openForm()}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         <span>新建</span>
       </button>
     </div>
@@ -276,9 +291,9 @@ export default function ContactsView({ active, config, onOpenChat, onDeleted }: 
           </select></label>
         <label className="contacts-field"><span className="contacts-field-name">模型</span>
           <input data-contacts-model value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} required list="contacts-model-options" />
+          <button type="button" className="contacts-fetch" data-contacts-fetch-models onClick={() => { void loadModels() }} disabled={busy}>获取模型</button>
           <datalist id="contacts-model-options">{models.map((model) => <option key={model} value={model} />)}</datalist>
         </label>
-        <button type="button" className="contacts-fetch" data-contacts-fetch-models onClick={() => { void loadModels() }} disabled={busy}>获取模型列表</button>
         {modelStatus && <p className="contacts-hint" role="status">{modelStatus}</p>}
         {form.id === DEFAULT_CHARACTER_ID && <p className="contacts-hint">内置角色的人设与模型会写回设置页的全局配置。</p>}
         <label className="contacts-field contacts-field-multiline"><span className="contacts-field-name">人设</span>

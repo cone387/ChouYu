@@ -54,10 +54,12 @@ describe('contacts layout', () => {
     expect(cssSource).toMatch(/\.contacts-sort-option\[aria-pressed="true"\]/)
   })
 
-  it('moves the new-character action into the search toolbar row', () => {
+  it('moves the new-character action into the search toolbar row as a quiet peer', () => {
     expect(viewSource).toMatch(/data-contacts-new className="contacts-new"/)
     expect(viewSource).not.toContain('contacts-new-card')
-    expect(cssSource).toMatch(/\.contacts-new \{[^}]*background: var\(--accent\)/)
+    expect(cssSource).toMatch(/\.contacts-new \{[^}]*background: color-mix\(in srgb, var\(--text-muted\) 10%/)
+    expect(cssSource).toMatch(/\.contacts-new \{[^}]*height: 30px/)
+    expect(cssSource).toMatch(/\.contacts-search-box \{[^}]*height: 30px/)
     expect(cssSource).toMatch(/\.contacts-toolbar \{[^}]*display: flex/)
   })
 
@@ -65,6 +67,28 @@ describe('contacts layout', () => {
     expect(cssSource).toMatch(/\.contacts-detail \{[^}]*resize: both/)
     expect(cssSource).toMatch(/\.contacts-form \{[^}]*resize: both/)
     expect(cssSource).toMatch(/\.contacts-detail \{[^}]*width: min\(460px, 100%\)/)
+  })
+
+  it('keeps the detail panel compact so it fits without an outer scrollbar', () => {
+    expect(cssSource).toMatch(/\.contacts-detail-soul \{[^}]*max-height: 120px/)
+    expect(cssSource).toMatch(/\.contacts-field \{[^}]*min-height: 38px/)
+    expect(cssSource).toMatch(/\.contacts-detail-actions button \{[^}]*min-height: 30px/)
+  })
+
+  it('closes detail, confirm and form dialogs on Escape before the panel swallows it', () => {
+    expect(viewSource).toMatch(/event\.key !== 'Escape'/)
+    expect(viewSource).toContain("window.addEventListener('keydown', closeOnEscape, true)")
+    expect(viewSource).toMatch(/if \(form\) setForm\(null\)/)
+    expect(viewSource).toMatch(/else if \(confirmDelete\) setConfirmDelete\(null\)/)
+    expect(viewSource).toMatch(/else setDetail\(null\)/)
+  })
+
+  it('keeps the fetch-models action inline inside the model field row', () => {
+    expect(viewSource).toContain('>获取模型</button>')
+    expect(viewSource).toMatch(/data-contacts-model[^\n]*list="contacts-model-options"/)
+    expect(cssSource).toMatch(/\.contacts-fetch \{[^}]*flex: none/)
+    expect(cssSource).toMatch(/\.contacts-fetch \{[^}]*min-height: 26px/)
+    expect(cssSource).toMatch(/\.contacts-hint \{[^}]*padding-left: 54px/)
   })
 
   it('opens a detail panel on card click with chat, edit and delete actions', () => {
