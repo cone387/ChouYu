@@ -866,7 +866,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle('db:select-session', (_event, id: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
-    return selectChatSession(id)
+    const workspace = selectChatSession(id)
+    notifyAssistantUnread()
+    return workspace
   })
   ipcMain.handle('db:rename-session', (_event, id: string, title: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')

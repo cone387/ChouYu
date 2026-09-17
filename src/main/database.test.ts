@@ -466,4 +466,64 @@ describe('assistant messages', () => {
   it('rejects creating a custom character named after the assistant', () => {
     expect(() => createCharacter({ name: '助手', avatar: '🔔', soulMd: '', providerProfileId: 'default', model: 'm' })).toThrow(/同名/)
   })
+
+  it('keeps proactive appends newer than the renderer list when saving', () => {
+    const w1 = appendAssistantMessage('旧问候', 1000)
+    const assistantId = w1.sessions.find((s) => s.characterId === 'assistant')!.id
+    // 渲染层缓存带着已加载的历史（旧问候）流式回复；主进程稍后的追加不在缓存里。
+    saveSessionMessages(assistantId, [
+      { id: 'p1', role: 'assistant', content: '旧问候', timestamp: 1000 },
+      { id: 'u1', role: 'user', content: '在吗', timestamp: 1500 },
+      { id: 'a1', role: 'assistant', content: '正在回复', timestamp: 1600 }
+    ])
+    appendAssistantMessage('稍后提醒：喝水', 2000)
+    saveSessionMessages(assistantId, [
+      { id: 'p1', role: 'assistant', content: '旧问候', timestamp: 1000 },
+      { id: 'u1', role: 'user', content: '在吗', timestamp: 1500 },
+      { id: 'a1', role: 'assistant', content: '回复完毕', timestamp: 1600 }
+    ])
+    const contents = getSession(assistantId)!.messages.map((m) => m.content)
+    expect(contents).toContain('旧问候')
+    expect(contents).toContain('稍后提醒：喝水')
+  })
+
+  it('still clears the assistant session when the renderer saves an empty list', () => {
+    const w1 = appendAssistantMessage('会被清掉', 1000)
+    const assistantId = w1.sessions.find((s) => s.characterId === 'assistant')!.id
+    const w2 = saveSessionMessages(assistantId, [])
+    expect(getSession(assistantId)!.messages).toHaveLength(0)
+    expect(w2.sessions.find((s) => s.characterId === 'assistant')!.messageCount).toBe(0)
+  })
+
+  it('does not resurrect older db messages the renderer dropped on retry', () => {
+    const w1 = appendAssistantMessage('问候', 1000)
+    const assistantId = w1.sessions.find((s) => s.characterId === 'assistant')!.id
+    appendAssistantMessage('被重试覆盖的提醒', 1600)
+    saveSessionMessages(assistantId, [
+      { id: 'u1', role: 'user', content: '重来', timestamp: 1500 },
+      { id: 'a2', role: 'assistant', content: '新回复', timestamp: 3000 }
+    ])
+    const contents = getSession(assistantId)!.messages.map((m) => m.content)
+    expect(contents).not.toContain('被重试覆盖的提醒')
+  })
+
+  it('does not preserve trailing db messages for non-assistant sessions', () => {
+    const workspace = createChatSession('普通会话')
+    const id = workspace.activeSession.id
+    saveSessionMessages(id, [{ id: 'm1', role: 'user', content: '第一条', timestamp: 1000 }])
+    const w2 = saveSessionMessages(id, [{ id: 'm2', role: 'user', content: '更旧但替换', timestamp: 500 }])
+    expect(w2.activeSession.messages.map((m) => m.id)).toEqual(['m2'])
+  })
+
+  it('appends to the most recently updated assistant session', () => {
+    const w1 = appendAssistantMessage('第一条', 1000)
+    const firstId = w1.sessions.find((s) => s.characterId === 'assistant')!.id
+    const created = createChatSession('第二个助手会话', 'assistant')
+    const secondId = created.activeSession.id
+    appendAssistantMessage('第二条', 3000)
+    expect(getSession(firstId)!.messages.map((m) => m.content)).toEqual(['第一条'])
+    expect(getSession(secondId)!.messages.map((m) => m.content)).toEqual(['第二条'])
+    appendAssistantMessage('第三条', 4000)
+    expect(getSession(secondId)!.messages.map((m) => m.content)).toEqual(['第二条', '第三条'])
+  })
 })

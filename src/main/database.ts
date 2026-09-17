@@ -509,7 +509,9 @@ function markSessionReadUpToNow(session: ChatSession): void {
 /** 主动提醒的唯一入口：写入助手会话并即时落盘，托盘角标据此更新。 */
 export function appendAssistantMessage(content: string, timestamp?: number): SessionWorkspace {
   const at = Number.isFinite(timestamp) ? Number(timestamp) : Date.now()
-  let session = store.sessions.find((candidate) => isAssistantCharacter(candidate.characterId))
+  let session = store.sessions
+    .filter((candidate) => isAssistantCharacter(candidate.characterId))
+    .reduce<ChatSession | null>((latest, candidate) => (!latest || candidate.updatedAt > latest.updatedAt ? candidate : latest), null)
   if (!session) {
     session = createSession([], '助手消息', at, ASSISTANT_CHARACTER_ID)
     store.sessions.unshift(session)
@@ -637,11 +639,20 @@ export function saveSessionMessages(id: string, messages: Message[]): SessionWor
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
   const previousImages = new Map(session.messages.filter((message) => message.imageUrl && isAttachmentReference(message.imageUrl)).map((message) => [message.id, message.imageUrl]))
-  session.messages = sanitizeMessages(messages).map((message) => ({
+  let nextMessages: Message[] = sanitizeMessages(messages).map((message) => ({
     ...message,
     // A missing file must not erase its durable reference when the renderer saves text updates.
     imageUrl: message.imageUrl ?? previousImages.get(message.id)
   }))
+  // 生成期间的主动追加可能尚未进入渲染层缓存（后台会话在流式中无法收到 sessions:changed 的消息合并）：
+  // 只保留比 incoming 全部消息都新的缺失消息，避免旧回复在重试/编辑后被“复活”；空列表是显式清空，不合并。
+  if (isAssistantCharacter(session.characterId) && nextMessages.length > 0) {
+    const known = new Set(nextMessages.map((message) => message.id))
+    const maxIncoming = nextMessages.reduce((latest, message) => Math.max(latest, message.timestamp), 0)
+    const trailing = session.messages.filter((message) => !known.has(message.id) && message.timestamp > maxIncoming)
+    if (trailing.length > 0) nextMessages = [...nextMessages, ...trailing]
+  }
+  session.messages = nextMessages
   session.updatedAt = Date.now()
   // 渲染层保存消息说明用户正在助手会话对话：AI 回复不当未读。
   if (isAssistantCharacter(session.characterId)) markSessionReadUpToNow(session)
