@@ -210,9 +210,12 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const narrowLayout = geometry.narrow
   const sessionsVisible = displayMode !== 'chat' && (narrowLayout ? narrowSessionsOpen : displayMode === 'sessions' || showSessions)
   const panelReady = presentation.loaded && dimensionsLoaded && sidebarLoaded && (workspaceLoaded || Boolean(workspaceError) || showSettings)
+  const persistSessionsVisible = useCallback((visible: boolean) => {
+    void window.electronAPI.db.setState(SESSION_SIDEBAR_STATE_KEY, String(visible)).catch(() => { /* The persistent storage notice reports disk failures. */ })
+  }, [])
   const changeDisplayMode = (mode: WorkspaceMode) => {
     presentation.changeMode(mode)
-    if (mode !== 'chat') setShowSessions(true)
+    if (mode !== 'chat') { setShowSessions(true); persistSessionsVisible(true) }
     if (mode !== 'workspace') navigate('chat')
     setNarrowSessionsOpen(mode !== 'chat' && narrowLayout)
   }
@@ -369,11 +372,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (displayMode === 'sessions') { presentation.changeMode('chat'); return }
     setShowSessions((current) => {
       const next = !current
-      void window.electronAPI.db.setState(SESSION_SIDEBAR_STATE_KEY, String(next)).catch(() => { /* The persistent storage notice reports disk failures. */ })
+      persistSessionsVisible(next)
       if (!next) setTimeout(requestComposerFocus, 0)
       return next
     })
-  }, [requestComposerFocus, narrowLayout, displayMode, presentation.changeMode])
+  }, [requestComposerFocus, narrowLayout, displayMode, presentation.changeMode, persistSessionsVisible])
 
   useEffect(() => {
     if (maximized || (messages.length === 0 && !isStreaming)) return
@@ -701,6 +704,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       {displayMode === 'workspace' && <WorkspaceNav activePage={activePage} onNavigate={navigate} status={getStatusText()} />}
       <WorkspaceHeader onHide={onHide} onClose={onClose} dragHandleProps={dragHandleProps}
         onSearch={() => setShowGlobalSearch(true)}
+        sessionsVisible={sessionsVisible} onToggleSessions={isChat ? toggleSessionSidebar : undefined}
         maximized={maximized} onMaximize={presentation.toggleMaximized} mode={displayMode} onModeChange={changeDisplayMode} />
       <div className="workspace-body">
         <div className="workspace-page workspace-chat" hidden={!isChat}>

@@ -7,6 +7,7 @@ const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/compon
 const panelResizeSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/usePanelResize.ts'), 'utf8')
 const workspaceSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
 const sidebarSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.tsx'), 'utf8')
+const workspaceHeaderSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Workspace/WorkspaceHeader.tsx'), 'utf8')
 const sidebarStylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.css'), 'utf8')
 const inputSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/InputArea.tsx'), 'utf8')
 const memoryServiceSource = readFileSync(resolve(process.cwd(), 'src/main/memory/service.ts'), 'utf8')
@@ -59,10 +60,24 @@ describe('chat layout guardrails', () => {
     expect(panelSource).not.toContain('memorySyncProvider')
   })
 
-  it('uses the top-bar session toggle as the only close control', () => {
+  it('exposes the header session-list toggle with persisted visibility', () => {
+    expect(workspaceHeaderSource).toContain('onToggleSessions?: () => void')
+    expect(workspaceHeaderSource).toContain('aria-pressed={sessionsVisible}')
+    expect(workspaceHeaderSource).toContain("title={sessionsVisible ? '隐藏对话列表' : '显示对话列表'}")
+    expect(panelSource).toContain('sessionsVisible={sessionsVisible}')
+    expect(panelSource).toContain('onToggleSessions={isChat ? toggleSessionSidebar : undefined}')
     expect(panelSource).not.toContain('onClose={() => setShowSessions(false)}')
     expect(panelSource).toContain('dragHandleProps={dragHandleProps}')
     expect(sidebarSource).not.toContain('aria-label="关闭对话列表"')
+  })
+
+  it('persists forced session visibility when switching to non-chat modes', () => {
+    const changeDisplayModeSource = panelSource.slice(
+      panelSource.indexOf('const changeDisplayMode'),
+      panelSource.indexOf('const refreshPlugins')
+    )
+    expect(changeDisplayModeSource).toContain('persistSessionsVisible(true)')
+    expect(panelSource).toContain('persistSessionsVisible(next)')
   })
 
   it('places session actions behind a single top-right menu button', () => {
