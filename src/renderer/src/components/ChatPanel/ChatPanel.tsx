@@ -642,10 +642,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   // 托盘/宠物入口请求聚焦助手会话：只消费递增的那一次，不随 sessions 变化重放。
   const handledAssistantFocusRef = useRef(0)
   useEffect(() => {
+    if (!workspaceLoaded) return
     if (!assistantFocusRequest || assistantFocusRequest === handledAssistantFocusRef.current) return
     handledAssistantFocusRef.current = assistantFocusRequest
     void openCharacterChat(ASSISTANT_CHARACTER_ID)
-  }, [assistantFocusRequest, openCharacterChat])
+  }, [workspaceLoaded, assistantFocusRequest, openCharacterChat])
 
   // 阅读中不累计未读：当前会话是助手、面板展开且有新消息时自动标读。
   const activeAssistantUnread = sessions.find((session) => session.id === activeSessionId)?.unreadCount ?? 0
