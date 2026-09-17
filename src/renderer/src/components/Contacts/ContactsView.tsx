@@ -191,10 +191,11 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
 
   // 聊天页信息条跳转过来：打开对应角色详情后消费焦点，再次点击可重新触发。
   // 角色列表异步加载，找不到时先等待，加载完成后依赖变化会再次进入。
+  // 助手是置顶卡片直达会话，没有详情弹窗（编辑会被数据库拒绝），跳转焦点直接忽略。
   useEffect(() => {
     if (!active || !focusCharacterId) return
     const character = characters.find((item) => item.id === focusCharacterId)
-    if (!character) return
+    if (!character || character.id === ASSISTANT_CHARACTER_ID) return
     setDetail(character)
     onFocusConsumed?.()
   }, [active, focusCharacterId, characters, onFocusConsumed])
