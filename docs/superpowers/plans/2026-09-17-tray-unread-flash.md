@@ -522,10 +522,10 @@ Expected: 全部通过。
 
 ```bash
 npm run build
-grep -rl "proactive-unread-changed" out/preload/assets out/main | head -3
-grep -rl "open-messages-center" out/preload/assets out/main | head -3
+grep -rl "proactive-unread-changed" out/preload out/main | head -3
+grep -rl "open-messages-center" out/preload out/main | head -3
 grep -rl "pet-unread-dot" out/renderer/assets | head -3
-grep -rl "助手消息" out/main/*.js 2>/dev/null || grep -rl "助手消息" out/main | head -3
+grep -rl "助手消息" out/main | head -3
 ```
 
 Expected: 每条 grep 都有文件命中(用户测试走 out/ 产物,必须确认进包)。
