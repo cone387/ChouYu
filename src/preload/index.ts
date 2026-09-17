@@ -229,6 +229,15 @@ const api = {
   notifyPetVisible: (visible: boolean) => {
     ipcRenderer.send('pet-visibility-changed', visible)
   },
+  setProactiveUnread: (count: number) => {
+    ipcRenderer.send('proactive-unread-changed', count)
+  },
+  onOpenMessages: (callback: () => void) => {
+    ipcRenderer.on('open-messages-center', callback)
+    return () => {
+      ipcRenderer.removeListener('open-messages-center', callback)
+    }
+  },
   onOpenChatPanel: (callback: () => void) => {
     ipcRenderer.on('open-chat-panel', callback)
     return () => { ipcRenderer.removeListener('open-chat-panel', callback) }
