@@ -346,18 +346,18 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     </div>
     {error && !form && !confirmDelete && <div className="contacts-error" role="alert">{error}</div>}
     <div className="contacts-scroll">
-      <button type="button" className="contacts-card contacts-assistant-card" data-contacts-item={ASSISTANT_CHARACTER_ID}
-        onClick={() => onOpenChat(ASSISTANT_CHARACTER_ID)}>
-        <span className="contacts-card-head">
-          <span className="contacts-card-avatar" aria-hidden="true"><CharacterAvatar character={{ id: ASSISTANT_CHARACTER_ID, name: '助手', avatar: '' }} /></span>
-          <span className="contacts-card-title">
-            <span className="contacts-card-name">助手<em className="contacts-builtin">内置</em></span>
-            <span className="contacts-card-subtitle">主动提醒都发到这里</span>
-          </span>
-        </span>
-        <span className="contacts-card-desc">问候、休息与任务提醒会以聊天消息出现，可以随时回复。</span>
-      </button>
       <div className="contacts-grid">
+        <button type="button" className="contacts-card" data-contacts-item={ASSISTANT_CHARACTER_ID}
+          onClick={() => onOpenChat(ASSISTANT_CHARACTER_ID)}>
+          <span className="contacts-card-head">
+            <span className="contacts-card-avatar" aria-hidden="true"><CharacterAvatar character={{ id: ASSISTANT_CHARACTER_ID, name: '助手', avatar: '' }} /></span>
+            <span className="contacts-card-title">
+              <span className="contacts-card-name">助手<em className="contacts-builtin">内置</em></span>
+              <span className="contacts-card-subtitle">主动提醒都发到这里</span>
+            </span>
+          </span>
+          <span className="contacts-card-desc">问候、休息与任务提醒会以聊天消息出现，可以随时回复。</span>
+        </button>
         {filtered.map((character) => {
           const model = character.builtIn ? config.model : character.model
           const soulSummary = summarizeSoulMd(character.builtIn ? config.soulMd : character.soulMd)

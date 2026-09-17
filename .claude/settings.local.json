@@ -11,7 +11,14 @@
       "Bash(\"node_modules/electron/dist/electron.exe\" test-electron.js)",
       "Bash(node -e ' *)",
       "Bash(npx electron-builder *)",
-      "Bash(CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --win --publish never)"
+      "Bash(CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --win --publish never)",
+      "Bash(sw_vers)",
+      "Bash(npm --version)",
+      "Bash(timeout 25 npx electron-vite dev)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npx electron-vite *)",
+      "Bash(pkill -f \"electron\")",
+      "Bash(node *)"
     ]
   }
 }
