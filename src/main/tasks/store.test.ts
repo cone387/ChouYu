@@ -108,6 +108,91 @@ describe('TasksStore', () => {
     store.close()
   })
 
+  test('完成历史加载更多，并在全部历史中按关键词和优先级搜索', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    for (let index = 0; index < 65; index++) {
+      const task = store.createTask({ title: `历史 ${index}`, note: index === 0 ? '唯一早期记录 100%_ABC' : '', priority: index === 0 ? 'high' : 'low' })
+      store.completeTask(task.id)
+    }
+    expect(store.listTasks({ doneLimit: 100 }).done).toHaveLength(65)
+    const found = store.listTasks({ doneQuery: '100%_abc', donePriorities: ['high'] })
+    expect(found.done.map(task => task.title)).toEqual(['历史 0'])
+    expect(found.matchedDone).toBe(1)
+    expect(found.totalDone).toBe(65)
+    expect(store.listTasks({ doneQuery: '唯一', donePriorities: ['low'] }).matchedDone).toBe(0)
+    expect(() => store.listTasks({ doneLimit: -1 })).toThrow('加载数量')
+    store.close()
+  })
+
+  test('归档保留任务和提醒，允许编辑原归属但不允许新增或移入', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    const project = store.createProject('归档项目')
+    const task = store.createTask({ title: '保留任务', projectId: project.id, remindAt: 1 })
+    const other = store.createTask({ title: '其他任务' })
+    store.archiveProject(project.id, true)
+    expect(store.listTasks().open.some(item => item.id === task.id)).toBe(true)
+    expect(store.updateTask(task.id, { title: '修改标题', projectId: project.id }).projectId).toBe(project.id)
+    expect(store.claimDueReminders(2).map(item => item.id)).toEqual([task.id])
+    expect(() => store.createTask({ title: '新增', projectId: project.id })).toThrow('归档')
+    expect(() => store.updateTask(other.id, { projectId: project.id })).toThrow('归档')
+    expect(store.updateTask(task.id, { projectId: null }).projectId).toBeNull()
+    store.close()
+  })
+
+  test('重复任务恢复后再次完成不生成第二份下一期，删除下一期后仍不重建', () => {
+    const file = tempFile('tasks.db')
+    const store = openTasksStore(file)
+    const task = store.createTask({ title: '重复', dueAt: Date.now() + 86_400_000, recurrence: 'daily' })
+    store.completeTask(task.id)
+    const next = store.listTasks().open[0]
+    store.reopenTask(task.id)
+    store.completeTask(task.id)
+    expect(store.listTasks().open.map(item => item.id)).toEqual([next.id])
+    store.close()
+    const reopened = openTasksStore(file)
+    reopened.deleteTask(next.id)
+    reopened.reopenTask(task.id)
+    reopened.completeTask(task.id)
+    expect(reopened.listTasks().open).toHaveLength(0)
+    reopened.close()
+  })
+
+  test('v3 升级保留重复任务且不为旧已完成实例重复生成下一期', async () => {
+    const file = tempFile('tasks.db')
+    const store = openTasksStore(file)
+    const task = store.createTask({ title: '旧重复', dueAt: Date.now() + 86_400_000, recurrence: 'daily' })
+    store.completeTask(task.id)
+    const next = store.listTasks().open[0]
+    store.close()
+    const Database = (await import('better-sqlite3')).default
+    const raw = new Database(file)
+    raw.exec('ALTER TABLE tasks DROP COLUMN recurrence_generated')
+    raw.pragma('user_version = 3')
+    raw.close()
+    const upgraded = openTasksStore(file)
+    upgraded.reopenTask(task.id)
+    upgraded.completeTask(task.id)
+    expect(upgraded.listTasks().open.map(item => item.id)).toEqual([next.id])
+    upgraded.completeTask(next.id)
+    expect(upgraded.listTasks().open).toHaveLength(1)
+    upgraded.close()
+  })
+
+  test('选项按 id 改名和重排保留任务关联，删除只清除被删值', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    const field = store.createField({ name: '阶段', options: ['待办', '进行中'] })
+    const task = store.createTask({ title: '字段任务', customFields: { [field.id]: field.options[1].id } })
+    store.completeTask(task.id)
+    const renamed = store.updateField(field.id, { options: [{ ...field.options[1], name: '处理中' }, field.options[0], { name: '阻塞' }] })
+    expect(renamed.options[0].id).toBe(field.options[1].id)
+    expect(store.listTasks().done[0].customFields[field.id]).toBe(field.options[1].id)
+    expect(() => store.updateField(field.id, { options: [{ id: 'unknown', name: '错误' }] })).toThrow('选项不存在')
+    expect(store.listFields()[0].options).toEqual(renamed.options)
+    store.updateField(field.id, { options: [renamed.options[1]] })
+    expect(store.listTasks().done[0].customFields[field.id]).toBeUndefined()
+    store.close()
+  })
+
   test('claimDueReminders 只领取一次且排除已完成/无提醒', () => {
     const store = openTasksStore(tempFile('tasks.db'))
     const now = 10_000

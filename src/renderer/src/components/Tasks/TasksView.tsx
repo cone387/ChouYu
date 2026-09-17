@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import type { RemindChoiceId, TaskDueRange, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSortMode, TaskView } from '../../../../shared/tasks'
+import type { RemindChoiceId, TaskDueRange, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldUpdateInput, TaskSortMode, TaskView } from '../../../../shared/tasks'
 import {
   DUE_RANGE_LABELS, PRIORITY_LABELS, RECURRENCE_LABELS, REMIND_CHOICES, TASK_SORT_LABELS, compareTasks, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, remindAtFromChoice, sortTasks
 } from '../../../../shared/tasks'
@@ -78,6 +78,11 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [doneTasks, setDoneTasks] = useState<TaskRecord[]>([])
   const [totalDone, setTotalDone] = useState(0)
+  const [matchedDone, setMatchedDone] = useState(0)
+  const [doneLimit, setDoneLimit] = useState(50)
+  const [loading, setLoading] = useState(false)
+  const [notice, setNotice] = useState('')
+  const reloadSequence = useRef(0)
   const [projects, setProjects] = useState<TaskProject[]>([])
   const [views, setViews] = useState<TaskView[]>([])
   const [fields, setFields] = useState<TaskSelectField[]>([])
@@ -97,28 +102,38 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
   const taskRefs = useRef<Record<string, HTMLLIElement | null>>({})
 
   const reload = useCallback(() => {
-    void Promise.all([window.electronAPI.tasks.list(), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views(), window.electronAPI.tasks.fields()])
+    const sequence = ++reloadSequence.current
+    setLoading(true)
+    void Promise.all([window.electronAPI.tasks.list({ doneLimit, doneQuery: selection === 'done' ? query : '', donePriorities: selection === 'done' ? filterPriorities : [] }), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views(), window.electronAPI.tasks.fields()])
       .then(([list, projectList, viewList, fieldList]) => {
+        if (sequence !== reloadSequence.current) return
         setTasks(list.open)
         setDoneTasks(list.done)
         setTotalDone(list.totalDone)
+        setMatchedDone(list.matchedDone)
         setProjects(projectList)
         setViews(viewList)
         setFields(fieldList)
         window.dispatchEvent(new Event('chouyu:tasks-changed'))
         setQuarantineNotice(list.quarantinedAt ? '任务数据文件曾无法读取，已重建空库，原文件已隔离保存。' : '')
       })
-      .catch(reason => setError(String(reason)))
-  }, [])
+      .catch(reason => { if (sequence === reloadSequence.current) setError(String(reason)) })
+      .finally(() => { if (sequence === reloadSequence.current) setLoading(false) })
+  }, [doneLimit, query, filterPriorities, selection])
 
-  useEffect(() => { if (active) reload() }, [active, reload])
+  useEffect(() => {
+    if (!active) return
+    const timer = setTimeout(reload, 100)
+    return () => { clearTimeout(timer); reloadSequence.current += 1 }
+  }, [active, reload])
+  useEffect(() => { setDoneLimit(50) }, [query, filterPriorities, selection])
   useEffect(() => {
     if (!draft && !viewDraft && !fieldsOpen) return
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setDraft(null); setViewDraft(null); setFieldsOpen(false) } }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
   }, [draft, viewDraft, fieldsOpen])
-  useEffect(() => { if (focusTaskId) { setSelection('all'); setQuery('') } }, [focusTaskId])
+  useEffect(() => { if (focusTaskId) { setSelection('all'); setQuery(''); setFilterPriorities([]); setMode('list') } }, [focusTaskId])
   useEffect(() => {
     if (!focusTaskId || !tasks.length) return
     const element = taskRefs.current[focusTaskId]
@@ -164,7 +179,14 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
       ? window.electronAPI.tasks.update(draft.id, { title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, dueAt, remindAt, recurrence: draft.recurrence, customFields })
       : window.electronAPI.tasks.create({ title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, dueAt, remindAt, recurrence: draft.recurrence, customFields })
     void request
-      .then(() => { setDraft(null); reload() })
+      .then(saved => {
+        setDraft(null)
+        if (selection === 'done' || !matchesSelection(saved, selection) || !matchesKeywordAndFilter(saved)) {
+          setSelection('all'); setQuery(''); setFilterPriorities([])
+          setNotice('任务已保存，已切换到全部任务。')
+        } else setNotice(draft.id ? '任务已保存。' : '任务已创建。')
+        reload()
+      })
       .catch(reason => setError(String(reason)))
       .finally(() => setBusy(false))
   }
@@ -175,6 +197,13 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
   const remove = (id: string) => {
     if (!window.confirm('删除这个任务？此操作无法撤销。')) return
     void window.electronAPI.tasks.remove(id).then(reload).catch(reason => setError(String(reason)))
+  }
+  const archiveProject = (project: TaskProject) => {
+    void window.electronAPI.tasks.archiveProject(project.id, true).then(() => {
+      if (selection === `project:${project.id}`) setSelection('all')
+      setNotice(`「${project.name}」已归档，未完成任务和提醒仍会保留。`)
+      reload()
+    }).catch(reason => setError(String(reason)))
   }
   const submitProject = (event: FormEvent) => {
     event.preventDefault()
@@ -211,10 +240,28 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
     if (selection === `view:${view.id}`) setSelection('today')
     void window.electronAPI.tasks.deleteView(view.id).then(reload).catch(reason => setError(String(reason)))
   }
-  const saveField = (id: string | null, input: { name: string; options?: string[] }) => {
+  const saveField = async (id: string | null, input: TaskSelectFieldUpdateInput): Promise<TaskSelectField> => {
     setBusy(true); setError('')
-    const request = id ? window.electronAPI.tasks.updateField(id, input) : window.electronAPI.tasks.createField(input)
-    void request.then(reload).catch(reason => setError(String(reason))).finally(() => setBusy(false))
+    try {
+      const saved = id
+        ? await window.electronAPI.tasks.updateField(id, input)
+        : await window.electronAPI.tasks.createField({ name: input.name ?? '', options: input.options?.map(option => typeof option === 'string' ? option : option.name) })
+      reload()
+      setNotice('字段已保存。')
+      return saved
+    } catch (reason) {
+      setError(String(reason))
+      throw reason
+    } finally { setBusy(false) }
+  }
+  const startCreate = () => {
+    const view = selection.startsWith('view:') ? views.find(item => item.id === selection.slice(5)) : undefined
+    const candidate = selection.startsWith('project:') ? selection.slice(8) : view?.projectIds.length === 1 ? view.projectIds[0] : ''
+    const projectId = projects.some(project => project.id === candidate && !project.archivedAt) ? candidate : ''
+    const dueDate = selection === 'today' || selection === 'week' || view?.dueRange === 'today' || view?.dueRange === 'week' ? toInputDate(Date.now()) : ''
+    const priority = filterPriorities.length === 1 ? filterPriorities[0] : view?.priorities.length === 1 ? view.priorities[0] : emptyDraft.priority
+    setError('')
+    setDraft({ ...emptyDraft, projectId, dueDate, priority, customFields: {} })
   }
   const removeField = (field: TaskSelectField) => {
     if (groupFieldId === field.id) setGroupFieldId(null)
@@ -259,7 +306,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
                   </form>
                 : <>
                     <button type="button" aria-current={selection === id || undefined} onClick={() => setSelection(id)}>{project.name}<span className="tasks-count">{countFor(`project:${project.id}`)}</span></button>
-                    <span className="tasks-project-actions"><button type="button" aria-label={`重命名 ${project.name}`} onClick={() => setRenaming({ id: project.id, name: project.name, original: project.name })}>…</button><button type="button" aria-label={`归档 ${project.name}`} onClick={() => void window.electronAPI.tasks.archiveProject(project.id, true).then(reload).catch(reason => setError(String(reason)))}>归档</button></span>
+                    <span className="tasks-project-actions"><button type="button" aria-label={`重命名 ${project.name}`} onClick={() => setRenaming({ id: project.id, name: project.name, original: project.name })}>…</button><button type="button" aria-label={`归档 ${project.name}`} onClick={() => archiveProject(project)}>归档</button></span>
                   </>}
             </li>
           })}
@@ -275,7 +322,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
               </li>}
         </ul>
         {projects.some(project => project.archivedAt) && <details className="tasks-archived">
-          <summary>已归档项目</summary>
+          <summary title="归档只收起项目入口，未完成任务和提醒仍会保留">已归档项目</summary>
           <ul role="list">{projects.filter(project => project.archivedAt).map(project => <li key={project.id}>{project.name} <button type="button" onClick={() => void window.electronAPI.tasks.archiveProject(project.id, false).then(reload).catch(reason => setError(String(reason)))}>恢复</button></li>)}</ul>
         </details>}
       </div>
@@ -283,15 +330,16 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
 
     <section className="tasks-main" aria-label="任务列表">
       {quarantineNotice && <p role="alert" className="tasks-quarantine">{quarantineNotice}</p>}
-      {error && <p role="alert" className="tasks-error">{error}</p>}
+      {error && !draft && !viewDraft && !fieldsOpen && <p role="alert" className="tasks-error">{error}</p>}
+      {notice && <p role="status" className="tasks-notice">{notice}<button type="button" aria-label="关闭提示" onClick={() => setNotice('')}>×</button></p>}
       {selection !== 'done' && <div className="tasks-tabs" role="group" aria-label="展示方式">
         <button type="button" className="tasks-tab" aria-pressed={mode === 'list'} onClick={() => setMode('list')}>列表</button>
         <button type="button" className="tasks-tab" aria-pressed={mode === 'board'} onClick={() => setMode('board')}>看板</button>
       </div>}
       <div className="tasks-toolbar">
         <div className="tasks-toolbar-group">
-          <button type="button" className="tasks-create" onClick={() => setDraft({ ...emptyDraft })}>新建任务</button>
-          <p>{selection === 'done' ? `${totalDone} 个已完成` : `${visible.length} 个进行中${totalDone > 0 ? ` · ${totalDone} 个已完成` : ''}`}</p>
+          <button type="button" className="tasks-create" onClick={startCreate}>新建任务</button>
+          <p>{selection === 'done' ? `${matchedDone} 个匹配 · 共 ${totalDone} 个已完成` : `${visible.length} 个进行中${totalDone > 0 ? ` · ${totalDone} 个已完成` : ''}`}</p>
         </div>
         <div className="tasks-toolbar-group">
           {mode === 'board' && selection !== 'done' && <label className="tasks-group">分组
@@ -336,7 +384,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
         </div>
       </div>
 
-      {(selection === 'done' ? doneVisible.length : visible.length) === 0 && !draft && <div className="tasks-empty">
+      {(selection === 'done' ? doneVisible.length : visible.length) === 0 && !draft && !loading && <div className="tasks-empty">
         {selection === 'done'
           ? <><h2>{query.trim() ? '没有匹配的已完成任务' : '还没有已完成的任务'}</h2><p>{query.trim() ? '试试其他关键词，或清空搜索。' : '完成的任务会保留在这里，可随时恢复。'}</p></>
           : <><h2>{query.trim() ? '没有匹配的任务' : selection.startsWith('project:') ? '这个项目还没有任务' : selection.startsWith('view:') ? '这个视图还没有匹配的任务' : '这里没有待办任务'}</h2><p>{query.trim() ? '试试其他关键词，或清空搜索。' : '点击「新建任务」开始，支持截止日、提醒和优先级。'}</p></>}
@@ -349,6 +397,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
             <button type="button" aria-label="关闭任务弹窗" onClick={() => setDraft(null)}>×</button>
           </header>
           <form className="tasks-form" onSubmit={submitDraft} aria-label={draft.id ? '编辑任务' : '新建任务'}>
+        {error && <p role="alert" className="tasks-error">{error}</p>}
         <label>
           标题
           <input value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })}
@@ -366,8 +415,8 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
             项目
             <select value={draft.projectId} onChange={e => setDraft({ ...draft, projectId: e.target.value })} aria-label="任务项目">
               <option value="">不归属项目</option>
-              {projects.filter(project => !project.archivedAt).map(project =>
-                <option key={project.id} value={project.id}>{project.name}</option>)}
+              {projects.filter(project => !project.archivedAt || project.id === draft.projectId).map(project =>
+                <option key={project.id} value={project.id}>{project.name}{project.archivedAt ? '（已归档）' : ''}</option>)}
             </select>
           </label>
           <label>
@@ -427,6 +476,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
             <button type="button" aria-label="关闭视图弹窗" onClick={() => setViewDraft(null)}>×</button>
           </header>
           <form className="tasks-form" onSubmit={submitViewDraft} aria-label={viewDraft.id ? '编辑视图' : '新建视图'}>
+            {error && <p role="alert" className="tasks-error">{error}</p>}
             <label>
               名称
               <input value={viewDraft.name} onChange={e => setViewDraft({ ...viewDraft, name: e.target.value })}
@@ -468,8 +518,9 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
         </div>
       </div>}
 
-      {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
+      {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} error={error} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
 
+      {loading && <p role="status">正在加载任务…</p>}
       {selection === 'done'
         ? <ul role="list" className="tasks-list tasks-list-done" aria-label="已完成任务">
         {doneVisible.map(task => <li key={task.id} className="tasks-item" data-priority={task.priority}>
@@ -503,6 +554,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
           </div>
         </li>)}
       </ul>}
+      {selection === 'done' && doneTasks.length < matchedDone && <button className="tasks-load-more" type="button" disabled={loading} onClick={() => setDoneLimit(limit => limit + 50)}>加载更多（已加载 {doneTasks.length} / {matchedDone}）</button>}
     </section>
   </div>
 }

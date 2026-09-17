@@ -9,6 +9,7 @@ interface BoardColumn {
   key: string
   label: string
   patch: TaskUpdateInput
+  archived?: boolean
 }
 
 interface TasksBoardProps {
@@ -31,8 +32,8 @@ export default function TasksBoard({ tasks, projects, fields, groupMode, groupFi
       columns.push({ key: priority, label: `${PRIORITY_LABELS[priority]}优先级`, patch: { priority } })
     }
   } else if (groupMode === 'project') {
-    for (const project of projects.filter(project => !project.archivedAt)) {
-      columns.push({ key: project.id, label: project.name, patch: { projectId: project.id } })
+    for (const project of projects.filter(project => !project.archivedAt || tasks.some(task => task.projectId === project.id))) {
+      columns.push({ key: project.id, label: `${project.name}${project.archivedAt ? '（已归档）' : ''}`, patch: { projectId: project.id }, archived: Boolean(project.archivedAt) })
     }
     columns.push({ key: '', label: '无项目', patch: { projectId: null } })
   } else if (groupField) {
@@ -51,6 +52,7 @@ export default function TasksBoard({ tasks, projects, fields, groupMode, groupFi
 
   const dropInto = (event: DragEvent<HTMLElement>, column: BoardColumn) => {
     event.preventDefault()
+    if (column.archived) return
     const id = event.dataTransfer.getData('text/plain')
     const task = id ? tasks.find(item => item.id === id) : undefined
     if (!task || columnOf(task) === column) return
@@ -61,7 +63,7 @@ export default function TasksBoard({ tasks, projects, fields, groupMode, groupFi
     {columns.map(column => {
       const items = tasks.filter(task => columnOf(task) === column)
       return <section key={column.key || 'none'} className="tasks-board-column" aria-label={`${column.label}，${items.length} 个任务`}
-        onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }}
+        onDragOver={event => { if (!column.archived) { event.preventDefault(); event.dataTransfer.dropEffect = 'move' } }}
         onDrop={event => dropInto(event, column)}>
         <h3 className="tasks-board-column-title">{column.label}<span className="tasks-count">{items.length}</span></h3>
         <ul role="list" className="tasks-board-cards">

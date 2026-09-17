@@ -43,7 +43,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
       }
     }
   )
-  ipcMain.handle('tasks:list', () => store!.listTasks())
+  ipcMain.handle('tasks:list', (_event, options) => store!.listTasks(options ?? {}))
   ipcMain.handle('tasks:create', (_event, input) => store!.createTask(input ?? {}))
   ipcMain.handle('tasks:update', (_event, id: string, patch) => store!.updateTask(id, patch ?? {}))
   ipcMain.handle('tasks:complete', (_event, id: string) => store!.completeTask(id))

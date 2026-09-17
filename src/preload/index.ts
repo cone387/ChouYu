@@ -66,7 +66,7 @@ const api = {
     cancelAnalysis: () => ipcRenderer.invoke('journal:cancel-analysis')
   } satisfies JournalAPI,
   tasks: {
-    list: () => ipcRenderer.invoke('tasks:list'),
+    list: options => ipcRenderer.invoke('tasks:list', options),
     create: input => ipcRenderer.invoke('tasks:create', input),
     update: (id, patch) => ipcRenderer.invoke('tasks:update', id, patch),
     complete: id => ipcRenderer.invoke('tasks:complete', id),

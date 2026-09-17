@@ -8,6 +8,7 @@ import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
 import { initializeTasks, closeTasks } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
+import { runTasksUISmoke } from './smoke/tasks-ui-smoke'
 import { setTrayUnread, setupTray } from './tray'
 import { registerHotkey } from './hotkey'
 import { initDatabase, getConfig, flushDatabase, getAssistantUnreadCount } from './database'
@@ -88,6 +89,7 @@ function createWindow(): void {
       try {
         await runStorageRuntimeSmoke(mainWindow!)
         await runContactsSmoke(mainWindow!)
+        await runTasksUISmoke(mainWindow!)
         await runChatRuntimeSmoke(mainWindow!)
         await runJournalSmoke(mainWindow!)
         console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)

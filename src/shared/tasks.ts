@@ -51,10 +51,17 @@ export interface TaskUpdateInput {
   customFields?: Record<string, string | null>
 }
 
+export interface TaskListOptions {
+  doneLimit?: number
+  doneQuery?: string
+  donePriorities?: TaskPriority[]
+}
+
 export interface TaskListResult {
   open: TaskRecord[]
   done: TaskRecord[]
   totalDone: number
+  matchedDone: number
   quarantinedAt: number | null
 }
 
@@ -109,6 +116,12 @@ export interface TaskSelectField {
 export interface TaskSelectFieldInput {
   name: string
   options?: string[]
+}
+
+export interface TaskSelectFieldUpdateInput {
+  name?: string
+  /** 带 id 的选项支持改名；省略 id 表示新增。字符串数组兼容旧调用。 */
+  options?: string[] | { id?: string; name: string }[]
 }
 
 export const TASK_PRIORITY_ORDER: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 }
@@ -242,7 +255,7 @@ export function formatTaskDue(at: number): string {
 }
 
 export interface TasksAPI {
-  list(): Promise<TaskListResult>
+  list(options?: TaskListOptions): Promise<TaskListResult>
   create(input: TaskCreateInput): Promise<TaskRecord>
   update(id: string, patch: TaskUpdateInput): Promise<TaskRecord>
   complete(id: string): Promise<TaskRecord>
@@ -258,7 +271,7 @@ export interface TasksAPI {
   deleteView(id: string): Promise<void>
   fields(): Promise<TaskSelectField[]>
   createField(input: TaskSelectFieldInput): Promise<TaskSelectField>
-  updateField(id: string, patch: Partial<TaskSelectFieldInput>): Promise<TaskSelectField>
+  updateField(id: string, patch: TaskSelectFieldUpdateInput): Promise<TaskSelectField>
   deleteField(id: string): Promise<void>
   ready(): void
   onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void

@@ -2,11 +2,11 @@ import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import type {
-  TaskCreateInput, TaskDueRange, TaskFieldOption, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldInput, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
+  TaskCreateInput, TaskListOptions, TaskSelectFieldUpdateInput, TaskDueRange, TaskFieldOption, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldInput, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
 } from '../../shared/tasks'
 import { nextRecurrenceDueAt } from '../../shared/tasks'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
 const RECURRENCES: TaskRecurrence[] = ['none', 'daily', 'weekly', 'monthly']
 const DUE_RANGES: TaskDueRange[] = ['today', 'week', 'overdue', 'none', 'any']
@@ -16,6 +16,7 @@ interface TaskRow {
   status: string; due_at: number | null; remind_at: number | null; remind_fired_at: number | null
   recurrence: string; recurrence_anchor_at: number | null
   created_at: number; updated_at: number; completed_at: number | null
+  recurrence_generated?: number
   custom_fields?: string
 }
 interface ProjectRow { id: string; name: string; archived_at: number | null; created_at: number }
@@ -167,6 +168,13 @@ function migrate(database: Database.Database): void {
   const columns = database.pragma('table_info(tasks)') as { name?: unknown }[]
   if (columns.length > 0 && !columns.some(column => column.name === 'custom_fields')) {
     database.exec("ALTER TABLE tasks ADD COLUMN custom_fields TEXT NOT NULL DEFAULT '{}'")
+  }
+  if (!columns.some(column => column.name === 'recurrence_generated')) {
+    database.transaction(() => {
+      database.exec("ALTER TABLE tasks ADD COLUMN recurrence_generated INTEGER NOT NULL DEFAULT 0")
+      // 旧版完成实例已经生成过下一期，不靠标题或时间猜测关联。
+      database.exec("UPDATE tasks SET recurrence_generated = 1 WHERE status = 'done' AND recurrence <> 'none' AND due_at IS NOT NULL")
+    })()
   }
   database.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
@@ -350,14 +358,14 @@ export class TasksStore {
     return toField(row)
   }
 
-  updateField(id: string, patch: Partial<TaskSelectFieldInput>): TaskSelectField {
+  updateField(id: string, patch: TaskSelectFieldUpdateInput): TaskSelectField {
     const outcome = this.database.transaction((): TaskSelectField | null => {
       const current = this.database.prepare('SELECT * FROM task_fields WHERE id = ?').get(id) as FieldRow | undefined
       if (!current) return null
       const existing = toField(current)
       const name = patch?.name === undefined ? existing.name : assertFieldName(patch.name)
-      // 选项按名字匹配保留原 id,改名等于换选项;被移除的选项同步清理任务上的引用
-      const options = patch?.options === undefined ? existing.options : this.mergeOptions(existing.options, assertOptionNames(patch.options))
+      // 显式 id 保留改名关联；只有移除选项才清理任务引用。
+      const options = patch?.options === undefined ? existing.options : this.mergeOptions(existing.options, patch.options)
       this.database.prepare('UPDATE task_fields SET name = ?, options = ?, updated_at = ? WHERE id = ?')
         .run(name, JSON.stringify(options), Date.now(), id)
       if (patch?.options !== undefined) this.pruneFieldValues(id, new Set(options.map(option => option.id)))
@@ -367,12 +375,24 @@ export class TasksStore {
     return outcome
   }
 
-  private mergeOptions(existing: TaskFieldOption[], names: string[]): TaskFieldOption[] {
-    const unused = new Map(existing.map(option => [option.name, option.id]))
-    return names.map(optionName => {
-      const previous = unused.get(optionName)
-      if (previous !== undefined) return { id: previous, name: optionName }
-      return { id: randomUUID(), name: optionName }
+  private mergeOptions(existing: TaskFieldOption[], input: unknown): TaskFieldOption[] {
+    if (!Array.isArray(input)) throw new Error('选项无效。')
+    if (input.every(item => typeof item === 'string')) {
+      return assertOptionNames(input).map(name => ({ id: existing.find(option => option.name === name)?.id ?? randomUUID(), name }))
+    }
+    if (input.length > 30) throw new Error('选项过多。')
+    const ids = new Set<string>()
+    const names = new Set<string>()
+    return input.map(item => {
+      if (!item || typeof item !== 'object' || typeof item.name !== 'string') throw new Error('选项无效。')
+      const name = item.name.trim()
+      if (!name || names.has(name)) throw new Error('选项名称不能为空或重复。')
+      if (item.id !== undefined && (typeof item.id !== 'string' || !existing.some(option => option.id === item.id))) throw new Error('选项不存在。')
+      const id = item.id ?? randomUUID()
+      if (ids.has(id)) throw new Error('选项重复。')
+      ids.add(id)
+      names.add(name)
+      return { id, name }
     })
   }
 
@@ -428,7 +448,7 @@ export class TasksStore {
     if (!current) throw new Error('任务不存在。')
     const title = patch?.title === undefined ? current.title : assertTitle(patch.title)
     const note = patch?.note === undefined ? current.note : assertText(patch.note, 2_000)
-    const projectId = patch?.projectId === undefined ? current.project_id : this.requireActiveProjectId(patch.projectId)
+    const projectId = patch?.projectId === undefined || patch.projectId === current.project_id ? current.project_id : this.requireActiveProjectId(patch.projectId)
     const priority = patch?.priority === undefined ? current.priority : assertPriority(patch.priority)
     const dueAt = patch?.dueAt === undefined ? current.due_at : assertTimestamp(patch.dueAt, '截止时间')
     const remindAt = patch?.remindAt === undefined ? current.remind_at : assertTimestamp(patch.remindAt, '提醒时间')
@@ -463,10 +483,11 @@ export class TasksStore {
       const now = Date.now()
       this.database.prepare(`UPDATE tasks SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'open'`).run(now, now, id)
       const recurrence = assertRecurrence(current.recurrence)
-      if (recurrence !== 'none' && current.due_at !== null) {
+      if (recurrence !== 'none' && current.due_at !== null && !current.recurrence_generated) {
         // 迟到完成时跳过已错过的周期,避免下一期一出生就已过期
         const nextDueAt = nextRecurrenceDueAt(current.due_at, recurrence, current.recurrence_anchor_at ?? current.due_at, now)
         if (nextDueAt !== null) {
+          this.database.prepare('UPDATE tasks SET recurrence_generated = 1 WHERE id = ?').run(id)
           const reminderOffset = current.remind_at !== null ? current.due_at - current.remind_at : null
           this.database.prepare(`INSERT INTO tasks
             (id, title, note, project_id, priority, status, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields)
@@ -497,11 +518,29 @@ export class TasksStore {
     return toTask(row)
   }
 
-  listTasks(): TaskListResult {
+  listTasks(options: TaskListOptions = {}): TaskListResult {
+    const limit = options.doneLimit ?? 50
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('加载数量无效。')
+    if (options.doneQuery !== undefined && typeof options.doneQuery !== 'string') throw new Error('搜索条件无效。')
+    const query = (options.doneQuery ?? '').trim().toLocaleLowerCase()
+    const priorities = assertPriorityList(options.donePriorities)
+    const conditions = ["status = 'done'"]
+    const params: (string | number)[] = []
+    if (query) {
+      conditions.push("instr(lower(title || ' ' || coalesce(note, '')), ?) > 0")
+      params.push(query)
+    }
+    if (priorities.length) {
+      conditions.push(`priority IN (${priorities.map(() => '?').join(',')})`)
+      params.push(...priorities)
+    }
+    const where = conditions.join(' AND ')
+
     const open = (this.database.prepare(`SELECT * FROM tasks WHERE status = 'open' ORDER BY created_at, rowid`).all() as TaskRow[]).map(toTask)
-    const done = (this.database.prepare(`SELECT * FROM tasks WHERE status = 'done' ORDER BY completed_at DESC, rowid DESC LIMIT 50`).all() as TaskRow[]).map(toTask)
+    const done = (this.database.prepare(`SELECT * FROM tasks WHERE ${where} ORDER BY completed_at DESC, rowid DESC LIMIT ?`).all(...params, limit) as TaskRow[]).map(toTask)
     const totalDone = (this.database.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE status = 'done'`).get() as { count: number }).count
-    return { open, done, totalDone, quarantinedAt: this.quarantinedAt }
+    const matchedDone = (this.database.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE ${where}`).get(...params) as { count: number }).count
+    return { open, done, totalDone, matchedDone, quarantinedAt: this.quarantinedAt }
   }
 
   /** 原子领取到期提醒:先写 remind_fired_at 再由调用方发通知,保证只发一次。 */

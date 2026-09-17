@@ -238,3 +238,13 @@
 @media (prefers-reduced-motion: reduce) {
   .tasks-view *, .tasks-view *::before, .tasks-view *::after { transition: none !important; animation: none !important; }
 }
+
+.tasks-field-options { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.tasks-field-option { display: flex; align-items: center; gap: 8px; }
+.tasks-field-option input { flex: 1; min-width: 0; }
+.tasks-field-options button { align-self: flex-start; border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; background: var(--bg-primary); color: var(--text-secondary); cursor: pointer; }
+.tasks-notice { display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--bg-secondary); font-size: 13px; }
+.tasks-notice button { border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
+
+.tasks-load-more { flex: none; align-self: center; border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; background: var(--bg-primary); color: var(--text-secondary); cursor: pointer; }
+.tasks-load-more:disabled { opacity: .6; cursor: default; }
