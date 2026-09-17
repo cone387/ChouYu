@@ -6,9 +6,12 @@ const stylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/compone
 const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.tsx'), 'utf8')
 const panelResizeSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/usePanelResize.ts'), 'utf8')
 const workspaceSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
+const workspaceHookSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
 const sidebarSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.tsx'), 'utf8')
+const workspaceHeaderSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Workspace/WorkspaceHeader.tsx'), 'utf8')
 const sidebarStylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.css'), 'utf8')
 const inputSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/InputArea.tsx'), 'utf8')
+const messageSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/MessageArea.tsx'), 'utf8')
 const memoryServiceSource = readFileSync(resolve(process.cwd(), 'src/main/memory/service.ts'), 'utf8')
 
 describe('chat layout guardrails', () => {
@@ -59,10 +62,24 @@ describe('chat layout guardrails', () => {
     expect(panelSource).not.toContain('memorySyncProvider')
   })
 
-  it('uses the top-bar session toggle as the only close control', () => {
+  it('exposes the header session-list toggle with persisted visibility', () => {
+    expect(workspaceHeaderSource).toContain('onToggleSessions?: () => void')
+    expect(workspaceHeaderSource).toContain('aria-pressed={sessionsVisible}')
+    expect(workspaceHeaderSource).toContain("title={sessionsVisible ? '隐藏对话列表' : '显示对话列表'}")
+    expect(panelSource).toContain('sessionsVisible={sessionsVisible}')
+    expect(panelSource).toContain('onToggleSessions={isChat ? toggleSessionSidebar : undefined}')
     expect(panelSource).not.toContain('onClose={() => setShowSessions(false)}')
     expect(panelSource).toContain('dragHandleProps={dragHandleProps}')
     expect(sidebarSource).not.toContain('aria-label="关闭对话列表"')
+  })
+
+  it('persists forced session visibility when switching to non-chat modes', () => {
+    const changeDisplayModeSource = panelSource.slice(
+      panelSource.indexOf('const changeDisplayMode'),
+      panelSource.indexOf('const refreshPlugins')
+    )
+    expect(changeDisplayModeSource).toContain('persistSessionsVisible(true)')
+    expect(panelSource).toContain('persistSessionsVisible(next)')
   })
 
   it('places session actions behind a single top-right menu button', () => {
@@ -190,5 +207,29 @@ describe('contacts presence in the chat surface', () => {
     expect(sidebarStylesheet).toMatch(/\.conversation-item-avatar\s*\{[\s\S]*?border-radius:\s*50%/)
     expect(sidebarStylesheet).toMatch(/\.conversation-item-body\s*\{[\s\S]*?min-width:\s*0/)
     expect(sidebarStylesheet).toMatch(/\.conversation-item-character\s*\{[\s\S]*?text-overflow:\s*ellipsis/)
+  })
+})
+
+describe('assistant contact wiring', () => {
+  it('focuses the assistant session on demand and follows main-side session updates', () => {
+    expect(panelSource).toContain('assistantFocusRequest?: number')
+    expect(panelSource).toContain('openCharacterChat(ASSISTANT_CHARACTER_ID)')
+    expect(panelSource).toContain('onSessionsChanged')
+    expect(panelSource).toContain('db.markSessionRead(activeSessionId)')
+    expect(workspaceHookSource).toContain('mergeForeignMessages')
+  })
+
+  it('badges assistant unread on session cards', () => {
+    expect(sidebarSource).toContain('conversation-item-unread')
+    expect(sidebarSource).toContain("session.unreadCount > 99 ? '99+'")
+    expect(sidebarStylesheet).toContain('#ff4d4f')
+  })
+
+  it('offers snooze only on assistant replies', () => {
+    expect(messageSource).toContain('canSnooze?: boolean')
+    expect(messageSource).toContain('onSnoozeContent?.(msg.content)')
+    expect(panelSource).toContain('canSnooze={activeCharacterId === ASSISTANT_CHARACTER_ID}')
+    expect(panelSource).toContain('proactiveEngine.snoozeContent')
+    expect(stylesheet).toContain('.message-snooze-btn')
   })
 })

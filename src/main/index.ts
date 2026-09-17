@@ -8,9 +8,9 @@ import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
 import { initializeTasks, closeTasks } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
-import { setupTray } from './tray'
+import { setTrayUnread, setupTray } from './tray'
 import { registerHotkey } from './hotkey'
-import { initDatabase, getConfig, flushDatabase } from './database'
+import { initDatabase, getConfig, flushDatabase, getAssistantUnreadCount } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
@@ -294,6 +294,7 @@ app.whenReady().then(async () => {
   await pluginRegistry.initializePlugins()
   if (!isSmokeTest) {
     setupTray(mainWindow!)
+    setTrayUnread(getAssistantUnreadCount())
     registerHotkey(mainWindow!)
     setClipboardWatcherEnabled(mainWindow!, getConfig().clipboardWatch)
   }

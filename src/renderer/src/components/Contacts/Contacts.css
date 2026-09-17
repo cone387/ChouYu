@@ -130,3 +130,9 @@
 @media (prefers-reduced-motion: reduce) {
   .contacts-view *, .contacts-view { transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* 置顶助手卡片：网格上方通栏，点击直接进助手会话 */
+.contacts-assistant-card {
+  width: 100%;
+  margin-bottom: var(--space-3);
+}

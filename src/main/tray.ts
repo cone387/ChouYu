@@ -1,18 +1,40 @@
 import { Tray, Menu, BrowserWindow, MenuItem, app, nativeImage, ipcMain } from 'electron'
-import { PET_ICON_PNG_BASE64 } from '../shared/pet-icon'
+import { PET_ICON_PNG_BASE64, TRANSPARENT_ICON_PNG_BASE64 } from '../shared/pet-icon'
+import { TrayFlasher } from './tray-flasher'
 import { openJournalWorkspace, toggleJournalPause, getJournalStatus } from './journal'
 
 let tray: Tray | null = null
 let petVisibilityItem: MenuItem | null = null
+let trayUnreadCount = 0
+let trayFlasher: TrayFlasher | null = null
+let updateTrayStatus: (() => void) | null = null
 
 export function setTrayPetVisible(visible: boolean): void {
   if (petVisibilityItem) petVisibilityItem.checked = visible
+}
+
+export function setTrayUnread(count: number): void {
+  const next = Math.max(0, Math.floor(count) || 0)
+  trayUnreadCount = next
+  if (!tray || tray.isDestroyed()) return
+  if (trayFlasher) {
+    if (next > 0) trayFlasher.start()
+    else trayFlasher.stop()
+  }
+  updateTrayStatus?.()
 }
 
 export function setupTray(mainWindow: BrowserWindow): void {
   const icon = nativeImage.createFromBuffer(Buffer.from(PET_ICON_PNG_BASE64, 'base64')).resize({ width: 16, height: 16, quality: 'best' })
   if (icon.isEmpty()) throw new Error('Tray icon failed to render')
   tray = new Tray(icon)
+
+  const blankIcon = nativeImage.createFromBuffer(Buffer.from(TRANSPARENT_ICON_PNG_BASE64, 'base64')).resize({ width: 16, height: 16, quality: 'best' })
+  const flasher = new TrayFlasher({
+    showNormal: () => { if (tray && !tray.isDestroyed()) tray.setImage(icon) },
+    showBlank: () => { if (tray && !tray.isDestroyed()) tray.setImage(blankIcon) }
+  })
+  trayFlasher = flasher
 
   const openChatPanel = () => {
     if (mainWindow.isMinimized()) mainWindow.restore()
@@ -22,6 +44,15 @@ export function setupTray(mainWindow: BrowserWindow): void {
     mainWindow.webContents.send('open-chat-panel')
   }
 
+  const openAssistantChat = () => {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+    mainWindow.moveTop()
+    mainWindow.setIgnoreMouseEvents(false)
+    mainWindow.webContents.send('open-assistant-chat')
+  }
+
   const contextMenu = Menu.buildFromTemplate([
     { label: '工作日志', click: openJournalWorkspace },
     { id: 'journal-state', label: '活动记录：未开启', enabled: false },
@@ -29,6 +60,10 @@ export function setupTray(mainWindow: BrowserWindow): void {
     {
       label: '打开聊天',
       click: openChatPanel
+    },
+    {
+      label: '助手消息',
+      click: openAssistantChat
     },
     {
       label: '显示桌面宠物',
@@ -72,11 +107,20 @@ export function setupTray(mainWindow: BrowserWindow): void {
     const pause = contextMenu.getMenuItemById('journal-pause')!
     pause.enabled = status.config.enabled
     pause.label = status.config.paused ? '继续活动记录' : '暂停活动记录'
-    tray.setToolTip(`ChouYu · 活动记录${text}${scope}`)
+    const unreadSuffix = trayUnreadCount > 0 ? ` · ${trayUnreadCount} 条新消息` : ''
+    tray.setToolTip(`ChouYu · 活动记录${text}${scope}${unreadSuffix}`)
   }
+  updateTrayStatus = updateJournalStatus
   updateJournalStatus()
   const journalTimer = setInterval(updateJournalStatus, 3000)
-  app.once('will-quit', () => clearInterval(journalTimer))
-  tray.on('click', openChatPanel)
-  tray.on('double-click', openChatPanel)
+  app.once('will-quit', () => {
+    clearInterval(journalTimer)
+    flasher.dispose()
+  })
+  const onTrayClick = () => {
+    if (trayUnreadCount > 0) openAssistantChat()
+    else openChatPanel()
+  }
+  tray.on('click', onTrayClick)
+  tray.on('double-click', onTrayClick)
 }

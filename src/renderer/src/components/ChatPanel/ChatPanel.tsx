@@ -18,7 +18,7 @@ import MemorySettingsTab from '../Settings/MemorySettingsTab'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
 import type { MemoryConflictAction, MemoryFeedbackValue, MemoryRecord } from '../../../../shared/memory'
 import { isAIConfigured } from '../../../../shared/config'
-import { DEFAULT_CHARACTER_ID, INDUSTRY_LABELS } from '../../../../shared/characters'
+import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRY_LABELS } from '../../../../shared/characters'
 import {
   Message,
   PetState,
@@ -38,6 +38,7 @@ import {
 } from '../../core/panel-state'
 import { usePanelResize } from './usePanelResize'
 import { useSessionWorkspace } from './useSessionWorkspace'
+import { proactiveEngine } from '../../core/proactive'
 import './ChatPanel.css'
 
 interface ChatPanelProps {
@@ -61,9 +62,10 @@ interface ChatPanelProps {
   onPendingAttachmentConsumed?: () => void
   pendingMessage?: string | null
   onPendingMessageConsumed?: () => void
+  assistantFocusRequest?: number
 }
 
-export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
+export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed, assistantFocusRequest }: ChatPanelProps) {
   const [activePage, setActivePage] = useState<WorkspacePage>(initialShowSettings ? 'settings' : 'chat')
   const [visitedPages, setVisitedPages] = useState<Partial<Record<WorkspacePage, boolean>>>({ settings: initialShowSettings })
   const [taskFocusId, setTaskFocusId] = useState<string | undefined>()
@@ -210,9 +212,12 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const narrowLayout = geometry.narrow
   const sessionsVisible = displayMode !== 'chat' && (narrowLayout ? narrowSessionsOpen : displayMode === 'sessions' || showSessions)
   const panelReady = presentation.loaded && dimensionsLoaded && sidebarLoaded && (workspaceLoaded || Boolean(workspaceError) || showSettings)
+  const persistSessionsVisible = useCallback((visible: boolean) => {
+    void window.electronAPI.db.setState(SESSION_SIDEBAR_STATE_KEY, String(visible)).catch(() => { /* The persistent storage notice reports disk failures. */ })
+  }, [])
   const changeDisplayMode = (mode: WorkspaceMode) => {
     presentation.changeMode(mode)
-    if (mode !== 'chat') setShowSessions(true)
+    if (mode !== 'chat') { setShowSessions(true); persistSessionsVisible(true) }
     if (mode !== 'workspace') navigate('chat')
     setNarrowSessionsOpen(mode !== 'chat' && narrowLayout)
   }
@@ -369,11 +374,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (displayMode === 'sessions') { presentation.changeMode('chat'); return }
     setShowSessions((current) => {
       const next = !current
-      void window.electronAPI.db.setState(SESSION_SIDEBAR_STATE_KEY, String(next)).catch(() => { /* The persistent storage notice reports disk failures. */ })
+      persistSessionsVisible(next)
       if (!next) setTimeout(requestComposerFocus, 0)
       return next
     })
-  }, [requestComposerFocus, narrowLayout, displayMode, presentation.changeMode])
+  }, [requestComposerFocus, narrowLayout, displayMode, presentation.changeMode, persistSessionsVisible])
 
   useEffect(() => {
     if (maximized || (messages.length === 0 && !isStreaming)) return
@@ -628,6 +633,32 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     navigate('chat')
   }, [sessions, selectSession, createSession, navigate])
 
+  // 主进程在别的入口追加了助手消息（或会话结构变化）：重拉工作区，保留侧栏顺序。
+  useEffect(() => window.electronAPI.onSessionsChanged(() => {
+    void window.electronAPI.db.getSessionWorkspace()
+      .then((workspace) => applyWorkspace(workspace, true))
+      .catch(() => { /* 保留现有工作区，下次事件重试 */ })
+  }), [applyWorkspace])
+
+  // 托盘/宠物入口请求聚焦助手会话：只消费递增的那一次，不随 sessions 变化重放。
+  const handledAssistantFocusRef = useRef(0)
+  useEffect(() => {
+    if (!workspaceLoaded) return
+    if (!assistantFocusRequest || assistantFocusRequest === handledAssistantFocusRef.current) return
+    handledAssistantFocusRef.current = assistantFocusRequest
+    void openCharacterChat(ASSISTANT_CHARACTER_ID)
+  }, [workspaceLoaded, assistantFocusRequest, openCharacterChat])
+
+  // 阅读中不累计未读：当前会话是助手、面板展开且有新消息时自动标读。
+  const activeAssistantUnread = sessions.find((session) => session.id === activeSessionId)?.unreadCount ?? 0
+  useEffect(() => {
+    if (!visible || !workspaceLoaded || !activeAssistantUnread) return
+    if (activeCharacterId !== ASSISTANT_CHARACTER_ID) return
+    void window.electronAPI.db.markSessionRead(activeSessionId)
+      .then((workspace) => applyWorkspace(workspace, true))
+      .catch(() => { /* 存储故障提示机制兜底 */ })
+  }, [visible, workspaceLoaded, activeAssistantUnread, activeCharacterId, activeSessionId, applyWorkspace])
+
   // 删除角色会连带删除其会话：先停掉这些会话的在途生成（对齐 deleteSession 的先例），
   // 再按保留侧栏顺序的方式应用新工作区。
   const handleCharactersDeleted = useCallback((workspace: SessionWorkspace) => {
@@ -701,6 +732,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       {displayMode === 'workspace' && <WorkspaceNav activePage={activePage} onNavigate={navigate} status={getStatusText()} />}
       <WorkspaceHeader onHide={onHide} onClose={onClose} dragHandleProps={dragHandleProps}
         onSearch={() => setShowGlobalSearch(true)}
+        sessionsVisible={sessionsVisible} onToggleSessions={isChat ? toggleSessionSidebar : undefined}
         maximized={maximized} onMaximize={presentation.toggleMaximized} mode={displayMode} onModeChange={changeDisplayMode} />
       <div className="workspace-body">
         <div className="workspace-page workspace-chat" hidden={!isChat}>
@@ -754,6 +786,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 contextLimit={MAX_HISTORY_MESSAGES}
                 onMemoryFeedback={submitMemoryFeedback}
                 onCorrectMemory={correctMemory}
+                canSnooze={activeCharacterId === ASSISTANT_CHARACTER_ID}
+                onSnoozeContent={(content) => proactiveEngine.snoozeContent(content)}
               />
             )}
             {confirmClear && (

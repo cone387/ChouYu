@@ -4,10 +4,9 @@ import Pet from './components/Pet/Pet'
 import ChatPanel from './components/ChatPanel/ChatPanel'
 import type { WorkspacePage } from './components/Workspace/WorkspaceNav'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
-import ProactiveCenter from './components/ProactiveCenter/ProactiveCenter'
 import { AppConfig, PetState } from './shared/types'
 import { DEFAULT_CONFIG, PANEL_WIDTH } from './shared/constants'
-import { proactiveEngine, type ProactiveMessage } from './core/proactive'
+import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
 import { clampPanelPosition, getCenteredPanelPosition } from './core/panel-position'
 import { getDefaultPanelHeight } from './core/panel-state'
@@ -28,9 +27,8 @@ function App() {
   const [scrollCaptureProgress, setScrollCaptureProgress] = useState(0)
   const [activePluginId, setActivePluginId] = useState<string | null>(null)
   const [clipboardText, setClipboardText] = useState<string | null>(null)
-  const [proactiveMsg, setProactiveMsg] = useState<string | null>(null)
-  const [proactiveMessages, setProactiveMessages] = useState<ProactiveMessage[]>([])
-  const [showProactiveCenter, setShowProactiveCenter] = useState(false)
+  const [assistantUnread, setAssistantUnread] = useState(0)
+  const [assistantFocusRequest, setAssistantFocusRequest] = useState(0)
   const [pendingDrop, setPendingDrop] = useState<{ type: 'image' | 'text'; data: string; name: string } | null>(null)
   const [pendingClipboardMsg, setPendingClipboardMsg] = useState<string | null>(null)
   const [fileDropError, setFileDropError] = useState<string | null>(null)
@@ -127,6 +125,9 @@ function App() {
 
   // Proactive engine - respect config
   useEffect(() => {
+    const append = (message: string) => {
+      void window.electronAPI.proactiveAppend(message).catch(() => { /* storage notice covers persistence failures */ })
+    }
     proactiveEngine.start((msg, kind) => {
       if (kind === 'return') {
         const now = new Date()
@@ -139,52 +140,35 @@ function App() {
         ]).then(([day, recent]) => {
           const titles = [...new Set(recent.items.map(item => item.title.trim()).filter(Boolean))].slice(0, 3)
           const where = titles.length ? `刚才停在：${titles.join('、')}。` : ''
-          setProactiveMsg(day.activityCount > 0
+          append(day.activityCount > 0
             ? `欢迎回来。今天已经记录 ${day.activityCount} 段工作。${where}要接着刚才的工作吗？`
             : `欢迎回来。${where}要接着刚才的工作吗？`)
-        }).catch(() => setProactiveMsg(msg))
+        }).catch(() => append(msg))
       } else {
-        setProactiveMsg(msg)
+        append(msg)
       }
-      const next = proactiveEngine.getMessages()
-      setProactiveMessages(next)
-      void window.electronAPI.db.setState('proactive-messages', JSON.stringify(next)).catch(() => { /* storage notice covers persistence failures */ })
     }, { greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder })
-    setProactiveMessages(proactiveEngine.getMessages())
-    void window.electronAPI.db.getState('proactive-messages').then(value => {
+    void window.electronAPI.db.getState('assistant-snoozes').then(value => {
       if (!value) return
-      try {
-        const stored = JSON.parse(value)
-        if (Array.isArray(stored)) {
-          proactiveEngine.hydrateMessages(stored)
-          setProactiveMessages(proactiveEngine.getMessages())
-        }
-      } catch { /* ignore malformed optional history */ }
+      try { proactiveEngine.restoreSnoozes(JSON.parse(value)) } catch { /* ignore malformed snooze history */ }
     }).catch(() => {})
     return () => proactiveEngine.stop()
   }, [config.proactiveGreeting, config.proactiveRestReminder])
 
-  const persistProactiveMessages = useCallback(() => {
-    const next = proactiveEngine.getMessages()
-    setProactiveMessages(next)
-    void window.electronAPI.db.setState('proactive-messages', JSON.stringify(next)).catch(() => { /* storage notice covers persistence failures */ })
+  // 助手未读驱动宠物红点；托盘由主进程驱动。
+  useEffect(() => {
+    void window.electronAPI.getAssistantUnread().then(setAssistantUnread).catch(() => {})
+    return window.electronAPI.onAssistantUnread(setAssistantUnread)
   }, [])
 
-  // Auto-dismiss proactive message after 8s
-  useEffect(() => {
-    if (!proactiveMsg) return
-    const t = setTimeout(() => setProactiveMsg(null), 8000)
-    return () => clearTimeout(t)
-  }, [proactiveMsg])
-
-  // Task reminders from the main-process scheduler flow into the message center.
+  // Task reminders from the main-process scheduler land in the assistant session.
   useEffect(() => {
     const cleanup = window.electronAPI.tasks.onTasksReminder(payload => {
-      if ('task' in payload) proactiveEngine.postExternal(`任务提醒：${payload.task.title}`, 'task', payload.task.id)
-      else if (payload.backlog > 0) proactiveEngine.postExternal(`错过了 ${payload.backlog} 条任务提醒`, 'task')
+      if ('task' in payload) void window.electronAPI.proactiveAppend(`任务提醒：${payload.task.title}`)
+      else if (payload.backlog > 0) void window.electronAPI.proactiveAppend(`错过了 ${payload.backlog} 条任务提醒`)
     })
     const rebuiltCleanup = window.electronAPI.tasks.onTasksStoreRebuilt(() => {
-      proactiveEngine.postExternal('任务数据文件无法读取，已重建空库，原文件已隔离保存。', 'task')
+      void window.electronAPI.proactiveAppend('任务数据文件无法读取，已重建空库，原文件已隔离保存。')
     })
     window.electronAPI.tasks.ready()
     return () => { cleanup(); rebuiltCleanup() }
@@ -370,6 +354,14 @@ function App() {
   }, [openChatPanel])
 
   useEffect(() => {
+    const cleanup = window.electronAPI.onOpenAssistantChat(() => {
+      openChatPanel()
+      setAssistantFocusRequest(current => current + 1)
+    })
+    return cleanup
+  }, [openChatPanel])
+
+  useEffect(() => {
     const cleanup = window.electronAPI.onHidePanel(() => {
       hidePanel()
     })
@@ -528,56 +520,16 @@ function App() {
           onPositionChange={setPetPosition}
           onClick={togglePanel}
           onOpenSettings={openSettings}
-          onOpenMessages={() => {
-            proactiveEngine.markAllRead()
-            persistProactiveMessages()
-            setShowProactiveCenter(true)
+          onOpenAssistantChat={() => {
+            openChatPanel()
+            setAssistantFocusRequest(current => current + 1)
           }}
           state={petState}
           size={config.petSize}
           onFileDrop={handleFileDrop}
           onFileDropError={setFileDropError}
+          hasUnread={assistantUnread > 0}
         />
-      )}
-      {showProactiveCenter && (
-        <ProactiveCenter
-          messages={proactiveMessages}
-          position={{
-            left: Math.max(12, Math.min(window.innerWidth - 352, petPosition.x >= 362 ? petPosition.x - 350 : petPosition.x + config.petSize + 10)),
-            top: Math.max(12, Math.min(window.innerHeight - 532, petPosition.y))
-          }}
-          onClose={() => setShowProactiveCenter(false)}
-          onSnooze={(id) => {
-            proactiveEngine.snooze(id)
-            persistProactiveMessages()
-            setShowProactiveCenter(false)
-          }}
-          onRemove={(id) => {
-            proactiveEngine.remove(id)
-            persistProactiveMessages()
-          }}
-          onClear={() => {
-            if (!window.confirm('清空全部助手消息？此操作无法撤销。')) return
-            proactiveEngine.clearMessages()
-            persistProactiveMessages()
-          }}
-          onOpenTask={(taskId) => { setShowProactiveCenter(false); openTasksPage(taskId) }}
-        />
-      )}
-      {/* Proactive message bubble */}
-      {proactiveMsg && (
-        <div
-          data-interactive
-          className="pet-bubble proactive-bubble"
-          style={{ left: petPosition.x + config.petSize + 10, top: petPosition.y - 10 }}
-          onClick={() => setProactiveMsg(null)}
-          role="button"
-          tabIndex={0}
-          aria-label={`${proactiveMsg}，点击关闭`}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProactiveMsg(null) }}
-        >
-          {proactiveMsg}
-        </div>
       )}
       {/* Clipboard toast */}
       {clipboardText && (
@@ -630,6 +582,7 @@ function App() {
           onPendingAttachmentConsumed={() => setPendingDrop(null)}
           pendingMessage={pendingClipboardMsg}
           onPendingMessageConsumed={() => setPendingClipboardMsg(null)}
+          assistantFocusRequest={assistantFocusRequest}
         />
       )}
       {screenshotImage && (

@@ -143,6 +143,11 @@ export interface ElectronAPI {
   onTogglePanel: (callback: () => void) => () => void
   onSetPetVisible: (callback: (visible: boolean) => void) => () => void
   notifyPetVisible: (visible: boolean) => void
+  proactiveAppend: (content: string, timestamp?: number) => Promise<void>
+  getAssistantUnread: () => Promise<number>
+  onSessionsChanged: (callback: () => void) => () => void
+  onAssistantUnread: (callback: (count: number) => void) => () => void
+  onOpenAssistantChat: (callback: () => void) => () => void
   onOpenChatPanel: (callback: () => void) => () => void
   onOpenJournalPanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void
@@ -181,6 +186,7 @@ export interface ElectronAPI {
     renameSession: (id: string, title: string) => Promise<ChatSessionSummary[]>
     deleteSession: (id: string) => Promise<SessionWorkspace>
     saveSessionMessages: (id: string, msgs: Message[]) => Promise<SessionWorkspace>
+    markSessionRead: (id: string) => Promise<SessionWorkspace>
     exportSession: (id: string) => Promise<{ ok: boolean; canceled: boolean; filePath?: string }>
     getState: (key: string) => Promise<string | null>
     setState: (key: string, value: string) => Promise<void>
@@ -240,6 +246,7 @@ export interface ChatSessionSummary {
   characterId: string
   createdAt: number
   updatedAt: number
+  unreadCount?: number
 }
 
 export interface SessionWorkspace {

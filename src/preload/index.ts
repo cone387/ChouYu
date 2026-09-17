@@ -229,6 +229,21 @@ const api = {
   notifyPetVisible: (visible: boolean) => {
     ipcRenderer.send('pet-visibility-changed', visible)
   },
+  proactiveAppend: (content: string, timestamp?: number) => ipcRenderer.invoke('proactive:append', content, timestamp) as Promise<void>,
+  getAssistantUnread: () => ipcRenderer.invoke('proactive:get-unread') as Promise<number>,
+  onSessionsChanged: (callback: () => void) => {
+    ipcRenderer.on('sessions:changed', callback)
+    return () => { ipcRenderer.removeListener('sessions:changed', callback) }
+  },
+  onAssistantUnread: (callback: (count: number) => void) => {
+    const handler = (_e: unknown, count: number) => callback(count)
+    ipcRenderer.on('assistant-unread-changed', handler)
+    return () => { ipcRenderer.removeListener('assistant-unread-changed', handler) }
+  },
+  onOpenAssistantChat: (callback: () => void) => {
+    ipcRenderer.on('open-assistant-chat', callback)
+    return () => { ipcRenderer.removeListener('open-assistant-chat', callback) }
+  },
   onOpenChatPanel: (callback: () => void) => {
     ipcRenderer.on('open-chat-panel', callback)
     return () => { ipcRenderer.removeListener('open-chat-panel', callback) }
@@ -280,6 +295,7 @@ const api = {
     renameSession: (id: string, title: string) => ipcRenderer.invoke('db:rename-session', id, title),
     deleteSession: (id: string) => ipcRenderer.invoke('db:delete-session', id),
     saveSessionMessages: (id: string, msgs: unknown[]) => ipcRenderer.invoke('db:save-session-messages', id, msgs),
+    markSessionRead: (id: string) => ipcRenderer.invoke('db:mark-session-read', id),
     exportSession: (id: string) => ipcRenderer.invoke('db:export-session', id),
     getState: (key: string) => ipcRenderer.invoke('db:get-state', key),
     setState: (key: string, value: string) => ipcRenderer.invoke('db:set-state', key, value)

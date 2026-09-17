@@ -23,6 +23,8 @@ interface MessageAreaProps {
   contextLimit?: number
   onMemoryFeedback?: (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => Promise<void>
   onCorrectMemory?: (memoryId: string) => void
+  canSnooze?: boolean
+  onSnoozeContent?: (content: string) => void
 }
 
 function formatTime(ts: number) {
@@ -112,7 +114,7 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory }: MessageAreaProps) {
+export default function MessageArea({ searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze, onSnoozeContent }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState(initialSearch)
@@ -283,6 +285,15 @@ export default function MessageArea({ searchOpen = false, initialSearch = '', on
               {msg.responseStatus === 'stopped' && <span className="message-state">已停止</span>}
               {msg.role === 'assistant' && msg.content && !msg.toolData && (
                 <CopyButton text={msg.content} />
+              )}
+              {canSnooze && msg.role === 'assistant' && msg.content && !msg.toolData && !msg.pluginData && onSnoozeContent && (
+                <button
+                  className="message-snooze-btn"
+                  onClick={() => onSnoozeContent?.(msg.content)}
+                  aria-label="十分钟后再次提醒"
+                >
+                  稍后提醒
+                </button>
               )}
               {msg.role === 'user' && !isStreaming && !msg.toolData && !msg.pluginData && onEditMessage && msg.id !== editingId && (
                 <button

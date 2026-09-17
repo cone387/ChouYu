@@ -42,6 +42,14 @@ interface GenerationOptions {
  */
 export const STREAM_RENDER_INTERVAL_MS = 80
 
+/** 流式生成期间主进程追加的助手消息不能被渲染层缓存掩盖：把缓存里没有的消息按时间戳并进来。 */
+function mergeForeignMessages(cached: Message[], incoming: Message[]): Message[] {
+  const known = new Set(cached.map((message) => message.id))
+  const foreign = incoming.filter((message) => !known.has(message.id))
+  if (foreign.length === 0) return cached
+  return [...cached, ...foreign].sort((a, b) => a.timestamp - b.timestamp)
+}
+
 interface UseSessionWorkspaceParams {
   config: AppConfig
   onPetStateChange: (state: PetState) => void
@@ -120,8 +128,9 @@ export function useSessionWorkspace({
 
   const applyWorkspace = useCallback((workspace: SessionWorkspace, preserveSessionOrder = false) => {
     const sessionId = workspace.activeSession.id
+    const cached = sessionMessagesRef.current.get(sessionId)
     const activeMessages = sessionGenerationsRef.current.has(sessionId)
-      ? sessionMessagesRef.current.get(sessionId) || workspace.activeSession.messages
+      ? (cached ? mergeForeignMessages(cached, workspace.activeSession.messages) : workspace.activeSession.messages)
       : workspace.activeSession.messages
     activeSessionIdRef.current = sessionId
     latestMessagesRef.current = activeMessages

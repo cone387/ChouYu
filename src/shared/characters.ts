@@ -116,6 +116,29 @@ export function createDefaultCharacter(now = Date.now()): Character {
   }
 }
 
+export const ASSISTANT_CHARACTER_ID = 'assistant'
+export const ASSISTANT_CHARACTER_NAME = '助手'
+export const ASSISTANT_SOUL_MD = '你是丑鱼桌面助手，负责把问候、休息与任务提醒送到用户眼前。语气简短温暖，每条消息一到两句话，不啰嗦、不追问；用户回复时给务实的小建议。'
+
+export function createAssistantCharacter(now = Date.now()): Character {
+  return {
+    id: ASSISTANT_CHARACTER_ID,
+    name: ASSISTANT_CHARACTER_NAME,
+    avatar: '🔔',
+    category: '',
+    soulMd: ASSISTANT_SOUL_MD,
+    providerProfileId: DEFAULT_PROFILE_ID,
+    model: '',
+    builtIn: true,
+    createdAt: now,
+    updatedAt: now
+  }
+}
+
+export function isAssistantCharacter(id: string): boolean {
+  return id === ASSISTANT_CHARACTER_ID
+}
+
 /** 内置角色是人设/模型的实时视图：仅保留 name/avatar 编辑，其余字段运行期解析。 */
 export function normalizeCharacters(value: unknown): Character[] {
   const items: Record<string, unknown>[] = []
@@ -134,13 +157,13 @@ export function normalizeCharacters(value: unknown): Character[] {
     const avatar = typeof input.avatar === 'string' && input.avatar.trim() ? clampCodePoints(input.avatar.trim(), 8) : defaultCharacter.avatar
     defaultCharacter = { ...defaultCharacter, name, avatar }
   }
-  const names = new Set<string>([defaultCharacter.name])
-  const ids = new Set<string>([DEFAULT_CHARACTER_ID])
+  const names = new Set<string>([defaultCharacter.name, ASSISTANT_CHARACTER_NAME])
+  const ids = new Set<string>([DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID])
   const custom: Character[] = []
   const now = Date.now()
   for (const input of items) {
     const id = typeof input.id === 'string' ? input.id.trim().slice(0, 128) : ''
-    if (!id || isDefaultCharacter(id)) continue
+    if (!id || isDefaultCharacter(id) || isAssistantCharacter(id)) continue
     if (ids.has(id)) continue
     const draft = sanitizeCharacterDraft(input)
     if (!draft) continue
@@ -154,7 +177,7 @@ export function normalizeCharacters(value: unknown): Character[] {
     custom.push({ id, ...draft, name: characterName, builtIn: false, createdAt, updatedAt })
     if (custom.length >= MAX_CHARACTER_COUNT - 1) break
   }
-  return [defaultCharacter, ...custom]
+  return [defaultCharacter, createAssistantCharacter(), ...custom]
 }
 
 export interface EffectiveChatConfig {
@@ -168,13 +191,13 @@ export interface EffectiveChatConfig {
 export type CharacterResolution = { ok: true; config: EffectiveChatConfig } | { ok: false; error: string }
 
 export function resolveCharacterConfig(character: Character | undefined | null, config: AppConfig): CharacterResolution {
-  if (!character || isDefaultCharacter(character.id)) {
+  if (!character || character.builtIn) {
     if (!isAIConfigured(config)) {
-      return { ok: false, error: '默认角色使用设置页的 AI 配置，请先完成 Base URL、API Key 和模型设置。' }
+      return { ok: false, error: '内置角色使用设置页的 AI 配置，请先完成 Base URL、API Key 和模型设置。' }
     }
     return {
       ok: true,
-      config: { provider: config.provider, baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model, soulMd: config.soulMd }
+      config: { provider: config.provider, baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model, soulMd: character?.soulMd || config.soulMd }
     }
   }
   const profile = getProviderProfiles(config).find((item) => item.id === character.providerProfileId)

@@ -910,7 +910,8 @@
 
 .message-retry-btn,
 .message-edit-btn,
-.message-continue-btn {
+.message-continue-btn,
+.message-snooze-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -926,9 +927,19 @@
 
 .message-retry-btn:hover,
 .message-edit-btn:hover,
-.message-continue-btn:hover {
+.message-continue-btn:hover,
+.message-snooze-btn:hover {
   background: var(--hover-bg);
   color: var(--text-primary);
+}
+
+.message-snooze-btn {
+  visibility: hidden;
+}
+
+.message:hover .message-snooze-btn,
+.message-snooze-btn:focus-visible {
+  visibility: visible;
 }
 
 .message-edit {

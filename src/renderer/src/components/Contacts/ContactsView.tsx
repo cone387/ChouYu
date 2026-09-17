@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABELS, type CharacterStats } from '../../../../shared/characters'
+import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABELS, type CharacterStats } from '../../../../shared/characters'
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
 import './Contacts.css'
@@ -191,10 +191,11 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
 
   // 聊天页信息条跳转过来：打开对应角色详情后消费焦点，再次点击可重新触发。
   // 角色列表异步加载，找不到时先等待，加载完成后依赖变化会再次进入。
+  // 助手是置顶卡片直达会话，没有详情弹窗（编辑会被数据库拒绝），跳转焦点直接忽略。
   useEffect(() => {
     if (!active || !focusCharacterId) return
     const character = characters.find((item) => item.id === focusCharacterId)
-    if (!character) return
+    if (!character || character.id === ASSISTANT_CHARACTER_ID) return
     setDetail(character)
     onFocusConsumed?.()
   }, [active, focusCharacterId, characters, onFocusConsumed])
@@ -212,6 +213,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return characters
+      .filter((character) => character.id !== ASSISTANT_CHARACTER_ID)
       .filter((character) => category === 'all'
         || (category === 'other' ? !character.category : character.category === category))
       .filter((character) => modelFilter === 'all' || character.model === modelFilter)
@@ -343,6 +345,17 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     </div>
     {error && <div className="contacts-error" role="alert">{error}</div>}
     <div className="contacts-scroll">
+      <button type="button" className="contacts-card contacts-assistant-card" data-contacts-item={ASSISTANT_CHARACTER_ID}
+        onClick={() => onOpenChat(ASSISTANT_CHARACTER_ID)}>
+        <span className="contacts-card-head">
+          <span className="contacts-card-avatar contacts-card-avatar-default" aria-hidden="true">🔔</span>
+          <span className="contacts-card-title">
+            <span className="contacts-card-name">助手<em className="contacts-builtin">内置</em></span>
+            <span className="contacts-card-subtitle">主动提醒都发到这里</span>
+          </span>
+        </span>
+        <span className="contacts-card-desc">问候、休息与任务提醒会以聊天消息出现，可以随时回复。</span>
+      </button>
       <div className="contacts-grid">
         {filtered.map((character) => {
           const model = character.builtIn ? config.model : character.model

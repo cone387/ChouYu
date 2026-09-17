@@ -31,6 +31,7 @@ import { recognizeOfflineImage } from './offline-ocr'
 import { reloadPluginHotkeys, updateMainHotkey } from './hotkey'
 import { capabilityRegistry } from './capabilities/registry'
 import { setClipboardWatcherEnabled } from './clipboard'
+import { setTrayUnread } from './tray'
 import { initAutoUpdater } from './updater'
 import { diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
 import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
@@ -90,6 +91,9 @@ import {
   renameChatSession,
   deleteChatSession,
   saveSessionMessages,
+  appendAssistantMessage,
+  getAssistantUnreadCount,
+  markSessionRead,
   getState,
   setState
 } from './database'
@@ -788,6 +792,27 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('characters:changed')
   }
 
+  const notifyAssistantUnread = () => {
+    const count = getAssistantUnreadCount()
+    setTrayUnread(count)
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('assistant-unread-changed', count)
+  }
+
+  ipcMain.handle('proactive:append', (_event, content: unknown, timestamp?: unknown) => {
+    if (typeof content !== 'string' || !content.trim() || content.length > 20_000) throw new Error('Invalid proactive content')
+    const at = typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : undefined
+    appendAssistantMessage(content, at)
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sessions:changed')
+    notifyAssistantUnread()
+  })
+  ipcMain.handle('proactive:get-unread', () => getAssistantUnreadCount())
+  ipcMain.handle('db:mark-session-read', (_event, id: string) => {
+    if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
+    const workspace = markSessionRead(id)
+    notifyAssistantUnread()
+    return workspace
+  })
+
   ipcMain.handle('characters:list', () => listCharacters())
   ipcMain.handle('characters:create', (_event, draft: unknown) => {
     const result = createCharacter(draft)
@@ -841,7 +866,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle('db:select-session', (_event, id: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
-    return selectChatSession(id)
+    const workspace = selectChatSession(id)
+    notifyAssistantUnread()
+    return workspace
   })
   ipcMain.handle('db:rename-session', (_event, id: string, title: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
@@ -850,12 +877,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle('db:delete-session', (_event, id: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
-    return deleteChatSession(id)
+    const workspace = deleteChatSession(id)
+    notifyAssistantUnread()
+    return workspace
   })
   ipcMain.handle('db:save-session-messages', (_event, id: string, messages) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
     if (!Array.isArray(messages)) throw new Error('Invalid session messages')
-    return saveSessionMessages(id, messages)
+    const workspace = saveSessionMessages(id, messages)
+    notifyAssistantUnread()
+    return workspace
   })
   ipcMain.handle('db:export-session', async (_event, id: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
