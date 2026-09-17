@@ -15,7 +15,8 @@ describe('pet icon consistency', () => {
     expect(traySource).toContain('nativeImage.createFromBuffer')
     expect(traySource).toContain('icon.isEmpty()')
     expect(traySource).toContain("mainWindow.webContents.send('open-chat-panel')")
-    expect(traySource).toContain('tray.on(\'click\', openChatPanel)')
+    expect(traySource).toContain('tray.on(\'click\', onTrayClick)')
+    expect(traySource).toContain("mainWindow.webContents.send('open-messages-center')")
     expect(traySource).toContain('mainWindow.focus()')
     expect(traySource).toContain('mainWindow.moveTop()')
     // Data-URL images cannot inherit CSS variables, so the workspace logo inlines a themed svg.
