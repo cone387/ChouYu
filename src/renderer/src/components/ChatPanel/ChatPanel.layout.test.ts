@@ -222,4 +222,12 @@ describe('assistant contact wiring', () => {
     expect(sidebarSource).toContain("session.unreadCount > 99 ? '99+'")
     expect(sidebarStylesheet).toContain('#ff4d4f')
   })
+
+  it('offers snooze only on assistant replies', () => {
+    expect(messageSource).toContain('canSnooze?: boolean')
+    expect(messageSource).toContain('onSnoozeContent?.(msg.content)')
+    expect(panelSource).toContain('canSnooze={activeCharacterId === ASSISTANT_CHARACTER_ID}')
+    expect(panelSource).toContain('proactiveEngine.snoozeContent')
+    expect(stylesheet).toContain('.message-snooze-btn')
+  })
 })

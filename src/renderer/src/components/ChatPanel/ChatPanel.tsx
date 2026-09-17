@@ -38,6 +38,7 @@ import {
 } from '../../core/panel-state'
 import { usePanelResize } from './usePanelResize'
 import { useSessionWorkspace } from './useSessionWorkspace'
+import { proactiveEngine } from '../../core/proactive'
 import './ChatPanel.css'
 
 interface ChatPanelProps {
@@ -785,6 +786,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 contextLimit={MAX_HISTORY_MESSAGES}
                 onMemoryFeedback={submitMemoryFeedback}
                 onCorrectMemory={correctMemory}
+                canSnooze={activeCharacterId === ASSISTANT_CHARACTER_ID}
+                onSnoozeContent={(content) => proactiveEngine.snoozeContent(content)}
               />
             )}
             {confirmClear && (
