@@ -6,9 +6,22 @@ import { openJournalWorkspace, toggleJournalPause, getJournalStatus } from './jo
 let tray: Tray | null = null
 let petVisibilityItem: MenuItem | null = null
 let trayUnreadCount = 0
+let trayFlasher: TrayFlasher | null = null
+let updateTrayStatus: (() => void) | null = null
 
 export function setTrayPetVisible(visible: boolean): void {
   if (petVisibilityItem) petVisibilityItem.checked = visible
+}
+
+export function setTrayUnread(count: number): void {
+  const next = Math.max(0, Math.floor(count) || 0)
+  trayUnreadCount = next
+  if (!tray || tray.isDestroyed()) return
+  if (trayFlasher) {
+    if (next > 0) trayFlasher.start()
+    else trayFlasher.stop()
+  }
+  updateTrayStatus?.()
 }
 
 export function setupTray(mainWindow: BrowserWindow): void {
@@ -21,6 +34,7 @@ export function setupTray(mainWindow: BrowserWindow): void {
     showNormal: () => { if (tray && !tray.isDestroyed()) tray.setImage(icon) },
     showBlank: () => { if (tray && !tray.isDestroyed()) tray.setImage(blankIcon) }
   })
+  trayFlasher = flasher
 
   const openChatPanel = () => {
     if (mainWindow.isMinimized()) mainWindow.restore()
@@ -30,13 +44,13 @@ export function setupTray(mainWindow: BrowserWindow): void {
     mainWindow.webContents.send('open-chat-panel')
   }
 
-  const openMessages = () => {
+  const openAssistantChat = () => {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
     mainWindow.moveTop()
     mainWindow.setIgnoreMouseEvents(false)
-    mainWindow.webContents.send('open-messages-center')
+    mainWindow.webContents.send('open-assistant-chat')
   }
 
   const contextMenu = Menu.buildFromTemplate([
@@ -49,7 +63,7 @@ export function setupTray(mainWindow: BrowserWindow): void {
     },
     {
       label: '助手消息',
-      click: openMessages
+      click: openAssistantChat
     },
     {
       label: '显示桌面宠物',
@@ -96,18 +110,7 @@ export function setupTray(mainWindow: BrowserWindow): void {
     const unreadSuffix = trayUnreadCount > 0 ? ` · ${trayUnreadCount} 条新消息` : ''
     tray.setToolTip(`ChouYu · 活动记录${text}${scope}${unreadSuffix}`)
   }
-  const setTrayUnread = (count: number) => {
-    const next = Math.max(0, Math.floor(count) || 0)
-    trayUnreadCount = next
-    if (!tray || tray.isDestroyed()) return
-    if (next > 0) flasher.start()
-    else flasher.stop()
-    updateJournalStatus()
-  }
-  ipcMain.removeAllListeners('proactive-unread-changed')
-  ipcMain.on('proactive-unread-changed', (_event, count: number) => {
-    if (typeof count === 'number') setTrayUnread(count)
-  })
+  updateTrayStatus = updateJournalStatus
   updateJournalStatus()
   const journalTimer = setInterval(updateJournalStatus, 3000)
   app.once('will-quit', () => {
@@ -115,7 +118,7 @@ export function setupTray(mainWindow: BrowserWindow): void {
     flasher.dispose()
   })
   const onTrayClick = () => {
-    if (trayUnreadCount > 0) openMessages()
+    if (trayUnreadCount > 0) openAssistantChat()
     else openChatPanel()
   }
   tray.on('click', onTrayClick)
