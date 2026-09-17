@@ -25,3 +25,19 @@ describe('panel opening placement', () => {
     expect(traySource).toContain("send('set-pet-visible', item.checked)")
   })
 })
+
+describe('assistant message pipeline', () => {
+  it('routes proactive messages into the assistant session instead of a standalone center', () => {
+    expect(source).toContain('proactiveAppend')
+    expect(source).toContain('restoreSnoozes')
+    expect(source).toContain('onAssistantUnread(setAssistantUnread)')
+    expect(source).toContain('hasUnread={assistantUnread > 0}')
+    expect(source).toContain('onOpenAssistantChat(')
+    expect(source).toContain('assistantFocusRequest={assistantFocusRequest}')
+    expect(source).not.toContain('ProactiveCenter')
+    expect(source).not.toContain('proactiveMsg')
+    expect(source).not.toContain('proactive-bubble')
+    expect(source).not.toContain('setProactiveUnread')
+    expect(source).not.toContain('onOpenMessages')
+  })
+})

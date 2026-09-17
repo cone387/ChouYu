@@ -148,8 +148,6 @@ export interface ElectronAPI {
   onSessionsChanged: (callback: () => void) => () => void
   onAssistantUnread: (callback: (count: number) => void) => () => void
   onOpenAssistantChat: (callback: () => void) => () => void
-  setProactiveUnread: (count: number) => void
-  onOpenMessages: (callback: () => void) => () => void
   onOpenChatPanel: (callback: () => void) => () => void
   onOpenJournalPanel: (callback: () => void) => () => void
   onOpenSettings: (callback: () => void) => () => void

@@ -244,15 +244,6 @@ const api = {
     ipcRenderer.on('open-assistant-chat', callback)
     return () => { ipcRenderer.removeListener('open-assistant-chat', callback) }
   },
-  setProactiveUnread: (count: number) => {
-    ipcRenderer.send('proactive-unread-changed', count)
-  },
-  onOpenMessages: (callback: () => void) => {
-    ipcRenderer.on('open-messages-center', callback)
-    return () => {
-      ipcRenderer.removeListener('open-messages-center', callback)
-    }
-  },
   onOpenChatPanel: (callback: () => void) => {
     ipcRenderer.on('open-chat-panel', callback)
     return () => { ipcRenderer.removeListener('open-chat-panel', callback) }

@@ -10,7 +10,7 @@ interface PetProps {
   onPositionChange: (pos: { x: number; y: number }) => void
   onClick: () => void
   onOpenSettings: () => void
-  onOpenMessages: () => void
+  onOpenAssistantChat: () => void
   state: PetState
   size: number
   hasUnread: boolean
@@ -18,7 +18,7 @@ interface PetProps {
   onFileDropError?: (message: string) => void
 }
 
-export default function Pet({ position, onPositionChange, onClick, onOpenSettings, onOpenMessages, state, size, hasUnread, onFileDrop, onFileDropError }: PetProps) {
+export default function Pet({ position, onPositionChange, onClick, onOpenSettings, onOpenAssistantChat, state, size, hasUnread, onFileDrop, onFileDropError }: PetProps) {
   const draggingRef = useRef(false)
   const hasDraggedRef = useRef(false)
   const dragStartRef = useRef({ screenX: 0, screenY: 0, posX: 0, posY: 0 })
@@ -223,7 +223,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
           className="pet-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
-          <button onClick={() => { setContextMenu(null); onOpenMessages() }}>助手消息</button>
+          <button onClick={() => { setContextMenu(null); onOpenAssistantChat() }}>助手消息</button>
           <button onClick={() => { setContextMenu(null); onOpenSettings() }}>设置</button>
           <button onClick={() => { setContextMenu(null); void window.electronAPI.quitApp() }}>退出</button>
         </div>

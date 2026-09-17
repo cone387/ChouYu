@@ -279,10 +279,6 @@ html, body, #root {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.proactive-bubble {
-  pointer-events: auto;
-}
-
 .clipboard-bubble {
   pointer-events: auto;
 }

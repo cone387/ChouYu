@@ -1,11 +1,10 @@
-﻿/**
- * Proactive Engine - makes the pet speak on its own occasionally.
+/**
+ * Proactive Engine - schedules the assistant's spontaneous messages.
  *
- * Rules:
  * - Greet on first launch of the day (configurable)
- * - Remind user to rest after 60 minutes of continuous use (configurable)
+ * - Remind the user to rest after 60 minutes of continuous use (configurable)
  * - At most one new proactive event per 60 minutes
- * - Keep every event until the user removes it
+ * - Delivered via callback; persistence lives in the assistant chat session
  */
 
 const COOLDOWN = 60 * 60 * 1000 // 60 minutes
@@ -14,19 +13,17 @@ const REST_REMINDER_INTERVAL = 60 * 60 * 1000 // 60 minutes
 export type ProactiveKind = 'greeting' | 'rest' | 'return' | 'task'
 type ProactiveCallback = (message: string, kind?: ProactiveKind) => void
 
-export interface ProactiveMessage {
-  id: string
-  message: string
-  createdAt: number
-  readAt?: number
-  snoozedUntil?: number
-  kind?: ProactiveKind
-  taskId?: string
-}
-
 export interface ProactiveOptions {
   greeting: boolean
   restReminder: boolean
+}
+
+export const SNOOZE_PREFIX = '⏰ 稍后提醒：'
+
+export interface AssistantSnooze {
+  id: string
+  content: string
+  dueAt: number
 }
 
 export class ProactiveEngine {
@@ -35,56 +32,16 @@ export class ProactiveEngine {
   private callback: ProactiveCallback | null = null
   private greetedDate: string | null = null
   private greetingTimer: ReturnType<typeof setTimeout> | null = null
+  private snoozes = new Map<string, AssistantSnooze>()
   private snoozeTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private idleTimer: ReturnType<typeof setTimeout> | null = null
   private interrupted = false
   private options: ProactiveOptions = { greeting: true, restReminder: true }
-  private messages: ProactiveMessage[] = []
-
-  getMessages(): ProactiveMessage[] { return [...this.messages] }
-
-  hydrateMessages(messages: ProactiveMessage[]): void {
-    const merged = new Map(this.messages.map(message => [message.id, message]))
-    messages.forEach(message => { if (message && typeof message.id === 'string' && typeof message.message === 'string') merged.set(message.id, message) })
-    this.messages = [...merged.values()].sort((a, b) => b.createdAt - a.createdAt)
-    this.messages.forEach(message => this.scheduleSnooze(message))
-    this.persistMessages()
-  }
-
-  snooze(id: string, minutes = 10): void {
-    const item = this.messages.find(message => message.id === id)
-    if (!item) return
-    item.snoozedUntil = Date.now() + minutes * 60_000
-    this.persistMessages()
-    this.scheduleSnooze(item)
-  }
-
-  markAllRead(): void {
-    const now = Date.now()
-    this.messages.forEach(message => { if (!message.readAt) message.readAt = now })
-    this.persistMessages()
-  }
-
-  remove(id: string): void {
-    this.messages = this.messages.filter(message => message.id !== id)
-    const timer = this.snoozeTimers.get(id)
-    if (timer) clearTimeout(timer)
-    this.snoozeTimers.delete(id)
-    this.persistMessages()
-  }
-
-  clearMessages(): void {
-    this.messages = []
-    this.snoozeTimers.forEach(timer => clearTimeout(timer))
-    this.snoozeTimers.clear()
-    this.persistMessages()
-  }
 
   start(callback: ProactiveCallback, options?: ProactiveOptions): void {
     this.stop()
     this.callback = callback
-    this.messages = this.readMessages()
-    this.messages.forEach(message => this.scheduleSnooze(message))
+    this.snoozes.forEach((item) => this.scheduleSnooze(item))
     this.scheduleIdleCheck()
     this.options = options || { greeting: true, restReminder: true }
     this.greetedDate = this.readGreetingDate()
@@ -119,49 +76,64 @@ export class ProactiveEngine {
     this.restTimer = setTimeout(() => this.remindRest(), REST_REMINDER_INTERVAL)
   }
 
-  private canSpeak(): boolean {
-    return Date.now() - this.lastProactiveTime > COOLDOWN
+  snoozeContent(content: string, minutes = 10): void {
+    if (!content.trim()) return
+    const item: AssistantSnooze = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      content: content.slice(0, 20_000),
+      dueAt: Date.now() + minutes * 60_000
+    }
+    this.snoozes.set(item.id, item)
+    this.scheduleSnooze(item)
+    this.persistSnoozes()
   }
 
-  private enqueue(message: string, kind: ProactiveKind, taskId?: string): void {
-    this.messages.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message, createdAt: Date.now(), kind, ...(taskId ? { taskId } : {}) })
-    this.persistMessages()
+  /** 启动时从 db state 恢复待提醒项：未来项重挂定时器，过期项立即触发。 */
+  restoreSnoozes(items: unknown): void {
+    this.snoozes.clear()
+    this.snoozeTimers.forEach(timer => clearTimeout(timer))
+    this.snoozeTimers.clear()
+    if (Array.isArray(items)) {
+      for (const raw of items) {
+        if (!raw || typeof raw !== 'object') continue
+        const item = raw as Partial<AssistantSnooze>
+        if (typeof item.id !== 'string' || !item.id) continue
+        if (typeof item.content !== 'string' || !item.content.trim()) continue
+        if (!Number.isFinite(item.dueAt)) continue
+        this.snoozes.set(item.id, { id: item.id.slice(0, 128), content: item.content.slice(0, 20_000), dueAt: Number(item.dueAt) })
+      }
+    }
+    this.snoozes.forEach((item) => this.scheduleSnooze(item))
+    this.persistSnoozes()
+  }
+
+  private canSpeak(): boolean {
+    return Date.now() - this.lastProactiveTime > COOLDOWN
   }
 
   private speak(message: string, kind: ProactiveKind = 'rest'): void {
     if (!this.callback) return
     this.lastProactiveTime = Date.now()
-    this.enqueue(message, kind)
-    this.callback(message)
+    this.callback(message, kind)
   }
 
-  /** 外部注入的确定性提醒(任务到期),不受 60 分钟冷却限制。 */
-  postExternal(message: string, kind: ProactiveKind = 'task', taskId?: string): void {
-    this.enqueue(message, kind, taskId)
-    this.callback?.(message, kind)
-  }
-
-  private readMessages(): ProactiveMessage[] {
+  private persistSnoozes(): void {
+    if (typeof window === 'undefined' || !window.electronAPI?.db) return
     try {
-      const value = JSON.parse(localStorage.getItem('chouyu.proactive.messages') || '[]')
-      return Array.isArray(value) ? value.filter(item => item && typeof item.id === 'string' && typeof item.message === 'string' && Number.isFinite(item.createdAt)) : []
-    } catch { return [] }
+      void window.electronAPI.db.setState('assistant-snoozes', JSON.stringify([...this.snoozes.values()]))
+        .catch(() => { /* storage notice covers persistence failures */ })
+    } catch { /* unavailable */ }
   }
 
-  private persistMessages(): void {
-    try { localStorage.setItem('chouyu.proactive.messages', JSON.stringify(this.messages)) } catch { /* unavailable */ }
-  }
-
-  private scheduleSnooze(item: ProactiveMessage): void {
-    const current = this.snoozeTimers.get(item.id)
-    if (current) clearTimeout(current)
-    if (!item.snoozedUntil) return
-    const delay = Math.max(0, item.snoozedUntil - Date.now())
+  private scheduleSnooze(item: AssistantSnooze): void {
+    const existing = this.snoozeTimers.get(item.id)
+    if (existing) clearTimeout(existing)
+    const delay = Math.max(0, item.dueAt - Date.now())
     const timer = setTimeout(() => {
+      this.snoozes.delete(item.id)
       this.snoozeTimers.delete(item.id)
-      item.snoozedUntil = undefined
-      this.persistMessages()
-      this.callback?.(item.message, item.kind)
+      this.persistSnoozes()
+      this.callback?.(`${SNOOZE_PREFIX}${item.content}`)
     }, delay)
     this.snoozeTimers.set(item.id, timer)
   }
