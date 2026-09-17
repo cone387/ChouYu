@@ -9,7 +9,7 @@ import { readStoreFile, writeStoreFile } from './store-file'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/conversation-search'
 import { AppConfig, DEFAULT_APP_CONFIG, DEFAULT_PROFILE_ID, getProviderProfiles, normalizeConfig } from '../shared/config'
 import {
-  Character, CharacterStats, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS,
+  ASSISTANT_CHARACTER_ID, Character, CharacterStats, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS,
   isAssistantCharacter, normalizeCharacters, sanitizeCharacterDraft
 } from '../shared/characters'
 import {
@@ -40,6 +40,7 @@ export interface ChatSession {
   characterId: string
   createdAt: number
   updatedAt: number
+  lastReadAt?: number
 }
 
 export interface ChatSessionSummary {
@@ -50,6 +51,7 @@ export interface ChatSessionSummary {
   characterId: string
   createdAt: number
   updatedAt: number
+  unreadCount: number
 }
 
 export interface SessionWorkspace {
@@ -202,13 +204,15 @@ function normalizeSessions(value: unknown): ChatSession[] {
       const messages = sanitizeMessages(input.messages)
       const createdAt = Number.isFinite(input.createdAt) ? Number(input.createdAt) : Date.now()
       const updatedAt = Number.isFinite(input.updatedAt) ? Number(input.updatedAt) : createdAt
+      const lastReadAt = Number.isFinite(input.lastReadAt) ? Number(input.lastReadAt) : undefined
       return {
         id,
         title: normalizeSessionTitle(typeof input.title === 'string' ? input.title : deriveSessionTitle(messages)),
         messages,
         characterId: typeof input.characterId === 'string' && input.characterId.trim() ? input.characterId.trim().slice(0, 128) : DEFAULT_CHARACTER_ID,
         createdAt,
-        updatedAt
+        updatedAt,
+        ...(lastReadAt !== undefined ? { lastReadAt } : {})
       }
     })
     .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -233,7 +237,10 @@ function toSummary(session: ChatSession): ChatSessionSummary {
     messageCount: session.messages.length,
     characterId: session.characterId,
     createdAt: session.createdAt,
-    updatedAt: session.updatedAt
+    updatedAt: session.updatedAt,
+    unreadCount: isAssistantCharacter(session.characterId)
+      ? session.messages.filter((message) => message.timestamp > (session.lastReadAt ?? 0)).length
+      : 0
   }
 }
 
@@ -376,7 +383,7 @@ function seedPresetCharacters(): void {
   const now = Date.now()
   let seeded = 0
   for (const preset of PRESET_CHARACTERS) {
-    if (store.characters.length >= MAX_CHARACTER_COUNT) break
+    if (store.characters.filter((item) => !item.builtIn).length >= MAX_CHARACTER_COUNT - 1) break
     if (store.characters.some((item) => item.id === preset.id) || names.has(preset.name.toLowerCase())) continue
     store.characters.push({
       id: preset.id, name: preset.name, avatar: preset.avatar, category: preset.category, soulMd: preset.soulMd,
@@ -402,6 +409,26 @@ function backfillPresetCategories(): void {
   if (changed) persist(false)
 }
 
+/** 旧版消息中心的 proactive-messages 历史一次性迁入助手会话，幂等。 */
+function migrateProactiveMessages(): void {
+  if (store.state['proactive-migrated']) return
+  const raw = store.state['proactive-messages']
+  store.state['proactive-migrated'] = String(Date.now())
+  if (!raw) return
+  let entries: unknown[] = []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) entries = parsed
+  } catch { /* malformed legacy payload: drop it */ }
+  const legacy = entries
+    .flatMap((item) => item && typeof item === 'object' && typeof (item as Record<string, unknown>).message === 'string'
+      && Number.isFinite((item as Record<string, unknown>).createdAt)
+      ? [{ message: (item as Record<string, unknown>).message as string, createdAt: Number((item as Record<string, unknown>).createdAt) }]
+      : [])
+    .sort((a, b) => a.createdAt - b.createdAt)
+  for (const item of legacy) appendAssistantMessage(item.message, item.createdAt)
+}
+
 export function initDatabase(): void {
   filePath = path.join(app.getPath('userData'), 'chouyu-data.json')
   if (persistTimer) clearTimeout(persistTimer)
@@ -410,6 +437,7 @@ export function initDatabase(): void {
   store = load()
   seedPresetCharacters()
   backfillPresetCategories()
+  migrateProactiveMessages()
   persist(false)
 }
 
@@ -460,10 +488,46 @@ export function createChatSession(title?: string, characterId: string = DEFAULT_
 }
 
 export function selectChatSession(id: string): SessionWorkspace {
-  if (!store.sessions.some((session) => session.id === id)) throw new Error('会话不存在或已被删除。')
+  const session = store.sessions.find((candidate) => candidate.id === id)
+  if (!session) throw new Error('会话不存在或已被删除。')
   store.activeSessionId = id
+  if (isAssistantCharacter(session.characterId)) markSessionReadUpToNow(session)
   persist()
   return getSessionWorkspace()
+}
+
+/** 查看会话即标记已读：取当前时间与最新消息时间戳的较大者，避免未来时间戳消息卡住角标。 */
+function markSessionReadUpToNow(session: ChatSession): void {
+  const latest = session.messages.reduce((latest, message) => Math.max(latest, message.timestamp), 0)
+  session.lastReadAt = Math.max(Date.now(), latest)
+}
+
+/** 主动提醒的唯一入口：写入助手会话并即时落盘，托盘角标据此更新。 */
+export function appendAssistantMessage(content: string, timestamp?: number): SessionWorkspace {
+  const at = Number.isFinite(timestamp) ? Number(timestamp) : Date.now()
+  let session = store.sessions.find((candidate) => isAssistantCharacter(candidate.characterId))
+  if (!session) {
+    session = createSession([], '助手消息', at, ASSISTANT_CHARACTER_ID)
+    store.sessions.unshift(session)
+  }
+  session.messages.push({ id: randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at })
+  session.updatedAt = at
+  persist(false)
+  return getSessionWorkspace()
+}
+
+export function markSessionRead(id: string): SessionWorkspace {
+  const session = store.sessions.find((candidate) => candidate.id === id)
+  if (!session) throw new Error('会话不存在或已被删除。')
+  markSessionReadUpToNow(session)
+  persist(false)
+  return getSessionWorkspace()
+}
+
+export function getAssistantUnreadCount(): number {
+  return store.sessions
+    .filter((session) => isAssistantCharacter(session.characterId))
+    .reduce((total, session) => total + session.messages.filter((message) => message.timestamp > (session.lastReadAt ?? 0)).length, 0)
 }
 
 export function renameChatSession(id: string, title: string): ChatSessionSummary[] {
@@ -528,6 +592,7 @@ export function createCharacter(draft: unknown): CharacterStats {
 
 export function updateCharacter(id: string, draft: unknown): CharacterStats {
   const character = findCharacterByIdOrThrow(id)
+  if (isAssistantCharacter(id)) throw new Error('内置助手不可编辑。')
   const input = sanitizeCharacterDraft(draft)
   if (!input) throw new Error('角色名称和模型为必填项。')
   if (character.builtIn && input.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置角色固定使用默认档案。')
@@ -574,6 +639,8 @@ export function saveSessionMessages(id: string, messages: Message[]): SessionWor
     imageUrl: message.imageUrl ?? previousImages.get(message.id)
   }))
   session.updatedAt = Date.now()
+  // 渲染层保存消息说明用户正在助手会话对话：AI 回复不当未读。
+  if (isAssistantCharacter(session.characterId)) markSessionReadUpToNow(session)
   if (session.title === DEFAULT_SESSION_TITLE) session.title = deriveSessionTitle(session.messages)
   schedulePersist()
   return getSessionWorkspace()

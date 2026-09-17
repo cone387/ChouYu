@@ -17,11 +17,12 @@ vi.mock('electron', () => ({
 }))
 
 import {
-  createCharacter, createChatSession, deleteCharacter, flushDatabase, getActiveSession, getConfig, getSession,
-  getSessionWorkspace, getSessions, getStorageStatus, initDatabase, listCharacters, onStorageStatus, saveConfig,
-  saveSessionMessages, setState, searchSessions, updateCharacter
+  appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase,
+  getActiveSession, getAssistantUnreadCount, getConfig, getSession, getSessionWorkspace, getSessions,
+  getStorageStatus, initDatabase, listCharacters, markSessionRead, onStorageStatus, saveConfig, saveSessionMessages,
+  selectChatSession, setState, searchSessions, updateCharacter
 } from './database'
-import { DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS } from '../shared/characters'
+import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS } from '../shared/characters'
 import { DEFAULT_APP_CONFIG } from '../shared/config'
 import { AttachmentStore } from './attachment-store'
 
@@ -374,5 +375,88 @@ describe('characters', () => {
     const raw = JSON.parse(fs.readFileSync(storePath(), 'utf-8'))
     expect(raw.config.providerProfiles[0].apiKey).toMatch(/^safe:v1:/)
     expect(Array.isArray(raw.characters)).toBe(true)
+  })
+})
+
+describe('assistant messages', () => {
+  it('creates the assistant session on first append and appends in order', () => {
+    const first = appendAssistantMessage('问候一', 1000)
+    const summary = first.sessions.find((session) => session.characterId === 'assistant')
+    expect(summary?.title).toBe('助手消息')
+    expect(summary?.messageCount).toBe(1)
+    expect(summary?.unreadCount).toBe(1)
+    appendAssistantMessage('问候二', 2000)
+    const id = first.sessions.find((session) => session.characterId === 'assistant')!.id
+    expect(getSession(id)?.messages.map((item) => [item.content, item.role, item.timestamp]))
+      .toEqual([['问候一', 'assistant', 1000], ['问候二', 'assistant', 2000]])
+    expect(getSession(id)?.updatedAt).toBe(2000)
+    expect(getSessions().find((session) => session.id === id)?.unreadCount).toBe(2)
+  })
+
+  it('clears unread via markSessionRead and via selecting the assistant session', () => {
+    const workspace = appendAssistantMessage('新消息', Date.now())
+    const id = workspace.sessions.find((session) => session.characterId === 'assistant')!.id
+    expect(getAssistantUnreadCount()).toBe(1)
+    expect(markSessionRead(id).sessions.find((session) => session.id === id)?.unreadCount).toBe(0)
+    expect(getAssistantUnreadCount()).toBe(0)
+    appendAssistantMessage('又一条', Date.now() + 10)
+    expect(getAssistantUnreadCount()).toBe(1)
+    selectChatSession(id)
+    expect(getAssistantUnreadCount()).toBe(0)
+    expect(getSessions().find((session) => session.id === id)?.unreadCount).toBe(0)
+  })
+
+  it('keeps unread badges exclusive to assistant sessions', () => {
+    const id = getActiveSession().id
+    saveSessionMessages(id, [message('普通消息')])
+    expect(getSessions().find((session) => session.id === id)?.unreadCount).toBe(0)
+    expect(getAssistantUnreadCount()).toBe(0)
+  })
+
+  it('keeps lastReadAt across restart', () => {
+    const workspace = appendAssistantMessage('重启前', Date.now())
+    const id = workspace.sessions.find((session) => session.characterId === 'assistant')!.id
+    markSessionRead(id)
+    appendAssistantMessage('重启后', Date.now() + 100)
+    flushDatabase()
+    initDatabase()
+    const summary = getSessions().find((session) => session.id === id)
+    expect(summary?.unreadCount).toBe(1)
+  })
+
+  it('migrates legacy proactive-messages once, ordered, skipping malformed entries', () => {
+    const legacy = JSON.stringify([
+      { id: 'p1', message: '旧问候', createdAt: 2000 },
+      { id: 'p2', message: '旧提醒', createdAt: 1000 },
+      { id: 'bad', message: 42, createdAt: 3000 },
+      'junk'
+    ])
+    fs.writeFileSync(storePath(), JSON.stringify({
+      version: 4,
+      config: { ...DEFAULT_APP_CONFIG },
+      characters: [],
+      sessions: [],
+      activeSessionId: '',
+      state: { 'proactive-messages': legacy }
+    }))
+    initDatabase()
+    const assistant = getSessions().find((session) => session.characterId === 'assistant')
+    expect(assistant?.messageCount).toBe(2)
+    const id = assistant!.id
+    expect(getSession(id)?.messages.map((item) => item.content)).toEqual(['旧提醒', '旧问候'])
+    initDatabase()
+    expect(getSession(id)?.messages).toHaveLength(2)
+  })
+
+  it('rejects editing the assistant but allows deleting its sessions', () => {
+    const workspace = appendAssistantMessage('守卫', Date.now())
+    const id = workspace.sessions.find((session) => session.characterId === 'assistant')!.id
+    expect(() => updateCharacter(ASSISTANT_CHARACTER_ID, { name: '改名', avatar: 'x', soulMd: '', providerProfileId: 'default', model: 'm' })).toThrow('不可编辑')
+    expect(() => deleteCharacter(ASSISTANT_CHARACTER_ID)).toThrow('不可删除')
+    expect(deleteChatSession(id).sessions.some((session) => session.id === id)).toBe(false)
+  })
+
+  it('rejects creating a custom character named after the assistant', () => {
+    expect(() => createCharacter({ name: '助手', avatar: '🔔', soulMd: '', providerProfileId: 'default', model: 'm' })).toThrow(/同名/)
   })
 })

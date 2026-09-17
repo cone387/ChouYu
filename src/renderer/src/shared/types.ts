@@ -242,6 +242,7 @@ export interface ChatSessionSummary {
   characterId: string
   createdAt: number
   updatedAt: number
+  unreadCount?: number
 }
 
 export interface SessionWorkspace {
