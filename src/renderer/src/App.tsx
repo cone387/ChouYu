@@ -170,6 +170,17 @@ function App() {
     void window.electronAPI.db.setState('proactive-messages', JSON.stringify(next)).catch(() => { /* storage notice covers persistence failures */ })
   }, [])
 
+  // Push unread count to main process for tray flashing
+  useEffect(() => {
+    window.electronAPI.setProactiveUnread(proactiveMessages.filter(message => !message.readAt).length)
+  }, [proactiveMessages])
+
+  useEffect(() => window.electronAPI.onOpenMessages(() => {
+    proactiveEngine.markAllRead()
+    persistProactiveMessages()
+    setShowProactiveCenter(true)
+  }), [persistProactiveMessages])
+
   // Auto-dismiss proactive message after 8s
   useEffect(() => {
     if (!proactiveMsg) return
@@ -537,6 +548,7 @@ function App() {
           size={config.petSize}
           onFileDrop={handleFileDrop}
           onFileDropError={setFileDropError}
+          hasUnread={proactiveMessages.some(message => !message.readAt)}
         />
       )}
       {showProactiveCenter && (
