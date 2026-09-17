@@ -6,6 +6,7 @@ const stylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/compone
 const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.tsx'), 'utf8')
 const panelResizeSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/usePanelResize.ts'), 'utf8')
 const workspaceSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
+const workspaceHookSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
 const sidebarSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.tsx'), 'utf8')
 const workspaceHeaderSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Workspace/WorkspaceHeader.tsx'), 'utf8')
 const sidebarStylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.css'), 'utf8')
@@ -215,6 +216,7 @@ describe('assistant contact wiring', () => {
     expect(panelSource).toContain('openCharacterChat(ASSISTANT_CHARACTER_ID)')
     expect(panelSource).toContain('onSessionsChanged')
     expect(panelSource).toContain('db.markSessionRead(activeSessionId)')
+    expect(workspaceHookSource).toContain('mergeForeignMessages')
   })
 
   it('badges assistant unread on session cards', () => {
