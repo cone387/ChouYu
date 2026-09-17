@@ -3,7 +3,7 @@ import { createServer, type ServerResponse } from 'http'
 import fs from 'fs'
 import path from 'path'
 import {
-  createChatSession, deleteChatSession, flushDatabase, getActiveSession, getConfig,
+  createChatSession, deleteChatSession, flushDatabase, getActiveSession, getConfig, getSessions,
   saveConfig, saveSessionMessages, selectChatSession, type Message
 } from '../database'
 import { waitForRenderer } from './storage-smoke'
@@ -436,6 +436,9 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await click(window, '[aria-label="窗口模式"]')
     await click(window, '[data-workspace-mode-option="workspace"]')
     await waitForRenderer(window, "document.querySelector('.workspace-sessions:not([hidden])')")
+    await window.webContents.executeJavaScript("window.electronAPI.proactiveAppend('冒烟助手消息')")
+    await waitForRenderer(window, "[...document.querySelectorAll('.conversation-item-title')].some(el => el.textContent.includes('助手消息'))")
+    await waitForRenderer(window, "Boolean(document.querySelector('.conversation-item .conversation-item-unread'))")
     await window.webContents.executeJavaScript("document.querySelector('.conversation-item-main').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
     await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     console.log('CHOUYU_CHAT_SMOKE_PASSED markdown, full-text search, streaming scroll, settings, memory CRUD, approval keyboard')
@@ -455,6 +458,9 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     stream?.end()
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
+    for (const summary of getSessions().filter((session) => session.characterId === 'assistant')) {
+      deleteChatSession(summary.id)
+    }
     selectChatSession(originalSession)
     deleteChatSession(fixture)
     saveConfig(originalConfig)
