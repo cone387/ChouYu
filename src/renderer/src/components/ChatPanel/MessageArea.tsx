@@ -10,8 +10,10 @@ import ToolActivityCard from './ToolActivityCard'
 import { getConversationForRetry } from '../../core/conversation-actions'
 import { highlightCode, isSupportedLanguage } from '../../core/highlight'
 import { useMessageWindow } from './useMessageWindow'
+import CharacterAvatar, { type AvatarIdentity } from '../CharacterAvatar/CharacterAvatar'
 
 interface MessageAreaProps {
+  character?: AvatarIdentity | null
   searchOpen?: boolean
   initialSearch?: string
   onCloseSearch?: () => void
@@ -114,7 +116,7 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze, onSnoozeContent }: MessageAreaProps) {
+export default function MessageArea({ character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze, onSnoozeContent }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState(initialSearch)
@@ -210,17 +212,11 @@ export default function MessageArea({ searchOpen = false, initialSearch = '', on
         >
           {msg.role === 'assistant' && (
             <div className="message-avatar" aria-hidden="true">
-              <svg width="28" height="28" viewBox="0 0 80 80">
-                <circle cx="40" cy="44" r="28" fill="var(--accent)"/>
-                <ellipse cx="30" cy="38" rx="4" ry="5" fill="white"/>
-                <ellipse cx="50" cy="38" rx="4" ry="5" fill="white"/>
-                <circle cx="30" cy="39" r="2.5" fill="#2d2d2d"/>
-                <circle cx="50" cy="39" r="2.5" fill="#2d2d2d"/>
-                <path d="M 32 52 Q 40 58 48 52" stroke="#2d2d2d" fill="none" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
+              <CharacterAvatar character={character} />
             </div>
           )}
           <div className="message-body">
+            {msg.role === 'assistant' && <span className="message-sender">{character?.name || '联系人'}</span>}
             {searching && (msg.role !== 'user' || msg.toolData) && <SearchMatch text={searchableMessageText(msg)} query={normalizedQuery} />}
             <div className="message-bubble">
               {msg.imageUrl && (
@@ -367,17 +363,10 @@ export default function MessageArea({ searchOpen = false, initialSearch = '', on
       {!searching && isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
         <div className="message message-assistant">
           <div className="message-avatar" aria-hidden="true">
-            <svg width="28" height="28" viewBox="0 0 80 80">
-              <circle cx="40" cy="44" r="28" fill="var(--accent)"/>
-              <ellipse cx="30" cy="38" rx="4" ry="5" fill="white"/>
-              <ellipse cx="50" cy="38" rx="4" ry="5" fill="white"/>
-              <circle cx="30" cy="39" r="2.5" fill="#2d2d2d"/>
-              <circle cx="50" cy="39" r="2.5" fill="#2d2d2d"/>
-              <path d="M 32 52 Q 40 58 48 52" stroke="#2d2d2d" fill="none" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
+            <CharacterAvatar character={character} />
           </div>
           <div className="message-body">
-            <div className="message-bubble typing-indicator" role="status" aria-label="AI 正在回复">
+            <div className="message-bubble typing-indicator" role="status" aria-label={`${character?.name || '联系人'}正在回复`}>
               <span></span><span></span><span></span>
             </div>
           </div>

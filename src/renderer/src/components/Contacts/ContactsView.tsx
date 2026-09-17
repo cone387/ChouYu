@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABELS, type CharacterStats } from '../../../../shared/characters'
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
+import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import './Contacts.css'
 
 interface ContactsViewProps {
@@ -191,11 +192,11 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
 
   // 聊天页信息条跳转过来：打开对应角色详情后消费焦点，再次点击可重新触发。
   // 角色列表异步加载，找不到时先等待，加载完成后依赖变化会再次进入。
-  // 助手是置顶卡片直达会话，没有详情弹窗（编辑会被数据库拒绝），跳转焦点直接忽略。
+  // 助手可查看详情，但不提供编辑入口。
   useEffect(() => {
     if (!active || !focusCharacterId) return
     const character = characters.find((item) => item.id === focusCharacterId)
-    if (!character || character.id === ASSISTANT_CHARACTER_ID) return
+    if (!character) return
     setDetail(character)
     onFocusConsumed?.()
   }, [active, focusCharacterId, characters, onFocusConsumed])
@@ -343,12 +344,12 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           aria-pressed={modelFilter === model} onClick={() => setModelFilter(model)}>{model}</button>)}
       </div>}
     </div>
-    {error && <div className="contacts-error" role="alert">{error}</div>}
+    {error && !form && !confirmDelete && <div className="contacts-error" role="alert">{error}</div>}
     <div className="contacts-scroll">
       <button type="button" className="contacts-card contacts-assistant-card" data-contacts-item={ASSISTANT_CHARACTER_ID}
         onClick={() => onOpenChat(ASSISTANT_CHARACTER_ID)}>
         <span className="contacts-card-head">
-          <span className="contacts-card-avatar contacts-card-avatar-default" aria-hidden="true">🔔</span>
+          <span className="contacts-card-avatar" aria-hidden="true"><CharacterAvatar character={{ id: ASSISTANT_CHARACTER_ID, name: '助手', avatar: '' }} /></span>
           <span className="contacts-card-title">
             <span className="contacts-card-name">助手<em className="contacts-builtin">内置</em></span>
             <span className="contacts-card-subtitle">主动提醒都发到这里</span>
@@ -363,7 +364,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           return <button key={character.id} type="button" data-contacts-item={character.id}
             className="contacts-card" onClick={() => setDetail(character)}>
             <span className="contacts-card-head">
-              <span className={`contacts-card-avatar${character.builtIn ? ' contacts-card-avatar-default' : ''}`} aria-hidden="true">{character.avatar}</span>
+              <span className="contacts-card-avatar" aria-hidden="true"><CharacterAvatar character={character} /></span>
               <span className="contacts-card-title">
                 <span className="contacts-card-name">{character.name}{character.builtIn && <em className="contacts-builtin">内置</em>}</span>
                 <span className="contacts-card-subtitle">{model}</span>
@@ -384,7 +385,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       initialWidth={460} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
       <div>
         <div className="contacts-detail-head">
-          <span className={`contacts-detail-avatar${detail.builtIn ? ' contacts-detail-avatar-default' : ''}`} aria-hidden="true">{detail.avatar}</span>
+          <span className="contacts-detail-avatar" aria-hidden="true"><CharacterAvatar character={detail} /></span>
           <div>
             <p className="contacts-detail-title">{detail.name}{detail.builtIn && <em className="contacts-builtin">内置</em>}</p>
             <p className="contacts-detail-subtitle">{detail.builtIn ? '内置角色' : '自定义角色'}</p>
@@ -403,11 +404,11 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <span className="contacts-detail-value">{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</span></label>
         </div>
         <p className="contacts-detail-soul-title">人设</p>
-        <div className="contacts-detail-soul">{(detail.builtIn ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
+        <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
         <div className="contacts-detail-actions">
           <button type="button" className="primary" data-contacts-start-chat={detail.id}
             onClick={() => { onOpenChat(detail.id); setDetail(null) }}>开始对话</button>
-          <button type="button" data-contacts-edit={detail.id} onClick={() => { setDetail(null); openForm(detail) }}>编辑</button>
+          {detail.id !== ASSISTANT_CHARACTER_ID && <button type="button" data-contacts-edit={detail.id} onClick={() => { setDetail(null); openForm(detail) }}>编辑</button>}
           {!detail.builtIn && <button type="button" className="danger" data-contacts-delete={detail.id}
             onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
         </div>
@@ -417,6 +418,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       <div className="contacts-confirm" role="alertdialog" aria-modal="true" aria-label="删除角色确认">
         <p className="contacts-confirm-title">删除角色</p>
         <p>删除「{confirmDelete.name}」将同时删除它的 {confirmDelete.sessionCount} 个会话，无法恢复。</p>
+        {error && <div className="contacts-error" role="alert">{error}</div>}
         <div className="contacts-confirm-actions">
           <button type="button" autoFocus onClick={() => setConfirmDelete(null)}>取消</button>
           <button type="button" className="danger" data-contacts-confirm-delete disabled={busy} onClick={() => { void deleteCharacter() }}>删除</button>
@@ -430,7 +432,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <label className="contacts-field"><span className="contacts-field-name">名字</span>
           <input data-contacts-name value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={24} /></label>
         <label className="contacts-field contacts-field-avatar"><span className="contacts-field-name">头像</span>
-          <span className="contacts-avatar-preview" aria-hidden="true">{form.avatar || Array.from(form.name)[0] || '鱼'}</span>
+          <span className="contacts-avatar-preview" aria-hidden="true"><CharacterAvatar character={{ id: form.id ?? 'draft', name: form.name, avatar: form.avatar || Array.from(form.name.trim())[0] || '?' }} /></span>
           <input data-contacts-avatar value={form.avatar} onChange={(event) => setForm({ ...form, avatar: event.target.value })} maxLength={8} placeholder="emoji 或单字，留空取首字" /></label>
         <div className="contacts-avatar-palette" role="group" aria-label="快速选择头像">
           {AVATAR_CHOICES.map((emoji) => <button key={emoji} type="button" className="contacts-avatar-option"
@@ -457,6 +459,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <label className="contacts-field contacts-field-multiline"><span className="contacts-field-name">人设</span>
           <textarea data-contacts-soulmd rows={3} value={form.soulMd}
             onChange={(event) => setForm({ ...form, soulMd: event.target.value })} placeholder="系统提示词，留空使用默认丑鱼人格" /></label>
+        {error && <div className="contacts-error" role="alert">{error}</div>}
         <div className="contacts-form-actions">
           <button type="button" onClick={() => setForm(null)}>取消</button>
           <button type="submit" className="primary" data-contacts-save disabled={busy}>保存</button>

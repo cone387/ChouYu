@@ -19,8 +19,8 @@ const PALETTE_SWATCHES = [
   { id: 'purple', label: '紫色', color: '#6c5ce7' },
   { id: 'pink', label: '粉色', color: '#d6336c' },
   { id: 'blue', label: '蓝色', color: '#2563eb' },
-  { id: 'green', label: '绿色', color: '#16a34a' },
-  { id: 'orange', label: '橙色', color: '#ea580c' }
+  { id: 'green', label: '绿色', color: '#15803d' },
+  { id: 'orange', label: '橙色', color: '#c2410c' }
 ] as const satisfies ReadonlyArray<{ id: PaletteId; label: string; color: string }>
 
 interface SoulVersion {

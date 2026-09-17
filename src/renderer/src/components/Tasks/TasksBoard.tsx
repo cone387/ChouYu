@@ -1,6 +1,7 @@
 import type { DragEvent } from 'react'
 import type { TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskUpdateInput } from '../../../../shared/tasks'
-import { PRIORITY_LABELS, formatTaskDue, isOverdue } from '../../../../shared/tasks'
+import { PRIORITY_LABELS } from '../../../../shared/tasks'
+import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
 
 export type BoardGroupMode = 'priority' | 'project' | 'field'
 
@@ -65,22 +66,17 @@ export default function TasksBoard({ tasks, projects, fields, groupMode, groupFi
         <h3 className="tasks-board-column-title">{column.label}<span className="tasks-count">{items.length}</span></h3>
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
-            const chips = fields.map(field => {
-              const optionId = task.customFields[field.id]
-              if (!optionId) return null
-              const optionName = field.options.find(option => option.id === optionId)?.name
-              return optionName ? <span key={field.id} className="tasks-chip" title={`${field.name}：${optionName}`}>{optionName}</span> : null
-            })
             return <li key={task.id} className="tasks-board-card" draggable data-priority={task.priority}
               onDragStart={event => { event.dataTransfer.setData('text/plain', task.id); event.dataTransfer.effectAllowed = 'move' }}>
               <button type="button" className="tasks-complete" aria-label={`完成 ${task.title}`} onClick={() => onComplete(task.id)} />
               <button type="button" className="tasks-board-card-body" onClick={() => onEdit(task)}>
                 <span className="tasks-board-card-head">
-                  <span className="tasks-board-card-dot" data-priority={task.priority} aria-hidden="true" />
+
                   <span className="tasks-board-card-title">{task.title}</span>
                 </span>
-                {task.dueAt !== null && <span className={`tasks-board-card-due${isOverdue(task, Date.now()) ? ' tasks-overdue' : ''}`}>{formatTaskDue(task.dueAt)}</span>}
-                {chips.some(chip => chip !== null) && <span className="tasks-board-card-chips">{chips}</span>}
+                {task.note && <span className="tasks-board-card-note">{task.note}</span>}
+                <span className="tasks-board-card-chips"><TaskCardMeta task={task} projects={projects} fields={fields} /></span>
+                <span className="tasks-board-card-footer"><span className="tasks-board-card-status"><span className="tasks-board-card-dot" aria-hidden="true" />未完成</span><TaskCardDue task={task} /></span>
               </button>
             </li>
           })}

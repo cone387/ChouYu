@@ -202,7 +202,7 @@ describe('contacts presence in the chat surface', () => {
     expect(sidebarSource).toContain('conversation-item-avatar')
     expect(sidebarSource).toContain('conversation-item-character')
     expect(sidebarSource).toContain('DEFAULT_CHARACTER_NAME')
-    expect(sidebarSource).toContain("{character?.avatar || '🐟'}")
+    expect(sidebarSource).toContain('<CharacterAvatar character={character} />')
     expect(sidebarStylesheet).toMatch(/\.conversation-item-main\s*\{[\s\S]*?flex-direction:\s*row/)
     expect(sidebarStylesheet).toMatch(/\.conversation-item-avatar\s*\{[\s\S]*?border-radius:\s*50%/)
     expect(sidebarStylesheet).toMatch(/\.conversation-item-body\s*\{[\s\S]*?min-width:\s*0/)
@@ -222,7 +222,7 @@ describe('assistant contact wiring', () => {
   it('badges assistant unread on session cards', () => {
     expect(sidebarSource).toContain('conversation-item-unread')
     expect(sidebarSource).toContain("session.unreadCount > 99 ? '99+'")
-    expect(sidebarStylesheet).toContain('#ff4d4f')
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-unread\s*\{[^}]*background: var\(--error\);[^}]*color: var\(--on-error\)/)
   })
 
   it('offers snooze only on assistant replies', () => {

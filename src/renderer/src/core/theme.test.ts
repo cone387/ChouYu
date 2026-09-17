@@ -79,6 +79,25 @@ describe('theme preference', () => {
     }
   })
 
+  it('keeps text and solid button labels readable in every palette and theme', () => {
+    const tokens = (block: string) => Object.fromEntries([...block.matchAll(/(--[\w-]+):\s*(#[\da-f]{6})\s*;/gi)].map(match => [match[1], match[2]]))
+    const light = tokens(darkVarBlock(stylesheet, ':root {'))
+    const dark = { ...light, ...tokens(darkVarBlock(stylesheet, ":root[data-theme='dark']")) }
+    const luminance = (hex: string) => {
+      const channels = hex.slice(1).match(/../g)!.map(value => parseInt(value, 16) / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+      return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722
+    }
+    const contrast = (a: string, b: string) => (Math.max(luminance(a), luminance(b)) + .05) / (Math.min(luminance(a), luminance(b)) + .05)
+    for (const theme of ['light', 'dark']) {
+      for (const palette of PALETTE_IDS) {
+        const values = { ...(theme === 'light' ? light : dark), ...tokens(darkVarBlock(stylesheet, theme === 'light' ? `:root[data-palette='${palette}']` : `:root[data-theme='dark'][data-palette='${palette}']`)) }
+        for (const [foreground, background] of [['--on-accent', '--accent'], ['--on-accent', '--accent-hover'], ['--on-error', '--error'], ['--text-primary', '--bg-primary'], ['--text-secondary', '--bg-secondary'], ['--text-muted', '--bg-secondary'], ['--accent', '--bg-primary'], ['--hljs-comment', '--code-bg']]) {
+          expect(contrast(values[foreground], values[background]), `${theme}/${palette}: ${foreground} on ${background}`).toBeGreaterThanOrEqual(4.5)
+        }
+      }
+    }
+  })
+
   it('wires the config palette into the html attribute', () => {
     expect(themeSource).toContain('dataset.palette = resolvePalette(palettePreference)')
   })

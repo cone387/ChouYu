@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type HTMLAttributes } from 'react'
 import { DEFAULT_CHARACTER_ID, DEFAULT_CHARACTER_NAME, type CharacterStats } from '../../../../shared/characters'
 import type { ChatSessionSummary } from '../../shared/types'
+import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import './ConversationSidebar.css'
 
 interface ConversationSidebarProps {
@@ -181,7 +182,7 @@ export default function ConversationSidebar({
                   aria-selected={active}
                   disabled={busyId === session.id}
                 >
-                  <span className={`conversation-item-avatar${character?.builtIn ? ' conversation-item-avatar-default' : ''}`} aria-hidden="true">{character?.avatar || '🐟'}</span>
+                  <span className="conversation-item-avatar" aria-hidden="true"><CharacterAvatar character={character} /></span>
                   <span className="conversation-item-body">
                     <span className="conversation-item-title-row">
                       <span className="conversation-item-title">{session.title}</span>

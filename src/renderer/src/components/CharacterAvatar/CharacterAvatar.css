@@ -1,0 +1,29 @@
+.character-avatar {
+  --avatar-color: #526174;
+  --avatar-highlight: #fff;
+  --avatar-ink: #173e40;
+  display: inline-grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  flex: none;
+  overflow: hidden;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--avatar-color) 11%, var(--bg-primary));
+  color: var(--avatar-color);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--avatar-color) 10%, transparent);
+  line-height: 1;
+}
+.character-avatar[data-avatar-tone='blue'] { --avatar-color: #3269af; }
+.character-avatar[data-avatar-tone='teal'] { --avatar-color: #187b72; }
+.character-avatar[data-avatar-tone='violet'] { --avatar-color: #7956b4; }
+.character-avatar[data-avatar-tone='rose'] { --avatar-color: #ad4d70; }
+.character-avatar[data-avatar-tone='amber'] { --avatar-color: #986718; }
+:root[data-theme='dark'] .character-avatar { --avatar-color: #b0b9c8; }
+:root[data-theme='dark'] .character-avatar[data-avatar-tone='blue'] { --avatar-color: #8fb9f0; }
+:root[data-theme='dark'] .character-avatar[data-avatar-tone='teal'] { --avatar-color: #68c5b7; }
+:root[data-theme='dark'] .character-avatar[data-avatar-tone='violet'] { --avatar-color: #bba1e9; }
+:root[data-theme='dark'] .character-avatar[data-avatar-tone='rose'] { --avatar-color: #e69db8; }
+:root[data-theme='dark'] .character-avatar[data-avatar-tone='amber'] { --avatar-color: #e0bb77; }
+.character-avatar svg { display: block; width: 100%; height: 100%; }
+.character-avatar-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }

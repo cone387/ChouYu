@@ -5,6 +5,7 @@ import {
 } from '../../../../shared/tasks'
 import TasksBoard, { type BoardGroupMode } from './TasksBoard'
 import TaskFieldsDialog from './TaskFieldsDialog'
+import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
 import './Tasks.css'
 
 type SmartView = 'today' | 'week' | 'overdue' | 'all' | 'done'
@@ -487,7 +488,8 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
           <button type="button" className="tasks-complete" aria-label={`完成 ${task.title}`} onClick={() => complete(task.id)} />
           <div className="tasks-item-body">
             <div className="tasks-item-head">
-              <span className="tasks-item-title">{task.title}</span>
+              <button type="button" className="tasks-item-title tasks-title-button" onClick={() => setDraft(draftFromTask(task))}>{task.title}</button>
+              <TaskCardDue task={task} />
               <details className="tasks-item-menu">
                 <summary aria-label={`更多操作 ${task.title}`} title="更多操作">…</summary>
                 <div className="tasks-item-menu-popover">
@@ -496,23 +498,8 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
                 </div>
               </details>
             </div>
-            <span className="tasks-item-meta">
-              {projects.find(project => project.id === task.projectId)?.name && <span className="tasks-chip tasks-chip-project">{projects.find(project => project.id === task.projectId)?.name}</span>}
-              {task.dueAt !== null && <span className={isOverdue(task, Date.now()) ? 'tasks-overdue' : ''}>
-                {isOverdue(task, Date.now()) ? '已过期 · ' : ''}{dueLabel(task.dueAt)}
-              </span>}
-              <span className={`tasks-chip tasks-chip-priority-${task.priority}`}>{PRIORITY_LABELS[task.priority]}优先级</span>
-              {fields.map(field => {
-                const optionId = task.customFields[field.id]
-                if (!optionId) return null
-                const optionName = field.options.find(option => option.id === optionId)?.name
-                return optionName ? <span key={field.id} className="tasks-chip">{field.name}：{optionName}</span> : null
-              })}
-              {task.recurrence !== 'none' && <span className="tasks-chip">{RECURRENCE_LABELS[task.recurrence]}</span>}
-              {task.remindAt !== null && <span className="tasks-chip">{task.remindFiredAt !== null ? '已提醒' : '已设置提醒'}</span>}
-            </span>
-            {task.note && <p className="tasks-item-note">{task.note}</p>}
-            <span className="tasks-item-created">创建于 {dueLabel(task.createdAt)}</span>
+            {task.note && <p className="tasks-item-note" title={task.note}>{task.note}</p>}
+            <TaskCardMeta task={task} projects={projects} fields={fields} />
           </div>
         </li>)}
       </ul>}

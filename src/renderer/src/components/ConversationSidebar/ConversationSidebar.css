@@ -143,10 +143,6 @@
   line-height: 1;
 }
 
-.conversation-item-avatar-default {
-  background: var(--accent);
-}
-
 .conversation-item-body {
   flex: 1;
   min-width: 0;
@@ -396,7 +392,7 @@
 .conversation-confirm button.danger {
   border-color: var(--error-border);
   background: var(--error);
-  color: #fff;
+  color: var(--on-error);
 }
 
 /* 未读徽标：助手等入口在后台追加的消息数，红点样式与标题行内展示。 */
@@ -406,8 +402,8 @@
   height: 18px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-pill);
-  background: #ff4d4f;
-  color: #fff;
+  background: var(--error);
+  color: var(--on-error);
   font-size: 11px;
   font-weight: 600;
   line-height: 18px;

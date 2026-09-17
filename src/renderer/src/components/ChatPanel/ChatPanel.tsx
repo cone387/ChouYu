@@ -7,6 +7,7 @@ import WorkspaceHeader from '../Workspace/WorkspaceHeader'
 import { useWorkspacePresentation } from '../Workspace/useWorkspacePresentation'
 import { getWorkspaceGeometry, type WorkspaceMode } from '../../core/workspace-state'
 import MessageArea from './MessageArea'
+import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import InputArea, { PendingAttachment } from './InputArea'
 import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
@@ -762,7 +763,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               <div className="character-context-bar" role="status">
                 <button type="button" className="character-context-main" data-character-bar={activeCharacter.id}
                   onClick={() => openContactsDetail(activeCharacter.id)} title="查看联系人详情">
-                  <span className={`character-context-avatar${activeCharacter.builtIn ? ' character-context-avatar-default' : ''}`} aria-hidden="true">{activeCharacter.avatar || '🐟'}</span>
+                  <span className="character-context-avatar" aria-hidden="true"><CharacterAvatar character={activeCharacter} /></span>
                   <span className="character-context-name">{activeCharacter.name}</span>
                   {activeCharacter.builtIn && <em className="character-context-badge">内置</em>}
                   <span className="character-context-model">{activeCharacter.builtIn ? config.model : activeCharacter.model}</span>
@@ -774,6 +775,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             {workspaceError && <div className="memory-candidate-error" role="alert">{workspaceError}<button onClick={retryWorkspace}>重新加载</button></div>}
             {workspaceLoaded && (
               <MessageArea
+                character={activeCharacter}
                 key={activeSessionId}
                 searchOpen={showMessageSearch}
                 initialSearch={messageSearchQuery}
