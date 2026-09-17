@@ -18,7 +18,7 @@ import MemorySettingsTab from '../Settings/MemorySettingsTab'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
 import type { MemoryConflictAction, MemoryFeedbackValue, MemoryRecord } from '../../../../shared/memory'
 import { isAIConfigured } from '../../../../shared/config'
-import { DEFAULT_CHARACTER_ID, INDUSTRY_LABELS } from '../../../../shared/characters'
+import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRY_LABELS } from '../../../../shared/characters'
 import {
   Message,
   PetState,
@@ -61,9 +61,10 @@ interface ChatPanelProps {
   onPendingAttachmentConsumed?: () => void
   pendingMessage?: string | null
   onPendingMessageConsumed?: () => void
+  assistantFocusRequest?: number
 }
 
-export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed }: ChatPanelProps) {
+export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed, assistantFocusRequest }: ChatPanelProps) {
   const [activePage, setActivePage] = useState<WorkspacePage>(initialShowSettings ? 'settings' : 'chat')
   const [visitedPages, setVisitedPages] = useState<Partial<Record<WorkspacePage, boolean>>>({ settings: initialShowSettings })
   const [taskFocusId, setTaskFocusId] = useState<string | undefined>()
@@ -630,6 +631,31 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     else await createSession(characterId)
     navigate('chat')
   }, [sessions, selectSession, createSession, navigate])
+
+  // 主进程在别的入口追加了助手消息（或会话结构变化）：重拉工作区，保留侧栏顺序。
+  useEffect(() => window.electronAPI.onSessionsChanged(() => {
+    void window.electronAPI.db.getSessionWorkspace()
+      .then((workspace) => applyWorkspace(workspace, true))
+      .catch(() => { /* 保留现有工作区，下次事件重试 */ })
+  }), [applyWorkspace])
+
+  // 托盘/宠物入口请求聚焦助手会话：只消费递增的那一次，不随 sessions 变化重放。
+  const handledAssistantFocusRef = useRef(0)
+  useEffect(() => {
+    if (!assistantFocusRequest || assistantFocusRequest === handledAssistantFocusRef.current) return
+    handledAssistantFocusRef.current = assistantFocusRequest
+    void openCharacterChat(ASSISTANT_CHARACTER_ID)
+  }, [assistantFocusRequest, openCharacterChat])
+
+  // 阅读中不累计未读：当前会话是助手、面板展开且有新消息时自动标读。
+  const activeAssistantUnread = sessions.find((session) => session.id === activeSessionId)?.unreadCount ?? 0
+  useEffect(() => {
+    if (!visible || !workspaceLoaded || !activeAssistantUnread) return
+    if (activeCharacterId !== ASSISTANT_CHARACTER_ID) return
+    void window.electronAPI.db.markSessionRead(activeSessionId)
+      .then((workspace) => applyWorkspace(workspace, true))
+      .catch(() => { /* 存储故障提示机制兜底 */ })
+  }, [visible, workspaceLoaded, activeAssistantUnread, activeCharacterId, activeSessionId, applyWorkspace])
 
   // 删除角色会连带删除其会话：先停掉这些会话的在途生成（对齐 deleteSession 的先例），
   // 再按保留侧栏顺序的方式应用新工作区。

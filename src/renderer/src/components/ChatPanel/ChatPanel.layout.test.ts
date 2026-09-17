@@ -10,6 +10,7 @@ const sidebarSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/comp
 const workspaceHeaderSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Workspace/WorkspaceHeader.tsx'), 'utf8')
 const sidebarStylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ConversationSidebar/ConversationSidebar.css'), 'utf8')
 const inputSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/InputArea.tsx'), 'utf8')
+const messageSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/MessageArea.tsx'), 'utf8')
 const memoryServiceSource = readFileSync(resolve(process.cwd(), 'src/main/memory/service.ts'), 'utf8')
 
 describe('chat layout guardrails', () => {
@@ -205,5 +206,20 @@ describe('contacts presence in the chat surface', () => {
     expect(sidebarStylesheet).toMatch(/\.conversation-item-avatar\s*\{[\s\S]*?border-radius:\s*50%/)
     expect(sidebarStylesheet).toMatch(/\.conversation-item-body\s*\{[\s\S]*?min-width:\s*0/)
     expect(sidebarStylesheet).toMatch(/\.conversation-item-character\s*\{[\s\S]*?text-overflow:\s*ellipsis/)
+  })
+})
+
+describe('assistant contact wiring', () => {
+  it('focuses the assistant session on demand and follows main-side session updates', () => {
+    expect(panelSource).toContain('assistantFocusRequest?: number')
+    expect(panelSource).toContain('openCharacterChat(ASSISTANT_CHARACTER_ID)')
+    expect(panelSource).toContain('onSessionsChanged')
+    expect(panelSource).toContain('db.markSessionRead(activeSessionId)')
+  })
+
+  it('badges assistant unread on session cards', () => {
+    expect(sidebarSource).toContain('conversation-item-unread')
+    expect(sidebarSource).toContain("session.unreadCount > 99 ? '99+'")
+    expect(sidebarStylesheet).toContain('#ff4d4f')
   })
 })

@@ -186,6 +186,7 @@ export default function ConversationSidebar({
                     <span className="conversation-item-title-row">
                       <span className="conversation-item-title">{session.title}</span>
                       {streamingSessionIds.has(session.id) && <span className="conversation-item-streaming" role="status">回复中</span>}
+                      {session.unreadCount ? <span className="conversation-item-unread" aria-label={`${session.unreadCount} 条未读`}>{session.unreadCount > 99 ? '99+' : session.unreadCount}</span> : null}
                     </span>
                     <span className="conversation-item-preview">{session.preview}</span>
                     <span className="conversation-item-meta">
