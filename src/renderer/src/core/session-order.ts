@@ -12,5 +12,6 @@ export function mergeSessionsInCurrentOrder(
     updatedById.delete(session.id)
     return [next]
   })
-  return [...stable, ...updatedById.values()]
+  // 新会话置顶，已有会话只更新内容，不因保存时间变化重新排队。
+  return [...updatedById.values(), ...stable]
 }

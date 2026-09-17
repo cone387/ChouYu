@@ -126,7 +126,7 @@ export function useSessionWorkspace({
     }).catch(() => {})
   }, [])
 
-  const applyWorkspace = useCallback((workspace: SessionWorkspace, preserveSessionOrder = false) => {
+  const applyWorkspace = useCallback((workspace: SessionWorkspace, preserveSessionOrder = true) => {
     const sessionId = workspace.activeSession.id
     const cached = sessionMessagesRef.current.get(sessionId)
     const activeMessages = sessionGenerationsRef.current.has(sessionId)
@@ -168,7 +168,7 @@ export function useSessionWorkspace({
     if (activeSessionIdRef.current === sessionId) onPetStateChange('idle')
   }, [onPetStateChange, setSessionStreaming, setToolApprovalRequests])
 
-  const persistCurrentSession = useCallback(async (preserveSessionOrder = false) => {
+  const persistCurrentSession = useCallback(async (preserveSessionOrder = true) => {
     const id = activeSessionIdRef.current
     if (!id || !initializedRef.current) return
     const workspace = await saveActiveSessionMessages(id, latestMessagesRef.current)

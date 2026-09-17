@@ -163,8 +163,9 @@ describe('chat layout guardrails', () => {
 })
 
 describe('contacts workspace wiring', () => {
-  it('mixes every character’s sessions in the sidebar ordered by recency', () => {
-    expect(panelSource).toContain('[...sessions].sort((a, b) => b.updatedAt - a.updatedAt), [sessions])')
+  it('mixes every character’s sessions without re-sorting workspace order', () => {
+    expect(panelSource).toContain('const visibleSessions = sessions')
+    expect(workspaceSource).toContain('preserveSessionOrder = true')
     expect(panelSource).not.toContain('visibleSessions = useMemo(() => sessions.filter')
   })
 

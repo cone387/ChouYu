@@ -183,10 +183,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   // 自定义角色自带 Provider 配置（主进程 resolveCharacterConfig 解析），
   // 全局 AI 配置为空时也允许对话；内置角色仍依赖设置页的全局配置。
   const customCharacterActive = Boolean(activeCharacter && !activeCharacter.builtIn)
-  // 会话列表混合展示所有联系人的会话并按最近活跃排序（微信式）；
-  // 存储里的会话顺序是插入序，更新不重排，不能直接当最近序用。
-  const visibleSessions = useMemo(() =>
-    [...sessions].sort((a, b) => b.updatedAt - a.updatedAt), [sessions])
+  // 工作区首次加载按最近更新时间排列，后续更新保留卡片位置。
+  // 不要在显示层重新排序：自动保存也会修改 updatedAt。
+  const visibleSessions = sessions
   const {
     dimensionsLoaded,
     panelHeight,
