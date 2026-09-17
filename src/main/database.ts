@@ -10,7 +10,7 @@ import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/c
 import { AppConfig, DEFAULT_APP_CONFIG, DEFAULT_PROFILE_ID, getProviderProfiles, normalizeConfig } from '../shared/config'
 import {
   Character, CharacterStats, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS,
-  normalizeCharacters, sanitizeCharacterDraft
+  isAssistantCharacter, normalizeCharacters, sanitizeCharacterDraft
 } from '../shared/characters'
 import {
   DEFAULT_SESSION_TITLE,
@@ -511,7 +511,8 @@ function findCharacterByIdOrThrow(id: string): Character {
 export function createCharacter(draft: unknown): CharacterStats {
   const input = sanitizeCharacterDraft(draft)
   if (!input) throw new Error('角色名称和模型为必填项。')
-  if (store.characters.length >= MAX_CHARACTER_COUNT) throw new Error(`最多支持 ${MAX_CHARACTER_COUNT} 个角色。`)
+  const customCount = store.characters.filter((item) => !item.builtIn).length
+  if (customCount >= MAX_CHARACTER_COUNT - 1) throw new Error(`最多支持 ${MAX_CHARACTER_COUNT} 个角色。`)
   if (!getProviderProfiles(store.config).some((profile) => profile.id === input.providerProfileId)) {
     throw new Error('所选供应商档案不存在，请先到设置页创建。')
   }
