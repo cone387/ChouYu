@@ -13,11 +13,12 @@ interface PetProps {
   onOpenMessages: () => void
   state: PetState
   size: number
+  hasUnread: boolean
   onFileDrop?: (file: { type: 'image' | 'text'; data: string; name: string }) => void
   onFileDropError?: (message: string) => void
 }
 
-export default function Pet({ position, onPositionChange, onClick, onOpenSettings, onOpenMessages, state, size, onFileDrop, onFileDropError }: PetProps) {
+export default function Pet({ position, onPositionChange, onClick, onOpenSettings, onOpenMessages, state, size, hasUnread, onFileDrop, onFileDropError }: PetProps) {
   const draggingRef = useRef(false)
   const hasDraggedRef = useRef(false)
   const dragStartRef = useRef({ screenX: 0, screenY: 0, posX: 0, posY: 0 })
@@ -214,6 +215,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
         onDragLeave={handleDragLeave}
       >
         <PetSvg state={state} />
+        {hasUnread && <span className="pet-unread-dot" aria-hidden="true" />}
       </div>
       {contextMenu && (
         <div
