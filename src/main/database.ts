@@ -421,11 +421,15 @@ function migrateProactiveMessages(): void {
     if (Array.isArray(parsed)) entries = parsed
   } catch { /* malformed legacy payload: drop it */ }
   const legacy = entries
-    .flatMap((item) => item && typeof item === 'object' && typeof (item as Record<string, unknown>).message === 'string'
-      && Number.isFinite((item as Record<string, unknown>).createdAt)
-      ? [{ message: (item as Record<string, unknown>).message as string, createdAt: Number((item as Record<string, unknown>).createdAt) }]
-      : [])
+    .flatMap((item): { message: string; createdAt: number }[] => {
+      if (!item || typeof item !== 'object') return []
+      const message = (item as Record<string, unknown>).message
+      const createdAt = (item as Record<string, unknown>).createdAt
+      if (typeof message !== 'string' || message.trim().length === 0 || !Number.isFinite(createdAt)) return []
+      return [{ message, createdAt: Number(createdAt) }]
+    })
     .sort((a, b) => a.createdAt - b.createdAt)
+  // 迁移的历史消息保持未读：用户从未见过它们，升级后首次启动的未读爆发是预期行为。
   for (const item of legacy) appendAssistantMessage(item.message, item.createdAt)
 }
 

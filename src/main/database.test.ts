@@ -380,13 +380,17 @@ describe('characters', () => {
 
 describe('assistant messages', () => {
   it('creates the assistant session on first append and appends in order', () => {
+    const preAppendActiveId = getSessionWorkspace().activeSession.id
     const first = appendAssistantMessage('问候一', 1000)
     const summary = first.sessions.find((session) => session.characterId === 'assistant')
+    const assistantSessionId = summary!.id
+    expect(first.activeSession.id).not.toBe(assistantSessionId)
+    expect(first.activeSession.id).toBe(preAppendActiveId)
     expect(summary?.title).toBe('助手消息')
     expect(summary?.messageCount).toBe(1)
     expect(summary?.unreadCount).toBe(1)
     appendAssistantMessage('问候二', 2000)
-    const id = first.sessions.find((session) => session.characterId === 'assistant')!.id
+    const id = assistantSessionId
     expect(getSession(id)?.messages.map((item) => [item.content, item.role, item.timestamp]))
       .toEqual([['问候一', 'assistant', 1000], ['问候二', 'assistant', 2000]])
     expect(getSession(id)?.updatedAt).toBe(2000)
@@ -429,6 +433,7 @@ describe('assistant messages', () => {
       { id: 'p1', message: '旧问候', createdAt: 2000 },
       { id: 'p2', message: '旧提醒', createdAt: 1000 },
       { id: 'bad', message: 42, createdAt: 3000 },
+      { id: 'blank', message: '   ', createdAt: 4000 },
       'junk'
     ])
     fs.writeFileSync(storePath(), JSON.stringify({
@@ -444,6 +449,8 @@ describe('assistant messages', () => {
     expect(assistant?.messageCount).toBe(2)
     const id = assistant!.id
     expect(getSession(id)?.messages.map((item) => item.content)).toEqual(['旧提醒', '旧问候'])
+    // 迁移语义锁定：历史消息保持未读，升级后首次启动的一次性未读爆发（托盘闪烁+角标）是预期行为。
+    expect(getAssistantUnreadCount()).toBe(2)
     initDatabase()
     expect(getSession(id)?.messages).toHaveLength(2)
   })
