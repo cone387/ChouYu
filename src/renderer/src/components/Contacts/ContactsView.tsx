@@ -166,6 +166,75 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
   </div>
 }
 
+function ContactMenu({ character, active, onDetail, onEdit, onDelete }: {
+  character: CharacterStats
+  active: boolean
+  onDetail: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => { if (!active) setOpen(false) }, [active])
+  useEffect(() => {
+    if (!open) return
+    rootRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+    const outside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', outside)
+    window.addEventListener('keydown', escape, true)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      window.removeEventListener('keydown', escape, true)
+    }
+  }, [open])
+
+  const choose = (action: () => void) => {
+    setOpen(false)
+    triggerRef.current?.focus()
+    action()
+  }
+
+  return <div className="contacts-card-menu" ref={rootRef}
+    onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}>
+    <button ref={triggerRef} type="button" className="contacts-menu-trigger" data-contacts-menu={character.id}
+      aria-label={`${character.name}的更多操作`} title="更多操作" aria-haspopup="menu" aria-expanded={open}
+      aria-controls={open ? `contact-menu-${character.id}` : undefined}
+      onClick={() => setOpen((value) => !value)}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setOpen(true) }
+      }}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <circle cx="3" cy="8" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="13" cy="8" r="1.5" />
+      </svg>
+    </button>
+    {open && <div className="contacts-menu-popover" id={`contact-menu-${character.id}`} role="menu" aria-label={`${character.name}的操作`}
+      onKeyDown={(event) => {
+        if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+        const index = items.indexOf(document.activeElement as HTMLButtonElement)
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+          : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+        items[next]?.focus()
+      }}>
+      <button type="button" role="menuitem" data-contacts-menu-detail={character.id} onClick={() => choose(onDetail)}>查看详情</button>
+      {character.id !== ASSISTANT_CHARACTER_ID && <button type="button" role="menuitem" data-contacts-menu-edit={character.id} onClick={() => choose(onEdit)}>编辑</button>}
+      {!character.builtIn && <button type="button" role="menuitem" className="danger" data-contacts-menu-delete={character.id} onClick={() => choose(onDelete)}>删除</button>}
+    </div>}
+  </div>
+}
+
 export default function ContactsView({ active, config, focusCharacterId, onFocusConsumed, detailOnly = false, onDismiss, onOpenChat, onDeleted }: ContactsViewProps) {
   const [characters, setCharacters] = useState<CharacterStats[]>([])
   const [profiles, setProfiles] = useState<ResolvedProviderProfile[]>([])
@@ -206,6 +275,8 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   useEffect(() => {
     if (detailOnly && !focusCharacterId && !detail && !form && !confirmDelete) onDismiss?.()
   }, [detailOnly, focusCharacterId, detail, form, confirmDelete, onDismiss])
+
+  const assistant = characters.find((character) => character.id === ASSISTANT_CHARACTER_ID)
 
   const distinctModels = useMemo(
     () => [...new Set(characters.map((character) => character.model).filter(Boolean))]
@@ -354,6 +425,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     {error && !form && !confirmDelete && <div className="contacts-error" role="alert">{error}</div>}
     <div className="contacts-scroll">
       <div className="contacts-grid">
+        <div className="contacts-card-container">
         <button type="button" className="contacts-card" data-contacts-item={ASSISTANT_CHARACTER_ID}
           onClick={() => onOpenChat(ASSISTANT_CHARACTER_ID)}>
           <span className="contacts-card-head">
@@ -365,11 +437,15 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           </span>
           <span className="contacts-card-desc">问候、休息与任务提醒会以聊天消息出现，可以随时回复。</span>
         </button>
+        {assistant && <ContactMenu character={assistant} active={active}
+          onDetail={() => setDetail(assistant)} onEdit={() => {}} onDelete={() => {}} />}
+        </div>
         {filtered.map((character) => {
           const model = character.builtIn ? config.model : character.model
           const soulSummary = summarizeSoulMd(character.builtIn ? config.soulMd : character.soulMd)
-          return <button key={character.id} type="button" data-contacts-item={character.id}
-            className="contacts-card" onClick={() => setDetail(character)}>
+          return <div key={character.id} className="contacts-card-container">
+          <button type="button" data-contacts-item={character.id}
+            className="contacts-card" onClick={() => onOpenChat(character.id)}>
             <span className="contacts-card-head">
               <span className="contacts-card-avatar" aria-hidden="true"><CharacterAvatar character={character} /></span>
               <span className="contacts-card-title">
@@ -384,6 +460,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
               <span className="contacts-card-tag">{character.sessionCount} 个会话</span>
             </span>
           </button>
+          <ContactMenu character={character} active={active}
+            onDetail={() => setDetail(character)} onEdit={() => openForm(character)}
+            onDelete={() => { setError(''); setConfirmDelete(character) }} />
+          </div>
         })}
       </div>
       {filtered.length === 0 && <p className="contacts-empty">没有匹配的角色</p>}

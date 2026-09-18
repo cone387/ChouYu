@@ -70,13 +70,26 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     const character = listCharacters().find((item) => item.name === '冒烟猫')
     if (!character) throw new Error('Character was not created')
 
-    // 5) 点击角色卡片弹详情面板，从面板进入会话页，联系人信息条可见（等列表异步刷新渲染出该角色的卡片再点）
+    // 卡片菜单可查看详情和直接编辑，操作期间保持在通讯录。
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-menu="${character.id}"]'))`)
+    await click(window, `[data-contacts-menu="${character.id}"]`)
+    await click(window, `[data-contacts-menu-detail="${character.id}"]`)
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))
+      && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
+    await click(window, '[data-contacts-close]')
+    await click(window, `[data-contacts-menu="${character.id}"]`)
+    await click(window, `[data-contacts-menu-edit="${character.id}"]`)
+    await waitForRenderer(window, `document.querySelector('[data-contacts-name]')?.value === '冒烟猫'
+      && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
+    await window.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    await waitForRenderer(window, "!document.querySelector('[data-contacts-form]')")
+
+    // 5) 点击角色卡片直接进入会话页，联系人信息条可见（等列表异步刷新渲染出该角色的卡片再点）
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-item="${character.id}"]'))`)
     await click(window, `[data-contacts-item="${character.id}"]`)
-    await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))`)
-    await click(window, `[data-contacts-start-chat="${character.id}"]`)
     await waitForRenderer(window, `document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'chat'`)
     await waitForRenderer(window, `Boolean(document.querySelector('[data-character-bar="${character.id}"]'))`)
+    await waitForRenderer(window, `!document.querySelector('[data-contacts-detail]')`)
 
     // 在聊天区查看联系人详情，打开、关闭和再次打开都应保留聊天导航。
     for (const closeWithEscape of [false, true]) {
@@ -110,11 +123,10 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 300))
     if (!chatBody || chatBody['model'] !== 'cat-model') throw new Error(`Expected character model on loopback, got ${JSON.stringify(chatBody?.['model'])}`)
 
-    // 7) 从详情面板删除角色并确认（级联删除其会话）
+    // 7) 从卡片菜单删除角色并确认（级联删除其会话）
     await click(window, '[data-workspace-nav="contacts"]')
-    await click(window, `[data-contacts-item="${character.id}"]`)
-    await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-delete="${character.id}"]'))`)
-    await click(window, `[data-contacts-delete="${character.id}"]`)
+    await click(window, `[data-contacts-menu="${character.id}"]`)
+    await click(window, `[data-contacts-menu-delete="${character.id}"]`)
     await click(window, '[data-contacts-confirm-delete]')
     await new Promise((resolve) => setTimeout(resolve, 300))
     if (getCharacter(character.id)) throw new Error('Character was not deleted')

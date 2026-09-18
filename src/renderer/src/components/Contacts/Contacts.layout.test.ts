@@ -117,7 +117,7 @@ describe('contacts layout', () => {
     expect(cssSource).toMatch(/\.contacts-hint \{[^}]*padding-left: 54px/)
   })
 
-  it('opens a detail panel on card click with chat, edit and delete actions', () => {
+  it('keeps chat, edit and delete actions in the contact detail panel', () => {
     expect(viewSource).toContain("'data-contacts-detail': detail.id")
     expect(viewSource).toContain('data-contacts-start-chat=')
     expect(viewSource).toMatch(/data-contacts-edit=\{detail\.id\}/)
