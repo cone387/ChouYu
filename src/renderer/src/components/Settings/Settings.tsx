@@ -89,6 +89,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [appVersion, setAppVersion] = useState<string>('')
   const [updateStatus, setUpdateStatus] = useState<string>('')
+  const [searchHotkeyDraft, setSearchHotkeyDraft] = useState(DEFAULT_CONFIG.searchHotkey)
   const [hotkeyDraft, setHotkeyDraft] = useState(DEFAULT_CONFIG.hotkey)
   const [saveError, setSaveError] = useState('')
   const [saveStatus, setSaveStatus] = useState('')
@@ -137,6 +138,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
     window.electronAPI.db.getConfig().then((loaded) => {
       setConfig(loaded)
       setHotkeyDraft(loaded.hotkey)
+      setSearchHotkeyDraft(loaded.searchHotkey)
       window.electronAPI.db.getState(SOUL_HISTORY_STATE_KEY).then((value) => {
         const history = parseSoulHistory(value)
         if (history.length > 0) {
@@ -258,11 +260,13 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
       const saved = await window.electronAPI.db.saveConfig(patch)
       setConfig(saved)
       setHotkeyDraft(saved.hotkey)
+      setSearchHotkeyDraft(saved.searchHotkey)
       setSaveStatus('配置已保存，将用于下一次对话。')
     } catch (error) {
       const current = await window.electronAPI.db.getConfig()
       setConfig(current)
       setHotkeyDraft(current.hotkey)
+      setSearchHotkeyDraft(current.searchHotkey)
       setSaveStatus('')
       setSaveError(error instanceof Error ? error.message : '设置保存失败')
     }
@@ -678,6 +682,16 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                 </div>
               </div>
               <div id="settings-hotkey-help" className="settings-help">示例：Alt+Space、CommandOrControl+Shift+Y</div>
+              <div className="settings-field">
+                <label htmlFor="settings-search-hotkey">全局搜索快捷键</label>
+                <div className="settings-hotkey-row settings-search-hotkey-row">
+                  <input id="settings-search-hotkey" value={searchHotkeyDraft} maxLength={128} placeholder="CommandOrControl+K" aria-describedby="settings-search-hotkey-help"
+                    onChange={event => setSearchHotkeyDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void save({ searchHotkey: searchHotkeyDraft }) }} />
+                  <button className="settings-secondary-btn" onClick={() => { void save({ searchHotkey: searchHotkeyDraft }) }}>应用</button>
+                  <button className="settings-secondary-btn" onClick={() => { void save({ searchHotkey: DEFAULT_CONFIG.searchHotkey }) }}>恢复默认</button>
+                </div>
+                <div id="settings-search-hotkey-help" className="settings-help">在应用面板内生效。默认 Ctrl+K（Mac 为 ⌘K），支持如 Alt+K、CommandOrControl+Shift+K；留空应用可关闭。</div>
+              </div>
               </div>
 
               <div className="settings-section-title">智能功能</div>

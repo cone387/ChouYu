@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { journalDateKey as dateKey, journalSearchExcerpt, journalSearchRange } from '../../core/journal-search'
 
-type Result = { id: string; kind: 'session' | 'memory' | 'journal' | 'capture'; title: string; detail: string; excerpt?: string; date?: string }
+import { INDUSTRY_LABELS } from '../../../../shared/characters'
+import { matchesSearchShortcut } from '../../../../shared/search-shortcut'
 
-type Scope = 'all' | 'session' | 'journal' | 'memory'
-const scopes: { id: Scope; label: string }[] = [{ id: 'all', label: '全部' }, { id: 'session', label: '会话' }, { id: 'journal', label: '工作日志' }, { id: 'memory', label: '记忆' }]
+type Result = { id: string; kind: 'session' | 'memory' | 'journal' | 'capture' | 'contact' | 'task'; title: string; detail: string; excerpt?: string; date?: string; done?: boolean }
+
+type Scope = 'all' | 'session' | 'journal' | 'memory' | 'contact' | 'task'
+const scopes: { id: Scope; label: string }[] = [{ id: 'all', label: '全部' }, { id: 'session', label: '会话' }, { id: 'journal', label: '工作日志' }, { id: 'memory', label: '记忆' }, { id: 'contact', label: '通讯录' }, { id: 'task', label: '任务' }]
 export type SearchSnapshot = { query: string; scope: Scope; startDate: string; endDate: string; appFilter: string; journalOffset: number }
 
-export default function GlobalSearch({ onClose, onSession, onMemory, onJournal, snapshot }: {
+export default function GlobalSearch({ onClose, onSession, onMemory, onJournal, onContact, onTask, searchHotkey, snapshot }: {
+  searchHotkey: string
+  onContact: (id: string) => void
+  onTask: (id: string, done: boolean, query: string) => void
   snapshot: MutableRefObject<SearchSnapshot | null>
   onClose: () => void
   onSession: (id: string, query: string) => Promise<void>
@@ -46,7 +52,7 @@ export default function GlobalSearch({ onClose, onSession, onMemory, onJournal, 
     const observer = new ResizeObserver(position)
     if (workspace) observer.observe(workspace)
     window.addEventListener('resize', position)
-    return () => { observer.disconnect(); window.removeEventListener('resize', position); element.close(); previous?.blur() }
+    return () => { observer.disconnect(); window.removeEventListener('resize', position); element.close(); previous?.isConnected && previous.focus() }
   }, [])
   useEffect(() => { snapshot.current = { query, scope, startDate, endDate, appFilter, journalOffset } }, [query, scope, startDate, endDate, appFilter, journalOffset, snapshot])
   useEffect(() => {
@@ -62,10 +68,12 @@ export default function GlobalSearch({ onClose, onSession, onMemory, onJournal, 
         scope === 'all' || scope === 'session' ? window.electronAPI.db.searchSessions(term) : Promise.resolve([]),
         scope === 'all' || scope === 'memory' ? window.electronAPI.memory.list({ query: term, status: 'active', limit: 20 }) : Promise.resolve([]),
         scope !== 'all' && scope !== 'journal' ? Promise.resolve({ items: [], total: 0 }) : range ? window.electronAPI.journal.list({ ...range, query: term, app: appFilter, offset: journalOffset }) : Promise.reject(new Error(rangeError)),
-        scope !== 'all' && scope !== 'journal' ? Promise.resolve({ items: [], total: 0 }) : range ? window.electronAPI.journal.captures({ ...range, query: term, app: appFilter, offset: journalOffset }) : Promise.reject(new Error(rangeError))
+        scope !== 'all' && scope !== 'journal' ? Promise.resolve({ items: [], total: 0 }) : range ? window.electronAPI.journal.captures({ ...range, query: term, app: appFilter, offset: journalOffset }) : Promise.reject(new Error(rangeError)),
+        scope === 'all' || scope === 'contact' ? window.electronAPI.characters.list() : Promise.resolve([]),
+        scope === 'all' || scope === 'task' ? window.electronAPI.tasks.list({ doneQuery: term, doneLimit: 50 }) : Promise.resolve({ open: [], done: [] })
       ])
       if (!active) return
-      const [sessions, memories, journal, captures] = responses
+      const [sessions, memories, journal, captures, contacts, tasks] = responses
       const total = Math.max(journal.status === 'fulfilled' ? journal.value.total : 0, captures.status === 'fulfilled' ? captures.value.total : 0)
       if (journal.status === 'fulfilled' && captures.status === 'fulfilled' && journalOffset && journalOffset >= total) { setJournalOffset(Math.max(0, Math.floor((total - 1) / 20) * 20)); return }
       setJournalTotal(total)
@@ -74,9 +82,11 @@ export default function GlobalSearch({ onClose, onSession, onMemory, onJournal, 
       if (memories.status === 'fulfilled') items.push(...memories.value.map(item => ({ id: item.id, kind: 'memory' as const, title: item.content, detail: '长期记忆' })))
       if (journal.status === 'fulfilled') items.push(...journal.value.items.slice(0, 20).map(item => ({ id: String(item.id), kind: 'journal' as const, title: item.title || item.app, detail: `${dateKey(item.startedAt)} · ${item.app}`, date: dateKey(item.startedAt) })))
       if (captures.status === 'fulfilled') items.push(...captures.value.items.slice(0, 20).map(item => ({ id: item.id, kind: 'capture' as const, title: item.title || item.app, detail: `${dateKey(item.capturedAt)} · ${item.app}`, excerpt: journalSearchExcerpt(item.ocrText || item.title, term), date: dateKey(item.capturedAt) })))
+      if (contacts.status === 'fulfilled') items.push(...contacts.value.filter(item => [item.name, item.soulMd, INDUSTRY_LABELS[item.category] || item.category].join(' ').toLocaleLowerCase().includes(term.toLocaleLowerCase())).map(item => ({ id: item.id, kind: 'contact' as const, title: item.name, detail: INDUSTRY_LABELS[item.category] || '联系人', excerpt: journalSearchExcerpt(item.soulMd, term) })))
+      if (tasks.status === 'fulfilled') items.push(...[...tasks.value.open.filter(item => `${item.title} ${item.note}`.toLocaleLowerCase().includes(term.toLocaleLowerCase())), ...tasks.value.done].map(item => ({ id: item.id, kind: 'task' as const, title: item.title, detail: `${item.status === 'done' ? '已完成' : '待办'}${item.dueAt ? ` · 截止 ${dateKey(item.dueAt)}` : ''}`, excerpt: journalSearchExcerpt(item.note, term), done: item.status === 'done' })))
       setCoverage(scope !== 'all' && scope !== 'journal' ? '' : [journal.status === 'fulfilled' ? `活动本页 ${Math.min(20, journal.value.items.length)} / 共 ${journal.value.total} 条` : '', captures.status === 'fulfilled' ? `画面本页 ${Math.min(20, captures.value.items.length)} / 共 ${captures.value.total} 条` : ''].filter(Boolean).join(' · '))
       setResults(items); setLoading(false)
-      const failed = responses.flatMap((result, index) => result.status === 'rejected' ? [['会话', '记忆', '活动', '画面'][index]] : [])
+      const failed = responses.flatMap((result, index) => result.status === 'rejected' ? [['会话', '记忆', '活动', '画面', '通讯录', '任务'][index]] : [])
       if (failed.length) setError([scope === 'all' || scope === 'journal' ? rangeError : '', `${failed.join('、')}暂时无法搜索，请重试或切换范围。`].filter(Boolean).join(' '))
     }, 200)
     return () => { active = false; clearTimeout(timer) }
@@ -90,13 +100,15 @@ export default function GlobalSearch({ onClose, onSession, onMemory, onJournal, 
     try {
       if (item.kind === 'session') await onSession(item.id, query.trim())
       else if (item.kind === 'memory') onMemory(item.id)
+      else if (item.kind === 'contact') onContact(item.id)
+      else if (item.kind === 'task') onTask(item.id, Boolean(item.done), query.trim())
       else onJournal(item.date!, query.trim(), `${item.kind === 'capture' ? 'capture' : 'activity'}:${item.id}`)
       onClose()
     } catch { setError('无法打开这条结果，请重试。'); setOpening(false) }
   }
   return <dialog ref={dialog} className="global-search-dialog" aria-label="全局搜索" onCancel={event => { event.preventDefault(); onClose() }}
     onKeyDown={event => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); inputRef.current?.focus(); inputRef.current?.select(); return }
+      if (matchesSearchShortcut(event.nativeEvent, searchHotkey, navigator.platform.includes('Mac'))) { event.preventDefault(); inputRef.current?.focus(); inputRef.current?.select(); return }
       if (event.nativeEvent.isComposing) return
       if (!['ArrowDown', 'ArrowUp'].includes(event.key) || (event.target instanceof HTMLInputElement && event.target.type === 'date')) return
       const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('.global-search-result:not(:disabled)')]
@@ -106,13 +118,13 @@ export default function GlobalSearch({ onClose, onSession, onMemory, onJournal, 
       const next = index < 0 ? (event.key === 'ArrowDown' ? 0 : buttons.length - 1) : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
       buttons[next]?.focus()
     }}>
-    <div className="global-search-heading"><input ref={inputRef} autoFocus aria-label="搜索会话、记忆和活动" placeholder="搜索会话、日志、记忆…" maxLength={500} value={query} onChange={event => { setQuery(event.target.value); setJournalOffset(0) }}
+    <div className="global-search-heading"><input ref={inputRef} autoFocus aria-label="搜索会话、通讯录、任务、日志和记忆" placeholder="搜索会话、通讯录、任务、日志、记忆…" maxLength={500} value={query} onChange={event => { setQuery(event.target.value); setJournalOffset(0) }}
       onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && firstResult && !loading && !opening) void open(firstResult) }} />
       <button onClick={onClose} aria-label="关闭全局搜索">Esc</button></div>
     <div className="global-search-scopes" role="group" aria-label="搜索范围">{scopes.map(item => <button key={item.id} type="button" data-search-scope={item.id} aria-pressed={scope === item.id} onClick={() => chooseScope(item.id)}>{item.label}</button>)}</div>
     <div className="global-search-body">
-    {scope === 'journal' && <details className="global-search-range"><summary>日志范围：{startDate} 至 {endDate}{appFilter.trim() ? ` · 应用包含“${appFilter.trim()}”` : ''}</summary><div><label>开始日期<input type="date" aria-label="日志搜索开始日期" value={startDate} onChange={event => { setStartDate(event.target.value); setJournalOffset(0) }} /></label><label>结束日期<input type="date" aria-label="日志搜索结束日期" value={endDate} onChange={event => { setEndDate(event.target.value); setJournalOffset(0) }} /></label><label>应用包含<input aria-label="日志搜索应用" maxLength={120} value={appFilter} placeholder="如 chrome.exe 或 Safari" onChange={event => { setAppFilter(event.target.value); setJournalOffset(0) }} /></label></div><p className="global-search-hint">含结束当天，每次最多 31 天。日期和应用仅限定日志，会话和记忆不受限。</p></details>}
-    <p className="global-search-hint">{scope === 'all' ? `每类预览 5 条。日志范围 ${startDate} 至 ${endDate}${appFilter.trim() ? ` · 应用包含“${appFilter.trim()}”` : ''}；切换工作日志可调整。` : scope === 'session' ? '搜索所有会话的标题与正文，打开后定位匹配内容。' : scope === 'memory' ? '搜索当前记忆库中的有效记忆，最多显示 20 条。' : '活动和画面各按 20 条分页；未识别的画面按标题和应用查找。'}</p>
+    {scope === 'journal' && <details className="global-search-range"><summary>日志范围：{startDate} 至 {endDate}{appFilter.trim() ? ` · 应用包含“${appFilter.trim()}”` : ''}</summary><div><label>开始日期<input type="date" aria-label="日志搜索开始日期" value={startDate} onChange={event => { setStartDate(event.target.value); setJournalOffset(0) }} /></label><label>结束日期<input type="date" aria-label="日志搜索结束日期" value={endDate} onChange={event => { setEndDate(event.target.value); setJournalOffset(0) }} /></label><label>应用包含<input aria-label="日志搜索应用" maxLength={120} value={appFilter} placeholder="如 chrome.exe 或 Safari" onChange={event => { setAppFilter(event.target.value); setJournalOffset(0) }} /></label></div><p className="global-search-hint">含结束当天，每次最多 31 天。日期和应用仅限定日志，其他搜索范围不受限。</p></details>}
+    <p className="global-search-hint">{scope === 'all' ? `每类预览 5 条。日志范围 ${startDate} 至 ${endDate}${appFilter.trim() ? ` · 应用包含“${appFilter.trim()}”` : ''}；切换工作日志可调整。` : scope === 'session' ? '搜索所有会话的标题与正文，打开后定位匹配内容。' : scope === 'contact' ? '搜索联系人名称、分类与角色介绍，打开查看详情。' : scope === 'task' ? '搜索任务标题和备注，包含待办及已完成任务（已完成最多显示 50 条）。' : scope === 'memory' ? '搜索当前记忆库中的有效记忆，最多显示 20 条。' : '活动和画面各按 20 条分页；未识别的画面按标题和应用查找。'}</p>
     {scope === 'journal' && coverage && <p className="global-search-hint" role="status">{coverage}</p>}
     {scope === 'journal' && (journalTotal > 20 || journalOffset > 0) && <nav className="global-search-pagination" aria-label="跨日日志分页"><button disabled={loading || opening || !journalOffset} onClick={() => setJournalOffset(value => Math.max(0, value - 20))}>上一页日志</button><span>第 {Math.floor(journalOffset / 20) + 1} 页</span><button disabled={loading || opening || journalOffset + 20 >= journalTotal} onClick={() => setJournalOffset(value => value + 20)}>下一页日志</button></nav>}
     <div className="global-search-results" aria-busy={loading || opening}>
@@ -121,7 +133,7 @@ export default function GlobalSearch({ onClose, onSession, onMemory, onJournal, 
       {groups.map(group => <section className="global-search-group" key={group.id} aria-label={group.label}>
         <div className="global-search-group-heading"><h3>{group.label}</h3>{scope === 'all' && <button type="button" onClick={() => chooseScope(group.id)}>查看该范围 →</button>}</div>
         {(scope === 'all' ? group.items.slice(0, 5) : group.items).map(item => <button key={`${item.kind}:${item.id}`} className="global-search-result" disabled={opening || loading} onClick={() => void open(item)}>
-          <span className="global-search-kind">{{ session: '会话', memory: '记忆', journal: '活动', capture: '画面' }[item.kind]}</span>
+          <span className="global-search-kind">{{ session: '会话', memory: '记忆', journal: '活动', capture: '画面', contact: '联系人', task: '任务' }[item.kind]}</span>
           <span><strong>{item.title}</strong>{item.excerpt && <small className="global-search-excerpt">{item.excerpt}</small>}<small>{item.detail}</small></span>
         </button>)}
       </section>)}

@@ -74,7 +74,7 @@ const draftFromTask = (task: TaskRecord): Draft => ({
 const dueLabel = (at: number): string =>
   new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at)
 
-export default function TasksView({ active, focusTaskId }: { active: boolean; focusTaskId?: string }) {
+export default function TasksView({ active, focusTaskId, searchRequest }: { active: boolean; focusTaskId?: string; searchRequest?: { id: string; done: boolean; query: string; nonce: number } }) {
   const menusRef = useTaskMenus(active)
   const [selection, setSelection] = useState<Selection>('today')
   const [query, setQuery] = useState('')
@@ -143,12 +143,16 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
   }, [draft, viewDraft, fieldsOpen])
   useEffect(() => { if (focusTaskId) { setSelection('all'); setQuery(''); setFilterPriorities([]); setMode('list') } }, [focusTaskId])
   useEffect(() => {
-    if (!focusTaskId || !tasks.length) return
+    if (!searchRequest) return
+    setSelection(searchRequest.done ? 'done' : 'all'); setQuery(searchRequest.done ? searchRequest.query : ''); setFilterPriorities([]); setMode('list')
+  }, [searchRequest])
+  useEffect(() => {
+    if (!active || !focusTaskId) return
     const element = taskRefs.current[focusTaskId]
     if (!element) return
     element.scrollIntoView({ block: 'center' })
     element.focus({ preventScroll: true })
-  }, [focusTaskId, tasks, selection])
+  }, [active, focusTaskId, tasks, doneTasks, selection, searchRequest])
 
   const now = Date.now()
   const matchesSelection = (task: TaskRecord, target: Selection): boolean => {
@@ -585,7 +589,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
       {loading && <p role="status">正在加载任务…</p>}
       {selection === 'done'
         ? <ul role="list" className="tasks-list tasks-list-done" aria-label="已完成任务">
-        {doneVisible.map(task => <li key={task.id} className="tasks-item" data-priority={task.priority}>
+        {doneVisible.map(task => <li key={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={task.id === focusTaskId ? -1 : undefined} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority}>
           <span className="tasks-item-title tasks-item-done-title">{task.title}</span>
           <span className="tasks-item-meta">{task.completedAt ? dueLabel(task.completedAt) + ' 完成' : ''}</span>
           <button type="button" onClick={() => void window.electronAPI.tasks.reopen(task.id).then(reload).catch(reason => setError(String(reason)))}>恢复</button>

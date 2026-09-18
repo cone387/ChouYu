@@ -995,3 +995,7 @@
 .provider-profile-form > div { display: flex; gap: var(--space-4); justify-content: flex-end; }
 .provider-profiles-card button.danger { color: #dc2626; }
 [data-theme='dark'] .provider-profiles-card button.danger { color: #f87171; }
+
+.settings-search-hotkey-row { width: 100%; flex-wrap: wrap; }
+.settings-search-hotkey-row input { flex: 1 1 180px; }
+.settings-search-hotkey-row button { flex-shrink: 0; white-space: nowrap; }

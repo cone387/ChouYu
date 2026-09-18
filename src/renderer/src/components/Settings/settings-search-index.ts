@@ -39,6 +39,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { nav: 'general', navLabel: '通用', label: '开机自启', keywords: ['自动启动', '登录启动', 'autostart'], fieldId: 'settings-autostart' },
   { nav: 'general', navLabel: '通用', label: '宠物大小', keywords: ['尺寸', '缩放'], fieldId: 'settings-pet-size' },
   { nav: 'general', navLabel: '通用', label: '外观主题', keywords: ['深色', '浅色', '暗夜', 'dark', 'light', '亮暗', '配色', '主题色', '换色'], fieldId: 'settings-theme-label' },
+  { nav: 'general', navLabel: '通用', label: '全局搜索快捷键', keywords: ['搜索', '快捷键', 'hotkey', '通讯录', '任务'], fieldId: 'settings-search-hotkey' },
   { nav: 'general', navLabel: '通用', label: '唤出面板', keywords: ['快捷键', 'hotkey', '呼出'], fieldId: 'settings-hotkey' },
   { nav: 'general', navLabel: '通用', label: '开机问好', keywords: ['问候', '主动打招呼'] },
   { nav: 'general', navLabel: '通用', label: '久坐提醒', keywords: ['休息提醒', '健康'] },

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
+import { matchesSearchShortcut } from '../../../../shared/search-shortcut'
 import GlobalSearch, { type SearchSnapshot } from '../Workspace/GlobalSearch'
 import Journal from '../Journal/Journal'
 import TasksView from '../Tasks/TasksView'
@@ -100,6 +101,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [])
   const [showMessageSearch, setShowMessageSearch] = useState(false)
   const searchSnapshot = useRef<SearchSnapshot | null>(null)
+  const [taskSearchRequest, setTaskSearchRequest] = useState<{ id: string; done: boolean; query: string; nonce: number }>()
   const [showGlobalSearch, setShowGlobalSearch] = useState(false)
   const [journalSearch, setJournalSearch] = useState<{ date: string; query: string; id: number; sourceId?: string }>()
   const [messageSearchQuery, setMessageSearchQuery] = useState('')
@@ -411,7 +413,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!visible || toolApprovalRequest || event.defaultPrevented || document.querySelector('dialog[open], [aria-modal="true"]')) return
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      if (matchesSearchShortcut(event, config.searchHotkey, navigator.platform.includes('Mac'))) {
         event.preventDefault(); setShowGlobalSearch(true); return
       }
       if (isChat && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
@@ -433,7 +435,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [confirmClear, isChat, navigate, onClose, requestComposerFocus, showMessageSearch, toolApprovalRequest, visible])
+  }, [config.searchHotkey, confirmClear, isChat, navigate, onClose, requestComposerFocus, showMessageSearch, toolApprovalRequest, visible])
 
 
 
@@ -752,6 +754,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       style={{ left: maximized ? 4 : position.x, top: maximized ? 4 : position.y, width: shellWidth, height: geometry.height, display: visible && panelReady ? undefined : 'none' }}>
       {displayMode === 'workspace' && <WorkspaceNav activePage={activePage} onNavigate={navigate} status={getStatusText()} />}
       <WorkspaceHeader onHide={onHide} onClose={onClose} dragHandleProps={dragHandleProps}
+        searchHotkey={config.searchHotkey}
         onSearch={() => setShowGlobalSearch(true)}
         sessionsVisible={sessionsVisible} onToggleSessions={isChat ? toggleSessionSidebar : undefined}
         maximized={maximized} onMaximize={presentation.toggleMaximized} mode={displayMode} onModeChange={changeDisplayMode} />
@@ -878,7 +881,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           </>}
         </section>
         <section className="workspace-page workspace-contacts" hidden={activePage !== 'contacts'} aria-label="通讯录工作区">
-          {visitedPages.contacts && <ContactsView active={visible && activePage === 'contacts'} config={config}
+          {visitedPages.contacts && <ContactsView active={visible && activePage === 'contacts'} config={config} focusCharacterId={contactsFocusId} onFocusConsumed={clearContactsFocus}
             onOpenChat={(characterId) => { void openCharacterChat(characterId) }}
             onDeleted={handleCharactersDeleted} />}
         </section>
@@ -889,7 +892,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         </section>
         <section className="workspace-page workspace-tasks" hidden={activePage !== 'tasks'} aria-label="任务工作区">
           {visitedPages.tasks && <>
-            <TasksView active={visible && activePage === 'tasks'} focusTaskId={taskFocusId} />
+            <TasksView active={visible && activePage === 'tasks'} focusTaskId={taskFocusId} searchRequest={taskSearchRequest} />
           </>}
         </section>
         <section className="workspace-page workspace-settings" hidden={!showSettings} aria-label="设置工作区">
@@ -909,7 +912,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         onPointerDown={event => handlePanelResizeStart(edge, event)} onPointerMove={handlePanelResizeMove}
         onPointerUp={handlePanelResizeEnd} onPointerCancel={handlePanelResizeEnd} />)}
       {toolApprovalRequest && <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />}
-      {showGlobalSearch && visible && <GlobalSearch snapshot={searchSnapshot} onClose={() => setShowGlobalSearch(false)}
+      {showGlobalSearch && visible && <GlobalSearch searchHotkey={config.searchHotkey} onContact={id => { setContactsFocusId(id); navigate('contacts') }} onTask={(id, done, query) => { setTaskFocusId(id); setTaskSearchRequest({ id, done, query, nonce: Date.now() }); navigate('tasks') }} snapshot={searchSnapshot} onClose={() => setShowGlobalSearch(false)}
         onSession={async (id, query) => { await selectSession(id); navigate('chat'); setNarrowSessionsOpen(false); setMessageSearchQuery(query); setShowMessageSearch(true) }}
         onMemory={openMemoryWorkspace}
         onJournal={(date, query, sourceId) => { setJournalSearch({ date, query, sourceId, id: Date.now() }); navigate('journal') }} />}

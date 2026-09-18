@@ -1,3 +1,4 @@
+import { runGlobalSearchSmoke } from './global-search-smoke'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
 import { flushDatabase, getCharacter, getConfig, listCharacters, saveConfig } from '../database'
@@ -121,6 +122,9 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     // 8) 回到聊天页：chat-smoke 的首个等待依赖 .input-textarea。
     await click(window, '[data-workspace-nav="chat"]')
     await waitForRenderer(window, "Boolean(document.querySelector('.input-textarea'))")
+
+    await runGlobalSearchSmoke(window)
+    console.log('CHOUYU_GLOBAL_SEARCH_SMOKE_PASSED contacts, open/done task navigation, changed and disabled shortcuts')
 
     // 9) 关闭并卸载面板，交还与 chat-smoke 单独运行时相同的起点：
     // 它在主进程直接创建夹具会话，依赖面板挂载时全新加载工作区。

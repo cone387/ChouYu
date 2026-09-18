@@ -1,3 +1,5 @@
+import { DEFAULT_SEARCH_SHORTCUT, normalizeSearchShortcut } from './search-shortcut'
+
 export const DEFAULT_SOUL_MD = `# ChouYu 人格与工作方式
 
 你是 ChouYu（丑鱼），住在用户桌面上的可靠伙伴。你有自己的语气，但帮助用户解决问题永远比表演人设更重要。
@@ -92,6 +94,7 @@ export interface AppConfig {
   baseUrl: string
   apiKey: string
   model: string
+  searchHotkey: string
   hotkey: string
   autoStart: boolean
   petSize: number
@@ -127,6 +130,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   baseUrl: '',
   apiKey: '',
   model: '',
+  searchHotkey: DEFAULT_SEARCH_SHORTCUT,
   hotkey: 'Alt+Space',
   autoStart: false,
   petSize: 80,
@@ -223,6 +227,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     apiKey: typeof source.apiKey === 'string' ? source.apiKey : '',
     model: typeof source.model === 'string' ? source.model.trim() : '',
     hotkey: typeof source.hotkey === 'string' && source.hotkey.trim() ? source.hotkey.trim() : DEFAULT_APP_CONFIG.hotkey,
+    searchHotkey: (() => { try { return normalizeSearchShortcut(source.searchHotkey ?? DEFAULT_SEARCH_SHORTCUT) } catch { return DEFAULT_SEARCH_SHORTCUT } })(),
     autoStart: source.autoStart === true,
     theme: source.theme === 'light' || source.theme === 'dark' ? source.theme : 'system',
     palette: isPaletteId(source.palette) ? source.palette : 'purple',
@@ -269,6 +274,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.baseUrl === 'string') patch.baseUrl = input.baseUrl.trim().slice(0, 2048)
   if (typeof input.apiKey === 'string') patch.apiKey = input.apiKey.slice(0, 8192)
   if (typeof input.model === 'string') patch.model = input.model.trim().slice(0, 256)
+  if (input.searchHotkey !== undefined) patch.searchHotkey = normalizeSearchShortcut(input.searchHotkey)
   if (typeof input.hotkey === 'string') patch.hotkey = input.hotkey.trim().slice(0, 128)
   if (typeof input.autoStart === 'boolean') patch.autoStart = input.autoStart
   if (input.theme === 'system' || input.theme === 'light' || input.theme === 'dark') patch.theme = input.theme

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type HTMLAttributes } from 'react'
+import { searchShortcutLabel } from '../../../../shared/search-shortcut'
 import type { WorkspaceMode } from '../../core/workspace-state'
 
 const modes: { id: WorkspaceMode; label: string; detail: string }[] = [
@@ -7,7 +8,8 @@ const modes: { id: WorkspaceMode; label: string; detail: string }[] = [
   { id: 'workspace', label: '完整工作区', detail: '全局导航与所有页面' }
 ]
 
-export default function WorkspaceHeader({ onHide, onClose, dragHandleProps, maximized, onMaximize, mode, onModeChange, onSearch, sessionsVisible, onToggleSessions }: {
+export default function WorkspaceHeader({ onHide, onClose, dragHandleProps, maximized, onMaximize, mode, onModeChange, onSearch, searchHotkey, sessionsVisible, onToggleSessions }: {
+  searchHotkey: string
   onSearch: () => void
   onHide: () => void
   onClose: () => void
@@ -35,9 +37,9 @@ export default function WorkspaceHeader({ onHide, onClose, dragHandleProps, maxi
   }, [menuOpen])
   return <div className="workspace-header chat-panel-drag-handle" {...dragHandleProps}
     onDoubleClick={event => { if (!(event.target as HTMLElement).closest('button, [role="menu"]')) onMaximize() }}>
-    <button type="button" className="workspace-search-trigger" onClick={onSearch} aria-label="全局搜索" title="全局搜索（⌘K / Ctrl+K）">
+    <button type="button" className="workspace-search-trigger" onClick={onSearch} aria-label="全局搜索" title={`全局搜索${searchHotkey ? `（${searchShortcutLabel(searchHotkey, navigator.platform.includes('Mac'))}）` : ''}`}>
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-      <span>搜索会话、日志、记忆…</span><kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
+      <span>搜索会话、通讯录、任务…</span>{searchHotkey && <kbd>{searchShortcutLabel(searchHotkey, navigator.platform.includes('Mac'))}</kbd>}
     </button>
     {onToggleSessions && <button type="button" className={`topbar-btn${sessionsVisible ? ' topbar-btn-active' : ''}`}
       onClick={onToggleSessions} aria-label={sessionsVisible ? '隐藏对话列表' : '显示对话列表'} title={sessionsVisible ? '隐藏对话列表' : '显示对话列表'} aria-pressed={sessionsVisible}>
