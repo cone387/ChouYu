@@ -77,6 +77,26 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, `document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'chat'`)
     await waitForRenderer(window, `Boolean(document.querySelector('[data-character-bar="${character.id}"]'))`)
 
+    // 在聊天区查看联系人详情，打开、关闭和再次打开都应保留聊天导航。
+    for (const closeWithEscape of [false, true]) {
+      await click(window, `[data-character-bar="${character.id}"]`)
+      await waitForRenderer(window, `Boolean(document.querySelector('.workspace-chat [data-contacts-detail="${character.id}"]'))`)
+      const staysInChat = await window.webContents.executeJavaScript(`
+        document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'chat'
+        && !document.querySelector('.workspace-chat').hidden
+        && document.querySelector('.workspace-contacts').hidden
+      `)
+      if (!staysInChat) throw new Error('Opening contact details changed the chat navigation')
+      if (closeWithEscape) {
+        await window.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+      } else {
+        await click(window, '.workspace-chat [data-contacts-close]')
+      }
+      await waitForRenderer(window, `!document.querySelector('.workspace-chat .contacts-view-overlay')
+        && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'chat'
+        && getComputedStyle(document.querySelector('.chat-panel')).display !== 'none'`)
+    }
+
     // 6) 角色流解析：请求命中 loopback 且使用角色模型
     const streamResult = await window.webContents.executeJavaScript(`window.electronAPI.ai.startStream({
       requestId: 'contacts-smoke-1',

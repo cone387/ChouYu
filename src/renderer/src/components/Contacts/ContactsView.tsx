@@ -10,6 +10,8 @@ interface ContactsViewProps {
   config: AppConfig
   focusCharacterId?: string | null
   onFocusConsumed?: () => void
+  detailOnly?: boolean
+  onDismiss?: () => void
   onOpenChat: (characterId: string) => void
   onDeleted: (workspace: SessionWorkspace) => void
 }
@@ -164,7 +166,7 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
   </div>
 }
 
-export default function ContactsView({ active, config, focusCharacterId, onFocusConsumed, onOpenChat, onDeleted }: ContactsViewProps) {
+export default function ContactsView({ active, config, focusCharacterId, onFocusConsumed, detailOnly = false, onDismiss, onOpenChat, onDeleted }: ContactsViewProps) {
   const [characters, setCharacters] = useState<CharacterStats[]>([])
   const [profiles, setProfiles] = useState<ResolvedProviderProfile[]>([])
   const [query, setQuery] = useState('')
@@ -190,7 +192,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     return window.electronAPI.characters.onChanged(refresh)
   }, [active, refresh])
 
-  // 聊天页信息条跳转过来：打开对应角色详情后消费焦点，再次点击可重新触发。
+  // 聊天页信息条请求详情：打开对应角色后消费焦点，再次点击可重新触发。
   // 角色列表异步加载，找不到时先等待，加载完成后依赖变化会再次进入。
   // 助手可查看详情，但不提供编辑入口。
   useEffect(() => {
@@ -200,6 +202,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     setDetail(character)
     onFocusConsumed?.()
   }, [active, focusCharacterId, characters, onFocusConsumed])
+
+  useEffect(() => {
+    if (detailOnly && !focusCharacterId && !detail && !form && !confirmDelete) onDismiss?.()
+  }, [detailOnly, focusCharacterId, detail, form, confirmDelete, onDismiss])
 
   const distinctModels = useMemo(
     () => [...new Set(characters.map((character) => character.model).filter(Boolean))]
@@ -297,7 +303,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
 
   // 捕获阶段拦截 Escape，避免冒泡到 ChatPanel 把整个面板收起。
   useEffect(() => {
-    if (!detail && !form && !confirmDelete) return
+    if (!active || (!detail && !form && !confirmDelete)) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
@@ -308,9 +314,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     }
     window.addEventListener('keydown', closeOnEscape, true)
     return () => window.removeEventListener('keydown', closeOnEscape, true)
-  }, [detail, form, confirmDelete])
+  }, [active, detail, form, confirmDelete])
 
-  return <div className="contacts-view" data-contacts-root>
+  return <div className={detailOnly ? 'contacts-view contacts-view-overlay' : 'contacts-view'} data-contacts-root>
+    {!detailOnly && <>
     <div className="contacts-toolbar">
       <div className="contacts-search-box">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
@@ -381,6 +388,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       </div>
       {filtered.length === 0 && <p className="contacts-empty">没有匹配的角色</p>}
     </div>
+    </>}
     {detail && <ResizableModal className="contacts-detail" role="dialog" label={`角色详情 ${detail.name}`}
       initialWidth={460} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
       <div>
@@ -406,6 +414,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <p className="contacts-detail-soul-title">人设</p>
         <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
         <div className="contacts-detail-actions">
+          <button type="button" data-contacts-close onClick={() => setDetail(null)}>关闭</button>
           <button type="button" className="primary" data-contacts-start-chat={detail.id}
             onClick={() => { onOpenChat(detail.id); setDetail(null) }}>开始对话</button>
           {detail.id !== ASSISTANT_CHARACTER_ID && <button type="button" data-contacts-edit={detail.id} onClick={() => { setDetail(null); openForm(detail) }}>编辑</button>}

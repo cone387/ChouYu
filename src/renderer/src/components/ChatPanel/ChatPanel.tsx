@@ -110,6 +110,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [memoryWriteNotice, setMemoryWriteNotice] = useState('')
   const [memoryCorrectionId, setMemoryCorrectionId] = useState('')
   const [contactsFocusId, setContactsFocusId] = useState<string | null>(null)
+  const [showContactDetail, setShowContactDetail] = useState(false)
   const memoryNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0, dx: 0, dy: 0 })
@@ -618,11 +619,16 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [navigate])
 
   const clearContactsFocus = useCallback(() => setContactsFocusId(null), [])
+  const closeContactDetail = useCallback(() => setShowContactDetail(false), [])
+
+  useEffect(() => {
+    if (!visible || !isChat) setShowContactDetail(false)
+  }, [visible, isChat])
 
   const openContactsDetail = useCallback((characterId: string) => {
     setContactsFocusId(characterId)
-    navigate('contacts')
-  }, [navigate])
+    setShowContactDetail(true)
+  }, [])
 
   const openCharacterChat = useCallback(async (characterId: string) => {
     const latest = [...sessions]
@@ -842,6 +848,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               history={inputHistory}
             />
           </div>
+          {showContactDetail && visible && isChat && <ContactsView active config={config} detailOnly
+            focusCharacterId={contactsFocusId} onFocusConsumed={clearContactsFocus} onDismiss={closeContactDetail}
+            onOpenChat={(characterId) => { void openCharacterChat(characterId) }}
+            onDeleted={handleCharactersDeleted} />}
         </div>
         <section className="workspace-page workspace-memory" hidden={!showMemoryWorkspace} aria-label="记忆工作区">
           {visitedPages.memory && <>
@@ -854,7 +864,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         </section>
         <section className="workspace-page workspace-contacts" hidden={activePage !== 'contacts'} aria-label="通讯录工作区">
           {visitedPages.contacts && <ContactsView active={visible && activePage === 'contacts'} config={config}
-            focusCharacterId={contactsFocusId} onFocusConsumed={clearContactsFocus}
             onOpenChat={(characterId) => { void openCharacterChat(characterId) }}
             onDeleted={handleCharactersDeleted} />}
         </section>
