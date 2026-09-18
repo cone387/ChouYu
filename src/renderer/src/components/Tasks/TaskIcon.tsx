@@ -1,6 +1,7 @@
-export type IconName = 'task' | 'list' | 'board' | 'filter' | 'sort' | 'fields' | 'group' | 'plus' | 'chevron' | 'more' | 'today' | 'week' | 'clock' | 'unplanned' | 'all' | 'done' | 'inbox' | 'folder' | 'search' | 'edit' | 'archive' | 'trash' | 'collapse' | 'expand'
+export type IconName = 'grip' | 'task' | 'list' | 'board' | 'filter' | 'sort' | 'fields' | 'group' | 'plus' | 'chevron' | 'more' | 'today' | 'week' | 'clock' | 'unplanned' | 'all' | 'done' | 'inbox' | 'folder' | 'search' | 'edit' | 'archive' | 'trash' | 'collapse' | 'expand'
 
 const paths: Record<IconName, string> = {
+  grip: 'M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01',
   collapse: 'M4 4h16v16H4zM9 4v16M16 9l-3 3 3 3',
   expand: 'M4 4h16v16H4zM9 4v16M13 9l3 3-3 3',
   today: 'M5 4h14v16H5zM8 2v4M16 2v4M5 9h14M9 13h2v3H9z',

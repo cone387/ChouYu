@@ -33,6 +33,17 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, "!document.querySelector('.tasks-more-views').open")
     if (hidden) await assert("!!document.querySelector('.tasks-more-views > summary[data-active]')")
   }
+  const choose = async (label: string, value: string) => {
+    await click(`[role="combobox"][aria-label="${label}"]`)
+    await waitForRenderer(window, "!!document.querySelector('.tasks-select-options:popover-open')")
+    await run(`(() => {
+      const popup = document.querySelector('.tasks-select-options:popover-open');
+      const option = Array.from(popup.querySelectorAll('[role="option"]')).find(item => item.dataset.value === ${JSON.stringify(value)});
+      if (!option) throw new Error('Missing themed option');
+      option.click();
+    })()`)
+    await waitForRenderer(window, "!document.querySelector('.tasks-select-options:popover-open')")
+  }
   const originalIds: string[] = await run("window.electronAPI.tasks.list({ doneLimit: 10000 }).then(list => [...list.open, ...list.done].map(task => task.id))")
   const projectId: string = await run(`window.electronAPI.tasks.createProject('任务界面测试').then(project => project.id)`)
   const fieldId: string = await run(`window.electronAPI.tasks.createField({ name: '测试阶段', options: ['待办', '进行中'] }).then(field => field.id)`)
@@ -79,15 +90,22 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await fill('[aria-label="移动清单 任务界面测试 到分组"]', groupId)
   await waitForRenderer(window, "Array.from(document.querySelectorAll('.tasks-project-group ul')).some(item => item.textContent.includes('任务界面测试'))")
   await assert("document.querySelector('.tasks-more-views-popover').textContent.includes('新建自定义视图')")
+  await assert("!document.querySelector('.tasks-search')")
+  await click('[aria-label="新建任务选项"]')
+  await assert("Array.from(document.querySelectorAll('.tasks-create-options .tasks-item-menu-popover button')).map(button => button.textContent).join(',') === '新建任务,新建分组'")
+  await click('.tasks-create-options .tasks-item-menu-popover button:last-child')
+  await assert("document.querySelector('.tasks-collection-dialog')?.textContent.includes('新建分组')")
+  await click('[aria-label="关闭清单分组弹窗"]')
+
   await click('.tasks-create')
   await assert("document.querySelector('[aria-label=\"任务截止日期\"]').value === new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0')")
   await click('[aria-label="关闭任务弹窗"]')
   await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
   await click('.tasks-create')
-  await assert(`document.querySelector('[aria-label="任务清单"]').value === ${JSON.stringify(projectId)}`)
+  await assert(`document.querySelector('[aria-label="任务清单"]').dataset.value === ${JSON.stringify(projectId)}`)
   await fill('[aria-label="任务标题"]', '界面创建任务')
   const optionId: string = await run(`window.electronAPI.tasks.fields().then(fields => fields.find(field => field.id === ${JSON.stringify(fieldId)}).options[1].id)`)
-  await fill('[aria-label="任务 测试阶段"]', optionId)
+  await choose('任务 测试阶段', optionId)
   await click('.tasks-dialog button[type="submit"]')
   await waitForRenderer(window, "!document.querySelector('.tasks-dialog') && document.querySelector('.tasks-list')?.textContent.includes('界面创建任务')")
   // All transient menus dismiss outside / with Escape; structural groups stay open.
@@ -127,7 +145,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert("!document.querySelector('[aria-label=排序方式]').parentElement.open")
   await click('[aria-label="筛选任务"]')
   // The smoke window is hidden, so explicitly dispatch the focus transition.
-  await run("document.querySelector('.tasks-search input').dispatchEvent(new FocusEvent('focusin', { bubbles: true }))")
+  await run("document.querySelector('.tasks-create').dispatchEvent(new FocusEvent('focusin', { bubbles: true }))")
   await assert("!document.querySelector('[aria-label=筛选任务]').parentElement.open")
   await waitForRenderer(window, "Boolean(document.querySelector('.tasks-item-menu summary'))")
   await click('.tasks-item-menu summary')
@@ -136,10 +154,37 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('[aria-label="关闭任务弹窗"]')
   // Creation inherits the current project and the board column.
   await click('.tasks-tab:nth-child(2)')
+  const taskSnapshot = await run("window.electronAPI.tasks.list().then(list => JSON.stringify(list.open))")
+  const dragColumn = async (source: string, target: string, after: boolean) => {
+    await run(`(() => {
+      const from = document.querySelector('[data-column-key="' + ${JSON.stringify(source)} + '"] .tasks-column-drag-handle');
+      const to = document.querySelector('[data-column-key="' + ${JSON.stringify(target)} + '"]');
+      const dataTransfer = new DataTransfer();
+      from.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
+      const rect = to.getBoundingClientRect();
+      const clientX = ${after} ? rect.right - 4 : rect.left + 4;
+      to.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer, clientX }));
+      to.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer, clientX }));
+      from.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+    })()`)
+  }
+  await dragColumn('high', 'low', true)
+  await assert("Array.from(document.querySelectorAll('.tasks-board-column')).map(item => item.dataset.columnKey).join(',') === 'medium,low,high'")
+  await assert(`window.electronAPI.tasks.list().then(list => JSON.stringify(list.open) === ${JSON.stringify(taskSnapshot)})`)
+  await click('.tasks-tab:first-child')
+  await click('.tasks-tab:nth-child(2)')
+  await assert("Array.from(document.querySelectorAll('.tasks-board-column')).map(item => item.dataset.columnKey).join(',') === 'medium,low,high'")
+  await run("document.querySelector('[data-column-key=high] .tasks-column-drag-handle').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true }))")
+  await assert("Array.from(document.querySelectorAll('.tasks-board-column')).map(item => item.dataset.columnKey).join(',') === 'medium,high,low'")
+  await dragColumn('high', 'medium', false)
+  await assert("Array.from(document.querySelectorAll('.tasks-board-column')).map(item => item.dataset.columnKey).join(',') === 'high,medium,low'")
+  await run("document.querySelector('.tasks-board').scrollLeft = 0")
+
   await click('.tasks-board-column:first-child > .tasks-board-add')
-  await fill('[aria-label="快速任务标题"]', '看板快速创建')
-  await click('.tasks-quick-create button[type="submit"]')
-  await waitForRenderer(window, "document.querySelector('.tasks-board-column:first-child')?.textContent.includes('看板快速创建') && !document.querySelector('.tasks-quick-create')")
+  await assert("document.querySelector('.tasks-composer')?.getAttribute('aria-modal') === 'true'")
+  await fill('[aria-label="任务标题"]', '看板快速创建')
+  await click('.tasks-composer button[type="submit"]')
+  await waitForRenderer(window, "document.querySelector('.tasks-board-column:first-child')?.textContent.includes('看板快速创建') && !document.querySelector('.tasks-composer')")
   const quickId: string = await run("window.electronAPI.tasks.list().then(list => list.open.find(task => task.title === '看板快速创建').id)")
   await assert(`window.electronAPI.tasks.list().then(list => list.open.some(task => task.id === ${JSON.stringify(quickId)} && task.priority === 'high' && task.projectId === ${JSON.stringify(projectId)}))`)
   await click('[aria-label="完成 看板快速创建"]')
@@ -154,7 +199,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('[aria-label="任务完成状态"] + div button:first-child')
   await waitForRenderer(window, "!!document.querySelector('[aria-label=\"完成 看板快速创建\"]')")
   await click('[aria-label="在 高优先级 中新建任务"]')
-  await assert("document.querySelector('[aria-label=\"任务优先级\"]').value === 'high'")
+  await assert("document.querySelector('[aria-label=\"任务优先级\"] button[aria-pressed=true]').dataset.priority === 'high'")
   await click('.tasks-date-shortcuts > button:nth-child(2)')
   await assert("(() => { const day = new Date(); day.setDate(day.getDate() + 1); return document.querySelector('[aria-label=\"任务截止日期\"]').value === day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0') })()")
   await click('[aria-label="关闭任务弹窗"]')
@@ -182,8 +227,8 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('.tasks-page-heading h1')
   await run(`window.electronAPI.tasks.remove(${JSON.stringify(quickId)})`)
   // Trigger a reload after fixture cleanup.
-  await fill('.tasks-search input', '界面')
-  await fill('.tasks-search input', '')
+  await selectView('all')
+  await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
   await waitForRenderer(window, "!document.querySelector('.tasks-list')?.textContent.includes('看板快速创建')")
   if (process.env.CHOUYU_TASKS_ARTIFACTS) {
     const directory = process.env.CHOUYU_TASKS_ARTIFACTS
@@ -222,7 +267,28 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
             await assert("document.querySelector('.tasks-composer').scrollWidth <= document.querySelector('.tasks-composer').clientWidth + 1")
             await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
             writeFileSync(join(directory, `tasks-composer-${mode}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+            await click('[role="combobox"][aria-label="任务清单"]')
+            await waitForRenderer(window, "!!document.querySelector('.tasks-select-options:popover-open')")
+            await assert("getComputedStyle(document.querySelector('.tasks-select-options:popover-open')).backgroundColor === getComputedStyle(document.querySelector('.tasks-composer')).backgroundColor")
+            await run("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+            await assert("!!document.querySelector('.tasks-composer') && !document.querySelector('.tasks-select-options:popover-open')")
+            await run("document.querySelector('[aria-label=\"任务标题\"]').focus()")
+            await assert("getComputedStyle(document.querySelector('[aria-label=\"任务标题\"]')).outlineStyle === 'none' && getComputedStyle(document.querySelector('[aria-label=\"任务标题\"]')).boxShadow === 'none'")
             await click('.tasks-composer-dates > summary')
+            await waitForRenderer(window, "!!document.querySelector('.tasks-date-popover:popover-open')")
+            await click('.tasks-calendar-days button:nth-child(15)')
+            await assert("!!document.querySelector('.tasks-date-popover:popover-open')")
+            await assert("innerWidth <= 640 || document.querySelector('.tasks-date-popover').scrollHeight <= document.querySelector('.tasks-date-popover').clientHeight + 1")
+            await click('[role="combobox"][aria-label="任务提醒"]')
+            await waitForRenderer(window, "!!document.querySelector('.tasks-select-options:popover-open')")
+            await assert("!!document.querySelector('.tasks-date-popover:popover-open')")
+            await run("document.querySelector('[aria-label=\"任务提醒\"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+            await assert("!!document.querySelector('.tasks-date-popover:popover-open') && !document.querySelector('.tasks-select-options:popover-open')")
+            await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+            await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+            writeFileSync(join(directory, `tasks-calendar-${mode}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+            await assert("Array.from(document.querySelectorAll('.tasks-composer input, .tasks-composer textarea')).every(element => getComputedStyle(element).borderTopWidth === '0px')")
+
             await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
             await assert("document.querySelector('.tasks-composer').scrollWidth <= document.querySelector('.tasks-composer').clientWidth + 1")
             await click('[aria-label="关闭任务弹窗"]')
@@ -263,9 +329,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, "document.querySelectorAll('.tasks-list-done > li').length === 50")
   await run("Array.from(document.querySelectorAll('.tasks-main > button')).find(button => button.textContent.includes('加载更多')).click()")
   await waitForRenderer(window, "document.querySelectorAll('.tasks-list-done > li').length === 55")
-  await fill('.tasks-search input', '最早历史目标')
-  await waitForRenderer(window, "document.querySelectorAll('.tasks-list-done > li').length === 1 && document.querySelector('.tasks-list-done').textContent.includes('最早历史目标')")
-  await fill('.tasks-search input', '')
+  await assert("window.electronAPI.tasks.list({ doneQuery: '最早历史目标' }).then(list => list.matchedDone === 1 && list.done[0].title === '最早历史目标')")
   const unplannedId: string = await run("window.electronAPI.tasks.create({ title: '待规划验收任务' }).then(task => task.id)")
   await selectView('unplanned')
   await click('.tasks-tab:first-child')

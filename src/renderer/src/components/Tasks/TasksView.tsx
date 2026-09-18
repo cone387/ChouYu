@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { RemindChoiceId, TaskDueRange, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldUpdateInput, TaskSortMode, TaskView, TaskUpdateInput } from '../../../../shared/tasks'
 import {
-  DUE_RANGE_LABELS, PRIORITY_LABELS, RECURRENCE_LABELS, REMIND_CHOICES, TASK_SORT_LABELS, compareTasks, isUnplanned, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, remindAtFromChoice, sortTasks
+  DUE_RANGE_LABELS, PRIORITY_LABELS, REMIND_CHOICES, TASK_SORT_LABELS, compareTasks, isUnplanned, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, remindAtFromChoice, sortTasks
 } from '../../../../shared/tasks'
 import TasksBoard, { groupTasks, type BoardGroupMode } from './TasksBoard'
-import TaskQuickCreate from './TaskQuickCreate'
+import TaskEditorDialog, { type TaskDraft as Draft } from './TaskEditorDialog'
 import TaskFieldsDialog from './TaskFieldsDialog'
 import TaskCollectionDialog from './TaskCollectionDialog'
 import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
@@ -26,20 +26,6 @@ const SMART_VIEWS: { id: SmartView; label: string }[] = [
 
 const SMART_ICONS: Record<SmartView, IconName> = { today: 'today', week: 'week', overdue: 'clock', unplanned: 'unplanned', all: 'all', done: 'done' }
 
-interface Draft {
-  id: string
-  title: string
-  note: string
-  projectId: string
-  priority: TaskPriority
-  startDate: string
-  startTime: string
-  dueDate: string
-  dueTime: string
-  remind: RemindChoiceId
-  recurrence: TaskRecord['recurrence']
-  customFields: Record<string, string>
-}
 
 const emptyDraft: Draft = { id: '', title: '', note: '', projectId: '', priority: 'medium', startDate: '', startTime: '09:00', dueDate: '', dueTime: '09:00', remind: 'due', recurrence: 'none', customFields: {} }
 
@@ -369,14 +355,6 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     return { ...emptyDraft, projectId, dueDate, priority, title: patch.title ?? '', ...(patch.projectId ? { projectId: patch.projectId } : {}), ...(patch.priority ? { priority: patch.priority } : {}), customFields: Object.fromEntries(Object.entries(patch.customFields ?? {}).filter((entry): entry is [string, string] => entry[1] !== null)) }
   }
   const startCreate = () => { setError(''); setDraft(createDraft()) }
-  const quickCreate = async (title: string, patch: TaskUpdateInput = {}) => {
-    const values = createDraft({ ...patch, title })
-    const dueAt = draftDueAt(values)
-    const saved = await window.electronAPI.tasks.create({ title, projectId: values.projectId || null, priority: values.priority, dueAt, remindAt: remindAtFromChoice(values.remind, dueAt), customFields: values.customFields })
-    setStatusFilter('open')
-    if (!matchesSelection(saved, selection) || !matchesKeywordAndFilter(saved)) { setSelection('all'); setQuery(''); clearFilters() }
-    reload()
-  }
   const removeField = (field: TaskSelectField) => {
     if (groupFieldId === field.id) setGroupFieldId(null)
     void window.electronAPI.tasks.deleteField(field.id).then(reload).catch(reason => setError(String(reason)))
@@ -524,8 +502,8 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
             <details className="tasks-tool-menu tasks-create-options">
               <summary aria-label="新建任务选项" title="新建任务选项"><TaskIcon name="chevron" /></summary>
               <div className="tasks-item-menu-popover">
-                <p className="tasks-tool-title">选择优先级新建</p>
-                {(['high', 'medium', 'low'] as TaskPriority[]).map(priority => <button type="button" key={priority} onClick={e => { startCreate(); setDraft(current => current ? { ...current, priority } : current); e.currentTarget.closest('details')?.removeAttribute('open') }}>{PRIORITY_LABELS[priority]}优先级任务</button>)}
+                <button type="button" onClick={startCreate}><TaskIcon name="task" />新建任务</button>
+                <button type="button" onClick={startNewGroup}><TaskIcon name="folder" />新建分组</button>
               </div>
             </details>
           </div>
@@ -585,11 +563,10 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
             </div>
           </details>
         </div>
-        <div className="tasks-toolbar-group tasks-toolbar-end">
-          <label className="tasks-search"><span className="sr-only">搜索任务</span><TaskIcon name="search" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索任务或备注" />{query && <button type="button" aria-label="清空搜索" onClick={() => setQuery('')}>×</button>}</label>
-        </div>
+
       </div>
 
+      {query && <div className="tasks-search-context">搜索结果：{query}<button type="button" aria-label="清除任务搜索条件" onClick={() => setQuery('')}>清除</button></div>}
       {(selection === 'done' ? doneVisible.length : sorted.length) === 0 && (mode === 'list' || selection === 'done') && !draft && !loading && <div className="tasks-empty">
         <span className="tasks-empty-icon"><TaskIcon name={selection === 'unplanned' ? 'unplanned' : 'task'} /></span>
         {effectiveStatus === 'done'
@@ -606,101 +583,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         onSubmit={groupRenaming ? submitGroupRename : newProject !== null ? submitProject : submitGroup}
         onClose={closeCollectionDialog} />}
 
-      {draft && <div className="tasks-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setDraft(null) }}>
-        <div ref={taskDialogRef} className="tasks-dialog tasks-composer" role="dialog" aria-modal="true" aria-labelledby="tasks-dialog-title" onMouseDown={event => event.stopPropagation()}>
-          <header className="tasks-dialog-header">
-            <h2 id="tasks-dialog-title">{draft.id ? '编辑任务' : '新建任务'}</h2>
-            <button type="button" aria-label="关闭任务弹窗" disabled={busy} onClick={() => setDraft(null)}>×</button>
-          </header>
-          <form className="tasks-form" onSubmit={submitDraft} aria-label={draft.id ? '编辑任务' : '新建任务'}>
-        {error && <p role="alert" className="tasks-error">{error}</p>}
-        <label className="tasks-composer-title">
-          <span className="sr-only">标题</span>
-          <input value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })}
-            onKeyDown={e => { if (e.key === 'Escape' && !busy) setDraft(null) }}
-            autoFocus aria-label="任务标题" placeholder="输入任务标题，回车创建" />
-        </label>
-        <div className="tasks-form-row">
-          <label>
-            清单
-            <select value={draft.projectId} onChange={e => setDraft({ ...draft, projectId: e.target.value })} aria-label="任务清单">
-
-              {projects.filter(project => !project.archivedAt || project.id === draft.projectId).map(project =>
-                <option key={project.id} value={project.id}>{project.name}{project.archivedAt ? '（已归档）' : ''}</option>)}
-            </select>
-          </label>
-          <label>
-            优先级
-            <select value={draft.priority} onChange={e => setDraft({ ...draft, priority: e.target.value as TaskPriority })} aria-label="任务优先级">
-              <option value="high">高</option>
-              <option value="medium">中</option>
-              <option value="low">低</option>
-            </select>
-          </label>
-
-        </div>
-        <div className="tasks-date-shortcuts" role="group" aria-label="快捷截止日期">
-          {[0, 1].map(offset => <button type="button" key={offset} onClick={() => { const day = new Date(); day.setDate(day.getDate() + offset); setDraft({ ...draft, dueDate: toInputDate(day.getTime()) }) }}><TaskIcon name="today" />{offset ? '明天' : '今天'}</button>)}
-          <details className="tasks-composer-dates" open={undefined}>
-            <summary><TaskIcon name="clock" />{draft.dueDate ? `${draft.dueDate} ${draft.dueTime} 截止` : draft.startDate ? `${draft.startDate} 开始` : '其他时间'}<TaskIcon name="chevron" /></summary>
-            <div className="tasks-date-editor">
-        <div className="tasks-form-row">
-          <label>开始日期<input type="date" value={draft.startDate} onChange={e => setDraft({ ...draft, startDate: e.target.value })} aria-label="任务开始日期" /></label>
-          <label>开始时间<input type="time" value={draft.startTime} onChange={e => setDraft({ ...draft, startTime: e.target.value })} aria-label="任务开始时间" disabled={!draft.startDate} /></label>
-        </div>
-        <div className="tasks-form-row">
-          <label>
-            截止日期
-            <input type="date" value={draft.dueDate} onChange={e => setDraft({ ...draft, dueDate: e.target.value, ...(e.target.value ? {} : { recurrence: 'none' as const, remind: 'none' as const }) })} aria-label="任务截止日期" />
-          </label>
-          <label>
-            时间
-            <input type="time" value={draft.dueTime} onChange={e => setDraft({ ...draft, dueTime: e.target.value })} aria-label="任务截止时间" />
-          </label>
-          <label>
-            提醒
-            <select value={draft.remind} onChange={e => setDraft({ ...draft, remind: e.target.value as RemindChoiceId })}
-              disabled={!draft.dueDate} aria-label="任务提醒">
-              {REMIND_CHOICES.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
-            </select>
-          </label>
-        </div>
-        <div className="tasks-form-row">          <label>
-            重复
-            <select value={draft.recurrence} onChange={e => setDraft({ ...draft, recurrence: e.target.value as TaskRecord['recurrence'] })} disabled={!draft.dueDate} aria-label="任务重复规则">
-              {(Object.keys(RECURRENCE_LABELS) as TaskRecord['recurrence'][]).map(id => <option key={id} value={id}>{RECURRENCE_LABELS[id]}</option>)}
-            </select>
-          </label></div>
-              <button type="button" className="tasks-text-button" onClick={() => setDraft({ ...draft, startDate: '', dueDate: '', remind: 'none', recurrence: 'none' })}>清除时间安排</button>
-            </div>
-          </details>
-        </div>
-        <details className="tasks-composer-note" open={draft.note ? true : undefined}>
-          <summary><TaskIcon name="edit" />添加备注</summary>
-        <label>
-          备注
-          <textarea value={draft.note} onChange={e => setDraft({ ...draft, note: e.target.value })}
-            onKeyDown={e => { if (e.key === 'Escape' && !busy) setDraft(null) }}
-            aria-label="任务备注" rows={2} />
-        </label>
-        </details>
-        {fields.length > 0 && <div className="tasks-form-row" role="group" aria-label="自定义字段">
-          {fields.map(field => <label key={field.id}>
-            {field.name}
-            <select value={draft.customFields[field.id] ?? ''} aria-label={`任务 ${field.name}`}
-              onChange={e => setDraft({ ...draft, customFields: { ...draft.customFields, [field.id]: e.target.value } })}>
-              <option value="">未设置</option>
-              {field.options.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
-            </select>
-          </label>)}
-        </div>}
-        <div className="tasks-form-actions">
-          <button type="button" disabled={busy} onClick={() => setDraft(null)}>取消</button>
-          <button type="submit" disabled={busy || !draft.title.trim()}>{busy ? '保存中…' : draft.id ? '保存' : '创建'}</button>
-        </div>
-          </form>
-        </div>
-      </div>}
+      {draft && <TaskEditorDialog draft={draft} projects={projects} fields={fields} busy={busy} error={error} dialogRef={taskDialogRef} onChange={setDraft} onClose={() => { if (!busy) setDraft(null) }} onSubmit={submitDraft} />}
 
       {viewDraft && <div className="tasks-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setViewDraft(null) }}>
         <div className="tasks-dialog" role="dialog" aria-modal="true" aria-labelledby="tasks-view-dialog-title" onMouseDown={event => event.stopPropagation()}>
@@ -764,23 +647,22 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         </li>)}
       </ul>
         : mode === 'board'
-        ? <TasksBoard tasks={sorted} projects={projects} fields={displayFields} groupingFields={fields} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
+        ? <TasksBoard orderScope={selection} tasks={sorted} projects={projects} fields={displayFields} groupingFields={fields} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
             onEdit={task => setDraft(draftFromTask(task))}
             onComplete={complete}
             onReopen={id => void window.electronAPI.tasks.reopen(id).then(reload).catch(reason => setError(String(reason)))}
-            onQuickCreate={(title, patch) => quickCreate(title, patch)}
             onCreate={patch => { setError(''); setDraft(createDraft(patch)) }}
             onMove={(id, patch) => void window.electronAPI.tasks.update(id, patch).then(reload).catch(reason => setError(String(reason)))} />
         : listGrouped
         ? <div className="tasks-grouped-list">{groupTasks(sorted, projects, fields, boardGroupMode, groupFieldId).map(column => <details className="tasks-content-group" key={column.key || 'none'} open>
             <summary><TaskIcon name="chevron" /><span>{column.label}</span><span className="tasks-count">{column.tasks.length}</span></summary>
             <ul role="list" className="tasks-list">{column.tasks.map(renderTask)}</ul>
-            {!column.archived && effectiveStatus !== 'done' && <TaskQuickCreate onCreate={title => quickCreate(title, column.patch)} onDetails={title => { setError(''); setDraft(createDraft({ ...column.patch, title })) }} />}
+            {!column.archived && effectiveStatus !== 'done' && <button type="button" className="tasks-board-add" onClick={() => { setError(''); setDraft(createDraft(column.patch)) }}><TaskIcon name="plus" />新建任务</button>}
           </details>)}</div>
         : <ul role="list" className="tasks-list">
         {sorted.map(renderTask)}
       </ul>}
-      {selection !== 'done' && mode === 'list' && !listGrouped && effectiveStatus !== 'done' && <TaskQuickCreate onCreate={title => quickCreate(title)} onDetails={title => { setError(''); setDraft(createDraft({ title })) }} />}
+      {selection !== 'done' && mode === 'list' && !listGrouped && effectiveStatus !== 'done' && <button type="button" className="tasks-board-add" onClick={startCreate}><TaskIcon name="plus" />新建任务</button>}
       {effectiveStatus !== 'open' && doneTasks.length < matchedDone && <button className="tasks-load-more" type="button" disabled={loading} onClick={() => setDoneLimit(limit => limit + 50)}>加载更多（已加载 {doneTasks.length} / {matchedDone}）</button>}
     </section>
   </div>

@@ -540,15 +540,6 @@
   .tasks-column-add { opacity: 1; }
 }
 
-.tasks-quick-create { margin: 4px 0; padding: 10px; border: 1px solid var(--tasks-active); background: var(--bg-primary); border-radius: 7px; }
-.tasks-quick-create > input { width: 100%; box-sizing: border-box; padding: 6px 2px; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; }
-.tasks-quick-create > div { display: flex; align-items: center; gap: 5px; padding-top: 10px; }
-.tasks-quick-create > div > span { flex: 1; }
-.tasks-quick-create button { border: 0; background: transparent; color: var(--text-secondary); font-size: 12px; padding: 5px 7px; border-radius: 4px; cursor: pointer; }
-.tasks-quick-create button:hover { background: var(--hover-bg); }
-.tasks-quick-create button[type=submit] { background: var(--tasks-selected-bg); color: var(--tasks-active); }
-.tasks-quick-create button:disabled { opacity: .45; cursor: not-allowed; }
-
 .tasks-content-group { padding: 8px 0; }
 .tasks-content-group > summary { display: flex; align-items: center; gap: 8px; padding: 8px 4px; list-style: none; color: var(--text-secondary); font-size: 13px; cursor: pointer; }
 .tasks-content-group > summary::-webkit-details-marker { display: none; }
@@ -573,3 +564,104 @@
 }
 
 .tasks-composer .tasks-composer-title input::placeholder { color: var(--text-muted); font-weight: 400; opacity: 1; }
+
+/* One shared editor for creation and editing from every task entry point. */
+.tasks-composer { width: min(640px, 100%); border-radius: 12px; overflow: auto; }
+.tasks-composer .tasks-dialog-header { padding: 18px 24px 8px; }
+.tasks-composer .tasks-dialog-header h2 { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; }
+.tasks-composer .tasks-dialog-header h2 svg { color: var(--tasks-active); }
+.tasks-composer .tasks-form { min-height: 380px; gap: 18px; padding: 8px 24px 0; }
+.tasks-composer .tasks-composer-title input { font-size: 22px; line-height: 1.5; padding: 4px 0 12px; }
+.tasks-composer-properties { display: grid; gap: 4px; }
+.tasks-composer-properties > :is(label, .tasks-select-field) { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 14px; min-height: 38px; }
+.tasks-composer-properties > :is(label, .tasks-select-field) > span { color: var(--text-muted); font-size: 13px; }
+.tasks-composer-properties select { min-width: 0; width: 100%; border-color: transparent; background: transparent; padding: 8px; border-radius: 5px; }
+.tasks-composer-properties select:hover, .tasks-composer-properties select:focus { border-color: var(--border); background: var(--bg-secondary); }
+.tasks-composer-description { gap: 10px !important; }
+.tasks-composer-description > span { display: flex; align-items: center; gap: 7px; color: var(--text-muted); font-size: 13px; }
+.tasks-composer-description textarea { resize: vertical; min-height: 100px; line-height: 1.7; border-color: transparent; background: var(--bg-secondary); border-radius: 7px; padding: 12px; }
+.tasks-composer-description textarea::placeholder { color: var(--text-muted); }
+.tasks-composer .tasks-form-actions { position: sticky; bottom: 0; margin: 0 -24px; padding: 16px 24px; border-top: 1px solid var(--border); background: var(--bg-primary); align-items: center; z-index: 1; }
+.tasks-composer-hint { flex: 1; font-size: 11px; color: var(--text-muted); }
+.tasks-composer .tasks-form-actions button { min-width: 68px; border-radius: 6px; }
+@media (max-width: 640px) {
+  .tasks-composer .tasks-form { padding: 8px 16px 0; }
+  .tasks-composer .tasks-form-actions { margin: 0 -16px; padding: 14px 16px; }
+  .tasks-composer-properties > :is(label, .tasks-select-field) { grid-template-columns: 70px minmax(0, 1fr); gap: 8px; }
+  .tasks-composer .tasks-composer-title input { font-size: 20px; }
+  .tasks-composer-hint { display: none; }
+}
+
+/* Editor controls follow application surfaces without colored focus borders. */
+.tasks-composer .tasks-form :is(input, textarea, select),
+.tasks-composer .tasks-form :is(input, textarea, select):is(:hover, :focus, :focus-visible) { border-color: transparent; outline: none; box-shadow: none; }
+.tasks-composer .tasks-form input:focus, .tasks-composer .tasks-form textarea:focus { background: var(--bg-secondary); }
+.tasks-composer .tasks-select { min-width: 0; width: 100%; }
+.tasks-composer .tasks-select > summary { display: flex; justify-content: space-between; gap: 10px; width: 100%; min-height: 34px; box-sizing: border-box; padding: 8px; border: 0; border-radius: 5px; background: transparent; color: var(--text-primary); font-size: 13px; }
+.tasks-composer .tasks-select > summary > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tasks-composer .tasks-select > summary:is(:hover, :focus-visible), .tasks-composer .tasks-select[open] > summary { background: var(--hover-bg); outline: none; box-shadow: none; }
+.tasks-composer .tasks-select > summary[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.tasks-select-options { padding: 5px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 8px 28px color-mix(in srgb, var(--text-primary) 14%, transparent); }
+.tasks-composer .tasks-select-options > button { display: flex; justify-content: space-between; align-items: center; gap: 20px; min-height: 34px; width: 100%; max-width: 320px; border: 0; padding: 7px 10px; border-radius: 4px; font: inherit; font-size: 13px; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
+.tasks-composer .tasks-select-options > button:is(:hover, :focus-visible) { background: var(--hover-bg); outline: none; box-shadow: none; }
+.tasks-composer .tasks-select-options > button[aria-selected="true"] { background: var(--tasks-selected-bg); color: var(--tasks-active); }
+.tasks-search-context { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 12px; color: var(--text-muted); }
+.tasks-search-context button { border: 0; background: transparent; color: var(--tasks-active); cursor: pointer; }
+
+.tasks-form-row > .tasks-select-field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 120px; font-size: 12px; color: var(--text-secondary); }
+
+/* Borderless task properties, including focused date/time controls. */
+.tasks-composer .tasks-form :is(input, textarea, select),
+.tasks-composer .tasks-form :is(input, textarea, select):is(:hover, :focus, :focus-visible, :active) {
+  border: 0 !important; outline: 0 !important; box-shadow: none !important;
+}
+.tasks-composer .tasks-composer-title input:focus { background: transparent; }
+.tasks-composer .tasks-select { width: fit-content; max-width: 100%; justify-self: start; }
+.tasks-composer .tasks-select > summary { width: auto; max-width: 100%; justify-content: flex-start; gap: 8px; }
+.tasks-priority-options { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.tasks-composer .tasks-priority-options > button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 0; border-radius: 5px; background: transparent; color: var(--text-secondary); font-size: 13px; cursor: pointer; }
+.tasks-priority-options button > span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+.tasks-priority-options button[data-priority="high"] > span { background: var(--error); }
+.tasks-priority-options button[data-priority="medium"] > span { background: var(--tasks-active); }
+.tasks-composer .tasks-priority-options button:hover { background: var(--hover-bg); }
+.tasks-composer .tasks-priority-options button[aria-pressed="true"] { background: var(--tasks-selected-bg); color: var(--tasks-active); }
+.tasks-composer .tasks-priority-options button:focus-visible { outline: none; box-shadow: none; background: var(--hover-bg); }
+.tasks-composer .tasks-composer-dates[open] { flex-basis: auto; }
+.tasks-composer .tasks-composer-dates > summary { display: flex; gap: 6px; border: 0; background: transparent; font-size: 13px; padding: 7px 8px; max-width: 100%; }
+.tasks-composer-dates > summary > span { white-space: normal; overflow-wrap: anywhere; }
+.tasks-composer .tasks-composer-dates[open] > summary { background: var(--hover-bg); }
+.tasks-composer .tasks-date-popover { width: min(320px, calc(100vw - 40px)) !important; padding: 14px; gap: 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-primary); color: var(--text-primary); }
+.tasks-calendar-header { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.tasks-calendar-header > span { flex: 1; }
+.tasks-composer .tasks-date-popover button { min-height: 28px; border: 0; border-radius: 5px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 12px; padding: 4px 6px; cursor: pointer; }
+.tasks-composer .tasks-date-popover button:hover, .tasks-composer .tasks-date-popover button:focus-visible { background: var(--hover-bg); outline: 0; box-shadow: none; }
+.tasks-composer .tasks-calendar-header button { width: 28px; font-size: 20px; text-align: center; }
+.tasks-calendar-week, .tasks-calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.tasks-calendar-week { text-align: center; font-size: 11px; color: var(--text-muted); }
+.tasks-composer .tasks-calendar-days > button { display: grid; place-items: center; width: 100%; min-height: 30px; padding: 0; font-size: 12px; }
+.tasks-composer .tasks-calendar-days > button[data-outside] { opacity: .4; }
+.tasks-composer .tasks-calendar-days > button[aria-current="date"] { color: var(--tasks-active); font-weight: 600; }
+.tasks-composer .tasks-calendar-days > button[aria-pressed="true"] { background: var(--tasks-active); color: var(--bg-primary); opacity: 1; }
+.tasks-calendar-date-row { display: grid; grid-template-columns: minmax(0, 1fr) 88px; align-items: center; gap: 4px; padding: 5px; border-radius: 6px; background: var(--bg-secondary); }
+.tasks-calendar-date-row[data-active] { background: var(--hover-bg); }
+.tasks-composer .tasks-calendar-date-row label { display: flex; flex-direction: row; align-items: center; gap: 3px; font-size: 11px; white-space: nowrap; }
+.tasks-composer .tasks-calendar-date-row input { min-width: 0; width: 100%; box-sizing: border-box; padding: 5px 2px; background: transparent; font-size: 11px; }
+.tasks-calendar-setting { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.tasks-calendar-setting .tasks-select { max-width: 220px; }
+.tasks-calendar-footer { display: flex; justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--border); }
+.tasks-composer .tasks-calendar-footer > button:last-child { color: var(--tasks-active); }
+
+.tasks-date-popover::-webkit-scrollbar { width: 5px; }
+.tasks-date-popover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-muted) 25%, transparent); border-radius: 6px; }
+.tasks-date-popover::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
+.tasks-board-column { position: relative; }
+.tasks-column-drag-handle { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 4px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: grab; }
+.tasks-column-drag-handle > span:not(.tasks-count) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tasks-column-drag-handle > svg { color: var(--text-muted); opacity: 0; }
+.tasks-board-column:hover .tasks-column-drag-handle > svg, .tasks-column-drag-handle:focus-visible > svg { opacity: 1; }
+.tasks-column-drag-handle:active { cursor: grabbing; }
+.tasks-board-column[data-column-dragging] { opacity: .45; }
+.tasks-board-column[data-column-insert]::after { content: ''; position: absolute; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--tasks-active); pointer-events: none; }
+.tasks-board-column[data-column-insert="before"]::after { left: -6px; }
+.tasks-board-column[data-column-insert="after"]::after { right: -6px; }

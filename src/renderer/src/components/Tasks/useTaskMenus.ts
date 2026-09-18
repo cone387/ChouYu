@@ -12,6 +12,11 @@ export default function useTaskMenus(active: boolean) {
     const openMenus = () => Array.from(root.querySelectorAll<HTMLDetailsElement>(MENU_SELECTOR)).filter(menu => menu.open)
     const popupFor = (menu: HTMLDetailsElement) => menu.querySelector<HTMLElement>(':scope > .tasks-item-menu-popover')
     const closeMenu = (menu: HTMLDetailsElement) => {
+      for (const child of Array.from(menu.querySelectorAll<HTMLDetailsElement>(MENU_SELECTOR)).reverse()) {
+        const childPopup = popupFor(child)
+        if (childPopup?.matches(':popover-open')) childPopup.hidePopover()
+        child.open = false
+      }
       const popup = popupFor(menu)
       if (popup?.matches(':popover-open')) popup.hidePopover()
       menu.open = false
@@ -21,7 +26,7 @@ export default function useTaskMenus(active: boolean) {
       const trigger = menu.querySelector<HTMLElement>(':scope > summary')
       if (!popup || !trigger || !menu.open) return
       const anchor = trigger.getBoundingClientRect()
-      const panel = root.getBoundingClientRect()
+      const panel = (menu.closest('.tasks-composer') ?? root).getBoundingClientRect()
       const margin = 8, gap = 5
       const leftEdge = Math.max(0, panel.left) + margin
       const rightEdge = Math.min(window.innerWidth, panel.right) - margin
@@ -37,6 +42,12 @@ export default function useTaskMenus(active: boolean) {
       popup.setAttribute('popover', 'manual')
       if (!popup.matches(':popover-open')) popup.showPopover()
       const size = popup.getBoundingClientRect()
+      // Calendars can overlap their trigger so the month and time settings stay visible together.
+      if (menu.matches('.tasks-composer-dates')) {
+        popup.style.left = `${Math.max(leftEdge, Math.min(anchor.left, rightEdge - size.width))}px`
+        popup.style.top = `${Math.max(topEdge, Math.min(anchor.bottom + gap, bottomEdge - size.height))}px`
+        return
+      }
       const below = Math.max(0, bottomEdge - anchor.bottom - gap)
       const above = Math.max(0, anchor.top - topEdge - gap)
       const upwards = size.height > below && above > below
@@ -44,7 +55,7 @@ export default function useTaskMenus(active: boolean) {
       // When the anchor itself is at an edge, use the available panel height.
       const height = Math.min(size.height, available || maxHeight)
       popup.style.maxHeight = `${available || maxHeight}px`
-      const alignLeft = menu.matches('.tasks-create-options, .tasks-heading-menu') || Boolean(menu.closest('.tasks-toolbar'))
+      const alignLeft = menu.matches('.tasks-create-options, .tasks-heading-menu, .tasks-composer-dates, .tasks-select') || Boolean(menu.closest('.tasks-toolbar'))
       const desiredLeft = alignLeft ? anchor.left : anchor.right - size.width
       const desiredTop = upwards ? anchor.top - gap - height : anchor.bottom + gap
       popup.style.left = `${Math.max(leftEdge, Math.min(desiredLeft, rightEdge - size.width))}px`
@@ -60,24 +71,24 @@ export default function useTaskMenus(active: boolean) {
       const button = event.target.closest('button')
       const menu = button?.closest<HTMLDetailsElement>(MENU_SELECTOR)
       // Checkbox/select changes remain open so users can adjust several filters.
-      if (button && !button.disabled && menu && root.contains(menu)) closeMenu(menu)
+      if (button && !button.disabled && !button.hasAttribute('data-menu-keep-open') && menu && root.contains(menu)) closeMenu(menu)
     }
     const onToggle = (event: Event) => {
       const menu = event.target
       if (!(menu instanceof HTMLDetailsElement) || !menu.matches(MENU_SELECTOR)) return
       if (!menu.open) { closeMenu(menu); return }
-      for (const other of openMenus()) if (other !== menu) closeMenu(other)
+      for (const other of openMenus()) if (other !== menu && !other.contains(menu)) closeMenu(other)
       positionMenu(menu)
     }
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       const menus = openMenus()
       if (!menus.length) return
-      const focusedMenu = menus.find(menu => menu.contains(document.activeElement)) ?? menus[menus.length - 1]
-      for (const menu of menus) closeMenu(menu)
+      const focusedMenu = [...menus].reverse().find(menu => menu.contains(document.activeElement)) ?? menus[menus.length - 1]
+      closeMenu(focusedMenu)
       focusedMenu.querySelector<HTMLElement>(':scope > summary')?.focus()
       event.preventDefault()
-      event.stopPropagation()
+      event.stopImmediatePropagation()
     }
     const closeAll = () => { for (const menu of openMenus()) closeMenu(menu) }
     const onScroll = (event: Event) => {
