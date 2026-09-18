@@ -695,3 +695,10 @@
 @media (max-width: 640px) {
   .tasks-toolbar .tasks-field-popover { left: 0; right: auto; width: 240px; }
 }
+
+.tasks-board-card[data-card-insert]::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--tasks-active); box-shadow: 0 0 0 2px var(--tasks-selected-bg); pointer-events: none; }
+.tasks-board-card[data-card-insert='before']::after { top: -6px; }
+.tasks-board-card[data-card-insert='after']::after { bottom: -6px; }
+.tasks-card-drop-slot { display: grid; place-items: center; min-height: 56px; border: 1px dashed var(--tasks-active); border-radius: var(--radius-md); background: var(--tasks-selected-bg); color: var(--tasks-active); font-size: var(--font-sm); pointer-events: none; }
+.tasks-board-card[data-saving] { opacity: .55; cursor: progress; }
+.tasks-board-card:focus-visible { outline: 2px solid var(--tasks-active); outline-offset: 2px; }

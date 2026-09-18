@@ -221,14 +221,16 @@ export function compareTasks(a: TaskRecord, b: TaskRecord, now: number): number 
   return b.createdAt - a.createdAt
 }
 
-export type TaskSortMode = 'smart' | 'due' | 'start' | 'updated' | 'priority' | 'created' | 'title'
+export type TaskSortMode = 'manual' | 'smart' | 'due' | 'start' | 'updated' | 'priority' | 'created' | 'title'
 export const TASK_SORT_LABELS: Record<TaskSortMode, string> = {
-  smart: '智能排序', start: '按开始时间', updated: '按更新时间', due: '按截止时间', priority: '按优先级', created: '按创建时间', title: '按标题'
+  manual: '手动排序', smart: '智能排序', start: '按开始时间', updated: '按更新时间', due: '按截止时间', priority: '按优先级', created: '按创建时间', title: '按标题'
 }
 
 export function sortTasks(tasks: TaskRecord[], mode: TaskSortMode, now: number): TaskRecord[] {
   const copy = [...tasks]
   switch (mode) {
+    case 'manual':
+      break
     case 'due':
       copy.sort((a, b) => {
         if (a.dueAt === b.dueAt) return compareTasks(a, b, now)

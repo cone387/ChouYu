@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { TaskSelectField, TaskSelectFieldUpdateInput } from '../../../../shared/tasks'
 
+import { useConfirm } from '../common/ConfirmProvider'
+
 interface TaskFieldsDialogProps {
   fields: TaskSelectField[]
   busy: boolean
@@ -14,6 +16,7 @@ const parseOptions = (text: string): string[] =>
   text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
 
 export default function TaskFieldsDialog({ fields, busy, error, onSave, onDelete, onClose }: TaskFieldsDialogProps) {
+  const confirm = useConfirm()
   const [rows, setRows] = useState(() => fields.map(field => ({ id: field.id, name: field.name, options: field.options.map(option => ({ ...option })) })))
   const [creating, setCreating] = useState<{ name: string; options: string } | null>(null)
   // 保存/删除后 fields 属性刷新:已编辑行保留草稿,新字段补入,被删字段移除
@@ -26,13 +29,14 @@ export default function TaskFieldsDialog({ fields, busy, error, onSave, onDelete
 
   const submitRow = (event: FormEvent, id: string) => {
     event.preventDefault()
+    if (busy) return
     const row = rows.find(item => item.id === id)
     if (!row) return
     void onSave(id, { name: row.name, options: row.options.map(option => ({ ...(option.id.startsWith('new:') ? {} : { id: option.id }), name: option.name })) }).then(saved => setRows(current => current.map(item => item.id === id ? { id: saved.id, name: saved.name, options: saved.options.map(option => ({ ...option })) } : item))).catch(() => {})
   }
   const submitCreate = (event: FormEvent) => {
     event.preventDefault()
-    if (!creating) return
+    if (!creating || busy) return
     const name = creating.name.trim()
     if (!name) return
     void onSave(null, { name, options: parseOptions(creating.options) }).then(() => setCreating(null)).catch(() => {})
@@ -59,20 +63,20 @@ export default function TaskFieldsDialog({ fields, busy, error, onSave, onDelete
               {row.options.map((option, index) => <div className="tasks-field-option" key={option.id}>
                 <input disabled={busy} value={option.name} aria-label={`${row.name} 选项 ${index + 1}`}
                   onChange={event => setRows(rows.map(item => item.id === row.id ? { ...item, options: item.options.map(value => value.id === option.id ? { ...value, name: event.target.value } : value) } : item))} />
-                <button type="button" disabled={busy} aria-label={`删除选项 ${option.name}`} onClick={() => {
+                <button type="button" disabled={busy} aria-label={`删除选项 ${option.name}`} onClick={async () => {
                   const saved = fields.find(field => field.id === row.id)?.options.some(value => value.id === option.id)
-                  if (saved && !window.confirm(`删除选项「${option.name}」？保存后，使用该选项的任务将变为未设置。`)) return
+                  if (saved && !await confirm({ title: '删除字段选项', message: `删除选项「${option.name}」？保存后，使用该选项的任务将变为未设置。` })) return
                   setRows(rows.map(item => item.id === row.id ? { ...item, options: item.options.filter(value => value.id !== option.id) } : item))
                 }}>删除</button>
               </div>)}
               <button type="button" disabled={busy || row.options.length >= 30} onClick={() => setRows(rows.map(item => item.id === row.id ? { ...item, options: [...item.options, { id: `new:${crypto.randomUUID()}`, name: '' }] } : item))}>添加选项 +</button>
             </div>
             <div className="tasks-form-actions">
-              <button type="submit" disabled={busy || !row.name.trim()}>保存</button>
+              <button type="submit" disabled={busy || !row.name.trim()}>{busy ? '保存中…' : '保存'}</button>
               <button type="button" className="tasks-item-menu-danger" disabled={busy}
-                onClick={() => {
+                onClick={async () => {
                   const target = fields.find(field => field.id === row.id)
-                  if (target && window.confirm(`删除字段「${row.name}」？任务上的对应值会被清除。`)) onDelete(target)
+                  if (target && await confirm({ title: '删除字段', message: `删除字段「${row.name}」？任务上的对应值会被清除。` })) onDelete(target)
                 }}>删除</button>
             </div>
           </form>
@@ -91,7 +95,7 @@ export default function TaskFieldsDialog({ fields, busy, error, onSave, onDelete
                 onChange={event => setCreating({ ...creating, options: event.target.value })} />
             </label>
             <div className="tasks-form-actions">
-              <button type="submit" disabled={busy || !creating.name.trim()}>创建</button>
+              <button type="submit" disabled={busy || !creating.name.trim()}>{busy ? '创建中…' : '创建'}</button>
               <button type="button" onClick={() => setCreating(null)}>取消</button>
             </div>
           </form>}

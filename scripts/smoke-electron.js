@@ -23,11 +23,14 @@ fs.writeFileSync(legacyStorePath, JSON.stringify({
   ],
   state: {}
 }), 'utf8')
+const nativeCapture = process.argv.includes('--native-capture')
 const env = {
   ...process.env,
   CHOUYU_SMOKE_TEST: '1',
+  CHOUYU_SMOKE_CAPTURE_ONLY: nativeCapture ? '1' : '0',
   CHOUYU_SMOKE_USER_DATA: smokeUserData
 }
+console.log(nativeCapture ? 'Smoke mode: native capture (requires interactive desktop and recording permission).' : 'Smoke mode: UI/data regression with synthetic capture; native capture is tested separately.')
 if (process.argv.includes('--ocr')) env.CHOUYU_SMOKE_OCR_FIXTURE = path.resolve(__dirname, '../tests/fixtures/ocr-sample.png')
 delete env.ELECTRON_RUN_AS_NODE
 

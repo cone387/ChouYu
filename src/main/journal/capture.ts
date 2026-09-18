@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, session, type DesktopCapturerSource } from 'electron'
+import { app, BrowserWindow, desktopCapturer, session, systemPreferences, type DesktopCapturerSource } from 'electron'
 import { createHash } from 'crypto'
 import { join } from 'path'
 
@@ -50,7 +50,16 @@ export async function captureJournalWindow(hwnd: string) {
     timer = setTimeout(stopJournalCapture, 8000)
   })
   const acquisition = (async () => {
-    const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: false })
+    let sources: DesktopCapturerSource[]
+    try {
+      sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: false })
+    } catch (reason) {
+      const status = process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : null
+      const hint = status && status !== 'granted'
+        ? `请在系统设置的隐私与安全性中允许当前应用录屏并重启（权限状态：${status}）。`
+        : '请确认桌面会话可用、窗口仍打开，再重试。'
+      throw new Error(`无法获取窗口画面源。${hint}活动记录仍会继续。原始错误：${reason instanceof Error ? reason.message : String(reason)}`)
+    }
     if (cancelled) throw new Error('画面采集已取消。')
     const source = sources.find(item => item.id.split(':')[1] === hwnd)
     if (!source) throw new Error('当前窗口无法采集画面，活动记录仍会继续。')

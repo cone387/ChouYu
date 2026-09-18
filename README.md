@@ -52,9 +52,14 @@ npm test
 npm run test:memory-eval
 npm run test:smoke
 
+# 真实窗口采集验收（需要交互桌面；macOS 需要录屏权限）
+npm run test:smoke:capture
+
 # 打包 Windows 安装包
 npm run package:win
 ```
+
+普通冒烟测试使用隔离测试窗口的合成画面，覆盖界面、存储、OCR 索引和活动记录流程，不依赖录屏权限。`test:smoke:capture` 单独检查真实窗口采集、连续采集和资源释放；权限不足时会明确失败并提示处理方法。原有 `CHOUYU_SMOKE_SYNTHETIC_CAPTURE` 环境变量不再需要。
 
 ## 使用
 

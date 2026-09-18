@@ -27,6 +27,8 @@ import { runJournalPlaybookSmoke } from './smoke/journal-playbook-smoke'
 import { runStorageRuntimeSmoke } from './smoke/storage-smoke'
 import { runContactsSmoke } from './smoke/contacts-smoke'
 import { runChatRuntimeSmoke } from './smoke/chat-smoke'
+import { runProviderProfilesUISmoke } from './smoke/provider-profiles-ui-smoke'
+import { runNativeCaptureSmoke } from './smoke/native-capture-smoke'
 import { runJournalSmoke } from './smoke/journal-smoke'
 
 let mainWindow: BrowserWindow | null = null
@@ -87,11 +89,16 @@ function createWindow(): void {
   if (isSmokeTest) {
     mainWindow.webContents.once('did-finish-load', async () => {
       try {
-        await runStorageRuntimeSmoke(mainWindow!)
-        await runContactsSmoke(mainWindow!)
-        await runTasksUISmoke(mainWindow!)
-        await runChatRuntimeSmoke(mainWindow!)
-        await runJournalSmoke(mainWindow!)
+        if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
+          await runNativeCaptureSmoke()
+        } else {
+          await runStorageRuntimeSmoke(mainWindow!)
+          await runContactsSmoke(mainWindow!)
+          await runTasksUISmoke(mainWindow!)
+          await runProviderProfilesUISmoke(mainWindow!)
+          await runChatRuntimeSmoke(mainWindow!)
+          await runJournalSmoke(mainWindow!)
+        }
         console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
         setTimeout(() => app.quit(), 300)
       } catch (error) {
@@ -148,7 +155,7 @@ app.whenReady().then(async () => {
   initDatabase()
   registerBuiltInCapabilities()
   initializeMemory()
-  if (isSmokeTest) {
+  if (isSmokeTest && process.env.CHOUYU_SMOKE_CAPTURE_ONLY !== '1') {
     try {
       const capabilityCatalog = capabilityRegistry.list(getConfig())
       const activeMemoryEngines = capabilityCatalog.filter((item) => item.kind === 'memory-engine' && item.active)

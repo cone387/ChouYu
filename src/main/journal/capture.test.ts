@@ -4,6 +4,7 @@ const mock = vi.hoisted(() => ({ sources: vi.fn(), windows: [] as any[], permiss
 vi.mock('electron', () => ({
   app: { isPackaged: false, getAppPath: () => '/test' },
   desktopCapturer: { getSources: mock.sources },
+  systemPreferences: { getMediaAccessStatus: () => 'denied' },
   session: { fromPartition: () => ({
     setPermissionCheckHandler: (handler: any) => { mock.permission.check = handler },
     setPermissionRequestHandler: (handler: any) => { mock.permission.request = handler },
@@ -39,6 +40,12 @@ describe('single-window journal capture', () => {
     expect((await captureJournalWindow('123')).bytes.length).toBe(3)
     expect(mock.sources).toHaveBeenCalledWith({ types: ['window'], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: false })
     expect(mock.windows[0].options).toMatchObject({ show: false, webPreferences: { sandbox: true, nodeIntegration: false } })
+  })
+  it('explains enumeration failures and allows retry without capturing another source', async () => {
+    mock.sources.mockRejectedValueOnce(new Error('Failed to get sources.'))
+    await expect(captureJournalWindow('123')).rejects.toThrow('无法获取窗口画面源')
+    expect(mock.execute).not.toHaveBeenCalled()
+    await expect(captureJournalWindow('123')).resolves.toHaveProperty('width', 640)
   })
   it('does not capture a different window when the requested HWND is missing', async () => {
     await expect(captureJournalWindow('999')).rejects.toThrow('无法采集')

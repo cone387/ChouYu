@@ -5,7 +5,7 @@ import { waitForRenderer } from './storage-smoke'
 
 /** 通过真实 IPC 和 React 表单验证任务上下文、字段关联、归档和历史搜索。 */
 export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
-  const run = (source: string) => window.webContents.executeJavaScript(source)
+  const run = (source: string) => window.webContents.executeJavaScript(source).catch(error => { throw new Error(`Tasks UI script failed: ${source.slice(0, 500)} — ${String(error)}`) })
   const click = (selector: string) => run(`(() => {
     const element = document.querySelector(${JSON.stringify(selector)});
     if (!element || element.disabled) throw new Error('Missing control: ' + ${JSON.stringify(selector)});
@@ -97,6 +97,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert("document.querySelector('.tasks-collection-dialog')?.textContent.includes('新建分组')")
   await click('[aria-label="关闭清单分组弹窗"]')
 
+  await selectView('today')
   await click('.tasks-create')
   await assert("document.querySelector('[aria-label=\"任务截止日期\"]').value === new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0')")
   await click('[aria-label="关闭任务弹窗"]')
@@ -179,6 +180,13 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await dragColumn('high', 'medium', false)
   await assert("Array.from(document.querySelectorAll('.tasks-board-column')).map(item => item.dataset.columnKey).join(',') === 'high,medium,low'")
   await run("document.querySelector('.tasks-board').scrollLeft = 0")
+  // Preview reorders before drop; cancelling restores the saved order.
+  await run("window.__columnSmokeDrag = new DataTransfer(); document.querySelector('[data-column-key=high] .tasks-column-drag-handle').dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__columnSmokeDrag }))")
+  await run("(() => { const target = document.querySelector('[data-column-key=low]'); const rect = target.getBoundingClientRect(); target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: rect.right - 4, dataTransfer: window.__columnSmokeDrag })) })()")
+  await assert("Array.from(document.querySelectorAll('.tasks-board > .tasks-board-column:not(.tasks-drag-preview)')).map(item => item.dataset.columnKey).join(',') === 'medium,low,high'")
+  await run("document.querySelector('[data-column-key=high] .tasks-column-drag-handle').dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__columnSmokeDrag })); delete window.__columnSmokeDrag")
+  await assert("Array.from(document.querySelectorAll('.tasks-board-column')).map(item => item.dataset.columnKey).join(',') === 'high,medium,low'")
+
 
   await click('.tasks-board-column:first-child .tasks-column-add')
   await assert("document.querySelector('.tasks-composer')?.getAttribute('aria-modal') === 'true'")
@@ -224,6 +232,57 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert("!document.querySelector('.tasks-list')?.textContent.includes('测试阶段：进行中')")
   await click('[aria-label="字段配置"]')
   await click('[role="switch"][aria-label="显示测试阶段"]')
+  await click('.tasks-page-heading h1')
+  // Per-project preferences survive navigation; another view keeps its defaults.
+  await click('[aria-label="字段配置"]')
+  await click('[role="switch"][aria-label="显示截止时间"]')
+  await click('.tasks-page-heading h1')
+  await click('.tasks-tab:nth-child(2)')
+  await selectView('all')
+  await assert("!!document.querySelector('.tasks-list') && !document.querySelector('.tasks-main[data-hide-due]')")
+  await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
+  await assert("!!document.querySelector('.tasks-board') && !!document.querySelector('.tasks-main[data-hide-due]')")
+  // Drag cards within one column, preview the insertion point, then commit.
+  const manualIds: string[] = await run(`Promise.all(['手动排序甲', '手动排序乙'].map(title => window.electronAPI.tasks.create({ title, priority: 'high', projectId: ${JSON.stringify(projectId)} }))).then(tasks => tasks.map(task => task.id))`)
+  await selectView('all')
+  await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
+  await waitForRenderer(window, `!!document.querySelector('[data-task-id="${manualIds[1]}"]')`)
+  await run(`(() => {
+    window.__taskSmokeDrag = new DataTransfer();
+    document.querySelector('[data-task-id="${manualIds[1]}"]').dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__taskSmokeDrag }));
+  })()`)
+  await run(`(() => {
+    const target = document.querySelector('[data-task-id="${manualIds[0]}"]');
+    const rect = target.getBoundingClientRect();
+    target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: window.__taskSmokeDrag, clientY: rect.top + 1 }));
+  })()`)
+  await assert(`document.querySelector('[data-task-id="${manualIds[0]}"]').dataset.cardInsert === 'before'`)
+  await run(`document.querySelector('[data-task-id="${manualIds[0]}"]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: window.__taskSmokeDrag })); delete window.__taskSmokeDrag`)
+  await waitForRenderer(window, "document.querySelector('[aria-label=排序方式]').textContent.includes('手动排序')")
+  await assert(`(() => { const ids = Array.from(document.querySelectorAll('[data-column-key="high"] [data-task-id]')).map(item => item.dataset.taskId); return ids.indexOf('${manualIds[1]}') < ids.indexOf('${manualIds[0]}') })()`)
+  await assert(`JSON.parse(localStorage.getItem('chouyu:task-view-preferences:v1'))['project:${projectId}'].taskOrder.indexOf('${manualIds[1]}') < JSON.parse(localStorage.getItem('chouyu:task-view-preferences:v1'))['project:${projectId}'].taskOrder.indexOf('${manualIds[0]}')`)
+  // Moving to another column updates the grouping field and the insertion order.
+  await run(`window.__taskSmokeDrag = new DataTransfer(); document.querySelector('[data-task-id="${manualIds[1]}"]').dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__taskSmokeDrag }))`)
+  const mediumTarget: string = await run("document.querySelector('[data-column-key=medium] [data-task-id]').dataset.taskId")
+  await run(`(() => { const target = document.querySelector('[data-task-id="${mediumTarget}"]'); const rect = target.getBoundingClientRect(); target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientY: rect.top + 1, dataTransfer: window.__taskSmokeDrag })) })()`)
+  await run(`document.querySelector('[data-task-id="${mediumTarget}"]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: window.__taskSmokeDrag })); delete window.__taskSmokeDrag`)
+  await waitForRenderer(window, `document.querySelector('[data-column-key=medium] [data-task-id]')?.dataset.taskId === '${manualIds[1]}'`)
+  await assert(`window.electronAPI.tasks.list().then(list => list.open.find(task => task.id === '${manualIds[1]}').priority === 'medium')`)
+  await click('.tasks-tab:first-child')
+  await run(`Array.from(document.querySelectorAll('.tasks-item')).find(item => item.textContent.includes('手动排序甲')).querySelector('summary').click()`)
+  await click('.tasks-item-menu[open] .tasks-item-menu-danger')
+  await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
+  await assert("document.activeElement.textContent === '取消'")
+  await click('.app-confirm-dialog button:first-child')
+  await assert(`window.electronAPI.tasks.list().then(list => list.open.some(task => task.id === '${manualIds[0]}'))`)
+  await run(`Array.from(document.querySelectorAll('.tasks-item')).find(item => item.textContent.includes('手动排序甲')).querySelector('summary').click()`)
+  await click('.tasks-item-menu[open] .tasks-item-menu-danger')
+  await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
+  await click('.app-confirm-dialog .app-button-danger')
+  await waitForRenderer(window, "!document.querySelector('.tasks-list').textContent.includes('手动排序甲')")
+  await run(`window.electronAPI.tasks.remove('${manualIds[1]}')`)
+  await click('[aria-label="字段配置"]')
+  await click('[role="switch"][aria-label="显示截止时间"]')
   await click('.tasks-page-heading h1')
   await run(`window.electronAPI.tasks.remove(${JSON.stringify(quickId)})`)
   // Trigger a reload after fixture cleanup.
@@ -351,7 +410,17 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     await window.electronAPI.tasks.deleteField(${JSON.stringify(fieldId)});
     window.dispatchEvent(new Event('chouyu:tasks-changed'));
   })()`)
+  // A renderer restart restores the selected workspace and per-view preferences.
+  await run(`window.electronAPI.tasks.archiveProject(${JSON.stringify(projectId)}, false)`)
+  window.webContents.reload()
+  await waitForRenderer(window, "!!window.electronAPI")
+  window.webContents.send('open-chat-panel')
+  await waitForRenderer(window, "!!document.querySelector('[data-workspace-nav=tasks]')")
+  await click('[data-workspace-nav="tasks"]')
+  await waitForRenderer(window, "document.querySelector('.tasks-page-heading h1')?.textContent === '待规划' && !!document.querySelector('[aria-label=\"归档 任务界面测试\"]')")
+  await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
+  await assert("!!document.querySelector('.tasks-list') && document.querySelector('[aria-label=排序方式]').textContent.includes('手动排序')")
   await click('[aria-label="关闭面板"]')
   await waitForRenderer(window, "!document.querySelector('.chat-panel')")
-  console.log('CHOUYU_TASKS_UI_SMOKE_PASSED menu dismissal/exclusivity/focus, groups, project membership, context creation, field rename, archive editing/board, history loading/search')
+  console.log('CHOUYU_TASKS_UI_SMOKE_PASSED menus, confirmations, per-view preference restoration, column preview/cancel, manual card order and cross-column moves, groups, fields and history')
 }

@@ -26,7 +26,7 @@ interface TasksBoardProps {
   groupFieldId: string | null
   onEdit: (task: TaskRecord) => void
   onComplete: (id: string) => void
-  onMove: (id: string, patch: TaskUpdateInput) => void
+  onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean) => Promise<void>
 }
 
 export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields: TaskSelectField[], groupMode: BoardGroupMode, groupFieldId: string | null) {
@@ -65,6 +65,13 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
   const scrollFrame = useRef<number | null>(null)
   const scrollSpeed = useRef(0)
   const dragPreview = useRef<HTMLElement | null>(null)
+  const [previewOrder, setPreviewOrder] = useState<string[] | null>(null)
+  const previewOrderRef = useRef<string[] | null>(null)
+  const [cardTarget, setCardTarget] = useState<{ column: string; id: string | null; after: boolean } | null>(null)
+  const [savingTask, setSavingTask] = useState<string | null>(null)
+  const savingRef = useRef(false)
+  const [moveError, setMoveError] = useState('')
+  const [orderError, setOrderError] = useState('')
   const [draggingTask, setDraggingTask] = useState<string | null>(null)
   const [dropColumn, setDropColumn] = useState<string | null>(null)
   const [orders, setOrders] = useState<Record<string, string[]>>(() => {
@@ -78,16 +85,20 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
   const [columnTarget, setColumnTarget] = useState<{ key: string; after: boolean } | null>(null)
   const scope = JSON.stringify([orderScope, groupMode, groupMode === 'field' ? groupFieldId : null])
   const savedOrder = orders[scope] ?? []
-  const columns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId).sort((a, b) => {
+  const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId).sort((a, b) => {
     const rank = (key: string) => { const index = savedOrder.indexOf(key); return index < 0 ? Infinity : index }
     return rank(a.key) - rank(b.key)
   })
+  const columns = previewOrder ? [...baseColumns].sort((a, b) => previewOrder.indexOf(a.key) - previewOrder.indexOf(b.key)) : baseColumns
   // Animate layout changes without changing the board's grouping or sort order.
   useLayoutEffect(() => {
     const next = new Map<string, DOMRect>()
     const board = boardRef.current
     if (!board) return
-    board.querySelectorAll<HTMLElement>('[data-motion-key]').forEach(element => {
+    const elements = Array.from(board.querySelectorAll<HTMLElement>('[data-motion-key]')).filter(element => !element.closest('.tasks-drag-preview'))
+    // Read layout without an earlier preview animation's transform applied.
+    elements.forEach(element => element.getAnimations().forEach(animation => animation.cancel()))
+    elements.forEach(element => {
       if (element.closest('.tasks-drag-preview')) return
       const key = element.dataset.motionKey!
       const bounds = element.getBoundingClientRect()
@@ -102,7 +113,6 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
         const x = old.left - rect.left - (oldParent && newParent ? oldParent.left - newParent.left : 0)
         const y = old.top - rect.top - (oldParent && newParent ? oldParent.top - newParent.top : 0)
         if (Math.abs(x) > 1 || Math.abs(y) > 1) {
-          element.getAnimations().forEach(animation => animation.cancel())
           element.animate([{ transform: `translate(${x}px, ${y}px)` }, { transform: 'translate(0, 0)' }], {
             duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)'
           })
@@ -110,7 +120,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
       }
     })
     positions.current = next
-  }, [tasks, orders, scope])
+  }, [tasks, orders, scope, previewOrder])
 
   const stopScroll = () => {
     if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current)
@@ -147,19 +157,37 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
   }
   useEffect(() => () => { stopScroll(); dragPreview.current?.remove() }, [])
 
-  const moveColumn = (source: string, target: string, after: boolean) => {
-    if (source === target || !columns.some(column => column.key === source)) return
-    const keys = columns.map(column => column.key).filter(key => key !== source)
-    const index = keys.indexOf(target)
-    if (index < 0) return
-    keys.splice(index + Number(after), 0, source)
-    setOrders(current => {
-      const next = { ...current, [scope]: keys }
-      try { localStorage.setItem('chouyu:task-board-columns', JSON.stringify(next)) } catch { /* Keep the current session usable when storage is unavailable. */ }
-      return next
-    })
+  const saveColumnOrder = (keys: string[]) => {
+    setOrders(current => ({ ...current, [scope]: keys }))
   }
-  const finishColumnDrag = () => { setDraggingColumn(null); setDraggingTask(null); setColumnTarget(null); setDropColumn(null); stopScroll(); dragPreview.current?.remove(); dragPreview.current = null }
+  useEffect(() => {
+    try { localStorage.setItem('chouyu:task-board-columns', JSON.stringify(orders)); setOrderError('') }
+    catch { setOrderError('列顺序暂时无法保存，重启后可能恢复默认。') }
+  }, [orders])
+  const orderedKeys = (source: string, target: string, after: boolean) => {
+    const keys = baseColumns.map(column => column.key).filter(key => key !== source)
+    const index = keys.indexOf(target)
+    if (source === target || index < 0 || !baseColumns.some(column => column.key === source)) return null
+    keys.splice(index + Number(after), 0, source)
+    return keys
+  }
+  const moveColumn = (source: string, target: string, after: boolean) => {
+    const keys = orderedKeys(source, target, after)
+    if (keys) saveColumnOrder(keys)
+  }
+  const finishColumnDrag = () => {
+    setDraggingColumn(null); setDraggingTask(null); setColumnTarget(null); setDropColumn(null); setCardTarget(null)
+    setPreviewOrder(null); previewOrderRef.current = null
+    stopScroll(); dragPreview.current?.remove(); dragPreview.current = null
+  }
+  useEffect(() => { finishColumnDrag() }, [scope])
+  const commitTask = async (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean) => {
+    if (savingRef.current || id === targetId) return
+    savingRef.current = true; setSavingTask(id); setMoveError('')
+    try { await onMove(id, patch, targetId, after) }
+    catch (reason) { setMoveError(`移动失败，任务保持原位。${reason instanceof Error ? reason.message : String(reason)}`) }
+    finally { savingRef.current = false; setSavingTask(null) }
+  }
   const isColumnDrag = (event: DragEvent<HTMLElement>) => event.dataTransfer.types.includes('application/x-chouyu-task-column')
 
   const dropInto = (event: DragEvent<HTMLElement>, column: BoardColumn) => {
@@ -169,21 +197,26 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
         const payload = JSON.parse(event.dataTransfer.getData('application/x-chouyu-task-column'))
         if (payload.scope === scope && typeof payload.key === 'string') {
           const rect = event.currentTarget.getBoundingClientRect()
-          moveColumn(payload.key, column.key, event.clientX > rect.left + rect.width / 2)
+          if (previewOrderRef.current) saveColumnOrder(previewOrderRef.current)
+          else moveColumn(payload.key, column.key, event.clientX > rect.left + rect.width / 2)
         }
       } catch { /* Ignore unrelated drag payloads. */ }
       finishColumnDrag()
       return
     }
+    const target = cardTarget?.column === column.key ? cardTarget : null
     finishColumnDrag()
-    if (column.archived) return
+    if (column.archived || savingRef.current) return
     const id = event.dataTransfer.getData('text/plain')
     const task = id ? tasks.find(item => item.id === id) : undefined
-    if (!task || columns.find(item => item.tasks.some(record => record.id === task.id))?.key === column.key) return
-    onMove(task.id, column.patch)
+    if (!task) return
+    const sameColumn = columns.find(item => item.tasks.some(record => record.id === task.id))?.key === column.key
+    const siblings = columns.find(item => item.key === column.key)?.tasks.filter(item => item.id !== task.id) ?? []
+    const targetId = target?.id ?? siblings.at(-1)?.id ?? null
+    void commitTask(task.id, sameColumn ? {} : column.patch, targetId, target?.id ? target.after : true)
   }
 
-  return <div ref={boardRef} className="tasks-board" aria-label="任务看板" data-drag-active={draggingColumn !== null || draggingTask !== null || undefined}
+  return <>{moveError && <p role="alert" className="tasks-error">{moveError}</p>}{orderError && <p role="status" className="tasks-notice">{orderError}</p>}{savingTask && <p role="status" className="tasks-notice">正在保存任务位置…</p>}<div ref={boardRef} className="tasks-board" aria-label="任务看板" data-drag-active={draggingColumn !== null || draggingTask !== null || undefined}
     onDragOver={event => { if (isColumnDrag(event) || draggingTask !== null) updateScroll(event.clientX) }}
     onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { stopScroll(); setDropColumn(null); setColumnTarget(null) } }}
     onDragEnd={finishColumnDrag}>
@@ -194,12 +227,25 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
           if (isColumnDrag(event)) {
             event.preventDefault(); event.dataTransfer.dropEffect = 'move'
             const rect = event.currentTarget.getBoundingClientRect()
-            setColumnTarget(draggingColumn === column.key ? null : { key: column.key, after: event.clientX > rect.left + rect.width / 2 })
-          } else if (!column.archived && (draggingTask !== null || event.dataTransfer.types.includes('text/plain'))) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.key) }
+            if (draggingColumn !== null && draggingColumn !== column.key) {
+              const after = event.clientX > rect.left + rect.width / 2
+              const keys = orderedKeys(draggingColumn, column.key, after)
+              if (keys && keys.join('\0') !== previewOrderRef.current?.join('\0')) {
+                previewOrderRef.current = keys; setPreviewOrder(keys)
+              }
+              setColumnTarget({ key: column.key, after })
+            }
+          } else if (!savingRef.current && !column.archived && (draggingTask !== null || event.dataTransfer.types.includes('text/plain'))) {
+            event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.key)
+            const card = (event.target as Element).closest<HTMLElement>('[data-task-id]')
+            const rect = card?.getBoundingClientRect()
+            const target = { column: column.key, id: card?.dataset.taskId ?? null, after: rect ? event.clientY > rect.top + rect.height / 2 : true }
+            setCardTarget(current => current?.column === target.column && current?.id === target.id && current?.after === target.after ? current : target)
+          }
         }}
         onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { setDropColumn(null); setColumnTarget(null) } }}
         onDrop={event => dropInto(event, column)}>
-        <h3 className="tasks-board-column-title"><button type="button" className="tasks-column-drag-handle" draggable aria-label={`移动看板列 ${column.label}`} title="拖动调整列位置；Alt + 左右方向键也可移动"
+        <h3 className="tasks-board-column-title"><button type="button" className="tasks-column-drag-handle" draggable={!savingTask} aria-label={`移动看板列 ${column.label}`} title="拖动调整列位置；Alt + 左右方向键也可移动"
           onDragStart={event => { event.stopPropagation(); event.dataTransfer.setData('application/x-chouyu-task-column', JSON.stringify({ scope, key: column.key })); event.dataTransfer.effectAllowed = 'move'; setPreview(event, event.currentTarget.closest<HTMLElement>('.tasks-board-column')!); setDraggingColumn(column.key) }}
           onDragEnd={finishColumnDrag}
           onKeyDown={event => {
@@ -212,8 +258,12 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
         {items.length === 0 && <p className="tasks-board-empty">暂无任务，可拖动任务到这里</p>}
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
-            return <li key={task.id} className="tasks-board-card" onDragEnd={finishColumnDrag} draggable data-priority={task.priority} data-motion-key={`task:${task.id}`} data-task-dragging={draggingTask === task.id || undefined}
-              onDragStart={event => { event.stopPropagation(); event.dataTransfer.setData('text/plain', task.id); event.dataTransfer.effectAllowed = 'move'; setPreview(event, event.currentTarget); setDraggingTask(task.id) }}>
+            return <li key={task.id} className="tasks-board-card" onDragEnd={finishColumnDrag} draggable={!savingTask} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined} onKeyDown={event => {
+                if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key) || column.archived) return
+                event.preventDefault(); const index = items.findIndex(item => item.id === task.id); const after = event.key === 'ArrowDown'; const target = items[index + (after ? 1 : -1)]
+                if (target) void commitTask(task.id, {}, target.id, after)
+              }} data-priority={task.priority} data-motion-key={`task:${task.id}`} data-task-dragging={draggingTask === task.id || undefined}
+              onDragStart={event => { if (savingRef.current) { event.preventDefault(); return }; event.stopPropagation(); event.dataTransfer.setData('text/plain', task.id); event.dataTransfer.effectAllowed = 'move'; setPreview(event, event.currentTarget); setDraggingTask(task.id) }}>
               <button type="button" className="tasks-complete" data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? onReopen(task.id) : onComplete(task.id)}>{task.status === 'done' ? '✓' : ''}</button>
               <button type="button" className="tasks-board-card-body" onClick={() => onEdit(task)}>
                 <span className="tasks-board-card-head">
@@ -227,7 +277,8 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
             </li>
           })}
         </ul>
+        {cardTarget?.column === column.key && cardTarget.id === null && draggingTask && <div className="tasks-card-drop-slot" aria-hidden="true">放到这里</div>}
       </section>
     })}
-  </div>
+  </div></>
 }

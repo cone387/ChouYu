@@ -29,7 +29,8 @@
     "test:smoke:packaged": "node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test:smoke:capture": "npm run build && node scripts/smoke-electron.js --native-capture"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
