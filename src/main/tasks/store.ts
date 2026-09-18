@@ -2,11 +2,11 @@ import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import type {
-  TaskCreateInput, TaskListOptions, TaskSelectFieldUpdateInput, TaskDueRange, TaskFieldOption, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldInput, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
+  TaskGroup, TaskCreateInput, TaskListOptions, TaskSelectFieldUpdateInput, TaskDueRange, TaskFieldOption, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldInput, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
 } from '../../shared/tasks'
 import { nextRecurrenceDueAt } from '../../shared/tasks'
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
 const RECURRENCES: TaskRecurrence[] = ['none', 'daily', 'weekly', 'monthly']
 const DUE_RANGES: TaskDueRange[] = ['today', 'week', 'overdue', 'none', 'any']
@@ -19,7 +19,7 @@ interface TaskRow {
   recurrence_generated?: number
   custom_fields?: string
 }
-interface ProjectRow { id: string; name: string; archived_at: number | null; created_at: number }
+interface ProjectRow { group_id: string | null; id: string; name: string; archived_at: number | null; created_at: number }
 interface ViewRow {
   id: string; name: string; project_ids: string; priorities: string
   due_range: string; created_at: number; updated_at: number
@@ -176,6 +176,11 @@ function migrate(database: Database.Database): void {
       database.exec("UPDATE tasks SET recurrence_generated = 1 WHERE status = 'done' AND recurrence <> 'none' AND due_at IS NOT NULL")
     })()
   }
+  database.exec('CREATE TABLE IF NOT EXISTS task_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE)')
+  const projectColumns = database.pragma('table_info(task_projects)') as { name: string }[]
+  if (!projectColumns.some(column => column.name === 'group_id')) {
+    database.exec('ALTER TABLE task_projects ADD COLUMN group_id TEXT REFERENCES task_groups(id)')
+  }
   database.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
 
@@ -190,7 +195,7 @@ const toTask = (row: TaskRow): TaskRecord => ({
   createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at
 })
 const toProject = (row: ProjectRow): TaskProject => ({
-  id: row.id, name: row.name, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
+  id: row.id, name: row.name, groupId: row.group_id, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
 })
 const toView = (row: ViewRow): TaskView => ({
   id: row.id, name: row.name,
@@ -255,12 +260,37 @@ export class TasksStore {
     return rows.map(toProject)
   }
 
-  createProject(name: string): TaskProject {
+  listGroups(): TaskGroup[] {
+    return this.database.prepare('SELECT id, name FROM task_groups ORDER BY rowid').all() as TaskGroup[]
+  }
+
+  createGroup(name: string): TaskGroup {
+    const clean = typeof name === 'string' ? name.trim() : ''
+    if (!clean || clean.length > 50) throw new Error('分组名称须为 1–50 个字符。')
+    const group = { id: randomUUID(), name: clean }
+    if (this.database.prepare('SELECT id FROM task_groups WHERE name = ?').get(clean)) throw new Error('同名分组已存在。')
+    this.database.prepare('INSERT INTO task_groups (id, name) VALUES (?, ?)').run(group.id, group.name)
+    return group
+  }
+
+  private requireGroup(id: string | null): void {
+    if (id !== null && (typeof id !== 'string' || !this.database.prepare('SELECT id FROM task_groups WHERE id = ?').get(id))) throw new Error('分组不存在。')
+  }
+
+  moveProject(id: string, groupId: string | null): TaskProject {
+    this.requireProject(id)
+    this.requireGroup(groupId)
+    this.database.prepare('UPDATE task_projects SET group_id = ? WHERE id = ?').run(groupId, id)
+    return this.requireProject(id)
+  }
+
+  createProject(name: string, groupId: string | null = null): TaskProject {
+    this.requireGroup(groupId)
     const clean = assertProjectName(name)
-    const row: ProjectRow = { id: randomUUID(), name: clean, archived_at: null, created_at: Date.now() }
+    const row: ProjectRow = { group_id: groupId, id: randomUUID(), name: clean, archived_at: null, created_at: Date.now() }
     try {
-      this.database.prepare('INSERT INTO task_projects (id, name, archived_at, created_at) VALUES (?, ?, ?, ?)')
-        .run(row.id, row.name, row.archived_at, row.created_at)
+      this.database.prepare('INSERT INTO task_projects (id, name, archived_at, created_at, group_id) VALUES (?, ?, ?, ?, ?)')
+        .run(row.id, row.name, row.archived_at, row.created_at, row.group_id)
     } catch (error) {
       if (String(error).includes('UNIQUE')) throw new Error('同名项目已存在。')
       throw error

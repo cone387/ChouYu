@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import type { RemindChoiceId, TaskDueRange, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldUpdateInput, TaskSortMode, TaskView } from '../../../../shared/tasks'
+import type { RemindChoiceId, TaskDueRange, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldUpdateInput, TaskSortMode, TaskView } from '../../../../shared/tasks'
 import {
   DUE_RANGE_LABELS, PRIORITY_LABELS, RECURRENCE_LABELS, REMIND_CHOICES, TASK_SORT_LABELS, compareTasks, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, remindAtFromChoice, sortTasks
 } from '../../../../shared/tasks'
 import TasksBoard, { type BoardGroupMode } from './TasksBoard'
 import TaskFieldsDialog from './TaskFieldsDialog'
 import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
+import TaskIcon from './TaskIcon'
+import useTaskMenus from './useTaskMenus'
 import './Tasks.css'
 
 type SmartView = 'today' | 'week' | 'overdue' | 'all' | 'done'
@@ -73,6 +75,7 @@ const dueLabel = (at: number): string =>
   new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at)
 
 export default function TasksView({ active, focusTaskId }: { active: boolean; focusTaskId?: string }) {
+  const menusRef = useTaskMenus(active)
   const [selection, setSelection] = useState<Selection>('today')
   const [query, setQuery] = useState('')
   const [tasks, setTasks] = useState<TaskRecord[]>([])
@@ -96,6 +99,10 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
   const [sortMode, setSortMode] = useState<TaskSortMode>('smart')
   const [filterPriorities, setFilterPriorities] = useState<TaskPriority[]>([])
   const [quarantineNotice, setQuarantineNotice] = useState('')
+  const [groups, setGroups] = useState<TaskGroup[]>([])
+  const [newGroup, setNewGroup] = useState<string | null>(null)
+  const [projectGroupId, setProjectGroupId] = useState('')
+  const [projectBusy, setProjectBusy] = useState(false)
   const [newProject, setNewProject] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<{ id: string; name: string; original: string } | null>(null)
   const [fieldsOpen, setFieldsOpen] = useState(false)
@@ -104,8 +111,8 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
   const reload = useCallback(() => {
     const sequence = ++reloadSequence.current
     setLoading(true)
-    void Promise.all([window.electronAPI.tasks.list({ doneLimit, doneQuery: selection === 'done' ? query : '', donePriorities: selection === 'done' ? filterPriorities : [] }), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views(), window.electronAPI.tasks.fields()])
-      .then(([list, projectList, viewList, fieldList]) => {
+    void Promise.all([window.electronAPI.tasks.list({ doneLimit, doneQuery: selection === 'done' ? query : '', donePriorities: selection === 'done' ? filterPriorities : [] }), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views(), window.electronAPI.tasks.fields(), window.electronAPI.tasks.groups()])
+      .then(([list, projectList, viewList, fieldList, groupList]) => {
         if (sequence !== reloadSequence.current) return
         setTasks(list.open)
         setDoneTasks(list.done)
@@ -114,6 +121,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
         setProjects(projectList)
         setViews(viewList)
         setFields(fieldList)
+        setGroups(groupList)
         window.dispatchEvent(new Event('chouyu:tasks-changed'))
         setQuarantineNotice(list.quarantinedAt ? '任务数据文件曾无法读取，已重建空库，原文件已隔离保存。' : '')
       })
@@ -208,10 +216,21 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
   const submitProject = (event: FormEvent) => {
     event.preventDefault()
     const name = newProject?.trim()
-    setNewProject(null)
-    if (!name) return
-    void window.electronAPI.tasks.createProject(name).then(reload).catch(reason => setError(String(reason)))
+    if (!name || projectBusy) return
+    setProjectBusy(true); setError('')
+    void window.electronAPI.tasks.createProject(name, projectGroupId || null)
+      .then(() => { setNewProject(null); reload() })
+      .catch(reason => setError(String(reason))).finally(() => setProjectBusy(false))
   }
+  const submitGroup = (event: FormEvent) => {
+    event.preventDefault()
+    if (!newGroup?.trim() || projectBusy) return
+    setProjectBusy(true); setError('')
+    void window.electronAPI.tasks.createGroup(newGroup.trim())
+      .then(() => { setNewGroup(null); reload() })
+      .catch(reason => setError(String(reason))).finally(() => setProjectBusy(false))
+  }
+
   const submitRename = (event: FormEvent) => {
     event.preventDefault()
     const target = renaming
@@ -268,7 +287,36 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
     void window.electronAPI.tasks.deleteField(field.id).then(reload).catch(reason => setError(String(reason)))
   }
 
-  return <div className="tasks-view">
+  const renderProject = (project: TaskProject) => {
+    const id = `project:${project.id}` as Selection
+    return <li key={project.id}>
+      {renaming?.id === project.id
+        ? <form className="tasks-new-project-form" onSubmit={submitRename}>
+            <input value={renaming.name} autoFocus aria-label={`重命名 ${project.name}`} placeholder="项目名称"
+              onChange={e => setRenaming({ ...renaming, name: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Escape') setRenaming(null) }} />
+            <button type="button" className="tasks-new-project-cancel" aria-label={`取消重命名 ${project.name}`} onClick={() => setRenaming(null)}>取消</button>
+          </form>
+        : <>
+            <button type="button" aria-current={selection === id || undefined} onClick={() => setSelection(id)}>{project.name}<span className="tasks-count">{countFor(`project:${project.id}`)}</span></button>
+            <details className="tasks-project-menu">
+              <summary aria-label={`管理项目 ${project.name}`}>…</summary>
+              <div className="tasks-item-menu-popover">
+                <button type="button" aria-label={`重命名 ${project.name}`} onClick={() => setRenaming({ id: project.id, name: project.name, original: project.name })}>重命名</button>
+                <label>移至分组<select aria-label={`移动项目 ${project.name} 到分组`} value={project.groupId ?? ''} onChange={e => void window.electronAPI.tasks.moveProject(project.id, e.target.value || null).then(reload).catch(reason => setError(String(reason)))}>
+                  <option value="">未分组</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+                </select></label>
+                <button type="button" aria-label={`归档 ${project.name}`} onClick={() => archiveProject(project)}>归档项目</button>
+              </div>
+            </details>
+          </>}
+    </li>
+  }
+  const selectionTitle = SMART_VIEWS.find(view => view.id === selection)?.label
+    ?? (selection.startsWith('project:') ? projects.find(project => project.id === selection.slice(8))?.name : views.find(view => view.id === selection.slice(5))?.name)
+    ?? '任务'
+
+  return <div className="tasks-view" ref={menusRef}>
     <aside className="tasks-sidebar" aria-label="任务视图筛选">
       <ul role="list">
         {SMART_VIEWS.map(view => <li key={view.id}>
@@ -276,7 +324,6 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
         </li>)}
       </ul>
       <div className="tasks-sidebar-views">
-        <h2>自定义视图</h2>
         <ul role="list">
           {views.map(view => {
             const id = `view:${view.id}` as Selection
@@ -288,39 +335,36 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
               </span>
             </li>
           })}
-          <li><button type="button" className="tasks-new-project" onClick={() => setViewDraft({ ...emptyViewDraft })}>新建视图 +</button></li>
+          <li><button type="button" className="tasks-new-project" onClick={() => setViewDraft({ ...emptyViewDraft })}>+ 自定义视图</button></li>
         </ul>
       </div>
       <div className="tasks-sidebar-projects">
-        <h2>项目</h2>
+        <div className="tasks-sidebar-heading"><h2>分组</h2>
+          <details className="tasks-tool-menu"><summary aria-label="新增分组或项目">+</summary>
+            <div className="tasks-item-menu-popover">
+              <button type="button" onClick={e => { setNewGroup(''); setNewProject(null); e.currentTarget.closest('details')?.removeAttribute('open') }}>新建分组</button>
+              <button type="button" onClick={e => { setProjectGroupId(''); setNewProject(''); setNewGroup(null); e.currentTarget.closest('details')?.removeAttribute('open') }}>新建项目</button>
+            </div>
+          </details>
+        </div>
         <ul role="list">
-          {projects.filter(project => !project.archivedAt).map(project => {
-            const id = `project:${project.id}` as Selection
-            return <li key={project.id}>
-              {renaming?.id === project.id
-                ? <form className="tasks-new-project-form" onSubmit={submitRename}>
-                    <input value={renaming.name} autoFocus aria-label={`重命名 ${project.name}`} placeholder="项目名称"
-                      onChange={e => setRenaming({ ...renaming, name: e.target.value })}
-                      onKeyDown={e => { if (e.key === 'Escape') setRenaming(null) }} />
-                    <button type="button" className="tasks-new-project-cancel" aria-label={`取消重命名 ${project.name}`} onClick={() => setRenaming(null)}>取消</button>
-                  </form>
-                : <>
-                    <button type="button" aria-current={selection === id || undefined} onClick={() => setSelection(id)}>{project.name}<span className="tasks-count">{countFor(`project:${project.id}`)}</span></button>
-                    <span className="tasks-project-actions"><button type="button" aria-label={`重命名 ${project.name}`} onClick={() => setRenaming({ id: project.id, name: project.name, original: project.name })}>…</button><button type="button" aria-label={`归档 ${project.name}`} onClick={() => archiveProject(project)}>归档</button></span>
-                  </>}
-            </li>
-          })}
-          {newProject === null
-            ? <li><button type="button" className="tasks-new-project" onClick={() => setNewProject('')}>新建项目 +</button></li>
-            : <li>
-                <form className="tasks-new-project-form" onSubmit={submitProject}>
-                  <input value={newProject} autoFocus aria-label="新项目名称" placeholder="项目名称"
-                    onChange={e => setNewProject(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Escape') setNewProject(null) }} />
-                  <button type="button" className="tasks-new-project-cancel" aria-label="取消新建项目" onClick={() => setNewProject(null)}>取消</button>
-                </form>
-              </li>}
+          {projects.filter(project => !project.archivedAt && !project.groupId).map(renderProject)}
         </ul>
+        {groups.map(group => <details className="tasks-project-group" key={group.id} open>
+          <summary><span>{group.name}</span><span className="tasks-count">{projects.filter(project => !project.archivedAt && project.groupId === group.id).length}</span></summary>
+          <ul role="list">{projects.filter(project => !project.archivedAt && project.groupId === group.id).map(renderProject)}</ul>
+          <button type="button" className="tasks-new-project" onClick={() => { setProjectGroupId(group.id); setNewProject(''); setNewGroup(null) }}>+ 新建项目</button>
+        </details>)}
+        {newGroup !== null && <form className="tasks-sidebar-form" onSubmit={submitGroup}>
+          <label>分组名称<input autoFocus value={newGroup} maxLength={50} onChange={e => setNewGroup(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setNewGroup(null) }} /></label>
+          <div><button type="submit" disabled={projectBusy || !newGroup.trim()}>创建</button><button type="button" onClick={() => setNewGroup(null)}>取消</button></div>
+        </form>}
+        {newProject !== null && <form className="tasks-sidebar-form" onSubmit={submitProject}>
+          <label>项目名称<input autoFocus value={newProject} maxLength={50} onChange={e => setNewProject(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setNewProject(null) }} /></label>
+          <label>所属分组<select value={projectGroupId} onChange={e => setProjectGroupId(e.target.value)}><option value="">未分组</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+          <div><button type="submit" disabled={projectBusy || !newProject.trim()}>创建</button><button type="button" onClick={() => setNewProject(null)}>取消</button></div>
+        </form>}
+
         {projects.some(project => project.archivedAt) && <details className="tasks-archived">
           <summary title="归档只收起项目入口，未完成任务和提醒仍会保留">已归档项目</summary>
           <ul role="list">{projects.filter(project => project.archivedAt).map(project => <li key={project.id}>{project.name} <button type="button" onClick={() => void window.electronAPI.tasks.archiveProject(project.id, false).then(reload).catch(reason => setError(String(reason)))}>恢复</button></li>)}</ul>
@@ -332,17 +376,33 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
       {quarantineNotice && <p role="alert" className="tasks-quarantine">{quarantineNotice}</p>}
       {error && !draft && !viewDraft && !fieldsOpen && <p role="alert" className="tasks-error">{error}</p>}
       {notice && <p role="status" className="tasks-notice">{notice}<button type="button" aria-label="关闭提示" onClick={() => setNotice('')}>×</button></p>}
+      <header className="tasks-page-heading">
+        <span className="tasks-heading-icon"><TaskIcon name="task" /></span><h1>{selectionTitle}</h1>
+        <details className="tasks-tool-menu tasks-heading-menu">
+          <summary aria-label="任务视图选项" title="任务视图选项"><TaskIcon name="more" /></summary>
+          <div className="tasks-item-menu-popover">
+            <button type="button" onClick={e => { setViewDraft({ ...emptyViewDraft }); e.currentTarget.closest('details')?.removeAttribute('open') }}>新建自定义视图</button>
+            <button type="button" onClick={e => { setFieldsOpen(true); e.currentTarget.closest('details')?.removeAttribute('open') }}>管理字段</button>
+          </div>
+        </details>
+      </header>
       {selection !== 'done' && <div className="tasks-tabs" role="group" aria-label="展示方式">
-        <button type="button" className="tasks-tab" aria-pressed={mode === 'list'} onClick={() => setMode('list')}>列表</button>
-        <button type="button" className="tasks-tab" aria-pressed={mode === 'board'} onClick={() => setMode('board')}>看板</button>
+        <button type="button" className="tasks-tab" aria-pressed={mode === 'list'} onClick={() => setMode('list')}><TaskIcon name="list" />列表</button>
+        <button type="button" className="tasks-tab" aria-pressed={mode === 'board'} onClick={() => setMode('board')}><TaskIcon name="board" />看板</button>
       </div>}
       <div className="tasks-toolbar">
         <div className="tasks-toolbar-group">
-          <button type="button" className="tasks-create" onClick={startCreate}>新建任务</button>
-          <p>{selection === 'done' ? `${matchedDone} 个匹配 · 共 ${totalDone} 个已完成` : `${visible.length} 个进行中${totalDone > 0 ? ` · ${totalDone} 个已完成` : ''}`}</p>
-        </div>
-        <div className="tasks-toolbar-group">
-          {mode === 'board' && selection !== 'done' && <label className="tasks-group">分组
+          <div className="tasks-create-split">
+            <button type="button" className="tasks-create" onClick={startCreate}><TaskIcon name="plus" />新建任务</button>
+            <details className="tasks-tool-menu tasks-create-options">
+              <summary aria-label="新建任务选项" title="新建任务选项"><TaskIcon name="chevron" /></summary>
+              <div className="tasks-item-menu-popover">
+                <p className="tasks-tool-title">选择优先级新建</p>
+                {(['high', 'medium', 'low'] as TaskPriority[]).map(priority => <button type="button" key={priority} onClick={e => { startCreate(); setDraft(current => current ? { ...current, priority } : current); e.currentTarget.closest('details')?.removeAttribute('open') }}>{PRIORITY_LABELS[priority]}优先级任务</button>)}
+              </div>
+            </details>
+          </div>
+          {mode === 'board' && selection !== 'done' && <label className="tasks-group" title="看板分组方式"><TaskIcon name="group" />
             <select value={groupMode === 'field' ? `field:${groupFieldId ?? ''}` : groupMode} aria-label="看板分组方式"
               onChange={e => {
                 const value = e.target.value
@@ -355,7 +415,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
             </select>
           </label>}
           <details className="tasks-tool-menu">
-            <summary aria-label="筛选任务">筛选{filterPriorities.length > 0 ? ` ·${filterPriorities.length}` : ''}</summary>
+            <summary aria-label="筛选任务" title="筛选任务" data-active={filterPriorities.length > 0 || undefined}><TaskIcon name="filter" />{filterPriorities.length > 0 && <span className="tasks-tool-badge">{filterPriorities.length}</span>}</summary>
             <div className="tasks-item-menu-popover tasks-tool-popover" role="group" aria-label="筛选优先级">
               <p className="tasks-tool-title">优先级</p>
               {(['high', 'medium', 'low'] as TaskPriority[]).map(priority => (
@@ -369,7 +429,7 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
             </div>
           </details>
           {selection !== 'done' && <details className="tasks-tool-menu">
-            <summary aria-label="排序方式">排序{sortMode !== 'smart' ? ` ·${TASK_SORT_LABELS[sortMode]}` : ''}</summary>
+            <summary aria-label="排序方式" title={`排序：${TASK_SORT_LABELS[sortMode]}`} data-active={sortMode !== 'smart' || undefined}><TaskIcon name="sort" /></summary>
             <div className="tasks-item-menu-popover tasks-tool-popover" role="group" aria-label="排序方式">
               {(Object.keys(TASK_SORT_LABELS) as TaskSortMode[]).map(id => (
                 <button key={id} type="button" aria-current={sortMode === id || undefined}
@@ -379,7 +439,9 @@ export default function TasksView({ active, focusTaskId }: { active: boolean; fo
               ))}
             </div>
           </details>}
-          <button type="button" className="tasks-fields-toggle" onClick={() => setFieldsOpen(true)}>字段</button>
+          <button type="button" className="tasks-fields-toggle" aria-label="管理字段" title="管理字段" onClick={() => setFieldsOpen(true)}><TaskIcon name="fields" /></button>
+        </div>
+        <div className="tasks-toolbar-group tasks-toolbar-end">
           <label className="tasks-search"><span className="sr-only">搜索任务</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索任务或备注" />{query && <button type="button" aria-label="清空搜索" onClick={() => setQuery('')}>×</button>}</label>
         </div>
       </div>

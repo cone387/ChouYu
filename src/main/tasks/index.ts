@@ -50,7 +50,10 @@ export function initializeTasks(options: TasksModuleOptions): void {
   ipcMain.handle('tasks:reopen', (_event, id: string) => store!.reopenTask(id))
   ipcMain.handle('tasks:delete', (_event, id: string) => store!.deleteTask(id))
   ipcMain.handle('tasks:projects', () => store!.listProjects())
-  ipcMain.handle('tasks:createProject', (_event, name: string) => store!.createProject(name))
+  ipcMain.handle('tasks:groups', () => store!.listGroups())
+  ipcMain.handle('tasks:createGroup', (_event, name: string) => store!.createGroup(name))
+  ipcMain.handle('tasks:moveProject', (_event, id: string, groupId: string | null) => store!.moveProject(id, groupId))
+  ipcMain.handle('tasks:createProject', (_event, name: string, groupId?: string | null) => store!.createProject(name, groupId))
   ipcMain.handle('tasks:renameProject', (_event, id: string, name: string) => store!.renameProject(id, name))
   ipcMain.handle('tasks:archiveProject', (_event, id: string, archived: boolean) => store!.archiveProject(id, archived))
   ipcMain.handle('tasks:views', () => store!.listViews())
@@ -72,7 +75,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
 
 export function closeTasks(): void {
   shuttingDown = true
-  for (const channel of ['tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView', 'tasks:fields', 'tasks:createField', 'tasks:updateField', 'tasks:deleteField']) ipcMain.removeHandler(channel)
+  for (const channel of ['tasks:groups', 'tasks:createGroup', 'tasks:moveProject', 'tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView', 'tasks:fields', 'tasks:createField', 'tasks:updateField', 'tasks:deleteField']) ipcMain.removeHandler(channel)
   ipcMain.removeAllListeners('tasks:ready')
   storeRebuilt = false
   pendingBacklog = 0

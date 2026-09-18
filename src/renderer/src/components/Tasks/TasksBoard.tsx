@@ -66,6 +66,7 @@ export default function TasksBoard({ tasks, projects, fields, groupMode, groupFi
         onDragOver={event => { if (!column.archived) { event.preventDefault(); event.dataTransfer.dropEffect = 'move' } }}
         onDrop={event => dropInto(event, column)}>
         <h3 className="tasks-board-column-title">{column.label}<span className="tasks-count">{items.length}</span></h3>
+        {items.length === 0 && <p className="tasks-board-empty">暂无任务，可拖动任务到这里</p>}
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
             return <li key={task.id} className="tasks-board-card" draggable data-priority={task.priority}

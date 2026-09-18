@@ -2,7 +2,13 @@ export type TaskPriority = 'high' | 'medium' | 'low'
 export type TaskStatus = 'open' | 'done'
 export type TaskRecurrence = 'none' | 'daily' | 'weekly' | 'monthly'
 
+export interface TaskGroup {
+  id: string
+  name: string
+}
+
 export interface TaskProject {
+  groupId?: string | null
   id: string
   name: string
   archivedAt?: number
@@ -262,7 +268,10 @@ export interface TasksAPI {
   reopen(id: string): Promise<TaskRecord>
   remove(id: string): Promise<void>
   projects(): Promise<TaskProject[]>
-  createProject(name: string): Promise<TaskProject>
+  groups(): Promise<TaskGroup[]>
+  createGroup(name: string): Promise<TaskGroup>
+  moveProject(id: string, groupId: string | null): Promise<TaskProject>
+  createProject(name: string, groupId?: string | null): Promise<TaskProject>
   renameProject(id: string, name: string): Promise<TaskProject>
   archiveProject(id: string, archived: boolean): Promise<TaskProject>
   views(): Promise<TaskView[]>
