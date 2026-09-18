@@ -626,6 +626,44 @@ export class TasksStore {
       conditions.push(`priority IN (${priorities.map(() => '?').join(',')})`)
       params.push(...priorities)
     }
+    const addProjects = (ids: string[]) => {
+      if (!ids.length) return
+      conditions.push(`project_id IN (${ids.map(() => '?').join(',')})`)
+      params.push(...ids)
+    }
+    const now = Date.now()
+    const today = new Date(now); today.setHours(0, 0, 0, 0)
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1)
+    const addDue = (range: TaskDueRange | 'todayOnly' | 'unplanned') => {
+      if (range === 'none') conditions.push('due_at IS NULL')
+      else if (range === 'unplanned') conditions.push('due_at IS NULL AND start_at IS NULL')
+      else if (range === 'overdue') { conditions.push('due_at < ?'); params.push(today.getTime()) }
+      else if (range === 'today') { conditions.push('due_at < ?'); params.push(tomorrow.getTime()) }
+      else if (range === 'todayOnly') { conditions.push('due_at >= ? AND due_at < ?'); params.push(today.getTime(), tomorrow.getTime()) }
+      else if (range === 'week') {
+        const monday = new Date(today); monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7)
+        const next = new Date(monday); next.setDate(next.getDate() + 7)
+        conditions.push('due_at >= ? AND due_at < ?'); params.push(monday.getTime(), next.getTime())
+      }
+    }
+    addProjects(assertIdList(options.doneProjectIds))
+    addDue(assertDueRange(options.doneDueRange))
+    const selection = options.doneSelection ?? 'all'
+    if (typeof selection !== 'string') throw new Error('任务视图无效。')
+    if (selection.startsWith('project:')) addProjects([selection.slice(8)])
+    else if (selection.startsWith('view:')) {
+      const view = this.listViews().find(item => item.id === selection.slice(5))
+      if (!view) conditions.push('0 = 1')
+      else {
+        addProjects(view.projectIds); addDue(view.dueRange)
+        if (view.priorities.length) {
+          conditions.push(`priority IN (${view.priorities.map(() => '?').join(',')})`)
+          params.push(...view.priorities)
+        }
+      }
+    } else if (selection === 'today') addDue('todayOnly')
+    else if (selection === 'week' || selection === 'overdue' || selection === 'unplanned') addDue(selection)
+    else if (selection !== 'all' && selection !== 'done') throw new Error('任务视图无效。')
     const where = conditions.join(' AND ')
 
     const open = (this.database.prepare(`SELECT * FROM tasks WHERE status = 'open' ORDER BY created_at, rowid`).all() as TaskRow[]).map(toTask)

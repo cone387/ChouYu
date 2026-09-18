@@ -66,6 +66,9 @@ export interface TaskListOptions {
   doneLimit?: number
   doneQuery?: string
   donePriorities?: TaskPriority[]
+  doneProjectIds?: string[]
+  doneDueRange?: TaskDueRange
+  doneSelection?: string
 }
 
 export interface TaskListResult {
@@ -218,9 +221,9 @@ export function compareTasks(a: TaskRecord, b: TaskRecord, now: number): number 
   return b.createdAt - a.createdAt
 }
 
-export type TaskSortMode = 'smart' | 'due' | 'priority' | 'created' | 'title'
+export type TaskSortMode = 'smart' | 'due' | 'start' | 'updated' | 'priority' | 'created' | 'title'
 export const TASK_SORT_LABELS: Record<TaskSortMode, string> = {
-  smart: '智能排序', due: '按截止时间', priority: '按优先级', created: '按创建时间', title: '按标题'
+  smart: '智能排序', start: '按开始时间', updated: '按更新时间', due: '按截止时间', priority: '按优先级', created: '按创建时间', title: '按标题'
 }
 
 export function sortTasks(tasks: TaskRecord[], mode: TaskSortMode, now: number): TaskRecord[] {
@@ -233,6 +236,12 @@ export function sortTasks(tasks: TaskRecord[], mode: TaskSortMode, now: number):
         if (b.dueAt === null) return -1
         return a.dueAt - b.dueAt
       })
+      break
+    case 'start':
+      copy.sort((a, b) => (a.startAt ?? Infinity) - (b.startAt ?? Infinity) || compareTasks(a, b, now))
+      break
+    case 'updated':
+      copy.sort((a, b) => b.updatedAt - a.updatedAt)
       break
     case 'priority':
       copy.sort((a, b) => TASK_PRIORITY_ORDER[a.priority] - TASK_PRIORITY_ORDER[b.priority] || compareTasks(a, b, now))

@@ -523,3 +523,35 @@ test('v6 升级保留改名后的默认项目、已有分组与任务关联', as
   expect(upgraded.listTasks().open[0]).toMatchObject({ id: task.id, projectId: project.id })
   upgraded.close()
 })
+
+test('完成任务按清单、视图和日期筛选后再分页，匹配总数准确', () => {
+  const store = openTasksStore(tempFile('done-scopes.db'))
+  try {
+    const project = store.createProject('目标清单')
+    const other = store.createProject('其他清单')
+    const today = new Date(); today.setHours(12, 0, 0, 0)
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1)
+    for (let index = 0; index < 6; index++) {
+      const task = store.createTask({ title: '目标 ' + index, projectId: project.id, priority: 'high', dueAt: today.getTime() })
+      store.completeTask(task.id)
+    }
+    const old = store.createTask({ title: '昨日', projectId: project.id, dueAt: yesterday.getTime() }); store.completeTask(old.id)
+    const planned = store.createTask({ title: '仅开始', projectId: project.id, startAt: today.getTime() }); store.completeTask(planned.id)
+    const unplanned = store.createTask({ title: '待规划', projectId: project.id }); store.completeTask(unplanned.id)
+    for (let index = 0; index < 55; index++) {
+      const task = store.createTask({ title: '其他 ' + index, projectId: other.id }); store.completeTask(task.id)
+    }
+    const result = store.listTasks({ doneLimit: 2, doneSelection: `project:${project.id}`, doneDueRange: 'today', donePriorities: ['high'] })
+    expect(result.done).toHaveLength(2)
+    expect(result.matchedDone).toBe(6)
+    expect(result.totalDone).toBe(64)
+    expect(result.done.every(task => task.projectId === project.id)).toBe(true)
+    expect(store.listTasks({ doneSelection: 'today', doneProjectIds: [project.id] }).matchedDone).toBe(6)
+    expect(store.listTasks({ doneSelection: 'overdue', doneProjectIds: [project.id] }).done.map(task => task.id)).toEqual([old.id])
+    expect(store.listTasks({ doneSelection: 'unplanned', doneProjectIds: [project.id] }).done.map(task => task.id)).toEqual([unplanned.id])
+    const view = store.createView({ name: '高优', projectIds: [project.id], priorities: ['high'], dueRange: 'today' })
+    expect(store.listTasks({ doneSelection: `view:${view.id}`, doneLimit: 3 }).matchedDone).toBe(6)
+    expect(store.listTasks({ doneSelection: 'view:missing' }).matchedDone).toBe(0)
+    expect(() => store.listTasks({ doneDueRange: 'invalid' as never })).toThrow('截止范围')
+  } finally { store.close() }
+})
