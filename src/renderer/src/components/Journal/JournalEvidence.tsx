@@ -99,6 +99,7 @@ export function JournalSummaryView({ date, revision, onGenerated, onOpenSource }
     {error && <p className="journal-error" role="alert">{error}</p>}
     {busy && <p role="status">正在归并事项，最长等待 2 分钟。<button onClick={() => void window.electronAPI.journal.cancelAnalysis().catch(reason => setError(String(reason)))}>取消生成</button></p>}
     {summary ? <><div className="journal-summary-meta"><p>{summary.model} · {new Date(summary.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 生成<br /><JournalUsage usage={summary.usage} /></p><button onClick={() => { void navigator.clipboard.writeText(summary.items.map(item => `${item.title || '活动'}${item.category ? ` · ${item.category}` : ''}\n${item.text}${item.note ? `\n备注：${item.note}` : ''}${item.nextStep ? `\n建议继续：${item.nextStep}` : ''}`).join('\n\n')).then(() => setCopied(true)).catch(() => setError('复制失败，请选择文字手动复制。')) }}>{copied ? '已复制' : '复制日志'}</button></div>
+      <p className="journal-coverage">总结保留生成时的引用文字；原始画面可能已因到期或自动清理而删除。</p>
       {summary.version !== 2 && <p className="journal-coverage">这是旧版总结，重新生成后可按事项查看具体线索。</p>}
       {summary.coverage && <p className="journal-coverage">分析了 {summary.coverage.analyzed} / {summary.coverage.available} 条来源 · {summary.coverage.ocrSources} 条含正文。{!summary.coverage.ocrSources && '仅有标题线索，无法确认具体修改与完成结果。'}{summary.truncated && '记录已抽样，可能遗漏部分事项。'}</p>}
       <ol className="journal-summary-items">{summary.items.map((item, index) => <li key={index} data-kind={item.kind || 'activity'}>

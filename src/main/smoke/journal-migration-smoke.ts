@@ -82,18 +82,18 @@ export async function runJournalMigrationSmoke(): Promise<void> {
     }
     const reopened = new Database(file)
     try {
-      if (reopened.pragma('user_version', { simple: true }) !== 11 || (reopened.prepare('SELECT COUNT(*) count FROM activities').get() as { count: number }).count) throw new Error('Migration version or retention pruning did not persist')
+      if (reopened.pragma('user_version', { simple: true }) !== 12 || (reopened.prepare('SELECT COUNT(*) count FROM activities').get() as { count: number }).count) throw new Error('Migration version or retention pruning did not persist')
     } finally { reopened.close() }
   }
   const futureDirectory = join(app.getPath('userData'), 'journal-future-schema')
   mkdirSync(futureDirectory, { recursive: true })
   const futureFile = join(futureDirectory, 'journal.db'), future = new Database(futureFile)
-  future.exec("CREATE TABLE future_data(value TEXT); INSERT INTO future_data VALUES('preserve-future-record'); PRAGMA user_version=12")
+  future.exec("CREATE TABLE future_data(value TEXT); INSERT INTO future_data VALUES('preserve-future-record'); PRAGMA user_version=13")
   future.close()
   const client = workerClient(futureDirectory)
   let rejected = false
   try { await client.request('config') } catch (error) { rejected = String(error).includes('更新版本') } finally { await client.worker.terminate() }
   const check = new Database(futureFile)
-  try { if (!rejected || check.pragma('user_version', { simple: true }) !== 12 || (check.prepare('SELECT value FROM future_data').get() as { value: string }).value !== 'preserve-future-record') throw new Error('Future schema was accepted or rewritten') } finally { check.close() }
-  console.log('CHOUYU_JOURNAL_MIGRATION_SMOKE_PASSED v7/v8/v9 to v11, two worker opens, saved image bytes, project/playbook preservation, retention and future-schema refusal')
+  try { if (!rejected || check.pragma('user_version', { simple: true }) !== 13 || (check.prepare('SELECT value FROM future_data').get() as { value: string }).value !== 'preserve-future-record') throw new Error('Future schema was accepted or rewritten') } finally { check.close() }
+  console.log('CHOUYU_JOURNAL_MIGRATION_SMOKE_PASSED to v12, two worker opens, saved image bytes, project/playbook preservation, retention and future-schema refusal')
 }

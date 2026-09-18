@@ -14,6 +14,7 @@ export interface JournalConfig {
   captureEnabled: boolean
   captureIntervalSeconds: number
   maxStorageMB: number
+  autoCleanup?: boolean
 }
 
 export interface JournalSample {
@@ -151,26 +152,27 @@ export interface JournalSummary {
 export const DEFAULT_JOURNAL_CONFIG: JournalConfig = {
   quickBookmarkEnabled: false,
   enabled: true, paused: false, retentionDays: 30,
-  captureEnabled: true, captureIntervalSeconds: 5, maxStorageMB: 2048,
+  captureEnabled: true, captureIntervalSeconds: 10, maxStorageMB: 10240, autoCleanup: false,
   excludedApps: ['1password.exe', 'bitwarden.exe', 'keepass.exe', 'keepassxc.exe', 'authy.exe']
 }
 
 export function validateJournalConfig(value: unknown, current: JournalConfig): JournalConfig {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('无效的日志设置。')
   const patch = value as Record<string, unknown>
-  if (Object.keys(patch).some(key => !['enabled', 'paused', 'retentionDays', 'excludedApps', 'captureEnabled', 'captureIntervalSeconds', 'maxStorageMB', 'quickBookmarkEnabled'].includes(key))) throw new Error('未知日志设置。')
-  for (const key of ['enabled', 'paused', 'captureEnabled', 'quickBookmarkEnabled']) {
+  if (Object.keys(patch).some(key => !['enabled', 'paused', 'retentionDays', 'excludedApps', 'captureEnabled', 'captureIntervalSeconds', 'maxStorageMB', 'quickBookmarkEnabled', 'autoCleanup'].includes(key))) throw new Error('未知日志设置。')
+  for (const key of ['enabled', 'paused', 'captureEnabled', 'quickBookmarkEnabled', 'autoCleanup']) {
     if (patch[key] !== undefined && typeof patch[key] !== 'boolean') throw new Error('记录状态必须为布尔值。')
   }
   if (patch.retentionDays !== undefined && ![7, 30, 90].includes(patch.retentionDays as number)) throw new Error('保留期限须为 7、30 或 90 天。')
   if (patch.captureIntervalSeconds !== undefined && ![5, 10, 20, 30, 60].includes(patch.captureIntervalSeconds as number)) throw new Error('画面间隔须为 5、10、20、30 或 60 秒。')
-  if (patch.maxStorageMB !== undefined && ![256, 512, 1024, 2048].includes(patch.maxStorageMB as number)) throw new Error('无效的画面存储上限。')
+  if (patch.maxStorageMB !== undefined && ![0, 256, 512, 1024, 2048, 5120, 10240, 20480, 51200].includes(patch.maxStorageMB as number)) throw new Error('无效的画面存储上限。')
   if (patch.excludedApps !== undefined && (!Array.isArray(patch.excludedApps) || patch.excludedApps.length > 100 || patch.excludedApps.some(item => typeof item !== 'string' || !/^[^\\/:*?"<>|\r\n]{1,104}$/i.test(item) || !item.trim()))) throw new Error('排除应用请填写进程名或 macOS 应用名，例如 chrome.exe 或 Safari，每行一个。')
   return { enabled: patch.enabled === undefined ? current.enabled : patch.enabled as boolean,
     quickBookmarkEnabled: patch.quickBookmarkEnabled === undefined ? current.quickBookmarkEnabled ?? false : patch.quickBookmarkEnabled as boolean,
     captureEnabled: patch.captureEnabled === undefined ? current.captureEnabled : patch.captureEnabled as boolean,
     captureIntervalSeconds: patch.captureIntervalSeconds === undefined ? current.captureIntervalSeconds : patch.captureIntervalSeconds as number,
     maxStorageMB: patch.maxStorageMB === undefined ? current.maxStorageMB : patch.maxStorageMB as number,
+    autoCleanup: patch.autoCleanup === undefined ? current.autoCleanup ?? false : patch.autoCleanup as boolean,
     paused: patch.paused === undefined ? current.paused : patch.paused as boolean,
     retentionDays: patch.retentionDays === undefined ? current.retentionDays : patch.retentionDays as number,
     excludedApps: patch.excludedApps === undefined ? [...current.excludedApps] : [...new Set((patch.excludedApps as string[]).map(item => item.toLowerCase()))] }

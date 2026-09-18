@@ -5,7 +5,8 @@ import { initializeJournalProjects, readJournalProjects, saveJournalProject, ass
 import { initializeJournalPlaybook, listJournalPlaybook, saveJournalPlaybook, deleteJournalPlaybook } from './playbook'
 import { parentPort, workerData } from 'worker_threads'
 import Database from 'better-sqlite3'
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, statSync } from 'fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, statSync, statfsSync } from 'fs'
+import { initializeCaptureUsage, captureUsage, cleanupTarget, capacityNotice, CAPTURE_RESERVE_BYTES, CAPTURE_PAUSED_PREFIX } from './storage-budget'
 import { join } from 'path'
 import { randomUUID, createHash } from 'crypto'
 import { DEFAULT_JOURNAL_CONFIG, migrateJournalConfig, validateJournalConfig, validateJournalQuery } from '../../shared/journal'
@@ -19,7 +20,7 @@ db.pragma('journal_mode = WAL')
 db.pragma('busy_timeout = 3000')
 db.pragma('secure_delete = ON')
 const previousVersion = Number(db.pragma('user_version', { simple: true }))
-if (previousVersion > 11) throw new Error('工作日志由更新版本创建，请升级应用。')
+if (previousVersion > 12) throw new Error('工作日志由更新版本创建，请升级应用。')
 db.exec(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY, app TEXT NOT NULL, title TEXT NOT NULL, startedAt INTEGER NOT NULL, endedAt INTEGER NOT NULL);
   CREATE INDEX IF NOT EXISTS activities_time ON activities(endedAt, startedAt);
@@ -45,7 +46,8 @@ db.transaction(() => {
   initializeJournalPlaybook(db)
   initializeJournalWeekly(db)
   initializeSemanticCache(db)
-  db.pragma('user_version = 11')
+  initializeCaptureUsage(db)
+  db.pragma('user_version = 12')
 })()
 const media = join(workerData.directory, 'media')
 mkdirSync(media, { recursive: true })
@@ -68,7 +70,7 @@ for (const name of readdirSync(media)) {
 }
 garbageCollect()
 const storageBytes = () => {
-  let total = (db.prepare('SELECT COALESCE(SUM(bytes),0) total FROM captures').get() as { total: number }).total
+  let total = captureUsage(db)
   for (const row of db.prepare('SELECT name FROM media_gc').all() as { name: string }[]) { try { total += statSync(join(media, row.name)).size } catch {} }
   return total
 }
@@ -95,10 +97,36 @@ const prune = (days: number) => {
   garbageCollect()
 }
 let lastPrune = 0
+const ensureCaptureCapacity = (incoming = CAPTURE_RESERVE_BYTES): string | null => {
+  const config = settings()
+  garbageCollect()
+  const target = cleanupTarget(config, storageBytes(), incoming)
+  if (target !== null) {
+    // Saved images are independent SQLite snapshots. Never delete activities or summaries here.
+    const removed = db.transaction(() => {
+      let remaining = captureUsage(db), count = 0
+      const queue = db.prepare("INSERT OR IGNORE INTO media_gc VALUES(?)")
+      const remove = db.prepare('DELETE FROM captures WHERE id=?')
+      for (const row of db.prepare('SELECT id,bytes FROM captures ORDER BY capturedAt,id').all() as { id: string; bytes: number }[]) {
+        if (remaining <= target) break
+        queue.run(`${row.id}.jpg`); remove.run(row.id)
+        remaining -= row.bytes; count++
+      }
+      return count
+    }).immediate()
+    if (removed) generation++
+    garbageCollect()
+  }
+  try {
+    const disk = statfsSync(media)
+    return capacityNotice(config, storageBytes(), incoming, disk.bavail * disk.bsize)
+  } catch { return `${CAPTURE_PAUSED_PREFIX}无法检查磁盘空间；稍后自动重试，活动记录继续。` }
+}
 parentPort!.on('message', ({ id, method, payload }) => {
   try {
     let result: unknown
     switch (method) {
+      case 'captureCapacity': result = ensureCaptureCapacity(); break
       case 'generateContinuations': result = generateContinuations(db, media, payload); break
       case 'quickBookmark': result = saveQuickBookmark(db, payload); break
       case 'saveItem': result = saveJournalItem(db, media, payload); break
@@ -258,7 +286,8 @@ parentPort!.on('message', ({ id, method, payload }) => {
         const existing = db.prepare('SELECT id FROM captures WHERE activityId=? AND hash=?').get(activityId, hash)
         if (existing) { result = existing; break }
         garbageCollect()
-        if (storageBytes() + bytes.length > settings().maxStorageMB * 1024 * 1024) throw new Error('画面存储已达上限，请删除旧记录或调整上限；活动记录仍会继续。')
+        const capacityError = ensureCaptureCapacity(bytes.length)
+        if (capacityError) throw new Error(capacityError)
         const captureId = randomUUID(); const name = mediaName(captureId); const temporary = join(media, `${captureId}.part`)
         try {
           writeFileSync(temporary, bytes, { flag: 'wx' }); renameSync(temporary, join(media, name))
@@ -266,7 +295,9 @@ parentPort!.on('message', ({ id, method, payload }) => {
         } catch (error) {
           db.prepare('INSERT OR IGNORE INTO media_gc VALUES(?)').run(name)
           db.prepare('INSERT OR IGNORE INTO media_gc VALUES(?)').run(`${captureId}.part`)
-          garbageCollect(); throw error
+          garbageCollect()
+          if ((error as NodeJS.ErrnoException).code === 'ENOSPC') throw new Error(`${CAPTURE_PAUSED_PREFIX}磁盘空间不足；请释放空间，活动记录继续。`)
+          throw error
         }
         result = { id: captureId }; break
       }

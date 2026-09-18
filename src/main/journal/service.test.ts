@@ -3,7 +3,7 @@ import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_JOURNAL_CONFIG } from '../../shared/journal'
 
-const mock = vi.hoisted(() => ({ screen: vi.fn(() => 'granted'), read: vi.fn(), stop: vi.fn(), idle: vi.fn(), capture: vi.fn(), ocr: vi.fn(), summarize: vi.fn(), answer: vi.fn(), worker: null as any, config: null as any, writes: [] as any[], sources: [] as any[], cachedSummary: null as any }))
+const mock = vi.hoisted(() => ({ screen: vi.fn(() => 'granted'), read: vi.fn(), stop: vi.fn(), idle: vi.fn(), capture: vi.fn(), ocr: vi.fn(), summarize: vi.fn(), answer: vi.fn(), worker: null as any, config: null as any, capacity: null as string | null, writes: [] as any[], sources: [] as any[], cachedSummary: null as any }))
 vi.mock('./summary', async importOriginal => ({ ...await importOriginal<typeof import('./summary')>(), generateJournalSummary: mock.summarize, answerJournalQuestion: mock.answer }))
 vi.mock('../database', () => ({ getConfig: () => ({ model: 'test' }) }))
 vi.mock('electron', async () => {
@@ -19,7 +19,7 @@ vi.mock('worker_threads', () => ({ Worker: class extends EventEmitter {
     mock.writes.push({ method, payload })
     if (method === 'configure') mock.config = payload
     if (method === 'summarySave') mock.cachedSummary = payload.summary
-    queueMicrotask(() => this.emit('message', { id, result: method === 'savedImage' ? 'data:image/jpeg;base64,Zml4dHVyZQ==' : method === 'savedOcrDone' ? { ocrText: payload.text, ocrStatus: 'ready' } : method === 'quickBookmark' ? { id: 'quick-fixture' } : method === 'summary' || method === 'summarySave' ? mock.cachedSummary : method === 'generateContinuations' ? { created: 1, skipped: 0, considered: 1 } : method === 'config' || method === 'configure' ? mock.config : method === 'sample' ? 1 : method === 'ocrJob' ? { id: payload, path: 'synthetic-only.jpg' } : method === 'summaryInput' ? { sources: mock.sources, truncated: false, generation: 0 } : null }))
+    queueMicrotask(() => this.emit('message', { id, result: method === 'captureCapacity' ? mock.capacity : method === 'savedImage' ? 'data:image/jpeg;base64,Zml4dHVyZQ==' : method === 'savedOcrDone' ? { ocrText: payload.text, ocrStatus: 'ready' } : method === 'quickBookmark' ? { id: 'quick-fixture' } : method === 'summary' || method === 'summarySave' ? mock.cachedSummary : method === 'generateContinuations' ? { created: 1, skipped: 0, considered: 1 } : method === 'config' || method === 'configure' ? mock.config : method === 'sample' ? 1 : method === 'ocrJob' ? { id: payload, path: 'synthetic-only.jpg' } : method === 'summaryInput' ? { sources: mock.sources, truncated: false, generation: 0 } : null }))
   }
   terminate = vi.fn(async () => 0)
 } }))
@@ -32,7 +32,7 @@ describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s',
   beforeEach(async () => {
     Object.defineProperty(process, 'platform', { value: platform })
     mock.screen.mockReturnValue('granted')
-    vi.useFakeTimers(); mock.writes = []; mock.sources = []; mock.cachedSummary = null; mock.config = { ...DEFAULT_JOURNAL_CONFIG, enabled: false, captureEnabled: false }
+    vi.useFakeTimers(); mock.capacity = null; mock.writes = []; mock.sources = []; mock.cachedSummary = null; mock.config = { ...DEFAULT_JOURNAL_CONFIG, enabled: false, captureEnabled: false, captureIntervalSeconds: 5 }
     mock.read.mockReset(); mock.stop.mockReset(); mock.idle.mockReturnValue(0)
     mock.read.mockResolvedValue({ app: 'editor.exe', title: '合成工作记录', pid: 123456, hwnd: '100' })
     mock.capture.mockReset(); mock.ocr.mockReset(); mock.summarize.mockReset(); mock.answer.mockReset()
@@ -238,7 +238,7 @@ describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s',
     expect(mock.writes.some(item => item.method === 'ocrDone')).toBe(false)
     expect(service.status().config.enabled).toBe(false)
   })
-  it('waits for a stable foreground, captures every five seconds and supplements a window switch', async () => {
+  it('waits for a stable foreground and enforces a global five second minimum on switches', async () => {
     await service.configure({ enabled: true, captureEnabled: true })
     await vi.advanceTimersByTimeAsync(999)
     expect(mock.capture).not.toHaveBeenCalled()
@@ -252,7 +252,32 @@ describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s',
     await vi.advanceTimersByTimeAsync(1000)
     expect(mock.capture).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(1000)
+    expect(mock.capture).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(3000)
     expect(mock.capture).toHaveBeenCalledTimes(3)
+  })
+  it('pauses globally before capture when full, even across window switches, and recovers after a capacity check', async () => {
+    mock.capacity = '截图已暂停：画面存储已达上限'
+    await service.configure({ enabled: true, captureEnabled: true })
+    await vi.advanceTimersByTimeAsync(1000)
+    mock.read.mockResolvedValue({ app: 'other.exe', title: 'different', pid: 123456, hwnd: '200' })
+    await vi.advanceTimersByTimeAsync(59_000)
+    expect(mock.capture).not.toHaveBeenCalled()
+    expect(mock.writes.filter(item => item.method === 'captureCapacity')).toHaveLength(1)
+    expect(mock.writes.filter(item => item.method === 'sample').length).toBeGreaterThan(50)
+    mock.capacity = null
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mock.capture).toHaveBeenCalledTimes(1)
+    expect(service.status().captureError).toBe('')
+  })
+  it('keeps window failure backoff when only its title changes', async () => {
+    mock.capture.mockRejectedValue(new Error('uncapturable'))
+    await service.configure({ enabled: true, captureEnabled: true })
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(mock.capture).toHaveBeenCalledTimes(2)
+    mock.read.mockResolvedValue({ app: 'editor.exe', title: 'new title', pid: 123456, hwnd: '100' })
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(mock.capture).toHaveBeenCalledTimes(2)
   })
   it('does not stack capture tasks while the previous frame is still processing', async () => {
     let finish!: (value: any) => void
@@ -264,6 +289,20 @@ describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s',
     finish({ bytes: Buffer.from('fake'), width: 100, height: 100 })
     await vi.advanceTimersByTimeAsync(0)
     expect(mock.writes.some(item => item.method === 'capture')).toBe(false)
+  })
+  it('remembers backoff when switching away from and back to a failing window', async () => {
+    mock.capture.mockRejectedValue(new Error('uncapturable'))
+    await service.configure({ enabled: true, captureEnabled: true })
+    await vi.advanceTimersByTimeAsync(16000)
+    expect(mock.capture).toHaveBeenCalledTimes(3)
+    mock.read.mockResolvedValue({ app: 'other.exe', title: 'other', pid: 123456, hwnd: '200' })
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(mock.capture).toHaveBeenCalledTimes(4)
+    mock.read.mockResolvedValue({ app: 'editor.exe', title: 'returned', pid: 123456, hwnd: '100' })
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(mock.capture).toHaveBeenCalledTimes(4)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(mock.capture).toHaveBeenCalledTimes(5)
   })
   it('backs off a failing window while continuing activities and immediately tries a new window', async () => {
     mock.capture.mockRejectedValue(new Error('uncapturable'))

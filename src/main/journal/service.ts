@@ -9,6 +9,7 @@ import { join } from 'path'
 import { ActivityHelper } from './activity-helper'
 import { captureJournalWindow, stopJournalCapture } from './capture'
 import { JournalOcr } from './ocr'
+import { CAPTURE_PAUSED_PREFIX } from './storage-budget'
 import { answerJournalQuestion, generateJournalSummary, selectJournalEvidence } from './summary'
 import { JournalQuestionContexts } from './question-context'
 import { getConfig } from '../database'
@@ -53,9 +54,8 @@ export class JournalService {
   private foregroundKey = ''
   private foregroundSince = 0
   private capturedKey = ''
-  private failedCaptureKey = ''
-  private captureFailures = 0
-  private captureRetryAt = 0
+  private captureRetries = new Map<string, { failures: number; at: number }>()
+  private capacityRetryAt = 0
   private ocr = new JournalOcr()
   private ocrBusy = false
   private ocrTimer?: ReturnType<typeof setTimeout>
@@ -124,7 +124,8 @@ export class JournalService {
     this.error = ''
     this.captureError = ''; this.lastFrameAt = 0
     this.foregroundKey = ''; this.capturedKey = ''; this.foregroundSince = 0
-    this.failedCaptureKey = ''; this.captureFailures = 0; this.captureRetryAt = 0
+    this.captureRetries.clear()
+    this.capacityRetryAt = 0
     this.state = !this.config.enabled ? 'off' : this.config.paused ? 'paused' : this.locked || this.suspended ? 'locked' : 'starting'
     void this.request('cut').catch(error => this.failStorage(error.message))
     if (this.state === 'starting' && !['win32', 'darwin'].includes(process.platform)) { this.state = 'error'; this.error = '活动记录目前仅支持 Windows 和 macOS。'; return }
@@ -155,12 +156,23 @@ export class JournalService {
           if (epoch !== this.epoch) return
           this.state = 'recording'; this.lastCapturedAt = Date.now()
           const key = JSON.stringify([sample.pid, sample.hwnd, sample.title])
+          const windowKey = JSON.stringify([sample.pid, sample.hwnd])
           if (key !== this.foregroundKey) { this.foregroundKey = key; this.foregroundSince = Date.now() }
           const settled = Date.now() - this.foregroundSince >= 1000
           const due = key !== this.capturedKey || Date.now() - this.lastFrameAt >= this.config.captureIntervalSeconds * 1000
           const screenAllowed = process.platform !== 'darwin' || systemPreferences.getMediaAccessStatus('screen') === 'granted'
           if (!screenAllowed) this.captureError = ''
-          if (this.config.captureEnabled && screenAllowed && settled && due && (key !== this.failedCaptureKey || Date.now() >= this.captureRetryAt)) {
+          const spaced = !this.lastFrameAt || Date.now() - this.lastFrameAt >= 5000
+          if (this.config.captureEnabled && screenAllowed && settled && due && spaced && Date.now() >= this.capacityRetryAt && Date.now() >= (this.captureRetries.get(windowKey)?.at ?? 0)) {
+            const capacityError = await this.request<string | null>('captureCapacity')
+            if (epoch !== this.epoch) return
+            if (capacityError) {
+              this.captureError = capacityError
+              this.capacityRetryAt = Date.now() + 60_000
+              stopJournalCapture()
+              return
+            }
+            this.capacityRetryAt = 0
             this.lastFrameAt = Date.now()
             this.capturedKey = key
             const at = this.lastFrameAt
@@ -172,13 +184,19 @@ export class JournalService {
               // A changed tab, process or foreground window invalidates the in-flight frame.
               if (current.hwnd !== sample.hwnd || current.pid !== sample.pid || current.title !== sample.title) return
               await this.request('capture', { activityId, width: frame.width, height: frame.height, bytes: frame.bytes, at })
-              if (epoch === this.epoch) { this.captureError = ''; this.failedCaptureKey = ''; this.captureFailures = 0; this.captureRetryAt = 0 }
+              if (epoch === this.epoch) { this.captureError = ''; this.captureRetries.delete(windowKey) }
             } catch (error) {
               if (epoch === this.epoch) {
-                this.captureFailures = key === this.failedCaptureKey ? this.captureFailures + 1 : 1
-                this.failedCaptureKey = key
-                const retrySeconds = Math.min(30, 5 * 2 ** Math.min(this.captureFailures - 1, 3))
-                this.captureRetryAt = Date.now() + retrySeconds * 1000
+                if (error instanceof Error && error.message.startsWith(CAPTURE_PAUSED_PREFIX)) {
+                  this.captureError = error.message; this.capacityRetryAt = Date.now() + 60_000
+                  stopJournalCapture()
+                  return
+                }
+                const failures = (this.captureRetries.get(windowKey)?.failures ?? 0) + 1
+                const retrySeconds = Math.min(30, 5 * 2 ** Math.min(failures - 1, 3))
+                this.captureRetries.delete(windowKey)
+                this.captureRetries.set(windowKey, { failures, at: Date.now() + retrySeconds * 1000 })
+                if (this.captureRetries.size > 64) this.captureRetries.delete(this.captureRetries.keys().next().value!)
                 this.captureError = `${error instanceof Error ? error.message : '画面采集失败。'} ${retrySeconds} 秒后重试；活动记录继续。`
               }
             }

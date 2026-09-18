@@ -36,6 +36,7 @@ export default function Journal({ active = true, searchRequest }: { active?: boo
   const [retention, setRetention] = useState(30)
   const [captureEnabled, setCaptureEnabled] = useState(DEFAULT_JOURNAL_CONFIG.captureEnabled)
   const [captureInterval, setCaptureInterval] = useState(DEFAULT_JOURNAL_CONFIG.captureIntervalSeconds)
+  const [autoCleanup, setAutoCleanup] = useState(false)
   const [storageLimit, setStorageLimit] = useState(DEFAULT_JOURNAL_CONFIG.maxStorageMB)
   const [view, setView] = useState<'overview' | 'activity' | 'captures' | 'summary' | 'ask' | 'usage' | 'saved' | 'semantic' | 'projects' | 'playbook' | 'weekly'>('overview')
   useEffect(() => window.electronAPI.journal.onBookmarkSaved(id => { handledBookmark.current = id; setBookmarkFocus(id); setView('saved') }), [])
@@ -111,6 +112,7 @@ export default function Journal({ active = true, searchRequest }: { active?: boo
     setCaptureEnabled(status?.config.captureEnabled ?? DEFAULT_JOURNAL_CONFIG.captureEnabled)
     setCaptureInterval(status?.config.captureIntervalSeconds ?? DEFAULT_JOURNAL_CONFIG.captureIntervalSeconds)
     setStorageLimit(status?.config.maxStorageMB ?? DEFAULT_JOURNAL_CONFIG.maxStorageMB)
+    setAutoCleanup(status?.config.autoCleanup ?? false)
     setSettings(value => !value)
   }
   const changeDate = (value: string) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(new Date(`${value}T00:00:00`).getTime())) return; setDate(value); setOffset(0); setLoading(true); setConfirmDelete(false); setSelectedSource('') }
@@ -168,11 +170,13 @@ export default function Journal({ active = true, searchRequest }: { active?: boo
       <div><label>保留期限<select aria-label="保留期限" value={retention} onChange={event => setRetention(Number(event.target.value))}><option value={7}>7 天</option><option value={30}>30 天</option><option value={90}>90 天</option></select></label>
         <label className="journal-capture-toggle"><input type="checkbox" checked={captureEnabled} onChange={event => setCaptureEnabled(event.target.checked)} />保存前台窗口画面，并在本机识别文字</label>
         <p>只保存当时的前台窗口，不保存整个桌面。窗口内部的隐私字段不会自动遮蔽，请排除相关应用或暂停记录。</p>
-        <label>画面间隔<select aria-label="画面间隔" value={captureInterval} onChange={event => setCaptureInterval(Number(event.target.value))}>{[5, 10, 20, 30, 60].map(value => <option key={value} value={value}>{value} 秒{value === 5 ? '（推荐）' : ''}</option>)}</select></label>
-        <p>窗口切换后稳定约 1 秒补采；同一窗口按所选间隔采集，相同画面去重。处理较慢时会延后，不叠加任务。</p>
-        <label>画面存储上限<select aria-label="画面存储上限" value={storageLimit} onChange={event => setStorageLimit(Number(event.target.value))}>{[256, 512, 1024, 2048].map(value => <option key={value} value={value}>{value >= 1024 ? `${value / 1024} GB` : `${value} MB`}</option>)}</select></label>
+        <label>画面间隔<select aria-label="画面间隔" value={captureInterval} onChange={event => setCaptureInterval(Number(event.target.value))}>{[5, 10, 20, 30, 60].map(value => <option key={value} value={value}>{value} 秒{value === 10 ? '（推荐）' : ''}</option>)}</select></label>
+        <p>窗口切换后稳定约 1 秒补采，自动截图至少间隔 5 秒；同一窗口按所选间隔采集，相同画面去重。处理较慢时会延后，不叠加任务。</p>
+        <label>画面存储上限<select aria-label="画面存储上限" value={storageLimit} onChange={event => setStorageLimit(Number(event.target.value))}>{[256, 512, 1024, 2048, 5120, 10240, 20480, 51200, 0].map(value => <option key={value} value={value}>{value === 0 ? '不限制' : value >= 1024 ? `${value / 1024} GB` : `${value} MB`}</option>)}</select></label>
+        <label className="journal-capture-toggle"><input type="checkbox" checked={autoCleanup} onChange={event => setAutoCleanup(event.target.checked)} />容量不足时自动清理最早的普通截图及其 OCR 索引</label>
+        <p>自动清理会不可撤销地删除旧画面，批量清理至上限的 90%。活动、收藏、书签和历史总结保留，总结引用的原始画面可能已过期。不限容量时不按配额清理；磁盘剩余不足 2 GB 时暂停截图，每分钟检查恢复。</p>
         <p>缩短期限会立即清理过期记录。时间为采样估计，不代表实际工作产出。</p>
-        <div className="journal-actions"><button className="journal-primary" disabled={busy} onClick={async () => { if (await configure({ excludedApps: excluded.split('\n').map(value => value.trim()).filter(Boolean), retentionDays: retention, captureEnabled, captureIntervalSeconds: captureInterval, maxStorageMB: storageLimit })) setSettings(false) }}>保存设置</button>
+        <div className="journal-actions"><button className="journal-primary" disabled={busy} onClick={async () => { if (await configure({ excludedApps: excluded.split('\n').map(value => value.trim()).filter(Boolean), retentionDays: retention, captureEnabled, captureIntervalSeconds: captureInterval, maxStorageMB: storageLimit, autoCleanup })) setSettings(false) }}>保存设置</button>
         {status?.config.enabled && <button disabled={busy} onClick={() => void configure({ enabled: false })}>关闭记录</button>}</div>
       </div>
     </section></dialog>}

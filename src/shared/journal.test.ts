@@ -3,7 +3,7 @@ import { DEFAULT_JOURNAL_CONFIG, migrateJournalConfig, validateJournalConfig, va
 
 describe('journal boundaries', () => {
   it('starts with activity and local OCR capture enabled and preserves omitted values', () => {
-    expect(DEFAULT_JOURNAL_CONFIG).toMatchObject({ enabled: true, captureEnabled: true, captureIntervalSeconds: 5, maxStorageMB: 2048 })
+    expect(DEFAULT_JOURNAL_CONFIG).toMatchObject({ enabled: true, captureEnabled: true, captureIntervalSeconds: 10, maxStorageMB: 10240, autoCleanup: false })
     expect(validateJournalConfig({ enabled: undefined, paused: true }, DEFAULT_JOURNAL_CONFIG)).toMatchObject({ enabled: true, paused: true })
   })
   it('upgrades the legacy preset once but preserves subsequent opt-out and custom choices', () => {
@@ -11,10 +11,10 @@ describe('journal boundaries', () => {
     expect(migrateJournalConfig(old, 2)).toMatchObject({ enabled: true, captureEnabled: true, captureIntervalSeconds: 5, maxStorageMB: 2048, paused: true })
     expect(migrateJournalConfig(old, 3)).toMatchObject(old)
     expect(migrateJournalConfig({ ...old, captureIntervalSeconds: 60 }, 2)).toMatchObject({ enabled: false, captureEnabled: false, captureIntervalSeconds: 60 })
-    expect(migrateJournalConfig({ enabled: true }, 1)).toMatchObject({ enabled: true, captureEnabled: true, captureIntervalSeconds: 5 })
+    expect(migrateJournalConfig({ enabled: true }, 1)).toMatchObject({ enabled: true, captureEnabled: true, captureIntervalSeconds: 10 })
   })
   it('rejects invalid retention, arbitrary paths and nonboolean enablement', () => {
-    for (const patch of [{ retentionDays: 0 }, { enabled: 'true' }, { excludedApps: ['C:\\secret.exe'] }, { unexpected: true }]) {
+    for (const patch of [{ autoCleanup: 'true' }, { maxStorageMB: -1 }, { retentionDays: 0 }, { enabled: 'true' }, { excludedApps: ['C:\\secret.exe'] }, { unexpected: true }]) {
       expect(() => validateJournalConfig(patch, DEFAULT_JOURNAL_CONFIG)).toThrow()
     }
   })
