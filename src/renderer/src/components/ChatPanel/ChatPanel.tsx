@@ -5,7 +5,7 @@ import TasksView from '../Tasks/TasksView'
 import WorkspaceNav, { type WorkspacePage } from '../Workspace/WorkspaceNav'
 import WorkspaceHeader from '../Workspace/WorkspaceHeader'
 import { useWorkspacePresentation } from '../Workspace/useWorkspacePresentation'
-import { getWorkspaceGeometry, type WorkspaceMode } from '../../core/workspace-state'
+import { getWorkspaceGeometry, parseWorkspacePage, WORKSPACE_PAGE_STATE_KEY, type WorkspaceMode } from '../../core/workspace-state'
 import MessageArea from './MessageArea'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import InputArea, { PendingAttachment } from './InputArea'
@@ -69,6 +69,8 @@ interface ChatPanelProps {
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed, assistantFocusRequest }: ChatPanelProps) {
   const [activePage, setActivePage] = useState<WorkspacePage>(initialShowSettings ? 'settings' : 'chat')
   const [visitedPages, setVisitedPages] = useState<Partial<Record<WorkspacePage, boolean>>>({ settings: initialShowSettings })
+  const [pageLoaded, setPageLoaded] = useState(false)
+  const pageChanged = useRef(false)
   const [taskFocusId, setTaskFocusId] = useState<string | undefined>()
   const showSettings = activePage === 'settings'
   const showMemoryWorkspace = activePage === 'memory'
@@ -81,7 +83,20 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const navigate = useCallback((page: WorkspacePage) => {
     setVisitedPages(previous => ({ ...previous, [page]: true }))
     setActivePage(page)
+    pageChanged.current = true
+    void window.electronAPI.db.setState(WORKSPACE_PAGE_STATE_KEY, page).catch(() => { /* Storage failures are reported globally. */ })
     if (page !== 'settings') settingsCloseRef.current?.()
+  }, [])
+  useEffect(() => {
+    let active = true
+    void window.electronAPI.db.getState(WORKSPACE_PAGE_STATE_KEY).then(value => {
+      // Explicit navigation wins over a late startup read.
+      if (!active || pageChanged.current) return
+      const page = parseWorkspacePage(value)
+      setActivePage(page)
+      setVisitedPages(previous => ({ ...previous, [page]: true }))
+    }).catch(() => {}).finally(() => { if (active) setPageLoaded(true) })
+    return () => { active = false }
   }, [])
   const [showMessageSearch, setShowMessageSearch] = useState(false)
   const searchSnapshot = useRef<SearchSnapshot | null>(null)
@@ -212,7 +227,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const shellWidth = geometry.width
   const narrowLayout = geometry.narrow
   const sessionsVisible = displayMode !== 'chat' && (narrowLayout ? narrowSessionsOpen : displayMode === 'sessions' || showSessions)
-  const panelReady = presentation.loaded && dimensionsLoaded && sidebarLoaded && (workspaceLoaded || Boolean(workspaceError) || showSettings)
+  const panelReady = pageLoaded && presentation.loaded && dimensionsLoaded && sidebarLoaded && (workspaceLoaded || Boolean(workspaceError) || showSettings)
   const persistSessionsVisible = useCallback((visible: boolean) => {
     void window.electronAPI.db.setState(SESSION_SIDEBAR_STATE_KEY, String(visible)).catch(() => { /* The persistent storage notice reports disk failures. */ })
   }, [])

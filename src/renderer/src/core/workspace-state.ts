@@ -1,3 +1,10 @@
+export type WorkspacePage = 'chat' | 'contacts' | 'tasks' | 'journal' | 'memory' | 'settings'
+export const WORKSPACE_PAGE_STATE_KEY = 'workspace-active-page'
+
+export function parseWorkspacePage(value: unknown): WorkspacePage {
+  return value === 'contacts' || value === 'tasks' || value === 'journal' || value === 'memory' || value === 'settings' ? value : 'chat'
+}
+
 export type WorkspaceMode = 'workspace' | 'sessions' | 'chat'
 export const WORKSPACE_MODE_STATE_KEY = 'workspace-display-mode'
 

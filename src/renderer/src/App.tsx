@@ -19,7 +19,7 @@ function App() {
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [panelInitialized, setPanelInitialized] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [workspaceRequest, setWorkspaceRequest] = useState<{ page: WorkspacePage; id: number; taskId?: string }>({ page: 'chat', id: 0 })
+  const [workspaceRequest, setWorkspaceRequest] = useState<{ page: WorkspacePage; id: number; taskId?: string }>()
   const [petState, setPetState] = useState<PetState>(stateMachine.getState())
   const [screenshotImage, setScreenshotImage] = useState<string | null>(null)
   const [captureMode, setCaptureMode] = useState<'crop' | 'scroll'>('crop')
@@ -293,7 +293,6 @@ function App() {
     if (!panelInitialized) setPanelInitialized(true)
     ensurePanelPosition()
     setShowSettings(false)
-    setWorkspaceRequest(previous => ({ page: 'chat', id: previous.id + 1 }))
     setPanelVisible(true)
     window.focus()
   }, [ensurePanelPosition, panelInitialized])
@@ -311,6 +310,8 @@ function App() {
   const closePanel = useCallback(() => {
     setPanelVisible(false)
     setPanelInitialized(false)
+    setWorkspaceRequest(undefined)
+    setAssistantFocusRequest(0)
     setShowSettings(false)
     restoreClickThrough()
   }, [restoreClickThrough])
@@ -320,7 +321,7 @@ function App() {
     setPanelVisible(true)
     setPanelInitialized(true)
     setShowSettings(true)
-    setWorkspaceRequest(previous => ({ page: 'settings', id: previous.id + 1 }))
+    setWorkspaceRequest(previous => ({ page: 'settings', id: (previous?.id ?? 0) + 1 }))
   }, [ensurePanelPosition])
 
   const openTasksPage = useCallback((taskId?: string) => {
@@ -328,7 +329,7 @@ function App() {
     setPanelVisible(true)
     setPanelInitialized(true)
     setShowSettings(false)
-    setWorkspaceRequest(previous => ({ page: 'tasks', id: previous.id + 1, ...(taskId ? { taskId } : {}) }))
+    setWorkspaceRequest(previous => ({ page: 'tasks', id: (previous?.id ?? 0) + 1, ...(taskId ? { taskId } : {}) }))
     window.focus()
   }, [ensurePanelPosition])
 
@@ -337,7 +338,7 @@ function App() {
     setPanelVisible(true)
     setPanelInitialized(true)
     setShowSettings(false)
-    setWorkspaceRequest(previous => ({ page: 'journal', id: previous.id + 1 }))
+    setWorkspaceRequest(previous => ({ page: 'journal', id: (previous?.id ?? 0) + 1 }))
     window.focus()
   }), [ensurePanelPosition])
 

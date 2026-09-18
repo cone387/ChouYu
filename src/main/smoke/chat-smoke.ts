@@ -148,6 +148,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     saveSessionMessages(fixture, messages)
     flushDatabase()
     window.webContents.send('config:changed', getConfig())
+    await window.webContents.executeJavaScript("window.electronAPI.db.setState('workspace-active-page', 'chat')")
     await window.webContents.executeJavaScript(`(() => {
       window.__chatOpeningFrames = [];
       window.__watchChatOpening = true;
@@ -441,6 +442,34 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "Boolean(document.querySelector('.conversation-item .conversation-item-unread'))")
     await window.webContents.executeJavaScript("document.querySelector('.conversation-item-main').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
     await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
+    window.webContents.send('open-chat-panel')
+    await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true]')")
+    for (const page of ['contacts', 'tasks', 'journal', 'memory', 'settings']) {
+      await click(window, `[data-workspace-nav="${page}"]`)
+      await waitForRenderer(window, `document.querySelector('.chat-panel[data-workspace-page=${page}]')`)
+      const saved = await window.webContents.executeJavaScript("window.electronAPI.db.getState('workspace-active-page')")
+      if (saved !== page) throw new Error(`Workspace page was not persisted: ${page}`)
+      await click(window, '[aria-label="关闭面板"]')
+      await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+      window.webContents.send('open-chat-panel')
+      await waitForRenderer(window, `document.querySelector('.chat-panel[data-ready=true][data-workspace-page=${page}]')`)
+    }
+    // Reload the renderer to discard all React state, as on a new application launch.
+    await window.webContents.reload()
+    await waitForRenderer(window, "Boolean(document.querySelector('.pet-container'))")
+    window.webContents.send('open-chat-panel')
+    await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true][data-workspace-page=settings]')")
+    window.webContents.send('open-journal-panel')
+    await waitForRenderer(window, "document.querySelector('.chat-panel[data-workspace-page=journal]')")
+    await click(window, '[data-workspace-nav="tasks"]')
+    await click(window, '[aria-label="关闭面板"]')
+    await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+    window.webContents.send('open-chat-panel')
+    await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true][data-workspace-page=tasks]')")
+    window.webContents.send('open-assistant-chat')
+    await waitForRenderer(window, "document.querySelector('.chat-panel[data-workspace-page=chat]')")
+    await click(window, '[aria-label="关闭面板"]')
+    console.log('CHOUYU_WORKSPACE_RESTORE_SMOKE_PASSED saved pages, close/reopen, renderer restart, explicit navigation and stale request protection')
     console.log('CHOUYU_CHAT_SMOKE_PASSED markdown, full-text search, streaming scroll, settings, memory CRUD, approval keyboard')
   } catch (error) {
     console.error('CHOUYU_CHAT_UI_STATE', await window.webContents.executeJavaScript(`JSON.stringify({

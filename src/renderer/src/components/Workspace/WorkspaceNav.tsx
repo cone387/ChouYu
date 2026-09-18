@@ -1,7 +1,8 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import './Workspace.css'
 
-export type WorkspacePage = 'chat' | 'contacts' | 'tasks' | 'journal' | 'memory' | 'settings'
+import type { WorkspacePage } from '../../core/workspace-state'
+export type { WorkspacePage } from '../../core/workspace-state'
 
 const pages: { id: WorkspacePage; label: string; path: string }[] = [
   { id: 'chat', label: '会话', path: 'M4 4h16v12H9l-5 4V4zM8 8h8M8 12h5' },

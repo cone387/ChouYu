@@ -58,7 +58,7 @@ export function setupTray(mainWindow: BrowserWindow): void {
     { id: 'journal-state', label: '活动记录：未开启', enabled: false },
     { id: 'journal-pause', label: '暂停活动记录', click: toggleJournalPause, enabled: false },
     {
-      label: '打开聊天',
+      label: '打开工作区',
       click: openChatPanel
     },
     {
