@@ -35,7 +35,7 @@ export default function TasksBoard({ tasks, projects, fields, groupMode, groupFi
     for (const project of projects.filter(project => !project.archivedAt || tasks.some(task => task.projectId === project.id))) {
       columns.push({ key: project.id, label: `${project.name}${project.archivedAt ? '（已归档）' : ''}`, patch: { projectId: project.id }, archived: Boolean(project.archivedAt) })
     }
-    columns.push({ key: '', label: '无项目', patch: { projectId: null } })
+    if (!projects.some(project => project.isDefault)) columns.push({ key: '', label: '无清单', patch: { projectId: null } })
   } else if (groupField) {
     for (const option of groupField.options) {
       columns.push({ key: option.id, label: option.name, patch: { customFields: { [groupField.id]: option.id } } })

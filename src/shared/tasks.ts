@@ -3,11 +3,13 @@ export type TaskStatus = 'open' | 'done'
 export type TaskRecurrence = 'none' | 'daily' | 'weekly' | 'monthly'
 
 export interface TaskGroup {
+  isDefault?: boolean
   id: string
   name: string
 }
 
 export interface TaskProject {
+  isDefault?: boolean
   groupId?: string | null
   id: string
   name: string
@@ -22,6 +24,7 @@ export interface TaskRecord {
   projectId: string | null
   priority: TaskPriority
   status: TaskStatus
+  startAt?: number | null
   dueAt: number | null
   remindAt: number | null
   remindFiredAt: number | null
@@ -39,6 +42,7 @@ export interface TaskCreateInput {
   note?: string
   projectId?: string | null
   priority?: TaskPriority
+  startAt?: number | null
   dueAt?: number | null
   remindAt?: number | null
   recurrence?: TaskRecurrence
@@ -50,6 +54,7 @@ export interface TaskUpdateInput {
   note?: string | null
   projectId?: string | null
   priority?: TaskPriority
+  startAt?: number | null
   dueAt?: number | null
   remindAt?: number | null
   recurrence?: TaskRecurrence
@@ -270,6 +275,8 @@ export interface TasksAPI {
   projects(): Promise<TaskProject[]>
   groups(): Promise<TaskGroup[]>
   createGroup(name: string): Promise<TaskGroup>
+  renameGroup(id: string, name: string): Promise<TaskGroup>
+  deleteGroup(id: string): Promise<void>
   moveProject(id: string, groupId: string | null): Promise<TaskProject>
   createProject(name: string, groupId?: string | null): Promise<TaskProject>
   renameProject(id: string, name: string): Promise<TaskProject>
@@ -286,4 +293,8 @@ export interface TasksAPI {
   onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void
   onOpenTasksPanel(callback: () => void): () => void
   onTasksStoreRebuilt(callback: () => void): () => void
+}
+
+export function isUnplanned(task: TaskRecord): boolean {
+  return task.status === 'open' && task.startAt == null && task.dueAt == null
 }

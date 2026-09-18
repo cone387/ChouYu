@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  compareTasks, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, nextRecurrenceDueAt, remindAtFromChoice, sortTasks, TASK_PRIORITY_ORDER
+  compareTasks, isUnplanned, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, nextRecurrenceDueAt, remindAtFromChoice, sortTasks, TASK_PRIORITY_ORDER
 } from './tasks'
 import type { RemindChoiceId, TaskRecord, TaskView } from './tasks'
 
@@ -153,4 +153,14 @@ describe('matchesTaskView', () => {
     expect(matchesTaskView(noDue, view({ dueRange: 'none' }), now)).toBe(true)
     expect(matchesTaskView(today, view({ dueRange: 'none' }), now)).toBe(false)
   })
+})
+
+
+test('待规划仅包含开始和截止都未设置的未完成任务', () => {
+  expect(isUnplanned(base())).toBe(true)
+  expect(isUnplanned(base({ startAt: null, dueAt: null }))).toBe(true)
+  expect(isUnplanned(base({ startAt: 0 }))).toBe(false)
+  expect(isUnplanned(base({ dueAt: 0 }))).toBe(false)
+  expect(isUnplanned(base({ startAt: 100, dueAt: 200 }))).toBe(false)
+  expect(isUnplanned(base({ status: 'done' }))).toBe(false)
 })

@@ -6,20 +6,20 @@ import type {
 } from '../../shared/tasks'
 import { nextRecurrenceDueAt } from '../../shared/tasks'
 
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 7
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
 const RECURRENCES: TaskRecurrence[] = ['none', 'daily', 'weekly', 'monthly']
 const DUE_RANGES: TaskDueRange[] = ['today', 'week', 'overdue', 'none', 'any']
 
 interface TaskRow {
   id: string; title: string; note: string | null; project_id: string | null; priority: string
-  status: string; due_at: number | null; remind_at: number | null; remind_fired_at: number | null
+  start_at: number | null; status: string; due_at: number | null; remind_at: number | null; remind_fired_at: number | null
   recurrence: string; recurrence_anchor_at: number | null
   created_at: number; updated_at: number; completed_at: number | null
   recurrence_generated?: number
   custom_fields?: string
 }
-interface ProjectRow { group_id: string | null; id: string; name: string; archived_at: number | null; created_at: number }
+interface ProjectRow { is_default?: number; group_id: string | null; id: string; name: string; archived_at: number | null; created_at: number }
 interface ViewRow {
   id: string; name: string; project_ids: string; priorities: string
   due_range: string; created_at: number; updated_at: number
@@ -181,21 +181,54 @@ function migrate(database: Database.Database): void {
   if (!projectColumns.some(column => column.name === 'group_id')) {
     database.exec('ALTER TABLE task_projects ADD COLUMN group_id TEXT REFERENCES task_groups(id)')
   }
-  database.pragma(`user_version = ${SCHEMA_VERSION}`)
+  database.transaction(() => {
+    if (!columns.some(column => column.name === 'start_at')) database.exec('ALTER TABLE tasks ADD COLUMN start_at INTEGER')
+    if (!projectColumns.some(column => column.name === 'is_default')) database.exec('ALTER TABLE task_projects ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0')
+    if (!database.prepare('SELECT id FROM task_projects WHERE is_default = 1').get()) {
+      const existing = database.prepare('SELECT id FROM task_projects WHERE name = ?').get('收集箱') as { id: string } | undefined
+      const id = existing?.id ?? randomUUID()
+      if (!existing) database.prepare('INSERT INTO task_projects (id, name, created_at) VALUES (?, ?, ?)').run(id, '收集箱', Date.now())
+      database.prepare('UPDATE task_projects SET is_default = 1, archived_at = NULL, group_id = NULL WHERE id = ?').run(id)
+      database.prepare('UPDATE tasks SET project_id = ? WHERE project_id IS NULL').run(id)
+    }
+  })()
+  database.transaction(() => {
+    const groupColumns = database.pragma('table_info(task_groups)') as { name: string }[]
+    if (!groupColumns.some(column => column.name === 'is_default')) database.exec('ALTER TABLE task_groups ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0')
+    let group = database.prepare('SELECT id FROM task_groups WHERE is_default = 1').get() as { id: string } | undefined
+    if (!group) {
+      group = database.prepare('SELECT id FROM task_groups WHERE name = ?').get('收集箱') as { id: string } | undefined
+      if (!group) {
+        group = { id: randomUUID() }
+        database.prepare('INSERT INTO task_groups (id, name, is_default) VALUES (?, ?, 1)').run(group.id, '收集箱')
+      } else database.prepare('UPDATE task_groups SET is_default = 1 WHERE id = ?').run(group.id)
+    }
+    const project = database.prepare('SELECT id, name FROM task_projects WHERE is_default = 1').get() as { id: string; name: string }
+    // Preserve the old default project's identity, renamed names, and every task association.
+    if (project.name === '收集箱') {
+      let name = '默认清单'
+      let suffix = 2
+      while (database.prepare('SELECT id FROM task_projects WHERE name = ? AND id <> ?').get(name, project.id)) name = `默认清单（${suffix++}）`
+      database.prepare('UPDATE task_projects SET name = ? WHERE id = ?').run(name, project.id)
+    }
+    database.prepare('UPDATE task_projects SET group_id = ? WHERE group_id IS NULL OR is_default = 1').run(group.id)
+    database.prepare('UPDATE tasks SET project_id = ? WHERE project_id IS NULL').run(project.id)
+    database.pragma(`user_version = ${SCHEMA_VERSION}`)
+  })()
 }
 
 const toTask = (row: TaskRow): TaskRecord => ({
   id: row.id, title: row.title, note: row.note ?? '', projectId: row.project_id,
   priority: (PRIORITIES.includes(row.priority as TaskPriority) ? row.priority : 'medium') as TaskPriority,
   status: row.status === 'done' ? 'done' : 'open',
-  dueAt: row.due_at, remindAt: row.remind_at, remindFiredAt: row.remind_fired_at,
+  startAt: row.start_at, dueAt: row.due_at, remindAt: row.remind_at, remindFiredAt: row.remind_fired_at,
   recurrence: (['daily', 'weekly', 'monthly'].includes(row.recurrence) ? row.recurrence : 'none') as TaskRecord['recurrence'],
   recurrenceAnchorAt: row.recurrence_anchor_at,
   customFields: parseCustomFields(row.custom_fields),
   createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at
 })
 const toProject = (row: ProjectRow): TaskProject => ({
-  id: row.id, name: row.name, groupId: row.group_id, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
+  isDefault: row.is_default === 1, id: row.id, name: row.name, groupId: row.group_id, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
 })
 const toView = (row: ViewRow): TaskView => ({
   id: row.id, name: row.name,
@@ -261,7 +294,7 @@ export class TasksStore {
   }
 
   listGroups(): TaskGroup[] {
-    return this.database.prepare('SELECT id, name FROM task_groups ORDER BY rowid').all() as TaskGroup[]
+    return (this.database.prepare('SELECT id, name, is_default FROM task_groups ORDER BY is_default DESC, rowid').all() as { id: string; name: string; is_default: number }[]).map(row => ({ id: row.id, name: row.name, ...(row.is_default ? { isDefault: true } : {}) }))
   }
 
   createGroup(name: string): TaskGroup {
@@ -273,18 +306,42 @@ export class TasksStore {
     return group
   }
 
+  renameGroup(id: string, name: string): TaskGroup {
+    this.requireGroup(id)
+    const clean = typeof name === 'string' ? name.trim() : ''
+    if (!clean || clean.length > 50) throw new Error('分组名称须为 1–50 个字符。')
+    if (this.database.prepare('SELECT id FROM task_groups WHERE name = ? AND id <> ?').get(clean, id)) throw new Error('同名分组已存在。')
+    this.database.prepare('UPDATE task_groups SET name = ? WHERE id = ?').run(clean, id)
+    return this.listGroups().find(group => group.id === id)!
+  }
+
+  deleteGroup(id: string): void {
+    this.requireGroup(id)
+    if (id === this.defaultGroupId()) throw new Error('默认分组不能删除。')
+    this.database.transaction(() => {
+      this.database.prepare('UPDATE task_projects SET group_id = ? WHERE group_id = ?').run(this.defaultGroupId(), id)
+      this.database.prepare('DELETE FROM task_groups WHERE id = ?').run(id)
+    })()
+  }
+
+  private defaultGroupId(): string {
+    return (this.database.prepare('SELECT id FROM task_groups WHERE is_default = 1').get() as { id: string }).id
+  }
+
   private requireGroup(id: string | null): void {
     if (id !== null && (typeof id !== 'string' || !this.database.prepare('SELECT id FROM task_groups WHERE id = ?').get(id))) throw new Error('分组不存在。')
   }
 
   moveProject(id: string, groupId: string | null): TaskProject {
-    this.requireProject(id)
+    if (this.requireProject(id).isDefault) throw new Error('默认清单不能移动。')
+    groupId = groupId ?? this.defaultGroupId()
     this.requireGroup(groupId)
     this.database.prepare('UPDATE task_projects SET group_id = ? WHERE id = ?').run(groupId, id)
     return this.requireProject(id)
   }
 
   createProject(name: string, groupId: string | null = null): TaskProject {
+    groupId = groupId ?? this.defaultGroupId()
     this.requireGroup(groupId)
     const clean = assertProjectName(name)
     const row: ProjectRow = { group_id: groupId, id: randomUUID(), name: clean, archived_at: null, created_at: Date.now() }
@@ -306,6 +363,7 @@ export class TasksStore {
   }
 
   archiveProject(id: string, archived: boolean): TaskProject {
+    if (this.requireProject(id).isDefault) throw new Error('默认清单不能删除或归档。')
     const result = this.database.prepare('UPDATE task_projects SET archived_at = ? WHERE id = ?')
       .run(archived ? Date.now() : null, id)
     if (!result.changes) throw new Error('项目不存在。')
@@ -319,7 +377,7 @@ export class TasksStore {
   }
 
   private requireActiveProjectId(projectId: unknown): string | null {
-    if (projectId === undefined || projectId === null) return null
+    if (projectId === undefined || projectId === null) return (this.database.prepare('SELECT id FROM task_projects WHERE is_default = 1').get() as { id: string }).id
     if (typeof projectId !== 'string') throw new Error('项目无效。')
     const row = this.database.prepare('SELECT id, archived_at FROM task_projects WHERE id = ?').get(projectId) as { id: string; archived_at: number | null } | undefined
     if (!row || row.archived_at !== null) throw new Error('项目不存在或已归档。')
@@ -454,17 +512,19 @@ export class TasksStore {
   createTask(input: TaskCreateInput): TaskRecord {
     const title = assertTitle(input?.title)
     const note = assertText(input?.note, 2_000)
-    const projectId = input?.projectId === undefined ? null : this.requireActiveProjectId(input.projectId)
+    const projectId = this.requireActiveProjectId(input?.projectId)
     const priority = assertPriority(input?.priority)
+    const startAt = assertTimestamp(input?.startAt, '开始时间')
     const dueAt = assertTimestamp(input?.dueAt, '截止时间')
+    if (startAt !== null && dueAt !== null && startAt > dueAt) throw new Error('开始时间不能晚于截止时间。')
     const remindAt = assertTimestamp(input?.remindAt, '提醒时间')
     const recurrence = assertRecurrence(input?.recurrence)
     const customFields = this.cleanCustomFieldValues(assertCustomFieldValues(input?.customFields))
     const now = Date.now()
     const info = this.database.prepare(`INSERT INTO tasks
-      (id, title, note, project_id, priority, status, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields)
-      VALUES (?, ?, ?, ?, ?, 'open', ?, ?, NULL, ?, ?, ?, ?, NULL, ?)`)
-      .run(randomUUID(), title, note, projectId, priority, dueAt, remindAt, recurrence, recurrence === 'none' ? null : dueAt, now, now, JSON.stringify(customFields))
+      (id, title, note, project_id, priority, status, start_at, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields)
+      VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?)`)
+      .run(randomUUID(), title, note, projectId, priority, startAt, dueAt, remindAt, recurrence, recurrence === 'none' ? null : dueAt, now, now, JSON.stringify(customFields))
     return this.requireTaskByRowid(Number(info.lastInsertRowid))
   }
 
@@ -480,15 +540,17 @@ export class TasksStore {
     const note = patch?.note === undefined ? current.note : assertText(patch.note, 2_000)
     const projectId = patch?.projectId === undefined || patch.projectId === current.project_id ? current.project_id : this.requireActiveProjectId(patch.projectId)
     const priority = patch?.priority === undefined ? current.priority : assertPriority(patch.priority)
+    const startAt = patch?.startAt === undefined ? current.start_at : assertTimestamp(patch.startAt, '开始时间')
     const dueAt = patch?.dueAt === undefined ? current.due_at : assertTimestamp(patch.dueAt, '截止时间')
+    if (startAt !== null && dueAt !== null && startAt > dueAt) throw new Error('开始时间不能晚于截止时间。')
     const remindAt = patch?.remindAt === undefined ? current.remind_at : assertTimestamp(patch.remindAt, '提醒时间')
     const recurrence = patch?.recurrence === undefined ? assertRecurrence(current.recurrence) : assertRecurrence(patch.recurrence)
     const resetFired = patch?.remindAt !== undefined && remindAt !== current.remind_at
     const customFields = patch?.customFields === undefined
       ? parseCustomFields(current.custom_fields)
       : this.cleanCustomFieldValues({ ...parseCustomFields(current.custom_fields), ...assertCustomFieldValues(patch.customFields) })
-    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, recurrence = ?, recurrence_anchor_at = ?, updated_at = ?, custom_fields = ? WHERE id = ?`)
-      .run(title, note, projectId, priority, dueAt, remindAt, resetFired ? null : current.remind_fired_at, recurrence, recurrence === 'none' ? null : (current.recurrence_anchor_at ?? dueAt), Date.now(), JSON.stringify(customFields), id)
+    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, start_at = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, recurrence = ?, recurrence_anchor_at = ?, updated_at = ?, custom_fields = ? WHERE id = ?`)
+      .run(title, note, projectId, priority, startAt, dueAt, remindAt, resetFired ? null : current.remind_fired_at, recurrence, recurrence === 'none' ? null : (current.recurrence_anchor_at ?? dueAt), Date.now(), JSON.stringify(customFields), id)
     return this.requireTask(id)
   }
 
@@ -520,9 +582,9 @@ export class TasksStore {
           this.database.prepare('UPDATE tasks SET recurrence_generated = 1 WHERE id = ?').run(id)
           const reminderOffset = current.remind_at !== null ? current.due_at - current.remind_at : null
           this.database.prepare(`INSERT INTO tasks
-            (id, title, note, project_id, priority, status, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields)
-            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, NULL, ?, ?, ?, ?, NULL, ?)`)
-            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, nextDueAt, reminderOffset !== null ? nextDueAt - reminderOffset : null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now, current.custom_fields ?? '{}')
+            (id, title, note, project_id, priority, status, start_at, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields)
+            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?)`)
+            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, current.start_at === null ? null : nextDueAt - (current.due_at - current.start_at), nextDueAt, reminderOffset !== null ? nextDueAt - reminderOffset : null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now, current.custom_fields ?? '{}')
         }
       }
       return this.requireTask(id)
