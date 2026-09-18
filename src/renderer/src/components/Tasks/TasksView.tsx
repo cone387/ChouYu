@@ -628,44 +628,50 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       {draft && <TaskEditorDialog draft={draft} projects={projects} fields={fields} busy={busy} error={error} dialogRef={taskDialogRef} onChange={setDraft} onClose={() => { if (!busy) setDraft(null) }} onSubmit={submitDraft} />}
 
       {viewDraft && <div className="tasks-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setViewDraft(null) }}>
-        <div className="tasks-dialog" role="dialog" aria-modal="true" aria-labelledby="tasks-view-dialog-title" onMouseDown={event => event.stopPropagation()}>
+        <div className="tasks-dialog tasks-view-dialog" role="dialog" aria-modal="true" aria-labelledby="tasks-view-dialog-title" onMouseDown={event => event.stopPropagation()}>
           <header className="tasks-dialog-header">
             <h2 id="tasks-view-dialog-title">{viewDraft.id ? '编辑视图' : '新建视图'}</h2>
             <button type="button" aria-label="关闭视图弹窗" onClick={() => setViewDraft(null)}>×</button>
           </header>
           <form className="tasks-form" onSubmit={submitViewDraft} aria-label={viewDraft.id ? '编辑视图' : '新建视图'}>
             {error && <p role="alert" className="tasks-error">{error}</p>}
-            <label>
-              名称
+            <label className="tasks-view-property">
+              <span className="tasks-view-property-name">名称：</span>
               <input value={viewDraft.name} onChange={e => setViewDraft({ ...viewDraft, name: e.target.value })}
                 onKeyDown={e => { if (e.key === 'Escape') setViewDraft(null) }}
                 autoFocus aria-label="视图名称" placeholder="例如：高优跟进" />
             </label>
             <fieldset className="tasks-view-filters">
               <legend>筛选条件（不选即不限）</legend>
-              <label>
-                截止范围
+              <label className="tasks-view-property">
+                <span className="tasks-view-property-name">截止范围：</span>
                 <select value={viewDraft.dueRange} onChange={e => setViewDraft({ ...viewDraft, dueRange: e.target.value as TaskDueRange })} aria-label="视图截止范围">
                   {(Object.keys(DUE_RANGE_LABELS) as TaskDueRange[]).map(id => <option key={id} value={id}>{DUE_RANGE_LABELS[id]}</option>)}
                 </select>
               </label>
-              <div className="tasks-view-checks" role="group" aria-label="视图优先级">
-                {(['high', 'medium', 'low'] as TaskPriority[]).map(priority => (
-                  <label key={priority} className="tasks-view-check">
-                    <input type="checkbox" checked={viewDraft.priorities.includes(priority)}
-                      onChange={e => setViewDraft({ ...viewDraft, priorities: e.target.checked ? [...viewDraft.priorities, priority] : viewDraft.priorities.filter(item => item !== priority) })} />
-                    {PRIORITY_LABELS[priority]}
-                  </label>
-                ))}
+              <div className="tasks-view-property">
+                <span className="tasks-view-property-name" id="tasks-view-priority-label">优先级：</span>
+                <div className="tasks-view-checks" role="group" aria-labelledby="tasks-view-priority-label">
+                  {(['high', 'medium', 'low'] as TaskPriority[]).map(priority => (
+                    <label key={priority} className="tasks-view-check">
+                      <input type="checkbox" checked={viewDraft.priorities.includes(priority)}
+                        onChange={e => setViewDraft({ ...viewDraft, priorities: e.target.checked ? [...viewDraft.priorities, priority] : viewDraft.priorities.filter(item => item !== priority) })} />
+                      {PRIORITY_LABELS[priority]}
+                    </label>
+                  ))}
+                </div>
               </div>
-              {projects.filter(project => !project.archivedAt).length > 0 && <div className="tasks-view-checks" role="group" aria-label="视图清单">
-                {projects.filter(project => !project.archivedAt).map(project => (
-                  <label key={project.id} className="tasks-view-check">
-                    <input type="checkbox" checked={viewDraft.projectIds.includes(project.id)}
-                      onChange={e => setViewDraft({ ...viewDraft, projectIds: e.target.checked ? [...viewDraft.projectIds, project.id] : viewDraft.projectIds.filter(item => item !== project.id) })} />
-                    {project.name}
-                  </label>
-                ))}
+              {projects.filter(project => !project.archivedAt).length > 0 && <div className="tasks-view-property">
+                <span className="tasks-view-property-name" id="tasks-view-project-label">清单：</span>
+                <div className="tasks-view-checks" role="group" aria-labelledby="tasks-view-project-label">
+                  {projects.filter(project => !project.archivedAt).map(project => (
+                    <label key={project.id} className="tasks-view-check">
+                      <input type="checkbox" checked={viewDraft.projectIds.includes(project.id)}
+                        onChange={e => setViewDraft({ ...viewDraft, projectIds: e.target.checked ? [...viewDraft.projectIds, project.id] : viewDraft.projectIds.filter(item => item !== project.id) })} />
+                      {project.name}
+                    </label>
+                  ))}
+                </div>
               </div>}
             </fieldset>
             <div className="tasks-form-actions">
@@ -675,6 +681,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
           </form>
         </div>
       </div>}
+
 
       {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} error={error} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
 
