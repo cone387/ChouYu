@@ -37,7 +37,7 @@ export default function useTaskMenus(active: boolean) {
       Object.assign(popup.style, {
         inset: 'auto', margin: '0', position: 'fixed',
         left: `${leftEdge}px`, top: `${topEdge}px`,
-        minWidth: `${Math.min(160, maxWidth)}px`, width: 'max-content', maxWidth: `${maxWidth}px`, maxHeight: `${maxHeight}px`
+        minWidth: `${Math.min(160, maxWidth)}px`, width: menu.matches('.tasks-field-menu') ? `${Math.min(280, maxWidth)}px` : 'max-content', maxWidth: `${maxWidth}px`, maxHeight: `${maxHeight}px`
       })
       popup.setAttribute('popover', 'manual')
       if (!popup.matches(':popover-open')) popup.showPopover()

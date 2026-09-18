@@ -1,0 +1,157 @@
+/* Shared select surface. Keep native form values, labels and keyboard handling.
+ * Electron supports base-select, including a themeable top-layer picker.
+ * Older preview browsers retain their native picker as a fallback.
+ */
+:root {
+  --select-radius: var(--radius-lg);
+  --select-option-radius: var(--radius-sm);
+  --select-height: 34px;
+}
+
+#root select:not([multiple]):not([size]),
+#root .tasks-select > summary {
+  box-sizing: border-box;
+  min-height: var(--select-height);
+  max-width: 100%;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--input-border);
+  border-radius: var(--select-radius);
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--font-md);
+  font-weight: 400;
+  line-height: var(--leading-normal);
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+#root select:not([multiple]):not([size]):enabled:hover,
+#root .tasks-select > summary:not([aria-disabled='true']):hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--input-border));
+  background-color: var(--hover-bg);
+}
+
+#root select:not([multiple]):not([size]):focus-visible,
+#root .tasks-select > summary:focus-visible,
+#root .model-picker-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+#root select:disabled,
+#root .tasks-select > summary[aria-disabled='true'] {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* Share the same menu surface with existing searchable/custom selectors. */
+#root .tasks-select-options,
+#root .model-picker-popover {
+  border: 1px solid var(--border);
+  border-radius: var(--select-radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+#root .tasks-select-options > button,
+#root .model-picker-option {
+  min-height: var(--select-height);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--select-option-radius);
+  font-size: var(--font-md);
+}
+
+#root .tasks-select-options > button:is(:hover, :focus-visible),
+#root .model-picker-option:is(:hover, :focus-visible) {
+  background: var(--hover-bg);
+}
+
+#root .tasks-select-options > button[aria-selected='true'],
+#root .model-picker-option[aria-selected='true'] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
+}
+
+@supports (appearance: base-select) {
+  #root select:not([multiple]):not([size]),
+  #root select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select;
+  }
+
+  #root select:not([multiple]):not([size]) {
+    gap: var(--space-5);
+    align-items: center;
+    background-image: none;
+  }
+
+  #root select::picker-icon {
+    content: '';
+    flex: 0 0 7px;
+    width: 7px;
+    height: 7px;
+    margin: 0 2px 3px auto;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    color: var(--text-muted);
+    transform: rotate(45deg);
+    transition: transform 140ms ease;
+  }
+
+  #root select:open {
+    border-color: var(--accent);
+  }
+
+  #root select:open::picker-icon { transform: translateY(3px) rotate(225deg); }
+
+  #root select::picker(select) {
+    box-sizing: border-box;
+    min-width: anchor-size(width);
+    max-width: calc(100vw - 16px);
+    max-height: min(320px, 60vh);
+    margin-block: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--select-radius);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-lg);
+    font: 400 var(--font-md)/var(--leading-normal) var(--font-sans);
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--input-border) transparent;
+  }
+
+  #root select:open::picker(select) { animation: select-appear 120ms ease-out; }
+
+  #root select:where(:not([multiple]):not([size])) option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    min-height: var(--select-height);
+    padding: var(--space-3) var(--space-5);
+    border: 0;
+    border-radius: var(--select-option-radius);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+
+  #root select option:enabled:is(:hover, :focus) { background: var(--hover-bg); outline: none; }
+  #root select option:checked { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary)); }
+  #root select option:disabled { color: var(--text-muted); opacity: .5; cursor: not-allowed; }
+  #root select option::checkmark { order: 1; margin-left: auto; color: var(--accent); }
+}
+
+@keyframes select-appear { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  #root select, #root select::picker-icon, #root .tasks-select > summary { transition: none; }
+  #root select:open::picker(select) { animation: none; }
+}

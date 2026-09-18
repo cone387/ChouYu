@@ -1,4 +1,5 @@
 @import './search-field.css';
+@import './select.css';
 
 :root {
   color-scheme: light;

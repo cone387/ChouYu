@@ -1,7 +1,7 @@
-import { useState, type DragEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import type { TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskUpdateInput } from '../../../../shared/tasks'
 import TaskIcon from './TaskIcon'
-import { PRIORITY_LABELS } from '../../../../shared/tasks'
+import { formatTaskDue, PRIORITY_LABELS } from '../../../../shared/tasks'
 import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
 
 export type BoardGroupMode = 'priority' | 'project' | 'field'
@@ -60,6 +60,12 @@ export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields:
 }
 
 export default function TasksBoard({ orderScope, tasks, projects, fields, groupingFields, hideNote, groupMode, groupFieldId, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+  const boardRef = useRef<HTMLDivElement>(null)
+  const positions = useRef(new Map<string, DOMRect>())
+  const scrollFrame = useRef<number | null>(null)
+  const scrollSpeed = useRef(0)
+  const dragPreview = useRef<HTMLElement | null>(null)
+  const [draggingTask, setDraggingTask] = useState<string | null>(null)
   const [dropColumn, setDropColumn] = useState<string | null>(null)
   const [orders, setOrders] = useState<Record<string, string[]>>(() => {
     try {
@@ -76,6 +82,71 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
     const rank = (key: string) => { const index = savedOrder.indexOf(key); return index < 0 ? Infinity : index }
     return rank(a.key) - rank(b.key)
   })
+  // Animate layout changes without changing the board's grouping or sort order.
+  useLayoutEffect(() => {
+    const next = new Map<string, DOMRect>()
+    const board = boardRef.current
+    if (!board) return
+    board.querySelectorAll<HTMLElement>('[data-motion-key]').forEach(element => {
+      if (element.closest('.tasks-drag-preview')) return
+      const key = element.dataset.motionKey!
+      const bounds = element.getBoundingClientRect()
+      const boardBounds = board.getBoundingClientRect()
+      const rect = new DOMRect(bounds.left - boardBounds.left + board.scrollLeft, bounds.top - boardBounds.top + board.scrollTop, bounds.width, bounds.height)
+      const old = positions.current.get(key)
+      next.set(key, rect)
+      if (old && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const parentKey = element.parentElement?.closest<HTMLElement>('[data-column-key]')?.dataset.motionKey
+        const oldParent = parentKey ? positions.current.get(parentKey) : undefined
+        const newParent = parentKey ? next.get(parentKey) : undefined
+        const x = old.left - rect.left - (oldParent && newParent ? oldParent.left - newParent.left : 0)
+        const y = old.top - rect.top - (oldParent && newParent ? oldParent.top - newParent.top : 0)
+        if (Math.abs(x) > 1 || Math.abs(y) > 1) {
+          element.getAnimations().forEach(animation => animation.cancel())
+          element.animate([{ transform: `translate(${x}px, ${y}px)` }, { transform: 'translate(0, 0)' }], {
+            duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)'
+          })
+        }
+      }
+    })
+    positions.current = next
+  }, [tasks, orders, scope])
+
+  const stopScroll = () => {
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current)
+    scrollFrame.current = null
+    scrollSpeed.current = 0
+  }
+  const updateScroll = (clientX: number) => {
+    const board = boardRef.current
+    if (!board) return
+    const rect = board.getBoundingClientRect()
+    const edge = 56
+    scrollSpeed.current = clientX < rect.left + edge
+      ? -Math.min(12, Math.max(0, (rect.left + edge - clientX) / edge * 12))
+      : Math.min(12, Math.max(0, (clientX - rect.right + edge) / edge * 12))
+    if (!scrollSpeed.current) { stopScroll(); return }
+    if (scrollFrame.current !== null) return
+    const tick = () => {
+      board.scrollLeft += scrollSpeed.current
+      scrollFrame.current = requestAnimationFrame(tick)
+    }
+    scrollFrame.current = requestAnimationFrame(tick)
+  }
+  const setPreview = (event: DragEvent<HTMLElement>, element: HTMLElement) => {
+    dragPreview.current?.remove()
+    const rect = element.getBoundingClientRect()
+    const preview = element.cloneNode(true) as HTMLElement
+    preview.classList.add('tasks-drag-preview')
+    preview.style.width = `${rect.width}px`
+    preview.style.height = `${Math.min(rect.height, 420)}px`
+    preview.setAttribute('aria-hidden', 'true')
+    boardRef.current?.appendChild(preview)
+    dragPreview.current = preview
+    event.dataTransfer.setDragImage(preview, Math.max(0, event.clientX - rect.left), Math.max(0, event.clientY - rect.top))
+  }
+  useEffect(() => () => { stopScroll(); dragPreview.current?.remove() }, [])
+
   const moveColumn = (source: string, target: string, after: boolean) => {
     if (source === target || !columns.some(column => column.key === source)) return
     const keys = columns.map(column => column.key).filter(key => key !== source)
@@ -88,7 +159,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
       return next
     })
   }
-  const finishColumnDrag = () => { setDraggingColumn(null); setColumnTarget(null); setDropColumn(null) }
+  const finishColumnDrag = () => { setDraggingColumn(null); setDraggingTask(null); setColumnTarget(null); setDropColumn(null); stopScroll(); dragPreview.current?.remove(); dragPreview.current = null }
   const isColumnDrag = (event: DragEvent<HTMLElement>) => event.dataTransfer.types.includes('application/x-chouyu-task-column')
 
   const dropInto = (event: DragEvent<HTMLElement>, column: BoardColumn) => {
@@ -104,7 +175,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
       finishColumnDrag()
       return
     }
-    setDropColumn(null)
+    finishColumnDrag()
     if (column.archived) return
     const id = event.dataTransfer.getData('text/plain')
     const task = id ? tasks.find(item => item.id === id) : undefined
@@ -112,23 +183,24 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
     onMove(task.id, column.patch)
   }
 
-  return <div className="tasks-board" aria-label="任务看板">
+  return <div ref={boardRef} className="tasks-board" aria-label="任务看板" data-drag-active={draggingColumn !== null || draggingTask !== null || undefined}
+    onDragOver={event => { if (isColumnDrag(event) || draggingTask !== null) updateScroll(event.clientX) }}
+    onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { stopScroll(); setDropColumn(null); setColumnTarget(null) } }}
+    onDragEnd={finishColumnDrag}>
     {columns.map(column => {
       const items = column.tasks
-      return <section key={column.key || 'none'} className="tasks-board-column" data-column-key={column.key} data-column-dragging={draggingColumn === column.key || undefined} data-column-insert={columnTarget?.key === column.key ? (columnTarget.after ? 'after' : 'before') : undefined} data-drop-target={dropColumn === column.key || undefined} aria-label={`${column.label}，${items.length} 个任务`}
+      return <section key={column.key || 'none'} className="tasks-board-column" data-column-key={column.key} data-motion-key={`column:${column.key}`} data-column-dragging={draggingColumn === column.key || undefined} data-column-insert={columnTarget?.key === column.key ? (columnTarget.after ? 'after' : 'before') : undefined} data-drop-target={dropColumn === column.key || undefined} aria-label={`${column.label}，${items.length} 个任务`}
         onDragOver={event => {
           if (isColumnDrag(event)) {
             event.preventDefault(); event.dataTransfer.dropEffect = 'move'
             const rect = event.currentTarget.getBoundingClientRect()
-            setColumnTarget({ key: column.key, after: event.clientX > rect.left + rect.width / 2 })
-          } else if (!column.archived) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.key) }
-          const board = event.currentTarget.parentElement
-          if (board) { const rect = board.getBoundingClientRect(); if (event.clientX > rect.right - 48) board.scrollLeft += 24; else if (event.clientX < rect.left + 48) board.scrollLeft -= 24 }
+            setColumnTarget(draggingColumn === column.key ? null : { key: column.key, after: event.clientX > rect.left + rect.width / 2 })
+          } else if (!column.archived && (draggingTask !== null || event.dataTransfer.types.includes('text/plain'))) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.key) }
         }}
         onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { setDropColumn(null); setColumnTarget(null) } }}
         onDrop={event => dropInto(event, column)}>
         <h3 className="tasks-board-column-title"><button type="button" className="tasks-column-drag-handle" draggable aria-label={`移动看板列 ${column.label}`} title="拖动调整列位置；Alt + 左右方向键也可移动"
-          onDragStart={event => { event.stopPropagation(); event.dataTransfer.setData('application/x-chouyu-task-column', JSON.stringify({ scope, key: column.key })); event.dataTransfer.effectAllowed = 'move'; setDraggingColumn(column.key) }}
+          onDragStart={event => { event.stopPropagation(); event.dataTransfer.setData('application/x-chouyu-task-column', JSON.stringify({ scope, key: column.key })); event.dataTransfer.effectAllowed = 'move'; setPreview(event, event.currentTarget.closest<HTMLElement>('.tasks-board-column')!); setDraggingColumn(column.key) }}
           onDragEnd={finishColumnDrag}
           onKeyDown={event => {
             if (!event.altKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return
@@ -140,8 +212,8 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
         {items.length === 0 && <p className="tasks-board-empty">暂无任务，可拖动任务到这里</p>}
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
-            return <li key={task.id} className="tasks-board-card" onDragEnd={() => setDropColumn(null)} draggable data-priority={task.priority}
-              onDragStart={event => { event.dataTransfer.setData('text/plain', task.id); event.dataTransfer.effectAllowed = 'move' }}>
+            return <li key={task.id} className="tasks-board-card" onDragEnd={finishColumnDrag} draggable data-priority={task.priority} data-motion-key={`task:${task.id}`} data-task-dragging={draggingTask === task.id || undefined}
+              onDragStart={event => { event.stopPropagation(); event.dataTransfer.setData('text/plain', task.id); event.dataTransfer.effectAllowed = 'move'; setPreview(event, event.currentTarget); setDraggingTask(task.id) }}>
               <button type="button" className="tasks-complete" data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? onReopen(task.id) : onComplete(task.id)}>{task.status === 'done' ? '✓' : ''}</button>
               <button type="button" className="tasks-board-card-body" onClick={() => onEdit(task)}>
                 <span className="tasks-board-card-head">
@@ -150,12 +222,11 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
                 </span>
                 {!hideNote && task.note && <span className="tasks-board-card-note">{task.note}</span>}
                 <span className="tasks-board-card-chips"><TaskCardMeta task={task} projects={projects} fields={fields} /></span>
-                <span className="tasks-board-card-footer"><span className="tasks-board-card-status"><span className="tasks-board-card-dot" aria-hidden="true" />{task.status === 'done' ? '已完成' : '未完成'}</span><TaskCardDue task={task} /></span>
+                <span className="tasks-board-card-footer">{task.startAt != null && <span className="tasks-start-cell tasks-board-start" title={`开始时间：${formatTaskDue(task.startAt)}`}><TaskIcon name="today" />{formatTaskDue(task.startAt)} 开始</span>}<span className="tasks-board-card-status"><span className="tasks-board-card-dot" aria-hidden="true" />{task.status === 'done' ? '已完成' : '未完成'}</span><TaskCardDue task={task} /></span>
               </button>
             </li>
           })}
         </ul>
-        {!column.archived && <button type="button" className="tasks-board-add" onClick={() => onCreate(column.patch)}><TaskIcon name="plus" />新建任务</button>}
       </section>
     })}
   </div>

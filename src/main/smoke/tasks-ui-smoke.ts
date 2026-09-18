@@ -180,7 +180,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert("Array.from(document.querySelectorAll('.tasks-board-column')).map(item => item.dataset.columnKey).join(',') === 'high,medium,low'")
   await run("document.querySelector('.tasks-board').scrollLeft = 0")
 
-  await click('.tasks-board-column:first-child > .tasks-board-add')
+  await click('.tasks-board-column:first-child .tasks-column-add')
   await assert("document.querySelector('.tasks-composer')?.getAttribute('aria-modal') === 'true'")
   await fill('[aria-label="任务标题"]', '看板快速创建')
   await click('.tasks-composer button[type="submit"]')
@@ -219,11 +219,11 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await fill('[aria-label="筛选截止范围"]', 'any')
   await click('.tasks-page-heading h1')
   await click('[aria-label="字段配置"]')
-  await click('[aria-label="字段配置"] + div label:nth-of-type(2) input')
+  await click('[role="switch"][aria-label="显示测试阶段"]')
   await click('.tasks-page-heading h1')
   await assert("!document.querySelector('.tasks-list')?.textContent.includes('测试阶段：进行中')")
   await click('[aria-label="字段配置"]')
-  await click('[aria-label="字段配置"] + div label:nth-of-type(2) input')
+  await click('[role="switch"][aria-label="显示测试阶段"]')
   await click('.tasks-page-heading h1')
   await run(`window.electronAPI.tasks.remove(${JSON.stringify(quickId)})`)
   // Trigger a reload after fixture cleanup.

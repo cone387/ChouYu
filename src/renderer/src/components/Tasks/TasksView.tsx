@@ -508,11 +508,11 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
             </details>
           </div>
           {selection !== 'done' && <details className="tasks-tool-menu">
-            <summary aria-label="任务完成状态" title={`状态：${effectiveStatus === 'open' ? '未完成' : effectiveStatus === 'done' ? '已完成' : '全部任务'}`} data-active={effectiveStatus !== 'open' || undefined}><TaskIcon name="done" /></summary>
+            <summary aria-label="任务完成状态" title={`状态：${effectiveStatus === 'open' ? '未完成' : effectiveStatus === 'done' ? '已完成' : '全部任务'}`} data-active={effectiveStatus !== 'open' || undefined}><TaskIcon name="done" /><span>{effectiveStatus === 'open' ? '未完成' : effectiveStatus === 'done' ? '已完成' : '全部任务'}</span></summary>
             <div className="tasks-item-menu-popover tasks-tool-popover">{(['open', 'done', 'all'] as const).map(status => <button type="button" key={status} aria-current={effectiveStatus === status || undefined} onClick={() => setStatusFilter(status)}>{status === 'open' ? '未完成' : status === 'done' ? '已完成' : '全部任务'}</button>)}</div>
           </details>}
           <details className="tasks-tool-menu">
-            <summary aria-label="筛选任务" title="筛选任务" data-active={filterCount > 0 || undefined}><TaskIcon name="filter" />{filterCount > 0 && <span className="tasks-tool-badge">{filterCount}</span>}</summary>
+            <summary aria-label="筛选任务" title="筛选任务" data-active={filterCount > 0 || undefined}><TaskIcon name="filter" /><span>筛选</span>{filterCount > 0 && <span className="tasks-tool-badge">{filterCount}</span>}</summary>
             <div className="tasks-item-menu-popover tasks-tool-popover" role="group" aria-label="筛选优先级">
               <p className="tasks-tool-title">筛选 · 同时满足以下条件</p><p className="tasks-tool-title">优先级（可多选）</p>
               {(['high', 'medium', 'low'] as TaskPriority[]).map(priority => (
@@ -529,7 +529,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
             </div>
           </details>
           {selection !== 'done' && <details className="tasks-tool-menu">
-            <summary aria-label="排序方式" title={`排序：${TASK_SORT_LABELS[sortMode]}`} data-active={sortMode !== 'smart' || undefined}><TaskIcon name="sort" /></summary>
+            <summary aria-label="排序方式" title={`排序：${TASK_SORT_LABELS[sortMode]}`} data-active={sortMode !== 'smart' || undefined}><TaskIcon name="sort" /><span>排序：{TASK_SORT_LABELS[sortMode]}</span></summary>
             <div className="tasks-item-menu-popover tasks-tool-popover" role="group" aria-label="排序方式">
               {(Object.keys(TASK_SORT_LABELS) as TaskSortMode[]).map(id => (
                 <button key={id} type="button" aria-current={sortMode === id || undefined}
@@ -539,7 +539,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
               ))}
             </div>
           </details>}
-          {selection !== 'done' && <details className="tasks-tool-menu"><summary aria-label="任务分组" title="分组方式"><TaskIcon name="group" /></summary><div className="tasks-item-menu-popover tasks-tool-popover"><label className="tasks-filter-row">分组依据
+          {selection !== 'done' && <details className="tasks-tool-menu"><summary aria-label="任务分组" title="分组方式"><TaskIcon name="group" /><span>分组：{mode === 'list' && !listGrouped ? '不分组' : boardGroupMode === 'priority' ? '优先级' : boardGroupMode === 'project' ? '清单' : fields.find(field => field.id === groupFieldId)?.name}</span></summary><div className="tasks-item-menu-popover tasks-tool-popover"><label className="tasks-filter-row">分组依据
             <select value={mode === 'list' && !listGrouped ? 'none' : groupMode === 'field' ? `field:${groupFieldId ?? ''}` : groupMode} aria-label="看板分组方式"
               onChange={e => {
                 const value = e.target.value
@@ -554,12 +554,24 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
               {fields.map(field => <option key={field.id} value={`field:${field.id}`}>按{field.name}</option>)}
             </select>
           </label></div></details>}
-          <details className="tasks-tool-menu">
-            <summary aria-label="字段配置" title="字段配置"><TaskIcon name="fields" /></summary>
-            <div className="tasks-item-menu-popover tasks-tool-popover">
-              <p className="tasks-tool-title">显示字段</p>
-              {[{ id: 'note', name: '备注' }, ...fields, { id: 'priority', name: '优先级' }, { id: 'project', name: '清单' }, { id: 'start', name: '开始时间' }, { id: 'due', name: '截止时间' }].map(field => <label className="tasks-view-check" key={field.id}><input type="checkbox" checked={!hiddenFields.includes(field.id)} onChange={e => setHiddenFields(e.target.checked ? hiddenFields.filter(id => id !== field.id) : [...hiddenFields, field.id])} />{field.name}</label>)}
-              <button type="button" className="tasks-fields-toggle" onClick={() => setFieldsOpen(true)}><TaskIcon name="plus" />管理自定义字段</button>
+          <details className="tasks-tool-menu tasks-field-menu">
+            <summary aria-label="字段配置" title="字段配置"><TaskIcon name="fields" /><span>字段配置</span></summary>
+            <div className="tasks-item-menu-popover tasks-tool-popover tasks-field-popover">
+              <p className="tasks-tool-title">字段配置</p>
+              <button type="button" className="tasks-fields-toggle" onClick={event => { setFieldsOpen(true); event.currentTarget.closest('details')?.removeAttribute('open') }}><TaskIcon name="plus" />管理自定义字段</button>
+              <div className="tasks-field-visibility-list" role="group" aria-label="字段显示与隐藏">
+                <div className="tasks-field-visibility-row"><span>任务名称</span><button type="button" disabled aria-label="任务名称始终显示" title="任务名称始终显示"><TaskIcon name="eye" /></button></div>
+                {[{ id: 'start', name: '开始时间' }, { id: 'due', name: '截止时间' }, { id: 'priority', name: '优先级' }, { id: 'project', name: '所属清单' }, { id: 'note', name: '备注' }, ...fields].map(field => {
+                  const visible = !hiddenFields.includes(field.id)
+                  return <div className="tasks-field-visibility-row" key={field.id} data-hidden={!visible || undefined}>
+                    <span>{field.name}</span>
+                    <button type="button" data-menu-keep-open role="switch" aria-checked={visible} aria-label={`显示${field.name}`} title={`${visible ? '隐藏' : '显示'}${field.name}`}
+                      onClick={() => setHiddenFields(current => current.includes(field.id) ? current.filter(id => id !== field.id) : [...current, field.id])}>
+                      <TaskIcon name={visible ? 'eye' : 'eyeOff'} />
+                    </button>
+                  </div>
+                })}
+              </div>
             </div>
           </details>
         </div>
@@ -657,12 +669,10 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         ? <div className="tasks-grouped-list">{groupTasks(sorted, projects, fields, boardGroupMode, groupFieldId).map(column => <details className="tasks-content-group" key={column.key || 'none'} open>
             <summary><TaskIcon name="chevron" /><span>{column.label}</span><span className="tasks-count">{column.tasks.length}</span></summary>
             <ul role="list" className="tasks-list">{column.tasks.map(renderTask)}</ul>
-            {!column.archived && effectiveStatus !== 'done' && <button type="button" className="tasks-board-add" onClick={() => { setError(''); setDraft(createDraft(column.patch)) }}><TaskIcon name="plus" />新建任务</button>}
           </details>)}</div>
         : <ul role="list" className="tasks-list">
         {sorted.map(renderTask)}
       </ul>}
-      {selection !== 'done' && mode === 'list' && !listGrouped && effectiveStatus !== 'done' && <button type="button" className="tasks-board-add" onClick={startCreate}><TaskIcon name="plus" />新建任务</button>}
       {effectiveStatus !== 'open' && doneTasks.length < matchedDone && <button className="tasks-load-more" type="button" disabled={loading} onClick={() => setDoneLimit(limit => limit + 50)}>加载更多（已加载 {doneTasks.length} / {matchedDone}）</button>}
     </section>
   </div>
