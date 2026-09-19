@@ -2,9 +2,11 @@ name: Repair macOS release assets
 
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
-    paths: ['.github/workflows/repair-release-macos.yml']
+    inputs:
+      release_tag:
+        description: Existing verified release tag to rebuild
+        required: true
+        default: v1.3.4
 
 jobs:
   upload:
@@ -12,7 +14,7 @@ jobs:
     permissions:
       contents: write
     env:
-      RELEASE_TAG: v1.3.4
+      RELEASE_TAG: ${{ inputs.release_tag }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CSC_IDENTITY_AUTO_DISCOVERY: false
     steps:
