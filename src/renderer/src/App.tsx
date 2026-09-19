@@ -1,3 +1,4 @@
+import type { AssistantMessageKind } from '../../shared/assistant-message'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import StorageNotice from './components/StorageNotice/StorageNotice'
 import Pet from './components/Pet/Pet'
@@ -125,8 +126,8 @@ function App() {
 
   // Proactive engine - respect config
   useEffect(() => {
-    const append = (message: string) => {
-      void window.electronAPI.proactiveAppend(message).catch(() => { /* storage notice covers persistence failures */ })
+    const append = (message: string, kind?: AssistantMessageKind) => {
+      void window.electronAPI.proactiveAppend(message, undefined, kind).catch(() => { /* storage notice covers persistence failures */ })
     }
     proactiveEngine.start((msg, kind) => {
       if (kind === 'return') {
@@ -142,10 +143,10 @@ function App() {
           const where = titles.length ? `刚才停在：${titles.join('、')}。` : ''
           append(day.activityCount > 0
             ? `欢迎回来。今天已经记录 ${day.activityCount} 段工作。${where}要接着刚才的工作吗？`
-            : `欢迎回来。${where}要接着刚才的工作吗？`)
-        }).catch(() => append(msg))
+            : `欢迎回来。${where}要接着刚才的工作吗？`, 'return')
+        }).catch(() => append(msg, 'return'))
       } else {
-        append(msg)
+        append(msg, kind)
       }
     }, { greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder })
     void window.electronAPI.db.getState('assistant-snoozes').then(value => {
@@ -164,11 +165,11 @@ function App() {
   // Task reminders from the main-process scheduler land in the assistant session.
   useEffect(() => {
     const cleanup = window.electronAPI.tasks.onTasksReminder(payload => {
-      if ('task' in payload) void window.electronAPI.proactiveAppend(`任务提醒：${payload.task.title}`)
-      else if (payload.backlog > 0) void window.electronAPI.proactiveAppend(`错过了 ${payload.backlog} 条任务提醒`)
+      if ('task' in payload) void window.electronAPI.proactiveAppend(`任务提醒：${payload.task.title}`, undefined, 'task')
+      else if (payload.backlog > 0) void window.electronAPI.proactiveAppend(`错过了 ${payload.backlog} 条任务提醒`, undefined, 'task-backlog')
     })
     const rebuiltCleanup = window.electronAPI.tasks.onTasksStoreRebuilt(() => {
-      void window.electronAPI.proactiveAppend('任务数据文件无法读取，已重建空库，原文件已隔离保存。')
+      void window.electronAPI.proactiveAppend('任务数据文件无法读取，已重建空库，原文件已隔离保存。', undefined, 'warning')
     })
     window.electronAPI.tasks.ready()
     return () => { cleanup(); rebuiltCleanup() }

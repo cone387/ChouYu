@@ -145,8 +145,16 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
       setContextMenu(null)
     }
     window.addEventListener('pointerdown', dismiss, true)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setContextMenu(null)
+    }
+    window.addEventListener('keydown', closeOnEscape, true)
     return () => {
       window.removeEventListener('pointerdown', dismiss, true)
+      window.removeEventListener('keydown', closeOnEscape, true)
     }
   }, [contextMenu])
 
@@ -220,7 +228,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
       {contextMenu && (
         <div
           data-interactive
-          className="pet-context-menu"
+          data-escape-overlay className="pet-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button onClick={() => { setContextMenu(null); onOpenAssistantChat() }}>助手消息</button>

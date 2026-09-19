@@ -1,3 +1,4 @@
+import { normalizeAssistantMessageKind } from '../shared/assistant-message'
 import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app, shell, powerMonitor } from 'electron'
 import { notifyJournalConfig } from './journal'
 import { randomUUID } from 'crypto'
@@ -798,10 +799,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('assistant-unread-changed', count)
   }
 
-  ipcMain.handle('proactive:append', (_event, content: unknown, timestamp?: unknown) => {
+  ipcMain.handle('proactive:append', (_event, content: unknown, timestamp?: unknown, kind?: unknown) => {
     if (typeof content !== 'string' || !content.trim() || content.length > 20_000) throw new Error('Invalid proactive content')
     const at = typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : undefined
-    appendAssistantMessage(content, at)
+    appendAssistantMessage(content, at, normalizeAssistantMessageKind(kind) ?? 'notification')
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sessions:changed')
     notifyAssistantUnread()
   })

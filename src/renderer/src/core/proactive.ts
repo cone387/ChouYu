@@ -10,7 +10,7 @@
 const COOLDOWN = 60 * 60 * 1000 // 60 minutes
 const REST_REMINDER_INTERVAL = 60 * 60 * 1000 // 60 minutes
 
-export type ProactiveKind = 'greeting' | 'rest' | 'return' | 'task'
+export type ProactiveKind = 'greeting' | 'rest' | 'return' | 'task' | 'snooze'
 type ProactiveCallback = (message: string, kind?: ProactiveKind) => void
 
 export interface ProactiveOptions {
@@ -133,7 +133,7 @@ export class ProactiveEngine {
       this.snoozes.delete(item.id)
       this.snoozeTimers.delete(item.id)
       this.persistSnoozes()
-      this.callback?.(`${SNOOZE_PREFIX}${item.content}`)
+      this.callback?.(`${SNOOZE_PREFIX}${item.content}`, 'snooze')
     }, delay)
     this.snoozeTimers.set(item.id, timer)
   }

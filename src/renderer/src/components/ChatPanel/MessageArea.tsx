@@ -1,3 +1,5 @@
+import { legacyAssistantMessageKind, normalizeAssistantMessageKind } from '../../../../shared/assistant-message'
+import AssistantMessageLabel from './AssistantMessageLabel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -102,10 +104,14 @@ function CodeBlock({ className, children }: { className?: string; children: stri
 function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        onClose()
+      }
     }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
+    window.addEventListener('keydown', handleKey, true)
+    return () => window.removeEventListener('keydown', handleKey, true)
   }, [onClose])
 
   return (
@@ -199,12 +205,15 @@ export default function MessageArea({ character, searchOpen = false, initialSear
         <div style={{ height: windowed.startOffset }} aria-hidden="true" />
       )}
       {visibleMessages.map(({ message: msg, index }) => {
+        const assistantKind = canSnooze && msg.role === 'assistant' && !msg.toolData && !msg.pluginData
+          ? normalizeAssistantMessageKind(msg.assistantKind) ?? legacyAssistantMessageKind(msg.content) : undefined
         const canRetry = !isStreaming && getConversationForRetry(messages, msg.id) !== null
         const memorySourceCount = msg.memoryRefs?.reduce((total, memory) => total + (memory.compressedCount || 1), 0) || 0
         return (
         <div
           key={msg.id}
           data-message-id={msg.id}
+          data-assistant-kind={assistantKind}
           ref={(node) => {
             if (node && useWindowing) windowed.measureRow(index, node.offsetHeight)
           }}
@@ -219,6 +228,7 @@ export default function MessageArea({ character, searchOpen = false, initialSear
             {msg.role === 'assistant' && <span className="message-sender">{character?.name || '联系人'}</span>}
             {searching && (msg.role !== 'user' || msg.toolData) && <SearchMatch text={searchableMessageText(msg)} query={normalizedQuery} />}
             <div className="message-bubble">
+              {assistantKind && <AssistantMessageLabel kind={assistantKind} />}
               {msg.imageUrl && (
                 <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
               )}

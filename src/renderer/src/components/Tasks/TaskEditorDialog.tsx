@@ -42,7 +42,6 @@ export default function TaskEditorDialog({ draft, projects, fields, busy, error,
         <label className="tasks-composer-title">
           <span className="sr-only">标题</span>
           <input value={draft.title} onChange={e => onChange({ ...draft, title: e.target.value })}
-            onKeyDown={e => { if (e.key === 'Escape' && !busy) onClose() }}
             autoFocus aria-label="任务标题" placeholder={draft.id ? "任务标题" : "准备做些什么？"} />
         </label>
         <div className="tasks-composer-properties">

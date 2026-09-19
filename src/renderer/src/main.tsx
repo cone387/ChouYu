@@ -5,11 +5,13 @@ import ConfirmProvider from './components/common/ConfirmProvider'
 import Journal from './components/Journal/Journal'
 import { initTheme } from './core/theme'
 import { initSelectInteractions } from './core/select'
+import { initEscapeInteractions } from './core/escape'
 import './styles/tokens.css'
 import './styles/index.css'
 
 initTheme()
 initSelectInteractions()
+initEscapeInteractions()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

@@ -1,3 +1,4 @@
+import { normalizeAssistantMessageKind, type AssistantMessageKind } from '../shared/assistant-message'
 import { app, safeStorage } from 'electron'
 import { randomUUID } from 'crypto'
 import path from 'path'
@@ -27,6 +28,7 @@ export interface Message {
   content: string
   timestamp: number
   imageUrl?: string
+  assistantKind?: AssistantMessageKind
   responseStatus?: 'error' | 'stopped'
   toolData?: ToolActivityData
   memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>
@@ -175,6 +177,7 @@ function sanitizeMessages(value: unknown): Message[] {
       responseStatus: message.responseStatus === 'error' || message.responseStatus === 'stopped'
         ? message.responseStatus
         : undefined,
+      assistantKind: message.role === 'assistant' ? normalizeAssistantMessageKind(message.assistantKind) : undefined,
       toolData: sanitizeToolData(message.toolData),
       memoryRefs: sanitizeMemoryRefs(message.memoryRefs),
       imageUrl: typeof message.imageUrl === 'string' ? message.imageUrl : undefined
@@ -507,7 +510,7 @@ function markSessionReadUpToNow(session: ChatSession): void {
 }
 
 /** 主动提醒的唯一入口：写入助手会话并即时落盘，托盘角标据此更新。 */
-export function appendAssistantMessage(content: string, timestamp?: number): SessionWorkspace {
+export function appendAssistantMessage(content: string, timestamp?: number, kind?: AssistantMessageKind): SessionWorkspace {
   const at = Number.isFinite(timestamp) ? Number(timestamp) : Date.now()
   let session = store.sessions
     .filter((candidate) => isAssistantCharacter(candidate.characterId))
@@ -516,7 +519,7 @@ export function appendAssistantMessage(content: string, timestamp?: number): Ses
     session = createSession([], '助手消息', at, ASSISTANT_CHARACTER_ID)
     store.sessions.unshift(session)
   }
-  session.messages.push({ id: randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at })
+  session.messages.push({ id: randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at, assistantKind: normalizeAssistantMessageKind(kind) })
   session.updatedAt = at
   persist(false)
   return getSessionWorkspace()

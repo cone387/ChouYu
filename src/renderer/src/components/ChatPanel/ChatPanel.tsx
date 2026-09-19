@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { matchesSearchShortcut } from '../../../../shared/search-shortcut'
+import { isOverlayEscape } from '../../core/escape'
 import GlobalSearch, { type SearchSnapshot } from '../Workspace/GlobalSearch'
 import Journal from '../Journal/Journal'
 import TasksView from '../Tasks/TasksView'
@@ -412,7 +413,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!visible || toolApprovalRequest || event.defaultPrevented || document.querySelector('dialog[open], [aria-modal="true"]')) return
+      if (!visible || toolApprovalRequest || event.defaultPrevented || isOverlayEscape(event) || document.querySelector('dialog[open], [aria-modal="true"]')) return
       if (matchesSearchShortcut(event, config.searchHotkey, navigator.platform.includes('Mac'))) {
         event.preventDefault(); setShowGlobalSearch(true); return
       }

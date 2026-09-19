@@ -52,6 +52,17 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
   const [cmdIndex, setCmdIndex] = useState(0)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  useEffect(() => {
+    if (!previewImage) return
+    const closePreview = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setPreviewImage(null)
+    }
+    window.addEventListener('keydown', closePreview, true)
+    return () => window.removeEventListener('keydown', closePreview, true)
+  }, [previewImage])
   const [activePlugin, setActivePlugin] = useState<PluginInfo | null>(null)
   const [showPluginOverflow, setShowPluginOverflow] = useState(false)
   const [attachmentError, setAttachmentError] = useState('')
@@ -125,6 +136,19 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
     document.addEventListener('mousedown', dismiss)
     return () => document.removeEventListener('mousedown', dismiss)
   }, [showScreenshotMenu])
+
+  useEffect(() => {
+    if (!showScreenshotMenu && !showPluginOverflow) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (showPluginOverflow) setShowPluginOverflow(false)
+      else setShowScreenshotMenu(false)
+    }
+    window.addEventListener('keydown', closeOnEscape, true)
+    return () => window.removeEventListener('keydown', closeOnEscape, true)
+  }, [showScreenshotMenu, showPluginOverflow])
 
   useEffect(() => {
     if (!showPluginOverflow) return
@@ -587,7 +611,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
           <div className="input-toolbar-left">
             <div className="screenshot-selector">
               {showScreenshotMenu && (
-                <div className="screenshot-dropdown">
+                <div data-escape-overlay className="screenshot-dropdown">
                   <button className="screenshot-menu-item" onClick={() => doScreenshot()}>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="5" cy="12" r="2"/><circle cx="11" cy="12" r="2"/>
@@ -700,7 +724,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
                         onClick={() => setShowPluginOverflow((v) => !v)}
                       >⋯</button>
                       {showPluginOverflow && (
-                        <div className="plugin-overflow-menu">
+                        <div data-escape-overlay className="plugin-overflow-menu">
                           {overflow.map((p) => (
                             <button
                               key={p.id}

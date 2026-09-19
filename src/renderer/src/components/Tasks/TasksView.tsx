@@ -186,7 +186,16 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   useEffect(() => { setDoneLimit(50) }, [query, filterPriorities, filterProjects, filterDue, selection])
   useEffect(() => {
     if (!draft && !viewDraft && !fieldsOpen) return
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) { setDraft(null); setViewDraft(null); setFieldsOpen(false) } }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (!busy) {
+        if (fieldsOpen) setFieldsOpen(false)
+        else if (viewDraft) setViewDraft(null)
+        else setDraft(null)
+      }
+    }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
   }, [draft, viewDraft, fieldsOpen, busy])
@@ -638,7 +647,6 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
             <label className="tasks-view-property">
               <span className="tasks-view-property-name">名称：</span>
               <input value={viewDraft.name} onChange={e => setViewDraft({ ...viewDraft, name: e.target.value })}
-                onKeyDown={e => { if (e.key === 'Escape') setViewDraft(null) }}
                 autoFocus aria-label="视图名称" placeholder="例如：高优跟进" />
             </label>
             <fieldset className="tasks-view-filters">

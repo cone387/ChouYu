@@ -28,7 +28,7 @@ export default function CommandMenu({ filter, selectedIndex, onSelect, onClose, 
   if (filtered.length === 0) return null
 
   return (
-    <div className="command-menu" role="listbox" aria-label="斜杠命令">
+    <div data-escape-overlay className="command-menu" role="listbox" aria-label="斜杠命令">
       {filtered.map((c, i) => (
         <button
           key={c.cmd}

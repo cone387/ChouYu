@@ -50,6 +50,17 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
   const [showAdd, setShowAdd] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [busyId, setBusyId] = useState('')
+  useEffect(() => {
+    if (!active || !confirmClear) return
+    const cancelClear = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (busyId !== 'clear') setConfirmClear(false)
+    }
+    window.addEventListener('keydown', cancelClear, true)
+    return () => window.removeEventListener('keydown', cancelClear, true)
+  }, [active, confirmClear, busyId])
   const [remoteListNotice, setRemoteListNotice] = useState('')
   const remoteListScope = JSON.stringify([config.memoryEngineProvider, config.memorySyncBaseUrl, config.memorySyncUserId, config.memorySyncApiKey])
   const remoteListScopeRef = useRef(remoteListScope)

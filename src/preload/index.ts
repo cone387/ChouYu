@@ -1,3 +1,4 @@
+import type { AssistantMessageKind } from '../shared/assistant-message'
 import type { StorageStatus } from '../shared/storage'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { JournalAPI } from '../shared/journal'
@@ -234,7 +235,7 @@ const api = {
   notifyPetVisible: (visible: boolean) => {
     ipcRenderer.send('pet-visibility-changed', visible)
   },
-  proactiveAppend: (content: string, timestamp?: number) => ipcRenderer.invoke('proactive:append', content, timestamp) as Promise<void>,
+  proactiveAppend: (content: string, timestamp?: number, kind?: AssistantMessageKind) => ipcRenderer.invoke('proactive:append', content, timestamp, kind) as Promise<void>,
   getAssistantUnread: () => ipcRenderer.invoke('proactive:get-unread') as Promise<number>,
   onSessionsChanged: (callback: () => void) => {
     ipcRenderer.on('sessions:changed', callback)

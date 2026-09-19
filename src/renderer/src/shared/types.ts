@@ -1,3 +1,4 @@
+import type { AssistantMessageKind } from '../../../shared/assistant-message'
 import type { StorageStatus } from '../../../shared/storage'
 import type { AppConfig, PaletteId, ResolvedProviderProfile } from '../../../shared/config'
 import type { CharacterStats } from '../../../shared/characters'
@@ -143,7 +144,7 @@ export interface ElectronAPI {
   onTogglePanel: (callback: () => void) => () => void
   onSetPetVisible: (callback: (visible: boolean) => void) => () => void
   notifyPetVisible: (visible: boolean) => void
-  proactiveAppend: (content: string, timestamp?: number) => Promise<void>
+  proactiveAppend: (content: string, timestamp?: number, kind?: AssistantMessageKind) => Promise<void>
   getAssistantUnread: () => Promise<number>
   onSessionsChanged: (callback: () => void) => () => void
   onAssistantUnread: (callback: (count: number) => void) => () => void
@@ -222,6 +223,7 @@ export interface Message {
   content: string
   timestamp: number
   imageUrl?: string
+  assistantKind?: AssistantMessageKind
   responseStatus?: 'error' | 'stopped'
   toolData?: ToolActivityData
   memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>

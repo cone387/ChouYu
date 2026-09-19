@@ -379,6 +379,15 @@ describe('characters', () => {
 })
 
 describe('assistant messages', () => {
+  it('preserves reminder types through save and restart', () => {
+    const workspace = appendAssistantMessage('喝杯水', 1000, 'rest')
+    const id = workspace.sessions.find(session => session.characterId === ASSISTANT_CHARACTER_ID)!.id
+    appendAssistantMessage('该交周报了', 2000, 'task')
+    saveSessionMessages(id, getSession(id)!.messages)
+    flushDatabase()
+    initDatabase()
+    expect(getSession(id)!.messages.map(message => message.assistantKind)).toEqual(['rest', 'task'])
+  })
   it('creates the assistant session on first append and appends in order', () => {
     const preAppendActiveId = getSessionWorkspace().activeSession.id
     const first = appendAssistantMessage('问候一', 1000)

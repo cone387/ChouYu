@@ -77,6 +77,18 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
     await click(window, '[data-contacts-close]')
+    // The menu trigger keeps focus while details are open: no focusin is fired
+    // on dismissal. Use real Escape input to reproduce its keyboard highlight.
+    for (const action of ['detail', 'edit', 'delete']) {
+      await click(window, `[data-contacts-menu="${character.id}"]`)
+      await click(window, `[data-contacts-menu-${action}="${character.id}"]`)
+      await waitForRenderer(window, "!!document.querySelector('.contacts-scrim')")
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+      await waitForRenderer(window, `!document.querySelector('.contacts-scrim')
+        && !document.querySelector('[data-contacts-menu="${character.id}"]').matches(':focus')
+        && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
+    }
     await click(window, `[data-contacts-menu="${character.id}"]`)
     await click(window, `[data-contacts-menu-edit="${character.id}"]`)
     await waitForRenderer(window, `document.querySelector('[data-contacts-name]')?.value === '冒烟猫'

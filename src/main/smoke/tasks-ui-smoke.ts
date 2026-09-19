@@ -55,6 +55,15 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   }
   await click('[data-workspace-nav="tasks"]')
   await waitForRenderer(window, "Boolean(document.querySelector('[aria-label=\"归档 任务界面测试\"]'))")
+  // Escape closes the editor whether focus is in its title or on the document.
+  for (const target of ['document', 'document.querySelector(\'[aria-label="任务标题"]\')']) {
+    await click('.tasks-create')
+    await waitForRenderer(window, "!!document.querySelector('.tasks-composer')")
+    await run(`${target}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`)
+    await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
+    await assert("!!document.querySelector('.chat-panel') && !document.querySelector('.workspace-tasks').hidden")
+    await waitForRenderer(window, "!document.querySelector('.tasks-create').matches(':focus')")
+  }
   await click('[aria-label="收起任务侧栏"]')
   await assert("document.querySelector('.tasks-sidebar').hidden && !!document.querySelector('[aria-label=\"展开任务侧栏\"]')")
   await click('[aria-label="展开任务侧栏"]')
@@ -132,8 +141,9 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     await run("document.querySelector('.tasks-page-heading h1').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))")
     await assert(`Array.from(document.querySelectorAll(${JSON.stringify(menuSelector)})).every(menu => !menu.open)`)
     await run(`document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('summary').click()`)
+    await waitForRenderer(window, `document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('.tasks-item-menu-popover').matches(':popover-open')`)
     await run("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
-    await assert(`!document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].open && document.activeElement === document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('summary')`)
+    await waitForRenderer(window, `!document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].open && !document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('summary').matches(':focus')`)
   }
   await assert("document.querySelector('.tasks-project-group').open")
   await click('[aria-label="筛选任务"]')

@@ -466,8 +466,18 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "!document.querySelector('.chat-panel')")
     window.webContents.send('open-chat-panel')
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true][data-workspace-page=tasks]')")
+    await window.webContents.executeJavaScript(`(async () => {
+      for (const [kind, content] of [
+        ['greeting', '早上好，新的一天开始啦。'], ['rest', '休息一下，看看远处，放松眼睛。'],
+        ['return', '欢迎回来。要接着刚才的工作吗？'], ['task', '任务提醒：整理本周项目进展'],
+        ['task-backlog', '错过了 2 条任务提醒'], ['snooze', '⏰ 稍后提醒：喝杯水'],
+        ['warning', '任务数据文件无法读取，原文件已隔离保存。']
+      ]) await window.electronAPI.proactiveAppend(content, undefined, kind);
+    })()`)
     window.webContents.send('open-assistant-chat')
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-workspace-page=chat]')")
+    await waitForRenderer(window, "document.querySelectorAll('.assistant-message-label').length >= 7")
+    await snapshots(window, 'assistant-notices', '[data-assistant-kind="task"]')
     await click(window, '[aria-label="关闭面板"]')
     console.log('CHOUYU_WORKSPACE_RESTORE_SMOKE_PASSED saved pages, close/reopen, renderer restart, explicit navigation and stale request protection')
     console.log('CHOUYU_CHAT_SMOKE_PASSED markdown, full-text search, streaming scroll, settings, memory CRUD, approval keyboard')

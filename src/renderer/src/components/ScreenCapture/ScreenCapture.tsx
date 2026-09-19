@@ -78,11 +78,15 @@ export default function ScreenCapture({
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        onCancel()
+      }
       if (e.key === 'Enter') handleConfirm()
     }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
+    window.addEventListener('keydown', handleKey, true)
+    return () => window.removeEventListener('keydown', handleKey, true)
   }, [onCancel, handleConfirm])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -123,7 +127,7 @@ export default function ScreenCapture({
   return (
     <div
       data-interactive
-      className={`screen-capture-overlay${busy ? ' is-busy' : ''}`}
+      data-escape-overlay className={`screen-capture-overlay${busy ? ' is-busy' : ''}`}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

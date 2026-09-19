@@ -1729,3 +1729,29 @@
 .character-context-badge { margin-left: var(--space-1); padding: 0 var(--space-2); border-radius: var(--radius-sm); font-size: 10px; font-style: normal; font-weight: 500; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .character-context-model { min-width: 0; max-width: 200px; overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
 .character-context-category { flex: none; padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); }
+
+/* Assistant notices remain readable in every theme; type is conveyed by text and icon. */
+.message[data-assistant-kind] { --notice-color: var(--accent); }
+.message[data-assistant-kind="greeting"] { --notice-color: var(--warning); }
+.message[data-assistant-kind="rest"] { --notice-color: var(--success); }
+.message[data-assistant-kind="return"] { --notice-color: var(--text-secondary); }
+.message[data-assistant-kind="task-backlog"],
+.message[data-assistant-kind="snooze"] { --notice-color: var(--warning); }
+.message[data-assistant-kind="warning"] { --notice-color: var(--error); }
+.message[data-assistant-kind] .message-bubble {
+  background: color-mix(in srgb, var(--notice-color) 6%, var(--ai-msg-bg));
+  border-color: color-mix(in srgb, var(--notice-color) 22%, var(--divider));
+  border-inline-start: 3px solid var(--notice-color);
+  border-radius: var(--radius-lg);
+}
+.assistant-message-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  color: var(--notice-color);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.assistant-message-label svg { flex-shrink: 0; }

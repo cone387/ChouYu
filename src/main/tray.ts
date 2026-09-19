@@ -121,6 +121,9 @@ export function setupTray(mainWindow: BrowserWindow): void {
     if (trayUnreadCount > 0) openAssistantChat()
     else openChatPanel()
   }
-  tray.on('click', onTrayClick)
-  tray.on('double-click', onTrayClick)
+  // macOS opens the attached native menu on click; don't also raise a window.
+  if (process.platform !== 'darwin') {
+    tray.on('click', onTrayClick)
+    tray.on('double-click', onTrayClick)
+  }
 }
