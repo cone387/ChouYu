@@ -80,6 +80,12 @@ const finish = (code, message) => {
   clearTimeout(timer)
   cleanup()
   if (message) console.error(message)
+  if (code !== 0 && process.env.GITHUB_ACTIONS) {
+    const failure = output.split(/\r?\n/).find(line => line.includes(FAILED_MARKER))
+      || message?.split('\n')[0] || 'Electron smoke test failed'
+    const escaped = failure.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
+    console.error(`::error title=Electron smoke test::${escaped}`)
+  }
   process.exitCode = code
 }
 
