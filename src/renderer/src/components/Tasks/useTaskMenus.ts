@@ -53,13 +53,15 @@ export default function useTaskMenus(active: boolean) {
       const upwards = size.height > below && above > below
       const available = upwards ? above : below
       // When the anchor itself is at an edge, use the available panel height.
-      const height = Math.min(size.height, available || maxHeight)
       popup.style.maxHeight = `${available || maxHeight}px`
+      // Windows scrollbars consume width when maxHeight makes the menu scroll.
+      // Position using the final box, including that scrollbar and any wrapping.
+      const finalSize = popup.getBoundingClientRect()
       const alignLeft = menu.matches('.tasks-create-options, .tasks-heading-menu, .tasks-composer-dates, .tasks-select') || Boolean(menu.closest('.tasks-toolbar'))
-      const desiredLeft = alignLeft ? anchor.left : anchor.right - size.width
-      const desiredTop = upwards ? anchor.top - gap - height : anchor.bottom + gap
-      popup.style.left = `${Math.max(leftEdge, Math.min(desiredLeft, rightEdge - size.width))}px`
-      popup.style.top = `${Math.max(topEdge, Math.min(desiredTop, bottomEdge - height))}px`
+      const desiredLeft = alignLeft ? anchor.left : anchor.right - finalSize.width
+      const desiredTop = upwards ? anchor.top - gap - finalSize.height : anchor.bottom + gap
+      popup.style.left = `${Math.max(leftEdge, Math.min(desiredLeft, rightEdge - finalSize.width))}px`
+      popup.style.top = `${Math.max(topEdge, Math.min(desiredTop, bottomEdge - finalSize.height))}px`
     }
     const closeOutside = (event: Event) => {
       if (!(event.target instanceof Node)) return
