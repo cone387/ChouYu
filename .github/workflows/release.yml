@@ -22,8 +22,22 @@ jobs:
       - run: npm run test:memory-eval
       - run: npm run test:smoke
 
-  build-macos:
+  prepare-release:
     needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create shared release draft before parallel uploads
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" || gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --notes "Release assets are being built."
+
+  build-macos:
+    needs: prepare-release
     runs-on: macos-latest
     permissions:
       contents: write
@@ -44,7 +58,7 @@ jobs:
         run: npm run build && npx electron-builder --mac --publish always
 
   build-windows:
-    needs: quality
+    needs: prepare-release
     runs-on: windows-latest
     permissions:
       contents: write
@@ -76,6 +90,13 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         shell: bash
         run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > /tmp/release-assets.txt
+          grep -E '\.dmg$' /tmp/release-assets.txt
+          grep -E '\.zip$' /tmp/release-assets.txt
+          grep -E '\.exe$' /tmp/release-assets.txt
+          grep -Fx 'latest-mac.yml' /tmp/release-assets.txt
+          grep -Fx 'latest.yml' /tmp/release-assets.txt
           notes="docs/releases/${RELEASE_TAG}.md"
           if [ -f "$notes" ]; then
             gh release edit "$RELEASE_TAG" --draft=false --latest --title "$RELEASE_TAG" --notes-file "$notes"

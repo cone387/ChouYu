@@ -1,0 +1,37 @@
+name: Repair macOS release assets
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/repair-release-macos.yml']
+
+jobs:
+  upload:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: v1.3.4
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build && npx electron-builder --mac --publish never
+      - name: Upload and verify macOS assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Upload explicit local files rather than relying on builder publication.
+          gh release upload "$RELEASE_TAG" dist/*.dmg dist/*.zip dist/*.blockmap dist/latest-mac.yml --clobber
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | tee /tmp/release-assets.txt
+          grep -E '\.dmg$' /tmp/release-assets.txt
+          grep -E '\.zip$' /tmp/release-assets.txt
+          grep -Fx 'latest-mac.yml' /tmp/release-assets.txt
