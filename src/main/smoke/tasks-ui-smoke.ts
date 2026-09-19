@@ -20,7 +20,18 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     element.dispatchEvent(new Event('change', { bubbles: true }));
   })()`)
   const assert = async (condition: string) => {
-    if (!await run(condition)) throw new Error(`Tasks UI assertion failed: ${condition}`)
+    if (!await run(condition)) {
+      const layout = await run(`JSON.stringify({
+        viewport: [innerWidth, innerHeight],
+        panel: document.querySelector('.tasks-view')?.getBoundingClientRect().toJSON(),
+        sidebar: (() => { const side = document.querySelector('.tasks-sidebar'); return side && [side.scrollWidth, side.scrollHeight] })(),
+        menus: Array.from(document.querySelectorAll('details[open] > .tasks-item-menu-popover')).map(menu => ({
+          name: menu.parentElement.querySelector('summary')?.textContent,
+          rect: menu.getBoundingClientRect().toJSON(), style: menu.getAttribute('style'), open: menu.matches(':popover-open')
+        }))
+      })`)
+      throw new Error(`Tasks UI assertion failed: ${condition}\nLayout: ${layout}`)
+    }
   }
   const selectView = async (id: string) => {
     const selector = `[data-view-selection="${id}"]`
