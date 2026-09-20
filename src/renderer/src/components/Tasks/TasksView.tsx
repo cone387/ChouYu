@@ -28,6 +28,14 @@ const SMART_VIEWS: { id: SmartView; label: string }[] = [
 ]
 
 const SMART_ICONS: Record<SmartView, IconName> = { today: 'today', week: 'week', overdue: 'clock', unplanned: 'unplanned', all: 'all', done: 'done' }
+const SMART_DESCRIPTIONS: Record<SmartView, string> = {
+  today: '截止日期在今天的任务，不包含更早的过期任务。',
+  week: '本周一至周日截止的任务，包含今天和本周内已过期的任务。',
+  unplanned: '开始和截止时间都未设置的任务；安排任一时间后会移出这里。',
+  all: '汇总所有清单的任务，默认显示未完成任务。',
+  overdue: '截止日期早于今天的任务。',
+  done: '已完成任务保留原有清单与时间安排，可以随时恢复。'
+}
 
 
 const emptyDraft: Draft = { id: '', title: '', note: '', projectId: '', priority: 'medium', startDate: '', startTime: '09:00', dueDate: '', dueTime: '09:00', remind: 'due', recurrence: 'none', customFields: {} }
@@ -259,7 +267,9 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     matchesTaskView({ ...task, status: 'open' }, { priorities: filterPriorities, projectIds: filterProjects, dueRange: filterDue }, now)
   const visible = (effectiveStatus === 'done' ? [] : tasks).filter(task => matchesKeywordAndFilter(task) && matchesSelection(task, selection))
     .sort((a, b) => compareTasks(a, b, now))
-  const doneVisible = effectiveStatus !== 'open' ? doneTasks.filter(matchesKeywordAndFilter) : []
+  // Recheck the current scope while its paginated history request is still in flight.
+  const doneVisible = effectiveStatus !== 'open' ? doneTasks.filter(task => matchesKeywordAndFilter(task) &&
+    (selection === 'done' || matchesSelection({ ...task, status: 'open' }, selection))) : []
   const sortedByMode = sortTasks([...visible, ...(selection === 'done' ? [] : doneVisible)], sortMode, now)
   const sorted = sortMode === 'manual' ? applyTaskOrder(sortedByMode, taskOrder) : sortedByMode
   const countFor = (target: Selection) => target === 'done' ? totalDone : tasks.filter(task => matchesSelection(task, target)).length
@@ -447,17 +457,21 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const hiddenViewSelected = selection.startsWith('view:') || hiddenSmartViews.some(view => view.id === selection)
 
   const renderTask = (task: TaskRecord) => {
-    return <li key={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={task.id === focusTaskId ? -1 : undefined} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority} data-completed={task.status === 'done' || undefined}>
+    return <li key={task.id} data-task-id={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={task.id === focusTaskId ? -1 : undefined} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority} data-completed={task.status === 'done' || undefined}>
           <button type="button" className="tasks-complete" disabled={actionPending} data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? reopen(task.id) : complete(task.id)}>{task.status === 'done' ? '✓' : ''}</button>
           <div className="tasks-item-body">
             <div className="tasks-item-head">
               <button type="button" className="tasks-item-title tasks-title-button" onClick={() => setDraft(draftFromTask(task))}>{task.title}</button>
             </div>
             {!hiddenFields.includes('note') && task.note && <p className="tasks-item-note" title={task.note}>{task.note}</p>}
-            <TaskCardMeta task={task} projects={projects} fields={displayFields} />
+            <TaskCardMeta task={task} projects={projects} fields={displayFields} showAllFields />
+            <div className="tasks-card-schedule">
+              {!hiddenFields.includes('start') && task.startAt != null && <span className="tasks-start-cell"><TaskIcon name="today" /><span>开始 <time dateTime={new Date(task.startAt).toISOString()}>{dueLabel(task.startAt)}</time></span></span>}
+              {!hiddenFields.includes('due') && task.dueAt !== null && <span className="tasks-due-cell"><span>截止</span><TaskCardDue task={task} /></span>}
+              {task.startAt == null && task.dueAt === null && task.status === 'open' && (!hiddenFields.includes('start') || !hiddenFields.includes('due')) && <span className="tasks-card-unplanned"><TaskIcon name="unplanned" />待规划 · 未安排时间</span>}
+              {task.status === 'done' && <span className="tasks-card-completed">已完成{task.completedAt ? ` · ${dueLabel(task.completedAt)}` : ''}</span>}
+            </div>
           </div>
-          <span className="tasks-date-cell tasks-start-cell" title={task.startAt != null ? `开始时间：${dueLabel(task.startAt)}` : '未设置开始时间'}><span className="tasks-date-label">开始</span>{task.startAt != null ? dueLabel(task.startAt) : '—'}</span>
-          <span className="tasks-date-cell tasks-due-cell"><span className="tasks-date-label">截止</span>{task.dueAt !== null ? <TaskCardDue task={task} /> : '—'}</span>
               <details className="tasks-item-menu">
                 <summary aria-label={`更多操作 ${task.title}`} title="更多操作"><TaskIcon name="more" /></summary>
                 <div className="tasks-item-menu-popover">
@@ -540,6 +554,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
           </div>
         </details>
       </header>
+      {selection in SMART_DESCRIPTIONS && <p className="tasks-view-description">{SMART_DESCRIPTIONS[selection as SmartView]}</p>}
       {selection !== 'done' && <div className="tasks-tabs" role="group" aria-label="展示方式">
         <button type="button" className="tasks-tab" aria-pressed={mode === 'list'} onClick={() => setMode('list')}><TaskIcon name="list" />列表</button>
         <button type="button" className="tasks-tab" aria-pressed={mode === 'board'} onClick={() => setMode('board')}><TaskIcon name="board" />看板</button>
@@ -704,14 +719,9 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} error={error} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
 
       {loading && <p role="status">正在加载任务…</p>}
-      {selection !== 'done' && mode === 'list' && sorted.length > 0 && <div className="tasks-list-heading" aria-hidden="true"><span>任务名称</span><span className="tasks-start-cell">开始时间</span><span className="tasks-due-cell">截止时间</span><span /></div>}
       {selection === 'done'
         ? <ul role="list" className="tasks-list tasks-list-done" aria-label="已完成任务">
-        {doneVisible.map(task => <li key={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={task.id === focusTaskId ? -1 : undefined} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority}>
-          <span className="tasks-item-title tasks-item-done-title">{task.title}</span>
-          <span className="tasks-item-meta">{task.completedAt ? dueLabel(task.completedAt) + ' 完成' : ''}</span>
-          <button type="button" onClick={() => reopen(task.id)}>恢复</button>
-        </li>)}
+        {doneVisible.map(renderTask)}
       </ul>
         : mode === 'board'
         ? <TasksBoard orderScope={selection} tasks={sorted} projects={projects} fields={displayFields} groupingFields={fields} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}

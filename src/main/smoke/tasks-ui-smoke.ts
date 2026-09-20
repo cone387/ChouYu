@@ -320,10 +320,23 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('[role="switch"][aria-label="显示截止时间"]')
   await click('.tasks-page-heading h1')
   await run(`window.electronAPI.tasks.remove(${JSON.stringify(quickId)})`)
+  await run(`(async () => {
+    const task = (await window.electronAPI.tasks.list()).open.find(task => task.title === '界面创建任务');
+    const start = new Date(); start.setHours(9, 0, 0, 0);
+    const due = new Date(); due.setHours(18, 0, 0, 0);
+    await window.electronAPI.tasks.update(task.id, { startAt: start.getTime(), dueAt: due.getTime(), note: '核对任务安排，整理本次交付的验收结果。' });
+  })()`)
   // Trigger a reload after fixture cleanup.
   await selectView('all')
   await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
   await waitForRenderer(window, "!document.querySelector('.tasks-list')?.textContent.includes('看板快速创建')")
+  await assert(`(() => {
+    const card = Array.from(document.querySelectorAll('.tasks-item')).find(item => item.textContent.includes('界面创建任务'));
+    return !document.querySelector('.tasks-list-heading') && card?.querySelector('.tasks-card-schedule')?.textContent.includes('开始')
+      && card.querySelector('.tasks-card-schedule').textContent.includes('截止') && card.textContent.includes('清单：任务界面测试')
+      && card.textContent.includes('优先级') && card.querySelector('.tasks-item-note')
+      && parseFloat(getComputedStyle(card).borderRadius) > 0 && getComputedStyle(card).borderBottomStyle !== 'none';
+  })()`)
   if (process.env.CHOUYU_TASKS_ARTIFACTS) {
     const directory = process.env.CHOUYU_TASKS_ARTIFACTS
     mkdirSync(directory, { recursive: true })
@@ -352,6 +365,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
           })()`)
 
           await run("document.querySelectorAll('.tasks-sidebar-view-nav, .tasks-sidebar-projects, .tasks-main').forEach(element => { element.scrollTop = 0; element.scrollLeft = 0 })")
+          if (layout === 'list') await run("document.querySelector('.tasks-item')?.scrollIntoView({ block: 'nearest' })")
           await assert("document.querySelector('.tasks-main').scrollWidth <= document.querySelector('.tasks-main').clientWidth + 1")
           await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
           writeFileSync(join(directory, `tasks-${layout}-${mode}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
@@ -425,9 +439,17 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, "document.querySelectorAll('.tasks-list-done > li').length === 55")
   await assert("window.electronAPI.tasks.list({ doneQuery: '最早历史目标' }).then(list => list.matchedDone === 1 && list.done[0].title === '最早历史目标')")
   const unplannedId: string = await run("window.electronAPI.tasks.create({ title: '待规划验收任务' }).then(task => task.id)")
+  // Use the same title to verify task identity, not just matching text.
+  const dueTodayId: string = await run("window.electronAPI.tasks.create({ title: '待规划验收任务', dueAt: Date.now() }).then(task => task.id)")
+  await selectView('today')
+  await click('.tasks-tab:first-child')
+  await waitForRenderer(window, `!!document.querySelector('.tasks-item[data-task-id="${dueTodayId}"]')`)
+  await assert(`!document.querySelector('.tasks-item[data-task-id="${unplannedId}"]')`)
   await selectView('unplanned')
   await click('.tasks-tab:first-child')
-  await waitForRenderer(window, "document.querySelector('.tasks-list')?.textContent.includes('待规划验收任务')")
+  await waitForRenderer(window, `!!document.querySelector('.tasks-item[data-task-id="${unplannedId}"]')`)
+  await assert(`!document.querySelector('.tasks-item[data-task-id="${dueTodayId}"]') && document.querySelector('.tasks-item[data-task-id="${unplannedId}"]').textContent.includes('未安排时间')`)
+  await run(`window.electronAPI.tasks.remove('${dueTodayId}')`)
   await assert("!document.querySelector('[aria-label=\"归档 默认清单\"]') && !!document.querySelector('[aria-label=\"重命名 默认清单\"]')")
   await run("Array.from(document.querySelectorAll('.tasks-title-button')).find(button => button.textContent === '待规划验收任务').click()")
   await click('.tasks-composer-dates > summary')

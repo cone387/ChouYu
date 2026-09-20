@@ -547,6 +547,7 @@ test('完成任务按清单、视图和日期筛选后再分页，匹配总数�
     expect(result.totalDone).toBe(64)
     expect(result.done.every(task => task.projectId === project.id)).toBe(true)
     expect(store.listTasks({ doneSelection: 'today', doneProjectIds: [project.id] }).matchedDone).toBe(6)
+    expect(store.listTasks({ doneDueRange: 'today', doneProjectIds: [project.id] }).matchedDone).toBe(6)
     expect(store.listTasks({ doneSelection: 'overdue', doneProjectIds: [project.id] }).done.map(task => task.id)).toEqual([old.id])
     expect(store.listTasks({ doneSelection: 'unplanned', doneProjectIds: [project.id] }).done.map(task => task.id)).toEqual([unplanned.id])
     const view = store.createView({ name: '高优', projectIds: [project.id], priorities: ['high'], dueRange: 'today' })

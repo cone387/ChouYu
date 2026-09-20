@@ -634,12 +634,11 @@ export class TasksStore {
     const now = Date.now()
     const today = new Date(now); today.setHours(0, 0, 0, 0)
     const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1)
-    const addDue = (range: TaskDueRange | 'todayOnly' | 'unplanned') => {
+    const addDue = (range: TaskDueRange | 'unplanned') => {
       if (range === 'none') conditions.push('due_at IS NULL')
       else if (range === 'unplanned') conditions.push('due_at IS NULL AND start_at IS NULL')
       else if (range === 'overdue') { conditions.push('due_at < ?'); params.push(today.getTime()) }
-      else if (range === 'today') { conditions.push('due_at < ?'); params.push(tomorrow.getTime()) }
-      else if (range === 'todayOnly') { conditions.push('due_at >= ? AND due_at < ?'); params.push(today.getTime(), tomorrow.getTime()) }
+      else if (range === 'today') { conditions.push('due_at >= ? AND due_at < ?'); params.push(today.getTime(), tomorrow.getTime()) }
       else if (range === 'week') {
         const monday = new Date(today); monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7)
         const next = new Date(monday); next.setDate(next.getDate() + 7)
@@ -661,7 +660,7 @@ export class TasksStore {
           params.push(...view.priorities)
         }
       }
-    } else if (selection === 'today') addDue('todayOnly')
+    } else if (selection === 'today') addDue('today')
     else if (selection === 'week' || selection === 'overdue' || selection === 'unplanned') addDue(selection)
     else if (selection !== 'all' && selection !== 'done') throw new Error('任务视图无效。')
     const where = conditions.join(' AND ')

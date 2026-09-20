@@ -142,11 +142,11 @@ describe('matchesTaskView', () => {
     expect(matchesTaskView(base({ projectId: null }), view({ projectIds: ['p1'] }), now)).toBe(false)
   })
 
-  test('截止范围:今天含过期、过期、无截止', () => {
+  test('截止范围:今天与侧栏口径一致，不包含更早过期任务', () => {
     const overdue = base({ dueAt: startToday - 1 })
     const today = base({ dueAt: startToday + 1 })
     const noDue = base({ dueAt: null })
-    expect(matchesTaskView(overdue, view({ dueRange: 'today' }), now)).toBe(true)
+    expect(matchesTaskView(overdue, view({ dueRange: 'today' }), now)).toBe(false)
     expect(matchesTaskView(today, view({ dueRange: 'today' }), now)).toBe(true)
     expect(matchesTaskView(today, view({ dueRange: 'overdue' }), now)).toBe(false)
     expect(matchesTaskView(overdue, view({ dueRange: 'overdue' }), now)).toBe(true)
@@ -163,4 +163,23 @@ test('待规划仅包含开始和截止都未设置的未完成任务', () => {
   expect(isUnplanned(base({ dueAt: 0 }))).toBe(false)
   expect(isUnplanned(base({ startAt: 100, dueAt: 200 }))).toBe(false)
   expect(isUnplanned(base({ status: 'done' }))).toBe(false)
+})
+
+test('待规划与今天、本周互斥，今天属于本周；创建日期不决定视图', () => {
+  const now = new Date(2026, 8, 16, 12).getTime()
+  const noSchedule = base({ createdAt: now, startAt: null, dueAt: null })
+  const dueToday = base({ dueAt: now })
+  const startOnly = base({ startAt: now, dueAt: null })
+  expect(isUnplanned(noSchedule)).toBe(true)
+  expect(isDueToday(noSchedule, now)).toBe(false)
+  expect(isDueThisWeek(noSchedule, now)).toBe(false)
+  expect(isUnplanned(dueToday)).toBe(false)
+  expect(isDueToday(dueToday, now)).toBe(true)
+  expect(isDueThisWeek(dueToday, now)).toBe(true)
+  expect(isUnplanned(startOnly)).toBe(false)
+  expect(isDueToday(startOnly, now)).toBe(false)
+  for (const offset of [-8, -1, 0, 1, 8]) {
+    const task = base({ dueAt: now + offset * 86400_000 })
+    expect(isUnplanned(task) && isDueToday(task, now)).toBe(false)
+  }
 })

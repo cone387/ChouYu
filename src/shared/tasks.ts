@@ -264,7 +264,7 @@ export function matchesTaskView(task: TaskRecord, view: Pick<TaskView, 'projectI
   if (view.projectIds.length > 0 && !view.projectIds.includes(task.projectId ?? '')) return false
   if (view.priorities.length > 0 && !view.priorities.includes(task.priority)) return false
   switch (view.dueRange) {
-    case 'today': return isDueToday(task, now) || isOverdue(task, now)
+    case 'today': return isDueToday(task, now)
     case 'week': return isDueThisWeek(task, now)
     case 'overdue': return isOverdue(task, now)
     case 'none': return task.dueAt === null

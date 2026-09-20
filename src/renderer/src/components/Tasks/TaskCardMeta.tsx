@@ -1,7 +1,7 @@
 import type { TaskProject, TaskRecord, TaskSelectField } from '../../../../shared/tasks'
 import { formatTaskDue, isOverdue, PRIORITY_LABELS, RECURRENCE_LABELS } from '../../../../shared/tasks'
 
-export default function TaskCardMeta({ task, projects, fields }: { task: TaskRecord; projects: TaskProject[]; fields: TaskSelectField[] }) {
+export default function TaskCardMeta({ task, projects, fields, showAllFields = false }: { task: TaskRecord; projects: TaskProject[]; fields: TaskSelectField[]; showAllFields?: boolean }) {
   const project = projects.find(item => item.id === task.projectId)
   const values = fields.flatMap(field => {
     const option = field.options.find(item => item.id === task.customFields[field.id])
@@ -10,13 +10,13 @@ export default function TaskCardMeta({ task, projects, fields }: { task: TaskRec
   return <span className="task-card-meta">
     <span className="task-card-properties">
       <span className={`task-card-priority task-card-priority-${task.priority}`}>{PRIORITY_LABELS[task.priority]}优先级</span>
-      {project && <span className="task-card-project" title={project.name}>{project.name}</span>}
+      {project && <span className="task-card-project" title={`清单：${project.name}`}>清单：{project.name}</span>}
       {task.recurrence !== 'none' && <span className="task-card-detail">{RECURRENCE_LABELS[task.recurrence]}</span>}
       {task.remindAt !== null && <span className="task-card-detail">{task.remindFiredAt !== null ? '已提醒' : '有提醒'}</span>}
     </span>
     {values.length > 0 && <span className="tasks-board-card-chips task-card-fields">
-      {values.slice(0, 2).map(value => <span key={value} className="tasks-chip" title={value}>{value}</span>)}
-      {values.length > 2 && <span className="tasks-chip" title={values.slice(2).join('\n')}>+{values.length - 2}</span>}
+      {(showAllFields ? values : values.slice(0, 2)).map(value => <span key={value} className="tasks-chip" title={value}>{value}</span>)}
+      {!showAllFields && values.length > 2 && <span className="tasks-chip" title={values.slice(2).join('\n')}>+{values.length - 2}</span>}
     </span>}
   </span>
 }
