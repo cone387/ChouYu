@@ -65,7 +65,7 @@ export default function ToolsSettingsTab({ globalEnabled, onGlobalChange, permis
               ? '读取和写入类工具执行前都会请求确认。'
               : permissionMode === 'auto'
                 ? '安全和读取类工具自动执行，写入类工具仍需确认。'
-                : '所有已启用工具直接执行，请仅在可信环境使用。'}
+                : '已启用工具直接执行；创建任务等标记为始终确认的操作仍需确认。'}
           </span>
         </div>
         <select
@@ -105,7 +105,7 @@ export default function ToolsSettingsTab({ globalEnabled, onGlobalChange, permis
                     <code>{tool.name}</code>
                     <span>{tool.source === 'plugin' ? '插件' : '内置'}</span>
                     <span>
-                      {permissionMode === 'full'
+                      {tool.alwaysConfirm ? '始终确认' : permissionMode === 'full'
                         ? '直接执行'
                         : permissionMode === 'auto'
                           ? tool.risk === 'write' ? '写入需确认' : '自动执行'

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { JournalCapture, JournalDetail } from '../../../../shared/journal'
 import { CaptureImage, journalRange } from './JournalEvidence'
 import { journalDuration, journalTime, kindLabel } from './JournalTasks'
+import { openTaskWorkspace } from '../Tasks/taskNavigation'
 
 export function JournalDetailPanel({ id, date, onClose, onChanged, active = true }: { id: string; date: string; active?: boolean; onClose(): void; onChanged(deleted: boolean): void }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -88,7 +89,7 @@ export function JournalDetailPanel({ id, date, onClose, onChanged, active = true
     {!detail && !error && <p role="status">正在读取活动与画面…</p>}
     {detail && <>
       <div className="journal-detail-meta"><span>{detail.task.category || kindLabel[detail.task.kind]}</span><span>{journalTime(detail.task.startedAt)} — {journalTime(detail.task.endedAt)} · {journalDuration(detail.task.durationMs)} 采样时长</span><button disabled={busy} aria-expanded={editing} onClick={() => setEditing(!editing)}>{editing ? '收起编辑' : '修正事项'}</button></div>
-      <div className="journal-actions"><button disabled={busy} onClick={() => { setSavingKind('continuation'); setSavedNote(detail.task.note) }}>添加接续卡</button><button disabled={busy || !selected} onClick={() => { setSavingKind('bookmark'); setSavedNote('') }}>保存画面书签</button></div>
+      <div className="journal-actions"><button disabled={busy} onClick={() => { onClose(); openTaskWorkspace({ draft: { title: detail.task.title, note: [detail.task.text, detail.task.note, detail.task.nextStep ? `建议下一步（请确认）：${detail.task.nextStep}` : ''].filter(Boolean).join('\n\n'), source: { kind: 'journal', id, date, label: detail.task.title.slice(0, 200) } } }) }}>转为任务</button><button disabled={busy} onClick={() => { setSavingKind('continuation'); setSavedNote(detail.task.note) }}>添加接续卡</button><button disabled={busy || !selected} onClick={() => { setSavingKind('bookmark'); setSavedNote('') }}>保存画面书签</button></div>
       {savingKind && <form className="journal-edit-form" onSubmit={event => { event.preventDefault(); void saveItem() }}>
         <label>{savingKind === 'bookmark' ? '书签备注' : '下次继续的备注'}<textarea value={savedNote} maxLength={4000} rows={2} onChange={event => setSavedNote(event.target.value)} /></label>
         <p>独立保存事项、活动来源{selected ? '及当前所选画面和识别文字' : ''}；日志到期或删除后仍保留，需到“接着做”单独删除。不调用模型。</p>

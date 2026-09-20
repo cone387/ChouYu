@@ -1,7 +1,7 @@
-import type { TaskProject, TaskRecord, TaskSelectField } from '../../../../shared/tasks'
+import type { TaskProject, TaskRecord, TaskSelectField, TaskSource } from '../../../../shared/tasks'
 import { formatTaskDue, isOverdue, PRIORITY_LABELS, RECURRENCE_LABELS } from '../../../../shared/tasks'
 
-export default function TaskCardMeta({ task, projects, fields, showAllFields = false, onOpenProject }: { task: TaskRecord; projects: TaskProject[]; fields: TaskSelectField[]; showAllFields?: boolean; onOpenProject: (id: string) => void }) {
+export default function TaskCardMeta({ task, projects, fields, showAllFields = false, onOpenProject, onSource }: { task: TaskRecord; projects: TaskProject[]; fields: TaskSelectField[]; showAllFields?: boolean; onOpenProject: (id: string) => void; onSource?: (source: TaskSource) => void }) {
   const project = projects.find(item => item.id === task.projectId)
   const values = fields.flatMap(field => {
     const option = field.options.find(item => item.id === task.customFields[field.id])
@@ -13,6 +13,8 @@ export default function TaskCardMeta({ task, projects, fields, showAllFields = f
       {project && <button type="button" className="task-card-project" title={project.name} aria-label={`打开清单 ${project.name}`} onClick={() => onOpenProject(project.id)}>{project.name}</button>}
       {task.recurrence !== 'none' && <span className="task-card-detail">{RECURRENCE_LABELS[task.recurrence]}</span>}
       {task.remindAt !== null && <span className="task-card-detail">{task.remindFiredAt !== null ? '已提醒' : '有提醒'}</span>}
+      {!!task.checklist?.length && <span className="task-card-detail" title="子项完成进度">子项 {task.checklist.filter(item => item.done).length}/{task.checklist.length}</span>}
+      {task.source && onSource && <button type="button" className="task-card-project" title={task.source.label} onClick={() => onSource(task.source!)}>回看来源</button>}
     </span>
     {values.length > 0 && <span className="tasks-board-card-chips task-card-fields">
       {(showAllFields ? values : values.slice(0, 2)).map(value => <span key={value} className="tasks-chip" title={value}>{value}</span>)}

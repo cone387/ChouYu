@@ -21,6 +21,7 @@ export interface AIToolDefinition {
   inputSchema: ToolJsonSchema
   risk: ToolRisk
   requiresConfirmation: boolean
+  alwaysConfirm?: boolean
   source: ToolSource
 }
 
@@ -46,6 +47,7 @@ export interface ToolApprovalRequest {
 }
 
 export interface ToolExecutionEvent {
+  taskId?: string
   requestId: string
   callId: string
   name: string
@@ -61,6 +63,7 @@ export interface ToolApprovalResolution {
 }
 
 export interface ToolActivityData {
+  taskId?: string
   callId: string
   name: string
   displayName: string
@@ -86,9 +89,10 @@ export function getToolRiskLabel(risk: ToolRisk): string {
 }
 
 export function shouldConfirmTool(
-  definition: Pick<AIToolDefinition, 'risk' | 'requiresConfirmation'>,
+  definition: Pick<AIToolDefinition, 'risk' | 'requiresConfirmation' | 'alwaysConfirm'>,
   mode: ToolPermissionMode
 ): boolean {
+  if (definition.alwaysConfirm) return true
   if (mode === 'full') return false
   if (mode === 'auto') return definition.risk === 'write'
   return definition.requiresConfirmation

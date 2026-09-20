@@ -6,10 +6,12 @@ import { validateToolArguments } from '../../shared/tools'
 import { filterCaptureSources } from '../../shared/capture'
 
 export interface ToolExecutionContext {
+  sessionId?: string
   mainWindow: BrowserWindow
 }
 
 export interface ToolResult {
+  taskId?: string
   content: string
   summary: string
 }
@@ -152,9 +154,10 @@ export function getRegisteredTool(name: string): AIToolDefinition | null {
 export async function executeRegisteredTool(
   name: string,
   arguments_: Record<string, unknown>,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
+  sessionId?: string
 ): Promise<ToolResult> {
   const tool = tools.find((candidate) => candidate.name === name)
   if (!tool) throw new Error(`未知工具：${name}`)
-  return tool.execute(validateToolArguments(tool.inputSchema, arguments_), { mainWindow })
+  return tool.execute(validateToolArguments(tool.inputSchema, arguments_), { mainWindow, sessionId })
 }

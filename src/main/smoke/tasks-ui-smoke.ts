@@ -1,7 +1,8 @@
-import type { BrowserWindow } from 'electron'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { dialog, type BrowserWindow } from 'electron'
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { waitForRenderer } from './storage-smoke'
+import type { TaskBackup } from '../tasks/backup'
 
 /** 通过真实 IPC 和 React 表单验证任务上下文、字段关联、归档和历史搜索。 */
 export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
@@ -11,7 +12,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     if (!element || element.disabled) throw new Error('Missing control: ' + ${JSON.stringify(selector)});
     element.click();
   })()`)
-  const clickPointer = async (selector: string, padding = false) => {
+  const clickPointer = async (selector: string, padding = false, waitForPaint = true) => {
     const point = await run(`(() => {
       const button = document.querySelector(${JSON.stringify(selector)});
       const rect = button.getBoundingClientRect();
@@ -24,6 +25,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
     window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
+    if (waitForPaint) await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   }
   const fill = (selector: string, value: string) => run(`(() => {
     const element = document.querySelector(${JSON.stringify(selector)});
@@ -149,7 +151,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert("document.querySelector('.tasks-sidebar-title button svg').getAttribute('viewBox') === '0 0 1024 1024'")
   await captureGrouping('sidebar-toggle-hover')
   await clickPointer('[aria-label="收起任务侧栏"]')
-  await assert("document.querySelector('.tasks-sidebar').hidden && !!document.querySelector('[aria-label=\"展开任务侧栏\"]')")
+  await waitForRenderer(window, "document.querySelector('.tasks-sidebar').hidden && !!document.querySelector('[aria-label=\"展开任务侧栏\"]')")
   await click('[aria-label="展开任务侧栏"]')
   await assert("!document.querySelector('.tasks-sidebar').hidden")
   await click('[aria-label="新建分组或清单"]')
@@ -198,7 +200,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   const collectionGroupsBefore: string = await run("window.electronAPI.tasks.groups().then(groups => JSON.stringify(groups))")
   await clickPointer('[aria-label="新建任务选项"]')
   await waitForRenderer(window, "document.querySelector('.tasks-create-options .tasks-item-menu-popover').matches(':popover-open')")
-  await assert("Array.from(document.querySelectorAll('.tasks-create-options .tasks-item-menu-popover button')).map(button => button.textContent).join(',') === '新建任务,新建分组'")
+  await assert("Array.from(document.querySelectorAll('.tasks-create-options .tasks-item-menu-popover button')).map(button => button.textContent).join(',') === '新建任务,快速新建,新建分组'")
   await clickPointer('.tasks-create-options .tasks-item-menu-popover button:last-child')
   await waitForRenderer(window, "!!document.querySelector('.tasks-display-group-form')")
   await assert(`(() => {
@@ -390,7 +392,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     await run(`document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('summary').scrollIntoView({ block: 'nearest' })`)
     await run("new Promise(resolve => requestAnimationFrame(resolve))")
     const sidebarSize = await run("(() => { const side = document.querySelector('.tasks-sidebar'); return [side.scrollWidth, side.scrollHeight] })()")
-    await run(`document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('summary').click()`)
+    await run(`document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector(':scope > summary').click()`)
     await assert(`document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].open`)
     await waitForRenderer(window, `document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('.tasks-item-menu-popover').matches(':popover-open')`)
     await assert(`(() => {
@@ -405,7 +407,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
 
     await run("document.querySelector('.tasks-page-heading h1').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))")
     await assert(`Array.from(document.querySelectorAll(${JSON.stringify(menuSelector)})).every(menu => !menu.open)`)
-    await run(`document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('summary').click()`)
+    await run(`document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector(':scope > summary').click()`)
     await waitForRenderer(window, `document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('.tasks-item-menu-popover').matches(':popover-open')`)
     await run("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
     await waitForRenderer(window, `!document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].open && !document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('summary').matches(':focus')`)
@@ -557,13 +559,13 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, `document.querySelector('[data-column-key=medium] [data-task-id]')?.dataset.taskId === '${manualIds[1]}'`)
   await assert(`window.electronAPI.tasks.list().then(list => list.open.find(task => task.id === '${manualIds[1]}').priority === 'medium')`)
   await click('.tasks-tab:first-child')
-  await run(`Array.from(document.querySelectorAll('.tasks-item')).find(item => item.textContent.includes('手动排序甲')).querySelector('summary').click()`)
+  await run(`Array.from(document.querySelectorAll('.tasks-item')).find(item => item.textContent.includes('手动排序甲')).querySelector('.tasks-item-menu > summary').click()`)
   await click('.tasks-item-menu[open] .tasks-item-menu-danger')
   await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
   await assert("document.activeElement.textContent === '取消'")
   await click('.app-confirm-dialog button:first-child')
   await assert(`window.electronAPI.tasks.list().then(list => list.open.some(task => task.id === '${manualIds[0]}'))`)
-  await run(`Array.from(document.querySelectorAll('.tasks-item')).find(item => item.textContent.includes('手动排序甲')).querySelector('summary').click()`)
+  await run(`Array.from(document.querySelectorAll('.tasks-item')).find(item => item.textContent.includes('手动排序甲')).querySelector('.tasks-item-menu > summary').click()`)
   await click('.tasks-item-menu[open] .tasks-item-menu-danger')
   await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
   await click('.app-confirm-dialog .app-button-danger')
@@ -677,6 +679,11 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, "document.querySelector('.tasks-list')?.textContent.includes('处理中')")
   await click('[aria-label="归档 任务界面测试"]')
   await waitForRenderer(window, "!document.querySelector('[aria-label=\"归档 任务界面测试\"]')")
+  await assert(`window.electronAPI.tasks.list().then(list => !list.open.some(task => task.projectId === '${projectId}'))`)
+  if (!await run("document.querySelector('.tasks-archived').open")) await click('.tasks-archived > summary')
+  await run("Array.from(document.querySelectorAll('.tasks-archived .tasks-project-select')).find(button => button.textContent === '任务界面测试').click()")
+  await click('.tasks-tabs .tasks-tab:first-child')
+  await waitForRenderer(window, "!!document.querySelector('.tasks-title-button')")
   await click('.tasks-title-button')
   await fill('[aria-label="任务标题"]', '归档后仍可编辑')
   await click('.tasks-dialog button[type="submit"]')
@@ -686,6 +693,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await chooseGrouping('project')
   await click('.tasks-page-heading h1')
   await waitForRenderer(window, "document.querySelector('.tasks-board')?.textContent.includes('任务界面测试（已归档）') && document.querySelector('.tasks-board')?.textContent.includes('归档后仍可编辑')")
+  await click('.tasks-tabs .tasks-tab:first-child')
   await run(`(async () => {
     for (let i = 0; i < 55; i++) {
       const task = await window.electronAPI.tasks.create({ title: i === 0 ? '最早历史目标' : '历史记录 ' + i });
@@ -851,8 +859,9 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     const transfer = new DataTransfer(); transfer.setData('application/x-chouyu-list-task', '${listOrderIds[0]}');
     document.querySelector('[data-group-key="${manualGroupId}"]').parentElement.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
   })()`)
+  await waitForRenderer(window, `!!document.querySelector('[data-group-key="${manualGroupId}"] [data-task-id="${listOrderIds[0]}"]')`)
   await dragTaskBefore(listOrderIds[1], listOrderIds[0])
-  const groupedListOrder = `Array.from(document.querySelectorAll('[data-group-key="${manualGroupId}"] .tasks-item')).map(item => item.dataset.taskId).join() === '${listOrderIds[1]},${listOrderIds[0]}'`
+  const groupedListOrder = `Array.from(document.querySelectorAll('[data-group-key="${manualGroupId}"] .tasks-item')).map(item => item.dataset.taskId).filter(id => ${JSON.stringify(listOrderIds)}.includes(id)).join() === '${listOrderIds[1]},${listOrderIds[0]}'`
   await assert(groupedListOrder)
   window.webContents.reload()
   await waitForRenderer(window, "!!window.electronAPI")
@@ -970,6 +979,95 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert(`window.electronAPI.tasks.list().then(list => { const task = list.open.find(task => task.id === '${presetFixture.dated}'); return new Date(task.dueAt).getDate() === ${presetFixture.targetDay} && new Date(task.dueAt).getHours() === 18 && new Date(task.startAt).getHours() === 9 })`)
   await captureGrouping('preset-week-dates')
   await run(`Promise.all(${JSON.stringify([presetFixture.ongoing, presetFixture.dated, presetFixture.done])}.map(id => window.electronAPI.tasks.remove(id)))`)
+  // The iteration's primary paths use the same IPC and controls as a real task workspace.
+  await selectView('tomorrow')
+  await restoreGrouping()
+  await assert("document.querySelector('[data-grouping-value=priority]').getAttribute('aria-pressed') === 'true'")
+  await click('.tasks-tabs .tasks-tab:first-child')
+  const clickNamed = (name: string) => run(`(() => { const button = Array.from(document.querySelectorAll('.tasks-view button')).find(button => button.textContent.trim() === ${JSON.stringify(name)}); if (!button || button.disabled) throw new Error('Missing button: ' + ${JSON.stringify(name)}); button.click() })()`)
+  await click('.tasks-create-options > summary')
+  await clickNamed('快速新建')
+  await fill('[aria-label="快速任务标题"]', '迭代快速任务')
+  await click('.tasks-quick-create button[type=submit]')
+  await waitForRenderer(window, "!!Array.from(document.querySelectorAll('.tasks-title-button')).find(button => button.textContent === '迭代快速任务')")
+  const iterationId: string = await run("window.electronAPI.tasks.list().then(list => list.open.find(task => task.title === '迭代快速任务').id)")
+  await assert(`window.electronAPI.tasks.get('${iterationId}').then(task => new Date(task.dueAt).toDateString() === new Date(new Date().setDate(new Date().getDate()+1)).toDateString())`)
+  await click('.tasks-quick-create button:last-of-type')
+  await click(`[data-task-id="${iterationId}"] .tasks-quick-edit > summary`)
+  await fill(`[aria-label="修改优先级 迭代快速任务"]`, 'high')
+  await waitForRenderer(window, `document.querySelector('[data-task-id="${iterationId}"]').dataset.priority === 'high'`)
+  await click('.tasks-page-heading h1')
+  await clickNamed('批量操作')
+  await click('[aria-label="选择 迭代快速任务"]')
+  await clickNamed('批量完成')
+  await waitForRenderer(window, `window.electronAPI.tasks.get('${iterationId}').then(task => task.status === 'done')`)
+  await assert("document.querySelector('.tasks-batch-bar').textContent.includes('已选 0 项')")
+  await clickNamed('取消选择')
+  await run(`window.dispatchEvent(new CustomEvent('chouyu:task-navigation', { detail: { taskId: '${iterationId}' } }))`)
+  await waitForRenderer(window, "document.querySelector('[aria-label=任务标题]')?.value === '迭代快速任务'")
+  await fill('[aria-label="新子项名称"]', '验收步骤')
+  await clickNamed('添加子项')
+  await click('[aria-label="完成子项 验收步骤"]')
+  await click('.tasks-composer button[type=submit]')
+  await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
+  await assert(`window.electronAPI.tasks.get('${iterationId}').then(task => task.checklist.length === 1 && task.checklist[0].done && task.status === 'done')`)
+  await run(`window.electronAPI.tasks.remove('${iterationId}')`)
+  await click('.tasks-heading-menu > summary')
+  await clickNamed('回收站')
+  await waitForRenderer(window, "!!document.querySelector('[aria-label=任务回收站]:modal') && !document.querySelector('[aria-label=任务回收站] [role=status]')")
+  await run("Array.from(document.querySelectorAll('.tasks-recovery-list li')).find(row => row.querySelector('strong').textContent === '迭代快速任务').querySelector('button').click()")
+  await waitForRenderer(window, `window.electronAPI.tasks.get('${iterationId}').then(Boolean)`)
+  await waitForRenderer(window, "document.querySelector('[aria-label=关闭任务回收站]')?.disabled === false")
+  await click('[aria-label="关闭任务回收站"]')
+  await click('.tasks-heading-menu > summary')
+  await clickNamed('备份与恢复')
+  await waitForRenderer(window, "!!document.querySelector('[aria-label=任务备份与恢复]:modal')")
+  await assert("document.querySelector('[aria-label=任务备份与恢复]').textContent.includes('导出完整备份')")
+  const backupPath = join(process.env.CHOUYU_SMOKE_USER_DATA!, 'task-iteration-export.json')
+  const originalSaveDialog = dialog.showSaveDialog, originalOpenDialog = dialog.showOpenDialog
+  try {
+    dialog.showSaveDialog = (async () => ({ canceled: false, filePath: backupPath })) as typeof dialog.showSaveDialog
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [backupPath] })) as typeof dialog.showOpenDialog
+    await clickNamed('导出完整备份')
+    await waitForRenderer(window, "document.querySelector('[aria-label=任务备份与恢复] [role=status]')?.textContent.includes('已保存')")
+    const exported = JSON.parse(readFileSync(backupPath, 'utf8')) as TaskBackup
+    if (!exported.tables.tasks.some(task => task.id === iterationId && JSON.parse(String(task.checklist))[0]?.done) || !exported.settings.preferences) throw new Error('Task backup omitted data or view settings')
+    await run(`window.electronAPI.tasks.update('${iterationId}', { title: '备份之后的改动' })`)
+    await clickNamed('选择备份文件')
+    await waitForRenderer(window, "!!document.querySelector('.tasks-backup-preview')")
+    await clickNamed('恢复这份备份')
+    await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
+    const reloaded = new Promise<void>(resolve => window.webContents.once('did-finish-load', () => resolve()))
+    await clickPointer('.app-confirm-dialog .app-button-danger', false, false)
+    await reloaded
+    await waitForRenderer(window, '!!window.electronAPI')
+    window.webContents.send('open-chat-panel')
+    await waitForRenderer(window, "!!document.querySelector('[data-workspace-nav=tasks]')")
+    await click('[data-workspace-nav="tasks"]')
+    await waitForRenderer(window, "!!document.querySelector('.tasks-page-heading')")
+    await assert(`window.electronAPI.tasks.get('${iterationId}').then(task => task.title === '迭代快速任务' && task.checklist[0].done)`)
+  } finally { dialog.showSaveDialog = originalSaveDialog; dialog.showOpenDialog = originalOpenDialog }
+  await run(`window.dispatchEvent(new CustomEvent('chouyu:task-navigation', { detail: { draft: { title: '来源转换验收', note: '需要用户确认', source: { kind: 'continuation', id: 'missing-source', label: '已删除接续卡' } } } }))`)
+  await waitForRenderer(window, "document.querySelector('[aria-label=任务标题]')?.value === '来源转换验收'")
+  await assert("window.electronAPI.tasks.list().then(list => !list.open.some(task => task.title === '来源转换验收'))")
+  await click('.tasks-composer button[type=submit]')
+  await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
+  await selectView('all')
+  await click('.tasks-tabs .tasks-tab:first-child')
+  await waitForRenderer(window, "!!Array.from(document.querySelectorAll('.tasks-title-button')).find(button => button.textContent === '来源转换验收')")
+  const sourceTaskId: string = await run("window.electronAPI.tasks.list().then(list => list.open.find(task => task.title === '来源转换验收').id)")
+  await run(`Array.from(document.querySelectorAll('[data-task-id="${sourceTaskId}"] button')).find(button => button.textContent === '回看来源').click()`)
+  await waitForRenderer(window, "document.querySelector('[aria-label=任务来源] [role=alert]')?.textContent.includes('任务本身仍然保留')")
+  await assert("(() => { const rect = document.querySelector('[aria-label=任务来源]').getBoundingClientRect(); return Math.abs(rect.left + rect.width / 2 - innerWidth / 2) < 2 && Math.abs(rect.top + rect.height / 2 - innerHeight / 2) < 2 })()")
+  await captureGrouping('iteration-source-missing')
+  await click('[aria-label="关闭任务来源"]')
+  await run(`Promise.all(['${iterationId}', '${sourceTaskId}'].map(id => window.electronAPI.tasks.remove(id)))`)
+  await run(`(async () => {
+    const original = new Set(${JSON.stringify(originalIds)});
+    const list = await window.electronAPI.tasks.list({ doneLimit: 10000 });
+    for (const task of [...list.open, ...list.done]) if (!original.has(task.id)) await window.electronAPI.tasks.remove(task.id);
+    window.dispatchEvent(new Event('chouyu:tasks-changed'));
+  })()`)
   await click('[aria-label="关闭面板"]')
   await waitForRenderer(window, "!document.querySelector('.chat-panel')")
   console.log('CHOUYU_TASKS_UI_SMOKE_PASSED menus, confirmations, per-view preference restoration, column preview/cancel, manual card order and cross-column moves, groups, fields and history')

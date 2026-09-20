@@ -133,7 +133,8 @@ function parseAIStreamRequest(value: unknown): AIStreamRequest | null {
 
   const characterId = typeof input.characterId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(input.characterId) ? input.characterId : undefined
 
-  return { requestId: input.requestId, systemPrompt: input.systemPrompt, messages, characterId }
+  const sessionId = typeof input.sessionId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(input.sessionId) ? input.sessionId : undefined
+  return { requestId: input.requestId, systemPrompt: input.systemPrompt, messages, characterId, sessionId }
 }
 
 function getErrorMessage(error: unknown): string {
@@ -679,7 +680,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               })
             }
             try {
-              const result = await executeRegisteredTool(call.name, arguments_, mainWindow)
+              const result = await executeRegisteredTool(call.name, arguments_, mainWindow, request.sessionId)
               sendToolEvent(event.sender, {
                 requestId: request.requestId,
                 callId: call.id,
@@ -687,7 +688,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                 displayName: definition.displayName,
                 risk: definition.risk,
                 status: 'completed',
-                summary: result.summary.slice(0, 500)
+                summary: result.summary.slice(0, 500), taskId: result.taskId
               })
               return result.content.slice(0, 50_000)
             } catch (error) {

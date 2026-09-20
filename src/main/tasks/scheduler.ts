@@ -23,6 +23,7 @@ export function startTaskScheduler(
   const now = options.now ?? (() => Date.now())
   let stopped = false
   let timer: ReturnType<typeof setInterval> | null = null
+  let lastTickAt = now()
 
   // 启动积压:应用没开时错过的提醒合并成一条,不逐条轰炸
   let backlog: TaskRecord[] = []
@@ -37,11 +38,18 @@ export function startTaskScheduler(
 
   const tick = (): void => {
     if (stopped) return
+    const currentTime = now()
+    const interrupted = currentTime - lastTickAt > Math.max(intervalMs * 3, 60_000)
     let due: TaskRecord[]
     try {
-      due = claim(now())
+      due = claim(currentTime)
     } catch (error) {
       console.error('tasks scheduler tick failed:', error)
+      return
+    }
+    lastTickAt = currentTime
+    if (interrupted && due.length > 0) {
+      try { handlers.onBacklog(due.length) } catch (error) { console.error('tasks scheduler backlog handler failed:', error) }
       return
     }
     for (const task of due) {

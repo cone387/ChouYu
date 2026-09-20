@@ -1,6 +1,26 @@
 export type TaskPriority = 'high' | 'medium' | 'low'
 export type TaskStatus = 'open' | 'done'
 export type TaskRecurrence = 'none' | 'daily' | 'weekly' | 'monthly'
+export interface TaskChecklistItem { id: string; title: string; done: boolean }
+export interface TaskSource { kind: 'chat' | 'journal' | 'continuation'; id: string; label: string; date?: string }
+
+export function validateTaskChecklist(input: unknown): TaskChecklistItem[] {
+  if (input === undefined) return []
+  if (!Array.isArray(input) || input.length > 100) throw new Error('任务子项最多 100 项。')
+  const ids = new Set<string>()
+  return input.map(item => {
+    if (!item || typeof item.id !== 'string' || !item.id || item.id.length > 200 || ids.has(item.id) || typeof item.title !== 'string' || !item.title.trim() || item.title.length > 200 || typeof item.done !== 'boolean') throw new Error('任务子项无效。')
+    ids.add(item.id)
+    return { id: item.id, title: item.title.trim(), done: item.done }
+  })
+}
+
+export function validateTaskSource(input: unknown): TaskSource | null {
+  if (input == null) return null
+  const value = input as TaskSource
+  if (!['chat', 'journal', 'continuation'].includes(value.kind) || typeof value.id !== 'string' || !value.id || value.id.length > 200 || typeof value.label !== 'string' || value.label.length > 200 || (value.date !== undefined && (typeof value.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.date)))) throw new Error('任务来源无效。')
+  return { kind: value.kind, id: value.id, label: value.label, ...(value.date ? { date: value.date } : {}) }
+}
 
 export interface TaskGroup {
   isDefault?: boolean
@@ -18,6 +38,8 @@ export interface TaskProject {
 }
 
 export interface TaskRecord {
+  checklist?: TaskChecklistItem[]
+  source?: TaskSource | null
   id: string
   title: string
   note: string
@@ -38,6 +60,8 @@ export interface TaskRecord {
 }
 
 export interface TaskCreateInput {
+  checklist?: TaskChecklistItem[]
+  source?: TaskSource | null
   title: string
   note?: string
   projectId?: string | null
@@ -50,6 +74,8 @@ export interface TaskCreateInput {
 }
 
 export interface TaskUpdateInput {
+  checklist?: TaskChecklistItem[]
+  source?: TaskSource | null
   title?: string
   note?: string | null
   projectId?: string | null
@@ -69,6 +95,53 @@ export interface TaskListOptions {
   doneProjectIds?: string[]
   doneDueRange?: TaskDueRange
   doneSelection?: string
+  doneGrouping?: TaskGroupingQuery
+}
+
+export interface TaskGroupingQuery {
+  mode: 'priority' | 'due' | 'project' | 'field' | 'custom' | 'status' | 'week' | 'overdue' | 'completed'
+  fieldId?: string | null
+  groups?: { id: string; taskIds: string[] }[]
+}
+
+export interface TaskTrashEntry {
+  id: string
+  kind: 'task' | 'project' | 'group'
+  name: string
+  deletedAt: number
+  taskCount: number
+}
+
+export interface TaskUISettings {
+  preferences: string
+  layoutOrder: string
+  selection: string
+}
+export interface TaskBackupPreview {
+  token: string
+  createdAt: number
+  taskCount: number
+  projectCount: number
+  trashCount: number
+}
+
+export type TaskBatchAction = { kind: 'complete' | 'reopen' } | { kind: 'update'; patch: TaskUpdateInput } | { kind: 'reschedule'; date: string }
+
+/** Changing a deadline preserves its clock time and the interval's calendar-day length. */
+export function rescheduleTaskDate(task: TaskRecord, date: string): TaskUpdateInput {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('改期日期无效。')
+  const [year, month, day] = date.split('-').map(Number)
+  const target = new Date(year, month - 1, day)
+  if (target.getFullYear() !== year || target.getMonth() !== month - 1 || target.getDate() !== day) throw new Error('改期日期无效。')
+  const anchor = new Date(task.dueAt ?? task.startAt ?? target.getTime())
+  target.setHours(task.dueAt != null || task.startAt != null ? anchor.getHours() : 9, anchor.getMinutes(), anchor.getSeconds(), anchor.getMilliseconds())
+  const dueAt = target.getTime()
+  const deltaDays = Math.round((Date.UTC(year, month - 1, day) - Date.UTC(anchor.getFullYear(), anchor.getMonth(), anchor.getDate())) / 86400_000)
+  let startAt = task.startAt
+  if (startAt != null && (task.dueAt != null || startAt > dueAt)) {
+    const shifted = new Date(startAt); shifted.setDate(shifted.getDate() + deltaDays); startAt = shifted.getTime()
+  }
+  return { dueAt, ...(startAt != null ? { startAt } : {}), ...(task.dueAt != null && task.remindAt != null ? { remindAt: dueAt - (task.dueAt - task.remindAt) } : {}) }
 }
 
 export interface TaskListResult {
@@ -76,6 +149,7 @@ export interface TaskListResult {
   done: TaskRecord[]
   totalDone: number
   matchedDone: number
+  doneGroupCounts: Record<string, number>
   quarantinedAt: number | null
 }
 
@@ -101,7 +175,7 @@ export interface TaskViewInput {
 }
 
 export const DUE_RANGE_LABELS: Record<TaskDueRange, string> = {
-  today: '今天和过期', week: '本周', overdue: '过期', none: '无截止', any: '不限'
+  today: '今天截止', week: '本周截止', overdue: '已过期', none: '无截止时间', any: '不限'
 }
 
 export interface TaskReminderPayload {
@@ -305,6 +379,15 @@ export function formatTaskDue(at: number): string {
 }
 
 export interface TasksAPI {
+  onChanged(callback: () => void): () => void
+  get(id: string): Promise<TaskRecord | null>
+  batch(ids: string[], action: TaskBatchAction): Promise<void>
+  exportBackup(settings: TaskUISettings): Promise<boolean>
+  selectBackup(): Promise<TaskBackupPreview | null>
+  restoreBackup(token: string, currentSettings: TaskUISettings): Promise<{ settings: TaskUISettings; safetyBackupPath: string }>
+  trash(): Promise<TaskTrashEntry[]>
+  restoreTrash(id: string): Promise<void>
+  purgeTrash(id: string): Promise<void>
   list(options?: TaskListOptions): Promise<TaskListResult>
   create(input: TaskCreateInput): Promise<TaskRecord>
   update(id: string, patch: TaskUpdateInput): Promise<TaskRecord>
@@ -331,7 +414,7 @@ export interface TasksAPI {
   deleteField(id: string): Promise<void>
   ready(): void
   onTasksReminder(callback: (event: TasksReminderEvent) => void): () => void
-  onOpenTasksPanel(callback: () => void): () => void
+  onOpenTasksPanel(callback: (taskId?: string) => void): () => void
   onTasksStoreRebuilt(callback: () => void): () => void
 }
 

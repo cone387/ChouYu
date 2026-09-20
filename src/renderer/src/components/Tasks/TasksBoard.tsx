@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import type { TaskProject, TaskRecord, TaskSelectField, TaskUpdateInput, TaskSortMode } from '../../../../shared/tasks'
 import TaskIcon from './TaskIcon'
+import TaskQuickEdit from './TaskQuickEdit'
+import type { TaskSource } from '../../../../shared/tasks'
 import { formatTaskDue, sortTasks } from '../../../../shared/tasks'
 import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
 import type { TaskDisplayGroup } from './taskViewPreferences'
@@ -9,6 +11,12 @@ import { groupTasks, taskGroupMove, type BoardColumn, type BoardGroupMode } from
 export { groupTasks, type BoardGroupMode } from './taskGrouping'
 
 interface TasksBoardProps {
+  selecting?: boolean
+  selectedIds?: string[]
+  selectionBusy?: boolean
+  onSelect?: (id: string) => void
+  onSource?: (source: TaskSource) => void
+  onQuickEdit?: (id: string, patch: TaskUpdateInput) => Promise<unknown>
   orderScope: string
   tasks: TaskRecord[]
   projects: TaskProject[]
@@ -25,6 +33,7 @@ interface TasksBoardProps {
   onReopen: (id: string) => void
   groupMode: BoardGroupMode
   sortMode: TaskSortMode
+  doneCounts?: Record<string, number>
   groupFieldId: string | null
   onOpenProject: (id: string) => void
   onEdit: (task: TaskRecord) => void
@@ -32,7 +41,7 @@ interface TasksBoardProps {
   onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => Promise<void>
 }
 
-export default function TasksBoard({ orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+export default function TasksBoard({ selecting, selectedIds, selectionBusy, onSelect, onSource, onQuickEdit, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, DOMRect>())
   const scrollFrame = useRef<number | null>(null)
@@ -49,7 +58,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null)
   const [columnTarget, setColumnTarget] = useState<{ key: string; after: boolean } | null>(null)
   const scope = JSON.stringify([orderScope, groupMode, groupMode === 'field' ? groupFieldId : null])
-  const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId, Date.now(), customGroups).sort((a, b) => {
+  const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId, Date.now(), customGroups, doneCounts).sort((a, b) => {
     const rank = (key: string) => { const index = savedOrder.indexOf(key); return index < 0 ? Infinity : index }
     return rank(a.key) - rank(b.key)
   }).map(column => groupMode === 'status' && column.key === 'done' && sortMode !== 'manual' ? { ...column, tasks: sortTasks(column.tasks, 'completed', Date.now()) } : column)
@@ -182,7 +191,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
     onDragEnd={finishColumnDrag}>
     {columns.map(column => {
       const items = column.tasks
-      return <section key={column.key || 'none'} className="tasks-board-column" data-column-key={column.key} data-motion-key={`column:${column.key}`} data-column-dragging={draggingColumn === column.key || undefined} data-column-insert={columnTarget?.key === column.key ? (columnTarget.after ? 'after' : 'before') : undefined} data-drop-target={dropColumn === column.key || undefined} aria-label={`${column.label}，${items.length} 个任务`}
+      return <section key={column.key || 'none'} className="tasks-board-column" data-column-key={column.key} data-motion-key={`column:${column.key}`} data-column-dragging={draggingColumn === column.key || undefined} data-column-insert={columnTarget?.key === column.key ? (columnTarget.after ? 'after' : 'before') : undefined} data-drop-target={dropColumn === column.key || undefined} aria-label={`${column.label}，${column.totalCount} 个任务`}
         onDragOver={event => {
           if (isColumnDrag(event)) {
             event.preventDefault(); event.dataTransfer.dropEffect = 'move'
@@ -216,13 +225,14 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
             const index = columns.findIndex(item => item.key === column.key)
             const target = columns[index + (event.key === 'ArrowRight' ? 1 : -1)]
             if (target) moveColumn(column.key, target.key, event.key === 'ArrowRight')
-          }}><TaskIcon name="grip" /><span title={groupMode === 'custom' && column.key ? '双击修改分组名称' : undefined} onDoubleClick={event => { event.stopPropagation(); if (groupMode === 'custom' && column.key) onRenameGroup(column.key) }}>{column.label}</span><span className="tasks-count">{items.length}</span></button>{!column.archived && column.canCreate !== false && <button type="button" className="tasks-column-add" aria-label={`在 ${column.label} 中新建任务`} title="新建任务" onClick={() => onCreate(column.patch, column.key)}><TaskIcon name="plus" /></button>}{renderGroupActions(column.key)}</h3>
-        {items.length === 0 && <p className="tasks-board-empty">{groupMode === 'due' ? '暂无此截止时间的任务' : '暂无任务，可拖动任务到这里'}</p>}
+          }}><TaskIcon name="grip" /><span title={groupMode === 'custom' && column.key ? '双击修改分组名称' : undefined} onDoubleClick={event => { event.stopPropagation(); if (groupMode === 'custom' && column.key) onRenameGroup(column.key) }}>{column.label}</span><span className="tasks-count">{column.totalCount}</span></button>{!column.archived && column.canCreate !== false && <button type="button" className="tasks-column-add" aria-label={`在 ${column.label} 中新建任务`} title="新建任务" onClick={() => onCreate(column.patch, column.key)}><TaskIcon name="plus" /></button>}{renderGroupActions(column.key)}</h3>
+        {items.length === 0 && <p className="tasks-board-empty">{column.totalCount > 0 ? '本组历史尚未加载，请点击底部「加载更多」' : groupMode === 'due' ? '暂无此截止时间的任务' : '暂无任务，可拖动任务到这里'}</p>}
+        {items.length > 0 && column.totalCount > items.length && <p className="tasks-view-description">已加载 {items.length} / {column.totalCount}</p>}
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
-            return <li key={task.id} className="tasks-board-card" data-completed={task.status === 'done' || undefined} onDragEnd={finishColumnDrag} draggable={!savingTask} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined}
+            return <li key={task.id} className="tasks-board-card" data-completed={task.status === 'done' || undefined} onDragEnd={finishColumnDrag} draggable={!savingTask && !selecting} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined}
               onClick={event => {
-                if ((event.target as Element).closest('button, summary, a, input, select, textarea') || window.getSelection()?.toString()) return
+                if ((event.target as Element).closest('button, summary, .tasks-quick-edit, a, input, select, textarea') || window.getSelection()?.toString()) return
                 onEdit(task)
               }} onKeyDown={event => {
                 if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); onEdit(task); return }
@@ -231,6 +241,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
                 if (target) void commitTask(task.id, {}, target.id, after)
               }} data-priority={task.priority} data-motion-key={`task:${task.id}`} data-task-dragging={draggingTask === task.id || undefined}
               onDragStart={event => { if (savingRef.current) { event.preventDefault(); return }; event.stopPropagation(); event.dataTransfer.setData('text/plain', task.id); event.dataTransfer.effectAllowed = 'move'; setPreview(event, event.currentTarget); setDraggingTask(task.id) }}>
+              {selecting && <input className="tasks-selection" type="checkbox" aria-label={`选择 ${task.title}`} checked={selectedIds?.includes(task.id) ?? false} disabled={selectionBusy} onChange={() => onSelect?.(task.id)} />}
               <button type="button" className="tasks-complete" data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? onReopen(task.id) : onComplete(task.id)}></button>
               <div className="tasks-board-card-body">
                 <span className="tasks-board-card-head">
@@ -238,9 +249,10 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
                   <span className="tasks-board-card-title">{task.title}</span>
                 </span>
                 {!hideNote && task.note && <span className="tasks-board-card-note">{task.note}</span>}
-                <span className="tasks-board-card-chips"><TaskCardMeta task={task} projects={projects} fields={fields} onOpenProject={onOpenProject} /></span>
+                <span className="tasks-board-card-chips"><TaskCardMeta task={task} projects={projects} fields={fields} onOpenProject={onOpenProject} onSource={onSource} /></span>
                 {(task.startAt != null || task.dueAt !== null) && <span className="tasks-board-card-footer">{task.startAt != null && <span className="tasks-start-cell tasks-board-start" title={`开始时间：${formatTaskDue(task.startAt)}`}><TaskIcon name="today" />{formatTaskDue(task.startAt)} 开始</span>}<TaskCardDue task={task} /></span>}
               </div>
+              {onQuickEdit && <TaskQuickEdit task={task} projects={projects} onSave={patch => onQuickEdit(task.id, patch)} />}
             </li>
           })}
         </ul>

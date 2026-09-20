@@ -67,7 +67,20 @@ const api = {
     cancelAnalysis: () => ipcRenderer.invoke('journal:cancel-analysis')
   } satisfies JournalAPI,
   tasks: {
+    batch: (ids, action) => ipcRenderer.invoke('tasks:batch', ids, action),
+    trash: () => ipcRenderer.invoke('tasks:trash'),
+    restoreTrash: id => ipcRenderer.invoke('tasks:restoreTrash', id),
+    purgeTrash: id => ipcRenderer.invoke('tasks:purgeTrash', id),
+    exportBackup: settings => ipcRenderer.invoke('tasks:exportBackup', settings),
+    selectBackup: () => ipcRenderer.invoke('tasks:selectBackup'),
+    restoreBackup: (token, settings) => ipcRenderer.invoke('tasks:restoreBackup', token, settings),
     list: options => ipcRenderer.invoke('tasks:list', options),
+    get: id => ipcRenderer.invoke('tasks:get', id),
+    onChanged: callback => {
+      const listener = () => callback()
+      ipcRenderer.on('tasks:changed', listener)
+      return () => { ipcRenderer.removeListener('tasks:changed', listener) }
+    },
     create: input => ipcRenderer.invoke('tasks:create', input),
     update: (id, patch) => ipcRenderer.invoke('tasks:update', id, patch),
     complete: id => ipcRenderer.invoke('tasks:complete', id),
@@ -98,8 +111,9 @@ const api = {
       return () => { ipcRenderer.removeListener('tasks:reminder', handler) }
     },
     onOpenTasksPanel: callback => {
-      ipcRenderer.on('open-tasks-panel', callback)
-      return () => { ipcRenderer.removeListener('open-tasks-panel', callback) }
+      const handler = (_event: unknown, taskId?: unknown) => callback(typeof taskId === 'string' ? taskId : undefined)
+      ipcRenderer.on('open-tasks-panel', handler)
+      return () => { ipcRenderer.removeListener('open-tasks-panel', handler) }
     },
     onTasksStoreRebuilt: callback => {
       ipcRenderer.on('tasks:store-rebuilt', callback)

@@ -17,6 +17,25 @@ afterEach(() => {
 })
 
 describe('startTaskScheduler', () => {
+  test('长时间暂停后合并提醒，正常运行恢复逐条提醒，时钟回拨不误判', () => {
+    vi.useFakeTimers()
+    let now = 10_000
+    const reminders: string[] = [], backlog: number[] = []
+    const store = openTasksStore(tempFile())
+    const scheduler = startTaskScheduler(time => store.claimDueReminders(time), {
+      onReminder: task => { reminders.push(task.title) }, onBacklog: count => { backlog.push(count) }
+    }, { intervalMs: 1_000, now: () => now })
+    store.createTask({ title: '休眠期间一', remindAt: 11_000 })
+    store.createTask({ title: '休眠期间二', remindAt: 12_000 })
+    now = 100_000; vi.advanceTimersByTime(1_000)
+    expect(backlog).toEqual([2]); expect(reminders).toEqual([])
+    store.createTask({ title: '正常提醒', remindAt: 100_500 })
+    now = 101_000; vi.advanceTimersByTime(1_000)
+    expect(reminders).toEqual(['正常提醒'])
+    now = 90_000; vi.advanceTimersByTime(1_000)
+    expect(backlog).toEqual([2])
+    scheduler.stop(); store.close()
+  })
   test('启动时到期提醒合并为一条 backlog,不逐条回调', () => {
     vi.useFakeTimers()
     const store = openTasksStore(tempFile())

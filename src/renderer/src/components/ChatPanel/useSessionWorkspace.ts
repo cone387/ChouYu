@@ -397,7 +397,8 @@ export function useSessionWorkspace({
           generation.requestId = requestId
           requestSessionRef.current.set(requestId, sessionId)
         },
-        character && !character.builtIn ? character.id : undefined
+        character && !character.builtIn ? character.id : undefined,
+        sessionId
       )
     } catch (error) {
       renderAccumulated()

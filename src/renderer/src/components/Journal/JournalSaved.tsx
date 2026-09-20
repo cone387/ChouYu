@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { JournalSavedItem, JournalSavedUsage } from '../../../../shared/journal'
 import { journalRange } from './JournalEvidence'
+import { openTaskWorkspace } from '../Tasks/taskNavigation'
 
 const yesterday = () => {
   const value = new Date(); value.setDate(value.getDate() - 1)
@@ -107,6 +108,7 @@ export function JournalSaved({ focusId = '' }: { focusId?: string }) {
         {item.note && <p>我的备注：{item.note}</p>}
         <div className="journal-actions"><button disabled={busy} aria-pressed={item.pinned} onClick={() => void run(() => window.electronAPI.journal.updateSaved({ id: item.id, pinned: !item.pinned }))}>{item.pinned ? '取消固定' : '固定'}</button>
           <button disabled={busy} onClick={() => void run(() => window.electronAPI.journal.updateSaved({ id: item.id, completed: !item.completed }))}>{item.completed ? '重新继续' : '标记完成'}</button>
+          {item.kind === 'continuation' && <button disabled={busy} onClick={() => openTaskWorkspace({ draft: { title: item.title, note: [item.task.text, item.note, item.task.nextStep ? `建议下一步（请确认）：${item.task.nextStep}` : ''].filter(Boolean).join('\n\n'), source: { kind: 'continuation', id: item.id, label: item.title.slice(0, 200) } } })}>转为任务</button>}
           <button aria-expanded={expanded === item.id} onClick={() => setExpanded(expanded === item.id ? '' : item.id)}>{expanded === item.id ? '收起来源' : '回看来源快照'}</button>
           <button disabled={busy} onClick={() => { setEditing(item.id); setNote(item.note) }}>编辑备注</button><button disabled={busy} onClick={() => setDeleting(item.id)}>删除收藏</button></div>
         {editing === item.id && <form className="journal-edit-form" onSubmit={event => { event.preventDefault(); void run(() => window.electronAPI.journal.updateSaved({ id: item.id, note })) }}><label>收藏备注<textarea autoFocus aria-label="收藏备注" value={note} maxLength={4000} onChange={event => setNote(event.target.value)} /></label><div className="journal-actions"><button disabled={busy}>保存备注</button><button type="button" disabled={busy} onClick={() => setEditing('')}>取消</button></div></form>}

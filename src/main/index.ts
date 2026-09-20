@@ -286,12 +286,12 @@ app.whenReady().then(async () => {
   } })
   initializeTasks({
     notificationsEnabled: () => getConfig().taskNotifications !== false,
-    openTasksWorkspace: () => {
+    openTasksWorkspace: taskId => {
       if (!mainWindow || mainWindow.isDestroyed()) return
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.show()
       mainWindow.focus()
-      mainWindow.webContents.send('open-tasks-panel')
+      mainWindow.webContents.send('open-tasks-panel', taskId)
     }
   })
   createWindow()

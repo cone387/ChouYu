@@ -137,6 +137,7 @@ function sanitizeToolData(value: unknown): ToolActivityData | undefined {
     callId: input.callId.slice(0, 128),
     name: input.name.slice(0, 64),
     displayName: input.displayName.slice(0, 100),
+    taskId: typeof input.taskId === 'string' ? input.taskId.slice(0, 200) : undefined,
     risk: input.risk as ToolActivityData['risk'],
     status: interrupted ? 'error' : status,
     summary: interrupted

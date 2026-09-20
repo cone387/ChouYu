@@ -125,17 +125,21 @@ describe('TasksStore', () => {
     store.close()
   })
 
-  test('归档保留任务和提醒，允许编辑原归属但不允许新增或移入', () => {
+  test('归档退出日常视图并暂停提醒，显式查看和恢复保留原任务', () => {
     const store = openTasksStore(tempFile('tasks.db'))
     const project = store.createProject('归档项目')
     const task = store.createTask({ title: '保留任务', projectId: project.id, remindAt: 1 })
     const other = store.createTask({ title: '其他任务' })
     store.archiveProject(project.id, true)
-    expect(store.listTasks().open.some(item => item.id === task.id)).toBe(true)
+    expect(store.listTasks().open.some(item => item.id === task.id)).toBe(false)
+    expect(store.listTasks({ doneSelection: `project:${project.id}` }).open.some(item => item.id === task.id)).toBe(true)
     expect(store.updateTask(task.id, { title: '修改标题', projectId: project.id }).projectId).toBe(project.id)
-    expect(store.claimDueReminders(2).map(item => item.id)).toEqual([task.id])
+    expect(store.claimDueReminders(2)).toEqual([])
     expect(() => store.createTask({ title: '新增', projectId: project.id })).toThrow('归档')
     expect(() => store.updateTask(other.id, { projectId: project.id })).toThrow('归档')
+    store.archiveProject(project.id, false)
+    expect(store.listTasks().open.some(item => item.id === task.id)).toBe(true)
+    expect(store.claimDueReminders(2).map(item => item.id)).toEqual([task.id])
     expect(store.updateTask(task.id, { projectId: null }).projectId).toBe(store.listProjects().find(project => project.isDefault)!.id)
     store.close()
   })
@@ -552,6 +556,158 @@ test('日期预设按完成时间筛选后分页，与前端规则一致，跨�
   } finally { clock.mockRestore(); store.close() }
 })
 
+test('完整历史分组计数不受分页限制，与前端分组一致', () => {
+  const store = openTasksStore(tempFile('group-counts.db'))
+  const at = (day: number) => new Date(2026, 8, day, 12).getTime()
+  const clock = vi.spyOn(Date, 'now')
+  try {
+    const project = store.createProject('历史清单')
+    const field = store.createField({ name: '阶段', options: ['待办', '处理'] })
+    for (let index = 0; index < 70; index++) {
+      clock.mockReturnValue(at(16 - index % 10))
+      const task = store.createTask({ title: `历史 ${index}`, projectId: project.id, priority: index % 2 ? 'high' : 'low', dueAt: index % 2 ? null : at(16 + index % 3), customFields: { [field.id]: field.options[index % 2].id } })
+      store.completeTask(task.id)
+    }
+    clock.mockReturnValue(at(16))
+    const all = store.listTasks({ doneSelection: 'done', doneLimit: 100 }).done
+    const groups = [{ id: 'manual', name: '手动', taskIds: all.slice(5, 40).map(task => task.id) }]
+    const expectedCounts: Record<string, Record<string, number>> = {
+      status: { done: 70 }, completed: { today: 7, yesterday: 7, recent: 35, earlier: 21 },
+      week: { '2026-9-14': 7, '2026-9-15': 7, '2026-9-16': 7, other: 49 },
+      due: { none: 35, today: 12, tomorrow: 11, later: 12 },
+      priority: { high: 35, low: 35 }, project: { [project.id]: 70 },
+      field: { [field.options[0].id]: 35, [field.options[1].id]: 35 }, custom: { manual: 35, '': 35 }, overdue: { other: 70 }
+    }
+    for (const mode of ['status', 'completed', 'week', 'due', 'priority', 'project', 'field', 'custom', 'overdue'] as const) {
+      const result = store.listTasks({ doneSelection: 'done', doneLimit: 2, doneGrouping: { mode, fieldId: field.id, groups } })
+      expect(result.done).toHaveLength(2)
+      expect(result.doneGroupCounts).toEqual(expectedCounts[mode])
+      expect(result.matchedDone).toBe(70)
+    }
+    const filtered = store.listTasks({ doneSelection: 'done', doneLimit: 1, donePriorities: ['high'], doneGrouping: { mode: 'priority' } })
+    expect(filtered.doneGroupCounts).toEqual({ high: 35 })
+  } finally { clock.mockRestore(); store.close() }
+})
+
+test('回收任务恢复原归属、字段和完成状态，过期提醒不重发', () => {
+  const store = openTasksStore(tempFile('trash-task.db'))
+  try {
+    const group = store.createGroup('工作')
+    const project = store.createProject('项目', group.id)
+    const field = store.createField({ name: '阶段', options: ['完成'] })
+    const task = store.createTask({ title: '回收任务', projectId: project.id, remindAt: 1, customFields: { [field.id]: field.options[0].id } })
+    store.completeTask(task.id); store.deleteTask(task.id)
+    const entry = store.listTrash()[0]
+    expect(entry).toMatchObject({ kind: 'task', name: task.title, taskCount: 1 })
+    store.deleteProject(project.id)
+    store.restoreTrash(entry.id)
+    expect(store.listTasks({ doneSelection: 'done' }).done.find(item => item.id === task.id)).toMatchObject({ projectId: project.id, status: 'done', customFields: task.customFields })
+    expect(store.listProjects().find(item => item.id === project.id)?.groupId).toBe(group.id)
+    store.reopenTask(task.id)
+    expect(store.claimDueReminders(Date.now())).toEqual([])
+  } finally { store.close() }
+})
+
+test('整组回收仅生成一条记录，跨重启恢复全部清单和任务，同名不覆盖新数据', () => {
+  const file = tempFile('trash-group.db')
+  let store = openTasksStore(file)
+  try {
+    const group = store.createGroup('原分组')
+    const project = store.createProject('原清单', group.id)
+    const task = store.createTask({ title: '原任务', projectId: project.id })
+    store.archiveProject(project.id, true)
+    store.deleteGroup(group.id, true)
+    expect(store.listTrash()).toHaveLength(1)
+    const trashId = store.listTrash()[0].id
+    const replacement = store.createGroup('原分组')
+    const newProject = store.createProject('原清单', replacement.id)
+    store.close(); store = openTasksStore(file)
+    store.restoreTrash(trashId)
+    expect(store.listGroups().find(item => item.id === group.id)?.name).toBe('原分组（恢复 1）')
+    expect(store.listProjects().find(item => item.id === project.id)).toMatchObject({ name: '原清单（恢复 1）', groupId: group.id, archivedAt: expect.any(Number) })
+    expect(store.listProjects().find(item => item.id === newProject.id)?.name).toBe('原清单')
+    expect(store.listTasks({ doneSelection: `project:${project.id}` }).open.some(item => item.id === task.id)).toBe(true)
+    expect(store.listTrash()).toHaveLength(0)
+    expect(() => store.restoreTrash(trashId)).toThrow('不存在')
+  } finally { store.close() }
+})
+
+test('保留内容的分组删除可恢复归属，但不覆盖后来手动移动的清单；永久删除不可恢复', () => {
+  const store = openTasksStore(tempFile('trash-keep.db'))
+  try {
+    const group = store.createGroup('原分组'), other = store.createGroup('新的安排')
+    const first = store.createProject('保持', group.id), second = store.createProject('手动移动', group.id)
+    store.deleteGroup(group.id, false)
+    store.moveProject(second.id, other.id)
+    store.restoreTrash(store.listTrash()[0].id)
+    expect(store.listProjects().find(item => item.id === first.id)?.groupId).toBe(group.id)
+    expect(store.listProjects().find(item => item.id === second.id)?.groupId).toBe(other.id)
+    const task = store.createTask({ title: '永久删除' }); store.deleteTask(task.id)
+    const id = store.listTrash()[0].id; store.purgeTrash(id)
+    expect(() => store.restoreTrash(id)).toThrow('不存在')
+  } finally { store.close() }
+})
+
+test('完整备份恢复任务、归属、字段、视图、回收站和 UI 配置', () => {
+  const store = openTasksStore(tempFile('backup-roundtrip.db'))
+  try {
+    const group = store.createGroup('备份分组'), project = store.createProject('备份清单', group.id)
+    const field = store.createField({ name: '备份字段', options: ['选项'] })
+    const view = store.createView({ name: '备份视图', projectIds: [project.id], dueRange: 'today' })
+    const task = store.createTask({ title: '保留', projectId: project.id, customFields: { [field.id]: field.options[0].id } })
+    const removed = store.createTask({ title: '回收', projectId: project.id }); store.deleteTask(removed.id)
+    const settings = { preferences: JSON.stringify({ today: { groupMode: 'custom', customGroups: [{ id: 'x', name: '安排', taskIds: [task.id] }] } }), layoutOrder: JSON.stringify({ 'sidebar:groups': [group.id] }), selection: 'today' }
+    const backup = store.exportBackup(settings)
+    store.deleteGroup(group.id, true); store.deleteField(field.id); store.deleteView(view.id)
+    store.createTask({ title: '备份后的新任务' })
+    expect(store.restoreBackup(JSON.parse(JSON.stringify(backup)))).toEqual(settings)
+    expect(store.listTasks().open.map(item => item.id)).toEqual([task.id])
+    expect(store.listFields().find(item => item.id === field.id)).toEqual(field)
+    expect(store.listViews().find(item => item.id === view.id)).toEqual(view)
+    expect(store.listProjects().find(item => item.id === project.id)?.groupId).toBe(group.id)
+    expect(store.listTrash()).toHaveLength(1)
+    store.restoreTrash(store.listTrash()[0].id)
+    expect(store.listTasks().open.some(item => item.id === removed.id)).toBe(true)
+  } finally { store.close() }
+})
+
+test('备份恢复在删除阶段或写入阶段失败时保留整个原工作区', async () => {
+  const file = tempFile('backup-rollback.db')
+  const store = openTasksStore(file)
+  const task = store.createTask({ title: '备份中的任务' })
+  const backup = store.exportBackup({ preferences: '{}', layoutOrder: '{}', selection: 'all' })
+  const newer = store.createTask({ title: '恢复前的新任务' })
+  const Database = (await import('better-sqlite3')).default
+  const db = new Database(file)
+  for (const operation of ['DELETE', 'INSERT']) {
+    db.exec(`CREATE TRIGGER fail_restore BEFORE ${operation} ON tasks BEGIN SELECT RAISE(ABORT, '模拟磁盘写入失败'); END`)
+    expect(() => store.restoreBackup(backup)).toThrow('模拟磁盘写入失败')
+    expect(store.listTasks().open.map(item => item.id)).toEqual([task.id, newer.id])
+    db.exec('DROP TRIGGER fail_restore')
+  }
+  db.close(); store.close()
+})
+
+test('损坏备份、无效引用和未来版本均在修改现有数据之前拒绝', () => {
+  const store = openTasksStore(tempFile('backup-invalid.db'))
+  try {
+    const task = store.createTask({ title: '不能丢失' })
+    const original = store.exportBackup({ preferences: '{}', layoutOrder: '{}', selection: 'today' })
+    for (const corrupt of [
+      (backup: typeof original) => { backup.schemaVersion += 1 },
+      (backup: typeof original) => { backup.tables.tasks[0].project_id = 'missing' },
+      (backup: typeof original) => { backup.tables.tasks[0].status = 'invalid' },
+      (backup: typeof original) => { backup.tables.tasks[0].due_at = 'not-a-date' },
+      (backup: typeof original) => { backup.tables.task_groups = [] },
+      (backup: typeof original) => { backup.settings.preferences = '{broken' }
+    ]) {
+      const backup = JSON.parse(JSON.stringify(original)) as typeof original; corrupt(backup)
+      expect(() => store.restoreBackup(backup)).toThrow()
+      expect(store.listTasks().open.map(item => item.id)).toEqual([task.id])
+    }
+  } finally { store.close() }
+})
+
 test('完成任务按清单、视图和日期筛选后再分页，匹配总数准确', () => {
   const store = openTasksStore(tempFile('done-scopes.db'))
   try {
@@ -628,6 +784,54 @@ test('删除分组勾选级联删除时包含归档清单和已完成任务，�
   expect(reopened.listTasks().open.map(task => task.id)).toEqual([kept.id])
   expect(reopened.listTasks().done).toEqual([])
   reopened.close()
+})
+
+test('批量操作整体回滚，重复完成不产生重复后继，改期保留时长和提醒偏移', () => {
+  const store = openTasksStore(tempFile('batch.db'))
+  const startAt = new Date(2026, 8, 20, 10).getTime(), dueAt = new Date(2026, 8, 22, 17).getTime()
+  const first = store.createTask({ title: '跨天', startAt, dueAt, remindAt: dueAt - 3600000 })
+  const repeat = store.createTask({ title: '每天', dueAt, recurrence: 'daily' })
+  expect(() => store.batchTasks([first.id, 'missing'], { kind: 'complete' })).toThrow()
+  expect(store.listTasks().open.some(task => task.id === first.id)).toBe(true)
+  store.batchTasks([first.id, repeat.id], { kind: 'complete' })
+  store.batchTasks([first.id, repeat.id], { kind: 'complete' })
+  expect(store.listTasks().open.filter(task => task.title === '每天')).toHaveLength(1)
+  store.batchTasks([first.id], { kind: 'reopen' })
+  expect(() => store.batchTasks([first.id], { kind: 'reschedule', date: '2026-02-30' })).toThrow()
+  store.batchTasks([first.id], { kind: 'reschedule', date: '2026-09-28' })
+  const moved = store.listTasks().open.find(task => task.id === first.id)!
+  expect(moved.startAt).toBe(new Date(2026, 8, 26, 10).getTime())
+  expect(moved.dueAt).toBe(new Date(2026, 8, 28, 17).getTime())
+  expect(moved.remindAt).toBe(moved.dueAt! - 3600000)
+  const destination = store.createProject('批量目标')
+  store.batchTasks([first.id, repeat.id], { kind: 'update', patch: { projectId: destination.id } })
+  expect([...store.listTasks().open, ...store.listTasks().done].filter(task => [first.id, repeat.id].includes(task.id)).every(task => task.projectId === destination.id)).toBe(true)
+  store.close()
+})
+
+test('子项、来源持久化并可回收恢复，子项与父状态独立，重复下一期重置勾选', () => {
+  const file = tempFile('checklist-source.db')
+  let store = openTasksStore(file)
+  const source = { kind: 'journal' as const, id: 'activity:7', label: '原日志', date: '2026-09-20' }
+  const task = store.createTask({ title: '父任务', source, dueAt: Date.now() + 86400000, recurrence: 'daily', checklist: [{ id: 'step', title: '第一步', done: false }] })
+  store.updateTask(task.id, { checklist: [{ id: 'step', title: '已勾选', done: true }] })
+  expect(store.getTask(task.id)?.status).toBe('open')
+  expect(() => store.updateTask(task.id, { checklist: [{ id: 'same', title: '', done: false }] })).toThrow()
+  store.completeTask(task.id)
+  const next = store.listTasks().open[0]
+  expect(next.checklist).toEqual([{ id: 'step', title: '已勾选', done: false }])
+  expect(next.source).toEqual(source)
+  store.close(); store = openTasksStore(file)
+  expect(store.getTask(task.id)?.checklist?.[0].done).toBe(true)
+  store.deleteTask(task.id)
+  store.restoreTrash(store.listTrash()[0].id)
+  expect(store.getTask(task.id)?.source).toEqual(source)
+  expect(store.getTask(task.id)?.checklist?.[0].done).toBe(true)
+  const backup = store.exportBackup({ preferences: '{}', layoutOrder: '{}', selection: 'all' })
+  store.restoreBackup(backup)
+  expect(store.getTask(task.id)?.source).toEqual(source)
+  expect(store.getTask(task.id)?.status).toBe('done')
+  store.close()
 })
 
 test('级联删除失败会整体回滚分组、清单和任务', async () => {

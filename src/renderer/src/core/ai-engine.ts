@@ -29,7 +29,8 @@ export async function streamChat(
   onChunk: StreamCallback,
   signal?: AbortSignal,
   onRequestStart?: (requestId: string) => void,
-  characterId?: string
+  characterId?: string,
+  sessionId?: string
 ): Promise<void> {
   if (!characterId && !config.apiKey.trim()) {
     throw new Error('尚未配置 API Key，请先打开设置完成配置。')
@@ -45,6 +46,7 @@ export async function streamChat(
     requestId,
     systemPrompt,
     characterId,
+    sessionId,
     messages: messages.map((message) => ({
       role: message.role,
       content: message.content,

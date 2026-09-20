@@ -7,6 +7,8 @@ import TaskIcon from './TaskIcon'
 import type { TaskDisplayGroup } from './taskViewPreferences'
 
 export interface TaskDraft {
+  checklist?: TaskRecord['checklist']
+  source?: TaskRecord['source']
   id: string
   title: string
   note: string
@@ -39,6 +41,11 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
   const defaultGroupId = groups.find(group => group.isDefault)?.id ?? ''
   const [groupId, setGroupId] = useState(() => projects.find(project => project.id === draft.projectId)?.groupId ?? defaultGroupId)
   const [projectName, setProjectName] = useState('')
+  const [newItem, setNewItem] = useState('')
+  const addItem = () => {
+    if (!newItem.trim() || busy || (draft.checklist?.length ?? 0) >= 100) return
+    onChange({ ...draft, checklist: [...draft.checklist ?? [], { id: crypto.randomUUID(), title: newItem.trim(), done: false }] }); setNewItem('')
+  }
   const groupProjects = projects.filter(project => (project.groupId ?? defaultGroupId) === groupId && (!project.archivedAt || project.id === draft.projectId))
   const hasSelectedProject = groupProjects.some(project => project.id === draft.projectId)
   const changeGroup = (id: string) => {
@@ -60,6 +67,7 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
           </header>
           <form className="tasks-form" onSubmit={onSubmit} aria-label={draft.id ? '编辑任务' : '新建任务'}>
         {error && <p role="alert" className="tasks-error">{error}</p>}
+        {draft.source && <p className="tasks-composer-hint">来源：{draft.source.label}。{draft.id ? '可通过任务卡片回看原始内容。' : '创建后可回看来源；取消不会创建任务。'}</p>}
         <label className="tasks-composer-title">
           <span className="sr-only">标题</span>
           <input value={draft.title} disabled={busy} onChange={e => onChange({ ...draft, title: e.target.value })}
@@ -97,6 +105,16 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
           <span><TaskIcon name="edit" />任务描述</span>
           <textarea value={draft.note} disabled={busy} onChange={e => onChange({ ...draft, note: e.target.value })} aria-label="任务备注" placeholder="补充背景、目标或需要注意的事情…" rows={4} />
         </label>
+        <fieldset className="tasks-checklist-editor" disabled={busy}>
+          <legend>子项 {draft.checklist?.filter(item => item.done).length ?? 0}/{draft.checklist?.length ?? 0}</legend>
+          <small>子项不单独提醒；勾选子项不会改变父任务状态。重复任务的下一期会重置子项勾选。</small>
+          {(draft.checklist ?? []).map(item => <div key={item.id}>
+            <input type="checkbox" aria-label={`完成子项 ${item.title}`} checked={item.done} onChange={event => onChange({ ...draft, checklist: draft.checklist!.map(value => value.id === item.id ? { ...value, done: event.target.checked } : value) })} />
+            <input aria-label="子项名称" maxLength={200} value={item.title} onChange={event => onChange({ ...draft, checklist: draft.checklist!.map(value => value.id === item.id ? { ...value, title: event.target.value } : value) })} />
+            <button type="button" aria-label={`删除子项 ${item.title}`} onClick={() => onChange({ ...draft, checklist: draft.checklist!.filter(value => value.id !== item.id) })}>×</button>
+          </div>)}
+          <div><input aria-label="新子项名称" placeholder="添加一个步骤" maxLength={200} value={newItem} onChange={event => setNewItem(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addItem() } }} /><button type="button" disabled={!newItem.trim() || (draft.checklist?.length ?? 0) >= 100} onClick={addItem}>添加子项</button></div>
+        </fieldset>
         {fields.length > 0 && <div className="tasks-composer-properties" role="group" aria-label="自定义字段">
           {fields.map(field => <div className="tasks-select-field" key={field.id}>
             <span>{field.name}</span>

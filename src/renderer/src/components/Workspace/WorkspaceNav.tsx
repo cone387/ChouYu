@@ -36,10 +36,12 @@ export default function WorkspaceNav({ activePage, onNavigate, status }: { activ
       timer = setTimeout(refreshDay, Math.max(1, tomorrow.getTime() - Date.now()))
     }
     refreshDay()
+    const unsubscribeTasks = window.electronAPI.tasks.onChanged(refresh)
     window.addEventListener('chouyu:tasks-changed', refresh)
     window.addEventListener('focus', refresh)
     return () => {
       disposed = true
+      unsubscribeTasks()
       clearTimeout(timer)
       window.removeEventListener('chouyu:tasks-changed', refresh)
       window.removeEventListener('focus', refresh)

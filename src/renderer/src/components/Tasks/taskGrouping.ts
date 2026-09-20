@@ -14,6 +14,7 @@ export interface BoardColumn {
   date?: number
   canCreate?: boolean
   hideEmpty?: boolean
+  totalCount?: number
 }
 
 const dayKey = (at: number) => {
@@ -49,7 +50,7 @@ export function taskGroupMove(task: TaskRecord, mode: BoardGroupMode, column: Bo
   return { patch: column.patch }
 }
 
-export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields: TaskSelectField[], groupMode: BoardGroupMode, groupFieldId: string | null, now = Date.now(), customGroups: TaskDisplayGroup[] = []) {
+export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields: TaskSelectField[], groupMode: BoardGroupMode, groupFieldId: string | null, now = Date.now(), customGroups: TaskDisplayGroup[] = [], doneCounts?: Record<string, number>) {
   const groupField = groupMode === 'field' ? fields.find(field => field.id === groupFieldId) ?? null : null
   const today = new Date(now); today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1)
@@ -85,7 +86,7 @@ export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields:
       columns.push({ key, label, patch: {}, canCreate: false })
     }
   } else if (groupMode === 'project') {
-    for (const project of projects.filter(project => !project.archivedAt || tasks.some(task => task.projectId === project.id))) {
+    for (const project of projects.filter(project => !project.archivedAt || tasks.some(task => task.projectId === project.id) || (doneCounts?.[project.id] ?? 0) > 0)) {
       columns.push({ key: project.id, label: `${project.name}${project.archivedAt ? '（已归档）' : ''}`, patch: { projectId: project.id }, archived: Boolean(project.archivedAt), hideEmpty: true })
     }
     if (!projects.some(project => project.isDefault) || tasks.some(task => task.projectId == null)) columns.push({ key: '', label: '无清单', patch: { projectId: null }, hideEmpty: true })
@@ -118,5 +119,6 @@ export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields:
     return undefined
   }
   return columns.map(column => ({ ...column, tasks: tasks.filter(task => columnOf(task) === column.key) }))
-    .filter(column => !column.hideEmpty || column.tasks.length > 0)
+    .map(column => ({ ...column, totalCount: doneCounts ? column.tasks.filter(task => task.status === 'open').length + (doneCounts[column.key] ?? 0) : column.tasks.length }))
+    .filter(column => !column.hideEmpty || column.totalCount > 0)
 }

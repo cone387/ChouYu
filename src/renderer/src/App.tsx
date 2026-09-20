@@ -1,4 +1,5 @@
 import type { AssistantMessageKind } from '../../shared/assistant-message'
+import type { TaskConversionDraft, TaskNavigation } from './components/Tasks/taskNavigation'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import StorageNotice from './components/StorageNotice/StorageNotice'
 import Pet from './components/Pet/Pet'
@@ -20,7 +21,7 @@ function App() {
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [panelInitialized, setPanelInitialized] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [workspaceRequest, setWorkspaceRequest] = useState<{ page: WorkspacePage; id: number; taskId?: string }>()
+  const [workspaceRequest, setWorkspaceRequest] = useState<{ page: WorkspacePage; id: number; taskId?: string; taskDraft?: TaskConversionDraft }>()
   const [petState, setPetState] = useState<PetState>(stateMachine.getState())
   const [screenshotImage, setScreenshotImage] = useState<string | null>(null)
   const [captureMode, setCaptureMode] = useState<'crop' | 'scroll'>('crop')
@@ -342,6 +343,15 @@ function App() {
   }), [ensurePanelPosition])
 
   useEffect(() => window.electronAPI.tasks.onOpenTasksPanel(openTasksPage), [openTasksPage])
+  useEffect(() => {
+    const onTask = (event: Event) => {
+      const detail = (event as CustomEvent<TaskNavigation>).detail
+      openTasksPage(detail.taskId)
+      if (detail.draft) setWorkspaceRequest(previous => ({ page: 'tasks', id: (previous?.id ?? 0) + 1, taskDraft: detail.draft }))
+    }
+    window.addEventListener('chouyu:task-navigation', onTask)
+    return () => window.removeEventListener('chouyu:task-navigation', onTask)
+  }, [openTasksPage])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onTogglePanel(togglePanel)

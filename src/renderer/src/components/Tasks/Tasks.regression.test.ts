@@ -43,7 +43,7 @@ describe('Tasks 视图源守卫', () => {
     const view = read('TasksView.tsx')
     expect(view).toContain("{ id: 'today', label: '今天' }")
     expect(view).toContain("{ id: 'done', label: '已完成' }")
-    expect(view).toContain("if (target === 'today' || target === 'week') return matchesTaskSchedule(task, target, now)")
+    expect(view).toContain("if (target === 'today' || target === 'tomorrow' || target === 'week') return matchesTaskSchedule(task, target, now)")
     expect(view).toContain("target === 'done' ? totalDone")
     expect(view).toContain('tasks-tool-menu')
     expect(view).toContain('sortTasks')

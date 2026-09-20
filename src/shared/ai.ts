@@ -5,6 +5,7 @@ export interface AIChatMessage {
 }
 
 export interface AIStreamRequest {
+  sessionId?: string
   requestId: string
   messages: AIChatMessage[]
   systemPrompt: string

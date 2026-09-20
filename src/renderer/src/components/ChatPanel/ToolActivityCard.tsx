@@ -1,5 +1,6 @@
 import type { ToolActivityData } from '../../../../shared/tools'
 import { getToolRiskLabel } from '../../../../shared/tools'
+import { openTaskWorkspace } from '../Tasks/taskNavigation'
 
 export default function ToolActivityCard({ data }: { data: ToolActivityData }) {
   const terminal = ['completed', 'denied', 'error'].includes(data.status)
@@ -26,6 +27,7 @@ export default function ToolActivityCard({ data }: { data: ToolActivityData }) {
         <span>{data.summary || getToolRiskLabel(data.risk)}</span>
       </span>
       <span className="tool-activity-status">{statusLabel}</span>
+      {data.status === 'completed' && data.taskId && <button type="button" onClick={() => openTaskWorkspace({ taskId: data.taskId })}>查看任务</button>}
     </div>
   )
 }

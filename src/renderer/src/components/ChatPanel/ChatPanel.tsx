@@ -4,6 +4,7 @@ import { isOverlayEscape } from '../../core/escape'
 import GlobalSearch, { type SearchSnapshot } from '../Workspace/GlobalSearch'
 import Journal from '../Journal/Journal'
 import TasksView from '../Tasks/TasksView'
+import type { TaskConversionDraft } from '../Tasks/taskNavigation'
 import WorkspaceNav, { type WorkspacePage } from '../Workspace/WorkspaceNav'
 import WorkspaceHeader from '../Workspace/WorkspaceHeader'
 import { useWorkspacePresentation } from '../Workspace/useWorkspacePresentation'
@@ -54,7 +55,7 @@ interface ChatPanelProps {
   petVisible: boolean
   onPetVisibleChange: (visible: boolean) => void
   initialShowSettings?: boolean
-  workspaceRequest?: { page: WorkspacePage; id: number; taskId?: string }
+  workspaceRequest?: { page: WorkspacePage; id: number; taskId?: string; taskDraft?: TaskConversionDraft }
   onSettingsClose?: () => void
   onScreenshot?: (hidePanel: boolean, callback: (dataUrl: string) => void) => void
   onScrollScreenshot?: (callback: (dataUrl: string) => void) => void
@@ -73,6 +74,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [pageLoaded, setPageLoaded] = useState(false)
   const pageChanged = useRef(false)
   const [taskFocusId, setTaskFocusId] = useState<string | undefined>()
+  const [taskOpenRequest, setTaskOpenRequest] = useState<{ id: number; taskId: string }>()
+  const [taskConversionRequest, setTaskConversionRequest] = useState<{ id: number; draft: TaskConversionDraft }>()
   const showSettings = activePage === 'settings'
   const showMemoryWorkspace = activePage === 'memory'
   const isChat = activePage === 'chat'
@@ -281,7 +284,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           displayName: event.displayName,
           risk: event.risk,
           status: event.status,
-          summary: event.summary
+          summary: event.summary, taskId: event.taskId
         }
         const existing = previous.find((message) => message.id === id)
         return existing
@@ -300,7 +303,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [initialShowSettings, navigate])
 
   useEffect(() => {
-    if (workspaceRequest) { navigate(workspaceRequest.page); setTaskFocusId(workspaceRequest.taskId) }
+    if (workspaceRequest) {
+      navigate(workspaceRequest.page); setTaskFocusId(workspaceRequest.taskId); setTaskSearchRequest(undefined)
+      setTaskOpenRequest(workspaceRequest.taskId ? { id: workspaceRequest.id, taskId: workspaceRequest.taskId } : undefined)
+      setTaskConversionRequest(workspaceRequest.taskDraft ? { id: workspaceRequest.id, draft: workspaceRequest.taskDraft } : undefined)
+    }
   }, [workspaceRequest, navigate])
 
   useEffect(() => {
@@ -868,7 +875,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         </section>
         <section className="workspace-page workspace-tasks" hidden={activePage !== 'tasks'} aria-label="任务工作区">
           {visitedPages.tasks && <>
-            <TasksView active={visible && activePage === 'tasks'} focusTaskId={taskFocusId} searchRequest={taskSearchRequest} />
+            <TasksView active={visible && activePage === 'tasks'} focusTaskId={taskFocusId} searchRequest={taskSearchRequest} taskOpenRequest={taskOpenRequest} conversionRequest={taskConversionRequest} onRequestConsumed={() => { setTaskOpenRequest(undefined); setTaskConversionRequest(undefined) }} onOpenChat={async id => { await selectSession(id); navigate('chat') }} />
           </>}
         </section>
         <section className="workspace-page workspace-settings" hidden={!showSettings} aria-label="设置工作区">
