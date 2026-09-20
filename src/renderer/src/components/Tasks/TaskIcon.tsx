@@ -1,4 +1,4 @@
-export type IconName = 'eye' | 'eyeOff' | 'grip' | 'task' | 'list' | 'board' | 'filter' | 'sort' | 'fields' | 'group' | 'plus' | 'chevron' | 'more' | 'today' | 'week' | 'clock' | 'unplanned' | 'all' | 'done' | 'inbox' | 'folder' | 'search' | 'edit' | 'archive' | 'trash' | 'collapse' | 'expand'
+export type IconName = 'eye' | 'eyeOff' | 'grip' | 'task' | 'list' | 'board' | 'filter' | 'sort' | 'fields' | 'group' | 'plus' | 'chevron' | 'disclosure' | 'more' | 'today' | 'week' | 'clock' | 'unplanned' | 'all' | 'done' | 'inbox' | 'folder' | 'search' | 'edit' | 'archive' | 'trash' | 'collapse' | 'expand'
 
 const paths: Record<IconName, string> = {
   eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
@@ -27,9 +27,10 @@ const paths: Record<IconName, string> = {
   group: 'M4 6h3M11 6h9M4 12h9M17 12h3M4 18h3M11 18h9M7 4v4M13 10v4M7 16v4',
   plus: 'M12 5v14M5 12h14',
   chevron: 'M6 9l6 6 6-6',
+  disclosure: 'M8 5l9 7-9 7z',
   more: 'M5 12h.01M12 12h.01M19 12h.01'
 }
 
 export default function TaskIcon({ name }: { name: IconName }) {
-  return <svg className="tasks-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} strokeWidth={name === 'more' ? 3.2 : undefined} /></svg>
+  return <svg className="tasks-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} fill={name === 'disclosure' ? 'currentColor' : undefined} strokeWidth={name === 'disclosure' ? 0 : name === 'more' ? 3.2 : undefined} /></svg>
 }

@@ -54,6 +54,12 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     writeFileSync(join(directory, `${name}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
   }
+  const chooseGrouping = async (value: string) => {
+    if (!await run("document.querySelector('.tasks-grouping-menu').open")) await click('.tasks-grouping-menu > summary')
+    await waitForRenderer(window, "document.querySelector('.tasks-grouping-menu .tasks-item-menu-popover').matches(':popover-open')")
+    await click(`[data-grouping-value="${value}"]`)
+    await waitForRenderer(window, "!document.querySelector('.tasks-grouping-menu').open")
+  }
   const selectView = async (id: string) => {
     const selector = `[data-view-selection="${id}"]`
     const hidden = await run(`!!document.querySelector(${JSON.stringify(selector)})?.closest('.tasks-more-views')`)
@@ -145,6 +151,15 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert("!document.querySelector('.tasks-project-group').open && document.querySelectorAll('.tasks-project-group')[1].open")
   await click('[aria-label="折叠或展开分组 收集箱"]')
   await assert("document.querySelector('.tasks-project-group').open")
+  await assert(`(() => {
+    const icon = document.querySelector('.tasks-project-group > summary > .tasks-disclosure-icon');
+    return icon.getBoundingClientRect().width > 0 && getComputedStyle(icon).width === '16px' && getComputedStyle(icon).transform === 'matrix(0, 1, -1, 0, 0, 0)'
+      && icon.querySelector('path').getAttribute('fill') === 'currentColor';
+  })()`)
+  await click('[aria-label="折叠或展开分组 收集箱"]')
+  await assert("getComputedStyle(document.querySelector('.tasks-project-group > summary > .tasks-disclosure-icon')).transform === 'none'")
+  await captureGrouping('sidebar-disclosure-collapsed')
+  await click('[aria-label="折叠或展开分组 收集箱"]')
   await click('[aria-label="管理分组 工作分组"]')
   await click('.tasks-group-actions .tasks-project-menu[open] .tasks-item-menu-popover button:first-child')
   await fill('.tasks-collection-form input', '工作分组改名')
@@ -199,10 +214,10 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert("!document.querySelector('.tasks-grouped-list .tasks-group-create-task') && !document.querySelector('.tasks-grouped-list').textContent.includes('中新建任务')")
   const manualGroupId: string = await run("Array.from(document.querySelectorAll('.tasks-content-group')).find(group => group.querySelector('summary').textContent.includes('手动任务组')).dataset.groupKey")
   await click('.tasks-grouping-menu > summary')
-  await fill('[aria-label="看板分组方式"]', 'priority')
+  await chooseGrouping('priority')
   await assert("document.querySelectorAll('.tasks-content-group').length === 3")
   await assert(`window.electronAPI.tasks.groups().then(groups => JSON.stringify(groups) === ${JSON.stringify(collectionGroupsBefore)})`)
-  await fill('[aria-label="看板分组方式"]', 'none')
+  await chooseGrouping('none')
   await click('.tasks-page-heading h1')
 
   await selectView('today')
@@ -264,13 +279,15 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
   // Manual task groups are named sections, independent from sidebar groups and automatic grouping.
   await click('.tasks-grouping-menu > summary')
-  await fill('[aria-label="看板分组方式"]', 'custom')
+  await chooseGrouping('custom')
   await click('.tasks-page-heading h1')
-  await click('.tasks-display-group-add')
+  await click('.tasks-create-options > summary')
+  await click('.tasks-create-options .tasks-item-menu-popover button:last-child')
   await fill('[aria-label="任务分组名称"]', '取消分组')
   await run("document.querySelector('[aria-label=\"任务分组名称\"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
   await assert("!document.querySelector('.tasks-display-group-form') && !document.querySelector('.tasks-grouped-list').textContent.includes('取消分组')")
-  await click('.tasks-display-group-add')
+  await click('.tasks-create-options > summary')
+  await click('.tasks-create-options .tasks-item-menu-popover button:last-child')
   await fill('[aria-label="任务分组名称"]', '手动任务组')
   await click('.tasks-display-group-form button[type=submit]')
   await assert("document.querySelector('.tasks-display-group-form [role=alert]')?.textContent.includes('同名')")
@@ -327,7 +344,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   // Display grouping is shared by list and board and restored per view.
   await click('.tasks-grouping-menu > summary')
   await waitForRenderer(window, "document.querySelector('.tasks-grouping-menu .tasks-item-menu-popover').matches(':popover-open')")
-  await fill('[aria-label="看板分组方式"]', 'due')
+  await chooseGrouping('due')
   await click('.tasks-page-heading h1')
   await assert("document.querySelector('[data-group-key=none]')?.textContent.includes('界面创建任务') && document.querySelectorAll('.tasks-content-group').length === 5")
   await selectView('all')
@@ -346,16 +363,18 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert(`window.electronAPI.tasks.list().then(list => list.open.find(task => task.id === '${dueGroupedTaskId}').dueAt === null)`)
   await click('.tasks-tab:first-child')
   await click('.tasks-grouping-menu > summary')
-  await fill('[aria-label="看板分组方式"]', 'field:' + fieldId)
+  await chooseGrouping('field:' + fieldId)
   await assert(`document.querySelector('[data-group-key="${optionId}"]')?.textContent.includes('界面创建任务')`)
-  await fill('[aria-label="看板分组方式"]', 'priority')
-  await fill('[aria-label="看板分组方式"]', 'none')
+  await chooseGrouping('priority')
+  await chooseGrouping('none')
   await click('.tasks-page-heading h1')
   // All transient menus dismiss outside / with Escape; structural groups stay open.
   await waitForRenderer(window, "!document.querySelector('.tasks-grouped-list') && document.querySelectorAll('.tasks-item').length === 1")
   const menuSelector = 'details.tasks-tool-menu, details.tasks-project-menu, details.tasks-item-menu'
   const menuCount: number = await run(`document.querySelectorAll(${JSON.stringify(menuSelector)}).length`)
   for (let index = 0; index < menuCount; index++) {
+    // Archived-row menus are tested separately after expanding their section.
+    if (await run(`!!document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].closest('.tasks-archived:not([open]), .tasks-project-group:not([open])')`)) continue
     await run(`document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('summary').scrollIntoView({ block: 'nearest' })`)
     await run("new Promise(resolve => requestAnimationFrame(resolve))")
     const sidebarSize = await run("(() => { const side = document.querySelector('.tasks-sidebar'); return [side.scrollWidth, side.scrollHeight] })()")
@@ -380,6 +399,15 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, `!document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].open && !document.querySelectorAll(${JSON.stringify(menuSelector)})[${index}].querySelector('summary').matches(':focus')`)
   }
   await assert("document.querySelector('.tasks-project-group').open")
+  await assert(`(() => {
+    const icon = document.querySelector('.tasks-project-group > summary > .tasks-disclosure-icon');
+    return icon.getBoundingClientRect().width > 0 && getComputedStyle(icon).width === '16px' && getComputedStyle(icon).transform === 'matrix(0, 1, -1, 0, 0, 0)'
+      && icon.querySelector('path').getAttribute('fill') === 'currentColor';
+  })()`)
+  await click('[aria-label="折叠或展开分组 收集箱"]')
+  await assert("getComputedStyle(document.querySelector('.tasks-project-group > summary > .tasks-disclosure-icon')).transform === 'none'")
+  await captureGrouping('sidebar-disclosure-collapsed')
+  await click('[aria-label="折叠或展开分组 收集箱"]')
   await click('[aria-label="筛选任务"]')
   await click('[aria-label="筛选优先级"] input')
   await assert("document.querySelector('[aria-label=筛选任务]').parentElement.open")
@@ -457,7 +485,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('[aria-label="关闭任务弹窗"]')
   await click('.tasks-tab:first-child')
   await click('[aria-label="任务分组"]')
-  await fill('[aria-label="看板分组方式"]', 'priority')
+  await chooseGrouping('priority')
   await click('.tasks-page-heading h1')
   await assert("document.querySelectorAll('.tasks-content-group').length === 3 && document.querySelector('.tasks-content-group').textContent.includes('看板快速创建')")
   await click('.tasks-content-group .tasks-item-body')
@@ -465,7 +493,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('[aria-label="关闭任务弹窗"]')
   await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
   await click('[aria-label="任务分组"]')
-  await fill('[aria-label="看板分组方式"]', 'none')
+  await chooseGrouping('none')
   await click('.tasks-page-heading h1')
   await click('[aria-label="筛选任务"]')
   await fill('[aria-label="筛选截止范围"]', 'today')
@@ -546,7 +574,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert(`(() => {
     const card = Array.from(document.querySelectorAll('.tasks-item')).find(item => item.textContent.includes('界面创建任务'));
     return !document.querySelector('.tasks-list-heading') && card?.querySelector('.tasks-card-schedule')?.textContent.includes('开始')
-      && card.querySelector('.tasks-card-schedule').textContent.includes('截止') && card.textContent.includes('清单：任务界面测试')
+      && card.querySelector('.tasks-card-schedule').textContent.includes('截止') && card.querySelector('.task-card-project')?.textContent === '任务界面测试'
       && card.textContent.includes('优先级') && card.querySelector('.tasks-item-note')
       && parseFloat(getComputedStyle(card).borderRadius) > 0 && getComputedStyle(card).borderBottomStyle !== 'none';
   })()`)
@@ -643,7 +671,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, "!document.querySelector('.tasks-dialog') && document.querySelector('.tasks-list')?.textContent.includes('归档后仍可编辑')")
   await click('.tasks-tab:nth-child(2)')
   await click('[aria-label="任务分组"]')
-  await fill('[aria-label="看板分组方式"]', 'project')
+  await chooseGrouping('project')
   await click('.tasks-page-heading h1')
   await waitForRenderer(window, "document.querySelector('.tasks-board')?.textContent.includes('任务界面测试（已归档）') && document.querySelector('.tasks-board')?.textContent.includes('归档后仍可编辑')")
   await run(`(async () => {
@@ -694,6 +722,8 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('[aria-label="管理分组 工作分组"]')
   await click('.tasks-group-actions .tasks-project-menu[open] .tasks-item-menu-danger')
   await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
+  await assert("document.querySelector('.app-confirm-checkbox input').checked")
+  await clickPointer('.app-confirm-checkbox input')
   await clickPointer('.app-confirm-dialog .app-button-danger')
   await waitForRenderer(window, "!document.querySelector('.app-confirm-dialog') && !document.querySelector('[aria-label=\"管理分组 工作分组\"]')")
   await assert(`window.electronAPI.tasks.projects().then(projects => projects.some(project => project.id === ${JSON.stringify(projectId)} && project.groupId !== ${JSON.stringify(groupId)}))`)
@@ -717,9 +747,170 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
   await assert("!!document.querySelector('.tasks-list') && document.querySelector('[aria-label=排序方式]').textContent.includes('手动排序')")
   await click('.tasks-grouping-menu > summary')
-  await fill('[aria-label="看板分组方式"]', 'custom')
+  await chooseGrouping('custom')
   await click('.tasks-page-heading h1')
   await assert(`!!document.querySelector('[data-group-key="${manualGroupId}"]') && !document.querySelector('[data-group-key="${secondManualGroupId}"]')`)
+  // Reorder sidebar groups/projects and display groups through actual drag handlers.
+  const orderFixture = await run(`(async () => {
+    const a = await window.electronAPI.tasks.createGroup('排序分组甲');
+    const b = await window.electronAPI.tasks.createGroup('排序分组乙');
+    const p = await window.electronAPI.tasks.createProject('排序清单甲', a.id);
+    const q = await window.electronAPI.tasks.createProject('排序清单乙', a.id);
+    window.dispatchEvent(new Event('chouyu:tasks-changed'));
+    return { a: a.id, b: b.id, p: p.id, q: q.id };
+  })()`)
+  await waitForRenderer(window, `!!document.querySelector('[data-project-id="${orderFixture.q}"]')`)
+  const dragBefore = async (source: string, target: string) => {
+    await run(`(() => {
+      window.__layoutDrag = new DataTransfer();
+      document.querySelector(${JSON.stringify(source)}).dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__layoutDrag }));
+    })()`)
+    await run(`(() => {
+      const target = document.querySelector(${JSON.stringify(target)});
+      const rect = target.getBoundingClientRect();
+      target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: window.__layoutDrag, clientY: rect.top + 1 }));
+    })()`)
+    await assert(`document.querySelector(${JSON.stringify(target)}).dataset.orderInsert === 'before'`)
+    await run(`(() => {
+      const target = document.querySelector(${JSON.stringify(target)});
+      target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: window.__layoutDrag, clientY: target.getBoundingClientRect().top + 1 }));
+      delete window.__layoutDrag;
+    })()`)
+  }
+  await dragBefore(`[data-group-id="${orderFixture.b}"] .tasks-project-group > summary`, `[data-group-id="${orderFixture.a}"]`)
+  await dragBefore(`[data-project-id="${orderFixture.q}"] .tasks-project-select`, `[data-project-id="${orderFixture.p}"]`)
+  const sidebarOrder = `(() => {
+    const groups = Array.from(document.querySelectorAll('.tasks-group-shell')).map(item => item.dataset.groupId);
+    const projects = Array.from(document.querySelectorAll('[data-group-id="${orderFixture.a}"] [data-project-id]')).map(item => item.dataset.projectId);
+    return groups.indexOf('${orderFixture.b}') < groups.indexOf('${orderFixture.a}') && projects.join() === '${orderFixture.q},${orderFixture.p}';
+  })()`
+  await assert(sidebarOrder)
+  await chooseGrouping('priority')
+  await dragBefore('[data-group-key="low"] > summary', '[data-group-key="high"] > summary')
+  await assert("document.querySelector('.tasks-content-group').dataset.groupKey === 'low'")
+  await click('.tasks-tab:nth-child(2)')
+  await assert("document.querySelector('.tasks-board-column').dataset.columnKey === 'low'")
+  await chooseGrouping('custom')
+  await assert("!!document.querySelector('.tasks-board .tasks-display-group-add')")
+  await assert(`(() => {
+    const menu = document.querySelector('.tasks-board-column-title .tasks-display-group-menu');
+    const add = menu.previousElementSibling;
+    return add.classList.contains('tasks-column-add') && menu.getBoundingClientRect().left - add.getBoundingClientRect().right <= 8;
+  })()`)
+  window.webContents.reload()
+  await waitForRenderer(window, "!!window.electronAPI")
+  window.webContents.send('open-chat-panel')
+  await waitForRenderer(window, "!!document.querySelector('[data-workspace-nav=tasks]')")
+  await click('[data-workspace-nav="tasks"]')
+  await waitForRenderer(window, `!!document.querySelector('[data-project-id="${orderFixture.q}"]')`)
+  await assert(sidebarOrder)
+  await chooseGrouping('priority')
+  await assert("document.querySelector('.tasks-board-column').dataset.columnKey === 'low'")
+  const listOrderIds: string[] = await run(`Promise.all(['列表排序甲', '列表排序乙'].map(title => window.electronAPI.tasks.create({ title, priority: 'high', projectId: ${JSON.stringify(projectId)} }))).then(tasks => { window.dispatchEvent(new Event('chouyu:tasks-changed')); return tasks.map(task => task.id) })`)
+  await selectView('all')
+  await click(`[data-project-id="${projectId}"] .tasks-project-select`)
+  await click('.tasks-tab:first-child')
+  await waitForRenderer(window, `!!document.querySelector('.tasks-item[data-task-id="${listOrderIds[1]}"]')`)
+  const dragTaskBefore = async (id: string, targetId: string) => {
+    await run(`(() => {
+      window.__listDrag = new DataTransfer();
+      document.querySelector('.tasks-item[data-task-id="${id}"]').dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__listDrag }));
+    })()`)
+    await run(`(() => {
+      const target = document.querySelector('.tasks-item[data-task-id="${targetId}"]');
+      target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: window.__listDrag, clientY: target.getBoundingClientRect().top + 1 }));
+    })()`)
+    await assert(`document.querySelector('.tasks-item[data-task-id="${targetId}"]').dataset.cardInsert === 'before'`)
+    await run(`(() => {
+      const target = document.querySelector('.tasks-item[data-task-id="${targetId}"]');
+      target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: window.__listDrag, clientY: target.getBoundingClientRect().top + 1 }));
+      delete window.__listDrag;
+    })()`)
+  }
+  const listOrderIs = (ids: string[]) => `Array.from(document.querySelectorAll('.tasks-item')).map(item => item.dataset.taskId).filter(id => ${JSON.stringify(listOrderIds)}.includes(id)).join() === '${ids.join()}'`
+  await dragTaskBefore(listOrderIds[1], listOrderIds[0])
+  await assert(listOrderIs([listOrderIds[1], listOrderIds[0]]))
+  await chooseGrouping('none')
+  await dragTaskBefore(listOrderIds[0], listOrderIds[1])
+  await assert(listOrderIs(listOrderIds))
+  await chooseGrouping('custom')
+  await assert("!document.querySelector('.tasks-grouped-list .tasks-display-group-add')")
+  await run(`(() => {
+    const transfer = new DataTransfer(); transfer.setData('application/x-chouyu-list-task', '${listOrderIds[0]}');
+    document.querySelector('[data-group-key="${manualGroupId}"]').parentElement.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  })()`)
+  await dragTaskBefore(listOrderIds[1], listOrderIds[0])
+  const groupedListOrder = `Array.from(document.querySelectorAll('[data-group-key="${manualGroupId}"] .tasks-item')).map(item => item.dataset.taskId).join() === '${listOrderIds[1]},${listOrderIds[0]}'`
+  await assert(groupedListOrder)
+  window.webContents.reload()
+  await waitForRenderer(window, "!!window.electronAPI")
+  window.webContents.send('open-chat-panel')
+  await waitForRenderer(window, "!!document.querySelector('[data-workspace-nav=tasks]')")
+  await click('[data-workspace-nav="tasks"]')
+  await waitForRenderer(window, `!!document.querySelector('.tasks-item[data-task-id="${listOrderIds[1]}"]')`)
+  await assert(groupedListOrder)
+  await run(`Promise.all(${JSON.stringify(listOrderIds)}.map(id => window.electronAPI.tasks.remove(id))).then(() => window.dispatchEvent(new Event('chouyu:tasks-changed')))`)
+  // Both list and board offer direct custom-group renaming.
+  await run(`document.querySelector('[data-group-key="${manualGroupId}"] > summary > span').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
+  await waitForRenderer(window, "!!document.querySelector('.tasks-display-group-form')")
+  await fill('[aria-label="任务分组名称"]', '双击修改分组')
+  await click('.tasks-display-group-form button[type=submit]')
+  await assert(`document.querySelector('[data-group-key="${manualGroupId}"] > summary').textContent.includes('双击修改分组')`)
+  await click('.tasks-tab:nth-child(2)')
+  await run(`document.querySelector('[data-column-key="${manualGroupId}"] .tasks-column-drag-handle > span').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
+  await waitForRenderer(window, "!!document.querySelector('.tasks-display-group-form')")
+  await fill('[aria-label="任务分组名称"]', '手动任务组')
+  await click('.tasks-display-group-form button[type=submit]')
+  await assert(`document.querySelector('[data-column-key="${manualGroupId}"] .tasks-column-drag-handle').textContent.includes('手动任务组')`)
+  const deletionIds: string[] = await run(`(async () => {
+    const open = await window.electronAPI.tasks.create({ title: '删除清单未完成任务', projectId: '${orderFixture.p}' });
+    const done = await window.electronAPI.tasks.create({ title: '删除清单已完成任务', projectId: '${orderFixture.p}' });
+    await window.electronAPI.tasks.complete(done.id);
+    const archived = await window.electronAPI.tasks.create({ title: '删除分组归档任务', projectId: '${orderFixture.q}' });
+    await window.electronAPI.tasks.complete(archived.id);
+    await window.electronAPI.tasks.archiveProject('${orderFixture.q}', true);
+    return [open.id, done.id, archived.id];
+  })()`)
+  await click(`[data-project-id="${orderFixture.p}"] .tasks-project-select`)
+  await waitForRenderer(window, "document.querySelector('.tasks-page-heading h1').textContent === '排序清单甲' && !!document.querySelector('.tasks-archived')")
+  await waitForRenderer(window, "!!document.querySelector('[aria-label=\"管理已归档清单 排序清单乙\"]')")
+  await click('.tasks-archived > summary')
+  await assert(`(() => {
+    const icon = document.querySelector('.tasks-archived > summary > .tasks-disclosure-icon');
+    return icon.getBoundingClientRect().width > 0 && getComputedStyle(icon).width === '16px' && getComputedStyle(icon).transform === 'matrix(0, 1, -1, 0, 0, 0)';
+  })()`)
+  await run("document.querySelector('[aria-label=\"管理已归档清单 排序清单乙\"]').focus()")
+  await click('[aria-label="管理已归档清单 排序清单乙"]')
+  await waitForRenderer(window, "!!document.querySelector('.tasks-archived .tasks-item-menu-popover:popover-open')")
+  await captureGrouping('sidebar-archived-menu')
+  await assert(`(() => {
+    const row = document.querySelector('[aria-label="管理已归档清单 排序清单乙"]').closest('.tasks-archived-row');
+    const name = row.querySelector('.tasks-nav-label').getBoundingClientRect();
+    const menu = row.querySelector('.tasks-project-menu > summary').getBoundingClientRect();
+    return name.right <= menu.left && menu.right <= row.getBoundingClientRect().right
+      && !!row.querySelector('[aria-label="恢复清单 排序清单乙"]') && !!row.querySelector('[aria-label="删除清单 排序清单乙"]');
+  })()`)
+  await click('.tasks-page-heading h1')
+  await click('[aria-label="管理清单 排序清单甲"]')
+  await assert("getComputedStyle(document.querySelector('[aria-label=\"移动清单 排序清单甲 到分组\"]')).borderWidth === '0px'")
+  await click('[aria-label="删除清单 排序清单甲"]')
+  await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
+  await clickPointer('.app-confirm-dialog button:first-child')
+  await assert(`window.electronAPI.tasks.projects().then(projects => projects.some(project => project.id === '${orderFixture.p}'))`)
+  await click('[aria-label="管理清单 排序清单甲"]')
+  await click('[aria-label="删除清单 排序清单甲"]')
+  await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
+  await clickPointer('.app-confirm-dialog .app-button-danger')
+  await waitForRenderer(window, `!document.querySelector('[data-project-id="${orderFixture.p}"]') && document.querySelector('.tasks-page-heading h1').textContent === '全部'`)
+  await assert(`window.electronAPI.tasks.list({ doneLimit: 10000 }).then(list => ![...list.open, ...list.done].some(task => ${JSON.stringify(deletionIds.slice(0, 2))}.includes(task.id)))`)
+  await click('[aria-label="管理分组 排序分组甲"]')
+  await click('.tasks-group-actions .tasks-project-menu[open] .tasks-item-menu-danger')
+  await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
+  await assert("document.querySelector('.app-confirm-checkbox input').checked")
+  await clickPointer('.app-confirm-dialog .app-button-danger')
+  await waitForRenderer(window, `!document.querySelector('[data-group-id="${orderFixture.a}"]')`)
+  await assert(`window.electronAPI.tasks.projects().then(projects => !projects.some(project => project.id === '${orderFixture.q}'))`)
+  await assert(`window.electronAPI.tasks.list({ doneLimit: 10000 }).then(list => ![...list.open, ...list.done].some(task => task.id === '${deletionIds[2]}'))`)
   await click('[aria-label="关闭面板"]')
   await waitForRenderer(window, "!document.querySelector('.chat-panel')")
   console.log('CHOUYU_TASKS_UI_SMOKE_PASSED menus, confirmations, per-view preference restoration, column preview/cancel, manual card order and cross-column moves, groups, fields and history')

@@ -73,11 +73,11 @@ describe('Tasks 视图源守卫', () => {
     expect(board).toContain('role="list"')
     expect(board).toContain('aria-label')
     expect(board).toContain('preventDefault')
-    expect(board).toContain('tasks-board-card-dot')
+    expect(board).not.toContain('tasks-board-card-status')
     expect(board).toContain('tasks-board-card-chips')
     const css = read('Tasks.css')
     expect(css).toContain('.tasks-tab[aria-pressed=')
-    expect(css).toContain('.tasks-board-card-dot')
+    expect(css).toContain('.task-card-project:focus-visible')
   })
   test('字段管理:弹窗可达性、表单集成与列表 chip', () => {
     const dialog = read('TaskFieldsDialog.tsx')

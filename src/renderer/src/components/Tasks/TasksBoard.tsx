@@ -16,18 +16,22 @@ interface TasksBoardProps {
   groupingFields: TaskSelectField[]
   customGroups: TaskDisplayGroup[]
   renderGroupActions: (id: string) => ReactNode
+  onRenameGroup: (id: string) => void
   onNewGroup: () => void
+  savedOrder: string[]
+  onOrder: (keys: string[]) => void
   hideNote: boolean
   onCreate: (patch: TaskUpdateInput, groupId: string) => void
   onReopen: (id: string) => void
   groupMode: BoardGroupMode
   groupFieldId: string | null
+  onOpenProject: (id: string) => void
   onEdit: (task: TaskRecord) => void
   onComplete: (id: string) => void
   onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => Promise<void>
 }
 
-export default function TasksBoard({ orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onNewGroup, hideNote, groupMode, groupFieldId, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+export default function TasksBoard({ orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, DOMRect>())
   const scrollFrame = useRef<number | null>(null)
@@ -39,20 +43,11 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
   const [savingTask, setSavingTask] = useState<string | null>(null)
   const savingRef = useRef(false)
   const [moveError, setMoveError] = useState('')
-  const [orderError, setOrderError] = useState('')
   const [draggingTask, setDraggingTask] = useState<string | null>(null)
   const [dropColumn, setDropColumn] = useState<string | null>(null)
-  const [orders, setOrders] = useState<Record<string, string[]>>(() => {
-    try {
-      const saved: unknown = JSON.parse(localStorage.getItem('chouyu:task-board-columns') ?? '{}')
-      if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {}
-      return Object.fromEntries(Object.entries(saved).filter(([, value]) => Array.isArray(value) && value.every(key => typeof key === 'string')))
-    } catch { return {} }
-  })
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null)
   const [columnTarget, setColumnTarget] = useState<{ key: string; after: boolean } | null>(null)
   const scope = JSON.stringify([orderScope, groupMode, groupMode === 'field' ? groupFieldId : null])
-  const savedOrder = orders[scope] ?? []
   const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId, Date.now(), customGroups).sort((a, b) => {
     const rank = (key: string) => { const index = savedOrder.indexOf(key); return index < 0 ? Infinity : index }
     return rank(a.key) - rank(b.key)
@@ -88,7 +83,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
       }
     })
     positions.current = next
-  }, [tasks, orders, scope, previewOrder])
+  }, [tasks, savedOrder, scope, previewOrder])
 
   const stopScroll = () => {
     if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current)
@@ -125,13 +120,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
   }
   useEffect(() => () => { stopScroll(); dragPreview.current?.remove() }, [])
 
-  const saveColumnOrder = (keys: string[]) => {
-    setOrders(current => ({ ...current, [scope]: keys }))
-  }
-  useEffect(() => {
-    try { localStorage.setItem('chouyu:task-board-columns', JSON.stringify(orders)); setOrderError('') }
-    catch { setOrderError('列顺序暂时无法保存，重启后可能恢复默认。') }
-  }, [orders])
+  const saveColumnOrder = onOrder
   const orderedKeys = (source: string, target: string, after: boolean) => {
     const keys = baseColumns.map(column => column.key).filter(key => key !== source)
     const index = keys.indexOf(target)
@@ -185,7 +174,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
     void commitTask(task.id, sameColumn ? {} : column.patch, targetId, target?.id ? target.after : true, column.key)
   }
 
-  return <>{groupMode === 'due' && <p className="tasks-view-description">修改任务的截止时间后，会自动调整所属分组。</p>}{moveError && <p role="alert" className="tasks-error">{moveError}</p>}{orderError && <p role="status" className="tasks-notice">{orderError}</p>}<div ref={boardRef} className="tasks-board" aria-label="任务看板" data-drag-active={draggingColumn !== null || draggingTask !== null || undefined}
+  return <>{groupMode === 'due' && <p className="tasks-view-description">修改任务的截止时间后，会自动调整所属分组。</p>}{moveError && <p role="alert" className="tasks-error">{moveError}</p>}<div ref={boardRef} className="tasks-board" aria-label="任务看板" data-drag-active={draggingColumn !== null || draggingTask !== null || undefined}
     onDragOver={event => { if (isColumnDrag(event) || draggingTask !== null) updateScroll(event.clientX) }}
     onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { stopScroll(); setDropColumn(null); setColumnTarget(null) } }}
     onDragEnd={finishColumnDrag}>
@@ -224,7 +213,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
             const index = columns.findIndex(item => item.key === column.key)
             const target = columns[index + (event.key === 'ArrowRight' ? 1 : -1)]
             if (target) moveColumn(column.key, target.key, event.key === 'ArrowRight')
-          }}><TaskIcon name="grip" /><span>{column.label}</span><span className="tasks-count">{items.length}</span></button>{!column.archived && groupMode !== 'due' && <button type="button" className="tasks-column-add" aria-label={`在 ${column.label} 中新建任务`} title="新建任务" onClick={() => onCreate(column.patch, column.key)}><TaskIcon name="plus" /></button>}{renderGroupActions(column.key)}</h3>
+          }}><TaskIcon name="grip" /><span title={groupMode === 'custom' && column.key ? '双击修改分组名称' : undefined} onDoubleClick={event => { event.stopPropagation(); if (groupMode === 'custom' && column.key) onRenameGroup(column.key) }}>{column.label}</span><span className="tasks-count">{items.length}</span></button>{!column.archived && groupMode !== 'due' && <button type="button" className="tasks-column-add" aria-label={`在 ${column.label} 中新建任务`} title="新建任务" onClick={() => onCreate(column.patch, column.key)}><TaskIcon name="plus" /></button>}{renderGroupActions(column.key)}</h3>
         {items.length === 0 && <p className="tasks-board-empty">{groupMode === 'due' ? '暂无此截止时间的任务' : '暂无任务，可拖动任务到这里'}</p>}
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
@@ -240,15 +229,15 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
               }} data-priority={task.priority} data-motion-key={`task:${task.id}`} data-task-dragging={draggingTask === task.id || undefined}
               onDragStart={event => { if (savingRef.current) { event.preventDefault(); return }; event.stopPropagation(); event.dataTransfer.setData('text/plain', task.id); event.dataTransfer.effectAllowed = 'move'; setPreview(event, event.currentTarget); setDraggingTask(task.id) }}>
               <button type="button" className="tasks-complete" data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? onReopen(task.id) : onComplete(task.id)}>{task.status === 'done' ? '✓' : ''}</button>
-              <button type="button" className="tasks-board-card-body" onClick={() => onEdit(task)}>
+              <div className="tasks-board-card-body">
                 <span className="tasks-board-card-head">
 
                   <span className="tasks-board-card-title">{task.title}</span>
                 </span>
                 {!hideNote && task.note && <span className="tasks-board-card-note">{task.note}</span>}
-                <span className="tasks-board-card-chips"><TaskCardMeta task={task} projects={projects} fields={fields} /></span>
-                <span className="tasks-board-card-footer">{task.startAt != null && <span className="tasks-start-cell tasks-board-start" title={`开始时间：${formatTaskDue(task.startAt)}`}><TaskIcon name="today" />{formatTaskDue(task.startAt)} 开始</span>}<span className="tasks-board-card-status"><span className="tasks-board-card-dot" aria-hidden="true" />{task.status === 'done' ? '已完成' : '未完成'}</span><TaskCardDue task={task} /></span>
-              </button>
+                <span className="tasks-board-card-chips"><TaskCardMeta task={task} projects={projects} fields={fields} onOpenProject={onOpenProject} /></span>
+                {(task.startAt != null || task.dueAt !== null) && <span className="tasks-board-card-footer">{task.startAt != null && <span className="tasks-start-cell tasks-board-start" title={`开始时间：${formatTaskDue(task.startAt)}`}><TaskIcon name="today" />{formatTaskDue(task.startAt)} 开始</span>}<TaskCardDue task={task} /></span>}
+              </div>
             </li>
           })}
         </ul>

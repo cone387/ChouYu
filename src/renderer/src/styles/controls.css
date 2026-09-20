@@ -39,6 +39,8 @@
 .app-confirm-dialog::backdrop { background: #0006; }
 .app-confirm-dialog h2 { margin: 0 0 var(--space-5); font-size: var(--font-lg); }
 .app-confirm-dialog p { margin: 0; color: var(--text-secondary); line-height: var(--leading-relaxed); overflow-wrap: anywhere; white-space: pre-line; }
+.app-confirm-checkbox { display: flex; align-items: flex-start; gap: var(--space-3); margin-top: var(--space-5); line-height: var(--leading-relaxed); cursor: pointer; }
+.app-confirm-checkbox input { flex: none; margin-top: 4px; accent-color: var(--accent); }
 .app-dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-4); margin-top: var(--space-7); }
 .provider-profile-form label { display: grid; gap: var(--space-3); font-size: var(--font-md); color: var(--text-secondary); }
 .provider-profile-form input { width: 100%; min-height: 34px; }

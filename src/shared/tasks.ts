@@ -287,11 +287,12 @@ export interface TasksAPI {
   groups(): Promise<TaskGroup[]>
   createGroup(name: string): Promise<TaskGroup>
   renameGroup(id: string, name: string): Promise<TaskGroup>
-  deleteGroup(id: string): Promise<void>
+  deleteGroup(id: string, deleteContents?: boolean): Promise<void>
   moveProject(id: string, groupId: string | null): Promise<TaskProject>
   createProject(name: string, groupId?: string | null): Promise<TaskProject>
   renameProject(id: string, name: string): Promise<TaskProject>
   archiveProject(id: string, archived: boolean): Promise<TaskProject>
+  deleteProject(id: string): Promise<void>
   views(): Promise<TaskView[]>
   createView(input: TaskViewInput): Promise<TaskView>
   updateView(id: string, patch: Partial<TaskViewInput>): Promise<TaskView>

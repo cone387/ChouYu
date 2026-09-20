@@ -1,6 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 
-interface ConfirmRequest { title: string; message: string; confirmLabel?: string }
+interface ConfirmRequest {
+  title: string; message: string; confirmLabel?: string
+  checkbox?: { label: string; defaultChecked: boolean; onChange: (checked: boolean) => void }
+}
 type Confirm = (request: ConfirmRequest) => Promise<boolean>
 const Context = createContext<Confirm | null>(null)
 export function useConfirm(): Confirm {
@@ -10,6 +13,7 @@ export function useConfirm(): Confirm {
 }
 export default function ConfirmProvider({ children }: { children: ReactNode }) {
   const [request, setRequest] = useState<ConfirmRequest | null>(null)
+  const [checked, setChecked] = useState(false)
   const resolveRef = useRef<((confirmed: boolean) => void) | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const opener = useRef<HTMLElement | null>(null)
@@ -26,6 +30,7 @@ export default function ConfirmProvider({ children }: { children: ReactNode }) {
     resolveRef.current?.(false)
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setRequest(next)
+    setChecked(next.checkbox?.defaultChecked ?? false)
     return new Promise(resolve => { resolveRef.current = resolve })
   }, [])
   useEffect(() => {
@@ -42,6 +47,7 @@ export default function ConfirmProvider({ children }: { children: ReactNode }) {
     {request && <dialog ref={dialog} className="app-confirm-dialog" data-interactive aria-labelledby={titleId} aria-describedby={messageId}
       onCancel={event => { event.preventDefault(); finish(false) }} onKeyDown={event => event.stopPropagation()}>
       <h2 id={titleId}>{request.title}</h2><p id={messageId}>{request.message}</p>
+      {request.checkbox && <label className="app-confirm-checkbox"><input type="checkbox" checked={checked} onChange={event => { setChecked(event.target.checked); request.checkbox?.onChange(event.target.checked) }} /><span>{request.checkbox.label}</span></label>}
       <div className="app-dialog-actions"><button type="button" className="app-button" autoFocus onClick={() => finish(false)}>取消</button><button type="button" className="app-button app-button-danger" onClick={() => finish(true)}>{request.confirmLabel ?? '删除'}</button></div>
     </dialog>}
   </Context.Provider>

@@ -1,7 +1,7 @@
 import type { TaskProject, TaskRecord, TaskSelectField } from '../../../../shared/tasks'
 import { formatTaskDue, isOverdue, PRIORITY_LABELS, RECURRENCE_LABELS } from '../../../../shared/tasks'
 
-export default function TaskCardMeta({ task, projects, fields, showAllFields = false }: { task: TaskRecord; projects: TaskProject[]; fields: TaskSelectField[]; showAllFields?: boolean }) {
+export default function TaskCardMeta({ task, projects, fields, showAllFields = false, onOpenProject }: { task: TaskRecord; projects: TaskProject[]; fields: TaskSelectField[]; showAllFields?: boolean; onOpenProject: (id: string) => void }) {
   const project = projects.find(item => item.id === task.projectId)
   const values = fields.flatMap(field => {
     const option = field.options.find(item => item.id === task.customFields[field.id])
@@ -10,7 +10,7 @@ export default function TaskCardMeta({ task, projects, fields, showAllFields = f
   return <span className="task-card-meta">
     <span className="task-card-properties">
       <span className={`task-card-priority task-card-priority-${task.priority}`}>{PRIORITY_LABELS[task.priority]}优先级</span>
-      {project && <span className="task-card-project" title={`清单：${project.name}`}>清单：{project.name}</span>}
+      {project && <button type="button" className="task-card-project" title={project.name} aria-label={`打开清单 ${project.name}`} onClick={() => onOpenProject(project.id)}>{project.name}</button>}
       {task.recurrence !== 'none' && <span className="task-card-detail">{RECURRENCE_LABELS[task.recurrence]}</span>}
       {task.remindAt !== null && <span className="task-card-detail">{task.remindFiredAt !== null ? '已提醒' : '有提醒'}</span>}
     </span>

@@ -314,11 +314,15 @@ export class TasksStore {
     return this.listGroups().find(group => group.id === id)!
   }
 
-  deleteGroup(id: string): void {
+  deleteGroup(id: string, deleteContents = false): void {
     this.requireGroup(id)
     if (id === this.defaultGroupId()) throw new Error('默认分组不能删除。')
     this.database.transaction(() => {
-      this.database.prepare('UPDATE task_projects SET group_id = ? WHERE group_id = ?').run(this.defaultGroupId(), id)
+      if (deleteContents === true) {
+        for (const project of this.listProjects().filter(project => project.groupId === id)) this.deleteProject(project.id)
+      } else {
+        this.database.prepare('UPDATE task_projects SET group_id = ? WHERE group_id = ?').run(this.defaultGroupId(), id)
+      }
       this.database.prepare('DELETE FROM task_groups WHERE id = ?').run(id)
     })()
   }
@@ -367,6 +371,14 @@ export class TasksStore {
       .run(archived ? Date.now() : null, id)
     if (!result.changes) throw new Error('项目不存在。')
     return this.requireProject(id)
+  }
+
+  deleteProject(id: string): void {
+    if (this.requireProject(id).isDefault) throw new Error('默认清单不能删除。')
+    this.database.transaction(() => {
+      this.database.prepare('DELETE FROM tasks WHERE project_id = ?').run(id)
+      this.database.prepare('DELETE FROM task_projects WHERE id = ?').run(id)
+    })()
   }
 
   private requireProject(id: string): TaskProject {
