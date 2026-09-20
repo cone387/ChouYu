@@ -1,6 +1,7 @@
 @import './search-field.css';
 @import './select.css';
 @import './controls.css';
+@import './scrollbars.css';
 
 :root {
   color-scheme: light;

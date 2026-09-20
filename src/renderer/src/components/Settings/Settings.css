@@ -178,15 +178,6 @@
   border-radius: 0 0 var(--radius-xl) 0;
 }
 
-.settings-content::-webkit-scrollbar {
-  width: 4px;
-}
-
-.settings-content::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: var(--radius-sm);
-}
-
 .settings-pane {
   animation: settings-fade 150ms ease-out;
 }
@@ -749,18 +740,12 @@
   line-height: 1.55;
   outline: none;
   transition: border-color 160ms, box-shadow 160ms;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
 }
 
 .settings-soul-editor:focus {
   border-color: var(--input-border);
   box-shadow: none;
 }
-
-.settings-soul-editor::-webkit-scrollbar { width: 5px; }
-.settings-soul-editor::-webkit-scrollbar-track { background: transparent; }
-.settings-soul-editor::-webkit-scrollbar-thumb { background: var(--border); border-radius: var(--radius-pill); }
 
 .settings-persona-card {
   flex: 1;

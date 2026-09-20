@@ -193,15 +193,6 @@
   padding: 4px;
 }
 
-.model-picker-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.model-picker-list::-webkit-scrollbar-thumb {
-  border-radius: 2px;
-  background: var(--border);
-}
-
 .model-picker-option {
   display: flex;
   width: 100%;

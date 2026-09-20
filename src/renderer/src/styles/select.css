@@ -121,8 +121,8 @@
     font: 400 var(--font-md)/var(--leading-normal) var(--font-sans);
     overflow: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: var(--input-border) transparent;
+    scrollbar-width: auto;
+    scrollbar-color: auto;
   }
 
   #root select:open::picker(select) { animation: select-appear 120ms ease-out; }
@@ -150,6 +150,20 @@
 }
 
 @keyframes select-appear { from { opacity: 0; } to { opacity: 1; } }
+
+/* Task properties use inline selectors, including their hover and open states. */
+#root .tasks-composer .tasks-select > summary,
+#root .tasks-composer .tasks-select > summary:is(:hover, :focus, :focus-visible, :active) {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+#root .tasks-composer .tasks-select > summary:is(:hover, :focus-visible),
+#root .tasks-composer .tasks-select[open] > summary {
+  background: var(--hover-bg);
+}
+#root .tasks-composer .tasks-select-options { border: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   #root select, #root select::picker-icon, #root .tasks-select > summary { transition: none; }

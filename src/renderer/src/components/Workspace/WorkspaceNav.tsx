@@ -1,4 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
+import { isDueToday } from '../../../../shared/tasks'
 import './Workspace.css'
 
 import type { WorkspacePage } from '../../core/workspace-state'
@@ -14,12 +15,35 @@ const pages: { id: WorkspacePage; label: string; path: string }[] = [
 ]
 
 export default function WorkspaceNav({ activePage, onNavigate, status }: { activePage: WorkspacePage; onNavigate: (page: WorkspacePage) => void; status: string }) {
-  const [openTaskCount, setOpenTaskCount] = useState(0)
+  const [todayTaskCount, setTodayTaskCount] = useState(0)
   useEffect(() => {
-    const refresh = () => { void window.electronAPI.tasks.list().then(result => setOpenTaskCount(result.open.length)).catch(() => {}) }
-    refresh()
+    let disposed = false
+    let requestId = 0
+    let timer: ReturnType<typeof setTimeout>
+    const refresh = () => {
+      const request = ++requestId
+      void window.electronAPI.tasks.list().then(result => {
+        if (!disposed && request === requestId) {
+          const now = Date.now()
+          setTodayTaskCount(result.open.filter(task => isDueToday(task, now)).length)
+        }
+      }).catch(() => {})
+    }
+    const refreshDay = () => {
+      refresh()
+      const tomorrow = new Date()
+      tomorrow.setHours(24, 0, 0, 0)
+      timer = setTimeout(refreshDay, Math.max(1, tomorrow.getTime() - Date.now()))
+    }
+    refreshDay()
     window.addEventListener('chouyu:tasks-changed', refresh)
-    return () => window.removeEventListener('chouyu:tasks-changed', refresh)
+    window.addEventListener('focus', refresh)
+    return () => {
+      disposed = true
+      clearTimeout(timer)
+      window.removeEventListener('chouyu:tasks-changed', refresh)
+      window.removeEventListener('focus', refresh)
+    }
   }, [])
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
@@ -46,7 +70,7 @@ export default function WorkspaceNav({ activePage, onNavigate, status }: { activ
       data-workspace-nav={page.id} aria-label={page.label} title={page.label}
       aria-current={activePage === page.id ? 'page' : undefined} onClick={() => onNavigate(page.id)}>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={page.path}/></svg>
-      {page.id === 'tasks' && openTaskCount > 0 && <span className="workspace-nav-badge" aria-label={`${openTaskCount} 个未完成任务`}>{openTaskCount > 99 ? '99+' : openTaskCount}</span>}
+      {page.id === 'tasks' && todayTaskCount > 0 && <span className="workspace-nav-badge" aria-label={`${todayTaskCount} 个今天待办任务`}>{todayTaskCount > 99 ? '99+' : todayTaskCount}</span>}
     </button>)}
   </nav>
 }

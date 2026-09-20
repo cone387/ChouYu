@@ -43,8 +43,6 @@
 .journal-notice { margin-bottom: 12px !important; }
 .journal-pagination { justify-content: center; margin: 20px; }
 .journal-shell footer { margin-top: 24px; font-size: 11px; color: var(--text-muted); }
-.journal-shell::-webkit-scrollbar { width: 6px; }
-.journal-shell::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
 .journal-view-nav { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 16px; }
 .journal-view-nav button[aria-current="page"] { color: var(--accent); background: var(--hover-bg); border-color: transparent; }
 .journal-settings label + label { margin-top: 12px; }
@@ -228,10 +226,6 @@
 .journal-settings-dialog > header h2 { margin: 0; font-size: 18px; }
 .journal-settings-dialog .journal-settings { border: 0; padding: 0; margin: 0; }
 .journal-list-scroll { max-height: clamp(180px, calc(100vh - 430px), 720px); overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding-right: 8px; }
-.journal-list-scroll::-webkit-scrollbar, .journal-settings-dialog::-webkit-scrollbar { width: 8px; }
-.journal-list-scroll::-webkit-scrollbar-track, .journal-settings-dialog::-webkit-scrollbar-track { background: var(--bg-secondary); border-radius: 8px; }
-.journal-list-scroll::-webkit-scrollbar-thumb, .journal-settings-dialog::-webkit-scrollbar-thumb { background: var(--text-muted); border: 2px solid var(--bg-secondary); border-radius: 8px; min-height: 32px; }
-.journal-list-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 .journal-list-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .journal-token-usage { font-size: 12px; line-height: 1.8; color: var(--text-secondary); overflow-wrap: anywhere; }
 .journal-usage-list { list-style: none; margin: 18px 0 0; padding-left: 0; }

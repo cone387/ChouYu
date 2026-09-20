@@ -1,0 +1,18 @@
+:root {
+  --scrollbar-thumb: color-mix(in srgb, var(--text-muted) 25%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--text-muted) 45%, transparent);
+}
+
+/* Chromium's native thin scrollbars can add platform arrows. Use one shared
+ * custom scrollbar for both axes, including dialogs, menus and textareas. */
+* { scrollbar-width: auto; scrollbar-color: auto; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: var(--radius-pill);
+  background: var(--scrollbar-thumb);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: transparent; }

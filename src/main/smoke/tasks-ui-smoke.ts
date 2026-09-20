@@ -68,6 +68,12 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   const choose = async (label: string, value: string) => {
     await click(`[role="combobox"][aria-label="${label}"]`)
     await waitForRenderer(window, "!!document.querySelector('.tasks-select-options:popover-open')")
+    await assert(`(() => {
+      const trigger = document.querySelector('[role="combobox"][aria-label="${label}"]');
+      const popup = document.querySelector('.tasks-select-options:popover-open');
+      return getComputedStyle(trigger).borderWidth === '0px' && getComputedStyle(trigger).boxShadow === 'none'
+        && getComputedStyle(popup).borderWidth === '0px';
+    })()`)
     await run(`(() => {
       const popup = document.querySelector('.tasks-select-options:popover-open');
       const option = Array.from(popup.querySelectorAll('[role="option"]')).find(item => item.dataset.value === ${JSON.stringify(value)});
@@ -87,6 +93,34 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   }
   await click('[data-workspace-nav="tasks"]')
   await waitForRenderer(window, "Boolean(document.querySelector('[aria-label=\"归档 任务界面测试\"]'))")
+  // Today's badge excludes unscheduled, past, future and completed tasks.
+  const badgeFixture = await run(`(async () => {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(start); tomorrow.setDate(tomorrow.getDate() + 1);
+    const list = await window.electronAPI.tasks.list();
+    const baseline = list.open.filter(task => task.dueAt !== null && task.dueAt >= +start && task.dueAt < +tomorrow).length;
+    const tasks = [];
+    for (const dueAt of [+start, +tomorrow - 1, +start - 1, +tomorrow, null, +start]) tasks.push(await window.electronAPI.tasks.create({ title: 'Badge fixture', dueAt }));
+    await window.electronAPI.tasks.complete(tasks[5].id);
+    window.dispatchEvent(new Event('chouyu:tasks-changed'));
+    return { baseline, ids: tasks.map(task => task.id) };
+  })()`)
+  await waitForRenderer(window, `document.querySelector('.workspace-nav-badge')?.textContent === '${badgeFixture.baseline + 2}'`)
+  await run(`window.electronAPI.tasks.complete('${badgeFixture.ids[0]}').then(() => window.dispatchEvent(new Event('chouyu:tasks-changed')))`)
+  await waitForRenderer(window, `document.querySelector('.workspace-nav-badge')?.textContent === '${badgeFixture.baseline + 1}'`)
+  await run(`Promise.all(${JSON.stringify(badgeFixture.ids)}.map(id => window.electronAPI.tasks.remove(id))).then(() => window.dispatchEvent(new Event('chouyu:tasks-changed')))`)
+  await waitForRenderer(window, `Number(document.querySelector('.workspace-nav-badge')?.textContent ?? 0) === ${badgeFixture.baseline}`)
+  const originalTheme = await run('document.documentElement.dataset.theme')
+  for (const theme of ['light', 'dark']) {
+    await run(`document.documentElement.dataset.theme = '${theme}'`)
+    await assert(`(() => {
+      const scrollers = [...document.querySelectorAll('*')].filter(element => /auto|scroll/.test(getComputedStyle(element).overflow));
+      const reference = getComputedStyle(document.querySelector('.tasks-main'), '::-webkit-scrollbar-thumb').backgroundColor;
+      return scrollers.length > 0 && scrollers.every(element => getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor === reference
+        && getComputedStyle(element, '::-webkit-scrollbar-button').display === 'none');
+    })()`)
+  }
+  await run(`document.documentElement.dataset.theme = ${JSON.stringify(originalTheme)}`)
   // Escape closes the editor whether focus is in its title or on the document.
   for (const target of ['document', 'document.querySelector(\'[aria-label="任务标题"]\')']) {
     await click('.tasks-create')

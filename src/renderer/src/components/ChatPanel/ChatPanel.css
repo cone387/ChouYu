@@ -119,9 +119,6 @@
   scrollbar-gutter: stable;
 }
 
-.memory-workspace-content::-webkit-scrollbar { width: 5px; }
-.memory-workspace-content::-webkit-scrollbar-thumb { border-radius: var(--radius-pill); background: var(--border); }
-
 @media (max-width: 640px) {
   .memory-workspace-content { padding: var(--space-5); }
 }
@@ -1355,20 +1352,6 @@
 /* Screenshot Button */
 .screenshot-btn svg {
   stroke: currentColor;
-}
-
-/* Scrollbar */
-.message-area::-webkit-scrollbar {
-  width: 4px;
-}
-
-.message-area::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.message-area::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: var(--radius-sm);
 }
 
 /* Horizontal overflow guard: chat content must wrap instead of creating a second axis. */

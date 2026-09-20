@@ -97,11 +97,10 @@ describe('settings layout guardrails', () => {
     expect(memoryStylesheet).toContain('.memory-identity-card')
   })
 
-  it('keeps the persona editor large with a thin, neutral scrollbar', () => {
+  it('keeps the persona editor large', () => {
     expect(stylesheet).toMatch(/\.settings-persona-pane\s*\{[\s\S]*display:\s*flex/)
     expect(stylesheet).toMatch(/\.settings-persona-card\s*\{[\s\S]*flex:\s*1/)
     expect(stylesheet).toMatch(/\.settings-soul-editor\s*\{[\s\S]*min-height:\s*340px/)
-    expect(stylesheet).toMatch(/\.settings-soul-editor::-webkit-scrollbar\s*\{\s*width:\s*5px/)
     expect(stylesheet).toMatch(/\.settings-soul-editor:focus\s*\{[\s\S]*box-shadow:\s*none/)
   })
 

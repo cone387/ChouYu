@@ -87,15 +87,6 @@
   padding: 0 var(--space-3) var(--space-4);
 }
 
-.conversation-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.conversation-list::-webkit-scrollbar-thumb {
-  border-radius: var(--radius-sm);
-  background: var(--border);
-}
-
 .conversation-item {
   position: relative;
   margin-bottom: var(--space-2);
