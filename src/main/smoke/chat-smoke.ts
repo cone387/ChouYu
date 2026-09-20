@@ -243,8 +243,29 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
       if (problem) throw new Error(problem)
       if (mode !== 'workspace') await snapshots(window, 'mode-' + mode)
     }
+    // Keep native pointer capture active while extending beyond the display and back.
+    // Explicit global coordinates simulate the screen-space movement used by resize handlers.
+    for (const selector of ['.chat-content-resize-edge', '.session-sidebar-resize-edge', '.panel-resize-edge-bottom', '.panel-resize-edge-top']) {
+      const geometry = await window.webContents.executeJavaScript(`(() => {
+        const handle = document.querySelector('${selector}').getBoundingClientRect();
+        return { x: Math.round(handle.x + handle.width / 2), y: Math.round(handle.y + handle.height / 2), panel: document.querySelector('.chat-panel').getBoundingClientRect().toJSON(), delta: Math.max(innerWidth, innerHeight) + 800 };
+      })()`)
+      const start = { x: geometry.x, y: geometry.y, globalX: geometry.x, globalY: geometry.y }
+      const horizontal = selector.includes('content') || selector.includes('sidebar')
+      const end = { x: start.x - 10, y: start.y + 10, globalX: start.globalX + (horizontal ? geometry.delta : 0), globalY: start.globalY + (horizontal ? 0 : selector.endsWith('top') ? -geometry.delta : geometry.delta) }
+      window.webContents.sendInputEvent({ type: 'mouseMove', ...start })
+      await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...start })
+      await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(resolve))')
+      window.webContents.sendInputEvent({ type: 'mouseMove', modifiers: ['leftbuttondown'], ...end })
+      await waitForRenderer(window, `(() => { const rect = document.querySelector('.chat-panel').getBoundingClientRect(); return Math.abs(rect.${horizontal ? 'width' : 'height'} - ${geometry.panel[horizontal ? 'width' : 'height'] + geometry.delta}) < 1 })()`)
+      if (selector.endsWith('top')) await waitForRenderer(window, `Math.abs(document.querySelector('.chat-panel').getBoundingClientRect().bottom - ${geometry.panel.bottom}) < 1`)
+      window.webContents.sendInputEvent({ type: 'mouseMove', modifiers: ['leftbuttondown'], ...start })
+      await waitForRenderer(window, `(() => { const rect = document.querySelector('.chat-panel').getBoundingClientRect(), original = ${JSON.stringify(geometry.panel)}; return ['x', 'y', 'width', 'height'].every(key => Math.abs(rect[key] - original[key]) < 1) })()`)
+      window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...start })
+    }
     await input(window, '.input-textarea', '')
-    console.log('CHOUYU_WINDOW_MODES_SMOKE_PASSED maximize/restore geometry, mode navigation and draft preservation')
+    console.log('CHOUYU_WINDOW_MODES_SMOKE_PASSED unbounded resizing, maximize/restore geometry, mode navigation and draft preservation')
 
     const grip = await window.webContents.executeJavaScript(`(() => {
       const rect = document.querySelector('.composer-resize-handle').getBoundingClientRect();

@@ -33,7 +33,6 @@ import {
 import {
   DEFAULT_CONFIG,
   MAX_HISTORY_MESSAGES,
-  WORKSPACE_NAV_WIDTH,
 } from '../../shared/constants'
 import {
   parseStoredSidebarVisibility,
@@ -221,9 +220,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     handleContentResizeEnd
   } = usePanelResize({
     position,
-    onPositionChange,
-    sidebarOccupiesSpace: displayMode !== 'chat',
-    chromeWidth: displayMode === 'workspace' ? WORKSPACE_NAV_WIDTH : 0
+    onPositionChange
   })
   const toolApprovalRequest = toolApprovalRequests[0] || null
   const geometry = getWorkspaceGeometry(displayMode, maximized, viewport, chatContentWidth, sessionSidebarWidth, panelHeight)

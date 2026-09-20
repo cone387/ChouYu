@@ -185,7 +185,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
     void commitTask(task.id, sameColumn ? {} : column.patch, targetId, target?.id ? target.after : true, column.key)
   }
 
-  return <>{groupMode === 'due' && <p className="tasks-view-description">修改任务的截止时间后，会自动调整所属分组。</p>}{moveError && <p role="alert" className="tasks-error">{moveError}</p>}{orderError && <p role="status" className="tasks-notice">{orderError}</p>}{savingTask && <p role="status" className="tasks-notice">正在保存任务位置…</p>}<div ref={boardRef} className="tasks-board" aria-label="任务看板" data-drag-active={draggingColumn !== null || draggingTask !== null || undefined}
+  return <>{groupMode === 'due' && <p className="tasks-view-description">修改任务的截止时间后，会自动调整所属分组。</p>}{moveError && <p role="alert" className="tasks-error">{moveError}</p>}{orderError && <p role="status" className="tasks-notice">{orderError}</p>}<div ref={boardRef} className="tasks-board" aria-label="任务看板" data-drag-active={draggingColumn !== null || draggingTask !== null || undefined}
     onDragOver={event => { if (isColumnDrag(event) || draggingTask !== null) updateScroll(event.clientX) }}
     onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { stopScroll(); setDropColumn(null); setColumnTarget(null) } }}
     onDragEnd={finishColumnDrag}>

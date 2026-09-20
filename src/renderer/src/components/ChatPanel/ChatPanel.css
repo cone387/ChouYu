@@ -3,7 +3,7 @@
   position: absolute;
   width: min(420px, calc(100vw - 16px));
   min-height: min(280px, calc(100vh - 8px));
-  max-height: calc(100vh - 8px);
+  max-height: none;
   background: var(--bg-panel);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border);

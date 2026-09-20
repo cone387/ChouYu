@@ -6,7 +6,7 @@ const path = require('path')
 const READY_MARKER = 'CHOUYU_SMOKE_READY'
 const FAILED_MARKER = 'CHOUYU_SMOKE_FAILED'
 // Capturing every workspace in both themes takes longer than the headless assertions.
-const TIMEOUT_MS = process.env.CHOUYU_SMOKE_ARTIFACTS ? 180_000 : 90_000
+const TIMEOUT_MS = process.env.CHOUYU_SMOKE_ARTIFACTS ? 180_000 : 120_000
 const packagedArgIndex = process.argv.indexOf('--packaged')
 const packagedExecutable = packagedArgIndex >= 0 ? process.argv[packagedArgIndex + 1] : ''
 const executable = packagedExecutable || require('electron')

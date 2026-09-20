@@ -309,7 +309,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         const hidden = !matchesKeywordAndFilter(saved) || (saved.status === 'open'
           ? effectiveStatus === 'done' || selection === 'done' || !matchesSelection(saved, selection)
           : effectiveStatus === 'open' || (selection !== 'done' && !matchesSelection({ ...saved, status: 'open' }, selection)))
-        setNotice(`${draft.id ? '任务已保存。' : '任务已创建。'}${hidden ? '该任务不符合当前视图或筛选条件，暂不在此显示。' : ''}`)
+        setNotice(hidden ? '该任务不符合当前视图或筛选条件，暂不在此显示。' : '')
         reloadRef.current()
       })
       .catch(reason => setError(String(reason)))
@@ -318,24 +318,24 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
 
   const actionLock = useRef(false)
   const [actionPending, setActionPending] = useState(false)
-  const performAction = async (operation: () => Promise<unknown>, message: string) => {
+  const performAction = async (operation: () => Promise<unknown>) => {
     if (actionLock.current) return
-    actionLock.current = true; setActionPending(true); setError(''); setNotice('正在保存修改…')
-    try { await operation(); setNotice(message); reloadRef.current() }
+    actionLock.current = true; setActionPending(true); setError(''); setNotice('')
+    try { await operation(); reloadRef.current() }
     catch (reason) { setNotice(''); setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { actionLock.current = false; setActionPending(false) }
   }
-  const complete = (id: string) => { void performAction(() => window.electronAPI.tasks.complete(id), '任务已完成。') }
-  const reopen = (id: string) => { void performAction(() => window.electronAPI.tasks.reopen(id), '任务已恢复。') }
+  const complete = (id: string) => { void performAction(() => window.electronAPI.tasks.complete(id)) }
+  const reopen = (id: string) => { void performAction(() => window.electronAPI.tasks.reopen(id)) }
   const remove = async (id: string) => {
     if (!await confirm({ title: '删除任务', message: '删除这个任务？此操作无法撤销。' })) return
-    void performAction(() => window.electronAPI.tasks.remove(id), '任务已删除。')
+    void performAction(() => window.electronAPI.tasks.remove(id))
   }
   const archiveProject = (project: TaskProject) => {
     void performAction(async () => {
       await window.electronAPI.tasks.archiveProject(project.id, true)
       setSelection(current => current === `project:${project.id}` ? 'all' : current)
-    }, `「${project.name}」已归档，未完成任务和提醒仍会保留。`)
+    })
   }
   const submitProject = (event: FormEvent) => {
     event.preventDefault()
@@ -354,7 +354,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       .then(group => {
         setGroups(current => [...current.filter(item => item.id !== group.id), group])
         setSidebarCollapsed(false); setRevealGroupId(group.id)
-        setNewGroup(null); setNotice(`已创建分组「${group.name}」，可以在分组中添加清单。`)
+        setNewGroup(null)
         reloadRef.current()
       })
       .catch(reason => setError(String(reason))).finally(() => setProjectBusy(false))
@@ -370,7 +370,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   }
   const removeGroup = async (group: TaskGroup) => {
     if (!await confirm({ title: '删除分组', message: `删除分组「${group.name}」？其中的清单和任务会保留，清单将移到默认分组。` })) return
-    void performAction(() => window.electronAPI.tasks.deleteGroup(group.id), '分组已删除，清单和任务已保留。')
+    void performAction(() => window.electronAPI.tasks.deleteGroup(group.id))
   }
   const startGroupProject = (group: TaskGroup) => {
     setProjectGroupId(group.id); setNewProject(''); setNewGroup(null); setGroupRenaming(null); setError('')
@@ -411,7 +411,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   }
   const removeView = async (view: TaskView) => {
     if (!await confirm({ title: '删除视图', message: `删除视图「${view.name}」？任务本身不受影响。` })) return
-    void performAction(async () => { await window.electronAPI.tasks.deleteView(view.id); setSelection(current => current === `view:${view.id}` ? 'today' : current) }, '视图已删除，任务已保留。')
+    void performAction(async () => { await window.electronAPI.tasks.deleteView(view.id); setSelection(current => current === `view:${view.id}` ? 'today' : current) })
   }
   const saveField = async (id: string | null, input: TaskSelectFieldUpdateInput): Promise<TaskSelectField> => {
     setBusy(true); setError('')
@@ -420,7 +420,6 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         ? await window.electronAPI.tasks.updateField(id, input)
         : await window.electronAPI.tasks.createField({ name: input.name ?? '', options: input.options?.map(option => typeof option === 'string' ? option : option.name) })
       reloadRef.current()
-      setNotice('字段已保存。')
       return saved
     } catch (reason) {
       setError(String(reason))
@@ -442,7 +441,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     try {
       await window.electronAPI.tasks.deleteField(field.id)
       if (groupFieldId === field.id) setGroupFieldId(null)
-      setNotice('字段已删除。'); reloadRef.current()
+      reloadRef.current()
     } catch (reason) { setError(String(reason)) }
     finally { setBusy(false) }
   }
@@ -456,7 +455,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     preferences.update(selection, current => ({ ...current, listGrouped: true, groupMode: 'custom', groupFieldId: null,
       customGroups: displayGroupDraft.id ? current.customGroups.map(group => group.id === id ? { ...group, name } : group) : [...current.customGroups, { id, name, taskIds: [] }]
     }))
-    setDisplayGroupDraft(null); setNotice(displayGroupDraft.id ? '分组已重命名。' : `已创建任务分组「${name}」。`)
+    setDisplayGroupDraft(null)
   }
   const deleteDisplayGroup = async (id: string) => {
     const group = customGroups.find(item => item.id === id)
@@ -464,7 +463,6 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     const scope = selection
     if (!await confirm({ title: '删除任务分组', message: `删除「${group.name}」？组内任务会保留并移到当前视图的“未分组”。`, confirmLabel: '删除分组' })) return
     preferences.update(scope, current => ({ ...current, customGroups: current.customGroups.filter(item => item.id !== id) }))
-    setNotice('分组已删除，组内任务已保留。')
   }
   const renderDisplayGroupActions = (id: string) => {
     const group = customGroups.find(item => item.id === id)

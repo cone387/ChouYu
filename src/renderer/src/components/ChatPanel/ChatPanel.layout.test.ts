@@ -115,8 +115,6 @@ describe('chat layout guardrails', () => {
     expect(panelSource).not.toContain('panelResizeRef')
     expect(panelSource).not.toContain('sidebarResizeRef')
     expect(panelSource).not.toContain('contentResizeRef')
-    expect(panelResizeSource).toContain('sidebarOccupiesSpace ? sessionSidebarWidth : 0')
-    expect(panelResizeSource).toContain('window.innerWidth - position.x - chatContentWidth - chromeWidth - 16')
     expect(panelResizeSource).toContain('startTop + startHeight - nextHeight')
   })
 
