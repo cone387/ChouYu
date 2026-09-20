@@ -133,6 +133,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const [matchedDone, setMatchedDone] = useState(0)
   const [doneLimit, setDoneLimit] = useState(50)
   const [loading, setLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [notice, setNotice] = useState('')
   const reloadSequence = useRef(0)
   const [projects, setProjects] = useState<TaskProject[]>([])
@@ -208,6 +209,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       doneSelection: selection, doneGrouping: JSON.parse(groupingQuery) }), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views(), window.electronAPI.tasks.fields(), window.electronAPI.tasks.groups()])
       .then(([list, projectList, viewList, fieldList, groupList]) => {
         if (sequence !== reloadSequence.current) return
+        setHasLoaded(true)
         setTasks(list.open)
         setDoneTasks(list.done)
         setTotalDone(list.totalDone)
@@ -808,6 +810,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
             <button type="button" onClick={e => { setBackupOpen(true); e.currentTarget.closest('details')?.removeAttribute('open') }}>备份与恢复</button>
           </div>
         </details>
+        <span className="tasks-loading-status" role="status" data-loading={loading || undefined}>{loading ? '正在加载任务…' : ''}</span>
       </header>
       {selection in SMART_DESCRIPTIONS && <p className="tasks-view-description">{SMART_DESCRIPTIONS[selection as SmartView]}</p>}
       {selection !== 'done' && <div className="tasks-tabs" role="group" aria-label="展示方式">
@@ -899,7 +902,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       </div>
 
       {query && <div className="tasks-search-context">搜索结果：{query}<button type="button" aria-label="清除任务搜索条件" onClick={() => setQuery('')}>清除</button></div>}
-      {(selection === 'done' ? doneVisible.length : sorted.length) === 0 && (mode === 'list' || selection === 'done') && !draft && !loading && <div className="tasks-empty">
+      {(selection === 'done' ? doneVisible.length : sorted.length) === 0 && (mode === 'list' || selection === 'done') && !draft && hasLoaded && <div className="tasks-empty">
         <span className="tasks-empty-icon"><TaskIcon name={selection === 'unplanned' ? 'unplanned' : 'task'} /></span>
         {effectiveStatus === 'done'
           ? <><h2>{query.trim() ? '没有匹配的已完成任务' : '还没有已完成的任务'}</h2><p>{query.trim() ? '试试其他关键词，或清空搜索。' : '完成的任务会保留在这里，可随时恢复。'}</p></>
@@ -977,7 +980,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       {backupOpen && <TaskBackupDialog onClose={() => setBackupOpen(false)} />}
       {sourcePreview && <TaskSourceDialog source={sourcePreview} onClose={() => setSourcePreview(null)} onChat={onOpenChat} />}
 
-      {loading && <p role="status">正在加载任务…</p>}
       {(mode === 'board' || listGrouped) && boardGroupMode === 'week' && <p className="tasks-view-description">跨天任务单独展示；单日任务可拖到其他日期改期，跨天任务请编辑起止时间。</p>}
       {(mode === 'board' || listGrouped) && (boardGroupMode === 'overdue' || boardGroupMode === 'completed') && <p className="tasks-view-description">分组由实际日期自动计算，可在组内拖动排序。</p>}
       {displayGroupDraft && <TaskDisplayGroupDialog key={displayGroupDraft.id} initialName={displayGroupDraft.name} editing={Boolean(displayGroupDraft.id)} onSave={saveDisplayGroup} onCancel={() => setDisplayGroupDraft(null)} />}

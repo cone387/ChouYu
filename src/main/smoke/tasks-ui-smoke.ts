@@ -197,6 +197,25 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert("!document.querySelector('.tasks-search')")
   await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
   await waitForRenderer(window, "document.querySelector('.tasks-page-heading h1')?.textContent === '任务界面测试'")
+  // Reloading an empty view must keep its placeholder and content position stable.
+  await click('.tasks-tabs .tasks-tab:first-child')
+  await waitForRenderer(window, "!!document.querySelector('.tasks-empty') && !document.querySelector('.tasks-loading-status[data-loading]')")
+  await run(`(() => {
+    const main = document.querySelector('.tasks-main');
+    const top = main.querySelector('.tasks-empty').getBoundingClientRect().top;
+    window.__taskLayoutErrors = [];
+    window.__taskLoadingSeen = false;
+    window.__taskLayoutObserver = new MutationObserver(() => {
+      if (main.querySelector('.tasks-loading-status[data-loading]')) window.__taskLoadingSeen = true;
+      const empty = main.querySelector('.tasks-empty');
+      if (!empty || Math.abs(empty.getBoundingClientRect().top - top) > 1) window.__taskLayoutErrors.push('Empty view moved during reload');
+    });
+    window.__taskLayoutObserver.observe(main, { childList: true, subtree: true, attributes: true });
+  })()`)
+  window.webContents.send('tasks:changed')
+  await waitForRenderer(window, "window.__taskLoadingSeen && !document.querySelector('.tasks-loading-status[data-loading]')")
+  await run("window.__taskLayoutObserver.disconnect()")
+  await assert("window.__taskLayoutErrors.length === 0")
   const collectionGroupsBefore: string = await run("window.electronAPI.tasks.groups().then(groups => JSON.stringify(groups))")
   await clickPointer('[aria-label="新建任务选项"]')
   await waitForRenderer(window, "document.querySelector('.tasks-create-options .tasks-item-menu-popover').matches(':popover-open')")

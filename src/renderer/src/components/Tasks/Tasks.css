@@ -229,6 +229,9 @@
 
 .tasks-page-heading { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0; }
 .tasks-page-heading h1 { margin: 0; font-size: 18px; line-height: 1.4; font-weight: 500; overflow-wrap: anywhere; }
+.tasks-loading-status { flex: 0 0 90px; margin-left: auto; font-size: 12px; color: var(--text-muted); opacity: 0; }
+.tasks-loading-status[data-loading] { animation: tasks-loading-reveal 0s 250ms forwards; }
+@keyframes tasks-loading-reveal { to { opacity: 1; } }
 .tasks-view-description { margin: var(--space-2) 0 var(--space-4); color: var(--text-muted); font-size: var(--font-sm); line-height: var(--leading-relaxed); }
 .tasks-sidebar-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 6px 6px 10px; }
 .tasks-sidebar-heading h2 { margin: 0; }
