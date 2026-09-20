@@ -4,6 +4,7 @@ import { PRIORITY_LABELS } from '../../../../shared/tasks'
 import TaskDatePicker from './TaskDatePicker'
 import TaskSelect from './TaskSelect'
 import TaskIcon from './TaskIcon'
+import type { TaskDisplayGroup } from './taskViewPreferences'
 
 export interface TaskDraft {
   id: string
@@ -18,12 +19,14 @@ export interface TaskDraft {
   remind: RemindChoiceId
   recurrence: TaskRecord['recurrence']
   customFields: Record<string, string>
+  displayGroupId?: string
 }
 
-export default function TaskEditorDialog({ draft, projects, groups, fields, busy, error, dialogRef, onChange, onCreateProject, onClose, onSubmit }: {
+export default function TaskEditorDialog({ draft, projects, groups, displayGroups, fields, busy, error, dialogRef, onChange, onCreateProject, onClose, onSubmit }: {
   draft: TaskDraft
   projects: TaskProject[]
   groups: TaskGroup[]
+  displayGroups: TaskDisplayGroup[]
   fields: TaskSelectField[]
   busy: boolean
   error: string
@@ -64,7 +67,7 @@ export default function TaskEditorDialog({ draft, projects, groups, fields, busy
         </label>
         <div className="tasks-composer-properties">
           <div className="tasks-select-field">
-            <span>所属分组</span>
+            <span>清单分组</span>
             <TaskSelect label="任务分组" value={groupId} disabled={busy} onChange={changeGroup} options={groups.map(group => ({ value: group.id, label: group.name }))} />
           </div>
           <div className="tasks-select-field">
@@ -72,6 +75,10 @@ export default function TaskEditorDialog({ draft, projects, groups, fields, busy
             <TaskSelect label="任务清单" value={draft.projectId} disabled={busy || groupProjects.length === 0} onChange={projectId => onChange({ ...draft, projectId })} options={groupProjects.map(project => ({ value: project.id, label: project.name + (project.archivedAt ? '（已归档）' : '') }))} />
           </div>
         </div>
+        {displayGroups.length > 0 && <div className="tasks-composer-properties"><div className="tasks-select-field">
+          <span>当前视图分组</span>
+          <TaskSelect label="任务展示分组" value={draft.displayGroupId ?? ''} disabled={busy} onChange={displayGroupId => onChange({ ...draft, displayGroupId })} options={[{ value: '', label: '未分组' }, ...displayGroups.map(group => ({ value: group.id, label: group.name }))]} />
+        </div></div>}
         {groupProjects.length === 0 && <div className="tasks-composer-new-project">
           <p>这个分组还没有可用清单，创建一个后即可保存任务。</p>
           <div><input aria-label="新清单名称" placeholder="清单名称" maxLength={50} value={projectName} disabled={busy} onChange={event => setProjectName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void createProject() } }} /><button type="button" disabled={busy || !projectName.trim()} onClick={() => void createProject()}>创建清单</button></div>

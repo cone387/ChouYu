@@ -7,11 +7,12 @@ import TasksBoard, { groupTasks, type BoardGroupMode } from './TasksBoard'
 import TaskEditorDialog, { type TaskDraft as Draft } from './TaskEditorDialog'
 import TaskFieldsDialog from './TaskFieldsDialog'
 import TaskCollectionDialog from './TaskCollectionDialog'
+import TaskDisplayGroupForm from './TaskDisplayGroupForm'
 import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
 import TaskIcon, { type IconName } from './TaskIcon'
 import useTaskMenus from './useTaskMenus'
 import useTaskViewPreferences from './useTaskViewPreferences'
-import { applyTaskOrder, moveTaskInOrder } from './taskViewPreferences'
+import { applyTaskOrder, assignTaskToGroup, moveTaskInOrder } from './taskViewPreferences'
 import { useConfirm } from '../common/ConfirmProvider'
 import './Tasks.css'
 
@@ -83,7 +84,6 @@ const dueLabel = (at: number): string =>
 export default function TasksView({ active, focusTaskId, searchRequest }: { active: boolean; focusTaskId?: string; searchRequest?: { id: string; done: boolean; query: string; nonce: number } }) {
   const confirm = useConfirm()
   const menusRef = useTaskMenus(active)
-  const groupingMenuRef = useRef<HTMLDetailsElement>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const sidebarToggleRef = useRef<HTMLButtonElement>(null)
   const toggleSidebar = () => {
@@ -125,7 +125,10 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const [views, setViews] = useState<TaskView[]>([])
   const [fields, setFields] = useState<TaskSelectField[]>([])
   const preferences = useTaskViewPreferences(selection)
-  const { mode, listGrouped, groupMode, groupFieldId, sortMode, hiddenFields, taskOrder } = preferences.value
+  const { mode, listGrouped, groupMode, groupFieldId, sortMode, hiddenFields, taskOrder, customGroups } = preferences.value
+  const [displayGroupDraft, setDisplayGroupDraft] = useState<{ id: string; name: string } | null>(null)
+  const [listDropGroup, setListDropGroup] = useState<string | null>(null)
+  useEffect(() => { setDisplayGroupDraft(null) }, [selection])
   const setMode = (value: 'list' | 'board') => preferences.set('mode', value)
   const setGroupFieldId = (value: string | null) => preferences.set('groupFieldId', value)
   const setSortMode = (value: TaskSortMode) => preferences.set('sortMode', value)
@@ -141,7 +144,8 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       // Capture keyboard focus before the editor autofocuses its title input.
       restoreTaskFocusRef.current = opener?.matches(':focus-visible') ?? false
     }
-    updateDraft(value)
+    updateDraft(value && typeof value !== 'function' && value.displayGroupId === undefined
+      ? { ...value, displayGroupId: customGroups.find(group => group.taskIds.includes(value.id))?.id ?? '' } : value)
   }
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -300,11 +304,12 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       : window.electronAPI.tasks.create({ title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, recurrence: draft.recurrence, customFields })
     void request
       .then(saved => {
+        if (draft.displayGroupId !== undefined) preferences.update(selection, current => ({ ...current, customGroups: assignTaskToGroup(current.customGroups, saved.id, draft.displayGroupId!) }))
         setDraft(null)
-        if (saved.status === 'open' && (effectiveStatus === 'done' || selection === 'done' || !matchesSelection(saved, selection) || !matchesKeywordAndFilter(saved))) {
-          setSelection('all'); setQuery(''); clearFilters(); setStatusFilter('open')
-          setNotice('任务已保存，已切换到全部任务。')
-        } else setNotice(draft.id ? '任务已保存。' : '任务已创建。')
+        const hidden = !matchesKeywordAndFilter(saved) || (saved.status === 'open'
+          ? effectiveStatus === 'done' || selection === 'done' || !matchesSelection(saved, selection)
+          : effectiveStatus === 'open' || (selection !== 'done' && !matchesSelection({ ...saved, status: 'open' }, selection)))
+        setNotice(`${draft.id ? '任务已保存。' : '任务已创建。'}${hidden ? '该任务不符合当前视图或筛选条件，暂不在此显示。' : ''}`)
         reloadRef.current()
       })
       .catch(reason => setError(String(reason)))
@@ -443,13 +448,37 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   }
 
   const startNewGroup = () => { setNewGroup(''); setNewProject(null); setGroupRenaming(null); setError('') }
-  const openTaskGrouping = () => requestAnimationFrame(() => {
-    const menu = groupingMenuRef.current
-    if (!menu) return
-    menu.open = true
-    menu.querySelector<HTMLElement>('summary')?.focus()
-  })
+  const startDisplayGroup = () => { setDisplayGroupDraft({ id: '', name: '' }); setError('') }
+  const saveDisplayGroup = (name: string): string | void => {
+    if (!displayGroupDraft) return
+    if (customGroups.some(group => group.id !== displayGroupDraft.id && group.name === name)) return '当前视图已有同名分组。'
+    const id = displayGroupDraft.id || crypto.randomUUID()
+    preferences.update(selection, current => ({ ...current, listGrouped: true, groupMode: 'custom', groupFieldId: null,
+      customGroups: displayGroupDraft.id ? current.customGroups.map(group => group.id === id ? { ...group, name } : group) : [...current.customGroups, { id, name, taskIds: [] }]
+    }))
+    setDisplayGroupDraft(null); setNotice(displayGroupDraft.id ? '分组已重命名。' : `已创建任务分组「${name}」。`)
+  }
+  const deleteDisplayGroup = async (id: string) => {
+    const group = customGroups.find(item => item.id === id)
+    if (!group) return
+    const scope = selection
+    if (!await confirm({ title: '删除任务分组', message: `删除「${group.name}」？组内任务会保留并移到当前视图的“未分组”。`, confirmLabel: '删除分组' })) return
+    preferences.update(scope, current => ({ ...current, customGroups: current.customGroups.filter(item => item.id !== id) }))
+    setNotice('分组已删除，组内任务已保留。')
+  }
+  const renderDisplayGroupActions = (id: string) => {
+    const group = customGroups.find(item => item.id === id)
+    if (boardGroupMode !== 'custom' || !group) return null
+    return <details className="tasks-item-menu tasks-display-group-menu">
+      <summary aria-label={`管理任务分组 ${group.name}`} title="管理任务分组"><TaskIcon name="more" /></summary>
+      <div className="tasks-item-menu-popover">
+        <button type="button" onClick={() => setDisplayGroupDraft({ id, name: group.name })}>重命名分组</button>
+        <button type="button" className="tasks-item-menu-danger" onClick={() => void deleteDisplayGroup(id)}>删除分组</button>
+      </div>
+    </details>
+  }
   const applyGrouping = (value: string) => {
+    setDisplayGroupDraft(null); setListDropGroup(null)
     preferences.update(selection, value === 'none' ? { listGrouped: false } : {
       listGrouped: true,
       groupMode: value.startsWith('field:') ? 'field' : value as BoardGroupMode,
@@ -495,6 +524,9 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
 
   const renderTask = (task: TaskRecord) => {
     return <li key={task.id} data-task-id={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={0} aria-label={`任务：${task.title}，按 Enter 编辑`} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority} data-completed={task.status === 'done' || undefined}
+          draggable={listGrouped && boardGroupMode === 'custom'}
+          onDragStart={event => { event.dataTransfer.setData('application/x-chouyu-list-task', task.id); event.dataTransfer.effectAllowed = 'move' }}
+          onDragEnd={() => setListDropGroup(null)}
           onClick={event => {
             if ((event.target as Element).closest('button, .tasks-item-menu, a, input, select, textarea, [role="button"]') || window.getSelection()?.toString()) return
             event.currentTarget.focus({ preventScroll: true })
@@ -610,13 +642,13 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         <div className="tasks-toolbar-group">
           <div className="tasks-create-split">
             <button type="button" className="tasks-create" onClick={startCreate}><TaskIcon name="plus" />新建任务</button>
-            <details className="tasks-tool-menu tasks-create-options">
+            {((mode === 'list' && !listGrouped) || boardGroupMode === 'custom') && <details className="tasks-tool-menu tasks-create-options">
               <summary aria-label="新建任务选项" title="新建任务选项"><TaskIcon name="chevron" /></summary>
               <div className="tasks-item-menu-popover">
                 <button type="button" onClick={startCreate}><TaskIcon name="task" />新建任务</button>
-                <button type="button" onClick={openTaskGrouping}><TaskIcon name="group" />新建分组</button>
+                <button type="button" onClick={startDisplayGroup}><TaskIcon name="group" />新建分组</button>
               </div>
-            </details>
+            </details>}
           </div>
           {selection !== 'done' && <details className="tasks-tool-menu">
             <summary aria-label="任务完成状态" title={`状态：${effectiveStatus === 'open' ? '未完成' : effectiveStatus === 'done' ? '已完成' : '全部任务'}`} data-active={effectiveStatus !== 'open' || undefined}><TaskIcon name="done" /><span>{effectiveStatus === 'open' ? '未完成' : effectiveStatus === 'done' ? '已完成' : '全部任务'}</span></summary>
@@ -650,9 +682,10 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
               ))}
             </div>
           </details>}
-          <details ref={groupingMenuRef} className="tasks-tool-menu tasks-grouping-menu"><summary aria-label="任务分组" title="任务展示分组"><TaskIcon name="group" /><span>分组：{(mode === 'list' || selection === 'done') && !listGrouped ? '不分组' : boardGroupMode === 'priority' ? '优先级' : boardGroupMode === 'due' ? '截止时间' : boardGroupMode === 'project' ? '清单' : fields.find(field => field.id === groupFieldId)?.name}</span></summary><div className="tasks-item-menu-popover tasks-tool-popover"><p className="tasks-tool-title">将当前任务按所选字段分组展示</p><label className="tasks-filter-row">分组依据
+          <details className="tasks-tool-menu tasks-grouping-menu"><summary aria-label="任务分组" title="任务展示分组"><TaskIcon name="group" /><span>分组：{(mode === 'list' || selection === 'done') && !listGrouped ? '不分组' : boardGroupMode === 'custom' ? '自定义分组' : boardGroupMode === 'priority' ? '优先级' : boardGroupMode === 'due' ? '截止时间' : boardGroupMode === 'project' ? '清单' : fields.find(field => field.id === groupFieldId)?.name}</span></summary><div className="tasks-item-menu-popover tasks-tool-popover"><p className="tasks-tool-title">选择当前任务的展示方式</p><label className="tasks-filter-row">分组依据
             <select value={(mode === 'list' || selection === 'done') && !listGrouped ? 'none' : boardGroupMode === 'field' ? `field:${groupFieldId ?? ''}` : boardGroupMode} aria-label="看板分组方式" onChange={event => applyGrouping(event.target.value)}>
               {(mode === 'list' || selection === 'done') && <option value="none">不分组</option>}
+              <option value="custom">自定义分组</option>
               <option value="priority">按优先级</option>
               <option value="due">按截止时间</option>
               <option value="project">按清单</option>
@@ -700,7 +733,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         onSubmit={groupRenaming ? submitGroupRename : newProject !== null ? submitProject : submitGroup}
         onClose={closeCollectionDialog} />}
 
-      {draft && <TaskEditorDialog draft={draft} projects={projects} groups={groups} fields={fields} busy={busy || projectBusy} error={error} dialogRef={taskDialogRef} onChange={setDraft} onCreateProject={createDraftProject} onClose={() => { if (!busy && !projectBusy) setDraft(null) }} onSubmit={submitDraft} />}
+      {draft && <TaskEditorDialog draft={draft} projects={projects} groups={groups} displayGroups={customGroups} fields={fields} busy={busy || projectBusy} error={error} dialogRef={taskDialogRef} onChange={setDraft} onCreateProject={createDraftProject} onClose={() => { if (!busy && !projectBusy) setDraft(null) }} onSubmit={submitDraft} />}
 
       {viewDraft && <div className="tasks-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setViewDraft(null) }}>
         <div className="tasks-dialog tasks-view-dialog" role="dialog" aria-modal="true" aria-labelledby="tasks-view-dialog-title" onMouseDown={event => event.stopPropagation()}>
@@ -760,27 +793,43 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} error={error} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
 
       {loading && <p role="status">正在加载任务…</p>}
+      {displayGroupDraft && <TaskDisplayGroupForm key={displayGroupDraft.id} initialName={displayGroupDraft.name} editing={Boolean(displayGroupDraft.id)} onSave={saveDisplayGroup} onCancel={() => setDisplayGroupDraft(null)} />}
       {selection !== 'done' && mode === 'board'
-        ? <TasksBoard orderScope={selection} tasks={sorted} projects={projects} fields={displayFields} groupingFields={fields} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
+        ? <TasksBoard orderScope={selection} tasks={sorted} projects={projects} fields={displayFields} groupingFields={fields} customGroups={customGroups} renderGroupActions={renderDisplayGroupActions} onNewGroup={startDisplayGroup} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
             onEdit={task => setDraft(draftFromTask(task))}
             onComplete={complete}
             onReopen={reopen}
-            onCreate={patch => { setError(''); setDraft(createDraft(patch)) }}
-            onMove={async (id, patch, targetId, after) => {
+            onCreate={(patch, groupId) => { setError(''); setDraft({ ...createDraft(patch), displayGroupId: boardGroupMode === 'custom' ? groupId : '' }) }}
+            onMove={async (id, patch, targetId, after, groupId) => {
               if (Object.keys(patch).length) {
                 const saved = await window.electronAPI.tasks.update(id, patch)
                 const update = (current: TaskRecord[]) => current.map(task => task.id === id ? saved : task)
                 setTasks(update); setDoneTasks(update)
               }
-              preferences.update(selection, current => ({ ...current, sortMode: 'manual', taskOrder: moveTaskInOrder(current.sortMode === 'manual' ? current.taskOrder : sorted.map(task => task.id), sorted.map(task => task.id), id, targetId, after) }))
+              preferences.update(selection, current => ({ ...current, sortMode: 'manual', taskOrder: moveTaskInOrder(current.sortMode === 'manual' ? current.taskOrder : sorted.map(task => task.id), sorted.map(task => task.id), id, targetId, after), customGroups: boardGroupMode === 'custom' && groupId !== undefined ? assignTaskToGroup(current.customGroups, id, groupId) : current.customGroups }))
               setNotice('任务位置已保存，当前视图使用手动排序。')
               reloadRef.current()
             }} />
         : listGrouped
-        ? <div className="tasks-grouped-list">{groupTasks(selection === 'done' ? doneVisible : sorted, projects, fields, boardGroupMode, groupFieldId, now).map(column => <details className="tasks-content-group" key={column.key || 'none'} data-group-key={column.key} open>
+        ? <div className="tasks-grouped-list">{groupTasks(selection === 'done' ? doneVisible : sorted, projects, fields, boardGroupMode, groupFieldId, now, customGroups).map(column => <div className="tasks-content-group-shell" key={column.key || 'none'} data-drop-target={listDropGroup === column.key || undefined}
+            onDragOver={event => { if (boardGroupMode === 'custom' && event.dataTransfer.types.includes('application/x-chouyu-list-task')) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setListDropGroup(column.key) } }}
+            onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setListDropGroup(null) }}
+            onDrop={event => {
+              setListDropGroup(null)
+              if (boardGroupMode !== 'custom') return
+              const id = event.dataTransfer.getData('application/x-chouyu-list-task')
+              if (!(selection === 'done' ? doneVisible : sorted).some(task => task.id === id)) return
+              event.preventDefault()
+              preferences.update(selection, current => ({ ...current, customGroups: assignTaskToGroup(current.customGroups, id, column.key) }))
+              setNotice(`任务已移到「${column.label}」。`)
+            }}>
+          <details className="tasks-content-group" data-group-key={column.key} open>
             <summary><TaskIcon name="chevron" /><span>{column.label}</span><span className="tasks-count">{column.tasks.length}</span></summary>
             <ul role="list" className={`tasks-list${selection === 'done' ? ' tasks-list-done' : ''}`} aria-label={column.label}>{column.tasks.map(renderTask)}</ul>
-          </details>)}</div>
+            {boardGroupMode === 'custom' && selection !== 'done' && <button type="button" className="tasks-group-create-task" onClick={() => setDraft({ ...createDraft(), displayGroupId: column.key })}><TaskIcon name="plus" />在{column.label}中新建任务</button>}
+          </details>{renderDisplayGroupActions(column.key)}</div>)}
+          {boardGroupMode === 'custom' && <button type="button" className="tasks-display-group-add" onClick={startDisplayGroup}><TaskIcon name="plus" />新建分组</button>}
+          </div>
         : <ul role="list" className={`tasks-list${selection === 'done' ? ' tasks-list-done' : ''}`} aria-label={selection === 'done' ? '已完成任务' : '任务列表'}>
         {(selection === 'done' ? doneVisible : sorted).map(renderTask)}
       </ul>}

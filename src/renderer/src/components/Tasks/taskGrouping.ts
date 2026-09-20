@@ -1,6 +1,7 @@
 import { PRIORITY_LABELS, type TaskPriority, type TaskProject, type TaskRecord, type TaskSelectField, type TaskUpdateInput } from '../../../../shared/tasks'
+import type { TaskDisplayGroup } from './taskViewPreferences'
 
-export type BoardGroupMode = 'priority' | 'due' | 'project' | 'field'
+export type BoardGroupMode = 'priority' | 'due' | 'project' | 'field' | 'custom'
 export interface BoardColumn {
   key: string
   label: string
@@ -8,7 +9,7 @@ export interface BoardColumn {
   archived?: boolean
 }
 
-export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields: TaskSelectField[], groupMode: BoardGroupMode, groupFieldId: string | null, now = Date.now()) {
+export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields: TaskSelectField[], groupMode: BoardGroupMode, groupFieldId: string | null, now = Date.now(), customGroups: TaskDisplayGroup[] = []) {
   const groupField = groupMode === 'field' ? fields.find(field => field.id === groupFieldId) ?? null : null
   const today = new Date(now); today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1)
@@ -23,6 +24,9 @@ export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields:
     for (const priority of ['high', 'medium', 'low'] as TaskPriority[]) {
       columns.push({ key: priority, label: `${PRIORITY_LABELS[priority]}优先级`, patch: { priority } })
     }
+  } else if (groupMode === 'custom') {
+    for (const group of customGroups) columns.push({ key: group.id, label: group.name, patch: {} })
+    columns.push({ key: '', label: '未分组', patch: {} })
   } else if (groupMode === 'due') {
     for (const [key, label] of [['past', '早于今天'], ['today', '今天'], ['tomorrow', '明天'], ['later', '以后'], ['none', '无截止时间']]) {
       columns.push({ key, label, patch: {} })
@@ -38,6 +42,7 @@ export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields:
   }
   const columnOf = (task: TaskRecord): string | undefined => {
     if (groupMode === 'priority') return task.priority
+    if (groupMode === 'custom') return customGroups.find(group => group.taskIds.includes(task.id))?.id ?? ''
     if (groupMode === 'due') return dueKey(task)
     if (groupMode === 'project') return task.projectId ?? ''
     if (groupField) return task.customFields[groupField.id] ?? ''

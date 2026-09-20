@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { applyTaskOrder, defaultTaskPreferences, moveTaskInOrder, parseTaskPreferences } from './taskViewPreferences'
+import { applyTaskOrder, assignTaskToGroup, defaultTaskPreferences, moveTaskInOrder, parseTaskPreferences } from './taskViewPreferences'
 
 describe('task view preferences', () => {
+  it('restores named groups per view and repairs invalid or duplicated memberships', () => {
+    const restored = parseTaskPreferences(JSON.stringify({ all: { groupMode: 'custom', customGroups: [
+      { id: 'a', name: '  需求  ', taskIds: ['t1', 't1', 3] },
+      { id: 'b', name: '执行', taskIds: ['t1', 't2'] },
+      { id: 'a', name: '重复', taskIds: ['t3'] }, { id: '', name: '错误' }, null
+    ] }, today: { groupMode: 'due' } }))
+    expect(restored.all.customGroups).toEqual([{ id: 'a', name: '需求', taskIds: ['t1'] }, { id: 'b', name: '执行', taskIds: ['t2'] }])
+    expect(restored.all.groupMode).toBe('custom')
+    expect(restored.today.customGroups).toEqual([])
+  })
+  it('moves between custom groups without dropping hidden tasks or mutating the source', () => {
+    const groups = [{ id: 'a', name: '需求', taskIds: ['t1', 'hidden'] }, { id: 'b', name: '执行', taskIds: [] }]
+    const moved = assignTaskToGroup(groups, 't1', 'b')
+    expect(moved.map(group => group.taskIds)).toEqual([['hidden'], ['t1']])
+    expect(assignTaskToGroup(moved, 't1', '').map(group => group.taskIds)).toEqual([['hidden'], []])
+    expect(assignTaskToGroup(groups, 't1', 'deleted')).toBe(groups)
+    expect(groups[0].taskIds).toEqual(['t1', 'hidden'])
+  })
   it('restores independent view settings including hidden fields and manual order', () => {
     const stored = parseTaskPreferences(JSON.stringify({
       'project:a': { ...defaultTaskPreferences, mode: 'board', sortMode: 'manual', hiddenFields: ['due'], taskOrder: ['b', 'a'] },

@@ -1,20 +1,45 @@
 import { TASK_SORT_LABELS, type TaskSortMode } from '../../../../shared/tasks'
 
+export interface TaskDisplayGroup {
+  id: string
+  name: string
+  taskIds: string[]
+}
+
 export interface TaskViewPreferences {
   mode: 'list' | 'board'
   listGrouped: boolean
-  groupMode: 'priority' | 'due' | 'project' | 'field'
+  groupMode: 'priority' | 'due' | 'project' | 'field' | 'custom'
   groupFieldId: string | null
   sortMode: TaskSortMode
   hiddenFields: string[]
   taskOrder: string[]
+  customGroups: TaskDisplayGroup[]
 }
 export const defaultTaskPreferences: TaskViewPreferences = {
   mode: 'list', listGrouped: false, groupMode: 'priority', groupFieldId: null,
-  sortMode: 'smart', hiddenFields: [], taskOrder: []
+  sortMode: 'smart', hiddenFields: [], taskOrder: [], customGroups: []
 }
 export const TASK_PREFERENCES_KEY = 'chouyu:task-view-preferences:v1'
 const strings = (value: unknown): string[] => Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string'))] : []
+function parseDisplayGroups(value: unknown): TaskDisplayGroup[] {
+  if (!Array.isArray(value)) return []
+  const ids = new Set<string>()
+  const tasks = new Set<string>()
+  return value.flatMap(item => {
+    if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id || ids.has(item.id) || typeof item.name !== 'string' || !item.name.trim()) return []
+    ids.add(item.id)
+    const taskIds = strings(item.taskIds).filter(id => { if (tasks.has(id)) return false; tasks.add(id); return true })
+    return [{ id: item.id, name: item.name.trim(), taskIds }]
+  })
+}
+
+/** A task belongs to at most one manual group in this view; other views are independent. */
+export function assignTaskToGroup(groups: TaskDisplayGroup[], taskId: string, groupId: string): TaskDisplayGroup[] {
+  if (groupId && !groups.some(group => group.id === groupId)) return groups
+  return groups.map(group => ({ ...group, taskIds: [...group.taskIds.filter(id => id !== taskId), ...(group.id === groupId ? [taskId] : [])] }))
+}
+
 export function parseTaskPreferences(raw: string | null): Record<string, TaskViewPreferences> {
   try {
     const data: unknown = JSON.parse(raw ?? '{}')
@@ -24,10 +49,10 @@ export function parseTaskPreferences(raw: string | null): Record<string, TaskVie
       const item = value as Record<string, unknown>
       return [[scope, {
         mode: item.mode === 'board' ? 'board' : 'list', listGrouped: item.listGrouped === true,
-        groupMode: item.groupMode === 'project' || item.groupMode === 'field' || item.groupMode === 'due' ? item.groupMode : 'priority',
+        groupMode: item.groupMode === 'project' || item.groupMode === 'field' || item.groupMode === 'due' || item.groupMode === 'custom' ? item.groupMode : 'priority',
         groupFieldId: typeof item.groupFieldId === 'string' ? item.groupFieldId : null,
         sortMode: typeof item.sortMode === 'string' && Object.hasOwn(TASK_SORT_LABELS, item.sortMode) ? item.sortMode as TaskSortMode : 'smart',
-        hiddenFields: strings(item.hiddenFields), taskOrder: strings(item.taskOrder)
+        hiddenFields: strings(item.hiddenFields), taskOrder: strings(item.taskOrder), customGroups: parseDisplayGroups(item.customGroups)
       }]]
     }))
   } catch { return {} }

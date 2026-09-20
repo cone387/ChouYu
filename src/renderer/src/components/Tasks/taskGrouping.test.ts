@@ -9,6 +9,15 @@ const task = (id: string, patch: Partial<TaskRecord> = {}): TaskRecord => ({
 })
 
 describe('task display grouping', () => {
+  it('keeps manual groups independent of automatic grouping and preserves tasks when a group is deleted', () => {
+    const tasks = [task('a'), task('b'), task('c')]
+    const groups = [{ id: 'requirements', name: '需求', taskIds: ['a', 'hidden'] }, { id: 'work', name: '执行', taskIds: ['b'] }]
+    const collect = (items: typeof groups) => groupTasks(tasks, [], [], 'custom', null, 0, items).map(group => [group.label, group.tasks.map(task => task.id)])
+    expect(collect(groups)).toEqual([['需求', ['a']], ['执行', ['b']], ['未分组', ['c']]])
+    expect(groupTasks(tasks, [], [], 'priority', null, 0, groups)[1].tasks).toHaveLength(3)
+    expect(collect(groups.slice(1))).toEqual([['执行', ['b']], ['未分组', ['a', 'c']]])
+    expect(tasks).toHaveLength(3)
+  })
   it('groups every task once by local due date, including midnight and year boundaries', () => {
     const now = new Date(2026, 11, 31, 12).getTime()
     const today = new Date(2026, 11, 31).getTime()

@@ -105,6 +105,7 @@
   display: inline-flex; align-items: center; gap: 4px; height: 34px; border-radius: 6px 0 0 6px; padding: 0 10px; font-size: 13px; cursor: pointer;
 }
 .tasks-create:hover { background: var(--hover-bg); }
+.tasks-create:only-child { border-radius: 6px; }
 .tasks-error, .tasks-quarantine { margin: 0; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
 .tasks-error { color: var(--error); border: 1px solid var(--error-border); }
 .tasks-quarantine { color: var(--text-secondary); border: 1px solid var(--border); }
@@ -537,6 +538,18 @@
 }
 
 .tasks-content-group { padding: 8px 0; }
+.tasks-content-group-shell { position: relative; }
+.tasks-content-group-shell[data-drop-target] { border-radius: 8px; background: var(--hover-bg); outline: 2px solid var(--accent); outline-offset: -2px; }
+.tasks-content-group-shell > .tasks-display-group-menu { position: absolute; right: 4px; top: 12px; }
+.tasks-content-group-shell:has(.tasks-display-group-menu) > details > summary { padding-right: 40px; }
+.tasks-display-group-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); }
+.tasks-display-group-form input { flex: 1; min-width: 100px; padding: 8px; border: 1px solid var(--input-border); border-radius: 6px; background: var(--input-bg); color: var(--text-primary); font: inherit; }
+.tasks-display-group-form button, .tasks-display-group-add, .tasks-group-create-task { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.tasks-display-group-form button[type="submit"] { background: var(--accent); color: white; }
+.tasks-display-group-form .tasks-error { flex-basis: 100%; margin: 0; }
+.tasks-display-group-add:hover, .tasks-group-create-task:hover { background: var(--hover-bg); color: var(--text-primary); }
+.tasks-display-group-add { align-self: flex-start; flex-shrink: 0; margin: 8px 0; }
+.tasks-group-create-task { margin-left: 24px; }
 .tasks-content-group > summary { display: flex; align-items: center; gap: 8px; padding: 8px 4px; list-style: none; color: var(--text-secondary); font-size: 13px; cursor: pointer; }
 .tasks-content-group > summary::-webkit-details-marker { display: none; }
 .tasks-content-group:not([open]) > summary > svg { transform: rotate(-90deg); }

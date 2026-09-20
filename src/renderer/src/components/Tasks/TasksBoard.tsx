@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import type { TaskProject, TaskRecord, TaskSelectField, TaskUpdateInput } from '../../../../shared/tasks'
 import TaskIcon from './TaskIcon'
 import { formatTaskDue } from '../../../../shared/tasks'
 import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
+import type { TaskDisplayGroup } from './taskViewPreferences'
 
 import { groupTasks, type BoardColumn, type BoardGroupMode } from './taskGrouping'
 export { groupTasks, type BoardGroupMode } from './taskGrouping'
@@ -13,17 +14,20 @@ interface TasksBoardProps {
   projects: TaskProject[]
   fields: TaskSelectField[]
   groupingFields: TaskSelectField[]
+  customGroups: TaskDisplayGroup[]
+  renderGroupActions: (id: string) => ReactNode
+  onNewGroup: () => void
   hideNote: boolean
-  onCreate: (patch: TaskUpdateInput) => void
+  onCreate: (patch: TaskUpdateInput, groupId: string) => void
   onReopen: (id: string) => void
   groupMode: BoardGroupMode
   groupFieldId: string | null
   onEdit: (task: TaskRecord) => void
   onComplete: (id: string) => void
-  onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean) => Promise<void>
+  onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => Promise<void>
 }
 
-export default function TasksBoard({ orderScope, tasks, projects, fields, groupingFields, hideNote, groupMode, groupFieldId, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+export default function TasksBoard({ orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onNewGroup, hideNote, groupMode, groupFieldId, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, DOMRect>())
   const scrollFrame = useRef<number | null>(null)
@@ -49,7 +53,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
   const [columnTarget, setColumnTarget] = useState<{ key: string; after: boolean } | null>(null)
   const scope = JSON.stringify([orderScope, groupMode, groupMode === 'field' ? groupFieldId : null])
   const savedOrder = orders[scope] ?? []
-  const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId).sort((a, b) => {
+  const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId, Date.now(), customGroups).sort((a, b) => {
     const rank = (key: string) => { const index = savedOrder.indexOf(key); return index < 0 ? Infinity : index }
     return rank(a.key) - rank(b.key)
   })
@@ -145,10 +149,10 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
     stopScroll(); dragPreview.current?.remove(); dragPreview.current = null
   }
   useEffect(() => { finishColumnDrag() }, [scope])
-  const commitTask = async (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean) => {
+  const commitTask = async (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => {
     if (savingRef.current || id === targetId) return
     savingRef.current = true; setSavingTask(id); setMoveError('')
-    try { await onMove(id, patch, targetId, after) }
+    try { await onMove(id, patch, targetId, after, groupId) }
     catch (reason) { setMoveError(`移动失败，任务保持原位。${reason instanceof Error ? reason.message : String(reason)}`) }
     finally { savingRef.current = false; setSavingTask(null) }
   }
@@ -178,7 +182,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
     if (groupMode === 'due' && !sameColumn) return
     const siblings = columns.find(item => item.key === column.key)?.tasks.filter(item => item.id !== task.id) ?? []
     const targetId = target?.id ?? siblings.at(-1)?.id ?? null
-    void commitTask(task.id, sameColumn ? {} : column.patch, targetId, target?.id ? target.after : true)
+    void commitTask(task.id, sameColumn ? {} : column.patch, targetId, target?.id ? target.after : true, column.key)
   }
 
   return <>{groupMode === 'due' && <p className="tasks-view-description">修改任务的截止时间后，会自动调整所属分组。</p>}{moveError && <p role="alert" className="tasks-error">{moveError}</p>}{orderError && <p role="status" className="tasks-notice">{orderError}</p>}{savingTask && <p role="status" className="tasks-notice">正在保存任务位置…</p>}<div ref={boardRef} className="tasks-board" aria-label="任务看板" data-drag-active={draggingColumn !== null || draggingTask !== null || undefined}
@@ -220,7 +224,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
             const index = columns.findIndex(item => item.key === column.key)
             const target = columns[index + (event.key === 'ArrowRight' ? 1 : -1)]
             if (target) moveColumn(column.key, target.key, event.key === 'ArrowRight')
-          }}><TaskIcon name="grip" /><span>{column.label}</span><span className="tasks-count">{items.length}</span></button>{!column.archived && groupMode !== 'due' && <button type="button" className="tasks-column-add" aria-label={`在 ${column.label} 中新建任务`} title="新建任务" onClick={() => onCreate(column.patch)}><TaskIcon name="plus" /></button>}</h3>
+          }}><TaskIcon name="grip" /><span>{column.label}</span><span className="tasks-count">{items.length}</span></button>{!column.archived && groupMode !== 'due' && <button type="button" className="tasks-column-add" aria-label={`在 ${column.label} 中新建任务`} title="新建任务" onClick={() => onCreate(column.patch, column.key)}><TaskIcon name="plus" /></button>}{renderGroupActions(column.key)}</h3>
         {items.length === 0 && <p className="tasks-board-empty">{groupMode === 'due' ? '暂无此截止时间的任务' : '暂无任务，可拖动任务到这里'}</p>}
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
@@ -251,5 +255,6 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
         {cardTarget?.column === column.key && cardTarget.id === null && draggingTask && <div className="tasks-card-drop-slot" aria-hidden="true">放到这里</div>}
       </section>
     })}
+    {groupMode === 'custom' && <button type="button" className="tasks-display-group-add" onClick={onNewGroup}><TaskIcon name="plus" />新建分组</button>}
   </div></>
 }
