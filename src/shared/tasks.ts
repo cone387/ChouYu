@@ -207,6 +207,30 @@ export function isDueThisWeek(task: TaskRecord, now: number): boolean {
   return task.dueAt >= monday && task.dueAt < addDays(monday, 7)
 }
 
+export type TaskSchedulePeriod = 'today' | 'tomorrow' | 'week'
+
+/** Local calendar bounds, with an exclusive end (also valid across DST changes). */
+export function taskScheduleBounds(period: TaskSchedulePeriod, now: number): [number, number] {
+  const today = startOfDay(now)
+  if (period === 'week') {
+    const monday = addDays(today, -((new Date(today).getDay() + 6) % 7))
+    return [monday, addDays(monday, 7)]
+  }
+  const start = period === 'tomorrow' ? addDays(today, 1) : today
+  return [start, addDays(start, 1)]
+}
+
+/** Open tasks use their execution interval; completed tasks use their completion date. */
+export function matchesTaskSchedule(task: TaskRecord, period: TaskSchedulePeriod, now: number): boolean {
+  const [start, end] = taskScheduleBounds(period, now)
+  if (task.status === 'done') {
+    return task.completedAt != null && task.completedAt >= start && task.completedAt < end
+  }
+  const effectiveStart = task.startAt ?? task.dueAt
+  if (effectiveStart == null) return false
+  return effectiveStart < end && (task.dueAt == null || task.dueAt >= start)
+}
+
 export function compareTasks(a: TaskRecord, b: TaskRecord, now: number): number {
   const bucket = (task: TaskRecord) => isOverdue(task, now) ? 0 : isDueToday(task, now) ? 1 : 2
   const byBucket = bucket(a) - bucket(b)
@@ -221,14 +245,18 @@ export function compareTasks(a: TaskRecord, b: TaskRecord, now: number): number 
   return b.createdAt - a.createdAt
 }
 
-export type TaskSortMode = 'manual' | 'smart' | 'due' | 'start' | 'updated' | 'priority' | 'created' | 'title'
+export type TaskSortMode = 'manual' | 'smart' | 'due' | 'start' | 'updated' | 'priority' | 'created' | 'title' | 'completed'
 export const TASK_SORT_LABELS: Record<TaskSortMode, string> = {
+  completed: '按完成时间',
   manual: '手动排序', smart: '智能排序', start: '按开始时间', updated: '按更新时间', due: '按截止时间', priority: '按优先级', created: '按创建时间', title: '按标题'
 }
 
 export function sortTasks(tasks: TaskRecord[], mode: TaskSortMode, now: number): TaskRecord[] {
   const copy = [...tasks]
   switch (mode) {
+    case 'completed':
+      copy.sort((a, b) => (b.completedAt ?? -Infinity) - (a.completedAt ?? -Infinity) || compareTasks(a, b, now))
+      break
     case 'manual':
       break
     case 'due':

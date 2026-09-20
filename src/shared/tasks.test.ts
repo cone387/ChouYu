@@ -3,6 +3,7 @@ import {
   compareTasks, isUnplanned, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, nextRecurrenceDueAt, remindAtFromChoice, sortTasks, TASK_PRIORITY_ORDER
 } from './tasks'
 import type { RemindChoiceId, TaskRecord, TaskView } from './tasks'
+import { matchesTaskSchedule, taskScheduleBounds } from './tasks'
 
 const base = (patch: Partial<TaskRecord> = {}): TaskRecord => ({
   id: 't', title: '任务', note: '', projectId: null, priority: 'medium', status: 'open',
@@ -163,6 +164,64 @@ test('待规划仅包含开始和截止都未设置的未完成任务', () => {
   expect(isUnplanned(base({ dueAt: 0 }))).toBe(false)
   expect(isUnplanned(base({ startAt: 100, dueAt: 200 }))).toBe(false)
   expect(isUnplanned(base({ status: 'done' }))).toBe(false)
+})
+
+describe('execution schedule presets', () => {
+  const at = (day: number, hour = 0) => new Date(2026, 8, day, hour).getTime()
+  const now = at(16, 12)
+
+  test.each([
+    [undefined, null, false], [null, null, false],
+    [at(15), null, true], [at(16, 23), null, true], [at(17), null, false],
+    [at(15), at(17), true], [at(16, 23), at(16, 23), true],
+    [at(14), at(15, 23), false], [at(17), at(18), false],
+    [null, at(16), true], [undefined, at(16, 23), true],
+    [null, at(15, 23), false], [null, at(17), false],
+    [at(15), at(16), true]
+  ])('start %s / due %s belongs to today: %s', (startAt, dueAt, expected) => {
+    const task = base({ startAt, dueAt })
+    expect(matchesTaskSchedule(task, 'today', now)).toBe(expected)
+    if (expected) {
+      expect(isOverdue(task, now)).toBe(false)
+      expect(isUnplanned(task)).toBe(false)
+    }
+  })
+
+  test('tomorrow uses the same four cases without changing the stored dates', () => {
+    const task = base({ startAt: null, dueAt: at(17, 9) })
+    expect(matchesTaskSchedule(task, 'today', now)).toBe(false)
+    expect(matchesTaskSchedule(task, 'tomorrow', now)).toBe(true)
+    expect(task.startAt).toBeNull()
+    expect(matchesTaskSchedule(base({ startAt: at(15) }), 'tomorrow', now)).toBe(true)
+    expect(matchesTaskSchedule(base({ startAt: at(15), dueAt: at(16, 23) }), 'tomorrow', now)).toBe(false)
+    expect(matchesTaskSchedule(base(), 'tomorrow', now)).toBe(false)
+  })
+
+  test('week includes intersecting intervals and both endpoint days, excluding next Monday', () => {
+    expect(taskScheduleBounds('week', now)).toEqual([at(14), at(21)])
+    expect(taskScheduleBounds('week', at(20, 23))).toEqual([at(14), at(21)])
+    for (const task of [base({ startAt: at(1) }), base({ startAt: at(1), dueAt: at(30) }), base({ dueAt: at(14) }), base({ startAt: at(20, 23) })]) {
+      expect(matchesTaskSchedule(task, 'week', now)).toBe(true)
+    }
+    for (const task of [base(), base({ dueAt: at(13, 23) }), base({ startAt: at(21) }), base({ dueAt: at(21) })]) {
+      expect(matchesTaskSchedule(task, 'week', now)).toBe(false)
+    }
+  })
+
+  test('completed tasks use completion date, including late and unplanned work, and stop rolling forward', () => {
+    for (const dates of [{ startAt: at(1) }, { dueAt: at(15) }, { dueAt: at(20) }, {}]) {
+      const task = base({ ...dates, status: 'done', completedAt: at(16, 9) })
+      expect(matchesTaskSchedule(task, 'today', now)).toBe(true)
+      expect(matchesTaskSchedule(task, 'tomorrow', now)).toBe(false)
+      expect(matchesTaskSchedule(task, 'today', at(17))).toBe(false)
+      expect(matchesTaskSchedule(task, 'week', now)).toBe(true)
+      expect(matchesTaskSchedule(task, 'week', at(21))).toBe(false)
+    }
+    expect(matchesTaskSchedule(base({ status: 'done', dueAt: now, completedAt: at(15, 23) }), 'today', now)).toBe(false)
+    expect(matchesTaskSchedule(base({ status: 'done', completedAt: null }), 'today', now)).toBe(false)
+    expect(matchesTaskSchedule(base({ status: 'done', completedAt: at(16) }), 'today', now)).toBe(true)
+    expect(matchesTaskSchedule(base({ status: 'done', completedAt: at(17) }), 'today', now)).toBe(false)
+  })
 })
 
 test('待规划与今天、本周互斥，今天属于本周；创建日期不决定视图', () => {

@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { applyTaskOrder, assignTaskToGroup, defaultTaskPreferences, moveTaskInOrder, parseTaskPreferences } from './taskViewPreferences'
+import { applyTaskOrder, assignTaskToGroup, defaultTaskPreferences, moveTaskInOrder, parseTaskPreferences, recommendedTaskPreferences } from './taskViewPreferences'
 
 describe('task view preferences', () => {
+  it('gives every preset its own defaults without changing saved choices', () => {
+    const expected = { today: 'status', week: 'week', unplanned: 'priority', all: 'project', overdue: 'overdue', done: 'completed' }
+    for (const [scope, groupMode] of Object.entries(expected)) {
+      expect(recommendedTaskPreferences(scope)).toMatchObject({ groupMode, listGrouped: true })
+    }
+    expect(recommendedTaskPreferences('today').statusFilter).toBe('all')
+    expect(recommendedTaskPreferences('done')).toMatchObject({ statusFilter: 'done', sortMode: 'completed' })
+    expect(recommendedTaskPreferences('project:a')).toEqual(defaultTaskPreferences)
+    const saved = parseTaskPreferences(JSON.stringify({ today: { ...defaultTaskPreferences, mode: 'board', groupMode: 'custom', customGroups: [{ id: 'a', name: '我的组', taskIds: ['t'] }] } }))
+    expect(saved.today).toMatchObject({ mode: 'board', groupMode: 'custom', listGrouped: false, statusFilter: 'open' })
+    expect(saved.today.customGroups[0].taskIds).toEqual(['t'])
+    for (const scope of Object.keys(expected)) {
+      const value = recommendedTaskPreferences(scope)
+      expect(parseTaskPreferences(JSON.stringify({ [scope]: value }))[scope]).toEqual(value)
+    }
+  })
   it('restores named groups per view and repairs invalid or duplicated memberships', () => {
     const restored = parseTaskPreferences(JSON.stringify({ all: { groupMode: 'custom', customGroups: [
       { id: 'a', name: '  需求  ', taskIds: ['t1', 't1', 3] },

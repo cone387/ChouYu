@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TaskRecord, TaskSelectField } from '../../../../shared/tasks'
-import { groupTasks } from './taskGrouping'
+import { groupTasks, taskGroupMove } from './taskGrouping'
 
 const task = (id: string, patch: Partial<TaskRecord> = {}): TaskRecord => ({
   id, title: id, note: '', projectId: null, priority: 'medium', status: 'open', startAt: null,
@@ -9,6 +9,48 @@ const task = (id: string, patch: Partial<TaskRecord> = {}): TaskRecord => ({
 })
 
 describe('task display grouping', () => {
+  const at = (day: number, hour = 0) => new Date(2026, 8, day, hour).getTime()
+  it('keeps two status columns and requests real completion transitions', () => {
+    const open = task('open'), done = task('done', { status: 'done', completedAt: at(16) })
+    const columns = groupTasks([open, done], [], [], 'status', null)
+    expect(columns.map(column => column.tasks.map(task => task.id))).toEqual([['open'], ['done']])
+    expect(taskGroupMove(open, 'status', columns[1], false)).toEqual({ patch: {}, status: 'done' })
+    expect(taskGroupMove(done, 'status', columns[0], false)).toEqual({ patch: {}, status: 'open' })
+    expect(columns[1].canCreate).toBe(false)
+    expect(groupTasks([], [], [], 'status', null)).toHaveLength(2)
+  })
+  it('shows seven dates with spanning work once, and completion on its actual day', () => {
+    const tasks = [task('single', { dueAt: at(16, 18) }), task('spanning', { startAt: at(1), dueAt: at(30) }),
+      task('ongoing', { startAt: at(15) }), task('done', { startAt: at(1), status: 'done', completedAt: at(16) })]
+    const columns = groupTasks(tasks, [], [], 'week', null, at(16))
+    expect(columns.filter(column => column.date != null)).toHaveLength(7)
+    expect(columns.find(column => column.date === at(16))?.tasks.map(task => task.id)).toEqual(['single', 'done'])
+    expect(columns.find(column => column.key === 'spanning')?.tasks.map(task => task.id)).toEqual(['spanning', 'ongoing'])
+    expect(columns.flatMap(column => column.tasks)).toHaveLength(4)
+    expect(columns.find(column => column.date === at(16))?.label).toContain('今天')
+  })
+  it('reschedules single-day work with times and reminder offset intact, refusing historical and spanning moves', () => {
+    const columns = groupTasks([], [], [], 'week', null, at(16))
+    const thursday = columns.find(column => column.date === at(17))!
+    const original = task('a', { startAt: at(16, 9), dueAt: at(16, 18), remindAt: at(16, 17) })
+    expect(taskGroupMove(original, 'week', thursday, false)?.patch).toEqual({ startAt: at(17, 9), dueAt: at(17, 18), remindAt: at(17, 17) })
+    expect(taskGroupMove(task('due', { dueAt: at(16, 18) }), 'week', thursday, false)?.patch).toEqual({ dueAt: at(17, 18) })
+    expect(taskGroupMove(task('ongoing', { startAt: at(16) }), 'week', thursday, false)).toBeNull()
+    expect(taskGroupMove(task('span', { startAt: at(15), dueAt: at(18) }), 'week', thursday, false)).toBeNull()
+    expect(taskGroupMove(task('done', { status: 'done', completedAt: at(16) }), 'week', thursday, false)).toBeNull()
+    expect(original.dueAt).toBe(at(16, 18))
+  })
+  it('uses disjoint overdue and completion buckets with immutable cross-group dates', () => {
+    const overdue = groupTasks([1, 3, 4, 7, 8].map(days => task(String(days), { dueAt: at(16 - days) })), [], [], 'overdue', null, at(16))
+    expect(overdue.map(column => column.tasks.map(task => task.id))).toEqual([['8'], ['4', '7'], ['1', '3']])
+    const completed = groupTasks([0, 1, 2, 6, 7].map(days => task(String(days), { status: 'done', dueAt: at(1), completedAt: at(16 - days) })), [], [], 'completed', null, at(16))
+    expect(completed.map(column => column.tasks.map(task => task.id))).toEqual([['0'], ['1'], ['2', '6'], ['7']])
+    for (const [mode, columns] of [['overdue', overdue], ['completed', completed]] as const) {
+      expect(taskGroupMove(columns[0].tasks[0], mode, columns[1], false)).toBeNull()
+      expect(taskGroupMove(columns[0].tasks[0], mode, columns[0], true)).toEqual({ patch: {} })
+      expect(columns.every(column => column.canCreate === false)).toBe(true)
+    }
+  })
   it('keeps manual groups independent of automatic grouping and preserves tasks when a group is deleted', () => {
     const tasks = [task('a'), task('b'), task('c')]
     const groups = [{ id: 'requirements', name: '需求', taskIds: ['a', 'hidden'] }, { id: 'work', name: '执行', taskIds: ['b'] }]

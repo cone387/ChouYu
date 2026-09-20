@@ -4,7 +4,7 @@ import { existsSync, renameSync } from 'node:fs'
 import type {
   TaskGroup, TaskCreateInput, TaskListOptions, TaskSelectFieldUpdateInput, TaskDueRange, TaskFieldOption, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldInput, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
 } from '../../shared/tasks'
-import { nextRecurrenceDueAt } from '../../shared/tasks'
+import { nextRecurrenceDueAt, taskScheduleBounds } from '../../shared/tasks'
 
 const SCHEMA_VERSION = 7
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
@@ -671,8 +671,11 @@ export class TasksStore {
           params.push(...view.priorities)
         }
       }
-    } else if (selection === 'today') addDue('today')
-    else if (selection === 'week' || selection === 'overdue' || selection === 'unplanned') addDue(selection)
+    } else if (selection === 'today' || selection === 'tomorrow' || selection === 'week') {
+      const [start, end] = taskScheduleBounds(selection, now)
+      conditions.push('completed_at >= ? AND completed_at < ?')
+      params.push(start, end)
+    } else if (selection === 'overdue' || selection === 'unplanned') addDue(selection)
     else if (selection !== 'all' && selection !== 'done') throw new Error('任务视图无效。')
     const where = conditions.join(' AND ')
 

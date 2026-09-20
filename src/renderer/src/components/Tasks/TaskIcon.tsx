@@ -1,11 +1,10 @@
-export type IconName = 'eye' | 'eyeOff' | 'grip' | 'task' | 'list' | 'board' | 'filter' | 'sort' | 'fields' | 'group' | 'plus' | 'chevron' | 'disclosure' | 'more' | 'today' | 'week' | 'clock' | 'unplanned' | 'all' | 'done' | 'inbox' | 'folder' | 'search' | 'edit' | 'archive' | 'trash' | 'collapse' | 'expand'
+export type IconName = 'eye' | 'eyeOff' | 'grip' | 'task' | 'list' | 'board' | 'filter' | 'sort' | 'fields' | 'group' | 'plus' | 'chevron' | 'disclosure' | 'more' | 'today' | 'week' | 'clock' | 'unplanned' | 'all' | 'done' | 'inbox' | 'folder' | 'search' | 'edit' | 'archive' | 'trash' | 'sidebar'
 
 const paths: Record<IconName, string> = {
+  sidebar: 'M862.037333 171.093333A85.333333 85.333333 0 0 1 938.666667 256v512a85.333333 85.333333 0 0 1-76.629334 84.906667L853.333333 853.333333H170.666667a85.333333 85.333333 0 0 1-85.333334-85.333333V256a85.333333 85.333333 0 0 1 85.333334-85.333333h682.666666l8.704 0.426666zM170.666667 230.4a25.6 25.6 0 0 0-25.6 25.6v512a25.6 25.6 0 0 0 25.6 25.6h183.466666V230.4H170.666667z m243.2 563.2H853.333333a25.6 25.6 0 0 0 25.6-25.6V256a25.6 25.6 0 0 0-25.6-25.6H413.866667v563.2z',
   eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
   eyeOff: 'M3 3l18 18M10.5 5.1A11 11 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3 4M6 6.5A21 21 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5-1M9 9a4 4 0 0 0 6 6',
   grip: 'M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01',
-  collapse: 'M4 4h16v16H4zM9 4v16M16 9l-3 3 3 3',
-  expand: 'M4 4h16v16H4zM9 4v16M13 9l3 3-3 3',
   today: 'M5 4h14v16H5zM8 2v4M16 2v4M5 9h14M9 13h2v3H9z',
   week: 'M4 4h16v16H4zM8 2v4M16 2v4M4 9h16M8 13h1M12 13h1M16 13h1M8 17h1M12 17h1',
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l3 2',
@@ -32,5 +31,6 @@ const paths: Record<IconName, string> = {
 }
 
 export default function TaskIcon({ name }: { name: IconName }) {
-  return <svg className="tasks-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} fill={name === 'disclosure' ? 'currentColor' : undefined} strokeWidth={name === 'disclosure' ? 0 : name === 'more' ? 3.2 : undefined} /></svg>
+  const filled = name === 'disclosure' || name === 'sidebar'
+  return <svg className="tasks-icon" width="16" height="16" viewBox={name === 'sidebar' ? '0 0 1024 1024' : '0 0 24 24'} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} fill={filled ? 'currentColor' : undefined} strokeWidth={filled ? 0 : name === 'more' ? 3.2 : undefined} /></svg>
 }

@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
-import type { TaskProject, TaskRecord, TaskSelectField, TaskUpdateInput } from '../../../../shared/tasks'
+import type { TaskProject, TaskRecord, TaskSelectField, TaskUpdateInput, TaskSortMode } from '../../../../shared/tasks'
 import TaskIcon from './TaskIcon'
-import { formatTaskDue } from '../../../../shared/tasks'
+import { formatTaskDue, sortTasks } from '../../../../shared/tasks'
 import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
 import type { TaskDisplayGroup } from './taskViewPreferences'
 
-import { groupTasks, type BoardColumn, type BoardGroupMode } from './taskGrouping'
+import { groupTasks, taskGroupMove, type BoardColumn, type BoardGroupMode } from './taskGrouping'
 export { groupTasks, type BoardGroupMode } from './taskGrouping'
 
 interface TasksBoardProps {
@@ -24,6 +24,7 @@ interface TasksBoardProps {
   onCreate: (patch: TaskUpdateInput, groupId: string) => void
   onReopen: (id: string) => void
   groupMode: BoardGroupMode
+  sortMode: TaskSortMode
   groupFieldId: string | null
   onOpenProject: (id: string) => void
   onEdit: (task: TaskRecord) => void
@@ -31,7 +32,7 @@ interface TasksBoardProps {
   onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => Promise<void>
 }
 
-export default function TasksBoard({ orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+export default function TasksBoard({ orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, DOMRect>())
   const scrollFrame = useRef<number | null>(null)
@@ -51,7 +52,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
   const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId, Date.now(), customGroups).sort((a, b) => {
     const rank = (key: string) => { const index = savedOrder.indexOf(key); return index < 0 ? Infinity : index }
     return rank(a.key) - rank(b.key)
-  })
+  }).map(column => groupMode === 'status' && column.key === 'done' && sortMode !== 'manual' ? { ...column, tasks: sortTasks(column.tasks, 'completed', Date.now()) } : column)
   const columns = previewOrder ? [...baseColumns].sort((a, b) => previewOrder.indexOf(a.key) - previewOrder.indexOf(b.key)) : baseColumns
   // Animate layout changes without changing the board's grouping or sort order.
   useLayoutEffect(() => {
@@ -168,10 +169,11 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
     const task = id ? tasks.find(item => item.id === id) : undefined
     if (!task) return
     const sameColumn = columns.find(item => item.tasks.some(record => record.id === task.id))?.key === column.key
-    if (groupMode === 'due' && !sameColumn) return
+    const plan = taskGroupMove(task, groupMode, column, sameColumn)
+    if (!plan) return
     const siblings = columns.find(item => item.key === column.key)?.tasks.filter(item => item.id !== task.id) ?? []
     const targetId = target?.id ?? siblings.at(-1)?.id ?? null
-    void commitTask(task.id, sameColumn ? {} : column.patch, targetId, target?.id ? target.after : true, column.key)
+    void commitTask(task.id, plan.patch, targetId, target?.id ? target.after : true, column.key)
   }
 
   return <>{groupMode === 'due' && <p className="tasks-view-description">修改任务的截止时间后，会自动调整所属分组。</p>}{moveError && <p role="alert" className="tasks-error">{moveError}</p>}<div ref={boardRef} className="tasks-board" aria-label="任务看板" data-drag-active={draggingColumn !== null || draggingTask !== null || undefined}
@@ -194,7 +196,8 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
               setColumnTarget({ key: column.key, after })
             }
           } else if (!savingRef.current && !column.archived && (draggingTask !== null || event.dataTransfer.types.includes('text/plain'))) {
-            if (groupMode === 'due' && !column.tasks.some(task => task.id === draggingTask)) { event.dataTransfer.dropEffect = 'none'; return }
+            const source = tasks.find(task => task.id === draggingTask)
+            if (!source || !taskGroupMove(source, groupMode, column, column.tasks.some(task => task.id === draggingTask))) { event.dataTransfer.dropEffect = 'none'; return }
             event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.key)
             const card = (event.target as Element).closest<HTMLElement>('[data-task-id]')
             const rect = card?.getBoundingClientRect()
@@ -213,11 +216,11 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
             const index = columns.findIndex(item => item.key === column.key)
             const target = columns[index + (event.key === 'ArrowRight' ? 1 : -1)]
             if (target) moveColumn(column.key, target.key, event.key === 'ArrowRight')
-          }}><TaskIcon name="grip" /><span title={groupMode === 'custom' && column.key ? '双击修改分组名称' : undefined} onDoubleClick={event => { event.stopPropagation(); if (groupMode === 'custom' && column.key) onRenameGroup(column.key) }}>{column.label}</span><span className="tasks-count">{items.length}</span></button>{!column.archived && groupMode !== 'due' && <button type="button" className="tasks-column-add" aria-label={`在 ${column.label} 中新建任务`} title="新建任务" onClick={() => onCreate(column.patch, column.key)}><TaskIcon name="plus" /></button>}{renderGroupActions(column.key)}</h3>
+          }}><TaskIcon name="grip" /><span title={groupMode === 'custom' && column.key ? '双击修改分组名称' : undefined} onDoubleClick={event => { event.stopPropagation(); if (groupMode === 'custom' && column.key) onRenameGroup(column.key) }}>{column.label}</span><span className="tasks-count">{items.length}</span></button>{!column.archived && column.canCreate !== false && <button type="button" className="tasks-column-add" aria-label={`在 ${column.label} 中新建任务`} title="新建任务" onClick={() => onCreate(column.patch, column.key)}><TaskIcon name="plus" /></button>}{renderGroupActions(column.key)}</h3>
         {items.length === 0 && <p className="tasks-board-empty">{groupMode === 'due' ? '暂无此截止时间的任务' : '暂无任务，可拖动任务到这里'}</p>}
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
-            return <li key={task.id} className="tasks-board-card" onDragEnd={finishColumnDrag} draggable={!savingTask} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined}
+            return <li key={task.id} className="tasks-board-card" data-completed={task.status === 'done' || undefined} onDragEnd={finishColumnDrag} draggable={!savingTask} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined}
               onClick={event => {
                 if ((event.target as Element).closest('button, summary, a, input, select, textarea') || window.getSelection()?.toString()) return
                 onEdit(task)
@@ -228,7 +231,7 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
                 if (target) void commitTask(task.id, {}, target.id, after)
               }} data-priority={task.priority} data-motion-key={`task:${task.id}`} data-task-dragging={draggingTask === task.id || undefined}
               onDragStart={event => { if (savingRef.current) { event.preventDefault(); return }; event.stopPropagation(); event.dataTransfer.setData('text/plain', task.id); event.dataTransfer.effectAllowed = 'move'; setPreview(event, event.currentTarget); setDraggingTask(task.id) }}>
-              <button type="button" className="tasks-complete" data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? onReopen(task.id) : onComplete(task.id)}>{task.status === 'done' ? '✓' : ''}</button>
+              <button type="button" className="tasks-complete" data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? onReopen(task.id) : onComplete(task.id)}></button>
               <div className="tasks-board-card-body">
                 <span className="tasks-board-card-head">
 

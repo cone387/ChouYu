@@ -136,7 +136,19 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     await assert("!!document.querySelector('.chat-panel') && !document.querySelector('.workspace-tasks').hidden")
     await waitForRenderer(window, "!document.querySelector('.tasks-create').matches(':focus')")
   }
-  await click('[aria-label="收起任务侧栏"]')
+  window.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 })
+  await waitForRenderer(window, "getComputedStyle(document.querySelector('.tasks-sidebar-title .tasks-sidebar-toggle')).opacity === '0'")
+  const sidebarHeader = await run(`(() => {
+    const title = document.querySelector('.tasks-sidebar-title > span').getBoundingClientRect();
+    const button = document.querySelector('.tasks-sidebar-title > button').getBoundingClientRect();
+    return { x: Math.round(title.x + title.width / 2), y: Math.round(title.y + title.height / 2), rightOfTitle: button.left > title.right };
+  })()`)
+  await assert(`${sidebarHeader.rightOfTitle}`)
+  window.webContents.sendInputEvent({ type: 'mouseMove', x: sidebarHeader.x, y: sidebarHeader.y })
+  await waitForRenderer(window, "getComputedStyle(document.querySelector('.tasks-sidebar-title .tasks-sidebar-toggle')).opacity === '1'")
+  await assert("document.querySelector('.tasks-sidebar-title button svg').getAttribute('viewBox') === '0 0 1024 1024'")
+  await captureGrouping('sidebar-toggle-hover')
+  await clickPointer('[aria-label="收起任务侧栏"]')
   await assert("document.querySelector('.tasks-sidebar').hidden && !!document.querySelector('[aria-label=\"展开任务侧栏\"]')")
   await click('[aria-label="展开任务侧栏"]')
   await assert("!document.querySelector('.tasks-sidebar').hidden")
@@ -911,6 +923,53 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, `!document.querySelector('[data-group-id="${orderFixture.a}"]')`)
   await assert(`window.electronAPI.tasks.projects().then(projects => !projects.some(project => project.id === '${orderFixture.q}'))`)
   await assert(`window.electronAPI.tasks.list({ doneLimit: 10000 }).then(list => ![...list.open, ...list.done].some(task => task.id === '${deletionIds[2]}'))`)
+  // Preset defaults and real status/date moves use the same rules in both layouts.
+  const presetFixture = await run(`(async () => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const monday = new Date(today); monday.setDate(monday.getDate() - (monday.getDay()+6)%7);
+    const first = new Date(monday); first.setHours(18);
+    const second = new Date(monday); second.setDate(second.getDate()+1);
+    const start = new Date(monday); start.setHours(9);
+    const ongoing = await window.electronAPI.tasks.create({ title: '默认分组执行任务', startAt: today.getTime() });
+    const dated = await window.electronAPI.tasks.create({ title: '默认分组单日任务', startAt: start.getTime(), dueAt: first.getTime() });
+    const done = await window.electronAPI.tasks.create({ title: '默认分组完成任务' }); await window.electronAPI.tasks.complete(done.id);
+    return { ongoing: ongoing.id, dated: dated.id, done: done.id, target: second.getFullYear()+'-'+(second.getMonth()+1)+'-'+second.getDate(), targetDay: second.getDate() };
+  })()`)
+  const restoreGrouping = async () => {
+    await click('.tasks-grouping-menu > summary')
+    await run("Array.from(document.querySelectorAll('.tasks-grouping-menu button')).find(button => button.textContent === '恢复推荐分组与排序').click()")
+    await waitForRenderer(window, "!document.querySelector('.tasks-grouping-menu').open")
+  }
+  for (const [view, grouping] of [['today', 'status'], ['week', 'week'], ['unplanned', 'priority'], ['all', 'project'], ['overdue', 'overdue'], ['done', 'completed']]) {
+    await selectView(view)
+    await restoreGrouping()
+    await assert(`document.querySelector('[data-grouping-value="${grouping}"]').getAttribute('aria-pressed') === 'true'`)
+  }
+  await selectView('today')
+  await click('.tasks-tab:first-child')
+  await waitForRenderer(window, `!!document.querySelector('[data-group-key="open"] [data-task-id="${presetFixture.ongoing}"]')`)
+  await assert(`!!document.querySelector('[data-group-key="done"] [data-task-id="${presetFixture.done}"]') && !document.querySelector('[data-group-key="done"]').open`)
+  await click('.tasks-tab:nth-child(2)')
+  await captureGrouping('preset-today-status')
+  const dropPresetCard = async (id: string, key: string) => {
+    await run(`window.__presetDrag = new DataTransfer(); document.querySelector('.tasks-board [data-task-id="${id}"]').dispatchEvent(new DragEvent('dragstart', { bubbles:true, dataTransfer:window.__presetDrag }))`)
+    await run(`document.querySelector('[data-column-key="${key}"]').dispatchEvent(new DragEvent('drop', { bubbles:true, cancelable:true, dataTransfer:window.__presetDrag })); delete window.__presetDrag`)
+  }
+  await dropPresetCard(presetFixture.ongoing, 'done')
+  await waitForRenderer(window, `!!document.querySelector('[data-column-key="done"] [data-task-id="${presetFixture.ongoing}"]')`)
+  await assert(`window.electronAPI.tasks.list({doneSelection:'today'}).then(list => list.done.some(task => task.id === '${presetFixture.ongoing}' && task.completedAt !== null))`)
+  await dropPresetCard(presetFixture.ongoing, 'open')
+  await waitForRenderer(window, `!!document.querySelector('[data-column-key="open"] [data-task-id="${presetFixture.ongoing}"]')`)
+  await assert(`window.electronAPI.tasks.list().then(list => list.open.some(task => task.id === '${presetFixture.ongoing}' && task.completedAt === null))`)
+  await selectView('week')
+  await click('.tasks-tab:nth-child(2)')
+  await waitForRenderer(window, `!!document.querySelector('.tasks-board [data-task-id="${presetFixture.dated}"]')`)
+  await assert(`document.querySelectorAll('.tasks-board-column').length >= 7 && !!document.querySelector('[data-column-key="spanning"] [data-task-id="${presetFixture.ongoing}"]')`)
+  await dropPresetCard(presetFixture.dated, presetFixture.target)
+  await waitForRenderer(window, `!!document.querySelector('[data-column-key="${presetFixture.target}"] [data-task-id="${presetFixture.dated}"]')`)
+  await assert(`window.electronAPI.tasks.list().then(list => { const task = list.open.find(task => task.id === '${presetFixture.dated}'); return new Date(task.dueAt).getDate() === ${presetFixture.targetDay} && new Date(task.dueAt).getHours() === 18 && new Date(task.startAt).getHours() === 9 })`)
+  await captureGrouping('preset-week-dates')
+  await run(`Promise.all(${JSON.stringify([presetFixture.ongoing, presetFixture.dated, presetFixture.done])}.map(id => window.electronAPI.tasks.remove(id)))`)
   await click('[aria-label="关闭面板"]')
   await waitForRenderer(window, "!document.querySelector('.chat-panel')")
   console.log('CHOUYU_TASKS_UI_SMOKE_PASSED menus, confirmations, per-view preference restoration, column preview/cancel, manual card order and cross-column moves, groups, fields and history')

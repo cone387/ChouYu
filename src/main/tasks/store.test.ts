@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { openTasksStore } from './store'
+import { matchesTaskSchedule } from '../../shared/tasks'
 
 const directories: string[] = []
 const tempFile = (name: string) => {
@@ -524,6 +525,33 @@ test('v6 升级保留改名后的默认项目、已有分组与任务关联', as
   upgraded.close()
 })
 
+test('日期预设按完成时间筛选后分页，与前端规则一致，跨天不延续', () => {
+  const store = openTasksStore(tempFile('done-schedule.db'))
+  const at = (day: number, hour = 0) => new Date(2026, 8, day, hour).getTime()
+  const clock = vi.spyOn(Date, 'now')
+  try {
+    const project = store.createProject('完成日期测试')
+    for (const day of [13, 14, 15, 16, 16, 17, 20, 21]) {
+      clock.mockReturnValue(at(day))
+      const task = store.createTask({ title: `完成 ${day}`, projectId: project.id, startAt: at(1) })
+      store.completeTask(task.id)
+    }
+    clock.mockReturnValue(at(16, 12))
+    const allDone = store.listTasks().done
+    for (const period of ['today', 'tomorrow', 'week'] as const) {
+      const expected = allDone.filter(task => matchesTaskSchedule(task, period, Date.now()))
+      const result = store.listTasks({ doneSelection: period, doneLimit: 1, doneProjectIds: [project.id] })
+      expect(result.matchedDone).toBe(expected.length)
+      expect(result.done.map(task => task.id)).toEqual(expected.slice(0, 1).map(task => task.id))
+    }
+    expect(store.listTasks({ doneSelection: 'today' }).matchedDone).toBe(2)
+    expect(store.listTasks({ doneSelection: 'week' }).matchedDone).toBe(6)
+    expect(store.listTasks({ doneSelection: 'today', doneDueRange: 'today' }).matchedDone).toBe(0)
+    clock.mockReturnValue(at(18))
+    expect(store.listTasks({ doneSelection: 'today' }).matchedDone).toBe(0)
+  } finally { clock.mockRestore(); store.close() }
+})
+
 test('完成任务按清单、视图和日期筛选后再分页，匹配总数准确', () => {
   const store = openTasksStore(tempFile('done-scopes.db'))
   try {
@@ -546,7 +574,7 @@ test('完成任务按清单、视图和日期筛选后再分页，匹配总数�
     expect(result.matchedDone).toBe(6)
     expect(result.totalDone).toBe(64)
     expect(result.done.every(task => task.projectId === project.id)).toBe(true)
-    expect(store.listTasks({ doneSelection: 'today', doneProjectIds: [project.id] }).matchedDone).toBe(6)
+    expect(store.listTasks({ doneSelection: 'today', doneProjectIds: [project.id] }).matchedDone).toBe(9)
     expect(store.listTasks({ doneDueRange: 'today', doneProjectIds: [project.id] }).matchedDone).toBe(6)
     expect(store.listTasks({ doneSelection: 'overdue', doneProjectIds: [project.id] }).done.map(task => task.id)).toEqual([old.id])
     expect(store.listTasks({ doneSelection: 'unplanned', doneProjectIds: [project.id] }).done.map(task => task.id)).toEqual([unplanned.id])

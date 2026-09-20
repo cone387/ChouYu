@@ -9,7 +9,8 @@ export interface TaskDisplayGroup {
 export interface TaskViewPreferences {
   mode: 'list' | 'board'
   listGrouped: boolean
-  groupMode: 'priority' | 'due' | 'project' | 'field' | 'custom'
+  groupMode: 'priority' | 'due' | 'project' | 'field' | 'custom' | 'status' | 'week' | 'overdue' | 'completed'
+  statusFilter: 'open' | 'done' | 'all'
   groupFieldId: string | null
   sortMode: TaskSortMode
   hiddenFields: string[]
@@ -17,7 +18,7 @@ export interface TaskViewPreferences {
   customGroups: TaskDisplayGroup[]
 }
 export const defaultTaskPreferences: TaskViewPreferences = {
-  mode: 'list', listGrouped: false, groupMode: 'priority', groupFieldId: null,
+  mode: 'list', listGrouped: false, groupMode: 'priority', groupFieldId: null, statusFilter: 'open',
   sortMode: 'smart', hiddenFields: [], taskOrder: [], customGroups: []
 }
 export const TASK_PREFERENCES_KEY = 'chouyu:task-view-preferences:v1'
@@ -32,6 +33,19 @@ function parseDisplayGroups(value: unknown): TaskDisplayGroup[] {
     const taskIds = strings(item.taskIds).filter(id => { if (tasks.has(id)) return false; tasks.add(id); return true })
     return [{ id: item.id, name: item.name.trim(), taskIds }]
   })
+}
+export function recommendedTaskPreferences(scope: string): TaskViewPreferences {
+  const value = { ...defaultTaskPreferences, hiddenFields: [], taskOrder: [], customGroups: [] }
+  switch (scope) {
+    case 'today': return { ...value, listGrouped: true, groupMode: 'status', statusFilter: 'all', sortMode: 'priority' }
+    case 'week': return { ...value, listGrouped: true, groupMode: 'week', sortMode: 'priority' }
+    case 'tomorrow':
+    case 'unplanned': return { ...value, listGrouped: true, sortMode: 'priority' }
+    case 'all': return { ...value, listGrouped: true, groupMode: 'project' }
+    case 'overdue': return { ...value, listGrouped: true, groupMode: 'overdue', sortMode: 'priority' }
+    case 'done': return { ...value, listGrouped: true, groupMode: 'completed', statusFilter: 'done', sortMode: 'completed' }
+    default: return value
+  }
 }
 
 /** A task belongs to at most one manual group in this view; other views are independent. */
@@ -49,7 +63,8 @@ export function parseTaskPreferences(raw: string | null): Record<string, TaskVie
       const item = value as Record<string, unknown>
       return [[scope, {
         mode: item.mode === 'board' ? 'board' : 'list', listGrouped: item.listGrouped === true,
-        groupMode: item.groupMode === 'project' || item.groupMode === 'field' || item.groupMode === 'due' || item.groupMode === 'custom' ? item.groupMode : 'priority',
+        groupMode: typeof item.groupMode === 'string' && ['project', 'field', 'due', 'custom', 'status', 'week', 'overdue', 'completed'].includes(item.groupMode) ? item.groupMode as TaskViewPreferences['groupMode'] : 'priority',
+        statusFilter: item.statusFilter === 'done' || item.statusFilter === 'all' ? item.statusFilter : 'open',
         groupFieldId: typeof item.groupFieldId === 'string' ? item.groupFieldId : null,
         sortMode: typeof item.sortMode === 'string' && Object.hasOwn(TASK_SORT_LABELS, item.sortMode) ? item.sortMode as TaskSortMode : 'smart',
         hiddenFields: strings(item.hiddenFields), taskOrder: strings(item.taskOrder), customGroups: parseDisplayGroups(item.customGroups)

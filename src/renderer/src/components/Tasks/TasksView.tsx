@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { RemindChoiceId, TaskDueRange, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldUpdateInput, TaskSortMode, TaskView, TaskUpdateInput } from '../../../../shared/tasks'
 import {
-  DUE_RANGE_LABELS, PRIORITY_LABELS, REMIND_CHOICES, TASK_SORT_LABELS, compareTasks, isUnplanned, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, remindAtFromChoice, sortTasks
+  DUE_RANGE_LABELS, PRIORITY_LABELS, REMIND_CHOICES, TASK_SORT_LABELS, compareTasks, isUnplanned, isOverdue, matchesTaskSchedule, matchesTaskView, remindAtFromChoice, sortTasks, taskScheduleBounds
 } from '../../../../shared/tasks'
 import TasksBoard, { groupTasks, type BoardGroupMode } from './TasksBoard'
 import TaskEditorDialog, { type TaskDraft as Draft } from './TaskEditorDialog'
@@ -13,7 +13,8 @@ import TaskIcon, { type IconName } from './TaskIcon'
 import useTaskMenus from './useTaskMenus'
 import useTaskLayoutOrder from './useTaskLayoutOrder'
 import useTaskViewPreferences from './useTaskViewPreferences'
-import { applyTaskOrder, assignTaskToGroup, moveTaskInOrder } from './taskViewPreferences'
+import { applyTaskOrder, assignTaskToGroup, moveTaskInOrder, recommendedTaskPreferences } from './taskViewPreferences'
+import { GROUP_LABELS, taskGroupMove, type BoardColumn } from './taskGrouping'
 import { useConfirm } from '../common/ConfirmProvider'
 import './Tasks.css'
 
@@ -31,8 +32,8 @@ const SMART_VIEWS: { id: SmartView; label: string }[] = [
 
 const SMART_ICONS: Record<SmartView, IconName> = { today: 'today', week: 'week', overdue: 'clock', unplanned: 'unplanned', all: 'all', done: 'done' }
 const SMART_DESCRIPTIONS: Record<SmartView, string> = {
-  today: '截止日期在今天的任务，不包含更早的过期任务。',
-  week: '本周一至周日截止的任务，包含今天和本周内已过期的任务。',
+  today: '执行时间覆盖今天的未完成任务，以及今天完成的任务；不包含更早的过期任务。',
+  week: '执行时间与本周一至周日相交的未完成任务，以及本周完成的任务。',
   unplanned: '开始和截止时间都未设置的任务；安排任一时间后会移出这里。',
   all: '汇总所有清单的任务，默认显示未完成任务。',
   overdue: '截止日期早于今天的任务。',
@@ -156,7 +157,8 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const [filterPriorities, setFilterPriorities] = useState<TaskPriority[]>([])
   const [filterProjects, setFilterProjects] = useState<string[]>([])
   const [filterDue, setFilterDue] = useState<TaskDueRange>('any')
-  const [statusFilter, setStatusFilter] = useState<'open' | 'done' | 'all'>('open')
+  const statusFilter = preferences.value.statusFilter
+  const setStatusFilter = (value: 'open' | 'done' | 'all') => preferences.set('statusFilter', value)
   const effectiveStatus = selection === 'done' ? 'done' : statusFilter
   const filterCount = Number(filterPriorities.length > 0) + Number(filterProjects.length > 0) + Number(filterDue !== 'any')
   const clearFilters = () => { setFilterPriorities([]); setFilterProjects([]); setFilterDue('any') }
@@ -210,6 +212,25 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
 
   useEffect(() => {
     if (!active) return
+    let day = taskScheduleBounds('today', Date.now())[0]
+    let timer: ReturnType<typeof setTimeout>
+    const checkDay = () => {
+      const now = Date.now()
+      const [start, end] = taskScheduleBounds('today', now)
+      if (start !== day) {
+        day = start
+        reloadRef.current()
+      }
+      clearTimeout(timer)
+      timer = setTimeout(checkDay, end - now + 100)
+    }
+    checkDay()
+    window.addEventListener('focus', checkDay)
+    return () => { clearTimeout(timer); window.removeEventListener('focus', checkDay) }
+  }, [active])
+
+  useEffect(() => {
+    if (!active) return
     const timer = setTimeout(reload, 100)
     return () => { clearTimeout(timer); reloadSequence.current += 1 }
   }, [active, reload])
@@ -229,11 +250,10 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
   }, [draft, viewDraft, fieldsOpen, busy, projectBusy])
-  useEffect(() => { setStatusFilter('open') }, [selection])
-  useEffect(() => { if (focusTaskId) { setSelection('all'); setQuery(''); clearFilters(); setStatusFilter('open'); preferences.update('all', { mode: 'list' }) } }, [focusTaskId])
+  useEffect(() => { if (focusTaskId) { setSelection('all'); setQuery(''); clearFilters(); preferences.update('all', { mode: 'list', statusFilter: 'open' }) } }, [focusTaskId])
   useEffect(() => {
     if (!searchRequest) return
-    setSelection(searchRequest.done ? 'done' : 'all'); setQuery(searchRequest.done ? searchRequest.query : ''); clearFilters(); setStatusFilter('open'); preferences.update(searchRequest.done ? 'done' : 'all', { mode: 'list' })
+    setSelection(searchRequest.done ? 'done' : 'all'); setQuery(searchRequest.done ? searchRequest.query : ''); clearFilters(); preferences.update(searchRequest.done ? 'done' : 'all', { mode: 'list', statusFilter: searchRequest.done ? 'done' : 'open' })
   }, [searchRequest])
   useEffect(() => {
     if (!active || !focusTaskId) return
@@ -270,8 +290,9 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       const view = views.find(item => item.id === target.slice('view:'.length))
       return view ? matchesTaskView(task, view, now) : false
     }
-    if (target === 'today') return isDueToday(task, now)
-    if (target === 'week') return isDueThisWeek(task, now)
+    if (target === 'today' || target === 'week') return matchesTaskSchedule(task, target, now)
+    // Other scopes keep their existing date filters when browsing completed tasks.
+    if (task.status === 'done') task = { ...task, status: 'open' }
     if (target === 'overdue') return isOverdue(task, now)
     if (target === 'unplanned') return isUnplanned(task)
     if (target === 'done') return false
@@ -285,7 +306,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     .sort((a, b) => compareTasks(a, b, now))
   // Recheck the current scope while its paginated history request is still in flight.
   const doneVisible = effectiveStatus !== 'open' ? doneTasks.filter(task => matchesKeywordAndFilter(task) &&
-    (selection === 'done' || matchesSelection({ ...task, status: 'open' }, selection))) : []
+    (selection === 'done' || matchesSelection(task, selection))) : []
   const sortedByMode = sortTasks([...visible, ...(selection === 'done' ? [] : doneVisible)], sortMode, now)
   const sorted = sortMode === 'manual' ? applyTaskOrder(sortedByMode, taskOrder) : sortedByMode
   const countFor = (target: Selection) => target === 'done' ? totalDone : tasks.filter(task => matchesSelection(task, target)).length
@@ -312,7 +333,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         setDraft(null)
         const hidden = !matchesKeywordAndFilter(saved) || (saved.status === 'open'
           ? effectiveStatus === 'done' || selection === 'done' || !matchesSelection(saved, selection)
-          : effectiveStatus === 'open' || (selection !== 'done' && !matchesSelection({ ...saved, status: 'open' }, selection)))
+          : effectiveStatus === 'open' || (selection !== 'done' && !matchesSelection(saved, selection)))
         setNotice(hidden ? '该任务不符合当前视图或筛选条件，暂不在此显示。' : '')
         reloadRef.current()
       })
@@ -449,7 +470,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     const projectId = projects.some(project => project.id === candidate && !project.archivedAt) ? candidate : projects.find(project => project.isDefault)?.id ?? ''
     const dueDate = selection === 'today' || selection === 'week' || view?.dueRange === 'today' || view?.dueRange === 'week' ? toInputDate(Date.now()) : ''
     const priority = filterPriorities.length === 1 ? filterPriorities[0] : view?.priorities.length === 1 ? view.priorities[0] : emptyDraft.priority
-    return { ...emptyDraft, projectId, dueDate, priority, title: patch.title ?? '', ...(patch.projectId ? { projectId: patch.projectId } : {}), ...(patch.priority ? { priority: patch.priority } : {}), customFields: Object.fromEntries(Object.entries(patch.customFields ?? {}).filter((entry): entry is [string, string] => entry[1] !== null)) }
+    return { ...emptyDraft, projectId, dueDate: patch.dueAt != null ? toInputDate(patch.dueAt) : dueDate, priority, title: patch.title ?? '', ...(patch.projectId ? { projectId: patch.projectId } : {}), ...(patch.priority ? { priority: patch.priority } : {}), customFields: Object.fromEntries(Object.entries(patch.customFields ?? {}).filter((entry): entry is [string, string] => entry[1] !== null)) }
   }
   const startCreate = () => { setError(''); setDraft(createDraft()) }
   const removeField = async (field: TaskSelectField) => {
@@ -504,8 +525,16 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     preferences.update(selection, value === 'none' ? { listGrouped: false } : {
       listGrouped: true,
       groupMode: value.startsWith('field:') ? 'field' : value as BoardGroupMode,
-      groupFieldId: value.startsWith('field:') ? value.slice('field:'.length) : null
+      groupFieldId: value.startsWith('field:') ? value.slice('field:'.length) : null,
+      ...(value === 'status' ? { statusFilter: 'all' as const } : {})
     })
+  }
+  const restoreRecommendedGrouping = () => {
+    const recommended = recommendedTaskPreferences(selection)
+    preferences.update(selection, { listGrouped: recommended.listGrouped, groupMode: recommended.groupMode,
+      groupFieldId: null, sortMode: recommended.sortMode, statusFilter: recommended.statusFilter, taskOrder: [] })
+    layoutOrder.save(JSON.stringify([selection, recommended.groupMode, null]), [])
+    setCollapsedGroups({}); clearFilters()
   }
   const closeCollectionDialog = () => { setNewGroup(null); setNewProject(null); setGroupRenaming(null); setError('') }
   const collectionDialogOpen = newGroup !== null || newProject !== null || groupRenaming !== null
@@ -514,8 +543,13 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const columnOrderScope = JSON.stringify([selection, boardGroupMode, boardGroupMode === 'field' ? groupFieldId : null])
   const orderedGroups = layoutOrder.sort('sidebar:groups', groups, group => group.id)
   const sidebarGroupIds = orderedGroups.map(group => group.id)
-  const listColumns = layoutOrder.sort(columnOrderScope, groupTasks(listTasks, projects, fields, boardGroupMode, groupFieldId, now, customGroups), column => column.key)
+  const orderedProjects = orderedGroups.flatMap(group => layoutOrder.sort(`sidebar:projects:${group.id}`, projects.filter(project => project.groupId === group.id).sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault))), project => project.id))
+  const groupingProjects = [...orderedProjects, ...projects.filter(project => !orderedProjects.some(item => item.id === project.id))]
+  const listColumns = layoutOrder.sort(columnOrderScope, groupTasks(listTasks, groupingProjects, fields, boardGroupMode, groupFieldId, now, customGroups), column => column.key)
+    .filter(column => column.tasks.length > 0 || (boardGroupMode !== 'week' && !(boardGroupMode === 'priority' && selection === 'unplanned')))
+    .map(column => boardGroupMode === 'status' && column.key === 'done' && sortMode !== 'manual' ? { ...column, tasks: sortTasks(column.tasks, 'completed', now) } : column)
   const columnIds = listColumns.map(column => column.key)
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
 
   const renderProject = (project: TaskProject) => {
     const id = `project:${project.id}` as Selection
@@ -557,15 +591,39 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const finishListDrag = () => { setListDraggingTask(null); setListCardTarget(null); setListDropGroup(null) }
   useEffect(finishListDrag, [selection, listGrouped, boardGroupMode, groupFieldId])
   const taskGroupKey = (id: string) => listColumns.find(column => column.tasks.some(task => task.id === id))?.key
+  const canMoveToColumn = (id: string, column: BoardColumn) => {
+    const task = listTasks.find(item => item.id === id)
+    return !actionPending && !!task && taskGroupMove(task, boardGroupMode, column, taskGroupKey(id) === column.key) !== null
+  }
   const canReorderListTask = (id: string, target: string) => id !== target && listTasks.some(task => task.id === id)
-    && (!listGrouped || boardGroupMode === 'custom' || taskGroupKey(id) === taskGroupKey(target))
+    && (!listGrouped || listColumns.some(column => column.key === taskGroupKey(target) && canMoveToColumn(id, column)))
+  const persistTaskMove = async (id: string, patch: TaskUpdateInput, target: string | null, after: boolean, groupId?: string) => {
+    if (actionLock.current) return
+    const task = listTasks.find(item => item.id === id)
+    if (!task || id === target) return
+    const column = groupId === undefined ? undefined : groupTasks(listTasks, groupingProjects, fields, boardGroupMode, groupFieldId, now, customGroups).find(item => item.key === groupId)
+    const plan = column ? taskGroupMove(task, boardGroupMode, column, taskGroupKey(id) === groupId) : { patch }
+    if (!plan) return
+    actionLock.current = true; setActionPending(true)
+    try {
+      let saved = task
+      if (plan.status && plan.status !== task.status) {
+        saved = await window.electronAPI.tasks[plan.status === 'done' ? 'complete' : 'reopen'](id)
+      } else if (Object.keys(plan.patch).length) saved = await window.electronAPI.tasks.update(id, plan.patch)
+      if (saved !== task) {
+        setTasks(current => [...current.filter(item => item.id !== id), ...(saved.status === 'open' ? [saved] : [])])
+        setDoneTasks(current => [...current.filter(item => item.id !== id), ...(saved.status === 'done' ? [saved] : [])])
+      }
+      const visibleIds = listTasks.map(item => item.id)
+      preferences.update(selection, current => ({ ...current, sortMode: 'manual',
+        taskOrder: moveTaskInOrder(current.sortMode === 'manual' ? current.taskOrder : visibleIds, visibleIds, id, target, after),
+        customGroups: boardGroupMode === 'custom' && groupId !== undefined ? assignTaskToGroup(current.customGroups, id, groupId) : current.customGroups
+      }))
+      if (saved !== task) reloadRef.current()
+    } finally { actionLock.current = false; setActionPending(false) }
+  }
   const moveListTask = (id: string, target: string | null, after: boolean, groupId?: string) => {
-    if (!listTasks.some(task => task.id === id) || id === target) return
-    const visibleIds = listTasks.map(task => task.id)
-    preferences.update(selection, current => ({ ...current, sortMode: 'manual',
-      taskOrder: moveTaskInOrder(current.sortMode === 'manual' ? current.taskOrder : visibleIds, visibleIds, id, target, after),
-      customGroups: listGrouped && boardGroupMode === 'custom' && groupId !== undefined ? assignTaskToGroup(current.customGroups, id, groupId) : current.customGroups
-    }))
+    void persistTaskMove(id, {}, target, after, listGrouped ? groupId : undefined).catch(reason => setError(`移动失败：${String(reason)}`))
   }
 
   const renderTask = (task: TaskRecord) => {
@@ -604,7 +662,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
             if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return
             event.preventDefault(); setDraft(draftFromTask(task))
           }}>
-          <button type="button" className="tasks-complete" disabled={actionPending} data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? reopen(task.id) : complete(task.id)}>{task.status === 'done' ? '✓' : ''}</button>
+          <button type="button" className="tasks-complete" disabled={actionPending} data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? reopen(task.id) : complete(task.id)}></button>
           <div className="tasks-item-body">
             <div className="tasks-item-head">
               <button type="button" className="tasks-item-title tasks-title-button" onClick={() => setDraft(draftFromTask(task))}>{task.title}</button>
@@ -630,7 +688,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
 
   return <div className="tasks-view" ref={menusRef}>
     <aside id="tasks-sidebar" className="tasks-sidebar" aria-label="任务视图筛选" hidden={sidebarCollapsed}>
-      <header className="tasks-sidebar-title"><button ref={sidebarCollapsed ? undefined : sidebarToggleRef} type="button" className="tasks-sidebar-toggle" aria-label="收起任务侧栏" title="收起任务侧栏" aria-expanded="true" aria-controls="tasks-sidebar" onClick={toggleSidebar}><TaskIcon name="collapse" /></button><span>任务</span></header>
+      <header className="tasks-sidebar-title"><span>任务</span><button ref={sidebarCollapsed ? undefined : sidebarToggleRef} type="button" className="tasks-sidebar-toggle" aria-label="收起任务侧栏" title="收起任务侧栏" aria-expanded="true" aria-controls="tasks-sidebar" onClick={toggleSidebar}><TaskIcon name="sidebar" /></button></header>
       <div className="tasks-sidebar-view-nav" role="region" aria-label="视图选择">
         <ul role="list" className="tasks-smart-views">
           {visibleSmartViews.map(view => <li key={view.id}>
@@ -701,7 +759,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       {error && !draft && !viewDraft && !fieldsOpen && !collectionDialogOpen && <p role="alert" className="tasks-error">{error}</p>}
       {notice && <p role="status" className="tasks-notice">{notice}<button type="button" aria-label="关闭提示" onClick={() => setNotice('')}>×</button></p>}
       <header className="tasks-page-heading">
-        {sidebarCollapsed && <button ref={sidebarToggleRef} type="button" className="tasks-sidebar-toggle" aria-label="展开任务侧栏" title="展开任务侧栏" aria-expanded="false" aria-controls="tasks-sidebar" onClick={toggleSidebar}><TaskIcon name="expand" /></button>}
+        {sidebarCollapsed && <button ref={sidebarToggleRef} type="button" className="tasks-sidebar-toggle" aria-label="展开任务侧栏" title="展开任务侧栏" aria-expanded="false" aria-controls="tasks-sidebar" onClick={toggleSidebar}><TaskIcon name="sidebar" /></button>}
         <span className="tasks-heading-icon"><TaskIcon name="task" /></span><h1>{selectionTitle}</h1>
         <details className="tasks-tool-menu tasks-heading-menu">
           <summary aria-label="任务视图选项" title="任务视图选项"><TaskIcon name="more" /></summary>
@@ -760,15 +818,20 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
               ))}
             </div>
           </details>}
-          <details className="tasks-tool-menu tasks-grouping-menu"><summary aria-label="任务分组" title="任务展示分组"><TaskIcon name="group" /><span>分组：{(mode === 'list' || selection === 'done') && !listGrouped ? '不分组' : boardGroupMode === 'custom' ? '自定义分组' : boardGroupMode === 'priority' ? '优先级' : boardGroupMode === 'due' ? '截止时间' : boardGroupMode === 'project' ? '清单' : fields.find(field => field.id === groupFieldId)?.name}</span></summary><div className="tasks-item-menu-popover tasks-tool-popover" role="group" aria-label="看板分组方式">
+          <details className="tasks-tool-menu tasks-grouping-menu"><summary aria-label="任务分组" title="任务展示分组"><TaskIcon name="group" /><span>分组：{(mode === 'list' || selection === 'done') && !listGrouped ? '不分组' : boardGroupMode === 'field' ? fields.find(field => field.id === groupFieldId)?.name : GROUP_LABELS[boardGroupMode]}</span></summary><div className="tasks-item-menu-popover tasks-tool-popover" role="group" aria-label="看板分组方式">
             {[
               ...((mode === 'list' || selection === 'done') ? [{ value: 'none', label: '不分组' }] : []),
               { value: 'custom', label: '自定义分组' },
               { value: 'priority', label: '按优先级' },
               { value: 'due', label: '按截止时间' },
               { value: 'project', label: '按清单' },
+              { value: 'status', label: '按完成状态' },
+              ...(selection === 'week' ? [{ value: 'week', label: '按本周日期' }] : []),
+              ...(selection === 'overdue' ? [{ value: 'overdue', label: '按逾期时长' }] : []),
+              { value: 'completed', label: '按完成日期' },
               ...fields.map(field => ({ value: `field:${field.id}`, label: `按${field.name}` }))
             ].map(option => <button type="button" key={option.value} data-grouping-value={option.value} aria-pressed={groupingValue === option.value} onClick={() => applyGrouping(option.value)}>{option.label}</button>)}
+            {selection in SMART_DESCRIPTIONS && <button type="button" onClick={restoreRecommendedGrouping}>恢复推荐分组与排序</button>}
           </div></details>
           <details className="tasks-tool-menu tasks-field-menu">
             <summary aria-label="字段配置" title="字段配置"><TaskIcon name="fields" /><span>字段配置</span></summary>
@@ -871,36 +934,34 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} error={error} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
 
       {loading && <p role="status">正在加载任务…</p>}
+      {(mode === 'board' || listGrouped) && boardGroupMode === 'week' && <p className="tasks-view-description">跨天任务单独展示；单日任务可拖到其他日期改期，跨天任务请编辑起止时间。</p>}
+      {(mode === 'board' || listGrouped) && (boardGroupMode === 'overdue' || boardGroupMode === 'completed') && <p className="tasks-view-description">分组由实际日期自动计算，可在组内拖动排序。</p>}
       {displayGroupDraft && <TaskDisplayGroupDialog key={displayGroupDraft.id} initialName={displayGroupDraft.name} editing={Boolean(displayGroupDraft.id)} onSave={saveDisplayGroup} onCancel={() => setDisplayGroupDraft(null)} />}
       {selection !== 'done' && mode === 'board'
-        ? <TasksBoard orderScope={selection} tasks={sorted} projects={projects} fields={displayFields} groupingFields={fields} customGroups={customGroups} renderGroupActions={renderDisplayGroupActions} onRenameGroup={renameDisplayGroup} onNewGroup={startDisplayGroup} savedOrder={layoutOrder.orders[columnOrderScope] ?? []} onOrder={keys => layoutOrder.save(columnOrderScope, keys)} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
+        ? <TasksBoard orderScope={selection} tasks={sorted} projects={groupingProjects} fields={displayFields} sortMode={sortMode} groupingFields={fields} customGroups={customGroups} renderGroupActions={renderDisplayGroupActions} onRenameGroup={renameDisplayGroup} onNewGroup={startDisplayGroup} savedOrder={layoutOrder.orders[columnOrderScope] ?? []} onOrder={keys => layoutOrder.save(columnOrderScope, keys)} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
             onOpenProject={openProject}
             onEdit={task => setDraft(draftFromTask(task))}
             onComplete={complete}
             onReopen={reopen}
             onCreate={(patch, groupId) => { setError(''); setDraft({ ...createDraft(patch), displayGroupId: boardGroupMode === 'custom' ? groupId : '' }) }}
-            onMove={async (id, patch, targetId, after, groupId) => {
-              if (Object.keys(patch).length) {
-                const saved = await window.electronAPI.tasks.update(id, patch)
-                const update = (current: TaskRecord[]) => current.map(task => task.id === id ? saved : task)
-                setTasks(update); setDoneTasks(update)
-              }
-              preferences.update(selection, current => ({ ...current, sortMode: 'manual', taskOrder: moveTaskInOrder(current.sortMode === 'manual' ? current.taskOrder : sorted.map(task => task.id), sorted.map(task => task.id), id, targetId, after), customGroups: boardGroupMode === 'custom' && groupId !== undefined ? assignTaskToGroup(current.customGroups, id, groupId) : current.customGroups }))
-              reloadRef.current()
-            }} />
+            onMove={persistTaskMove} />
         : listGrouped
         ? <div className="tasks-grouped-list">{listColumns.map(column => <div className="tasks-content-group-shell" key={column.key || 'none'} data-drop-target={listDropGroup === column.key || undefined}
-            onDragOver={event => { if (boardGroupMode === 'custom' && event.dataTransfer.types.includes('application/x-chouyu-list-task')) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setListDropGroup(column.key) } }}
+            onDragOver={event => { if (listDraggingTask && canMoveToColumn(listDraggingTask, column) && event.dataTransfer.types.includes('application/x-chouyu-list-task')) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setListDropGroup(column.key) } }}
             onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setListDropGroup(null) }}
             onDrop={event => {
               finishListDrag()
-              if (boardGroupMode !== 'custom') return
               const id = event.dataTransfer.getData('application/x-chouyu-list-task')
-              if (!listTasks.some(task => task.id === id)) return
+              if (!canMoveToColumn(id, column)) return
               event.preventDefault()
               moveListTask(id, null, true, column.key)
             }}>
-          <details className="tasks-content-group" data-group-key={column.key} open>
+          <details className="tasks-content-group" data-group-key={column.key}
+            open={!(collapsedGroups[`${columnOrderScope}:${column.key}`] ?? (boardGroupMode === 'status' && column.key === 'done'))}
+            onToggle={event => {
+              const collapsed = !event.currentTarget.open, key = `${columnOrderScope}:${column.key}`
+              setCollapsedGroups(current => current[key] === collapsed ? current : { ...current, [key]: collapsed })
+            }}>
             <summary {...layoutOrder.handle(columnOrderScope, column.key, columnIds)} {...layoutOrder.drop(columnOrderScope, column.key, columnIds)}><TaskIcon name="chevron" /><span title={boardGroupMode === 'custom' && column.key ? '双击修改分组名称' : undefined} onDoubleClick={event => { event.stopPropagation(); renameDisplayGroup(column.key) }}>{column.label}</span><span className="tasks-count">{column.tasks.length}</span></summary>
             <ul role="list" className={`tasks-list${selection === 'done' ? ' tasks-list-done' : ''}`} aria-label={column.label}>{column.tasks.map(renderTask)}</ul>
           </details>{renderDisplayGroupActions(column.key)}</div>)}
