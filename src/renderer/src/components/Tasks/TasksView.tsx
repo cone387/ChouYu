@@ -807,7 +807,6 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
                 setTasks(update); setDoneTasks(update)
               }
               preferences.update(selection, current => ({ ...current, sortMode: 'manual', taskOrder: moveTaskInOrder(current.sortMode === 'manual' ? current.taskOrder : sorted.map(task => task.id), sorted.map(task => task.id), id, targetId, after), customGroups: boardGroupMode === 'custom' && groupId !== undefined ? assignTaskToGroup(current.customGroups, id, groupId) : current.customGroups }))
-              setNotice('任务位置已保存，当前视图使用手动排序。')
               reloadRef.current()
             }} />
         : listGrouped
@@ -821,7 +820,6 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
               if (!(selection === 'done' ? doneVisible : sorted).some(task => task.id === id)) return
               event.preventDefault()
               preferences.update(selection, current => ({ ...current, customGroups: assignTaskToGroup(current.customGroups, id, column.key) }))
-              setNotice(`任务已移到「${column.label}」。`)
             }}>
           <details className="tasks-content-group" data-group-key={column.key} open>
             <summary><TaskIcon name="chevron" /><span>{column.label}</span><span className="tasks-count">{column.tasks.length}</span></summary>

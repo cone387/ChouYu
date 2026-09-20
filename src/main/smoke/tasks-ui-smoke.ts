@@ -236,6 +236,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     document.querySelector('[data-group-key="${secondManualGroupId}"]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
   })()`)
   await assert(`!!document.querySelector('[data-group-key="${secondManualGroupId}"] .tasks-item') && !document.querySelector('[data-group-key="${manualGroupId}"] .tasks-item')`)
+  await assert("!document.querySelector('.tasks-notice')?.textContent.includes('任务已移到')")
   await click('.tasks-tab:nth-child(2)')
   await assert(`!!document.querySelector('[data-column-key="${secondManualGroupId}"] [data-task-id="${manualTaskId}"]')`)
   await run(`(() => {
@@ -243,6 +244,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     document.querySelector('[data-column-key="${manualGroupId}"]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
   })()`)
   await waitForRenderer(window, `!!document.querySelector('[data-column-key="${manualGroupId}"] [data-task-id="${manualTaskId}"]')`)
+  await assert("!document.querySelector('.tasks-notice')?.textContent.includes('任务位置已保存')")
   await assert(`window.electronAPI.tasks.list().then(list => JSON.stringify(list.open.find(task => task.id === '${manualTaskId}')) === ${JSON.stringify(manualTaskSnapshot)})`)
   await click(`[data-column-key="${secondManualGroupId}"] .tasks-column-add`)
   await assert(`document.querySelector('[aria-label="任务展示分组"]').dataset.value === '${secondManualGroupId}'`)

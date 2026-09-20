@@ -34,7 +34,6 @@ describe('chat layout guardrails', () => {
     expect(stylesheet).toMatch(/\.chat-panel-workspace\s*\{[\s\S]*height:\s*auto/)
     expect(stylesheet).toMatch(/\.chat-panel-main > \.input-area\s*\{\s*margin-top:\s*auto/)
     expect(stylesheet).toMatch(/\.panel-resize-edge\s*\{[\s\S]*cursor:\s*ns-resize/)
-    expect(panelSource).toContain('const rect = panelEl.getBoundingClientRect()')
     expect(panelResizeSource).toContain('getDefaultPanelHeight(window.innerHeight)')
     expect(panelSource).toContain('height: geometry.height')
     expect(panelSource).toContain('getWorkspaceGeometry(displayMode, maximized')

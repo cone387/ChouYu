@@ -34,7 +34,7 @@ export default function TaskCollectionDialog({ title, name, onNameChange, groups
       <header className="tasks-dialog-header"><h2 id="tasks-collection-title">{title}</h2><button type="button" disabled={busy} aria-label="关闭清单分组弹窗" onClick={onClose}>×</button></header>
       <form className="tasks-form tasks-collection-form" onSubmit={onSubmit}>
         {error && <p role="alert" className="tasks-error">{error}</p>}
-        <label>{groups ? '清单名称' : '分组名称'}<input value={name} maxLength={50} required onChange={event => onNameChange(event.target.value)} placeholder={groups ? '输入清单名称' : '输入分组名称'} /></label>
+        <label>{groups ? '清单名称' : '分组名称'}<input value={name} maxLength={groups ? undefined : 50} required onChange={event => onNameChange(event.target.value)} placeholder={groups ? '输入清单名称' : '输入分组名称'} /></label>
         {groups && <label>所属分组<select value={groupId} onChange={event => onGroupChange?.(event.target.value)}>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>}
         <div className="tasks-form-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="submit" disabled={busy || !name.trim()}>{busy ? '保存中…' : editing ? '保存' : '创建'}</button></div>
       </form>

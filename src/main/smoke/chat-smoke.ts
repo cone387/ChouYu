@@ -184,6 +184,49 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-maximized=true]') && Math.abs(document.querySelector('.chat-panel').getBoundingClientRect().width - (innerWidth - 8)) < 1")
     await click(window, '[aria-label="还原窗口"]')
     await waitForRenderer(window, "(() => { const a = window.__normalBounds, b = document.querySelector('.chat-panel').getBoundingClientRect(); return ['x', 'y', 'width', 'height'].every(key => Math.abs(a[key] - b[key]) < 1) })()")
+    // Main panels may cross every viewport edge; only the pet retains edge snapping.
+    const dragPanel = async (target: 'near' | 'far' | 'restore') => {
+      await waitForRenderer(window, "document.querySelector('.chat-panel').getAnimations().every(animation => animation.playState === 'finished' || animation.playState === 'idle')")
+      const points = await window.webContents.executeJavaScript(`(() => {
+        const header = document.querySelector('.workspace-header');
+        const rect = header.getBoundingClientRect(), panel = document.querySelector('.chat-panel').getBoundingClientRect();
+        let start;
+        for (let y = Math.max(1, rect.top + 2); y < Math.min(innerHeight - 1, rect.bottom - 1) && !start; y += 2) {
+          for (let x = Math.max(1, rect.left + 12); x < Math.min(innerWidth - 1, rect.right - 1); x += 8) {
+            const hit = document.elementFromPoint(x, y);
+            if (hit === header) { start = { x: Math.round(x), y: Math.round(y) }; break; }
+          }
+        }
+        if (!start) throw new Error('No exposed panel drag surface');
+        const end = ${JSON.stringify(target)} === 'restore'
+          ? { x: Math.round(start.x + window.__normalBounds.x - panel.x), y: Math.round(start.y + window.__normalBounds.y - panel.y) }
+          : ${JSON.stringify(target)} === 'near' ? { x: 1, y: 1 } : { x: innerWidth - 80, y: innerHeight - 80 };
+        return { start, end, expected: { x: panel.x + end.x - start.x, y: panel.y + end.y - start.y } };
+      })()`)
+      // Dragging uses screen coordinates; Electron defaults these to zero unless provided.
+      const start = { ...points.start, globalX: points.start.x, globalY: points.start.y }
+      const end = { ...points.end, globalX: points.end.x, globalY: points.end.y }
+      window.webContents.sendInputEvent({ type: 'mouseMove', ...start })
+      await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...start })
+      await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(resolve))')
+      window.webContents.sendInputEvent({ type: 'mouseMove', ...end })
+      await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(resolve))')
+      window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...end })
+      await waitForRenderer(window, `(() => { const rect = document.querySelector('.chat-panel').getBoundingClientRect(); return Math.abs(rect.x - ${points.expected.x}) < 1 && Math.abs(rect.y - ${points.expected.y}) < 1 })()`)
+    }
+    await dragPanel('near')
+    await waitForRenderer(window, "(() => { const rect = document.querySelector('.chat-panel').getBoundingClientRect(); return rect.x < 0 && rect.y < 0 })()")
+    await click(window, '[aria-label="隐藏面板"]')
+    window.webContents.send('open-chat-panel')
+    await waitForRenderer(window, "(() => { const panel = document.querySelector('.chat-panel'); return panel.getClientRects().length && parseFloat(panel.style.left) < 0 && parseFloat(panel.style.top) < 0 })()")
+    await dragPanel('restore')
+    await dragPanel('far')
+    await waitForRenderer(window, "(() => { const rect = document.querySelector('.chat-panel').getBoundingClientRect(); return rect.right > innerWidth && rect.bottom > innerHeight })()")
+    await click(window, '[aria-label="最大化窗口"]')
+    await click(window, '[aria-label="还原窗口"]')
+    await waitForRenderer(window, "document.querySelector('.chat-panel').getBoundingClientRect().bottom > innerHeight")
+    await dragPanel('restore')
     for (const mode of ['chat', 'sessions', 'workspace']) {
       await click(window, '[aria-label="窗口模式"]')
       await click(window, '[data-workspace-mode-option="' + mode + '"]')

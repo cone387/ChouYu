@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { matchesSearchShortcut } from '../../../../shared/search-shortcut'
 import { isOverlayEscape } from '../../core/escape'
 import GlobalSearch, { type SearchSnapshot } from '../Workspace/GlobalSearch'
@@ -334,16 +334,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     onPetStateChange(isStreaming ? 'talking' : 'idle')
   }, [activeSessionId, isStreaming, onPetStateChange])
 
-  useLayoutEffect(() => {
-    if (!visible || !panelReady || maximized) return
-    const panelEl = panelRef.current
-    if (!panelEl) return
-      const rect = panelEl.getBoundingClientRect()
-      const nextX = Math.min(Math.max(4, position.x), Math.max(4, window.innerWidth - rect.width - 4))
-      const nextY = Math.min(Math.max(4, position.y), Math.max(4, window.innerHeight - rect.height - 4))
-      if (nextX !== position.x || nextY !== position.y) onPositionChange({ x: nextX, y: nextY })
-  }, [visible, panelReady, showMemoryWorkspace, showSettings, showSessions, panelHeight, chatContentWidth, sessionSidebarWidth, position, onPositionChange, viewport, maximized, shellWidth])
-
   const handleDragStart = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0 || maximized) return
     const target = event.target as HTMLElement
@@ -398,18 +388,6 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       return next
     })
   }, [requestComposerFocus, narrowLayout, displayMode, presentation.changeMode, persistSessionsVisible])
-
-  useEffect(() => {
-    if (maximized || (messages.length === 0 && !isStreaming)) return
-    const panelEl = panelRef.current
-    if (!panelEl) return
-    requestAnimationFrame(() => {
-      const rect = panelEl.getBoundingClientRect()
-      if (rect.bottom > window.innerHeight - 4) {
-        onPositionChange({ ...position, y: Math.max(4, position.y - (rect.bottom - window.innerHeight + 8)) })
-      }
-    })
-  }, [messages.length, isStreaming, maximized])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

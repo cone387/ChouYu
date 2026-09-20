@@ -37,7 +37,6 @@ const assertTitle = (title: unknown): string => {
 const assertProjectName = (name: unknown): string => {
   const value = typeof name === 'string' ? name.trim() : ''
   if (!value) throw new Error('项目名称不能为空。')
-  if (value.length > 50) throw new Error('项目名称过长。')
   return value
 }
 const assertPriority = (priority: unknown): TaskPriority => {

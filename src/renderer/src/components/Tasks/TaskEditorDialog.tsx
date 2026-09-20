@@ -81,7 +81,7 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
         </div></div>}
         {groupProjects.length === 0 && <div className="tasks-composer-new-project">
           <p>这个分组还没有可用清单，创建一个后即可保存任务。</p>
-          <div><input aria-label="新清单名称" placeholder="清单名称" maxLength={50} value={projectName} disabled={busy} onChange={event => setProjectName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void createProject() } }} /><button type="button" disabled={busy || !projectName.trim()} onClick={() => void createProject()}>创建清单</button></div>
+          <div><input aria-label="新清单名称" placeholder="清单名称" value={projectName} disabled={busy} onChange={event => setProjectName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void createProject() } }} /><button type="button" disabled={busy || !projectName.trim()} onClick={() => void createProject()}>创建清单</button></div>
         </div>}
         <div className="tasks-composer-properties">
           <div className="tasks-select-field">

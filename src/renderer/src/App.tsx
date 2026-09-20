@@ -9,7 +9,7 @@ import { AppConfig, PetState } from './shared/types'
 import { DEFAULT_CONFIG, PANEL_WIDTH } from './shared/constants'
 import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
-import { clampPanelPosition, getCenteredPanelPosition } from './core/panel-position'
+import { getCenteredPanelPosition } from './core/panel-position'
 import { getDefaultPanelHeight } from './core/panel-state'
 
 function App() {
@@ -76,7 +76,7 @@ function App() {
         try {
           const parsed = JSON.parse(panelValue)
           if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) {
-            setPanelPosition(clampPanelPosition({ x: parsed.x, y: parsed.y }, { width: PANEL_WIDTH, height: getDefaultPanelHeight(window.innerHeight) }, { width: window.innerWidth, height: window.innerHeight }))
+            setPanelPosition({ x: parsed.x, y: parsed.y })
           }
         } catch {}
       }
@@ -270,9 +270,7 @@ function App() {
   }, [])
 
   const ensurePanelPosition = useCallback((panelH?: number, panelW?: number) => {
-    setPanelPosition((current) => current
-      ? clampPanelPosition(current, { width: panelW || PANEL_WIDTH, height: panelH || getDefaultPanelHeight(window.innerHeight) }, { width: window.innerWidth, height: window.innerHeight })
-      : getDefaultPanelPosition(panelH, panelW))
+    setPanelPosition((current) => current ?? getDefaultPanelPosition(panelH, panelW))
   }, [getDefaultPanelPosition])
 
   const togglePanel = useCallback(() => {
