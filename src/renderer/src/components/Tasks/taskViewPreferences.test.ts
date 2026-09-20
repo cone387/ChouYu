@@ -15,6 +15,11 @@ describe('task view preferences', () => {
     expect(parseTaskPreferences('[]')).toEqual({})
     expect(parseTaskPreferences('{"today":{"mode":"bad","sortMode":"toString","hiddenFields":["due",1,"due"]}}').today).toEqual({ ...defaultTaskPreferences, hiddenFields: ['due'] })
   })
+  it('preserves date grouping independently for each task view', () => {
+    const saved = parseTaskPreferences(JSON.stringify({ all: { ...defaultTaskPreferences, listGrouped: true, groupMode: 'due' }, today: defaultTaskPreferences }))
+    expect(saved.all).toMatchObject({ listGrouped: true, groupMode: 'due' })
+    expect(saved.today).toMatchObject({ listGrouped: false, groupMode: 'priority' })
+  })
   it('preserves filtered-out tasks while moving before and after a visible target', () => {
     expect(moveTaskInOrder(['a', 'hidden', 'b', 'c'], ['a', 'b', 'c'], 'c', 'a', false)).toEqual(['c', 'a', 'hidden', 'b'])
     expect(moveTaskInOrder(['a', 'hidden', 'b', 'c'], ['a', 'b', 'c'], 'a', 'b', true)).toEqual(['hidden', 'b', 'a', 'c'])

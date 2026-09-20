@@ -3,7 +3,7 @@ import { TASK_SORT_LABELS, type TaskSortMode } from '../../../../shared/tasks'
 export interface TaskViewPreferences {
   mode: 'list' | 'board'
   listGrouped: boolean
-  groupMode: 'priority' | 'project' | 'field'
+  groupMode: 'priority' | 'due' | 'project' | 'field'
   groupFieldId: string | null
   sortMode: TaskSortMode
   hiddenFields: string[]
@@ -24,7 +24,7 @@ export function parseTaskPreferences(raw: string | null): Record<string, TaskVie
       const item = value as Record<string, unknown>
       return [[scope, {
         mode: item.mode === 'board' ? 'board' : 'list', listGrouped: item.listGrouped === true,
-        groupMode: item.groupMode === 'project' || item.groupMode === 'field' ? item.groupMode : 'priority',
+        groupMode: item.groupMode === 'project' || item.groupMode === 'field' || item.groupMode === 'due' ? item.groupMode : 'priority',
         groupFieldId: typeof item.groupFieldId === 'string' ? item.groupFieldId : null,
         sortMode: typeof item.sortMode === 'string' && Object.hasOwn(TASK_SORT_LABELS, item.sortMode) ? item.sortMode as TaskSortMode : 'smart',
         hiddenFields: strings(item.hiddenFields), taskOrder: strings(item.taskOrder)

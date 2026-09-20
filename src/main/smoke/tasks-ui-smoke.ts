@@ -125,11 +125,18 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, "Array.from(document.querySelectorAll('.tasks-project-group ul')).some(item => item.textContent.includes('任务界面测试'))")
   await assert("document.querySelector('.tasks-more-views-popover').textContent.includes('新建自定义视图')")
   await assert("!document.querySelector('.tasks-search')")
-  await click('[aria-label="新建任务选项"]')
+  const collectionGroupsBefore: string = await run("window.electronAPI.tasks.groups().then(groups => JSON.stringify(groups))")
+  await clickPointer('[aria-label="新建任务选项"]')
+  await waitForRenderer(window, "document.querySelector('.tasks-create-options .tasks-item-menu-popover').matches(':popover-open')")
   await assert("Array.from(document.querySelectorAll('.tasks-create-options .tasks-item-menu-popover button')).map(button => button.textContent).join(',') === '新建任务,新建分组'")
-  await click('.tasks-create-options .tasks-item-menu-popover button:last-child')
-  await assert("document.querySelector('.tasks-collection-dialog')?.textContent.includes('新建分组')")
-  await click('[aria-label="关闭清单分组弹窗"]')
+  await clickPointer('.tasks-create-options .tasks-item-menu-popover button:last-child')
+  await waitForRenderer(window, "document.querySelector('.tasks-grouping-menu .tasks-item-menu-popover').matches(':popover-open')")
+  await assert("!document.querySelector('.tasks-collection-dialog')")
+  await fill('[aria-label="看板分组方式"]', 'priority')
+  await assert("document.querySelectorAll('.tasks-content-group').length === 3")
+  await assert(`window.electronAPI.tasks.groups().then(groups => JSON.stringify(groups) === ${JSON.stringify(collectionGroupsBefore)})`)
+  await fill('[aria-label="看板分组方式"]', 'none')
+  await click('.tasks-page-heading h1')
 
   await selectView('today')
   await click('.tasks-create')
@@ -143,10 +150,10 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await choose('任务 测试阶段', optionId)
   await click('.tasks-dialog button[type="submit"]')
   await waitForRenderer(window, "!document.querySelector('.tasks-dialog') && document.querySelector('.tasks-list')?.textContent.includes('界面创建任务')")
-  // Create an empty group through the toolbar with real pointer input.
-  await clickPointer('[aria-label="新建任务选项"]')
-  await waitForRenderer(window, "document.querySelector('.tasks-create-options .tasks-item-menu-popover').matches(':popover-open')")
-  await clickPointer('.tasks-create-options .tasks-item-menu-popover button:last-child')
+  // Collection groups remain available only from the sidebar.
+  await click('[aria-label="新建分组或清单"]')
+  await waitForRenderer(window, "document.querySelector('.tasks-add-list-menu .tasks-item-menu-popover').matches(':popover-open')")
+  await click('.tasks-add-list-menu .tasks-item-menu-popover button:first-child')
   await waitForRenderer(window, "!!document.querySelector('.tasks-collection-dialog')")
   await fill('.tasks-collection-form input', '联动空分组')
   await clickPointer('.tasks-collection-form button[type="submit"]')
@@ -184,6 +191,34 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, "!!document.querySelector('.tasks-composer')")
   await click('[aria-label="关闭任务弹窗"]')
   await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
+  // Display grouping is shared by list and board and restored per view.
+  await click('[aria-label="新建任务选项"]')
+  await click('.tasks-create-options .tasks-item-menu-popover button:last-child')
+  await waitForRenderer(window, "document.querySelector('.tasks-grouping-menu .tasks-item-menu-popover').matches(':popover-open')")
+  await fill('[aria-label="看板分组方式"]', 'due')
+  await click('.tasks-page-heading h1')
+  await assert("document.querySelector('[data-group-key=none]')?.textContent.includes('界面创建任务') && document.querySelectorAll('.tasks-content-group').length === 5")
+  await selectView('all')
+  await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
+  await waitForRenderer(window, "document.querySelector('.tasks-grouping-menu summary')?.textContent.includes('截止时间') && !!document.querySelector('[data-group-key=none] .tasks-item')")
+  await click('.tasks-tab:nth-child(2)')
+  await assert("!!document.querySelector('[data-column-key=none] [data-task-id]') && !document.querySelector('.tasks-column-add')")
+  const dueGroupedTaskId: string = await run("document.querySelector('[data-column-key=none] [data-task-id]').dataset.taskId")
+  await run(`(() => {
+    const card = document.querySelector('[data-task-id="${dueGroupedTaskId}"]');
+    const target = document.querySelector('[data-column-key=today]');
+    const dataTransfer = new DataTransfer(); dataTransfer.setData('text/plain', '${dueGroupedTaskId}');
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+    card.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+  })()`)
+  await assert(`window.electronAPI.tasks.list().then(list => list.open.find(task => task.id === '${dueGroupedTaskId}').dueAt === null)`)
+  await click('.tasks-tab:first-child')
+  await click('.tasks-grouping-menu > summary')
+  await fill('[aria-label="看板分组方式"]', 'field:' + fieldId)
+  await assert(`document.querySelector('[data-group-key="${optionId}"]')?.textContent.includes('界面创建任务')`)
+  await fill('[aria-label="看板分组方式"]', 'priority')
+  await fill('[aria-label="看板分组方式"]', 'none')
+  await click('.tasks-page-heading h1')
   // All transient menus dismiss outside / with Escape; structural groups stay open.
   const menuSelector = 'details.tasks-tool-menu, details.tasks-project-menu, details.tasks-item-menu'
   const menuCount: number = await run(`document.querySelectorAll(${JSON.stringify(menuSelector)}).length`)

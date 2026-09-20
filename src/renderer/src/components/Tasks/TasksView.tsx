@@ -83,6 +83,7 @@ const dueLabel = (at: number): string =>
 export default function TasksView({ active, focusTaskId, searchRequest }: { active: boolean; focusTaskId?: string; searchRequest?: { id: string; done: boolean; query: string; nonce: number } }) {
   const confirm = useConfirm()
   const menusRef = useTaskMenus(active)
+  const groupingMenuRef = useRef<HTMLDetailsElement>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const sidebarToggleRef = useRef<HTMLButtonElement>(null)
   const toggleSidebar = () => {
@@ -126,8 +127,6 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const preferences = useTaskViewPreferences(selection)
   const { mode, listGrouped, groupMode, groupFieldId, sortMode, hiddenFields, taskOrder } = preferences.value
   const setMode = (value: 'list' | 'board') => preferences.set('mode', value)
-  const setListGrouped = (value: boolean) => preferences.set('listGrouped', value)
-  const setGroupMode = (value: BoardGroupMode) => preferences.set('groupMode', value)
   const setGroupFieldId = (value: string | null) => preferences.set('groupFieldId', value)
   const setSortMode = (value: TaskSortMode) => preferences.set('sortMode', value)
   const setHiddenFields = (value: string[] | ((current: string[]) => string[])) => preferences.set('hiddenFields', value)
@@ -444,6 +443,19 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   }
 
   const startNewGroup = () => { setNewGroup(''); setNewProject(null); setGroupRenaming(null); setError('') }
+  const openTaskGrouping = () => requestAnimationFrame(() => {
+    const menu = groupingMenuRef.current
+    if (!menu) return
+    menu.open = true
+    menu.querySelector<HTMLElement>('summary')?.focus()
+  })
+  const applyGrouping = (value: string) => {
+    preferences.update(selection, value === 'none' ? { listGrouped: false } : {
+      listGrouped: true,
+      groupMode: value.startsWith('field:') ? 'field' : value as BoardGroupMode,
+      groupFieldId: value.startsWith('field:') ? value.slice('field:'.length) : null
+    })
+  }
   const closeCollectionDialog = () => { setNewGroup(null); setNewProject(null); setGroupRenaming(null); setError('') }
   const collectionDialogOpen = newGroup !== null || newProject !== null || groupRenaming !== null
 
@@ -560,7 +572,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
             {group.isDefault ? <details className="tasks-tool-menu tasks-add-list-menu">
               <summary aria-label="新建分组或清单" title="新建分组或清单"><TaskIcon name="plus" /></summary>
               <div className="tasks-item-menu-popover">
-                <button type="button" onClick={startNewGroup}><TaskIcon name="folder" />新建分组</button>
+                <button type="button" onClick={startNewGroup}><TaskIcon name="folder" />新建清单分组</button>
                 <button type="button" onClick={() => startGroupProject(group)}><TaskIcon name="task" />新建清单</button>
               </div>
             </details> : <button type="button" className="tasks-group-add" aria-label={`在 ${group.name} 中新建清单`} title="新建清单" onClick={() => startGroupProject(group)}><TaskIcon name="plus" /></button>}
@@ -602,7 +614,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
               <summary aria-label="新建任务选项" title="新建任务选项"><TaskIcon name="chevron" /></summary>
               <div className="tasks-item-menu-popover">
                 <button type="button" onClick={startCreate}><TaskIcon name="task" />新建任务</button>
-                <button type="button" onClick={startNewGroup}><TaskIcon name="folder" />新建分组</button>
+                <button type="button" onClick={openTaskGrouping}><TaskIcon name="group" />新建分组</button>
               </div>
             </details>
           </div>
@@ -638,21 +650,15 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
               ))}
             </div>
           </details>}
-          {selection !== 'done' && <details className="tasks-tool-menu"><summary aria-label="任务分组" title="分组方式"><TaskIcon name="group" /><span>分组：{mode === 'list' && !listGrouped ? '不分组' : boardGroupMode === 'priority' ? '优先级' : boardGroupMode === 'project' ? '清单' : fields.find(field => field.id === groupFieldId)?.name}</span></summary><div className="tasks-item-menu-popover tasks-tool-popover"><label className="tasks-filter-row">分组依据
-            <select value={mode === 'list' && !listGrouped ? 'none' : groupMode === 'field' ? `field:${groupFieldId ?? ''}` : groupMode} aria-label="看板分组方式"
-              onChange={e => {
-                const value = e.target.value
-                setListGrouped(value !== 'none')
-                if (value === 'none') return
-                if (value.startsWith('field:')) { setGroupMode('field'); setGroupFieldId(value.slice('field:'.length) || null) }
-                else { setGroupMode(value as BoardGroupMode); setGroupFieldId(null) }
-              }}>
-              {mode === 'list' && <option value="none">不分组</option>}
+          <details ref={groupingMenuRef} className="tasks-tool-menu tasks-grouping-menu"><summary aria-label="任务分组" title="任务展示分组"><TaskIcon name="group" /><span>分组：{(mode === 'list' || selection === 'done') && !listGrouped ? '不分组' : boardGroupMode === 'priority' ? '优先级' : boardGroupMode === 'due' ? '截止时间' : boardGroupMode === 'project' ? '清单' : fields.find(field => field.id === groupFieldId)?.name}</span></summary><div className="tasks-item-menu-popover tasks-tool-popover"><p className="tasks-tool-title">将当前任务按所选字段分组展示</p><label className="tasks-filter-row">分组依据
+            <select value={(mode === 'list' || selection === 'done') && !listGrouped ? 'none' : boardGroupMode === 'field' ? `field:${groupFieldId ?? ''}` : boardGroupMode} aria-label="看板分组方式" onChange={event => applyGrouping(event.target.value)}>
+              {(mode === 'list' || selection === 'done') && <option value="none">不分组</option>}
               <option value="priority">按优先级</option>
+              <option value="due">按截止时间</option>
               <option value="project">按清单</option>
               {fields.map(field => <option key={field.id} value={`field:${field.id}`}>按{field.name}</option>)}
             </select>
-          </label></div></details>}
+          </label></div></details>
           <details className="tasks-tool-menu tasks-field-menu">
             <summary aria-label="字段配置" title="字段配置"><TaskIcon name="fields" /><span>字段配置</span></summary>
             <div className="tasks-item-menu-popover tasks-tool-popover tasks-field-popover">
@@ -686,7 +692,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       </div>}
 
       {collectionDialogOpen && <TaskCollectionDialog
-        title={groupRenaming ? '重命名分组' : newProject !== null ? '新建清单' : '新建分组'}
+        title={groupRenaming ? '重命名分组' : newProject !== null ? '新建清单' : '新建清单分组'}
         name={groupRenaming?.name ?? newProject ?? newGroup ?? ''}
         onNameChange={name => { if (groupRenaming) setGroupRenaming({ ...groupRenaming, name }); else if (newProject !== null) setNewProject(name); else setNewGroup(name) }}
         groups={newProject !== null ? groups : undefined} groupId={projectGroupId} onGroupChange={setProjectGroupId}
@@ -754,11 +760,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} error={error} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
 
       {loading && <p role="status">正在加载任务…</p>}
-      {selection === 'done'
-        ? <ul role="list" className="tasks-list tasks-list-done" aria-label="已完成任务">
-        {doneVisible.map(renderTask)}
-      </ul>
-        : mode === 'board'
+      {selection !== 'done' && mode === 'board'
         ? <TasksBoard orderScope={selection} tasks={sorted} projects={projects} fields={displayFields} groupingFields={fields} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
             onEdit={task => setDraft(draftFromTask(task))}
             onComplete={complete}
@@ -775,12 +777,12 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
               reloadRef.current()
             }} />
         : listGrouped
-        ? <div className="tasks-grouped-list">{groupTasks(sorted, projects, fields, boardGroupMode, groupFieldId).map(column => <details className="tasks-content-group" key={column.key || 'none'} open>
+        ? <div className="tasks-grouped-list">{groupTasks(selection === 'done' ? doneVisible : sorted, projects, fields, boardGroupMode, groupFieldId, now).map(column => <details className="tasks-content-group" key={column.key || 'none'} data-group-key={column.key} open>
             <summary><TaskIcon name="chevron" /><span>{column.label}</span><span className="tasks-count">{column.tasks.length}</span></summary>
-            <ul role="list" className="tasks-list">{column.tasks.map(renderTask)}</ul>
+            <ul role="list" className={`tasks-list${selection === 'done' ? ' tasks-list-done' : ''}`} aria-label={column.label}>{column.tasks.map(renderTask)}</ul>
           </details>)}</div>
-        : <ul role="list" className="tasks-list">
-        {sorted.map(renderTask)}
+        : <ul role="list" className={`tasks-list${selection === 'done' ? ' tasks-list-done' : ''}`} aria-label={selection === 'done' ? '已完成任务' : '任务列表'}>
+        {(selection === 'done' ? doneVisible : sorted).map(renderTask)}
       </ul>}
       {effectiveStatus !== 'open' && doneTasks.length < matchedDone && <button className="tasks-load-more" type="button" disabled={loading} onClick={() => setDoneLimit(limit => limit + 50)}>加载更多（已加载 {doneTasks.length} / {matchedDone}）</button>}
     </section>
