@@ -39,7 +39,7 @@ export default function ConfirmProvider({ children }: { children: ReactNode }) {
   }, [request])
   useEffect(() => () => { resolveRef.current?.(false) }, [])
   return <Context.Provider value={confirm}>{children}
-    {request && <dialog ref={dialog} className="app-confirm-dialog" aria-labelledby={titleId} aria-describedby={messageId}
+    {request && <dialog ref={dialog} className="app-confirm-dialog" data-interactive aria-labelledby={titleId} aria-describedby={messageId}
       onCancel={event => { event.preventDefault(); finish(false) }} onKeyDown={event => event.stopPropagation()}>
       <h2 id={titleId}>{request.title}</h2><p id={messageId}>{request.message}</p>
       <div className="app-dialog-actions"><button type="button" className="app-button" autoFocus onClick={() => finish(false)}>取消</button><button type="button" className="app-button app-button-danger" onClick={() => finish(true)}>{request.confirmLabel ?? '删除'}</button></div>

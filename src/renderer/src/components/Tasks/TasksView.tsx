@@ -126,8 +126,14 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const [viewDraft, setViewDraft] = useState<ViewDraft | null>(null)
   const [draft, updateDraft] = useState<Draft | null>(null)
   const taskOpenerRef = useRef<HTMLElement | null>(null)
+  const restoreTaskFocusRef = useRef(false)
   const setDraft: typeof updateDraft = value => {
-    if (!draft && value !== null) taskOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (!draft && value !== null) {
+      const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      taskOpenerRef.current = opener
+      // Capture keyboard focus before the editor autofocuses its title input.
+      restoreTaskFocusRef.current = opener?.matches(':focus-visible') ?? false
+    }
     updateDraft(value)
   }
   const [error, setError] = useState('')
@@ -218,6 +224,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   useEffect(() => {
     if (!draftOpen) return
     const previous = taskOpenerRef.current
+    const restoreFocus = restoreTaskFocusRef.current
     const trap = (event: KeyboardEvent) => {
       if (event.key !== 'Tab') return
       const controls = Array.from(taskDialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea, summary') ?? []).filter(element => element.getClientRects().length > 0)
@@ -226,7 +233,10 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
     document.addEventListener('keydown', trap)
-    return () => { document.removeEventListener('keydown', trap); (previous?.isConnected ? previous : menusRef.current?.querySelector<HTMLElement>('.tasks-create'))?.focus() }
+    return () => {
+      document.removeEventListener('keydown', trap)
+      if (restoreFocus) (previous?.isConnected ? previous : menusRef.current?.querySelector<HTMLElement>('.tasks-create'))?.focus()
+    }
   }, [draftOpen])
 
   const now = Date.now()

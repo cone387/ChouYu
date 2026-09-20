@@ -11,6 +11,20 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     if (!element || element.disabled) throw new Error('Missing control: ' + ${JSON.stringify(selector)});
     element.click();
   })()`)
+  const clickConfirmButton = async (selector: string) => {
+    const point = await run(`(() => {
+      const button = document.querySelector(${JSON.stringify(selector)});
+      const rect = button.getBoundingClientRect();
+      const x = Math.round(rect.x + rect.width / 2), y = Math.round(rect.y + rect.height / 2);
+      const hit = document.elementFromPoint(x, y);
+      if (!button.contains(hit) || !hit.closest('[data-interactive]')) throw new Error('Confirmation button is blocked or enables desktop click-through');
+      return { x, y };
+    })()`)
+    window.webContents.sendInputEvent({ type: 'mouseMove', ...point })
+    await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
+    window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
+  }
   const fill = (selector: string, value: string) => run(`(() => {
     const element = document.querySelector(${JSON.stringify(selector)});
     if (!element) throw new Error('Missing input: ' + ${JSON.stringify(selector)});
@@ -423,6 +437,26 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert(`window.electronAPI.tasks.list().then(list => list.open.find(task => task.id === ${JSON.stringify(unplannedId)}).startAt !== null)`)
   await selectView('unplanned')
   await waitForRenderer(window, "document.querySelector('.tasks-page-heading h1')?.textContent === '待规划' && !document.querySelector('.tasks-list')?.textContent.includes('待规划验收任务')")
+  // Group deletion must remain centered and reachable through real pointer input.
+  await click('[aria-label="管理分组 工作分组"]')
+  await click('.tasks-group-actions .tasks-project-menu[open] .tasks-item-menu-danger')
+  await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
+  await assert(`(() => {
+    const rect = document.querySelector('.app-confirm-dialog').getBoundingClientRect();
+    return Math.abs(rect.x + rect.width / 2 - innerWidth / 2) < 2
+      && Math.abs(rect.y + rect.height / 2 - innerHeight / 2) < 2
+      && rect.top >= 0 && rect.bottom <= innerHeight;
+  })()`)
+  await clickConfirmButton('.app-confirm-dialog button:first-child')
+  await waitForRenderer(window, "!document.querySelector('.app-confirm-dialog')")
+  await assert(`window.electronAPI.tasks.groups().then(groups => groups.some(group => group.id === ${JSON.stringify(groupId)}))`)
+  await click('[aria-label="管理分组 工作分组"]')
+  await click('.tasks-group-actions .tasks-project-menu[open] .tasks-item-menu-danger')
+  await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
+  await clickConfirmButton('.app-confirm-dialog .app-button-danger')
+  await waitForRenderer(window, "!document.querySelector('.app-confirm-dialog') && !document.querySelector('[aria-label=\"管理分组 工作分组\"]')")
+  await assert(`window.electronAPI.tasks.projects().then(projects => projects.some(project => project.id === ${JSON.stringify(projectId)} && project.groupId !== ${JSON.stringify(groupId)}))`)
+  await assert(`window.electronAPI.tasks.list().then(list => list.open.some(task => task.id === ${JSON.stringify(unplannedId)}))`)
   // 不把未完成任务的导航角标带入后续聊天 UI 验收。
   await run(`(async () => {
     const original = new Set(${JSON.stringify(originalIds)});

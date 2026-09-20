@@ -28,7 +28,7 @@
 .app-button.app-button-primary:enabled:hover { background: var(--accent-hover); }
 .app-button.app-button-danger { color: var(--error); border-color: var(--error-border); }
 .app-button.app-button-danger:enabled:hover { background: color-mix(in srgb, var(--error) 10%, var(--bg-primary)); }
-.app-confirm-dialog { width: min(400px, calc(100vw - 32px)); box-sizing: border-box; padding: var(--space-7); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--bg-primary); color: var(--text-primary); box-shadow: var(--shadow-lg); }
+.app-confirm-dialog { position: fixed; inset: 0; margin: auto; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box; padding: var(--space-7); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--bg-primary); color: var(--text-primary); box-shadow: var(--shadow-lg); }
 .app-confirm-dialog::backdrop { background: #0006; }
 .app-confirm-dialog h2 { margin: 0 0 var(--space-5); font-size: var(--font-lg); }
 .app-confirm-dialog p { margin: 0; color: var(--text-secondary); line-height: var(--leading-relaxed); overflow-wrap: anywhere; white-space: pre-line; }
