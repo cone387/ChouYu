@@ -174,11 +174,29 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await assert("Array.from(document.querySelectorAll('.tasks-create-options .tasks-item-menu-popover button')).map(button => button.textContent).join(',') === '新建任务,新建分组'")
   await clickPointer('.tasks-create-options .tasks-item-menu-popover button:last-child')
   await waitForRenderer(window, "!!document.querySelector('.tasks-display-group-form')")
-  await assert("!document.querySelector('.tasks-collection-dialog')")
+  await assert(`(() => {
+    const form = document.querySelector('.tasks-display-group-form');
+    const dialog = form.closest('[role="dialog"][aria-modal="true"]');
+    if (!dialog || dialog.querySelector('h2').textContent !== '新建任务分组' || document.activeElement !== form.querySelector('input')) return false;
+    const rect = dialog.getBoundingClientRect(), backdrop = dialog.parentElement.getBoundingClientRect();
+    return Math.abs(rect.x + rect.width / 2 - backdrop.x - backdrop.width / 2) < 2
+      && Math.abs(rect.y + rect.height / 2 - backdrop.y - backdrop.height / 2) < 2;
+  })()`)
+  for (const theme of ['light', 'dark']) {
+    await run(`document.documentElement.dataset.theme = '${theme}'`)
+    await assert(`(() => {
+      const input = document.querySelector('[aria-label="任务分组名称"]');
+      input.blur(); const border = getComputedStyle(input).borderColor;
+      input.focus(); const style = getComputedStyle(input);
+      return style.outlineStyle === 'none' && style.boxShadow === 'none' && style.borderColor === border;
+    })()`)
+  }
+  await run(`document.documentElement.dataset.theme = ${JSON.stringify(originalTheme)}`)
   await fill('[aria-label="任务分组名称"]', '手动任务组')
   await clickPointer('.tasks-display-group-form button[type=submit]')
   await waitForRenderer(window, "!document.querySelector('.tasks-display-group-form') && document.querySelector('.tasks-grouped-list')?.textContent.includes('手动任务组')")
   await assert("!document.querySelector('.tasks-notice')")
+  await assert("!document.querySelector('.tasks-grouped-list .tasks-group-create-task') && !document.querySelector('.tasks-grouped-list').textContent.includes('中新建任务')")
   const manualGroupId: string = await run("Array.from(document.querySelectorAll('.tasks-content-group')).find(group => group.querySelector('summary').textContent.includes('手动任务组')).dataset.groupKey")
   await click('.tasks-grouping-menu > summary')
   await fill('[aria-label="看板分组方式"]', 'priority')

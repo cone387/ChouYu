@@ -7,7 +7,7 @@ import TasksBoard, { groupTasks, type BoardGroupMode } from './TasksBoard'
 import TaskEditorDialog, { type TaskDraft as Draft } from './TaskEditorDialog'
 import TaskFieldsDialog from './TaskFieldsDialog'
 import TaskCollectionDialog from './TaskCollectionDialog'
-import TaskDisplayGroupForm from './TaskDisplayGroupForm'
+import TaskDisplayGroupDialog from './TaskDisplayGroupDialog'
 import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
 import TaskIcon, { type IconName } from './TaskIcon'
 import useTaskMenus from './useTaskMenus'
@@ -791,7 +791,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} error={error} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
 
       {loading && <p role="status">正在加载任务…</p>}
-      {displayGroupDraft && <TaskDisplayGroupForm key={displayGroupDraft.id} initialName={displayGroupDraft.name} editing={Boolean(displayGroupDraft.id)} onSave={saveDisplayGroup} onCancel={() => setDisplayGroupDraft(null)} />}
+      {displayGroupDraft && <TaskDisplayGroupDialog key={displayGroupDraft.id} initialName={displayGroupDraft.name} editing={Boolean(displayGroupDraft.id)} onSave={saveDisplayGroup} onCancel={() => setDisplayGroupDraft(null)} />}
       {selection !== 'done' && mode === 'board'
         ? <TasksBoard orderScope={selection} tasks={sorted} projects={projects} fields={displayFields} groupingFields={fields} customGroups={customGroups} renderGroupActions={renderDisplayGroupActions} onNewGroup={startDisplayGroup} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
             onEdit={task => setDraft(draftFromTask(task))}
@@ -822,7 +822,6 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
           <details className="tasks-content-group" data-group-key={column.key} open>
             <summary><TaskIcon name="chevron" /><span>{column.label}</span><span className="tasks-count">{column.tasks.length}</span></summary>
             <ul role="list" className={`tasks-list${selection === 'done' ? ' tasks-list-done' : ''}`} aria-label={column.label}>{column.tasks.map(renderTask)}</ul>
-            {boardGroupMode === 'custom' && selection !== 'done' && <button type="button" className="tasks-group-create-task" onClick={() => setDraft({ ...createDraft(), displayGroupId: column.key })}><TaskIcon name="plus" />在{column.label}中新建任务</button>}
           </details>{renderDisplayGroupActions(column.key)}</div>)}
           {boardGroupMode === 'custom' && <button type="button" className="tasks-display-group-add" onClick={startDisplayGroup}><TaskIcon name="plus" />新建分组</button>}
           </div>
