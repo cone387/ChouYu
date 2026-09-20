@@ -8,7 +8,7 @@ import { nextRecurrenceDueAt, taskScheduleBounds, validateTaskChecklist, validat
 import { countDoneGroups } from './group-counts'
 import { captureDeleted, listTrash, restoreTrash } from './recovery'
 import { createTaskBackup, restoreTaskBackup, validateTaskBackup } from './backup'
-import { rescheduleTaskDate, type TaskUISettings, type TaskBatchAction } from '../../shared/tasks'
+import { type TaskUISettings } from '../../shared/tasks'
 
 const SCHEMA_VERSION = 9
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
@@ -307,20 +307,6 @@ export class TasksStore {
   exportBackup(settings: TaskUISettings) { return createTaskBackup(this.database, settings) }
   validateBackup(input: unknown) { return validateTaskBackup(this.database, input) }
   restoreBackup(input: unknown) { return restoreTaskBackup(this.database, input) }
-  batchTasks(ids: string[], action: TaskBatchAction): void {
-    if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || ids.some(id => typeof id !== 'string') || new Set(ids).size !== ids.length) throw new Error('请选择 1–1000 项不同的任务。')
-    if (!action || !['complete', 'reopen', 'update', 'reschedule'].includes(action.kind)) throw new Error('批量操作无效。')
-    this.database.transaction(() => {
-      for (const id of ids) {
-        const task = this.requireTask(id)
-        if (action.kind === 'complete') { if (task.status === 'open') this.completeTask(id) }
-        else if (action.kind === 'reopen') { if (task.status === 'done') this.reopenTask(id) }
-        else if (action.kind === 'update') this.updateTask(id, action.patch)
-        else if (action.kind === 'reschedule') this.updateTask(id, rescheduleTaskDate(task, action.date))
-      }
-    })()
-  }
-
   listTrash() { return listTrash(this.database) }
   restoreTrash(id: string): void { restoreTrash(this.database, id) }
   purgeTrash(id: string): void { this.database.prepare('DELETE FROM task_trash WHERE id = ?').run(id) }

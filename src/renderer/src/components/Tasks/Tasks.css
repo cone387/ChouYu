@@ -711,18 +711,8 @@
 }
 
 .task-card-project { appearance: none; border: 0; padding: 0; background: none; font: inherit; cursor: pointer; text-align: left; }
-.tasks-batch-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 0; border-block: 1px solid var(--border); margin-bottom: 12px; }
-.tasks-batch-bar label { display: inline-flex; align-items: center; gap: 6px; }
-.tasks-toolbar-action { appearance: none; display: inline-flex; align-items: center; height: 34px; padding: 0 8px; border: 0; border-radius: 5px; font: inherit; font-size: 13px; background: transparent; color: var(--text-secondary); cursor: pointer; }
-.tasks-toolbar-action:hover, .tasks-toolbar-action[aria-pressed='true'] { background: var(--hover-bg); }
-.tasks-quick-create { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.tasks-quick-create > input { flex: 1 1 240px; min-width: 100px; }
-.tasks-quick-create > small { flex-basis: 100%; color: var(--text-muted); }
-.tasks-batch-bar :is(select, input) { width: auto; max-width: 180px; }
-.tasks-selection { flex: 0 0 16px; width: 16px; height: 16px; margin: 3px 0; padding: 0; accent-color: var(--tasks-active); }
 .tasks-quick-edit { flex: 0 0 auto; }
 .tasks-list > .tasks-item { grid-template-columns: 28px minmax(0, 1fr) 28px 28px; column-gap: 8px; }
-.tasks-list > .tasks-item:has(> .tasks-selection) { grid-template-columns: 16px 28px minmax(0, 1fr) 28px 28px; }
 .tasks-quick-edit > summary { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; box-sizing: border-box; list-style: none; color: var(--text-muted); cursor: pointer; }
 .tasks-source-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tasks-checklist-editor { margin: 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }

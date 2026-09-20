@@ -786,29 +786,6 @@ test('删除分组勾选级联删除时包含归档清单和已完成任务，�
   reopened.close()
 })
 
-test('批量操作整体回滚，重复完成不产生重复后继，改期保留时长和提醒偏移', () => {
-  const store = openTasksStore(tempFile('batch.db'))
-  const startAt = new Date(2026, 8, 20, 10).getTime(), dueAt = new Date(2026, 8, 22, 17).getTime()
-  const first = store.createTask({ title: '跨天', startAt, dueAt, remindAt: dueAt - 3600000 })
-  const repeat = store.createTask({ title: '每天', dueAt, recurrence: 'daily' })
-  expect(() => store.batchTasks([first.id, 'missing'], { kind: 'complete' })).toThrow()
-  expect(store.listTasks().open.some(task => task.id === first.id)).toBe(true)
-  store.batchTasks([first.id, repeat.id], { kind: 'complete' })
-  store.batchTasks([first.id, repeat.id], { kind: 'complete' })
-  expect(store.listTasks().open.filter(task => task.title === '每天')).toHaveLength(1)
-  store.batchTasks([first.id], { kind: 'reopen' })
-  expect(() => store.batchTasks([first.id], { kind: 'reschedule', date: '2026-02-30' })).toThrow()
-  store.batchTasks([first.id], { kind: 'reschedule', date: '2026-09-28' })
-  const moved = store.listTasks().open.find(task => task.id === first.id)!
-  expect(moved.startAt).toBe(new Date(2026, 8, 26, 10).getTime())
-  expect(moved.dueAt).toBe(new Date(2026, 8, 28, 17).getTime())
-  expect(moved.remindAt).toBe(moved.dueAt! - 3600000)
-  const destination = store.createProject('批量目标')
-  store.batchTasks([first.id, repeat.id], { kind: 'update', patch: { projectId: destination.id } })
-  expect([...store.listTasks().open, ...store.listTasks().done].filter(task => [first.id, repeat.id].includes(task.id)).every(task => task.projectId === destination.id)).toBe(true)
-  store.close()
-})
-
 test('子项、来源持久化并可回收恢复，子项与父状态独立，重复下一期重置勾选', () => {
   const file = tempFile('checklist-source.db')
   let store = openTasksStore(file)

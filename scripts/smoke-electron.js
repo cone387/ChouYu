@@ -5,7 +5,7 @@ const path = require('path')
 
 const READY_MARKER = 'CHOUYU_SMOKE_READY'
 const FAILED_MARKER = 'CHOUYU_SMOKE_FAILED'
-// Include task recovery, backup/reload, source and batch flows before chat/journal checks.
+// Include task recovery, backup/reload and source flows before chat/journal checks.
 // Capturing every workspace in both themes takes longer than the headless assertions.
 const TIMEOUT_MS = process.env.CHOUYU_SMOKE_ARTIFACTS ? 300_000 : 240_000
 const packagedArgIndex = process.argv.indexOf('--packaged')

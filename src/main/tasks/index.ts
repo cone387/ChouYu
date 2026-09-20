@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Notification } from 'electron'
 import { join } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import type { TaskUISettings, TaskBatchAction } from '../../shared/tasks'
+import type { TaskUISettings } from '../../shared/tasks'
 import type { TaskBackup } from './backup'
 import { openTasksStore, type TasksStore } from './store'
 import { startTaskScheduler } from './scheduler'
@@ -69,7 +69,6 @@ export function initializeTasks(options: TasksModuleOptions): void {
     }
   )
   ipcMain.handle('tasks:list', (_event, options) => store!.listTasks(options ?? {}))
-  ipcMain.handle('tasks:batch', (_event, ids: string[], action: TaskBatchAction) => store!.batchTasks(ids, action))
   ipcMain.handle('tasks:trash', () => store!.listTrash())
   ipcMain.handle('tasks:restoreTrash', (_event, id: string) => store!.restoreTrash(id))
   ipcMain.handle('tasks:purgeTrash', (_event, id: string) => store!.purgeTrash(id))
@@ -143,7 +142,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
 export function closeTasks(): void {
   shuttingDown = true
   pendingBackups.clear()
-  for (const channel of ['tasks:get', 'tasks:batch', 'tasks:trash', 'tasks:restoreTrash', 'tasks:purgeTrash', 'tasks:exportBackup', 'tasks:selectBackup', 'tasks:restoreBackup']) ipcMain.removeHandler(channel)
+  for (const channel of ['tasks:get', 'tasks:trash', 'tasks:restoreTrash', 'tasks:purgeTrash', 'tasks:exportBackup', 'tasks:selectBackup', 'tasks:restoreBackup']) ipcMain.removeHandler(channel)
   for (const channel of ['tasks:groups', 'tasks:createGroup', 'tasks:renameGroup', 'tasks:deleteGroup', 'tasks:moveProject', 'tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:deleteProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView', 'tasks:fields', 'tasks:createField', 'tasks:updateField', 'tasks:deleteField']) ipcMain.removeHandler(channel)
   ipcMain.removeAllListeners('tasks:ready')
   storeRebuilt = false

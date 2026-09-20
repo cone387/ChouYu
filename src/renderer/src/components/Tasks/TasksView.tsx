@@ -10,7 +10,6 @@ import TaskCollectionDialog from './TaskCollectionDialog'
 import TaskDisplayGroupDialog from './TaskDisplayGroupDialog'
 import TaskTrashDialog from './TaskTrashDialog'
 import TaskBackupDialog from './TaskBackupDialog'
-import TaskBatchBar from './TaskBatchBar'
 import TaskQuickEdit from './TaskQuickEdit'
 import type { TaskConversionDraft } from './taskNavigation'
 import type { TaskSource } from '../../../../shared/tasks'
@@ -192,11 +191,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const [fieldsOpen, setFieldsOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
-  const [selecting, setSelecting] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [quickTitle, setQuickTitle] = useState<string | null>(null)
-  const quickInput = useRef<HTMLInputElement>(null)
-  const toggleSelected = (id: string) => setSelectedIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id])
   const taskRefs = useRef<Record<string, HTMLLIElement | null>>({})
   useEffect(() => {
     if (!revealGroupId || sidebarCollapsed) return
@@ -516,30 +510,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     const value = conversionRequest.draft
     setError(''); setDraft({ ...emptyDraft, projectId: projects.find(project => project.isDefault)?.id ?? '', title: value.title.slice(0, 200), note: value.note.slice(0, 2000), source: value.source })
   }, [active, conversionRequest, projects])
-  useEffect(() => {
-    if (!active) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== 'n' || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.isComposing || document.querySelector('dialog[open], [role="dialog"]')) return
-      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return
-      event.preventDefault(); setQuickTitle('')
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [active])
-  useEffect(() => { if (quickTitle !== null && !actionPending) quickInput.current?.focus() }, [quickTitle === null, actionPending])
-  useEffect(() => { setQuickTitle(null) }, [selection])
-  const submitQuick = (event: FormEvent) => {
-    event.preventDefault()
-    if (!quickTitle?.trim()) return
-    const candidate = createDraft({ title: quickTitle.trim() })
-    void performAction(async () => {
-      const dueAt = draftDueAt(candidate)
-      const saved = await window.electronAPI.tasks.create({ title: candidate.title, projectId: candidate.projectId, priority: candidate.priority, dueAt, remindAt: remindAtFromChoice(candidate.remind, dueAt) })
-      setQuickTitle('')
-      if (!matchesKeywordAndFilter(saved) || !matchesSelection(saved, selection) || effectiveStatus === 'done') setNotice('任务已创建，不符合当前视图或筛选条件。')
-      quickInput.current?.focus()
-    })
-  }
   const removeField = async (field: TaskSelectField) => {
     if (busy) return
     setBusy(true); setError('')
@@ -607,12 +577,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const collectionDialogOpen = newGroup !== null || newProject !== null || groupRenaming !== null
 
   const listTasks = selection === 'done' ? (sortMode === 'manual' ? applyTaskOrder(doneVisible, taskOrder) : sortTasks(doneVisible, sortMode, now)) : sorted
-  const visibleIdKey = JSON.stringify(listTasks.map(task => task.id))
-  useEffect(() => { setSelectedIds([]) }, [selection, query, filterDue, filterPriorities, filterProjects, effectiveStatus])
-  useEffect(() => {
-    const visibleIds = new Set<string>(JSON.parse(visibleIdKey))
-    setSelectedIds(current => current.every(id => visibleIds.has(id)) ? current : current.filter(id => visibleIds.has(id)))
-  }, [visibleIdKey])
   const columnOrderScope = JSON.stringify([selection, boardGroupMode, boardGroupMode === 'field' ? groupFieldId : null])
   const orderedGroups = layoutOrder.sort('sidebar:groups', groups, group => group.id)
   const sidebarGroupIds = orderedGroups.map(group => group.id)
@@ -701,7 +665,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
 
   const renderTask = (task: TaskRecord) => {
     return <li key={task.id} data-task-id={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={0} aria-label={`任务：${task.title}，按 Enter 编辑`} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority} data-completed={task.status === 'done' || undefined}
-          draggable={!selecting}
+          draggable={true}
           data-card-insert={listCardTarget?.id === task.id ? (listCardTarget.after ? 'after' : 'before') : undefined}
           onDragStart={event => { event.stopPropagation(); event.dataTransfer.setData('application/x-chouyu-list-task', task.id); event.dataTransfer.effectAllowed = 'move'; setListDraggingTask(task.id) }}
           onDragEnd={finishListDrag}
@@ -735,7 +699,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
             if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return
             event.preventDefault(); setDraft(draftFromTask(task))
           }}>
-          {selecting && <input className="tasks-selection" type="checkbox" aria-label={`选择 ${task.title}`} checked={selectedIds.includes(task.id)} disabled={actionPending} onChange={() => toggleSelected(task.id)} />}
           <button type="button" className="tasks-complete" disabled={actionPending} data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? reopen(task.id) : complete(task.id)}></button>
           <div className="tasks-item-body">
             <div className="tasks-item-head">
@@ -859,12 +822,10 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
               <summary aria-label="新建任务选项" title="新建任务选项"><TaskIcon name="chevron" /></summary>
               <div className="tasks-item-menu-popover">
                 <button type="button" onClick={startCreate}><TaskIcon name="task" />新建任务</button>
-                <button type="button" title="Ctrl / ⌘ + N" onClick={() => setQuickTitle('')}><TaskIcon name="plus" />快速新建</button>
                 {((mode === 'list' && !listGrouped) || boardGroupMode === 'custom') && <button type="button" onClick={startDisplayGroup}><TaskIcon name="group" />新建分组</button>}
               </div>
             </details>
           </div>
-          <button type="button" className="tasks-toolbar-action" aria-pressed={selecting} disabled={actionPending} onClick={() => { setSelecting(!selecting); setSelectedIds([]) }}>批量操作</button>
           {selection !== 'done' && <details className="tasks-tool-menu">
             <summary aria-label="任务完成状态" title={`状态：${effectiveStatus === 'open' ? '未完成' : effectiveStatus === 'done' ? '已完成' : '全部任务'}`} data-active={effectiveStatus !== 'open' || undefined}><TaskIcon name="done" /><span>{effectiveStatus === 'open' ? '未完成' : effectiveStatus === 'done' ? '已完成' : '全部任务'}</span></summary>
             <div className="tasks-item-menu-popover tasks-tool-popover">{(['open', 'done', 'all'] as const).map(status => <button type="button" key={status} aria-current={effectiveStatus === status || undefined} onClick={() => setStatusFilter(status)}>{status === 'open' ? '未完成' : status === 'done' ? '已完成' : '全部任务'}</button>)}</div>
@@ -1017,16 +978,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       {sourcePreview && <TaskSourceDialog source={sourcePreview} onClose={() => setSourcePreview(null)} onChat={onOpenChat} />}
 
       {loading && <p role="status">正在加载任务…</p>}
-      {quickTitle !== null && <form className="tasks-quick-create" aria-label="快速新建任务" onSubmit={submitQuick}>
-        <input ref={quickInput} aria-label="快速任务标题" placeholder="输入任务名称，按 Enter 创建" value={quickTitle} disabled={actionPending} onChange={event => setQuickTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setQuickTitle(null) } }} />
-        <button type="submit" disabled={actionPending || !quickTitle.trim()}>创建</button>
-        <button type="button" disabled={actionPending} onClick={() => { setDraft(createDraft({ title: quickTitle })); setQuickTitle(null) }}>补充详情</button>
-        <button type="button" disabled={actionPending} onClick={() => setQuickTitle(null)}>取消</button>
-        <small>沿用当前视图的清单、日期和优先级</small>
-      </form>}
-      {selecting && <TaskBatchBar count={selectedIds.length} visibleCount={listTasks.length} busy={actionPending} projects={projects}
-        onSelectAll={() => setSelectedIds(listTasks.map(task => task.id))} onClear={() => { setSelectedIds([]); setSelecting(false) }}
-        onAction={action => void performAction(async () => { await window.electronAPI.tasks.batch(selectedIds, action); setSelectedIds([]) })} />}
       {(mode === 'board' || listGrouped) && boardGroupMode === 'week' && <p className="tasks-view-description">跨天任务单独展示；单日任务可拖到其他日期改期，跨天任务请编辑起止时间。</p>}
       {(mode === 'board' || listGrouped) && (boardGroupMode === 'overdue' || boardGroupMode === 'completed') && <p className="tasks-view-description">分组由实际日期自动计算，可在组内拖动排序。</p>}
       {displayGroupDraft && <TaskDisplayGroupDialog key={displayGroupDraft.id} initialName={displayGroupDraft.name} editing={Boolean(displayGroupDraft.id)} onSave={saveDisplayGroup} onCancel={() => setDisplayGroupDraft(null)} />}
@@ -1035,7 +986,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
             onOpenProject={openProject}
             onSource={setSourcePreview}
             onQuickEdit={async (id, patch) => { await window.electronAPI.tasks.update(id, patch); reloadRef.current() }}
-            selecting={selecting} selectedIds={selectedIds} selectionBusy={actionPending} onSelect={toggleSelected}
             onEdit={task => setDraft(draftFromTask(task))}
             onComplete={complete}
             onReopen={reopen}

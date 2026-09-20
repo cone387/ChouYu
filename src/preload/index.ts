@@ -67,7 +67,6 @@ const api = {
     cancelAnalysis: () => ipcRenderer.invoke('journal:cancel-analysis')
   } satisfies JournalAPI,
   tasks: {
-    batch: (ids, action) => ipcRenderer.invoke('tasks:batch', ids, action),
     trash: () => ipcRenderer.invoke('tasks:trash'),
     restoreTrash: id => ipcRenderer.invoke('tasks:restoreTrash', id),
     purgeTrash: id => ipcRenderer.invoke('tasks:purgeTrash', id),

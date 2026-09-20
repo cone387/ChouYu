@@ -125,7 +125,6 @@ export interface TaskBackupPreview {
   trashCount: number
 }
 
-export type TaskBatchAction = { kind: 'complete' | 'reopen' } | { kind: 'update'; patch: TaskUpdateInput } | { kind: 'reschedule'; date: string }
 
 /** Changing a deadline preserves its clock time and the interval's calendar-day length. */
 export function rescheduleTaskDate(task: TaskRecord, date: string): TaskUpdateInput {
@@ -381,7 +380,6 @@ export function formatTaskDue(at: number): string {
 export interface TasksAPI {
   onChanged(callback: () => void): () => void
   get(id: string): Promise<TaskRecord | null>
-  batch(ids: string[], action: TaskBatchAction): Promise<void>
   exportBackup(settings: TaskUISettings): Promise<boolean>
   selectBackup(): Promise<TaskBackupPreview | null>
   restoreBackup(token: string, currentSettings: TaskUISettings): Promise<{ settings: TaskUISettings; safetyBackupPath: string }>

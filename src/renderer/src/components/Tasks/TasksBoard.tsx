@@ -11,10 +11,6 @@ import { groupTasks, taskGroupMove, type BoardColumn, type BoardGroupMode } from
 export { groupTasks, type BoardGroupMode } from './taskGrouping'
 
 interface TasksBoardProps {
-  selecting?: boolean
-  selectedIds?: string[]
-  selectionBusy?: boolean
-  onSelect?: (id: string) => void
   onSource?: (source: TaskSource) => void
   onQuickEdit?: (id: string, patch: TaskUpdateInput) => Promise<unknown>
   orderScope: string
@@ -41,7 +37,7 @@ interface TasksBoardProps {
   onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => Promise<void>
 }
 
-export default function TasksBoard({ selecting, selectedIds, selectionBusy, onSelect, onSource, onQuickEdit, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+export default function TasksBoard({ onSource, onQuickEdit, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, DOMRect>())
   const scrollFrame = useRef<number | null>(null)
@@ -230,7 +226,7 @@ export default function TasksBoard({ selecting, selectedIds, selectionBusy, onSe
         {items.length > 0 && column.totalCount > items.length && <p className="tasks-view-description">已加载 {items.length} / {column.totalCount}</p>}
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
-            return <li key={task.id} className="tasks-board-card" data-completed={task.status === 'done' || undefined} onDragEnd={finishColumnDrag} draggable={!savingTask && !selecting} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined}
+            return <li key={task.id} className="tasks-board-card" data-completed={task.status === 'done' || undefined} onDragEnd={finishColumnDrag} draggable={!savingTask} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined}
               onClick={event => {
                 if ((event.target as Element).closest('button, summary, .tasks-quick-edit, a, input, select, textarea') || window.getSelection()?.toString()) return
                 onEdit(task)
@@ -241,7 +237,6 @@ export default function TasksBoard({ selecting, selectedIds, selectionBusy, onSe
                 if (target) void commitTask(task.id, {}, target.id, after)
               }} data-priority={task.priority} data-motion-key={`task:${task.id}`} data-task-dragging={draggingTask === task.id || undefined}
               onDragStart={event => { if (savingRef.current) { event.preventDefault(); return }; event.stopPropagation(); event.dataTransfer.setData('text/plain', task.id); event.dataTransfer.effectAllowed = 'move'; setPreview(event, event.currentTarget); setDraggingTask(task.id) }}>
-              {selecting && <input className="tasks-selection" type="checkbox" aria-label={`选择 ${task.title}`} checked={selectedIds?.includes(task.id) ?? false} disabled={selectionBusy} onChange={() => onSelect?.(task.id)} />}
               <button type="button" className="tasks-complete" data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? onReopen(task.id) : onComplete(task.id)}></button>
               <div className="tasks-board-card-body">
                 <span className="tasks-board-card-head">
