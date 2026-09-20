@@ -258,7 +258,12 @@ export default function TasksBoard({ orderScope, tasks, projects, fields, groupi
         {items.length === 0 && <p className="tasks-board-empty">暂无任务，可拖动任务到这里</p>}
         <ul role="list" className="tasks-board-cards">
           {items.map(task => {
-            return <li key={task.id} className="tasks-board-card" onDragEnd={finishColumnDrag} draggable={!savingTask} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined} onKeyDown={event => {
+            return <li key={task.id} className="tasks-board-card" onDragEnd={finishColumnDrag} draggable={!savingTask} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined}
+              onClick={event => {
+                if ((event.target as Element).closest('button, summary, a, input, select, textarea') || window.getSelection()?.toString()) return
+                onEdit(task)
+              }} onKeyDown={event => {
+                if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); onEdit(task); return }
                 if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key) || column.archived) return
                 event.preventDefault(); const index = items.findIndex(item => item.id === task.id); const after = event.key === 'ArrowDown'; const target = items[index + (after ? 1 : -1)]
                 if (target) void commitTask(task.id, {}, target.id, after)

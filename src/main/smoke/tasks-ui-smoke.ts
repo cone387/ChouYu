@@ -11,13 +11,13 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     if (!element || element.disabled) throw new Error('Missing control: ' + ${JSON.stringify(selector)});
     element.click();
   })()`)
-  const clickConfirmButton = async (selector: string) => {
+  const clickPointer = async (selector: string, padding = false) => {
     const point = await run(`(() => {
       const button = document.querySelector(${JSON.stringify(selector)});
       const rect = button.getBoundingClientRect();
-      const x = Math.round(rect.x + rect.width / 2), y = Math.round(rect.y + rect.height / 2);
+      const x = Math.round(rect.x + (${padding} ? 6 : rect.width / 2)), y = Math.round(rect.y + (${padding} ? 6 : rect.height / 2));
       const hit = document.elementFromPoint(x, y);
-      if (!button.contains(hit) || !hit.closest('[data-interactive]')) throw new Error('Confirmation button is blocked or enables desktop click-through');
+      if (!button.contains(hit) || !hit.closest('[data-interactive]')) throw new Error('Pointer target is blocked or enables desktop click-through: ' + ${JSON.stringify(selector)});
       return { x, y };
     })()`)
     window.webContents.sendInputEvent({ type: 'mouseMove', ...point })
@@ -97,7 +97,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('.tasks-add-list-menu .tasks-item-menu-popover button:first-child')
   await assert("document.querySelector('.tasks-collection-dialog')?.getAttribute('aria-modal') === 'true'")
   await fill('.tasks-collection-form input', '工作分组')
-  await click('.tasks-collection-form button[type="submit"]')
+  await clickPointer('.tasks-collection-form button[type="submit"]')
   await waitForRenderer(window, "Array.from(document.querySelectorAll('.tasks-project-group summary')).some(item => item.textContent === '工作分组')")
   await assert("!document.querySelector('.tasks-sidebar-projects .tasks-count')")
   await click('[aria-label="折叠或展开分组 收集箱"]')
@@ -143,6 +143,47 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await choose('任务 测试阶段', optionId)
   await click('.tasks-dialog button[type="submit"]')
   await waitForRenderer(window, "!document.querySelector('.tasks-dialog') && document.querySelector('.tasks-list')?.textContent.includes('界面创建任务')")
+  // Create an empty group through the toolbar with real pointer input.
+  await clickPointer('[aria-label="新建任务选项"]')
+  await waitForRenderer(window, "document.querySelector('.tasks-create-options .tasks-item-menu-popover').matches(':popover-open')")
+  await clickPointer('.tasks-create-options .tasks-item-menu-popover button:last-child')
+  await waitForRenderer(window, "!!document.querySelector('.tasks-collection-dialog')")
+  await fill('.tasks-collection-form input', '联动空分组')
+  await clickPointer('.tasks-collection-form button[type="submit"]')
+  await waitForRenderer(window, "!document.querySelector('.tasks-collection-dialog') && document.querySelector('.tasks-notice')?.textContent.includes('已创建分组「联动空分组」')")
+  const emptyGroupId: string = await run("window.electronAPI.tasks.groups().then(groups => groups.find(group => group.name === '联动空分组').id)")
+  await assert(`!!document.querySelector('[data-group-id="${emptyGroupId}"] .tasks-empty-group-add')`)
+  await run("document.querySelector('.tasks-item').scrollIntoView({ block: 'nearest' })")
+  await clickPointer('.tasks-item', true)
+  await waitForRenderer(window, "document.querySelector('.tasks-composer h2')?.textContent === '编辑任务'")
+  await assert(`document.querySelector('[role="combobox"][aria-label="任务分组"]').dataset.value === '${groupId}'`)
+  const siblingProjectId: string = await run("window.electronAPI.tasks.projects().then(projects => projects.find(project => project.name === '分组内项目').id)")
+  await choose('任务清单', siblingProjectId)
+  await choose('任务分组', groupId)
+  await assert(`document.querySelector('[aria-label="任务清单"]').dataset.value === '${siblingProjectId}'`)
+  await choose('任务分组', emptyGroupId)
+  await assert("document.querySelector('[aria-label=\"任务清单\"]').dataset.value === '' && document.querySelector('.tasks-composer button[type=submit]').disabled")
+  await fill('[aria-label="新清单名称"]', '联动新清单')
+  await clickPointer('.tasks-composer-new-project button')
+  await waitForRenderer(window, "!document.querySelector('.tasks-composer-new-project') && !document.querySelector('.tasks-composer button[type=submit]').disabled")
+  const linkedProjectId: string = await run("document.querySelector('[aria-label=\"任务清单\"]').dataset.value")
+  await assert(`window.electronAPI.tasks.projects().then(projects => projects.some(project => project.id === '${linkedProjectId}' && project.groupId === '${emptyGroupId}'))`)
+  await click('.tasks-composer button[type="submit"]')
+  await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
+  await assert(`window.electronAPI.tasks.list().then(list => list.open.find(task => task.title === '界面创建任务').projectId === '${linkedProjectId}')`)
+  await click('.tasks-item')
+  await waitForRenderer(window, "!!document.querySelector('.tasks-composer')")
+  await choose('任务分组', groupId)
+  await choose('任务清单', projectId)
+  await click('.tasks-composer button[type="submit"]')
+  await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
+  await run(`window.electronAPI.tasks.archiveProject('${linkedProjectId}', true).then(() => window.electronAPI.tasks.deleteGroup('${emptyGroupId}'))`)
+  await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
+  await waitForRenderer(window, `document.querySelector('.tasks-page-heading h1')?.textContent === '任务界面测试' && !document.querySelector('[data-group-id="${emptyGroupId}"]')`)
+  await run("document.querySelector('.tasks-item').focus(); document.querySelector('.tasks-item').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))")
+  await waitForRenderer(window, "!!document.querySelector('.tasks-composer')")
+  await click('[aria-label="关闭任务弹窗"]')
+  await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
   // All transient menus dismiss outside / with Escape; structural groups stay open.
   const menuSelector = 'details.tasks-tool-menu, details.tasks-project-menu, details.tasks-item-menu'
   const menuCount: number = await run(`document.querySelectorAll(${JSON.stringify(menuSelector)}).length`)
@@ -251,6 +292,10 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await fill('[aria-label="看板分组方式"]', 'priority')
   await click('.tasks-page-heading h1')
   await assert("document.querySelectorAll('.tasks-content-group').length === 3 && document.querySelector('.tasks-content-group').textContent.includes('看板快速创建')")
+  await click('.tasks-content-group .tasks-item-body')
+  await waitForRenderer(window, "!!document.querySelector('.tasks-composer')")
+  await click('[aria-label="关闭任务弹窗"]')
+  await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
   await click('[aria-label="任务分组"]')
   await fill('[aria-label="看板分组方式"]', 'none')
   await click('.tasks-page-heading h1')
@@ -373,6 +418,12 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
             await click('.tasks-create')
             await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
             await assert("document.querySelector('.tasks-composer').scrollWidth <= document.querySelector('.tasks-composer').clientWidth + 1")
+            await assert(`(() => {
+              const button = document.querySelector('.tasks-composer button[type=submit]');
+              const rect = button.getBoundingClientRect();
+              return [[rect.left + 8, rect.top + 8], [rect.right - 8, rect.top + 8], [rect.right - 8, rect.bottom - 8]]
+                .every(([x, y]) => button.contains(document.elementFromPoint(x, y)));
+            })()`)
             await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
             writeFileSync(join(directory, `tasks-composer-${mode}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
             await click('[role="combobox"][aria-label="任务清单"]')
@@ -469,13 +520,13 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
       && Math.abs(rect.y + rect.height / 2 - innerHeight / 2) < 2
       && rect.top >= 0 && rect.bottom <= innerHeight;
   })()`)
-  await clickConfirmButton('.app-confirm-dialog button:first-child')
+  await clickPointer('.app-confirm-dialog button:first-child')
   await waitForRenderer(window, "!document.querySelector('.app-confirm-dialog')")
   await assert(`window.electronAPI.tasks.groups().then(groups => groups.some(group => group.id === ${JSON.stringify(groupId)}))`)
   await click('[aria-label="管理分组 工作分组"]')
   await click('.tasks-group-actions .tasks-project-menu[open] .tasks-item-menu-danger')
   await waitForRenderer(window, "!!document.querySelector('.app-confirm-dialog:modal')")
-  await clickConfirmButton('.app-confirm-dialog .app-button-danger')
+  await clickPointer('.app-confirm-dialog .app-button-danger')
   await waitForRenderer(window, "!document.querySelector('.app-confirm-dialog') && !document.querySelector('[aria-label=\"管理分组 工作分组\"]')")
   await assert(`window.electronAPI.tasks.projects().then(projects => projects.some(project => project.id === ${JSON.stringify(projectId)} && project.groupId !== ${JSON.stringify(groupId)}))`)
   await assert(`window.electronAPI.tasks.list().then(list => list.open.some(task => task.id === ${JSON.stringify(unplannedId)}))`)

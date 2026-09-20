@@ -156,6 +156,8 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const displayFields = fields.filter(field => !hiddenFields.includes(field.id))
   const [quarantineNotice, setQuarantineNotice] = useState('')
   const [groups, setGroups] = useState<TaskGroup[]>([])
+  const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const [revealGroupId, setRevealGroupId] = useState<string | null>(null)
   const [groupRenaming, setGroupRenaming] = useState<TaskGroup | null>(null)
   const [newGroup, setNewGroup] = useState<string | null>(null)
   const [projectGroupId, setProjectGroupId] = useState('')
@@ -164,6 +166,13 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const [renaming, setRenaming] = useState<{ id: string; name: string; original: string } | null>(null)
   const [fieldsOpen, setFieldsOpen] = useState(false)
   const taskRefs = useRef<Record<string, HTMLLIElement | null>>({})
+  useEffect(() => {
+    if (!revealGroupId || sidebarCollapsed) return
+    const element = groupRefs.current[revealGroupId]
+    if (!element) return
+    element.scrollIntoView({ block: 'nearest' })
+    setRevealGroupId(null)
+  }, [revealGroupId, sidebarCollapsed, groups])
 
   const reload = useCallback(() => {
     const sequence = ++reloadSequence.current
@@ -204,7 +213,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
       if (event.key !== 'Escape' || event.defaultPrevented) return
       event.preventDefault()
       event.stopPropagation()
-      if (!busy) {
+      if (!busy && !projectBusy) {
         if (fieldsOpen) setFieldsOpen(false)
         else if (viewDraft) setViewDraft(null)
         else setDraft(null)
@@ -212,7 +221,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [draft, viewDraft, fieldsOpen, busy])
+  }, [draft, viewDraft, fieldsOpen, busy, projectBusy])
   useEffect(() => { setStatusFilter('open') }, [selection])
   useEffect(() => { if (focusTaskId) { setSelection('all'); setQuery(''); clearFilters(); setStatusFilter('open'); preferences.update('all', { mode: 'list' }) } }, [focusTaskId])
   useEffect(() => {
@@ -277,9 +286,10 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
 
   const submitDraft = (event: FormEvent) => {
     event.preventDefault()
-    if (!draft || busy) return
+    if (!draft || busy || projectBusy) return
     const title = draft.title.trim()
     if (!title) { setError('任务标题不能为空。'); return }
+    if (!draft.projectId) { setError('请先选择或创建所属清单。'); return }
     const startAt = draft.startDate ? new Date(`${draft.startDate}T${draft.startTime || '09:00'}`).getTime() : null
     const dueAt = draftDueAt(draft)
     if (startAt !== null && dueAt !== null && startAt > dueAt) { setError('开始时间不能晚于截止时间。'); return }
@@ -337,7 +347,12 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
     if (!newGroup?.trim() || projectBusy) return
     setProjectBusy(true); setError('')
     void window.electronAPI.tasks.createGroup(newGroup.trim())
-      .then(() => { setNewGroup(null); reloadRef.current() })
+      .then(group => {
+        setGroups(current => [...current.filter(item => item.id !== group.id), group])
+        setSidebarCollapsed(false); setRevealGroupId(group.id)
+        setNewGroup(null); setNotice(`已创建分组「${group.name}」，可以在分组中添加清单。`)
+        reloadRef.current()
+      })
       .catch(reason => setError(String(reason))).finally(() => setProjectBusy(false))
   }
 
@@ -355,6 +370,16 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   }
   const startGroupProject = (group: TaskGroup) => {
     setProjectGroupId(group.id); setNewProject(''); setNewGroup(null); setGroupRenaming(null); setError('')
+  }
+  const createDraftProject = async (name: string, groupId: string): Promise<TaskProject | null> => {
+    if (projectBusy) return null
+    setProjectBusy(true); setError('')
+    try {
+      const project = await window.electronAPI.tasks.createProject(name, groupId)
+      setProjects(current => [...current.filter(item => item.id !== project.id), project])
+      return project
+    } catch (reason) { setError(String(reason)); return null }
+    finally { setProjectBusy(false) }
   }
 
   const submitRename = (event: FormEvent) => {
@@ -457,7 +482,16 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
   const hiddenViewSelected = selection.startsWith('view:') || hiddenSmartViews.some(view => view.id === selection)
 
   const renderTask = (task: TaskRecord) => {
-    return <li key={task.id} data-task-id={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={task.id === focusTaskId ? -1 : undefined} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority} data-completed={task.status === 'done' || undefined}>
+    return <li key={task.id} data-task-id={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={0} aria-label={`任务：${task.title}，按 Enter 编辑`} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority} data-completed={task.status === 'done' || undefined}
+          onClick={event => {
+            if ((event.target as Element).closest('button, .tasks-item-menu, a, input, select, textarea, [role="button"]') || window.getSelection()?.toString()) return
+            event.currentTarget.focus({ preventScroll: true })
+            setDraft(draftFromTask(task))
+          }}
+          onKeyDown={event => {
+            if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return
+            event.preventDefault(); setDraft(draftFromTask(task))
+          }}>
           <button type="button" className="tasks-complete" disabled={actionPending} data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? reopen(task.id) : complete(task.id)}>{task.status === 'done' ? '✓' : ''}</button>
           <div className="tasks-item-body">
             <div className="tasks-item-head">
@@ -509,10 +543,11 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         </details>
       </div>
       <div className="tasks-sidebar-projects" role="region" aria-label="分组和清单列表">
-        {groups.map(group => <div className="tasks-group-shell" key={group.id}>
+        {groups.map(group => <div className="tasks-group-shell" key={group.id} data-group-id={group.id} ref={element => { groupRefs.current[group.id] = element }}>
           <details className="tasks-project-group" open>
             <summary aria-label={`折叠或展开分组 ${group.name}`}><span className="tasks-group-chevron"><TaskIcon name="chevron" /></span><span>{group.name}</span></summary>
             <ul role="list">{projects.filter(project => !project.archivedAt && project.groupId === group.id).sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault))).map(renderProject)}</ul>
+            {!projects.some(project => !project.archivedAt && project.groupId === group.id) && <button type="button" className="tasks-empty-group-add" onClick={() => startGroupProject(group)}><TaskIcon name="plus" />添加第一个清单</button>}
           </details>
           <div className="tasks-group-actions">
             <details className="tasks-project-menu">
@@ -659,7 +694,7 @@ export default function TasksView({ active, focusTaskId, searchRequest }: { acti
         onSubmit={groupRenaming ? submitGroupRename : newProject !== null ? submitProject : submitGroup}
         onClose={closeCollectionDialog} />}
 
-      {draft && <TaskEditorDialog draft={draft} projects={projects} fields={fields} busy={busy} error={error} dialogRef={taskDialogRef} onChange={setDraft} onClose={() => { if (!busy) setDraft(null) }} onSubmit={submitDraft} />}
+      {draft && <TaskEditorDialog draft={draft} projects={projects} groups={groups} fields={fields} busy={busy || projectBusy} error={error} dialogRef={taskDialogRef} onChange={setDraft} onCreateProject={createDraftProject} onClose={() => { if (!busy && !projectBusy) setDraft(null) }} onSubmit={submitDraft} />}
 
       {viewDraft && <div className="tasks-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setViewDraft(null) }}>
         <div className="tasks-dialog tasks-view-dialog" role="dialog" aria-modal="true" aria-labelledby="tasks-view-dialog-title" onMouseDown={event => event.stopPropagation()}>
