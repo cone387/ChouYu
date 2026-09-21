@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  compareTasks, isUnplanned, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, nextRecurrenceDueAt, remindAtFromChoice, sortTasks, TASK_PRIORITY_ORDER
+  compareTasks, isUnplanned, isDueThisWeek, isDueToday, isOverdue, matchesTaskView, nextRecurrenceDueAt, remindAtFromChoice, sortTasks, TASK_PRIORITY_ORDER, validateTaskChecklist
 } from './tasks'
 import type { RemindChoiceId, TaskRecord, TaskView } from './tasks'
 import { matchesTaskSchedule, taskScheduleBounds } from './tasks'
@@ -253,4 +253,22 @@ test('待规划与今天、本周互斥，今天属于本周；创建日期不�
     const task = base({ dueAt: now + offset * 86400_000 })
     expect(isUnplanned(task) && isDueToday(task, now)).toBe(false)
   }
+})
+
+describe('validateTaskChecklist 子项时间与提醒', () => {
+  test('接受可选截止时间与提醒，缺省字段兼容旧数据', () => {
+    const items = validateTaskChecklist([
+      { id: 'a', title: '旧格式', done: false },
+      { id: 'b', title: '带时间', done: false, dueAt: 1000, reminders: [{ at: 900, firedAt: null }] },
+      { id: 'c', title: '已清空', done: false, dueAt: null, reminders: [] }
+    ])
+    expect(items[0]).toEqual({ id: 'a', title: '旧格式', done: false })
+    expect(items[1]).toEqual({ id: 'b', title: '带时间', done: false, dueAt: 1000, reminders: [{ at: 900, firedAt: null }] })
+    expect(items[2]).toEqual({ id: 'c', title: '已清空', done: false })
+  })
+  test('无截止时间不许带提醒；非法时间与提醒结构报错', () => {
+    expect(() => validateTaskChecklist([{ id: 'a', title: 'x', done: false, reminders: [{ at: 1, firedAt: null }] }])).toThrow('子项提醒需要先设置截止时间。')
+    expect(() => validateTaskChecklist([{ id: 'a', title: 'x', done: false, dueAt: NaN }])).toThrow('任务子项无效。')
+    expect(() => validateTaskChecklist([{ id: 'a', title: 'x', done: false, dueAt: 1, reminders: [{ at: 'bad', firedAt: null }] }])).toThrow()
+  })
 })

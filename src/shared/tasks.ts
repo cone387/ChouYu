@@ -1,8 +1,8 @@
-import { nextTaskOccurrence, type TaskRecurrence, type TaskRepeatRule, type TaskReminder } from './taskScheduling'
+import { nextTaskOccurrence, validateReminders, type TaskRecurrence, type TaskRepeatRule, type TaskReminder } from './taskScheduling'
 export type { TaskRecurrence, TaskRepeatRule, TaskReminder } from './taskScheduling'
 export type TaskPriority = 'high' | 'medium' | 'low'
 export type TaskStatus = 'open' | 'done'
-export interface TaskChecklistItem { id: string; title: string; done: boolean }
+export interface TaskChecklistItem { id: string; title: string; done: boolean; dueAt?: number | null; reminders?: TaskReminder[] }
 export interface TaskSource { kind: 'chat' | 'journal' | 'continuation'; id: string; label: string; date?: string }
 
 export function validateTaskChecklist(input: unknown): TaskChecklistItem[] {
@@ -10,9 +10,17 @@ export function validateTaskChecklist(input: unknown): TaskChecklistItem[] {
   if (!Array.isArray(input) || input.length > 100) throw new Error('任务子项最多 100 项。')
   const ids = new Set<string>()
   return input.map(item => {
-    if (!item || typeof item.id !== 'string' || !item.id || item.id.length > 200 || ids.has(item.id) || typeof item.title !== 'string' || !item.title.trim() || item.title.length > 200 || typeof item.done !== 'boolean') throw new Error('任务子项无效。')
+    if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id || item.id.length > 200 || ids.has(item.id) || typeof item.title !== 'string' || !item.title.trim() || item.title.length > 200 || typeof item.done !== 'boolean') throw new Error('任务子项无效。')
     ids.add(item.id)
-    return { id: item.id, title: item.title.trim(), done: item.done }
+    const result: TaskChecklistItem = { id: item.id, title: item.title.trim(), done: item.done }
+    if (item.dueAt !== undefined && item.dueAt !== null) {
+      if (typeof item.dueAt !== 'number' || !Number.isFinite(item.dueAt)) throw new Error('任务子项无效。')
+      result.dueAt = Math.round(item.dueAt)
+    }
+    const reminders = item.reminders === undefined ? [] : validateReminders(item.reminders)
+    if (reminders.length > 0 && result.dueAt === undefined) throw new Error('子项提醒需要先设置截止时间。')
+    if (reminders.length) result.reminders = reminders
+    return result
   })
 }
 
