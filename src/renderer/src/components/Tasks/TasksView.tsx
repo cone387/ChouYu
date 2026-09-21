@@ -111,24 +111,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   }
   const viewNavRef = useRef<HTMLDivElement>(null)
   const [fitCount, setFitCount] = useState(Number.POSITIVE_INFINITY)
-  useEffect(() => {
-    const sidebar = sidebarRef.current
-    if (!sidebar || !active || sidebarCollapsed) return
-    const update = () => {
-      if (window.innerWidth <= 640) { setFitCount(3); return }
-      const row = viewNavRef.current?.querySelector<HTMLElement>('ul > li')
-      const more = viewNavRef.current?.querySelector<HTMLElement>('.tasks-more-views')
-      const rowHeight = row?.offsetHeight || 38
-      const moreHeight = more?.offsetHeight || 44
-      const headerHeight = sidebar.querySelector('header')?.getBoundingClientRect().height ?? 44
-      const budget = sidebarSplit.height ?? Math.min(sidebar.clientHeight * .52, sidebar.clientHeight - headerHeight - 120)
-      setFitCount(Math.max(1, Math.floor((budget - moreHeight) / rowHeight)))
-    }
-    const observer = new ResizeObserver(update)
-    observer.observe(sidebar)
-    update()
-    return () => observer.disconnect()
-  }, [active, sidebarCollapsed, sidebarSplit.height, sidebarRef])
   const [selection, setSelection] = useState<Selection>(() => {
     try {
       const last = localStorage.getItem('chouyu:task-selection') ?? ''
@@ -697,6 +679,26 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const overflowNavEntries = visibleNavEntries.slice(fitCount)
   const collapsedNavKeys = new Set([...nav.hidden, ...overflowNavEntries.map(entry => entry.key)])
   const hiddenViewSelected = collapsedNavKeys.has(selection.startsWith('view:') ? selection : navigationSelection)
+
+  useEffect(() => {
+    const sidebar = sidebarRef.current
+    if (!sidebar || !active || sidebarCollapsed) return
+    const update = () => {
+      if (window.innerWidth <= 640) { setFitCount(3); return }
+      const list = viewNavRef.current?.querySelector<HTMLElement>('ul')
+      const row = viewNavRef.current?.querySelector<HTMLElement>('ul > li')
+      const more = viewNavRef.current?.querySelector<HTMLElement>('.tasks-more-views')
+      const rowHeight = (row?.offsetHeight ?? 38) + (parseFloat(getComputedStyle(list ?? document.body).rowGap) || 0)
+      const moreHeight = more?.offsetHeight || 44
+      const headerHeight = sidebar.querySelector('header')?.getBoundingClientRect().height ?? 44
+      const budget = sidebarSplit.height ?? Math.min(sidebar.clientHeight * .52, sidebar.clientHeight - headerHeight - 120)
+      setFitCount(Math.max(1, Math.floor((budget - moreHeight) / rowHeight)))
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(sidebar)
+    update()
+    return () => observer.disconnect()
+  }, [active, sidebarCollapsed, sidebarSplit.height, sidebarRef, visibleNavEntries.length])
 
   const finishListDrag = () => { setListDraggingTask(null); setListCardTarget(null); setListDropGroup(null) }
   useEffect(finishListDrag, [selection, listGrouped, boardGroupMode, groupFieldId])
