@@ -1,11 +1,18 @@
 /* The rail and top strip are one continuous shell around the inset workspace. */
 .chat-panel.app-workspace {
+  --workspace-outer-radius: var(--radius-xl);
   --workspace-top-inset: 32px;
   --workspace-chrome: color-mix(in srgb, var(--bg-secondary) 94%, var(--text-primary));
   flex-direction: row;
   container-type: inline-size;
   container-name: workspace;
   background: var(--workspace-chrome);
+}
+.chat-panel.app-workspace[data-maximized="true"] {
+  --workspace-outer-radius: 0px;
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
 }
 .app-workspace [hidden] { display: none !important; }
 .workspace-header {
@@ -77,8 +84,8 @@
 .workspace-mode-menu button[aria-checked="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
 .workspace-mode-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .app-workspace:not([data-window-mode="workspace"]) .workspace-header { left: 0; }
-.app-workspace:not([data-window-mode="workspace"]) .workspace-body { border-bottom-left-radius: var(--radius-xl); }
-.app-workspace[data-window-mode="sessions"] .conversation-sidebar { border-bottom-left-radius: var(--radius-xl); }
+.app-workspace:not([data-window-mode="workspace"]) .workspace-body { border-bottom-left-radius: var(--workspace-outer-radius); }
+.app-workspace[data-window-mode="sessions"] .conversation-sidebar { border-bottom-left-radius: var(--workspace-outer-radius); }
 .app-workspace[data-maximized="true"] > .panel-resize-edge,
 .app-workspace[data-maximized="true"] > .chat-content-resize-edge { display: none; }
 .app-workspace[data-maximized="true"] .chat-panel-drag-handle { cursor: default; }
@@ -92,7 +99,7 @@
   gap: var(--space-5);
   padding: calc(var(--workspace-top-inset) + var(--space-5)) var(--space-2) var(--space-5);
   background: transparent;
-  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  border-radius: var(--workspace-outer-radius) 0 0 var(--workspace-outer-radius);
 }
 .workspace-brand { color: var(--accent); display: grid; place-items: center; height: 36px; margin-bottom: var(--space-4); }
 .workspace-brand { position: relative; }
@@ -114,7 +121,7 @@
 .workspace-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .workspace-nav-badge { position: absolute; top: 1px; right: 0; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 9px; background: var(--error); color: var(--on-error); font-size: 9px; line-height: 14px; text-align: center; font-weight: 700; pointer-events: none; }
 .workspace-nav-bottom { margin-top: auto; }
-.workspace-body { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; margin-top: var(--workspace-top-inset); background: var(--bg-primary); border-radius: var(--radius-xl) 0 var(--radius-xl) 0; }
+.workspace-body { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; margin-top: var(--workspace-top-inset); background: var(--bg-primary); border-radius: var(--radius-xl) 0 var(--workspace-outer-radius) 0; overflow: hidden; }
 .workspace-page { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: inherit; }
 .workspace-chat { position: relative; flex-direction: row; }
 .workspace-chat .chat-panel-main { border-radius: inherit; }

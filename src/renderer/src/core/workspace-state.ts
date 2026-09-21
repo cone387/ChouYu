@@ -14,10 +14,10 @@ export function parseWorkspaceMode(value: unknown): WorkspaceMode {
 
 export function getWorkspaceGeometry(mode: WorkspaceMode, maximized: boolean, viewport: { width: number; height: number }, contentWidth: number, sidebarWidth: number, panelHeight: number) {
   const chromeWidth = mode === 'workspace' ? 56 : 0
-  const width = maximized ? viewport.width - 8 : contentWidth + (mode === 'chat' ? 0 : sidebarWidth) + chromeWidth
+  const width = maximized ? viewport.width : contentWidth + (mode === 'chat' ? 0 : sidebarWidth) + chromeWidth
   return {
     width: Math.max(1, width),
-    height: maximized ? Math.max(1, viewport.height - 8) : panelHeight,
+    height: maximized ? Math.max(1, viewport.height) : panelHeight,
     chromeWidth,
     narrow: width < (mode === 'sessions' ? 600 : 700)
   }

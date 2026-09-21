@@ -170,6 +170,9 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
       const mode = document.querySelector('.workspace-mode-control').getBoundingClientRect();
       const minimize = document.querySelector('[aria-label="隐藏面板"]').getBoundingClientRect();
       if (mode.right > minimize.left + 1 || minimize.left - mode.right > 8) return 'Mode control must sit immediately before minimize';
+      const create = document.querySelector('.conversation-icon-btn');
+      const button = create.getBoundingClientRect(), icon = create.querySelector('svg').getBoundingClientRect();
+      if (Math.abs(button.x + button.width / 2 - icon.x - icon.width / 2) > 1 || Math.abs(button.y + button.height / 2 - icon.y - icon.height / 2) > 1) return 'New conversation icon is not centered';
       if (document.querySelector('.chat-panel-main .chat-topbar')) return 'Redundant chat toolbar remains';
       return '';
     })()`)
@@ -181,7 +184,16 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('.chat-panel').getAnimations().every(animation => animation.playState === 'finished' || animation.playState === 'idle')")
     await window.webContents.executeJavaScript("window.__modeComposer = document.querySelector('.input-textarea'); window.__normalBounds = document.querySelector('.chat-panel').getBoundingClientRect().toJSON()")
     await click(window, '[aria-label="最大化窗口"]')
-    await waitForRenderer(window, "document.querySelector('.chat-panel[data-maximized=true]') && Math.abs(document.querySelector('.chat-panel').getBoundingClientRect().width - (innerWidth - 8)) < 1")
+    await waitForRenderer(window, `(() => {
+      const panel = document.querySelector('.chat-panel[data-maximized=true]');
+      if (!panel) return false;
+      const rect = panel.getBoundingClientRect(), style = getComputedStyle(panel);
+      const body = getComputedStyle(panel.querySelector('.workspace-body'));
+      return rect.x === 0 && rect.y === 0 && rect.width === innerWidth && rect.height === innerHeight
+        && style.borderRadius === '0px' && style.borderTopWidth === '0px' && style.boxShadow === 'none'
+        && body.borderBottomRightRadius === '0px';
+    })()`)
+    await snapshots(window, 'window-maximized')
     await click(window, '[aria-label="还原窗口"]')
     await waitForRenderer(window, "(() => { const a = window.__normalBounds, b = document.querySelector('.chat-panel').getBoundingClientRect(); return ['x', 'y', 'width', 'height'].every(key => Math.abs(a[key] - b[key]) < 1) })()")
     // Main panels may cross every viewport edge; only the pet retains edge snapping.

@@ -734,7 +734,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       className="chat-panel app-workspace"
       data-window-mode={displayMode} data-maximized={maximized}
       data-workspace-page={activePage}
-      style={{ left: maximized ? 4 : position.x, top: maximized ? 4 : position.y, width: shellWidth, height: geometry.height, display: visible && panelReady ? undefined : 'none' }}>
+      style={{ left: maximized ? 0 : position.x, top: maximized ? 0 : position.y, width: shellWidth, height: geometry.height, display: visible && panelReady ? undefined : 'none' }}>
       {displayMode === 'workspace' && <WorkspaceNav activePage={activePage} onNavigate={navigate} status={getStatusText()} />}
       <WorkspaceHeader onHide={onHide} onClose={onClose} dragHandleProps={dragHandleProps}
         searchHotkey={config.searchHotkey}

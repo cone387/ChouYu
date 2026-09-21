@@ -57,6 +57,7 @@
   display: grid;
   width: 28px;
   height: 28px;
+  padding: 0;
   place-items: center;
   border: 0;
   border-radius: var(--radius-md);
@@ -215,6 +216,7 @@
   display: grid;
   width: 28px;
   height: 28px;
+  padding: 0;
   place-items: center;
   border: 0;
   border-radius: var(--radius-md);
