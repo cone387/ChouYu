@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type RefObject } from 'react'
-import type { RemindChoiceId, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField } from '../../../../shared/tasks'
-import { PRIORITY_LABELS } from '../../../../shared/tasks'
+import type { RemindChoiceId, TaskChecklistItem, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField } from '../../../../shared/tasks'
+import { PRIORITY_LABELS, REMIND_CHOICES, remindAtFromChoice } from '../../../../shared/tasks'
 import TaskDatePicker from './TaskDatePicker'
 import TaskSelect from './TaskSelect'
 import TaskIcon from './TaskIcon'
@@ -49,6 +49,28 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
   const [groupId, setGroupId] = useState(() => projects.find(project => project.id === draft.projectId)?.groupId ?? defaultGroupId)
   const [projectName, setProjectName] = useState('')
   const [newItem, setNewItem] = useState('')
+  const [insertedId, setInsertedId] = useState('')
+  const toDateTimeLocal = (at: number | null | undefined): string => {
+    if (at == null) return ''
+    const date = new Date(at)
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  }
+  const itemDueAt = (value: string): number | null => value ? new Date(value).getTime() : null
+  const itemRemindChoice = (item: TaskChecklistItem): RemindChoiceId => {
+    if (item.dueAt == null || item.reminders?.length !== 1 || item.reminders[0].firedAt !== null) return 'none'
+    for (const choice of REMIND_CHOICES) if (remindAtFromChoice(choice.id, item.dueAt) === item.reminders[0].at) return choice.id
+    return 'none'
+  }
+  const patchItem = (id: string, patch: Partial<TaskChecklistItem>) => onChange({ ...draft, checklist: draft.checklist!.map(value => value.id === id ? { ...value, ...patch } : value) })
+  const insertAfter = (id: string) => {
+    if ((draft.checklist?.length ?? 0) >= 100) return
+    const item: TaskChecklistItem = { id: crypto.randomUUID(), title: '', done: false }
+    const index = draft.checklist!.findIndex(value => value.id === id)
+    const next = [...draft.checklist!]
+    next.splice(index + 1, 0, item)
+    setInsertedId(item.id)
+    onChange({ ...draft, checklist: next })
+  }
   const addItem = () => {
     if (!newItem.trim() || busy || (draft.checklist?.length ?? 0) >= 100) return
     onChange({ ...draft, checklist: [...draft.checklist ?? [], { id: crypto.randomUUID(), title: newItem.trim(), done: false }] }); setNewItem('')
@@ -114,10 +136,19 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
         </label>
         <fieldset className="tasks-checklist-editor" disabled={busy}>
           <legend>子项 {draft.checklist?.filter(item => item.done).length ?? 0}/{draft.checklist?.length ?? 0}</legend>
-          <small>子项不单独提醒；勾选子项不会改变父任务状态。重复任务的下一期会重置子项勾选。</small>
-          {(draft.checklist ?? []).map(item => <div key={item.id}>
-            <input type="checkbox" aria-label={`完成子项 ${item.title}`} checked={item.done} onChange={event => onChange({ ...draft, checklist: draft.checklist!.map(value => value.id === item.id ? { ...value, done: event.target.checked } : value) })} />
-            <input aria-label="子项名称" maxLength={200} value={item.title} onChange={event => onChange({ ...draft, checklist: draft.checklist!.map(value => value.id === item.id ? { ...value, title: event.target.value } : value) })} />
+          <small>子项可设截止时间与提醒，到点以「任务 · 子项」提醒；勾选子项不改变父任务状态。重复任务下一期会重置子项勾选与提醒。子项不进入任务视图。</small>
+          {(draft.checklist ?? []).map(item => <div key={item.id} className="tasks-checklist-row">
+            <input type="checkbox" aria-label={`完成子项 ${item.title}`} checked={item.done} onChange={event => patchItem(item.id, { done: event.target.checked })} />
+            <input className="tasks-checklist-title" aria-label="子项名称" maxLength={200} value={item.title} autoFocus={insertedId === item.id}
+              onChange={event => patchItem(item.id, { title: event.target.value })}
+              onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); insertAfter(item.id) } }} />
+            <input type="datetime-local" className="tasks-checklist-due" aria-label={`子项截止时间 ${item.title}`} value={toDateTimeLocal(item.dueAt)}
+              onChange={event => patchItem(item.id, itemDueAt(event.target.value) === null ? { dueAt: null, reminders: [] } : { dueAt: itemDueAt(event.target.value)!, reminders: [] })} />
+            <select className="tasks-checklist-remind" aria-label={`子项提醒 ${item.title}`} disabled={busy || item.dueAt == null} value={itemRemindChoice(item)}
+              onChange={event => { const at = remindAtFromChoice(event.target.value as RemindChoiceId, item.dueAt ?? null); patchItem(item.id, at === null ? { reminders: [] } : { reminders: [{ at, firedAt: null }] }) }}>
+              {REMIND_CHOICES.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
+            </select>
+            <button type="button" className="tasks-checklist-insert" aria-label={`在 ${item.title || '子项'} 下方添加子项`} title="在下方添加子项" onClick={() => insertAfter(item.id)}>+</button>
             <button type="button" aria-label={`删除子项 ${item.title}`} onClick={() => onChange({ ...draft, checklist: draft.checklist!.filter(value => value.id !== item.id) })}>×</button>
           </div>)}
           <div><input aria-label="新子项名称" placeholder="添加一个步骤" maxLength={200} value={newItem} onChange={event => setNewItem(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addItem() } }} /><button type="button" disabled={!newItem.trim() || (draft.checklist?.length ?? 0) >= 100} onClick={addItem}>添加子项</button></div>

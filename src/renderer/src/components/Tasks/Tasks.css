@@ -792,3 +792,9 @@
 .tasks-composer .tasks-date-pages > button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
 .tasks-subitem-overdue { color: var(--error); }
+
+.tasks-checklist-row { display: flex; align-items: center; gap: 6px; }
+.tasks-checklist-row .tasks-checklist-title { flex: 1; min-width: 0; }
+.tasks-checklist-row input.tasks-checklist-due, .tasks-checklist-row .tasks-checklist-remind { flex: none; font-size: 12px; }
+.tasks-checklist-insert { visibility: hidden; }
+.tasks-checklist-row:hover .tasks-checklist-insert, .tasks-checklist-row:focus-within .tasks-checklist-insert { visibility: visible; }

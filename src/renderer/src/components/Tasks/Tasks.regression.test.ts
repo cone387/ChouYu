@@ -25,6 +25,8 @@ describe('Tasks 视图源守卫', () => {
     expect(source).toContain('tasks-new-project-form')
     expect(source).toContain('remindChoiceFromTask')
     expect(source).toContain('RECURRENCE_LABELS')
+    expect(source).toContain('tasks-checklist-due')
+    expect(source).toContain('tasks-checklist-insert')
   })
   test('样式:使用全局 token、窄屏断点与减少动画', () => {
     const css = read('Tasks.css')

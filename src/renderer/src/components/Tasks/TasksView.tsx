@@ -381,8 +381,8 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     const customFields = Object.fromEntries(fields.map(field => [field.id, draft.customFields[field.id] ?? null]))
     setBusy(true); setError('')
     const request = draft.id
-      ? window.electronAPI.tasks.update(draft.id, { title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, reminderTimes, repeatRule, recurrence: draft.recurrence, customFields, checklist: draft.checklist, source: draft.source })
-      : window.electronAPI.tasks.create({ title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, reminderTimes, repeatRule, recurrence: draft.recurrence, customFields, checklist: draft.checklist, source: draft.source })
+      ? window.electronAPI.tasks.update(draft.id, { title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, reminderTimes, repeatRule, recurrence: draft.recurrence, customFields, checklist: draft.checklist?.filter(item => item.title.trim()), source: draft.source })
+      : window.electronAPI.tasks.create({ title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, reminderTimes, repeatRule, recurrence: draft.recurrence, customFields, checklist: draft.checklist?.filter(item => item.title.trim()), source: draft.source })
     void request
       .then(saved => {
         if (draft.displayGroupId !== undefined) preferences.update(selection, current => ({ ...current, customGroups: assignTaskToGroup(current.customGroups, saved.id, draft.displayGroupId!) }))
