@@ -9,7 +9,8 @@ export function useChatScroll(
   content: RefObject<HTMLDivElement>,
   sessionKey: string,
   messages: readonly { id: string; role: string; content: string }[],
-  searching: boolean
+  searching: boolean,
+  active = true
 ) {
   const following = useRef(true)
   const previousTop = useRef(0)
@@ -33,6 +34,7 @@ export function useChatScroll(
   }, [sessionKey, searching, container])
 
   useLayoutEffect(() => {
+    if (!active) return
     const last = messages[messages.length - 1]
     const previous = previousMessages.current
     const sentMessage = last?.role === 'user' && !previous.some((message) => message.id === last.id)
@@ -40,12 +42,19 @@ export function useChatScroll(
     if (searching) return
     if (following.current || sentMessage) scrollToLatest()
     else if (previous !== messages) setHasNewContent(true)
-  }, [messages, searching, scrollToLatest])
+  }, [active, messages, searching, scrollToLatest])
+
+  // Restore before paint, ahead of viewport window measurements.
+  useLayoutEffect(() => {
+    if (!active || !container.current) return
+    if (following.current && !searching) scrollToLatest()
+    else container.current.scrollTop = previousTop.current
+  }, [active, container, searching, scrollToLatest])
 
   useEffect(() => {
     const element = container.current
     const list = content.current
-    if (!element || !list) return
+    if (!active || !element || !list) return
     let pointerDown = false
     const onWheel = (event: WheelEvent) => { if (event.deltaY < 0) following.current = false }
     const onPointerDown = () => { pointerDown = true }
@@ -84,7 +93,7 @@ export function useChatScroll(
       window.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [container, content, searching, sessionKey, scrollToLatest, messages.length > 0])
+  }, [active, container, content, searching, sessionKey, scrollToLatest, messages.length > 0])
 
   return { hasNewContent, scrollToLatest }
 }

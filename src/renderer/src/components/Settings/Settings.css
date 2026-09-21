@@ -178,10 +178,6 @@
   border-radius: 0 0 var(--radius-xl) 0;
 }
 
-.settings-pane {
-  animation: settings-fade 150ms ease-out;
-}
-
 .settings-pane-heading {
   margin-bottom: var(--space-5);
 }
@@ -238,11 +234,6 @@
   .settings-pane-heading { margin-bottom: var(--space-4); }
   .settings-card { margin-bottom: var(--space-4); padding: var(--space-5); }
   .settings-field { margin-bottom: var(--space-4); }
-}
-
-@keyframes settings-fade {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Fields */

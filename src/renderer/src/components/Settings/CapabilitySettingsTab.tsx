@@ -4,6 +4,7 @@ import type { AppConfig } from '../../shared/types'
 import './CapabilitySettingsTab.css'
 
 interface CapabilitySettingsTabProps {
+  active?: boolean
   config: AppConfig
   onSave: (patch: Partial<AppConfig>) => Promise<void>
   onNavigate: (section: 'memory') => void
@@ -20,23 +21,23 @@ function capabilityState(capability: CapabilityInfo): string {
   return '可选'
 }
 
-export default function CapabilitySettingsTab({ config, onSave, onNavigate }: CapabilitySettingsTabProps) {
+export default function CapabilitySettingsTab({ active = true, config, onSave, onNavigate }: CapabilitySettingsTabProps) {
   const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (!active) return
     let mounted = true
-    setLoading(true)
     window.electronAPI.capabilities.list().then((items) => {
-      if (mounted) setCapabilities(items)
+      if (mounted) { setCapabilities(items); setError('') }
     }).catch((reason) => {
       if (mounted) setError(reason instanceof Error ? reason.message : '能力目录加载失败。')
     }).finally(() => {
       if (mounted) setLoading(false)
     })
     return () => { mounted = false }
-  }, [config.embeddingEnabled, config.embeddingProvider, config.memoryEngineProvider])
+  }, [active, config.embeddingEnabled, config.embeddingProvider, config.memoryEngineProvider])
 
   const selectCapability = (capability: CapabilityInfo) => {
     if (capability.kind === 'memory-engine') {

@@ -175,12 +175,16 @@ export default function MemorySettingsTab({ enabled, onEnabledChange, config, on
     return () => clearTimeout(timer)
   }, [refresh, active, remoteListScope])
 
+  const focusedMemory = useRef<string>()
+  useEffect(() => { if (!focusMemoryId) focusedMemory.current = undefined }, [focusMemoryId])
   useEffect(() => {
-    if (!active || !focusMemoryId || memories.length === 0) return
-    setActiveView('library')
+    if (focusedMemory.current === focusMemoryId || !active || !focusMemoryId || memories.length === 0) return
+    if (activeView !== 'library') { setActiveView('library'); return }
     const element = document.querySelector(`[data-memory-id="${CSS.escape(focusMemoryId)}"]`)
-    element?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' })
-  }, [focusMemoryId, memories, active])
+    if (!element || !element.getClientRects().length) return
+    focusedMemory.current = focusMemoryId
+    element.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' })
+  }, [focusMemoryId, memories, active, activeView])
 
   useEffect(() => {
     void window.electronAPI.capabilities.list().then(setCapabilities).catch(() => setCapabilityStatus('能力插件目录加载失败。'))

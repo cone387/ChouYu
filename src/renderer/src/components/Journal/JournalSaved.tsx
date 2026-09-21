@@ -31,7 +31,7 @@ export function SavedSource({ item, onRecognized }: { item: JournalSavedItem; on
   </section>
 }
 
-export function JournalSaved({ focusId = '' }: { focusId?: string }) {
+export function JournalSaved({ active: visible = true, focusId = '' }: { active?: boolean; focusId?: string }) {
   const [shortcutEnabled, setShortcutEnabled] = useState(false), [shortcutError, setShortcutError] = useState('')
   const focused = useRef('')
   const [sourceDate, setSourceDate] = useState(yesterday)
@@ -43,16 +43,17 @@ export function JournalSaved({ focusId = '' }: { focusId?: string }) {
   const [deleting, setDeleting] = useState(''), [editing, setEditing] = useState(''), [note, setNote] = useState('')
   const [revision, setRevision] = useState(0)
   useEffect(() => {
+    if (!visible) return
     let active = true
-    setLoading(true)
     void Promise.all([window.electronAPI.journal.savedItems(), window.electronAPI.journal.savedUsage()]).then(([value, capacity]) => { if (active) { setItems(value); setUsage(capacity); setError('') } }).catch(reason => { if (active) { setUsage(null); setError(String(reason)) } }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [revision, focusId])
+  }, [visible, revision, focusId])
   useEffect(() => {
+    if (!visible) return
     let active = true
     void window.electronAPI.journal.status().then(status => { if (active) { setShortcutEnabled(Boolean(status.config.quickBookmarkEnabled)); setShortcutError(status.quickBookmarkError || '') } }).catch(reason => { if (active) setShortcutError(String(reason)) })
     return () => { active = false }
-  }, [revision])
+  }, [visible, revision])
   useEffect(() => {
     const item = items.find(value => value.id === focusId)
     if (!item || focused.current === focusId) return

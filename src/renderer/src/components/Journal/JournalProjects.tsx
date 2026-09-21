@@ -4,7 +4,7 @@ import { resolveJournalProject, type JournalProjectInput, type JournalProjectSta
 import { SavedSource } from './JournalSaved'
 
 const empty = (): JournalProjectInput => ({ name: '', description: '', archived: false, rules: [] })
-export function JournalProjects() {
+export function JournalProjects({ active = true }: { active?: boolean }) {
   const [state, setState] = useState<JournalProjectState>({ projects: [], assignments: [] })
   const [items, setItems] = useState<JournalSavedItem[]>([]), [draft, setDraft] = useState<JournalProjectInput | null>(null)
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState('')
@@ -15,7 +15,7 @@ export function JournalProjects() {
     const [next, saved] = await Promise.all([window.electronAPI.journal.projects(), window.electronAPI.journal.savedItems()])
     if (alive.current && id === request.current) { setState(next); setItems(saved); setLoading(false) }
   }
-  useEffect(() => { alive.current = true; void reload().catch(reason => { if (alive.current) { setError(String(reason)); setLoading(false) } }); return () => { alive.current = false; request.current++ } }, [])
+  useEffect(() => { alive.current = true; if (active) void reload().catch(reason => { if (alive.current) { setError(String(reason)); setLoading(false) } }); return () => { alive.current = false; request.current++ } }, [active])
   const run = async (operation: () => Promise<void>) => {
     if (busy) return
     setBusy(true); setError('')

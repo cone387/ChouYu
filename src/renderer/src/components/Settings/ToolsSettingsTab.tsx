@@ -4,13 +4,14 @@ import { getToolRiskLabel } from '../../../../shared/tools'
 import './ToolsSettingsTab.css'
 
 interface ToolsSettingsTabProps {
+  active?: boolean
   globalEnabled: boolean
   onGlobalChange: (enabled: boolean) => void
   permissionMode: 'confirm' | 'auto' | 'full'
   onPermissionModeChange: (mode: 'confirm' | 'auto' | 'full') => void
 }
 
-export default function ToolsSettingsTab({ globalEnabled, onGlobalChange, permissionMode, onPermissionModeChange }: ToolsSettingsTabProps) {
+export default function ToolsSettingsTab({ active = true, globalEnabled, onGlobalChange, permissionMode, onPermissionModeChange }: ToolsSettingsTabProps) {
   const [tools, setTools] = useState<ToolCatalogItem[]>([])
   const [loading, setLoading] = useState(true)
   const [busyName, setBusyName] = useState('')
@@ -21,11 +22,14 @@ export default function ToolsSettingsTab({ globalEnabled, onGlobalChange, permis
   ].filter((group) => group.tools.length > 0), [tools])
 
   useEffect(() => {
+    if (!active) return
+    let mounted = true
     window.electronAPI.tools.list()
-      .then(setTools)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : '工具列表加载失败。'))
-      .finally(() => setLoading(false))
-  }, [])
+      .then(items => { if (mounted) { setTools(items); setError('') } })
+      .catch((reason) => { if (mounted) setError(reason instanceof Error ? reason.message : '工具列表加载失败。') })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [active])
 
   const toggleTool = async (name: string, enabled: boolean) => {
     setBusyName(name)

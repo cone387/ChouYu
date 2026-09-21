@@ -4,22 +4,23 @@ import type { JournalSavedItem } from '../../../../shared/journal'
 import { SavedSource } from './JournalSaved'
 
 const monday = () => { const date = new Date(); date.setDate(date.getDate() - (date.getDay() + 6) % 7); return weeklyDate(date.getTime()) }
-export function JournalWeekly() {
+export function JournalWeekly({ active = true }: { active?: boolean }) {
   const [start, setStart] = useState(monday), [sources, setSources] = useState<JournalWeeklySource[]>([]), [selected, setSelected] = useState<string[]>([]), [query, setQuery] = useState(''), [page, setPage] = useState(0)
   const [reports, setReports] = useState<JournalWeeklyDraft[]>([]), [draft, setDraft] = useState<JournalWeeklyDraft | null>(null), [preview, setPreview] = useState(''), [deleting, setDeleting] = useState(''), [source, setSource] = useState<JournalSavedItem | null>(null)
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const alive = useRef(true), sequence = useRef(0), running = useRef(false)
   const from = new Date(`${start}T00:00:00`).getTime(), end = new Date(from); end.setDate(end.getDate() + 7); const to = end.getTime()
   const reload = async () => { const next = await window.electronAPI.journal.weekly(); if (alive.current) setReports(next) }
+  const loadedStart = useRef<string>()
   const loadSources = async () => {
     const id = ++sequence.current
-    setLoading(true); setSources([]); setSelected([]); setPage(0)
-    try { const next = await window.electronAPI.journal.weeklySources({ from, to }); if (alive.current && id === sequence.current) setSources(next) }
+    if (loadedStart.current !== start) { setLoading(true); setSources([]); setSelected([]); setPage(0) }
+    try { const next = await window.electronAPI.journal.weeklySources({ from, to }); if (alive.current && id === sequence.current) { loadedStart.current = start; setSources(next); setSelected(previous => previous.filter(id => next.some(source => source.id === id))) } }
     catch (reason) { if (alive.current && id === sequence.current) setError(String(reason)) }
     finally { if (alive.current && id === sequence.current) setLoading(false) }
   }
-  useEffect(() => { alive.current = true; void reload().catch(reason => { if (alive.current) setError(String(reason)) }); return () => { alive.current = false; sequence.current++ } }, [])
-  useEffect(() => { void loadSources() }, [start])
+  useEffect(() => { alive.current = true; if (active) void reload().catch(reason => { if (alive.current) setError(String(reason)) }); return () => { alive.current = false; sequence.current++ } }, [active])
+  useEffect(() => { if (active) void loadSources() }, [start, active])
   const run = async (operation: () => Promise<void>) => {
     if (running.current) return
     running.current = true; setBusy(true); setError(''); setNotice('')

@@ -337,7 +337,6 @@
   max-width: 85%;
   display: flex;
   gap: var(--space-4);
-  animation: msg-appear 200ms ease-out;
   min-width: 0;
 }
 
@@ -366,17 +365,6 @@
 }
 
 .message-sender { padding: 0 var(--space-2); color: var(--text-secondary); font-size: var(--font-sm); line-height: 1.4; }
-
-@keyframes msg-appear {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
 .message-user {
   align-self: flex-end;

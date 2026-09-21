@@ -97,6 +97,7 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
     const parent = panel?.offsetParent as HTMLElement | null
     if (!panel || !parent) return
     const observer = new ResizeObserver(() => {
+      if (!panel.getClientRects().length || !parent.clientHeight || !panel.offsetHeight) return
       setRect((current) => {
         if (!current || current.height !== null) return current
         const top = Math.max(8, Math.round((parent.clientHeight - panel.offsetHeight) / 2))

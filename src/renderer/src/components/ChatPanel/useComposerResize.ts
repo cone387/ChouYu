@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent, RefObject } from 'react'
 
 const HEIGHT_KEY = 'composer-height'
 const MIN_HEIGHT = 92
 
-export function useComposerResize(textareaRef: RefObject<HTMLTextAreaElement>, value: string) {
+export function useComposerResize(textareaRef: RefObject<HTMLTextAreaElement>, value: string, active = true) {
   const [height, setHeight] = useState<number | null>(null)
   const [maximum, setMaximum] = useState(220)
   const [resizing, setResizing] = useState(false)
@@ -21,12 +21,13 @@ export function useComposerResize(textareaRef: RefObject<HTMLTextAreaElement>, v
     return () => { mounted = false }
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const textarea = textareaRef.current
     const area = textarea?.closest('.input-area')
     const panel = textarea?.closest('.chat-panel-main')
-    if (!textarea || !area || !panel) return
+    if (!active || !textarea || !area || !panel) return
     const measure = () => {
+      if (!panel.clientHeight) return
       // Reserve the toolbar, attachments, other notices and some message history.
       const siblings = Array.from(panel.children).filter((el) => el !== area && !el.classList.contains('message-area'))
       const occupied = siblings.reduce((sum, el) => sum + el.getBoundingClientRect().height, 0)
@@ -39,15 +40,15 @@ export function useComposerResize(textareaRef: RefObject<HTMLTextAreaElement>, v
     for (const child of panel.children) observer.observe(child)
     measure()
     return () => observer.disconnect()
-  }, [textareaRef])
+  }, [textareaRef, active])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const textarea = textareaRef.current
-    if (!textarea) return
+    if (!active || !textarea || !textarea.getClientRects().length) return
     textarea.style.maxHeight = `${maximum}px`
     textarea.style.height = 'auto'
     textarea.style.height = `${height === null ? clamp(Math.min(textarea.scrollHeight, 220)) : clamp(height)}px`
-  }, [clamp, height, maximum, textareaRef, value])
+  }, [active, clamp, height, maximum, textareaRef, value])
 
   const save = (next: number | null) => {
     void window.electronAPI.db.setState(HEIGHT_KEY, next === null ? '' : String(next)).catch(() => {})

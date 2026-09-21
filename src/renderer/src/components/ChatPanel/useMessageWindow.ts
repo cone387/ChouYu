@@ -1,25 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-/**
- * Viewport windowing for the message list.
- *
- * Long sessions render every historical message on each update, which makes
- * streaming updates and scrolling visibly slower as a conversation grows.
- * This hook tracks which messages intersect the scroll viewport (plus a
- * buffer) and returns the index range that actually needs rendering; rows
- * outside the range are replaced by an estimated-height placeholder so the
- * scrollbar keeps its geometry.
- *
- * The estimate self-corrects: rendered rows report their measured height and
- * the average is used for out-of-window placeholders.
- */
+/** Keep measured row heights across navigation; unmeasured rows use a stable estimate. */
 
 /** Rows kept above/below the viewport before a message is unmounted. */
 const OVERSCAN = 6
 /** Assumed row height before any measurement exists. */
 const INITIAL_ESTIMATED_ROW_HEIGHT = 120
-/** Re-measure when the average drifts from the cached value by this ratio. */
-const HEIGHT_DRIFT_RATIO = 0.15
 
 export interface WindowRange {
   /** First index that must render (inclusive). */
@@ -67,83 +53,87 @@ export interface MessageWindow {
   measureRow: (index: number, height: number) => void
 }
 
+export function messageOffsets(count: number, heights: ReadonlyMap<number, number>, gap: number): number[] {
+  const offsets = [0]
+  for (let index = 0; index < count; index++) {
+    offsets.push(offsets[index] + (heights.get(index) ?? INITIAL_ESTIMATED_ROW_HEIGHT) + gap)
+  }
+  return offsets
+}
+
+export function messageIndexAt(offsets: readonly number[], top: number): number {
+  let low = 0, high = Math.max(0, offsets.length - 2)
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (offsets[middle + 1] <= top) low = middle + 1
+    else high = middle
+  }
+  return low
+}
+
 export function useMessageWindow(
   containerRef: React.RefObject<HTMLElement>,
   count: number,
-  deps: unknown[] = []
+  deps: unknown[] = [],
+  active = true
 ): MessageWindow {
   const [range, setRange] = useState({ start: 0, end: Math.min(count, OVERSCAN * 2 + 1) })
-  const [averageRowHeight, setAverageRowHeight] = useState(INITIAL_ESTIMATED_ROW_HEIGHT)
-  const rowHeightsRef = useRef<Map<number, number>>(new Map())
-  const totalMeasuredRef = useRef(0)
+  const [revision, setRevision] = useState(0)
+  const [gap, setGap] = useState(12)
+  const rowHeightsRef = useRef(new Map<number, number>())
+  const anchor = useRef({ index: 0, bottom: true })
+  const pendingAdjustment = useRef(0)
+  const offsets = useMemo(() => messageOffsets(count, rowHeightsRef.current, gap), [count, gap, revision])
 
-  // Reset the window and measurements whenever the message list identity
-  // changes (session switch) but not when its length changes (streaming).
-  useEffect(() => {
+  useLayoutEffect(() => {
     rowHeightsRef.current.clear()
-    totalMeasuredRef.current = 0
-    setAverageRowHeight(INITIAL_ESTIMATED_ROW_HEIGHT)
+    pendingAdjustment.current = 0
+    anchor.current = { index: 0, bottom: true }
+    setRevision(value => value + 1)
     setRange({ start: 0, end: Math.min(count, OVERSCAN * 2 + 1) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const container = containerRef.current
-    if (!container) return
-
-    const update = () => {
-      const viewportTop = container.scrollTop
-      const viewportHeight = container.clientHeight || container.getBoundingClientRect().height
-      if (!viewportHeight) return
-      const { start: firstVisible, end: nextEnd } = computeWindowRange(
-        viewportTop,
-        viewportHeight,
-        averageRowHeight,
-        count
-      )
-      // Measured rows and estimated spacers can change total height while
-      // leaving the viewport at the bottom. Anchor to the actual last row,
-      // rather than inferring its index from an outdated height average.
-      const atBottom = container.scrollHeight - viewportTop - viewportHeight <= 2
-      const end = atBottom ? count : nextEnd
-      const start = atBottom ? Math.max(0, count - Math.max(OVERSCAN * 2 + 1, nextEnd - firstVisible)) : firstVisible
-      setRange((previous) =>
-        previous.start === start && previous.end === end
-          ? previous
-          : { start, end }
-      )
+    if (!active || !container?.clientHeight) return
+    if (pendingAdjustment.current) {
+      container.scrollTop = anchor.current.bottom ? container.scrollHeight : container.scrollTop + pendingAdjustment.current
+      pendingAdjustment.current = 0
     }
-
+    const update = () => {
+      if (!container.clientHeight) return
+      const list = container.querySelector('.message-list')
+      if (list) setGap(parseFloat(getComputedStyle(list).rowGap) || 0)
+      const viewportTop = container.scrollTop
+      const atBottom = container.scrollHeight - viewportTop - container.clientHeight <= 2
+      const first = messageIndexAt(offsets, viewportTop)
+      anchor.current = { index: first, bottom: atBottom }
+      const start = atBottom ? Math.max(0, count - OVERSCAN * 2 - 1) : Math.max(0, first - OVERSCAN)
+      const end = atBottom ? count : Math.min(count, messageIndexAt(offsets, viewportTop + container.clientHeight) + OVERSCAN + 1)
+      setRange(previous => previous.start === start && previous.end === end ? previous : { start, end })
+    }
     update()
     container.addEventListener('scroll', update, { passive: true })
     const observer = new ResizeObserver(update)
     observer.observe(container)
-    return () => {
-      container.removeEventListener('scroll', update)
-      observer.disconnect()
-    }
-  }, [containerRef, count, averageRowHeight])
+    return () => { container.removeEventListener('scroll', update); observer.disconnect() }
+  }, [active, containerRef, count, offsets])
 
   const measureRow = (index: number, height: number) => {
-    if (!Number.isFinite(height) || height <= 0) return
+    if (!active || !containerRef.current?.clientHeight || !Number.isFinite(height) || height <= 0) return
     const previous = rowHeightsRef.current.get(index)
     if (previous === height) return
-    if (previous === undefined) totalMeasuredRef.current += 1
     rowHeightsRef.current.set(index, height)
-
-    const measuredCount = totalMeasuredRef.current
-    if (measuredCount < 4) return
-    let sum = 0
-    for (const value of rowHeightsRef.current.values()) sum += value
-    const next = sum / measuredCount
-    // Avoid feedback loops from tiny drifts: only accept meaningful changes.
-    if (Math.abs(next - averageRowHeight) / averageRowHeight > HEIGHT_DRIFT_RATIO) {
-      setAverageRowHeight(next)
-    }
+    // Correct only rows above the reading anchor. Learning one row must never
+    // resize every offscreen placeholder, which made long chats visibly jump.
+    if (index < anchor.current.index) pendingAdjustment.current += height - (previous ?? INITIAL_ESTIMATED_ROW_HEIGHT)
+    setRevision(value => value + 1)
   }
 
-  const startOffset = range.start * averageRowHeight
-  const endOffset = Math.max(0, (count - range.end) * averageRowHeight)
-
-  return { ...range, startOffset, endOffset, averageRowHeight, measureRow }
+  const start = Math.min(range.start, count)
+  const end = Math.min(range.end, count)
+  const startOffset = start ? Math.max(0, offsets[start] - gap) : 0
+  const endOffset = end < count ? Math.max(0, offsets[count] - offsets[end] - gap) : 0
+  return { start, end, startOffset, endOffset, averageRowHeight: count ? offsets[count] / count - gap : INITIAL_ESTIMATED_ROW_HEIGHT, measureRow }
 }

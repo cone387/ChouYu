@@ -4,16 +4,17 @@ import { journalRange } from './JournalEvidence'
 import { journalDuration } from './JournalTasks'
 
 const duration = (ms: number) => ms < 60_000 ? '不足 1 分钟' : `${Math.floor(ms / 60_000)} 分钟`
-export function JournalDayPanel({ date, revision, onSettings, onFilter }: { date: string; revision: number; onSettings(): void; onFilter(app: string): void }) {
+export function JournalDayPanel({ active: visible = true, date, revision, onSettings, onFilter }: { active?: boolean; date: string; revision: number; onSettings(): void; onFilter(app: string): void }) {
   const [day, setDay] = useState<JournalDay | null>(null)
   const [error, setError] = useState('')
   useEffect(() => { setDay(null) }, [date])
   useEffect(() => {
+    if (!visible) return
     let active = true
     try { void window.electronAPI.journal.overview(journalRange(date)).then(value => { if (active) { setDay(value); setError('') } }).catch(reason => { if (active) setError(String(reason)) }) }
     catch (reason) { setError(String(reason)) }
     return () => { active = false }
-  }, [date, revision])
+  }, [visible, date, revision])
   return <aside className="journal-day-panel" aria-label="当天概览">
     {error && <p role="alert">{error}</p>}
     {day ? <>

@@ -11,19 +11,20 @@ export function JournalUsage({ usage }: { usage?: AIUsage }) {
 }
 
 const states = { running: '进行中', success: '已完成', failed: '失败', cancelled: '已取消' }
-export function JournalUsageHistory({ date, revision }: { date: string; revision: number }) {
+export function JournalUsageHistory({ active: visible = true, date, revision }: { active?: boolean; date: string; revision: number }) {
   const [records, setRecords] = useState<JournalAnalysisRecord[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   useEffect(() => { setLoading(true); setRecords([]) }, [date])
   useEffect(() => {
+    if (!visible) return
     let active = true
     const from = new Date(`${date}T00:00:00`); const to = new Date(from); to.setDate(to.getDate() + 1)
     void window.electronAPI.journal.analysisRecords({ from: from.getTime(), to: to.getTime() }).then(value => {
       if (active) { setRecords(value); setError(''); setLoading(false) }
     }).catch(reason => { if (active) { setError(String(reason)); setLoading(false) } })
     return () => { active = false }
-  }, [date, revision])
+  }, [visible, date, revision])
   const known = records.filter(record => record.state !== 'running' && record.usage?.totalTokens !== undefined)
   return <section className="journal-usage-history" aria-label="AI 调用记录">
     <h2>AI 调用记录</h2><p>针对 {date} 的日志总结与问答。重新生成会保留每次调用记录。</p>

@@ -91,6 +91,8 @@ function createWindow(): void {
       try {
         if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
           await runNativeCaptureSmoke()
+        } else if (process.env.CHOUYU_SMOKE_NAVIGATION_ONLY === '1') {
+          await runChatRuntimeSmoke(mainWindow!)
         } else {
           await runStorageRuntimeSmoke(mainWindow!)
           await runContactsSmoke(mainWindow!)

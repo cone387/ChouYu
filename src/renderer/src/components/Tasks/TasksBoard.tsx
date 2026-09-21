@@ -11,6 +11,7 @@ import { groupTasks, taskGroupMove, type BoardColumn, type BoardGroupMode } from
 export { groupTasks, type BoardGroupMode } from './taskGrouping'
 
 interface TasksBoardProps {
+  active: boolean
   weekPeriod?: 'week' | 'nextWeek'
   onSource?: (source: TaskSource) => void
   onQuickEdit?: (id: string, patch: TaskUpdateInput) => Promise<unknown>
@@ -38,7 +39,7 @@ interface TasksBoardProps {
   onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => Promise<void>
 }
 
-export default function TasksBoard({ weekPeriod = 'week', onSource, onQuickEdit, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+export default function TasksBoard({ active, weekPeriod = 'week', onSource, onQuickEdit, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, DOMRect>())
   const scrollFrame = useRef<number | null>(null)
@@ -68,6 +69,11 @@ export default function TasksBoard({ weekPeriod = 'week', onSource, onQuickEdit,
     const elements = Array.from(board.querySelectorAll<HTMLElement>('[data-motion-key]')).filter(element => !element.closest('.tasks-drag-preview'))
     // Read layout without an earlier preview animation's transform applied.
     elements.forEach(element => element.getAnimations().forEach(animation => animation.cancel()))
+    // Hidden pages have zero-size boxes. Never animate from those on return.
+    if (!active || !board.getClientRects().length) {
+      positions.current.clear()
+      return
+    }
     elements.forEach(element => {
       if (element.closest('.tasks-drag-preview')) return
       const key = element.dataset.motionKey!
@@ -90,7 +96,7 @@ export default function TasksBoard({ weekPeriod = 'week', onSource, onQuickEdit,
       }
     })
     positions.current = next
-  }, [tasks, savedOrder, scope, previewOrder])
+  }, [active, tasks, savedOrder, scope, previewOrder])
 
   const stopScroll = () => {
     if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current)

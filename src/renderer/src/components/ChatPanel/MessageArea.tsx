@@ -15,6 +15,7 @@ import { useMessageWindow } from './useMessageWindow'
 import CharacterAvatar, { type AvatarIdentity } from '../CharacterAvatar/CharacterAvatar'
 
 interface MessageAreaProps {
+  active?: boolean
   character?: AvatarIdentity | null
   searchOpen?: boolean
   initialSearch?: string
@@ -122,7 +123,7 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze, onSnoozeContent }: MessageAreaProps) {
+export default function MessageArea({ active = true, character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze, onSnoozeContent }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState(initialSearch)
@@ -150,8 +151,8 @@ export default function MessageArea({ character, searchOpen = false, initialSear
   // Identify the session by its earliest message id: switching sessions resets
   // the window, while streaming (appending) must not.
   const sessionKey = messages.length > 0 ? messages[0].id : ''
-  const windowed = useMessageWindow(scrollRef, messages.length, [sessionKey, searching])
-  const { hasNewContent, scrollToLatest } = useChatScroll(scrollRef, listRef, sessionKey, messages, searching)
+  const { hasNewContent, scrollToLatest } = useChatScroll(scrollRef, listRef, sessionKey, messages, searching, active)
+  const windowed = useMessageWindow(scrollRef, messages.length, [sessionKey, searching], active)
 
   const submitMemoryFeedback = async (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => {
     if (!onMemoryFeedback) return

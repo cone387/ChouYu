@@ -39,7 +39,7 @@ export function CaptureDetail({ id, capture, onClose, onRetry, busy = false, err
   </dialog>
 }
 
-export function JournalCaptures({ date, query, revision, onOpenSource }: { date: string; query: string; revision: number; onOpenSource?(id: string): void }) {
+export function JournalCaptures({ active: visible = true, date, query, revision, onOpenSource }: { active?: boolean; date: string; query: string; revision: number; onOpenSource?(id: string): void }) {
   const [page, setPage] = useState<JournalCapturePage | null>(null)
   const [offset, setOffset] = useState(0)
   const [selected, setSelected] = useState<JournalCapture | null>(null)
@@ -48,6 +48,7 @@ export function JournalCaptures({ date, query, revision, onOpenSource }: { date:
   const [busy, setBusy] = useState(false)
   useEffect(() => { setOffset(0); setSelected(null); setPage(null); setError('') }, [date, query])
   useEffect(() => {
+    if (!visible) return
     let active = true
     const timer = setTimeout(() => {
       try {
@@ -55,7 +56,7 @@ export function JournalCaptures({ date, query, revision, onOpenSource }: { date:
       } catch (reason) { setError(String(reason)) }
     }, 200)
     return () => { active = false; clearTimeout(timer) }
-  }, [date, query, offset, revision, reload])
+  }, [visible, date, query, offset, revision, reload])
   const retry = async () => {
     if (!selected || busy) return
     setBusy(true)
@@ -69,11 +70,11 @@ export function JournalCaptures({ date, query, revision, onOpenSource }: { date:
       <CaptureImage id={capture.id} title={capture.title} /><span>{clock(capture.capturedAt)} · {capture.app.replace(/\.exe$/i, '')}</span><strong>{capture.title || '无窗口标题'}</strong><small>{capture.ocrStatus === 'ready' ? capture.ocrText.slice(0, 90) || '未识别到文字' : capture.ocrStatus === 'failed' ? 'OCR 失败，可打开重试' : '等待识别'}</small>
     </button>)}</div>
     {page && page.total > 30 && <nav className="journal-pagination" aria-label="画面分页"><button disabled={!offset} onClick={() => setOffset(value => Math.max(0, value - 30))}>上一页</button><span>第 {Math.floor(offset / 30) + 1} 页</span><button disabled={offset + 30 >= page.total} onClick={() => setOffset(value => value + 30)}>下一页</button></nav>}
-    {selected && <CaptureDetail id={selected.id} capture={selected} busy={busy} error={error} onClose={() => setSelected(null)} onRetry={() => void retry()} />}
+    {visible && selected && <CaptureDetail id={selected.id} capture={selected} busy={busy} error={error} onClose={() => setSelected(null)} onRetry={() => void retry()} />}
   </div>
 }
 
-export function JournalSummaryView({ date, revision, onGenerated, onOpenSource }: { date: string; revision: number; onGenerated?(): void; onOpenSource?(id: string): void }) {
+export function JournalSummaryView({ active: visible = true, date, revision, onGenerated, onOpenSource }: { active?: boolean; date: string; revision: number; onGenerated?(): void; onOpenSource?(id: string): void }) {
   const [summary, setSummary] = useState<JournalSummary | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -82,12 +83,12 @@ export function JournalSummaryView({ date, revision, onGenerated, onOpenSource }
   const generation = useRef(0)
   useEffect(() => { generation.current++; setSummary(null); setImage(''); setError('') }, [date])
   useEffect(() => {
-    if (busy) return
+    if (!visible || busy) return
     let active = true
     try { void window.electronAPI.journal.summary(journalRange(date)).then(value => { if (active) setSummary(value) }).catch(reason => { if (active) setError(String(reason)) }) }
     catch (reason) { setError(String(reason)) }
     return () => { active = false }
-  }, [date, revision, busy])
+  }, [visible, date, revision, busy])
   const generate = async () => {
     setBusy(true); setError(''); setCopied(false); const current = generation.current
     try { const result = await window.electronAPI.journal.summarize(journalRange(date)); if (generation.current === current) { setSummary(result); onGenerated?.() } }
@@ -110,14 +111,14 @@ export function JournalSummaryView({ date, revision, onGenerated, onOpenSource }
       })}</div></li>)}</ol>
       <details className="journal-summary-sources"><summary>查看全部引用依据（{summary.sources.length} 条）</summary>{summary.sources.map(source => <article id={`source-${source.id}`} key={source.id}><strong>{clock(source.at)} · {source.app} · {source.title}</strong><pre>{source.text || '此画面尚无识别文字'}</pre></article>)}</details>
     </> : !busy && <div className="journal-empty"><h2>从活动线索整理一天</h2><p>先积累一些记录，再生成带来源的工作日志。已有结果会保存在本机。</p></div>}
-    {image && <CaptureDetail id={image} onClose={() => setImage('')} />}
+    {visible && image && <CaptureDetail id={image} onClose={() => setImage('')} />}
   </section>
 }
 
 interface AskSession { question: string; turns: { question: string; answer: JournalAnswer }[]; busy: boolean; error: string }
 const emptyAsk: AskSession = { question: '', turns: [], busy: false, error: '' }
 
-export function JournalAsk({ date, onOpenSource }: { date: string; onOpenSource?(id: string, sourceDate?: string): void }) {
+export function JournalAsk({ active: visible = true, date, onOpenSource }: { active?: boolean; date: string; onOpenSource?(id: string, sourceDate?: string): void }) {
   const [sessions, setSessions] = useState<Record<string, AskSession>>({})
   const [ranges, setRanges] = useState<Record<string, { start: string; end: string }>>({})
   const chosen = ranges[date] || { start: date, end: date }
@@ -151,6 +152,6 @@ export function JournalAsk({ date, onOpenSource }: { date: string; onOpenSource?
       {!!answer.sources.length && <details><summary>引用的原始记录</summary>{answer.sources.map(source => <div key={source.id} id={`answer-${turnIndex}-${source.id}`}><strong>{journalDateKey(source.at)} {clock(source.at)} · {source.app}</strong><p>{source.title}</p>{source.text && <pre>{source.text}</pre>}</div>)}</details>}
     </article>)}
     <form onSubmit={event => { event.preventDefault(); void ask() }}><label htmlFor="journal-question">想找回什么</label><textarea id="journal-question" value={question} maxLength={1000} rows={3} placeholder="例如：下午看的评测报告叫什么？" onChange={event => setQuestion(event.target.value)} /><button className="journal-primary" disabled={busy || !question.trim() || !range}>{busy ? '正在查找依据…' : turns.length ? '继续追问' : '查找答案'}</button></form>
-    {image && <CaptureDetail id={image} onClose={() => setImage('')} />}
+    {visible && image && <CaptureDetail id={image} onClose={() => setImage('')} />}
   </section>
 }

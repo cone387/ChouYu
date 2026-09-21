@@ -6,7 +6,7 @@ import { SavedSource } from './JournalSaved'
 import { JournalPlaybookMemory } from './JournalPlaybookMemory'
 
 const blank = (): JournalPlaybookInput => ({ title: '', problem: '', attempts: '', resolution: '', status: 'open', projectId: null, sourceIds: [] })
-export function JournalPlaybook() {
+export function JournalPlaybook({ active = true }: { active?: boolean }) {
   const [entries, setEntries] = useState<JournalPlaybookEntry[]>([]), [sources, setSources] = useState<JournalSavedItem[]>([]), [projects, setProjects] = useState<JournalProject[]>([])
   const [draft, setDraft] = useState<JournalPlaybookInput | null>(null), [filter, setFilter] = useState('all'), [query, setQuery] = useState(''), [sourceQuery, setSourceQuery] = useState(''), [sourcePage, setSourcePage] = useState(0)
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [deleting, setDeleting] = useState(''), [expanded, setExpanded] = useState(''), [preview, setPreview] = useState(''), [page, setPage] = useState(0)
@@ -16,7 +16,7 @@ export function JournalPlaybook() {
     const [next, saved, state] = await Promise.all([window.electronAPI.journal.playbook(), window.electronAPI.journal.savedItems(), window.electronAPI.journal.projects()])
     if (alive.current && request.current === id) { setEntries(next); setSources(saved); setProjects(state.projects); setFilter(value => value === 'all' || value === 'none' || state.projects.some(project => project.id === value) ? value : 'all'); setLoading(false) }
   }
-  useEffect(() => { alive.current = true; void reload().catch(reason => { if (alive.current) { setError(String(reason)); setLoading(false) } }); return () => { alive.current = false; request.current++ } }, [])
+  useEffect(() => { alive.current = true; if (active) void reload().catch(reason => { if (alive.current) { setError(String(reason)); setLoading(false) } }); return () => { alive.current = false; request.current++ } }, [active])
   const run = async (operation: () => Promise<void>) => {
     if (busy) return
     setBusy(true); setError(''); setNotice('')

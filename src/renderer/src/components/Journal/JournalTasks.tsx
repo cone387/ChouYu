@@ -6,12 +6,13 @@ export const journalTime = (at: number) => new Date(at).toLocaleTimeString('zh-C
 export const journalDuration = (ms: number) => ms <= 0 ? '不足 1 分钟' : ms < 60_000 ? '不足 1 分钟' : ms < 3600_000 ? `${Math.floor(ms / 60_000)} 分钟` : `${Math.floor(ms / 3600_000)} 小时 ${Math.floor(ms / 60_000) % 60} 分钟`
 export const kindLabel = { activity: '活动线索', progress: '具体进展', blocker: '待解决', decision: '决定' }
 
-export function JournalTasks({ date, query, revision, onOpen, onOrganize }: { date: string; query: string; revision: number; onOpen(id: string): void; onOrganize(): void }) {
+export function JournalTasks({ active: visible = true, date, query, revision, onOpen, onOrganize }: { active?: boolean; date: string; query: string; revision: number; onOpen(id: string): void; onOrganize(): void }) {
   const [page, setPage] = useState<JournalTaskPage | null>(null)
   const [offset, setOffset] = useState(0)
   const [error, setError] = useState('')
   useEffect(() => { setOffset(0); setPage(null) }, [date, query])
   useEffect(() => {
+    if (!visible) return
     let active = true
     const timer = setTimeout(() => {
       void window.electronAPI.journal.tasks({ ...journalRange(date), query, offset }).then(value => {
@@ -21,7 +22,7 @@ export function JournalTasks({ date, query, revision, onOpen, onOrganize }: { da
       }).catch(reason => { if (active) setError(String(reason)) })
     }, 180)
     return () => { active = false; clearTimeout(timer) }
-  }, [date, query, offset, revision])
+  }, [visible, date, query, offset, revision])
   return <section className="journal-tasks" aria-label="事项视图">
     <div className="journal-task-toolbar"><p>{page ? `${page.total} 项${query ? '匹配结果' : '事项与线索'}` : '正在读取事项…'}</p><button onClick={onOrganize}>整理这一天 <span aria-hidden="true">↗</span></button></div>
     {error && <p role="alert" className="journal-error">{error}</p>}

@@ -68,6 +68,7 @@ interface SettingsProps {
   focusMemoryId?: string
   onOpenMemoryWorkspace?: () => void
   onOpenJournalWorkspace?: () => void
+  active?: boolean
   embedded?: boolean
 }
 
@@ -82,10 +83,12 @@ const NAV_ITEMS = [
   { key: 'about', label: '关于', icon: 'M7 4v3M7 9.5v.5' }
 ]
 
-export default function Settings({ onClose, petVisible, onPetVisibleChange, dragHandleProps, initialNav, focusMemoryId, onOpenMemoryWorkspace, onOpenJournalWorkspace, embedded = false }: SettingsProps) {
+export default function Settings({ onClose, petVisible, onPetVisibleChange, dragHandleProps, initialNav, focusMemoryId, onOpenMemoryWorkspace, onOpenJournalWorkspace, embedded = false, active = true }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showKey, setShowKey] = useState(false)
   const [activeNav, setActiveNav] = useState<string>(initialNav || 'ai')
+  const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({})
+  useEffect(() => { setVisitedTabs(previous => previous[activeNav] ? previous : { ...previous, [activeNav]: true }) }, [activeNav])
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [appVersion, setAppVersion] = useState<string>('')
   const [updateStatus, setUpdateStatus] = useState<string>('')
@@ -547,32 +550,32 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
             </div>
           )}
 
-          {activeNav === 'tools' && (
-            <ToolsSettingsTab
+          {(visitedTabs.tools || activeNav === 'tools') && <div hidden={activeNav !== 'tools'}>
+            <ToolsSettingsTab active={active && activeNav === 'tools'}
               globalEnabled={config.aiToolsEnabled}
               onGlobalChange={(enabled) => { void save({ aiToolsEnabled: enabled }) }}
               permissionMode={config.toolPermissionMode}
               onPermissionModeChange={(mode) => { void save({ toolPermissionMode: mode }) }}
             />
-          )}
+          </div>}
 
-          {activeNav === 'memory' && (
-            <MemorySettingsTab
+          {(visitedTabs.memory || activeNav === 'memory') && <div hidden={activeNav !== 'memory'}>
+            <MemorySettingsTab active={active && activeNav === 'memory'}
               enabled={config.memoryEnabled}
               onEnabledChange={(enabled) => { void save({ memoryEnabled: enabled }) }}
               config={config}
               onSaveConfig={save}
               focusMemoryId={focusMemoryId}
             />
-          )}
+          </div>}
 
-          {activeNav === 'capabilities' && (
-            <CapabilitySettingsTab
+          {(visitedTabs.capabilities || activeNav === 'capabilities') && <div hidden={activeNav !== 'capabilities'}>
+            <CapabilitySettingsTab active={active && activeNav === 'capabilities'}
               config={config}
               onSave={save}
               onNavigate={(section) => setActiveNav(section)}
             />
-          )}
+          </div>}
 
           {activeNav === 'general' && (
             <div className="settings-pane">

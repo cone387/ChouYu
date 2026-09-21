@@ -97,7 +97,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
     return document.activeElement === textarea
   }, [])
 
-  const composerResize = useComposerResize(textareaRef, value)
+  const composerResize = useComposerResize(textareaRef, value, active)
 
   useEffect(() => {
     if (!active || autoFocus === false || disabled || initialFocusDoneRef.current) return

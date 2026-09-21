@@ -7,6 +7,7 @@ import {
   saveConfig, saveSessionMessages, selectChatSession, type Message
 } from '../database'
 import { waitForRenderer } from './storage-smoke'
+import { runNavigationSmoke } from './navigation-smoke'
 
 async function input(window: BrowserWindow, selector: string, value: string): Promise<void> {
   await window.webContents.executeJavaScript(`(() => {
@@ -177,6 +178,8 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
       return '';
     })()`)
     if (chromeProblem) throw new Error(chromeProblem)
+    await runNavigationSmoke(window)
+    if (process.env.CHOUYU_SMOKE_NAVIGATION_ONLY === '1') return
     await snapshots(window, 'chat')
 
     await input(window, '.input-textarea', '窗口模式切换保留草稿')

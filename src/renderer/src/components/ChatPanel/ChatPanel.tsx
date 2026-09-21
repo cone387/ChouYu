@@ -129,6 +129,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [memoryCandidateError, setMemoryCandidateError] = useState('')
   const [memoryWriteNotice, setMemoryWriteNotice] = useState('')
   const [memoryCorrectionId, setMemoryCorrectionId] = useState('')
+  useEffect(() => { if (activePage !== 'memory') setMemoryCorrectionId('') }, [activePage])
   const [contactsFocusId, setContactsFocusId] = useState<string | null>(null)
   const [showContactDetail, setShowContactDetail] = useState(false)
   const memoryNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -781,6 +782,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             {workspaceError && <div className="memory-candidate-error" role="alert">{workspaceError}<button onClick={retryWorkspace}>重新加载</button></div>}
             {workspaceLoaded && (
               <MessageArea
+                active={visible && isChat}
                 character={activeCharacter}
                 key={activeSessionId}
                 searchOpen={showMessageSearch}
@@ -880,7 +882,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         </section>
         <section className="workspace-page workspace-settings" hidden={!showSettings} aria-label="设置工作区">
           {visitedPages.settings && <>
-            <Settings onClose={() => navigate('chat')} petVisible={petVisible} onPetVisibleChange={onPetVisibleChange}
+            <Settings active={visible && showSettings} onClose={() => navigate('chat')} petVisible={petVisible} onPetVisibleChange={onPetVisibleChange}
               onOpenMemoryWorkspace={() => openMemoryWorkspace()} onOpenJournalWorkspace={() => navigate('journal')} embedded />
           </>}
         </section>

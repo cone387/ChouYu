@@ -40,6 +40,8 @@ export default function Journal({ active = true, searchRequest }: { active?: boo
   const [storageLimit, setStorageLimit] = useState(DEFAULT_JOURNAL_CONFIG.maxStorageMB)
   const [view, setView] = useState<'overview' | 'activity' | 'captures' | 'summary' | 'ask' | 'usage' | 'saved' | 'semantic' | 'projects' | 'playbook' | 'weekly'>('overview')
   useEffect(() => window.electronAPI.journal.onBookmarkSaved(id => { handledBookmark.current = id; setBookmarkFocus(id); setView('saved') }), [])
+  const [visitedViews, setVisitedViews] = useState<Record<string, boolean>>({ overview: true })
+  useEffect(() => { setVisitedViews(previous => previous[view] ? previous : { ...previous, [view]: true }) }, [view])
   const [activityMode, setActivityMode] = useState<'tasks' | 'raw'>('tasks')
   useEffect(() => {
     if (!searchRequest) return
@@ -188,19 +190,19 @@ export default function Journal({ active = true, searchRequest }: { active?: boo
         <details className="journal-more"><summary aria-label="更多日志操作">更多 ···</summary><div><button onClick={event => { setConfirmDelete(true); event.currentTarget.closest('details')!.open = false }} disabled={busy}>删除当天记录</button></div></details>
         {(view === 'activity' || view === 'captures') && <label className="search-field journal-search" data-filled={Boolean(query)}><svg className="search-field-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input aria-label="搜索活动" value={query} onChange={event => { setQuery(event.target.value); setOffset(0); setLoading(true) }} placeholder={view === 'captures' ? '搜索画面文字或标题' : activityMode === 'tasks' ? '搜索事项、应用或备注' : '搜索应用或窗口标题'} />{query && <button className="search-field-action" aria-label="清空活动搜索" onClick={() => { setQuery(''); setOffset(0) }}>×</button>}</label>}
       </div>
-      {view === 'overview' ? <JournalDayPanel date={date} revision={revision} onFilter={app => { setQuery(app); setOffset(0); setView('activity'); setActivityMode('raw'); setLoading(true) }} onSettings={openSettings} /> : null}
+      {(visitedViews.overview || view === 'overview') && <div hidden={view !== 'overview'}><JournalDayPanel active={active && view === 'overview'} date={date} revision={revision} onFilter={app => { setQuery(app); setOffset(0); setView('activity'); setActivityMode('raw'); setLoading(true) }} onSettings={openSettings} /></div>}
       {view === 'activity' && <div className="journal-mode-bar"><div className="journal-mode-switch" aria-label="活动展示方式"><button aria-pressed={activityMode === 'tasks'} onClick={() => setActivityMode('tasks')}>事项视图</button><button aria-pressed={activityMode === 'raw'} onClick={() => setActivityMode('raw')}>原始记录</button></div>{activityMode === 'raw' && <span>{page.total} 条 · {duration(page.durationMs)}{query ? '匹配时长' : '记录时长'}</span>}</div>}
       {confirmDelete && <div className="journal-delete" role="alert"><span>删除 {date} 的活动、画面及识别文字？包含与当天重叠的跨日片段，已生成的日志总结也会清空。独立收藏仍保留，请到“接着做”单独删除。此操作不可撤销。</span><div><button disabled={busy} onClick={() => setConfirmDelete(false)}>取消</button><button disabled={busy} onClick={() => void deleteDay()}>确认删除</button></div></div>}
-      {view === 'weekly' && <JournalWeekly />}
-      {view === 'playbook' && <JournalPlaybook />}
-      {view === 'projects' && <JournalProjects />}
-      {view === 'saved' && <JournalSaved focusId={bookmarkFocus} />}
-      {view === 'semantic' && <JournalSemantic key={deletedRevision} date={date} onOpen={setSelectedSource} />}
-      {view === 'usage' && <JournalUsageHistory date={date} revision={revision} />}
-      {view === 'captures' && <JournalCaptures date={date} query={query} revision={revision} onOpenSource={setSelectedSource} />}
-      {view === 'summary' && <JournalSummaryView date={date} revision={revision} onGenerated={() => setRevision(value => value + 1)} onOpenSource={setSelectedSource} />}
-      <div hidden={view !== 'ask'}><JournalAsk key={deletedRevision} date={date} onOpenSource={setSelectedSource} /></div>
-      {view === 'activity' && activityMode === 'tasks' && <JournalTasks date={date} query={query} revision={revision} onOpen={setSelectedSource} onOrganize={() => setView('summary')} />}
+      {(visitedViews.weekly || view === 'weekly') && <div hidden={view !== 'weekly'}><JournalWeekly active={active && view === 'weekly'} /></div>}
+      {(visitedViews.playbook || view === 'playbook') && <div hidden={view !== 'playbook'}><JournalPlaybook active={active && view === 'playbook'} /></div>}
+      {(visitedViews.projects || view === 'projects') && <div hidden={view !== 'projects'}><JournalProjects active={active && view === 'projects'} /></div>}
+      {(visitedViews.saved || view === 'saved') && <div hidden={view !== 'saved'}><JournalSaved active={active && view === 'saved'} focusId={bookmarkFocus} /></div>}
+      {(visitedViews.semantic || view === 'semantic') && <div hidden={view !== 'semantic'}><JournalSemantic key={deletedRevision} date={date} onOpen={setSelectedSource} /></div>}
+      {(visitedViews.usage || view === 'usage') && <div hidden={view !== 'usage'}><JournalUsageHistory active={active && view === 'usage'} date={date} revision={revision} /></div>}
+      {(visitedViews.captures || view === 'captures') && <div hidden={view !== 'captures'}><JournalCaptures active={active && view === 'captures'} date={date} query={query} revision={revision} onOpenSource={setSelectedSource} /></div>}
+      {(visitedViews.summary || view === 'summary') && <div hidden={view !== 'summary'}><JournalSummaryView active={active && view === 'summary'} date={date} revision={revision} onGenerated={() => setRevision(value => value + 1)} onOpenSource={setSelectedSource} /></div>}
+      <div hidden={view !== 'ask'}><JournalAsk active={active && view === 'ask'} key={deletedRevision} date={date} onOpenSource={setSelectedSource} /></div>
+      {(visitedViews.activity || view === 'activity') && <div hidden={view !== 'activity' || activityMode !== 'tasks'}><JournalTasks active={active && view === 'activity' && activityMode === 'tasks'} date={date} query={query} revision={revision} onOpen={setSelectedSource} onOrganize={() => setView('summary')} /></div>}
       {view === 'activity' && activityMode === 'raw' && (loading ? <div className="journal-empty" role="status">正在读取活动…</div> : page.items.length === 0 ? <div className="journal-empty"><h2>{query ? '没有找到匹配的活动' : '这一天还没有记录'}</h2><p>{query ? '试试应用名或窗口标题中的其他文字。' : status?.state === 'paused' ? '记录已暂停，可以在顶栏继续记录。' : status?.state === 'error' ? '采集遇到问题，请查看上方错误提示。' : status?.config.enabled ? '这一天没有保存的活动，试试其他日期。' : '开启记录后，你的应用活动会按时间出现在这里。'}</p></div> : <ol key={`${date}:${query}:${offset}`} className="journal-timeline" tabIndex={0} aria-label="原始记录列表">{page.items.map(item => <li key={item.id}>
         <div className="journal-time"><time dateTime={new Date(item.startedAt).toISOString()}>{time(item.startedAt)}</time><span>{time(item.endedAt)}</span></div>
         <article><button className="journal-raw-open" onClick={() => setSelectedSource(`activity:${item.id}`)}><div className="journal-card-heading"><span className="journal-app">{item.app.replace(/\.exe$/i, '')}</span><span>{duration(item.endedAt - item.startedAt)}</span></div><h2>{item.title || '无窗口标题'}</h2><span className="journal-task-open">查看详情 →</span></button></article>

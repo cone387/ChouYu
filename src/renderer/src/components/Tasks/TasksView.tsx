@@ -178,6 +178,10 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const effectiveStatus = selection === 'done' ? 'done' : statusFilter
   const groupingQuery = JSON.stringify({ mode: groupMode === 'field' && !fields.some(field => field.id === groupFieldId) ? 'priority' : groupMode, fieldId: groupFieldId, groups: customGroups.map(group => ({ id: group.id, taskIds: group.taskIds })) })
   const countsKey = JSON.stringify([selection, query, filterPriorities, filterProjects, filterDue, groupingQuery])
+  const requestKey = JSON.stringify([countsKey, doneLimit])
+  const loadedRequestKey = useRef('')
+  const activeRef = useRef(active)
+  activeRef.current = active
   const [doneCountsResult, setDoneCountsResult] = useState<{ key: string; counts: Record<string, number> } | null>(null)
   const doneCounts = effectiveStatus !== 'open' && doneCountsResult?.key === countsKey ? doneCountsResult.counts : undefined
   const filterCount = Number(filterPriorities.length > 0) + Number(filterProjects.length > 0) + Number(filterDue !== 'any')
@@ -207,12 +211,14 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
 
   const reload = useCallback(() => {
     const sequence = ++reloadSequence.current
+    loadedRequestKey.current = ''
     setLoading(true)
     void Promise.all([window.electronAPI.tasks.list({ doneLimit, doneQuery: query, donePriorities: filterPriorities,
       doneProjectIds: filterProjects, doneDueRange: filterDue,
       doneSelection: selection, doneGrouping: JSON.parse(groupingQuery) }), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views(), window.electronAPI.tasks.fields(), window.electronAPI.tasks.groups()])
       .then(([list, projectList, viewList, fieldList, groupList]) => {
         if (sequence !== reloadSequence.current) return
+        loadedRequestKey.current = requestKey
         setHasLoaded(true)
         setTasks(list.open)
         setDoneTasks(list.done)
@@ -230,19 +236,19 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       })
       .catch(reason => { if (sequence === reloadSequence.current) setError(String(reason)) })
       .finally(() => { if (sequence === reloadSequence.current) setLoading(false) })
-  }, [doneLimit, query, filterPriorities, filterProjects, filterDue, selection, groupingQuery, countsKey])
+  }, [doneLimit, query, filterPriorities, filterProjects, filterDue, selection, groupingQuery, countsKey, requestKey])
   const reloadRef = useRef(reload)
   reloadRef.current = reload
 
+  const calendarDay = useRef(taskScheduleBounds('today', Date.now())[0])
   useEffect(() => {
     if (!active) return
-    let day = taskScheduleBounds('today', Date.now())[0]
     let timer: ReturnType<typeof setTimeout>
     const checkDay = () => {
       const now = Date.now()
       const [start, end] = taskScheduleBounds('today', now)
-      if (start !== day) {
-        day = start
+      if (start !== calendarDay.current) {
+        calendarDay.current = start
         reloadRef.current()
       }
       clearTimeout(timer)
@@ -254,11 +260,18 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   }, [active])
 
   useEffect(() => {
-    if (!active) return
+    if (!active || loadedRequestKey.current === requestKey) return
     const timer = setTimeout(reload, 100)
     return () => { clearTimeout(timer); reloadSequence.current += 1 }
-  }, [active, reload])
-  useEffect(() => { if (active) return window.electronAPI.tasks.onChanged(reload) }, [active, reload])
+  }, [active, reload, requestKey])
+  // Keep the cached page while navigating. Changes received in the background
+  // invalidate it, so returning still shows edits and reminder updates.
+  useEffect(() => window.electronAPI.tasks.onChanged(() => {
+    loadedRequestKey.current = ''
+    if (activeRef.current) reloadRef.current()
+    else reloadSequence.current += 1
+  }), [])
+  useEffect(() => () => { reloadSequence.current += 1 }, [])
   useEffect(() => { setDoneLimit(50) }, [query, filterPriorities, filterProjects, filterDue, selection])
   useEffect(() => {
     if (!draft && !viewDraft && !fieldsOpen) return
@@ -994,8 +1007,8 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       {(mode === 'board' || listGrouped) && boardGroupMode === 'week' && <p className="tasks-view-description">跨天任务单独展示；单日任务可拖到其他日期改期，跨天任务请编辑起止时间。</p>}
       {(mode === 'board' || listGrouped) && (boardGroupMode === 'overdue' || boardGroupMode === 'completed') && <p className="tasks-view-description">分组由实际日期自动计算，可在组内拖动排序。</p>}
       {displayGroupDraft && <TaskDisplayGroupDialog key={displayGroupDraft.id} initialName={displayGroupDraft.name} editing={Boolean(displayGroupDraft.id)} onSave={saveDisplayGroup} onCancel={() => setDisplayGroupDraft(null)} />}
-      {selection !== 'done' && mode === 'board'
-        ? <TasksBoard weekPeriod={weekPeriod} orderScope={selection} tasks={sorted} projects={groupingProjects} fields={displayFields} sortMode={sortMode} doneCounts={doneCounts} groupingFields={fields} customGroups={customGroups} renderGroupActions={renderDisplayGroupActions} onRenameGroup={renameDisplayGroup} onNewGroup={startDisplayGroup} savedOrder={layoutOrder.orders[columnOrderScope] ?? []} onOrder={keys => layoutOrder.save(columnOrderScope, keys)} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
+      {!hasLoaded ? <p className="tasks-initial-loading" role="status">正在加载任务…</p> : selection !== 'done' && mode === 'board'
+        ? <TasksBoard active={active} weekPeriod={weekPeriod} orderScope={selection} tasks={sorted} projects={groupingProjects} fields={displayFields} sortMode={sortMode} doneCounts={doneCounts} groupingFields={fields} customGroups={customGroups} renderGroupActions={renderDisplayGroupActions} onRenameGroup={renameDisplayGroup} onNewGroup={startDisplayGroup} savedOrder={layoutOrder.orders[columnOrderScope] ?? []} onOrder={keys => layoutOrder.save(columnOrderScope, keys)} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
             onOpenProject={openProject}
             onSource={setSourcePreview}
             onQuickEdit={async (id, patch) => { await window.electronAPI.tasks.update(id, patch); reloadRef.current() }}
