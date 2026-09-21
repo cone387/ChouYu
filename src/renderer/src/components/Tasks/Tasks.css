@@ -12,7 +12,7 @@
   color: var(--text-primary);
 }
 
-.tasks-sidebar { width: 204px; min-width: 0; padding-right: 12px; border-right: 1px solid var(--border); overflow-y: auto; flex: none; display: flex; flex-direction: column; gap: 8px; }
+.tasks-sidebar { width: 204px; min-width: 0; padding-right: 12px; border-right: 1px solid var(--border); overflow: hidden; flex: none; display: flex; flex-direction: column; gap: 8px; }
 .tasks-sidebar ul { list-style: none; width: 100%; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
 .tasks-sidebar li { width: 100%; }
 .tasks-sidebar button {
@@ -347,7 +347,6 @@
 .tasks-sidebar .tasks-count { float: none; background: transparent; font-size: 12px; padding: 0; min-width: 16px; color: var(--text-muted); flex: none; }
 .tasks-sidebar button[aria-current] .tasks-count { color: inherit; }
 .tasks-sidebar-views { padding-bottom: 10px; }
-.tasks-sidebar-projects { border-top: 1px solid var(--border); padding-top: 12px; }
 .tasks-nav-row { border-radius: 5px; gap: 0; padding-right: 3px; box-sizing: border-box; }
 .tasks-nav-row:hover { background: var(--hover-bg); }
 .tasks-nav-row[data-selected] { background: var(--tasks-selected-bg); }
@@ -474,10 +473,13 @@
 .tasks-item-menu-popover::backdrop { background: transparent; pointer-events: none; }
 .tasks-item-menu-popover:popover-open button { white-space: normal; overflow-wrap: anywhere; }
 
-/* Navigation stays fixed; only the project tree scrolls. */
-.tasks-sidebar { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; overflow: hidden; }
-.tasks-sidebar-view-nav { min-height: 0; overflow: hidden; }
-.tasks-sidebar-projects { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding-right: 4px; padding-top: 8px; }
+/* View nav and project tree scroll in their own regions; the divider between them is draggable. */
+.tasks-sidebar { min-height: 0; }
+.tasks-sidebar-view-nav { overflow-y: auto; min-height: 0; max-height: 80%; flex: 0 1 auto; }
+.tasks-sidebar-divider { flex: none; height: 6px; margin: 0 -4px; cursor: row-resize; touch-action: none; border-radius: 3px; }
+.tasks-sidebar-divider::after { content: ''; display: block; margin: 2px auto; width: 36px; height: 2px; border-radius: 1px; background: var(--border); }
+.tasks-sidebar-divider:hover, .tasks-sidebar-divider:focus-visible { background: var(--hover-bg); outline: none; }
+.tasks-sidebar-projects { flex: 1 1 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding-right: 4px; padding-top: 4px; }
 .tasks-sidebar .tasks-more-views > summary { display: flex; align-items: center; gap: 9px; min-height: 36px; box-sizing: border-box; width: 100%; margin-top: 2px; padding: 8px 10px; border: 0; border-radius: 5px; background: transparent; font-size: 13px; }
 .tasks-sidebar .tasks-more-views > summary:hover, .tasks-sidebar .tasks-more-views[open] > summary { background: var(--hover-bg); }
 .tasks-sidebar .tasks-more-views > summary[data-active] { color: var(--tasks-active); background: var(--tasks-selected-bg); }
@@ -491,8 +493,11 @@
 .tasks-more-views-popover .tasks-tool-title { padding-top: 8px; }
 .tasks-sidebar .tasks-more-view-create { border-top: 1px solid var(--border); border-radius: 0; margin-top: 4px; }
 @media (max-width: 640px) {
-  .tasks-sidebar { flex: 0 0 220px; max-height: 42%; grid-template-rows: auto auto minmax(0, 1fr); }
+  .tasks-sidebar { flex: 0 0 220px; max-height: 42%; }
   .tasks-sidebar .tasks-more-views > summary { font-size: 12px; min-height: 32px; padding: 6px 5px; }
+  .tasks-sidebar-divider { display: none; }
+  .tasks-sidebar-view-nav { height: auto !important; max-height: none; overflow: visible; flex: none; }
+  .tasks-sidebar-projects { flex: none; overflow: visible; border-top: 1px solid var(--border); }
 }
 
 /* Progressive task composer and compact content controls. */

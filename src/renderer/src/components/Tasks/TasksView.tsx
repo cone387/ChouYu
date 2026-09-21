@@ -20,6 +20,7 @@ import TaskIcon, { type IconName } from './TaskIcon'
 import useTaskMenus from './useTaskMenus'
 import useTaskLayoutOrder from './useTaskLayoutOrder'
 import useTaskViewPreferences from './useTaskViewPreferences'
+import useSidebarSplit from './useSidebarSplit'
 import { applyTaskOrder, assignTaskToGroup, moveTaskInOrder, recommendedTaskPreferences } from './taskViewPreferences'
 import { GROUP_LABELS, taskGroupMove, type BoardColumn } from './taskGrouping'
 import { useConfirm } from '../common/ConfirmProvider'
@@ -96,6 +97,8 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const layoutOrder = useTaskLayoutOrder()
   const confirm = useConfirm()
   const menusRef = useTaskMenus(active)
+  const sidebarRef = useRef<HTMLElement>(null)
+  const sidebarSplit = useSidebarSplit(sidebarRef)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const sidebarToggleRef = useRef<HTMLButtonElement>(null)
   const toggleSidebar = () => {
@@ -765,9 +768,9 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   }
 
   return <div className="tasks-view" ref={menusRef}>
-    <aside id="tasks-sidebar" className="tasks-sidebar" aria-label="任务视图筛选" hidden={sidebarCollapsed}>
+    <aside id="tasks-sidebar" className="tasks-sidebar" aria-label="任务视图筛选" hidden={sidebarCollapsed} ref={sidebarRef}>
       <header className="tasks-sidebar-title"><span>任务</span><button ref={sidebarCollapsed ? undefined : sidebarToggleRef} type="button" className="tasks-sidebar-toggle" aria-label="收起任务侧栏" title="收起任务侧栏" aria-expanded="true" aria-controls="tasks-sidebar" onClick={toggleSidebar}><TaskIcon name="sidebar" /></button></header>
-      <div className="tasks-sidebar-view-nav" role="region" aria-label="视图选择">
+      <div className="tasks-sidebar-view-nav" role="region" aria-label="视图选择" style={sidebarSplit.height === null ? undefined : { height: sidebarSplit.height, flex: 'none' }}>
         <ul role="list" className="tasks-smart-views">
           {visibleSmartViews.map(view => <li key={view.id}>
             <button type="button" data-view-selection={view.id} aria-current={navigationSelection === view.id || undefined} onClick={() => setSelection(view.id)}><TaskIcon name={SMART_ICONS[view.id]} /><span className="tasks-nav-label">{view.label}</span><span className="tasks-count">{countFor(view.id)}</span></button>
@@ -790,6 +793,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
           </div>
         </details>
       </div>
+      <div className="tasks-sidebar-divider" {...sidebarSplit.dividerProps} />
       <div className="tasks-sidebar-projects" role="region" aria-label="分组和清单列表">
         {orderedGroups.map(group => <div {...layoutOrder.drop('sidebar:groups', group.id, sidebarGroupIds)} className="tasks-group-shell" key={group.id} data-group-id={group.id} ref={element => { groupRefs.current[group.id] = element }}>
           <details className="tasks-project-group" open>
@@ -833,6 +837,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     <section className="tasks-main" aria-label="任务列表" data-hide-priority={hiddenFields.includes('priority') || undefined} data-hide-project={hiddenFields.includes('project') || undefined} data-hide-start={hiddenFields.includes('start') || undefined} data-hide-due={hiddenFields.includes('due') || undefined}>
       {layoutOrder.storageError && <p role="status" className="tasks-notice">{layoutOrder.storageError}</p>}
       {preferences.storageError && <p role="status" className="tasks-notice">{preferences.storageError}</p>}
+      {sidebarSplit.storageError && <p role="status" className="tasks-notice">{sidebarSplit.storageError}</p>}
       {quarantineNotice && <p role="alert" className="tasks-quarantine">{quarantineNotice}</p>}
       {error && !draft && !viewDraft && !fieldsOpen && !collectionDialogOpen && <p role="alert" className="tasks-error">{error}</p>}
       {notice && <p role="status" className="tasks-notice">{notice}<button type="button" aria-label="关闭提示" onClick={() => setNotice('')}>×</button></p>}
