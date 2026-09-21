@@ -6,5 +6,6 @@ dist/
 temp/
 .superpowers/
 .claude/worktrees/
+.playwright-mcp/
 __pycache__/
 *.pyc
