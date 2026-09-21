@@ -668,6 +668,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
             await click('.tasks-calendar-days button:nth-child(15)')
             await assert("!!document.querySelector('.tasks-date-popover:popover-open')")
             await assert("document.querySelector('.tasks-date-popover').scrollWidth <= document.querySelector('.tasks-date-popover').clientWidth + 1")
+            await click('.tasks-date-pages button:nth-child(2)')
             await assert("!!document.querySelector('.tasks-schedule-settings input[type=datetime-local]')")
             await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
             await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })

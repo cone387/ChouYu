@@ -8,6 +8,7 @@ const dateValue = (day: Date) => `${day.getFullYear()}-${String(day.getMonth() +
 export default function TaskDatePicker({ draft, busy, onChange }: { draft: TaskDraft; busy: boolean; onChange: (draft: TaskDraft) => void }) {
   const [month, setMonth] = useState(() => new Date((draft.dueDate || draft.startDate || dateValue(new Date())) + 'T12:00:00'))
   const [target, setTarget] = useState<'startDate' | 'dueDate'>('dueDate')
+  const [page, setPage] = useState<'date' | 'reminder' | 'repeat'>('date')
   const first = new Date(month.getFullYear(), month.getMonth(), 1)
   const offset = (first.getDay() + 6) % 7
   const days = Array.from({ length: 42 }, (_, index) => new Date(first.getFullYear(), first.getMonth(), index - offset + 1))
@@ -22,6 +23,11 @@ export default function TaskDatePicker({ draft, busy, onChange }: { draft: TaskD
     <details className="tasks-tool-menu tasks-composer-dates">
       <summary aria-label="设置任务时间" aria-disabled={busy} onClick={event => { if (busy) event.preventDefault() }}><TaskIcon name="clock" /><span>{summary}</span><TaskIcon name="chevron" /></summary>
       <div className="tasks-item-menu-popover tasks-date-popover" role="group" aria-label="任务时间设置">
+        <nav className="tasks-date-pages" aria-label="时间设置页面">
+          {(['date', 'reminder', 'repeat'] as const).map((value, index) => <button type="button" data-menu-keep-open key={value} aria-pressed={page === value} onClick={() => setPage(value)}>{['日期', '提醒', '重复'][index]}</button>)}
+        </nav>
+        <div className="tasks-date-page" key={page}>
+        {page === 'date' ? <>
         <header className="tasks-calendar-header">
           <span>{month.getFullYear()} 年 {month.getMonth() + 1} 月</span>
           <button type="button" data-menu-keep-open aria-label="上个月" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>‹</button>
@@ -42,7 +48,8 @@ export default function TaskDatePicker({ draft, busy, onChange }: { draft: TaskD
           <label>截止<input type="date" aria-label="任务截止日期" value={draft.dueDate} onFocus={() => setTarget('dueDate')} onChange={event => onChange({ ...draft, dueDate: event.target.value, ...(event.target.value ? {} : { recurrence: 'none', repeatRule: null, remind: 'none', reminderOffsets: [], reminderTimes: [] }) })} /></label>
           <input type="time" aria-label="任务截止时间" value={draft.dueTime} disabled={!draft.dueDate} onChange={event => onChange({ ...draft, dueTime: event.target.value })} />
         </div>
-        <TaskScheduleSettings draft={draft} busy={busy} onChange={onChange} />
+        </> : <TaskScheduleSettings section={page} draft={draft} busy={busy} onChange={onChange} />}
+        </div>
         <footer className="tasks-calendar-footer"><button type="button" data-menu-keep-open onClick={() => onChange({ ...draft, startDate: '', dueDate: '', remind: 'none', recurrence: 'none', repeatRule: null, reminderOffsets: [], reminderTimes: [] })}>清除时间</button><button type="button">完成</button></footer>
       </div>
     </details>

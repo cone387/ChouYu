@@ -9,11 +9,10 @@ const presets = [{ label: '截止时', offset: 0 }, { label: '提前 5 分钟', 
 const localDate = (at: number) => { const d = new Date(at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 function MonthDaysInput({ days, onChange }: { days: number[]; onChange(days: number[]): void }) {
-  const [text, setText] = useState(days.join(','))
-  return <label>每月日期<input aria-label="每月重复日期" placeholder="如 10,11；-1 表示月末" value={text} onChange={e => { setText(e.target.value); onChange(e.target.value.split(/[,，]/).map(Number)) }} /><small>可填多个日期；短月按月末执行，下月恢复原日期。</small></label>
+  return <div className="tasks-month-days"><span>每月日期</span><div className="tasks-repeat-weekdays" role="group" aria-label="每月重复日期">{[...Array.from({ length: 31 }, (_, i) => i + 1), -1].map(day => <button type="button" data-menu-keep-open key={day} aria-label={day === -1 ? '每月月末' : `每月 ${day} 日`} aria-pressed={days.includes(day)} onClick={() => onChange(days.includes(day) ? days.filter(d => d !== day) : [...days, day])}>{day === -1 ? '月末' : day}</button>)}</div><small>可选多个日期；短月按月末执行，下月恢复原日期。</small></div>
 }
 
-export default function TaskScheduleSettings({ draft, busy, onChange }: { draft: TaskDraft; busy: boolean; onChange(draft: TaskDraft): void }) {
+export default function TaskScheduleSettings({ section, draft, busy, onChange }: { section: 'reminder' | 'repeat'; draft: TaskDraft; busy: boolean; onChange(draft: TaskDraft): void }) {
   const [customReminder, setCustomReminder] = useState('')
   const [reminderError, setReminderError] = useState('')
   const due = draftDueAt(draft)
@@ -41,12 +40,15 @@ export default function TaskScheduleSettings({ draft, busy, onChange }: { draft:
   }
   return <fieldset className="tasks-schedule-settings" disabled={busy}>
     <legend className="sr-only">提醒与重复</legend>
+    {section === 'reminder' ? <>
     <div className="tasks-schedule-heading"><span>提醒 <small>{reminders.length}/5</small></span>{reminders.length > 0 && <button type="button" data-menu-keep-open onClick={() => setReminders([])}>不提醒</button>}</div>
     {reminders.length > 0 && <ul className="tasks-reminder-list">{reminders.map(at => <li key={at}><span>{new Date(at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span><button type="button" data-menu-keep-open aria-label={`移除提醒 ${new Date(at).toLocaleString('zh-CN')}`} onClick={() => setReminders(reminders.filter(t => t !== at))}>×</button></li>)}</ul>}
     <select aria-label="添加提醒" value="" disabled={due === null || reminders.length >= 5} onChange={e => { if (e.target.value !== '' && due !== null) addReminder(due - Number(e.target.value)) }}><option value="">添加相对截止时间的提醒</option>{presets.map(p => <option key={p.offset} value={p.offset} disabled={due !== null && reminders.includes(due - p.offset)}>{p.label}</option>)}</select>
     <div className="tasks-custom-reminder"><input type="datetime-local" aria-label="自定义提醒时间" value={customReminder} onChange={e => setCustomReminder(e.target.value)} /><button type="button" data-menu-keep-open disabled={!customReminder || reminders.length >= 5} onClick={() => addReminder(new Date(customReminder).getTime())}>添加</button></div>
     {reminderError && <p className="tasks-schedule-error" role="alert">{reminderError}</p>}
     <p className="tasks-schedule-hint">{due === null ? '也可单独设置提醒，无需截止日期。' : '修改截止时间时，提醒会同步平移。'}应用关闭或休眠时错过的提醒会在恢复后合并提示。</p>
+    </> : <>
+    {due === null && <p className="tasks-schedule-hint">请先在日期页设置截止日期，再选择重复规则。</p>}
     <label className="tasks-schedule-choice"><span>重复</span><select aria-label="任务重复规则" value={draft.recurrence} disabled={due === null} onChange={e => {
       const recurrence = e.target.value as TaskRecurrence
       onChange({ ...draft, recurrence, recurrenceIndex: 1, recurrenceAnchorAt: due, repeatRule: recurrence === 'custom' ? (draft.repeatRule ?? repeatRuleFor(draft.recurrence === 'none' ? 'daily' : draft.recurrence)) : null })
@@ -69,5 +71,6 @@ export default function TaskScheduleSettings({ draft, busy, onChange }: { draft:
     {(draft.recurrence === 'lunarYearly' || rule.frequency === 'lunarYearly' && draft.recurrence === 'custom') && <p className="tasks-schedule-hint">按所选日期对应的农历月日重复；无对应闰月时用普通月，小月三十按廿九执行。</p>}
     {preview && <p className="tasks-repeat-preview" aria-live="polite">{preview}</p>}
     {ruleError && <p className="tasks-schedule-error" role="alert">{ruleError}</p>}
+    </>}
   </fieldset>
 }

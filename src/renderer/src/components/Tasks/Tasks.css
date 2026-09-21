@@ -789,4 +789,13 @@
 .tasks-repeat-preview { color: var(--text-secondary); }
 .tasks-schedule-error { color: var(--error); }
 .tasks-composer .tasks-schedule-settings :is(input, select, button):focus-visible { outline: 2px solid var(--focus-ring) !important; outline-offset: 1px; }
-.tasks-composer .tasks-calendar-footer { position: sticky; bottom: -14px; z-index: 1; margin-bottom: -14px; padding: 10px 0 14px; background: var(--bg-primary); }
+.tasks-composer .tasks-date-popover { height: min(480px, calc(100dvh - 32px)); grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+.tasks-date-pages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 7px; background: var(--bg-secondary); }
+.tasks-composer .tasks-date-pages > button { min-height: 32px; }
+.tasks-composer .tasks-date-pages > button[aria-pressed='true'] { background: var(--bg-primary); color: var(--tasks-active); box-shadow: 0 1px 3px #0001; }
+.tasks-date-page { display: grid; align-content: start; gap: 10px; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 2px; }
+.tasks-date-page .tasks-schedule-settings { padding: 0; border: 0; }
+.tasks-month-days { display: grid; gap: 6px; font-size: 12px; }
+.tasks-month-days .tasks-repeat-weekdays > button:last-child { grid-column: span 2; white-space: nowrap; }
+.tasks-composer .tasks-calendar-footer { position: static; margin: 0; padding: 8px 0 0; background: var(--bg-primary); }
+.tasks-composer .tasks-date-pages > button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
