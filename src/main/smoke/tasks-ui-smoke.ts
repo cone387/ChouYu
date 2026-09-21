@@ -631,13 +631,13 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
             const divider = document.querySelector('.tasks-sidebar-divider');
             if (!sidebar || !views || !projects || !divider) return false;
             if (innerWidth > 640) {
-              // Wide: each region scrolls internally while the sidebar itself stays fixed.
+              // Wide: views auto-collapse into the more popover instead of scrolling, projects scroll internally, sidebar stays fixed.
               const viewTop = views.getBoundingClientRect().top;
               views.scrollTop = views.scrollHeight;
               const viewScroll = views.scrollTop;
               projects.scrollTop = projects.scrollHeight;
               const buttons = getComputedStyle(projects, '::-webkit-scrollbar-button');
-              return getComputedStyle(views).overflowY === 'auto' && getComputedStyle(projects).overflowY === 'auto'
+              return getComputedStyle(views).overflowY === 'hidden' && getComputedStyle(projects).overflowY === 'auto'
                 && viewScroll === 0 && views.scrollHeight <= views.clientHeight + 1 && views.getBoundingClientRect().top === viewTop
                 && getComputedStyle(divider).display !== 'none' && getComputedStyle(divider).cursor === 'row-resize'
                 && getComputedStyle(sidebar).overflowY === 'hidden' && sidebar.scrollHeight <= sidebar.clientHeight + 1
@@ -647,8 +647,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
             projects.scrollTop = projects.scrollHeight;
             sidebar.scrollTop = sidebar.scrollHeight;
             return getComputedStyle(divider).display === 'none'
-              && getComputedStyle(views).overflowY === 'visible' && getComputedStyle(views).maxHeight === 'none'
-              && getComputedStyle(projects).overflowY === 'visible'
+              && getComputedStyle(views).overflowY === 'visible' && getComputedStyle(projects).overflowY === 'visible'
               && getComputedStyle(sidebar).overflowY === 'auto'
               && projects.scrollTop === 0 && sidebar.scrollTop > 0;
           })()`)

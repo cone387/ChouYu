@@ -109,6 +109,26 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     setSidebarCollapsed(value => !value)
     requestAnimationFrame(() => sidebarToggleRef.current?.focus())
   }
+  const viewNavRef = useRef<HTMLDivElement>(null)
+  const [fitCount, setFitCount] = useState(Number.POSITIVE_INFINITY)
+  useEffect(() => {
+    const sidebar = sidebarRef.current
+    if (!sidebar || !active || sidebarCollapsed) return
+    const update = () => {
+      if (window.innerWidth <= 640) { setFitCount(3); return }
+      const row = viewNavRef.current?.querySelector<HTMLElement>('ul > li')
+      const more = viewNavRef.current?.querySelector<HTMLElement>('.tasks-more-views')
+      const rowHeight = row?.offsetHeight || 38
+      const moreHeight = more?.offsetHeight || 44
+      const headerHeight = sidebar.querySelector('header')?.getBoundingClientRect().height ?? 44
+      const budget = sidebarSplit.height ?? Math.min(sidebar.clientHeight * .52, sidebar.clientHeight - headerHeight - 120)
+      setFitCount(Math.max(1, Math.floor((budget - moreHeight) / rowHeight)))
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(sidebar)
+    update()
+    return () => observer.disconnect()
+  }, [active, sidebarCollapsed, sidebarSplit.height, sidebarRef])
   const [selection, setSelection] = useState<Selection>(() => {
     try {
       const last = localStorage.getItem('chouyu:task-selection') ?? ''
@@ -673,7 +693,10 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   })
   const visibleNavEntries = navEntries.filter(entry => !nav.hidden.includes(entry.key))
   const hiddenNavEntries = navEntries.filter(entry => nav.hidden.includes(entry.key))
-  const hiddenViewSelected = nav.hidden.includes(selection.startsWith('view:') ? selection : navigationSelection)
+  const shownNavEntries = visibleNavEntries.slice(0, fitCount)
+  const overflowNavEntries = visibleNavEntries.slice(fitCount)
+  const collapsedNavKeys = new Set([...nav.hidden, ...overflowNavEntries.map(entry => entry.key)])
+  const hiddenViewSelected = collapsedNavKeys.has(selection.startsWith('view:') ? selection : navigationSelection)
 
   const finishListDrag = () => { setListDraggingTask(null); setListCardTarget(null); setListDropGroup(null) }
   useEffect(finishListDrag, [selection, listGrouped, boardGroupMode, groupFieldId])
@@ -776,9 +799,9 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   return <div className="tasks-view" ref={menusRef}>
     <aside id="tasks-sidebar" className="tasks-sidebar" aria-label="任务视图筛选" hidden={sidebarCollapsed} ref={sidebarRef}>
       <header className="tasks-sidebar-title"><span>任务</span><button ref={sidebarCollapsed ? undefined : sidebarToggleRef} type="button" className="tasks-sidebar-toggle" aria-label="收起任务侧栏" title="收起任务侧栏" aria-expanded="true" aria-controls="tasks-sidebar" onClick={toggleSidebar}><TaskIcon name="sidebar" /></button></header>
-      <div className="tasks-sidebar-view-nav" role="region" aria-label="视图选择" style={sidebarSplit.height === null ? undefined : { height: sidebarSplit.height, flex: 'none' }}>
+      <div ref={viewNavRef} className="tasks-sidebar-view-nav" role="region" aria-label="视图选择" style={sidebarSplit.height === null ? undefined : { height: sidebarSplit.height, flex: 'none' }}>
         <ul role="list" className="tasks-smart-views">
-          {visibleNavEntries.map(entry => <li key={entry.key}>
+          {shownNavEntries.map(entry => <li key={entry.key}>
             <button type="button" data-view-selection={entry.key} aria-current={navigationSelection === entry.key || selection === entry.key || undefined} onClick={() => setSelection(entry.key)}><TaskIcon name={entry.icon} /><span className="tasks-nav-label">{entry.label}</span><span className="tasks-count">{countFor(entry.key)}</span></button>
           </li>)}
         </ul>
@@ -786,7 +809,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
           <summary aria-label="更多" title={hiddenViewSelected ? `${selectionTitle} · 更多` : '更多'} data-active={hiddenViewSelected || undefined}><TaskIcon name="more" /><span className="tasks-nav-label">{hiddenViewSelected ? selectionTitle : '更多'}</span><TaskIcon name="chevron" /></summary>
           <div className="tasks-item-menu-popover tasks-more-views-popover" role="group" aria-label="更多视图选择">
             <button type="button" className="tasks-more-view-create" onClick={() => setManageViewsOpen(true)}><TaskIcon name="fields" />管理视图</button>
-            {hiddenNavEntries.map(entry => entry.custom
+            {[...hiddenNavEntries, ...overflowNavEntries].map(entry => entry.custom
               ? <div className="tasks-more-view-row" key={entry.key}>
                 <button type="button" data-view-selection={entry.key} aria-current={selection === entry.key || undefined} onClick={() => setSelection(entry.key)} title={entry.label}><TaskIcon name={entry.icon} /><span className="tasks-nav-label">{entry.label}</span><span className="tasks-count">{countFor(entry.key)}</span></button>
                 <button type="button" className="tasks-more-view-action" aria-label={`编辑视图 ${entry.label}`} title="编辑视图" onClick={() => setViewDraft({ id: entry.custom!.id, name: entry.custom!.name, projectIds: [...entry.custom!.projectIds], priorities: [...entry.custom!.priorities], dueRange: entry.custom!.dueRange })}><TaskIcon name="edit" /></button>
