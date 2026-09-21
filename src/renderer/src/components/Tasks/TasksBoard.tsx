@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import type { TaskProject, TaskRecord, TaskSelectField, TaskUpdateInput, TaskSortMode } from '../../../../shared/tasks'
 import TaskIcon from './TaskIcon'
-import TaskQuickEdit from './TaskQuickEdit'
 import type { TaskSource } from '../../../../shared/tasks'
 import { formatTaskDue, sortTasks } from '../../../../shared/tasks'
 import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
@@ -14,7 +13,6 @@ interface TasksBoardProps {
   active: boolean
   weekPeriod?: 'week' | 'nextWeek'
   onSource?: (source: TaskSource) => void
-  onQuickEdit?: (id: string, patch: TaskUpdateInput) => Promise<unknown>
   orderScope: string
   tasks: TaskRecord[]
   projects: TaskProject[]
@@ -35,11 +33,12 @@ interface TasksBoardProps {
   groupFieldId: string | null
   onOpenProject: (id: string) => void
   onEdit: (task: TaskRecord) => void
+  onRemove: (id: string) => void
   onComplete: (id: string) => void
   onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => Promise<void>
 }
 
-export default function TasksBoard({ active, weekPeriod = 'week', onSource, onQuickEdit, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+export default function TasksBoard({ active, weekPeriod = 'week', onSource, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onRemove, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, DOMRect>())
   const scrollFrame = useRef<number | null>(null)
@@ -240,7 +239,7 @@ export default function TasksBoard({ active, weekPeriod = 'week', onSource, onQu
           {items.map(task => {
             return <li key={task.id} className="tasks-board-card" data-completed={task.status === 'done' || undefined} onDragEnd={finishColumnDrag} draggable={!savingTask} tabIndex={0} data-task-id={task.id} data-card-insert={cardTarget?.id === task.id && draggingTask !== task.id ? (cardTarget.after ? 'after' : 'before') : undefined} data-saving={savingTask === task.id || undefined}
               onClick={event => {
-                if ((event.target as Element).closest('button, summary, .tasks-quick-edit, a, input, select, textarea') || window.getSelection()?.toString()) return
+                if ((event.target as Element).closest('button, summary, a, input, select, textarea') || window.getSelection()?.toString()) return
                 onEdit(task)
               }} onKeyDown={event => {
                 if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); onEdit(task); return }
@@ -259,7 +258,13 @@ export default function TasksBoard({ active, weekPeriod = 'week', onSource, onQu
                 <span className="tasks-board-card-chips"><TaskCardMeta task={task} projects={projects} fields={fields} onOpenProject={onOpenProject} onSource={onSource} /></span>
                 {(task.startAt != null || task.dueAt !== null) && <span className="tasks-board-card-footer">{task.startAt != null && <span className="tasks-start-cell tasks-board-start" title={`开始时间：${formatTaskDue(task.startAt)}`}><TaskIcon name="today" />{formatTaskDue(task.startAt)} 开始</span>}<TaskCardDue task={task} /></span>}
               </div>
-              {onQuickEdit && <TaskQuickEdit task={task} projects={projects} onSave={patch => onQuickEdit(task.id, patch)} />}
+              <details className="tasks-item-menu">
+                <summary aria-label={`更多操作 ${task.title}`} title="更多操作"><TaskIcon name="more" /></summary>
+                <div className="tasks-item-menu-popover">
+                  <button type="button" onClick={() => onEdit(task)}>编辑任务</button>
+                  <button type="button" className="tasks-item-menu-danger" onClick={() => onRemove(task.id)}>删除任务</button>
+                </div>
+              </details>
             </li>
           })}
         </ul>

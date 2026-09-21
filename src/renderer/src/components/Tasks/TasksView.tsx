@@ -12,7 +12,6 @@ import TaskCollectionDialog from './TaskCollectionDialog'
 import TaskDisplayGroupDialog from './TaskDisplayGroupDialog'
 import TaskTrashDialog from './TaskTrashDialog'
 import TaskBackupDialog from './TaskBackupDialog'
-import TaskQuickEdit from './TaskQuickEdit'
 import type { TaskConversionDraft } from './taskNavigation'
 import type { TaskSource } from '../../../../shared/tasks'
 import TaskSourceDialog from './TaskSourceDialog'
@@ -733,7 +732,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
             finishListDrag()
           }}
           onClick={event => {
-            if ((event.target as Element).closest('button, .tasks-item-menu, .tasks-quick-edit, a, input, select, textarea, [role="button"]') || window.getSelection()?.toString()) return
+            if ((event.target as Element).closest('button, .tasks-item-menu, a, input, select, textarea, [role="button"]') || window.getSelection()?.toString()) return
             event.currentTarget.focus({ preventScroll: true })
             setDraft(draftFromTask(task))
           }}
@@ -755,7 +754,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
               {task.status === 'done' && <span className="tasks-card-completed">已完成{task.completedAt ? ` · ${dueLabel(task.completedAt)}` : ''}</span>}
             </div>
           </div>
-          <TaskQuickEdit task={task} projects={projects} onSave={async patch => { await window.electronAPI.tasks.update(task.id, patch); reloadRef.current() }} />
               <details className="tasks-item-menu">
                 <summary aria-label={`更多操作 ${task.title}`} title="更多操作"><TaskIcon name="more" /></summary>
                 <div className="tasks-item-menu-popover">
@@ -1029,7 +1027,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
         ? <TasksBoard active={active} weekPeriod={weekPeriod} orderScope={selection} tasks={sorted} projects={groupingProjects} fields={displayFields} sortMode={sortMode} doneCounts={doneCounts} groupingFields={fields} customGroups={customGroups} renderGroupActions={renderDisplayGroupActions} onRenameGroup={renameDisplayGroup} onNewGroup={startDisplayGroup} savedOrder={layoutOrder.orders[columnOrderScope] ?? []} onOrder={keys => layoutOrder.save(columnOrderScope, keys)} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
             onOpenProject={openProject}
             onSource={setSourcePreview}
-            onQuickEdit={async (id, patch) => { await window.electronAPI.tasks.update(id, patch); reloadRef.current() }}
+            onRemove={remove}
             onEdit={task => setDraft(draftFromTask(task))}
             onComplete={complete}
             onReopen={reopen}

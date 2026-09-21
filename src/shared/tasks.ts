@@ -141,24 +141,6 @@ export interface TaskBackupPreview {
   trashCount: number
 }
 
-
-/** Changing a deadline preserves its clock time and the interval's calendar-day length. */
-export function rescheduleTaskDate(task: TaskRecord, date: string): TaskUpdateInput {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('改期日期无效。')
-  const [year, month, day] = date.split('-').map(Number)
-  const target = new Date(year, month - 1, day)
-  if (target.getFullYear() !== year || target.getMonth() !== month - 1 || target.getDate() !== day) throw new Error('改期日期无效。')
-  const anchor = new Date(task.dueAt ?? task.startAt ?? target.getTime())
-  target.setHours(task.dueAt != null || task.startAt != null ? anchor.getHours() : 9, anchor.getMinutes(), anchor.getSeconds(), anchor.getMilliseconds())
-  const dueAt = target.getTime()
-  const deltaDays = Math.round((Date.UTC(year, month - 1, day) - Date.UTC(anchor.getFullYear(), anchor.getMonth(), anchor.getDate())) / 86400_000)
-  let startAt = task.startAt
-  if (startAt != null && (task.dueAt != null || startAt > dueAt)) {
-    const shifted = new Date(startAt); shifted.setDate(shifted.getDate() + deltaDays); startAt = shifted.getTime()
-  }
-  return { dueAt, ...(startAt != null ? { startAt } : {}), ...(task.dueAt != null && task.remindAt != null ? { remindAt: dueAt - (task.dueAt - task.remindAt), ...(task.reminders?.length ? { reminderTimes: task.reminders.map(reminder => reminder.at + dueAt - task.dueAt!) } : {}) } : {}) }
-}
-
 export interface TaskListResult {
   open: TaskRecord[]
   done: TaskRecord[]
