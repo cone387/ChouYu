@@ -114,3 +114,18 @@ test('同轮任务级与子项级提醒各发一条且原子记录', () => {
   expect(claimed[0].task.remindFiredAt).toBe(1000)
   expect(store.claimDueReminders(1000)).toEqual([])
 })
+test('重复任务下一期重置子项勾选并按周期偏移子项时间与提醒', () => {
+  const store = open()
+  const due = new Date(2030, 0, 1, 9).getTime()
+  vi.spyOn(Date, 'now').mockReturnValue(due)
+  const task = store.createTask({ title: '每周复查', dueAt: due, recurrence: 'weekly', checklist: [
+    { id: 'a', title: '整理', done: true, dueAt: due + 60_000, reminders: [{ at: due + 30_000, firedAt: 123 }] }
+  ] })
+  store.completeTask(task.id)
+  const next = store.listTasks().open[0]
+  expect(next.dueAt).toBe(due + 7 * 86_400_000)
+  const item = next.checklist![0]
+  expect(item.done).toBe(false)
+  expect(item.dueAt).toBe(due + 7 * 86_400_000 + 60_000)
+  expect(item.reminders).toEqual([{ at: due + 7 * 86_400_000 + 30_000, firedAt: null }])
+})

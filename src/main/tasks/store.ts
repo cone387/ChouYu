@@ -672,7 +672,14 @@ export class TasksStore {
           this.database.prepare(`INSERT INTO tasks
             (id, title, note, project_id, priority, status, start_at, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields, checklist, source, repeat_rule, recurrence_index, reminders)
             VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`)
-            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, current.start_at === null ? null : nextDueAt - (current.due_at - current.start_at), nextDueAt, reminders[0]?.at ?? null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now, current.custom_fields ?? '{}', JSON.stringify(validateTaskChecklist(JSON.parse(current.checklist ?? '[]')).map(item => ({ ...item, done: false }))), current.source ?? null, current.repeat_rule ?? null, (current.recurrence_index ?? 1) + 1, JSON.stringify(reminders))
+            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, current.start_at === null ? null : nextDueAt - (current.due_at - current.start_at), nextDueAt, reminders[0]?.at ?? null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now, current.custom_fields ?? '{}', JSON.stringify(validateTaskChecklist(JSON.parse(current.checklist ?? '[]')).map(item => {
+              const delta = nextDueAt - current.due_at!
+              return {
+                ...item, done: false,
+                ...(item.dueAt != null ? { dueAt: item.dueAt + delta } : {}),
+                ...(item.reminders?.length ? { reminders: item.reminders.map(r => ({ at: r.at + delta, firedAt: null })) } : {})
+              }
+            })), current.source ?? null, current.repeat_rule ?? null, (current.recurrence_index ?? 1) + 1, JSON.stringify(reminders))
         }
       }
       return this.requireTask(id)
