@@ -56,6 +56,7 @@ export default function TasksBoard({ active, weekPeriod = 'week', onSource, onQu
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null)
   const [columnTarget, setColumnTarget] = useState<{ key: string; after: boolean } | null>(null)
   const scope = JSON.stringify([orderScope, groupMode, groupMode === 'field' ? groupFieldId : null])
+  const measuredScope = useRef(scope)
   const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId, Date.now(), customGroups, doneCounts, weekPeriod).sort((a, b) => {
     const rank = (key: string) => { const index = savedOrder.indexOf(key); return index < 0 ? Infinity : index }
     return rank(a.key) - rank(b.key)
@@ -69,6 +70,10 @@ export default function TasksBoard({ active, weekPeriod = 'week', onSource, onQu
     const elements = Array.from(board.querySelectorAll<HTMLElement>('[data-motion-key]')).filter(element => !element.closest('.tasks-drag-preview'))
     // Read layout without an earlier preview animation's transform applied.
     elements.forEach(element => element.getAnimations().forEach(animation => animation.cancel()))
+    if (measuredScope.current !== scope) {
+      positions.current.clear()
+      measuredScope.current = scope
+    }
     // Hidden pages have zero-size boxes. Never animate from those on return.
     if (!active || !board.getClientRects().length) {
       positions.current.clear()

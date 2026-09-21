@@ -148,6 +148,7 @@ export interface TaskListResult {
   done: TaskRecord[]
   totalDone: number
   matchedDone: number
+  doneViewCounts: Record<string, number>
   doneGroupCounts: Record<string, number>
   quarantinedAt: number | null
 }

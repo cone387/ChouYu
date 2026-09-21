@@ -730,6 +730,11 @@ test('完成任务按清单、视图和日期筛选后再分页，匹配总数�
     expect(result.done).toHaveLength(2)
     expect(result.matchedDone).toBe(6)
     expect(result.totalDone).toBe(64)
+    expect(result.doneViewCounts.today).toBe(6)
+    const navigationCounts = store.listTasks({ doneLimit: 2 }).doneViewCounts
+    expect(navigationCounts.today).toBe(64)
+    expect(navigationCounts.done).toBe(64)
+    expect(navigationCounts.tomorrow).toBe(0)
     expect(result.done.every(task => task.projectId === project.id)).toBe(true)
     expect(store.listTasks({ doneSelection: 'today', doneProjectIds: [project.id] }).matchedDone).toBe(9)
     expect(store.listTasks({ doneDueRange: 'today', doneProjectIds: [project.id] }).matchedDone).toBe(6)
@@ -737,6 +742,8 @@ test('完成任务按清单、视图和日期筛选后再分页，匹配总数�
     expect(store.listTasks({ doneSelection: 'unplanned', doneProjectIds: [project.id] }).done.map(task => task.id)).toEqual([unplanned.id])
     const view = store.createView({ name: '高优', projectIds: [project.id], priorities: ['high'], dueRange: 'today' })
     expect(store.listTasks({ doneSelection: `view:${view.id}`, doneLimit: 3 }).matchedDone).toBe(6)
+    expect(store.listTasks({ doneLimit: 1 }).doneViewCounts[`view:${view.id}`]).toBe(6)
+    expect(store.listTasks({ doneQuery: '目标', doneLimit: 1 }).doneViewCounts.today).toBe(6)
     expect(store.listTasks({ doneSelection: 'view:missing' }).matchedDone).toBe(0)
     expect(() => store.listTasks({ doneDueRange: 'invalid' as never })).toThrow('截止范围')
   } finally { store.close() }

@@ -661,66 +661,75 @@ export class TasksStore {
     if (options.doneQuery !== undefined && typeof options.doneQuery !== 'string') throw new Error('搜索条件无效。')
     const query = (options.doneQuery ?? '').trim().toLocaleLowerCase()
     const priorities = assertPriorityList(options.donePriorities)
-    const conditions = ["status = 'done'"]
-    const params: (string | number)[] = []
-    if (query) {
-      conditions.push("instr(lower(title || ' ' || coalesce(note, '')), ?) > 0")
-      params.push(query)
-    }
-    if (priorities.length) {
-      conditions.push(`priority IN (${priorities.map(() => '?').join(',')})`)
-      params.push(...priorities)
-    }
-    const addProjects = (ids: string[]) => {
-      if (!ids.length) return
-      conditions.push(`project_id IN (${ids.map(() => '?').join(',')})`)
-      params.push(...ids)
-    }
     const now = Date.now()
-    const today = new Date(now); today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1)
-    const addDue = (range: TaskDueRange | 'unplanned') => {
-      if (range === 'none') conditions.push('due_at IS NULL')
-      else if (range === 'unplanned') conditions.push('due_at IS NULL AND start_at IS NULL')
-      else if (range === 'overdue') { conditions.push('due_at < ?'); params.push(today.getTime()) }
-      else if (range === 'today') { conditions.push('due_at >= ? AND due_at < ?'); params.push(today.getTime(), tomorrow.getTime()) }
-      else if (range === 'week') {
-        const monday = new Date(today); monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7)
-        const next = new Date(monday); next.setDate(next.getDate() + 7)
-        conditions.push('due_at >= ? AND due_at < ?'); params.push(monday.getTime(), next.getTime())
-      }
-    }
-    addProjects(assertIdList(options.doneProjectIds))
-    addDue(assertDueRange(options.doneDueRange))
-    const selection = options.doneSelection ?? 'all'
-    if (typeof selection !== 'string') throw new Error('任务视图无效。')
     const activeProjects = '(project_id IS NULL OR project_id NOT IN (SELECT id FROM task_projects WHERE archived_at IS NOT NULL))'
-    if (selection !== 'done' && !selection.startsWith('project:')) conditions.push(activeProjects)
-    if (selection.startsWith('project:')) addProjects([selection.slice(8)])
-    else if (selection.startsWith('view:')) {
-      const view = this.listViews().find(item => item.id === selection.slice(5))
-      if (!view) conditions.push('0 = 1')
-      else {
-        addProjects(view.projectIds); addDue(view.dueRange)
-        if (view.priorities.length) {
-          conditions.push(`priority IN (${view.priorities.map(() => '?').join(',')})`)
-          params.push(...view.priorities)
+    const savedViews = this.listViews()
+    const doneWhere = (selection: string) => {
+      const conditions = ["status = 'done'"]
+      const params: (string | number)[] = []
+      if (query) {
+        conditions.push("instr(lower(title || ' ' || coalesce(note, '')), ?) > 0")
+        params.push(query)
+      }
+      if (priorities.length) {
+        conditions.push(`priority IN (${priorities.map(() => '?').join(',')})`)
+        params.push(...priorities)
+      }
+      const addProjects = (ids: string[]) => {
+        if (!ids.length) return
+        conditions.push(`project_id IN (${ids.map(() => '?').join(',')})`)
+        params.push(...ids)
+      }
+      const today = new Date(now); today.setHours(0, 0, 0, 0)
+      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1)
+      const addDue = (range: TaskDueRange | 'unplanned') => {
+        if (range === 'none') conditions.push('due_at IS NULL')
+        else if (range === 'unplanned') conditions.push('due_at IS NULL AND start_at IS NULL')
+        else if (range === 'overdue') { conditions.push('due_at < ?'); params.push(today.getTime()) }
+        else if (range === 'today') { conditions.push('due_at >= ? AND due_at < ?'); params.push(today.getTime(), tomorrow.getTime()) }
+        else if (range === 'week') {
+          const monday = new Date(today); monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7)
+          const next = new Date(monday); next.setDate(next.getDate() + 7)
+          conditions.push('due_at >= ? AND due_at < ?'); params.push(monday.getTime(), next.getTime())
         }
       }
-    } else if (selection === 'today' || selection === 'tomorrow' || selection === 'week' || selection === 'nextWeek') {
-      const [start, end] = taskScheduleBounds(selection, now)
-      conditions.push('completed_at >= ? AND completed_at < ?')
-      params.push(start, end)
-    } else if (selection === 'overdue' || selection === 'unplanned') addDue(selection)
-    else if (selection !== 'all' && selection !== 'done') throw new Error('任务视图无效。')
-    const where = conditions.join(' AND ')
+      addProjects(assertIdList(options.doneProjectIds))
+      addDue(assertDueRange(options.doneDueRange))
+      if (typeof selection !== 'string') throw new Error('任务视图无效。')
+      if (selection !== 'done' && !selection.startsWith('project:')) conditions.push(activeProjects)
+      if (selection.startsWith('project:')) addProjects([selection.slice(8)])
+      else if (selection.startsWith('view:')) {
+        const view = savedViews.find(item => item.id === selection.slice(5))
+        if (!view) conditions.push('0 = 1')
+        else {
+          addProjects(view.projectIds); addDue(view.dueRange)
+          if (view.priorities.length) {
+            conditions.push(`priority IN (${view.priorities.map(() => '?').join(',')})`)
+            params.push(...view.priorities)
+          }
+        }
+      } else if (selection === 'today' || selection === 'tomorrow' || selection === 'week' || selection === 'nextWeek') {
+        const [start, end] = taskScheduleBounds(selection, now)
+        conditions.push('completed_at >= ? AND completed_at < ?')
+        params.push(start, end)
+      } else if (selection === 'overdue' || selection === 'unplanned') addDue(selection)
+      else if (selection !== 'all' && selection !== 'done') throw new Error('任务视图无效。')
+      return { where: conditions.join(' AND '), params }
+    }
+    const selection = options.doneSelection ?? 'all'
+    const { where, params } = doneWhere(selection)
+    const doneViewCounts = Object.fromEntries(['all', 'today', 'tomorrow', 'week', 'nextWeek', 'overdue', 'unplanned', 'done', ...savedViews.map(view => `view:${view.id}`)].map(scope => {
+      const filter = doneWhere(scope)
+      const { count } = this.database.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE ${filter.where}`).get(...filter.params) as { count: number }
+      return [scope, count]
+    }))
 
     const explicitProject = selection.startsWith('project:') ? selection.slice(8) : ''
     const open = (this.database.prepare(`SELECT * FROM tasks WHERE status = 'open' AND (${activeProjects} OR project_id = ?) ORDER BY created_at, rowid`).all(explicitProject) as TaskRow[]).map(toTask)
     const done = (this.database.prepare(`SELECT * FROM tasks WHERE ${where} ORDER BY completed_at DESC, rowid DESC LIMIT ?`).all(...params, limit) as TaskRow[]).map(toTask)
     const totalDone = (this.database.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE status = 'done'`).get() as { count: number }).count
     const matchedDone = (this.database.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE ${where}`).get(...params) as { count: number }).count
-    return { open, done, totalDone, matchedDone, doneGroupCounts: countDoneGroups(this.database, where, params, options.doneGrouping, now, selection === 'nextWeek' ? 'nextWeek' : 'week'), quarantinedAt: this.quarantinedAt }
+    return { open, done, totalDone, matchedDone, doneViewCounts, doneGroupCounts: countDoneGroups(this.database, where, params, options.doneGrouping, now, selection === 'nextWeek' ? 'nextWeek' : 'week'), quarantinedAt: this.quarantinedAt }
   }
 
   /** 原子领取到期提醒:先写 remind_fired_at 再由调用方发通知,保证只发一次。 */

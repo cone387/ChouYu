@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
-import { isDueToday } from '../../../../shared/tasks'
+import { matchesTaskSchedule } from '../../../../shared/tasks'
 import './Workspace.css'
 
 import type { WorkspacePage } from '../../core/workspace-state'
@@ -25,7 +25,7 @@ export default function WorkspaceNav({ activePage, onNavigate, status }: { activ
       void window.electronAPI.tasks.list().then(result => {
         if (!disposed && request === requestId) {
           const now = Date.now()
-          setTodayTaskCount(result.open.filter(task => isDueToday(task, now)).length)
+          setTodayTaskCount(result.open.filter(task => matchesTaskSchedule(task, 'today', now)).length)
         }
       }).catch(() => {})
     }

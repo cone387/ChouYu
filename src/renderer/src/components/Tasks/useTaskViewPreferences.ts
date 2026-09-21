@@ -20,5 +20,5 @@ export default function useTaskViewPreferences(scope: string) {
   const set = <K extends keyof TaskViewPreferences>(key: K, next: SetStateAction<TaskViewPreferences[K]>) => {
     update(scope, previous => ({ ...previous, [key]: typeof next === 'function' ? (next as (value: TaskViewPreferences[K]) => TaskViewPreferences[K])(previous[key]) : next }))
   }
-  return { value, set, update, storageError }
+  return { value, set, update, storageError, forScope: (target: string) => saved[target] ?? recommendedTaskPreferences(target) }
 }

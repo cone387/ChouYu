@@ -133,7 +133,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const [query, setQuery] = useState('')
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [doneTasks, setDoneTasks] = useState<TaskRecord[]>([])
-  const [totalDone, setTotalDone] = useState(0)
+  const [doneViewCounts, setDoneViewCounts] = useState<Record<string, number>>({})
   const [matchedDone, setMatchedDone] = useState(0)
   const [doneLimit, setDoneLimit] = useState(50)
   const [loading, setLoading] = useState(false)
@@ -178,7 +178,9 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const effectiveStatus = selection === 'done' ? 'done' : statusFilter
   const groupingQuery = JSON.stringify({ mode: groupMode === 'field' && !fields.some(field => field.id === groupFieldId) ? 'priority' : groupMode, fieldId: groupFieldId, groups: customGroups.map(group => ({ id: group.id, taskIds: group.taskIds })) })
   const countsKey = JSON.stringify([selection, query, filterPriorities, filterProjects, filterDue, groupingQuery])
-  const requestKey = JSON.stringify([countsKey, doneLimit])
+  // Open tasks are returned in full and filtered locally. Only completed
+  // tasks need another server page when the selection or filters change.
+  const requestKey = effectiveStatus === 'open' ? JSON.stringify(['open', selection.startsWith('project:') ? selection : '', query, filterPriorities, filterProjects, filterDue]) : JSON.stringify([countsKey, doneLimit])
   const loadedRequestKey = useRef('')
   const activeRef = useRef(active)
   activeRef.current = active
@@ -222,7 +224,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
         setHasLoaded(true)
         setTasks(list.open)
         setDoneTasks(list.done)
-        setTotalDone(list.totalDone)
+        setDoneViewCounts(list.doneViewCounts)
         setMatchedDone(list.matchedDone)
         setDoneCountsResult({ key: countsKey, counts: list.doneGroupCounts })
         setProjects(projectList)
@@ -259,8 +261,15 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     return () => { clearTimeout(timer); window.removeEventListener('focus', checkDay) }
   }, [active])
 
+  const previousQuery = useRef(query)
   useEffect(() => {
+    const typing = previousQuery.current !== query
+    previousQuery.current = query
     if (!active || loadedRequestKey.current === requestKey) return
+    if (!typing) {
+      reload()
+      return () => { reloadSequence.current += 1 }
+    }
     const timer = setTimeout(reload, 100)
     return () => { clearTimeout(timer); reloadSequence.current += 1 }
   }, [active, reload, requestKey])
@@ -348,7 +357,12 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     (selection === 'done' || matchesSelection(task, selection))) : []
   const sortedByMode = sortTasks([...visible, ...(selection === 'done' ? [] : doneVisible)], sortMode, now)
   const sorted = sortMode === 'manual' ? applyTaskOrder(sortedByMode, taskOrder) : sortedByMode
-  const countFor = (target: Selection) => target === 'done' ? totalDone : tasks.filter(task => matchesSelection(task, target)).length
+  const countFor = (target: Selection) => {
+    const scope = target === navigationSelection ? selection : target
+    const status = scope === 'done' ? 'done' : preferences.forScope(scope).statusFilter
+    const open = status === 'done' ? 0 : tasks.filter(task => matchesKeywordAndFilter(task) && matchesSelection(task, scope)).length
+    return open + (status === 'open' ? 0 : doneViewCounts[scope] ?? 0)
+  }
   const boardGroupMode: BoardGroupMode = groupMode === 'field' && !fields.some(field => field.id === groupFieldId) ? 'priority' : groupMode
 
   const submitDraft = (event: FormEvent) => {

@@ -34,7 +34,18 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
     return { top: area.scrollTop, height: window.__navigationComposer.getBoundingClientRect().height };
   })()`)
   const fixture: string = await run("window.electronAPI.tasks.create({ title: 'Navigation cache fixture', dueAt: Date.now() }).then(task => task.id)")
+  let completedFixture = ''
+  let spanningFixture = ''
   try {
+    await waitForRenderer(window, "!!document.querySelector('[data-workspace-nav=tasks] .workspace-nav-badge')")
+    await settle()
+    const initialBadge = await run("Number(document.querySelector('[data-workspace-nav=tasks] .workspace-nav-badge').textContent)")
+    spanningFixture = await run(`(() => {
+      const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 1);
+      const end = new Date(); end.setHours(23, 59, 0, 0); end.setDate(end.getDate() + 1);
+      return window.electronAPI.tasks.create({ title: 'Navigation spanning task fixture', startAt: start.getTime(), dueAt: end.getTime() }).then(task => task.id);
+    })()`)
+    await waitForRenderer(window, `Number(document.querySelector('[data-workspace-nav=tasks] .workspace-nav-badge').textContent) === ${initialBadge + 1}`)
     await click('[data-workspace-nav=tasks]')
     await waitForRenderer(window, "!!document.querySelector('[data-view-selection=today]')")
     await click('[data-view-selection=today]')
@@ -42,7 +53,22 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
     await run("Array.from(document.querySelectorAll('.tasks-grouping-menu button')).find(button => button.textContent === '恢复推荐分组与排序').click()")
     await click('.tasks-tab:nth-child(2)')
     await waitForRenderer(window, `!!document.querySelector('.tasks-board [data-task-id="${fixture}"]') && !document.querySelector('.tasks-loading-status[data-loading]')`)
+    completedFixture = await run("window.electronAPI.tasks.create({ title: 'Navigation completed count fixture' }).then(async task => { await window.electronAPI.tasks.complete(task.id); return task.id })")
+    await waitForRenderer(window, `!!document.querySelector('.tasks-board [data-task-id="${completedFixture}"]') && !document.querySelector('.tasks-loading-status[data-loading]')`)
+    const countMatches = await run(`Number(document.querySelector('[data-view-selection=today] .tasks-count').textContent) === new Set([...document.querySelectorAll('.tasks-board [data-task-id]')].map(el => el.dataset.taskId)).size`)
+    if (!countMatches) throw new Error('Today navigation count excludes completed tasks shown in the board')
     await settle()
+    await run("window.__navigationBoard = document.querySelector('.tasks-board')")
+    const rightInset = await run("document.querySelector('.tasks-view').getBoundingClientRect().right - document.querySelector('.tasks-main').getBoundingClientRect().right")
+    if (Math.abs(rightInset) > 1) throw new Error('Task scrollbar is inset from the workspace edge: ' + rightInset)
+    for (const period of ['tomorrow', 'today']) {
+      await click('[data-task-period=' + period + ']')
+      const switching = await frames(`({ loading: !!document.querySelector('.tasks-loading-status[data-loading]'),
+        animated: [...document.querySelectorAll('.tasks-board [data-motion-key]')].some(el => el.getAnimations().some(a => a.playState === 'running')) })`)
+      if (switching.some((frame: any) => frame.loading || frame.animated)) {
+        throw new Error('Task period navigation reloaded cached open tasks or animated between views: ' + JSON.stringify(switching))
+      }
+    }
     await run("window.__navigationBoard = document.querySelector('.tasks-board')")
 
     for (let iteration = 0; iteration < 3; iteration++) {
@@ -113,6 +139,8 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
     }
     console.log('CHOUYU_NAVIGATION_SMOKE_PASSED retained chat geometry, cached board, journal views/drafts, settings and memory animations')
   } finally {
+    if (spanningFixture) await run(`window.electronAPI.tasks.remove('${spanningFixture}')`)
+    if (completedFixture) await run(`window.electronAPI.tasks.remove('${completedFixture}')`)
     await run(`window.electronAPI.tasks.remove('${fixture}')`)
     await click('[data-workspace-nav=chat]')
     await run("document.querySelector('.composer-resize-handle').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))")
