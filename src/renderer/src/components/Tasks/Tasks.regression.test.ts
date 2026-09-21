@@ -6,7 +6,7 @@ const read = (name: string): string => readFileSync(fileURLToPath(new URL(name, 
 
 describe('Tasks 视图源守卫', () => {
   test('键盘与可达性:表单原生提交、Esc 取消、行内按钮 aria-label、列表 role', () => {
-    const source = read('TasksView.tsx') + read('TaskEditorDialog.tsx') + read('TaskDatePicker.tsx')
+    const source = read('TasksView.tsx') + read('TaskEditorDialog.tsx') + read('TaskDatePicker.tsx') + read('TaskScheduleSettings.tsx')
     expect(source).toContain('onSubmit={submitDraft}')
     expect(source).toContain("key === 'Escape'")
     expect(source).toContain('aria-label')

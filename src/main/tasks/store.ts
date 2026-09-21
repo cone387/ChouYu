@@ -1,18 +1,19 @@
+import { TASK_RECURRENCES, nextTaskOccurrence, parseImportedRepeatRule, repeatRuleFor, validateReminders, validateReminderTimes, validateRepeatRule, type TaskReminder } from '../../shared/taskScheduling'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import type {
   TaskGroup, TaskCreateInput, TaskListOptions, TaskSelectFieldUpdateInput, TaskDueRange, TaskFieldOption, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldInput, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
 } from '../../shared/tasks'
-import { nextRecurrenceDueAt, taskScheduleBounds, validateTaskChecklist, validateTaskSource } from '../../shared/tasks'
+import { taskScheduleBounds, validateTaskChecklist, validateTaskSource } from '../../shared/tasks'
 import { countDoneGroups } from './group-counts'
 import { captureDeleted, listTrash, restoreTrash } from './recovery'
 import { createTaskBackup, restoreTaskBackup, validateTaskBackup } from './backup'
 import { type TaskUISettings } from '../../shared/tasks'
 
-const SCHEMA_VERSION = 9
+const SCHEMA_VERSION = 10
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
-const RECURRENCES: TaskRecurrence[] = ['none', 'daily', 'weekly', 'monthly']
+const RECURRENCES: TaskRecurrence[] = TASK_RECURRENCES
 const DUE_RANGES: TaskDueRange[] = ['today', 'week', 'overdue', 'none', 'any']
 
 interface TaskRow {
@@ -21,6 +22,7 @@ interface TaskRow {
   recurrence: string; recurrence_anchor_at: number | null
   created_at: number; updated_at: number; completed_at: number | null
   recurrence_generated?: number
+  repeat_rule?: string | null; recurrence_index?: number; reminders?: string
   custom_fields?: string
   checklist?: string
   source?: string | null
@@ -175,6 +177,22 @@ function migrate(database: Database.Database): void {
     );
   `)
   const columns = database.pragma('table_info(tasks)') as { name?: unknown }[]
+  database.transaction(() => {
+    if (!columns.some(column => column.name === 'repeat_rule')) database.exec('ALTER TABLE tasks ADD COLUMN repeat_rule TEXT')
+    if (!columns.some(column => column.name === 'recurrence_index')) database.exec('ALTER TABLE tasks ADD COLUMN recurrence_index INTEGER NOT NULL DEFAULT 1')
+    if (!columns.some(column => column.name === 'reminders')) {
+      database.exec("ALTER TABLE tasks ADD COLUMN reminders TEXT NOT NULL DEFAULT '[]'")
+      database.exec("UPDATE tasks SET reminders = json_array(json_object('at',remind_at,'firedAt',remind_fired_at)) WHERE remind_at IS NOT NULL")
+    }
+    // Recover supported rules from the one-off Dida import without guessing from task titles.
+    for (const row of database.prepare("SELECT id,note FROM tasks WHERE id LIKE 'dida:%' AND status='open' AND recurrence='none' AND repeat_rule IS NULL").all() as { id: string; note: string | null }[]) {
+      if (!row.note?.includes('此重复规则仅保留记录，ChouYu 暂不支持自动重复。')) continue
+      const flag = /原重复规则：([^\r\n]+)/.exec(row.note ?? '')?.[1]
+      const rule = flag ? parseImportedRepeatRule(flag) : null
+      if (rule) database.prepare("UPDATE tasks SET recurrence='custom',repeat_rule=?,note=? WHERE id=?").run(JSON.stringify(rule), row.note!.replace('此重复规则仅保留记录，ChouYu 暂不支持自动重复。', '原重复规则已启用。'), row.id)
+    }
+  })()
+
   if (!columns.some(column => column.name === 'checklist')) database.exec("ALTER TABLE tasks ADD COLUMN checklist TEXT NOT NULL DEFAULT '[]'")
   if (!columns.some(column => column.name === 'source')) database.exec('ALTER TABLE tasks ADD COLUMN source TEXT')
   if (columns.length > 0 && !columns.some(column => column.name === 'custom_fields')) {
@@ -228,6 +246,13 @@ function migrate(database: Database.Database): void {
   })()
 }
 
+const rowReminders = (row: TaskRow): TaskReminder[] => {
+  const reminders = validateReminders(JSON.parse(row.reminders ?? '[]'))
+  return reminders.length || row.remind_at === null ? reminders : [{ at: row.remind_at, firedAt: row.remind_fired_at }]
+}
+const buildReminders = (times: number[], previous: TaskReminder[] = []): TaskReminder[] => validateReminderTimes(times).map(at => ({ at, firedAt: previous.find(r => r.at === at)?.firedAt ?? null }))
+const firedSummary = (reminders: TaskReminder[]): number | null => reminders.length && reminders.every(r => r.firedAt !== null) ? Math.max(...reminders.map(r => r.firedAt!)) : null
+
 const toTask = (row: TaskRow): TaskRecord => ({
   checklist: validateTaskChecklist(JSON.parse(row.checklist ?? '[]')),
   source: validateTaskSource(row.source ? JSON.parse(row.source) : null),
@@ -235,8 +260,10 @@ const toTask = (row: TaskRow): TaskRecord => ({
   priority: (PRIORITIES.includes(row.priority as TaskPriority) ? row.priority : 'medium') as TaskPriority,
   status: row.status === 'done' ? 'done' : 'open',
   startAt: row.start_at, dueAt: row.due_at, remindAt: row.remind_at, remindFiredAt: row.remind_fired_at,
-  recurrence: (['daily', 'weekly', 'monthly'].includes(row.recurrence) ? row.recurrence : 'none') as TaskRecord['recurrence'],
+  recurrence: (TASK_RECURRENCES.includes(row.recurrence as TaskRecurrence) ? row.recurrence : 'none') as TaskRecord['recurrence'],
   recurrenceAnchorAt: row.recurrence_anchor_at,
+  repeatRule: validateRepeatRule(row.repeat_rule ? JSON.parse(row.repeat_rule) : null),
+  recurrenceIndex: row.recurrence_index ?? 1, reminders: rowReminders(row),
   customFields: parseCustomFields(row.custom_fields),
   createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at
 })
@@ -555,16 +582,21 @@ export class TasksStore {
     const startAt = assertTimestamp(input?.startAt, '开始时间')
     const dueAt = assertTimestamp(input?.dueAt, '截止时间')
     if (startAt !== null && dueAt !== null && startAt > dueAt) throw new Error('开始时间不能晚于截止时间。')
-    const remindAt = assertTimestamp(input?.remindAt, '提醒时间')
+    const legacyReminder = assertTimestamp(input?.remindAt, '提醒时间')
+    const reminders = buildReminders(input?.reminderTimes ?? (legacyReminder === null ? [] : [legacyReminder]))
+    const remindAt = reminders[0]?.at ?? null
     const recurrence = assertRecurrence(input?.recurrence)
+    const repeatRule = validateRepeatRule(input?.repeatRule)
+    repeatRuleFor(recurrence, repeatRule)
+    if (recurrence !== 'none' && dueAt === null) throw new Error('设置重复前请先选择截止日期。')
     const customFields = this.cleanCustomFieldValues(assertCustomFieldValues(input?.customFields))
     const checklist = JSON.stringify(validateTaskChecklist(input?.checklist))
     const source = JSON.stringify(validateTaskSource(input?.source))
     const now = Date.now()
     const info = this.database.prepare(`INSERT INTO tasks
-      (id, title, note, project_id, priority, status, start_at, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields, checklist, source)
-      VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?)`)
-      .run(randomUUID(), title, note, projectId, priority, startAt, dueAt, remindAt, recurrence, recurrence === 'none' ? null : dueAt, now, now, JSON.stringify(customFields), checklist, source)
+      (id, title, note, project_id, priority, status, start_at, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields, checklist, source, repeat_rule, reminders)
+      VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`)
+      .run(randomUUID(), title, note, projectId, priority, startAt, dueAt, remindAt, recurrence, recurrence === 'none' ? null : dueAt, now, now, JSON.stringify(customFields), checklist, source, recurrence === 'custom' ? JSON.stringify(repeatRule) : null, JSON.stringify(reminders))
     return this.requireTaskByRowid(Number(info.lastInsertRowid))
   }
 
@@ -583,16 +615,27 @@ export class TasksStore {
     const startAt = patch?.startAt === undefined ? current.start_at : assertTimestamp(patch.startAt, '开始时间')
     const dueAt = patch?.dueAt === undefined ? current.due_at : assertTimestamp(patch.dueAt, '截止时间')
     if (startAt !== null && dueAt !== null && startAt > dueAt) throw new Error('开始时间不能晚于截止时间。')
-    const remindAt = patch?.remindAt === undefined ? current.remind_at : assertTimestamp(patch.remindAt, '提醒时间')
-    const recurrence = patch?.recurrence === undefined ? assertRecurrence(current.recurrence) : assertRecurrence(patch.recurrence)
-    const resetFired = patch?.remindAt !== undefined && remindAt !== current.remind_at
+    const previousReminders = rowReminders(current)
+    const datesChanged = dueAt !== current.due_at
+    const times = patch.reminderTimes !== undefined ? validateReminderTimes(patch.reminderTimes)
+      : patch.remindAt !== undefined ? (patch.remindAt === null ? [] : [assertTimestamp(patch.remindAt, '提醒时间')!])
+      : datesChanged && current.due_at !== null ? (dueAt === null ? [] : previousReminders.map(r => r.at + dueAt - current.due_at!)) : previousReminders.map(r => r.at)
+    const reminders = buildReminders(times, previousReminders)
+    const remindAt = reminders[0]?.at ?? null
+    const recurrence = patch.recurrence === undefined ? (dueAt === null && datesChanged ? 'none' : assertRecurrence(current.recurrence)) : assertRecurrence(patch.recurrence)
+    const repeatRule = validateRepeatRule(patch.repeatRule === undefined ? (current.repeat_rule ? JSON.parse(current.repeat_rule) : null) : patch.repeatRule)
+    repeatRuleFor(recurrence, repeatRule)
+    if (recurrence !== 'none' && dueAt === null) throw new Error('设置重复前请先选择截止日期。')
+    const ruleJson = recurrence === 'custom' ? JSON.stringify(repeatRule) : null
+    const ruleChanged = recurrence !== current.recurrence || ruleJson !== (current.repeat_rule ?? null)
+    const anchor = recurrence === 'none' ? null : datesChanged || ruleChanged ? dueAt : current.recurrence_anchor_at ?? dueAt
     const customFields = patch?.customFields === undefined
       ? parseCustomFields(current.custom_fields)
       : this.cleanCustomFieldValues({ ...parseCustomFields(current.custom_fields), ...assertCustomFieldValues(patch.customFields) })
     const checklist = patch?.checklist === undefined ? current.checklist ?? '[]' : JSON.stringify(validateTaskChecklist(patch.checklist))
     const source = patch?.source === undefined ? current.source ?? null : JSON.stringify(validateTaskSource(patch.source))
-    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, start_at = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, recurrence = ?, recurrence_anchor_at = ?, updated_at = ?, custom_fields = ?, checklist = ?, source = ? WHERE id = ?`)
-      .run(title, note, projectId, priority, startAt, dueAt, remindAt, resetFired ? null : current.remind_fired_at, recurrence, recurrence === 'none' ? null : (current.recurrence_anchor_at ?? dueAt), Date.now(), JSON.stringify(customFields), checklist, source, id)
+    this.database.prepare(`UPDATE tasks SET title = ?, note = ?, project_id = ?, priority = ?, start_at = ?, due_at = ?, remind_at = ?, remind_fired_at = ?, recurrence = ?, recurrence_anchor_at = ?, updated_at = ?, custom_fields = ?, checklist = ?, source = ?, repeat_rule = ?, recurrence_index = ?, reminders = ? WHERE id = ?`)
+      .run(title, note, projectId, priority, startAt, dueAt, remindAt, firedSummary(reminders), recurrence, anchor, Date.now(), JSON.stringify(customFields), checklist, source, ruleJson, ruleChanged ? 1 : current.recurrence_index ?? 1, JSON.stringify(reminders), id)
     return this.requireTask(id)
   }
 
@@ -619,14 +662,14 @@ export class TasksStore {
       const recurrence = assertRecurrence(current.recurrence)
       if (recurrence !== 'none' && current.due_at !== null && !current.recurrence_generated) {
         // 迟到完成时跳过已错过的周期,避免下一期一出生就已过期
-        const nextDueAt = nextRecurrenceDueAt(current.due_at, recurrence, current.recurrence_anchor_at ?? current.due_at, now)
+        const nextDueAt = nextTaskOccurrence(current.due_at, recurrence, current.repeat_rule ? JSON.parse(current.repeat_rule) : null, current.recurrence_anchor_at ?? current.due_at, now, current.recurrence_index ?? 1)
         if (nextDueAt !== null) {
           this.database.prepare('UPDATE tasks SET recurrence_generated = 1 WHERE id = ?').run(id)
-          const reminderOffset = current.remind_at !== null ? current.due_at - current.remind_at : null
+          const reminders = buildReminders(rowReminders(current).map(r => r.at + nextDueAt - current.due_at!))
           this.database.prepare(`INSERT INTO tasks
-            (id, title, note, project_id, priority, status, start_at, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields, checklist, source)
-            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?)`)
-            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, current.start_at === null ? null : nextDueAt - (current.due_at - current.start_at), nextDueAt, reminderOffset !== null ? nextDueAt - reminderOffset : null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now, current.custom_fields ?? '{}', JSON.stringify(validateTaskChecklist(JSON.parse(current.checklist ?? '[]')).map(item => ({ ...item, done: false }))), current.source ?? null)
+            (id, title, note, project_id, priority, status, start_at, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields, checklist, source, repeat_rule, recurrence_index, reminders)
+            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`)
+            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, current.start_at === null ? null : nextDueAt - (current.due_at - current.start_at), nextDueAt, reminders[0]?.at ?? null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now, current.custom_fields ?? '{}', JSON.stringify(validateTaskChecklist(JSON.parse(current.checklist ?? '[]')).map(item => ({ ...item, done: false }))), current.source ?? null, current.repeat_rule ?? null, (current.recurrence_index ?? 1) + 1, JSON.stringify(reminders))
         }
       }
       return this.requireTask(id)
@@ -732,14 +775,23 @@ export class TasksStore {
     return { open, done, totalDone, matchedDone, doneViewCounts, doneGroupCounts: countDoneGroups(this.database, where, params, options.doneGrouping, now, selection === 'nextWeek' ? 'nextWeek' : 'week'), quarantinedAt: this.quarantinedAt }
   }
 
-  /** 原子领取到期提醒:先写 remind_fired_at 再由调用方发通知,保证只发一次。 */
+  /** 原子记录各提醒的发送状态，再由调用方通知。同一轮的积压按任务合并。 */
   claimDueReminders(now: number): TaskRecord[] {
-    const rows = this.database.prepare(`
-      UPDATE tasks SET remind_fired_at = ?
-      WHERE status = 'open' AND remind_at IS NOT NULL AND remind_at <= ? AND remind_fired_at IS NULL
-        AND (project_id IS NULL OR project_id NOT IN (SELECT id FROM task_projects WHERE archived_at IS NOT NULL))
-      RETURNING *`).all(now, now) as TaskRow[]
-    return rows.map(toTask)
+    return this.database.transaction(() => {
+      const rows = this.database.prepare(`SELECT * FROM tasks
+        WHERE status = 'open' AND remind_at IS NOT NULL AND remind_at <= ? AND remind_fired_at IS NULL
+          AND (project_id IS NULL OR project_id NOT IN (SELECT id FROM task_projects WHERE archived_at IS NOT NULL))`).all(now) as TaskRow[]
+      const claimed: TaskRecord[] = []
+      for (const row of rows) {
+        const reminders = rowReminders(row)
+        if (!reminders.some(r => r.firedAt === null && r.at <= now)) continue
+        // Coalesce multiple missed alerts for one task, while later alerts still fire independently.
+        const updated = reminders.map(r => r.firedAt === null && r.at <= now ? { ...r, firedAt: now } : r)
+        this.database.prepare('UPDATE tasks SET reminders=?,remind_fired_at=? WHERE id=?').run(JSON.stringify(updated), firedSummary(updated), row.id)
+        claimed.push(toTask({ ...row, reminders: JSON.stringify(updated), remind_fired_at: firedSummary(updated) }))
+      }
+      return claimed
+    }).immediate()
   }
 }
 

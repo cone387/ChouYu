@@ -764,3 +764,29 @@
 .tasks-disclosure-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 16px; width: 16px; height: 16px; color: var(--text-muted); }
 .tasks-project-group[open] > summary > .tasks-disclosure-icon,
 .tasks-archived[open] > summary > .tasks-disclosure-icon { transform: rotate(90deg); }
+
+/* Repeat and reminder controls share the date panel's compact, keyboard-accessible layout. */
+.tasks-schedule-settings { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 12px 0 0; border: 0; border-top: 1px solid var(--border); }
+.tasks-schedule-heading, .tasks-schedule-choice { display: flex !important; flex-direction: row !important; align-items: center; justify-content: space-between; gap: 10px; }
+.tasks-schedule-heading { font-size: 13px; color: var(--text-secondary); }
+.tasks-schedule-heading small { color: var(--text-muted); }
+.tasks-schedule-settings select, .tasks-schedule-settings input { min-width: 0; max-width: 100%; width: 100%; box-sizing: border-box; }
+.tasks-schedule-choice select { width: auto; max-width: 190px; }
+.tasks-custom-reminder, .tasks-repeat-interval { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tasks-custom-reminder input { flex: 1; }
+.tasks-custom-reminder button { flex: none; }
+.tasks-repeat-interval input { width: 72px; }
+.tasks-repeat-interval select { flex: 1; }
+.tasks-repeat-interval > span { flex: none; font-size: 12px; color: var(--text-secondary); }
+.tasks-repeat-custom { display: grid; gap: 10px; padding: 10px; border-radius: 6px; background: var(--bg-secondary); }
+.tasks-repeat-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.tasks-composer .tasks-repeat-weekdays > button { min-height: 30px; }
+.tasks-composer .tasks-repeat-weekdays > button[aria-pressed='true'] { background: var(--tasks-selected-bg); color: var(--tasks-active); }
+.tasks-reminder-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.tasks-reminder-list li { display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 2px 8px; background: var(--bg-secondary); border-radius: 5px; }
+.tasks-schedule-hint, .tasks-repeat-preview, .tasks-schedule-error { margin: 0; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.tasks-schedule-hint, .tasks-repeat-custom small { color: var(--text-muted); }
+.tasks-repeat-preview { color: var(--text-secondary); }
+.tasks-schedule-error { color: var(--error); }
+.tasks-composer .tasks-schedule-settings :is(input, select, button):focus-visible { outline: 2px solid var(--focus-ring) !important; outline-offset: 1px; }
+.tasks-composer .tasks-calendar-footer { position: sticky; bottom: -14px; z-index: 1; margin-bottom: -14px; padding: 10px 0 14px; background: var(--bg-primary); }

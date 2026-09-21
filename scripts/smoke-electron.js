@@ -30,6 +30,7 @@ const env = {
   CHOUYU_SMOKE_TEST: '1',
   CHOUYU_SMOKE_CAPTURE_ONLY: nativeCapture ? '1' : '0',
   CHOUYU_SMOKE_NAVIGATION_ONLY: process.argv.includes('--navigation') ? '1' : '0',
+  CHOUYU_SMOKE_TASK_SCHEDULING_ONLY: process.argv.includes('--task-scheduling') ? '1' : '0',
   CHOUYU_SMOKE_USER_DATA: smokeUserData
 }
 console.log(nativeCapture ? 'Smoke mode: native capture (requires interactive desktop and recording permission).' : 'Smoke mode: UI/data regression with synthetic capture; native capture is tested separately.')

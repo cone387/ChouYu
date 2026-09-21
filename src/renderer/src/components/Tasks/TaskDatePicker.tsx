@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { RECURRENCE_LABELS, REMIND_CHOICES, type RemindChoiceId, type TaskRecord } from '../../../../shared/tasks'
 import type { TaskDraft } from './TaskEditorDialog'
-import TaskSelect from './TaskSelect'
+import TaskScheduleSettings from './TaskScheduleSettings'
 import TaskIcon from './TaskIcon'
 
 const dateValue = (day: Date) => `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
@@ -40,12 +39,11 @@ export default function TaskDatePicker({ draft, busy, onChange }: { draft: TaskD
           <input type="time" aria-label="任务开始时间" value={draft.startTime} disabled={!draft.startDate} onChange={event => onChange({ ...draft, startTime: event.target.value })} />
         </div>
         <div className="tasks-calendar-date-row" data-active={target === 'dueDate' || undefined}>
-          <label>截止<input type="date" aria-label="任务截止日期" value={draft.dueDate} onFocus={() => setTarget('dueDate')} onChange={event => onChange({ ...draft, dueDate: event.target.value, ...(event.target.value ? {} : { recurrence: 'none', remind: 'none' }) })} /></label>
+          <label>截止<input type="date" aria-label="任务截止日期" value={draft.dueDate} onFocus={() => setTarget('dueDate')} onChange={event => onChange({ ...draft, dueDate: event.target.value, ...(event.target.value ? {} : { recurrence: 'none', repeatRule: null, remind: 'none', reminderOffsets: [], reminderTimes: [] }) })} /></label>
           <input type="time" aria-label="任务截止时间" value={draft.dueTime} disabled={!draft.dueDate} onChange={event => onChange({ ...draft, dueTime: event.target.value })} />
         </div>
-        <div className="tasks-calendar-setting"><span>提醒</span><TaskSelect label="任务提醒" value={draft.remind} disabled={busy || !draft.dueDate} onChange={remind => onChange({ ...draft, remind: remind as RemindChoiceId })} options={REMIND_CHOICES.map(choice => ({ value: choice.id, label: choice.label }))} /></div>
-        <div className="tasks-calendar-setting"><span>重复</span><TaskSelect label="任务重复规则" value={draft.recurrence} disabled={busy || !draft.dueDate} onChange={recurrence => onChange({ ...draft, recurrence: recurrence as TaskRecord['recurrence'] })} options={(Object.keys(RECURRENCE_LABELS) as TaskRecord['recurrence'][]).map(id => ({ value: id, label: RECURRENCE_LABELS[id] }))} /></div>
-        <footer className="tasks-calendar-footer"><button type="button" data-menu-keep-open onClick={() => onChange({ ...draft, startDate: '', dueDate: '', remind: 'none', recurrence: 'none' })}>清除时间</button><button type="button">完成</button></footer>
+        <TaskScheduleSettings draft={draft} busy={busy} onChange={onChange} />
+        <footer className="tasks-calendar-footer"><button type="button" data-menu-keep-open onClick={() => onChange({ ...draft, startDate: '', dueDate: '', remind: 'none', recurrence: 'none', repeatRule: null, reminderOffsets: [], reminderTimes: [] })}>清除时间</button><button type="button">完成</button></footer>
       </div>
     </details>
   </div>

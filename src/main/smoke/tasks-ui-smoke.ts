@@ -1,3 +1,4 @@
+import { runTaskSchedulingUISmoke } from './task-scheduling-ui-smoke'
 import { dialog, type BrowserWindow } from 'electron'
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -666,12 +667,8 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
             await waitForRenderer(window, "!!document.querySelector('.tasks-date-popover:popover-open')")
             await click('.tasks-calendar-days button:nth-child(15)')
             await assert("!!document.querySelector('.tasks-date-popover:popover-open')")
-            await assert("innerWidth <= 640 || document.querySelector('.tasks-date-popover').scrollHeight <= document.querySelector('.tasks-date-popover').clientHeight + 1")
-            await click('[role="combobox"][aria-label="任务提醒"]')
-            await waitForRenderer(window, "!!document.querySelector('.tasks-select-options:popover-open')")
-            await assert("!!document.querySelector('.tasks-date-popover:popover-open')")
-            await run("document.querySelector('[aria-label=\"任务提醒\"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
-            await assert("!!document.querySelector('.tasks-date-popover:popover-open') && !document.querySelector('.tasks-select-options:popover-open')")
+            await assert("document.querySelector('.tasks-date-popover').scrollWidth <= document.querySelector('.tasks-date-popover').clientWidth + 1")
+            await assert("!!document.querySelector('.tasks-schedule-settings input[type=datetime-local]')")
             await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
             await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
             writeFileSync(join(directory, `tasks-calendar-${mode}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
@@ -1109,6 +1106,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     for (const task of [...list.open, ...list.done]) if (!original.has(task.id)) await window.electronAPI.tasks.remove(task.id);
     window.dispatchEvent(new Event('chouyu:tasks-changed'));
   })()`)
+  await runTaskSchedulingUISmoke(window)
   await click('[aria-label="关闭面板"]')
   await waitForRenderer(window, "!document.querySelector('.chat-panel')")
   console.log('CHOUYU_TASKS_UI_SMOKE_PASSED menus, confirmations, per-view preference restoration, column preview/cancel, manual card order and cross-column moves, groups, fields and history')

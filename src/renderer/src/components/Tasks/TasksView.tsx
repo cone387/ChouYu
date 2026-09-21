@@ -1,3 +1,5 @@
+import { draftDueAt, draftReminderTimes, draftScheduleFromTask } from './taskDraftScheduling'
+import { repeatRuleFor, validateReminderTimes } from '../../../../shared/taskScheduling'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { RemindChoiceId, TaskDueRange, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldUpdateInput, TaskSortMode, TaskView, TaskUpdateInput } from '../../../../shared/tasks'
 import {
@@ -65,10 +67,6 @@ const toInputDate = (at: number): string => {
   const date = new Date(at)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
-const draftDueAt = (draft: Draft): number | null => {
-  if (!draft.dueDate) return null
-  return new Date(`${draft.dueDate}T${draft.dueTime || '09:00'}`).getTime() || null
-}
 const remindChoiceFromTask = (task: TaskRecord): RemindChoiceId => {
   if (task.remindAt === null || task.dueAt === null) return 'none'
   for (const choice of REMIND_CHOICES) {
@@ -78,6 +76,7 @@ const remindChoiceFromTask = (task: TaskRecord): RemindChoiceId => {
 }
 const draftFromTask = (task: TaskRecord): Draft => ({
   id: task.id,
+  ...draftScheduleFromTask(task), originalDueAt: task.dueAt, originalStartAt: task.startAt, recurrenceIndex: task.recurrenceIndex, recurrenceAnchorAt: task.recurrenceAnchorAt,
   title: task.title,
   note: task.note,
   projectId: task.projectId ?? '',
@@ -371,15 +370,20 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     const title = draft.title.trim()
     if (!title) { setError('任务标题不能为空。'); return }
     if (!draft.projectId) { setError('请先选择或创建所属清单。'); return }
-    const startAt = draft.startDate ? new Date(`${draft.startDate}T${draft.startTime || '09:00'}`).getTime() : null
+    let startAt = draft.startDate ? new Date(`${draft.startDate}T${draft.startTime || '09:00'}`).getTime() : null
+    if (startAt !== null && draft.originalStartAt != null && Math.floor(startAt / 60000) === Math.floor(draft.originalStartAt / 60000)) startAt = draft.originalStartAt
     const dueAt = draftDueAt(draft)
     if (startAt !== null && dueAt !== null && startAt > dueAt) { setError('开始时间不能晚于截止时间。'); return }
-    const remindAt = remindAtFromChoice(draft.remind, dueAt)
+    let reminderTimes: number[]
+    try { reminderTimes = validateReminderTimes(draftReminderTimes(draft)); repeatRuleFor(draft.recurrence, draft.repeatRule) }
+    catch (error) { setError((error as Error).message); return }
+    const repeatRule = draft.recurrence === 'custom' ? draft.repeatRule : null
+    const remindAt = reminderTimes[0] ?? null
     const customFields = Object.fromEntries(fields.map(field => [field.id, draft.customFields[field.id] ?? null]))
     setBusy(true); setError('')
     const request = draft.id
-      ? window.electronAPI.tasks.update(draft.id, { title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, recurrence: draft.recurrence, customFields, checklist: draft.checklist, source: draft.source })
-      : window.electronAPI.tasks.create({ title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, recurrence: draft.recurrence, customFields, checklist: draft.checklist, source: draft.source })
+      ? window.electronAPI.tasks.update(draft.id, { title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, reminderTimes, repeatRule, recurrence: draft.recurrence, customFields, checklist: draft.checklist, source: draft.source })
+      : window.electronAPI.tasks.create({ title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, reminderTimes, repeatRule, recurrence: draft.recurrence, customFields, checklist: draft.checklist, source: draft.source })
     void request
       .then(saved => {
         if (draft.displayGroupId !== undefined) preferences.update(selection, current => ({ ...current, customGroups: assignTaskToGroup(current.customGroups, saved.id, draft.displayGroupId!) }))

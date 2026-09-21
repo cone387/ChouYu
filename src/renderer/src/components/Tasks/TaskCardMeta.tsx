@@ -1,5 +1,6 @@
+import { repeatDescription } from '../../../../shared/taskScheduling'
 import type { TaskProject, TaskRecord, TaskSelectField, TaskSource } from '../../../../shared/tasks'
-import { formatTaskDue, isOverdue, PRIORITY_LABELS, RECURRENCE_LABELS } from '../../../../shared/tasks'
+import { formatTaskDue, isOverdue, PRIORITY_LABELS } from '../../../../shared/tasks'
 
 export default function TaskCardMeta({ task, projects, fields, showAllFields = false, onOpenProject, onSource }: { task: TaskRecord; projects: TaskProject[]; fields: TaskSelectField[]; showAllFields?: boolean; onOpenProject: (id: string) => void; onSource?: (source: TaskSource) => void }) {
   const project = projects.find(item => item.id === task.projectId)
@@ -11,7 +12,7 @@ export default function TaskCardMeta({ task, projects, fields, showAllFields = f
     <span className="task-card-properties">
       <span className={`task-card-priority task-card-priority-${task.priority}`}>{PRIORITY_LABELS[task.priority]}优先级</span>
       {project && <button type="button" className="task-card-project" title={project.name} aria-label={`打开清单 ${project.name}`} onClick={() => onOpenProject(project.id)}>{project.name}</button>}
-      {task.recurrence !== 'none' && <span className="task-card-detail">{RECURRENCE_LABELS[task.recurrence]}</span>}
+      {task.recurrence !== 'none' && <span className="task-card-detail">{repeatDescription(task.recurrence, task.repeatRule)}</span>}
       {task.remindAt !== null && <span className="task-card-detail">{task.remindFiredAt !== null ? '已提醒' : '有提醒'}</span>}
       {!!task.checklist?.length && <span className="task-card-detail" title="子项完成进度">子项 {task.checklist.filter(item => item.done).length}/{task.checklist.length}</span>}
       {task.source && onSource && <button type="button" className="task-card-project" title={task.source.label} onClick={() => onSource(task.source!)}>回看来源</button>}

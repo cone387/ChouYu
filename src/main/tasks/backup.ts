@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import type { TaskUISettings } from '../../shared/tasks'
 import { validateTaskChecklist, validateTaskSource } from '../../shared/tasks'
+import { TASK_RECURRENCES, parseImportedRepeatRule, repeatRuleFor, validateRepeatRule, validateReminders } from '../../shared/taskScheduling'
 
 const tables = ['task_groups', 'task_projects', 'task_fields', 'task_views', 'tasks', 'task_trash'] as const
 type Table = typeof tables[number]
@@ -44,7 +45,10 @@ function insertRows(database: Database.Database, backup: TaskBackup) {
       if (table === 'tasks') {
         validateTaskChecklist(JSON.parse(String(row.checklist)))
         validateTaskSource(row.source ? JSON.parse(String(row.source)) : null)
-        if (typeof row.title !== 'string' || !row.title.trim() || !['open', 'done'].includes(String(row.status)) || !['high', 'medium', 'low'].includes(String(row.priority)) || !['none', 'daily', 'weekly', 'monthly'].includes(String(row.recurrence))) throw new Error('备份中的任务内容无效。')
+        if (typeof row.title !== 'string' || !row.title.trim() || !['open', 'done'].includes(String(row.status)) || !['high', 'medium', 'low'].includes(String(row.priority)) || !TASK_RECURRENCES.includes(row.recurrence as typeof TASK_RECURRENCES[number])) throw new Error('备份中的任务内容无效。')
+        repeatRuleFor(row.recurrence as typeof TASK_RECURRENCES[number], validateRepeatRule(row.repeat_rule ? JSON.parse(String(row.repeat_rule)) : null))
+        validateReminders(JSON.parse(String(row.reminders)))
+        if (!Number.isInteger(row.recurrence_index) || Number(row.recurrence_index) < 1) throw new Error('重复周期记录无效。')
         for (const key of ['start_at', 'due_at', 'remind_at', 'remind_fired_at', 'completed_at', 'recurrence_anchor_at', 'created_at', 'updated_at']) if (row[key] != null && (typeof row[key] !== 'number' || !Number.isFinite(new Date(row[key] as number).getTime()))) throw new Error('备份中的任务时间无效。')
         if (typeof row.start_at === 'number' && typeof row.due_at === 'number' && row.start_at > row.due_at) throw new Error('备份中的开始时间晚于截止时间。')
         const values = JSON.parse(String(row.custom_fields))
@@ -69,7 +73,7 @@ function insertRows(database: Database.Database, backup: TaskBackup) {
             const schema = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) as { sql: string }
             trashDatabase.exec(schema.sql)
           }
-          insertRows(trashDatabase, { ...backup, tables: { task_groups: payload.groups, task_projects: payload.projects, task_fields: payload.fields, task_views: [], task_trash: [], tasks: payload.tasks.map((task: Row) => ({ checklist: '[]', source: null, ...task })) } })
+          insertRows(trashDatabase, { ...backup, tables: { task_groups: payload.groups, task_projects: payload.projects, task_fields: payload.fields, task_views: [], task_trash: [], tasks: payload.tasks.map((task: Row) => ({ checklist: '[]', source: null, repeat_rule: null, recurrence_index: 1, reminders: legacyReminders(task), ...task })) } })
         } finally { trashDatabase.close() }
       }
       insert.run(...columns.map(column => row[column]))
@@ -78,8 +82,21 @@ function insertRows(database: Database.Database, backup: TaskBackup) {
 }
 
 /** Validate in an isolated database using the current schema before any real mutation. */
+function legacyReminders(task: Row): string {
+  return JSON.stringify(task.remind_at == null ? [] : [{ at: task.remind_at, firedAt: task.remind_fired_at ?? null }])
+}
+
 export function validateTaskBackup(database: Database.Database, input: unknown): TaskBackup {
-  const backup = input as TaskBackup
+  let backup = input as TaskBackup
+  if (backup?.format === 'chouyu-tasks' && backup.version === 1 && backup.schemaVersion === 9 && database.pragma('user_version', { simple: true }) === 10 && Array.isArray(backup.tables?.tasks)) {
+    backup = structuredClone(backup)
+    backup.schemaVersion = 10
+    backup.tables.tasks = backup.tables.tasks.map(task => {
+      const flag = String(task.id).startsWith('dida:') && task.status === 'open' && task.recurrence === 'none' && String(task.note).includes('此重复规则仅保留记录，ChouYu 暂不支持自动重复。') ? /原重复规则：([^\r\n]+)/.exec(String(task.note ?? ''))?.[1] : undefined
+      const rule = flag ? parseImportedRepeatRule(flag) : null
+      return { ...task, repeat_rule: rule ? JSON.stringify(rule) : null, recurrence_index: 1, reminders: legacyReminders(task), ...(rule ? { recurrence: 'custom', note: String(task.note).replace('此重复规则仅保留记录，ChouYu 暂不支持自动重复。', '原重复规则已启用。') } : {}) }
+    })
+  }
   if (!backup || backup.format !== 'chouyu-tasks' || backup.version !== 1 || backup.schemaVersion !== database.pragma('user_version', { simple: true })) throw new Error('备份格式或数据库版本不兼容。请使用相同版本的应用恢复。')
   if (typeof backup.createdAt !== 'number' || !Number.isFinite(backup.createdAt) || !backup.tables || tables.some(table => !Array.isArray(backup.tables[table]))) throw new Error('备份数据不完整。')
   validateTaskSettings(backup.settings)

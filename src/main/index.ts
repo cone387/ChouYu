@@ -9,6 +9,7 @@ import { initializeJournal, closeJournal } from './journal'
 import { initializeTasks, closeTasks } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
 import { runTasksUISmoke } from './smoke/tasks-ui-smoke'
+import { runTaskSchedulingUISmoke } from './smoke/task-scheduling-ui-smoke'
 import { setTrayUnread, setupTray } from './tray'
 import { registerHotkey } from './hotkey'
 import { initDatabase, getConfig, flushDatabase, getAssistantUnreadCount } from './database'
@@ -91,6 +92,8 @@ function createWindow(): void {
       try {
         if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
           await runNativeCaptureSmoke()
+        } else if (process.env.CHOUYU_SMOKE_TASK_SCHEDULING_ONLY === '1') {
+          await runTaskSchedulingUISmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_NAVIGATION_ONLY === '1') {
           await runChatRuntimeSmoke(mainWindow!)
         } else {

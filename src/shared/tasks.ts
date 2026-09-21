@@ -1,6 +1,7 @@
+import { nextTaskOccurrence, type TaskRecurrence, type TaskRepeatRule, type TaskReminder } from './taskScheduling'
+export type { TaskRecurrence, TaskRepeatRule, TaskReminder } from './taskScheduling'
 export type TaskPriority = 'high' | 'medium' | 'low'
 export type TaskStatus = 'open' | 'done'
-export type TaskRecurrence = 'none' | 'daily' | 'weekly' | 'monthly'
 export interface TaskChecklistItem { id: string; title: string; done: boolean }
 export interface TaskSource { kind: 'chat' | 'journal' | 'continuation'; id: string; label: string; date?: string }
 
@@ -51,6 +52,9 @@ export interface TaskRecord {
   remindAt: number | null
   remindFiredAt: number | null
   recurrence: TaskRecurrence
+  repeatRule?: TaskRepeatRule | null
+  recurrenceIndex?: number
+  reminders?: TaskReminder[]
   recurrenceAnchorAt: number | null
   /** 字段 id → 选项 id */
   customFields: Record<string, string>
@@ -70,6 +74,8 @@ export interface TaskCreateInput {
   dueAt?: number | null
   remindAt?: number | null
   recurrence?: TaskRecurrence
+  repeatRule?: TaskRepeatRule | null
+  reminderTimes?: number[]
   customFields?: Record<string, string | null>
 }
 
@@ -84,6 +90,8 @@ export interface TaskUpdateInput {
   dueAt?: number | null
   remindAt?: number | null
   recurrence?: TaskRecurrence
+  repeatRule?: TaskRepeatRule | null
+  reminderTimes?: number[]
   /** 与存量合并:值 null 表示清除该字段 */
   customFields?: Record<string, string | null>
 }
@@ -140,7 +148,7 @@ export function rescheduleTaskDate(task: TaskRecord, date: string): TaskUpdateIn
   if (startAt != null && (task.dueAt != null || startAt > dueAt)) {
     const shifted = new Date(startAt); shifted.setDate(shifted.getDate() + deltaDays); startAt = shifted.getTime()
   }
-  return { dueAt, ...(startAt != null ? { startAt } : {}), ...(task.dueAt != null && task.remindAt != null ? { remindAt: dueAt - (task.dueAt - task.remindAt) } : {}) }
+  return { dueAt, ...(startAt != null ? { startAt } : {}), ...(task.dueAt != null && task.remindAt != null ? { remindAt: dueAt - (task.dueAt - task.remindAt), ...(task.reminders?.length ? { reminderTimes: task.reminders.map(reminder => reminder.at + dueAt - task.dueAt!) } : {}) } : {}) }
 }
 
 export interface TaskListResult {
@@ -224,25 +232,10 @@ export const REMIND_CHOICES = [
 ] as const
 export type RemindChoiceId = (typeof REMIND_CHOICES)[number]['id']
 
-export const RECURRENCE_LABELS: Record<TaskRecurrence, string> = { none: '不重复', daily: '每天', weekly: '每周', monthly: '每月' }
+export const RECURRENCE_LABELS: Record<TaskRecurrence, string> = { none: '不重复', daily: '每天', weekly: '每周', monthly: '每月', yearly: '每年', weekdays: '工作日（周一至周五）', lunarYearly: '每年农历', custom: '自定义' }
 
 export function nextRecurrenceDueAt(dueAt: number, recurrence: TaskRecurrence, anchorAt = dueAt, notBefore?: number): number | null {
-  if (!Number.isFinite(dueAt) || recurrence === 'none') return null
-  const anchorDay = new Date(anchorAt).getDate()
-  const floor = typeof notBefore === 'number' && Number.isFinite(notBefore) ? notBefore : -Infinity
-  let date = new Date(dueAt)
-  do {
-    date = new Date(date)
-    if (recurrence === 'daily') date.setDate(date.getDate() + 1)
-    if (recurrence === 'weekly') date.setDate(date.getDate() + 7)
-    if (recurrence === 'monthly') {
-      date.setDate(1)
-      date.setMonth(date.getMonth() + 1)
-      const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
-      date.setDate(Math.min(anchorDay, lastDay))
-    }
-  } while (date.getTime() <= floor)
-  return date.getTime()
+  return nextTaskOccurrence(dueAt, recurrence, null, anchorAt, Number.isFinite(notBefore) ? notBefore! : dueAt)
 }
 
 export function remindAtFromChoice(choiceId: RemindChoiceId, dueAt: number | null): number | null {

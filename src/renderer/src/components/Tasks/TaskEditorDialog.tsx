@@ -20,6 +20,13 @@ export interface TaskDraft {
   dueTime: string
   remind: RemindChoiceId
   recurrence: TaskRecord['recurrence']
+  repeatRule?: TaskRecord['repeatRule']
+  reminderOffsets?: number[]
+  reminderTimes?: number[]
+  originalDueAt?: number | null
+  originalStartAt?: number | null
+  recurrenceIndex?: number
+  recurrenceAnchorAt?: number | null
   customFields: Record<string, string>
   displayGroupId?: string
 }
