@@ -288,6 +288,9 @@ const isCorruptionError = (error: unknown): boolean => {
   return code === 'SQLITE_NOTADB' || code === 'SQLITE_CORRUPT'
 }
 
+/** 被领取的提醒：任务级或某个子项级；itemTitle 存在即子项提醒。 */
+export interface ClaimedReminder { task: TaskRecord; itemTitle?: string }
+
 export class TasksStore {
   readonly quarantinedAt: number | null = null
   private constructor(private readonly database: Database.Database, quarantinedAt: number | null) {
@@ -775,20 +778,32 @@ export class TasksStore {
     return { open, done, totalDone, matchedDone, doneViewCounts, doneGroupCounts: countDoneGroups(this.database, where, params, options.doneGrouping, now, selection === 'nextWeek' ? 'nextWeek' : 'week'), quarantinedAt: this.quarantinedAt }
   }
 
-  /** 原子记录各提醒的发送状态，再由调用方通知。同一轮的积压按任务合并。 */
-  claimDueReminders(now: number): TaskRecord[] {
+  /** 原子记录各提醒的发送状态，再由调用方通知。任务级与子项级同轮各自领取，积压由调用方合并。 */
+  claimDueReminders(now: number): ClaimedReminder[] {
     return this.database.transaction(() => {
       const rows = this.database.prepare(`SELECT * FROM tasks
-        WHERE status = 'open' AND remind_at IS NOT NULL AND remind_at <= ? AND remind_fired_at IS NULL
+        WHERE status = 'open'
+          AND ((remind_at IS NOT NULL AND remind_at <= ? AND remind_fired_at IS NULL) OR checklist LIKE '%"reminders":%')
           AND (project_id IS NULL OR project_id NOT IN (SELECT id FROM task_projects WHERE archived_at IS NOT NULL))`).all(now) as TaskRow[]
-      const claimed: TaskRecord[] = []
+      const claimed: ClaimedReminder[] = []
       for (const row of rows) {
+        const checklist = validateTaskChecklist(JSON.parse(row.checklist ?? '[]'))
+        const firedItems: string[] = []
+        const nextChecklist = checklist.map(item => {
+          if (!item.reminders?.some(r => r.firedAt === null && r.at <= now)) return item
+          firedItems.push(item.title)
+          return { ...item, reminders: item.reminders.map(r => r.firedAt === null && r.at <= now ? { ...r, firedAt: now } : r) }
+        })
         const reminders = rowReminders(row)
-        if (!reminders.some(r => r.firedAt === null && r.at <= now)) continue
-        // Coalesce multiple missed alerts for one task, while later alerts still fire independently.
-        const updated = reminders.map(r => r.firedAt === null && r.at <= now ? { ...r, firedAt: now } : r)
-        this.database.prepare('UPDATE tasks SET reminders=?,remind_fired_at=? WHERE id=?').run(JSON.stringify(updated), firedSummary(updated), row.id)
-        claimed.push(toTask({ ...row, reminders: JSON.stringify(updated), remind_fired_at: firedSummary(updated) }))
+        const taskDue = reminders.some(r => r.firedAt === null && r.at <= now)
+        const updatedReminders = taskDue ? reminders.map(r => r.firedAt === null && r.at <= now ? { ...r, firedAt: now } : r) : reminders
+        if (taskDue || firedItems.length) {
+          this.database.prepare('UPDATE tasks SET reminders = ?, remind_fired_at = ?, checklist = ? WHERE id = ?')
+            .run(JSON.stringify(updatedReminders), taskDue ? firedSummary(updatedReminders) : row.remind_fired_at, JSON.stringify(nextChecklist), row.id)
+        }
+        const snapshot = toTask({ ...row, reminders: JSON.stringify(updatedReminders), remind_fired_at: taskDue ? firedSummary(updatedReminders) : row.remind_fired_at, checklist: JSON.stringify(nextChecklist) })
+        if (taskDue) claimed.push({ task: snapshot })
+        for (const title of firedItems) claimed.push({ task: snapshot, itemTitle: title })
       }
       return claimed
     }).immediate()

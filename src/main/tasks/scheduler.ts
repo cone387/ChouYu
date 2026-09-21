@@ -1,4 +1,5 @@
-import type { TaskRecord, TaskReminderPayload } from '../../shared/tasks'
+import type { TaskReminderPayload } from '../../shared/tasks'
+import type { ClaimedReminder } from './store'
 
 export interface TaskSchedulerHandlers {
   onReminder(task: TaskReminderPayload): void
@@ -10,12 +11,15 @@ export interface TaskSchedulerOptions {
   now?(): number
 }
 
-const toReminderPayload = (task: TaskRecord): TaskReminderPayload => ({
-  id: task.id, title: task.title, dueAt: task.dueAt, priority: task.priority
+const toReminderPayload = (entry: ClaimedReminder): TaskReminderPayload => ({
+  id: entry.task.id,
+  title: entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title,
+  dueAt: entry.task.dueAt,
+  priority: entry.task.priority
 })
 
 export function startTaskScheduler(
-  claim: (now: number) => TaskRecord[],
+  claim: (now: number) => ClaimedReminder[],
   handlers: TaskSchedulerHandlers,
   options: TaskSchedulerOptions = {}
 ): { stop(): void } {
@@ -26,7 +30,7 @@ export function startTaskScheduler(
   let lastTickAt = now()
 
   // 启动积压:应用没开时错过的提醒合并成一条,不逐条轰炸
-  let backlog: TaskRecord[] = []
+  let backlog: ClaimedReminder[] = []
   try {
     backlog = claim(now())
   } catch (error) {
@@ -40,7 +44,7 @@ export function startTaskScheduler(
     if (stopped) return
     const currentTime = now()
     const interrupted = currentTime - lastTickAt > Math.max(intervalMs * 3, 60_000)
-    let due: TaskRecord[]
+    let due: ClaimedReminder[]
     try {
       due = claim(currentTime)
     } catch (error) {
@@ -52,8 +56,8 @@ export function startTaskScheduler(
       try { handlers.onBacklog(due.length) } catch (error) { console.error('tasks scheduler backlog handler failed:', error) }
       return
     }
-    for (const task of due) {
-      try { handlers.onReminder(toReminderPayload(task)) } catch (error) { console.error('tasks scheduler reminder handler failed:', error) }
+    for (const entry of due) {
+      try { handlers.onReminder(toReminderPayload(entry)) } catch (error) { console.error('tasks scheduler reminder handler failed:', error) }
     }
   }
 

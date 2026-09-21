@@ -13,7 +13,7 @@ const settings = { preferences: '{}', layoutOrder: '{}', selection: 'all' }
 test('multiple reminders claim once each across restart; title edits preserve fired markers', () => {
   const file = path(), store = open(file)
   const task = store.createTask({ title: '提醒', dueAt: 1000, reminderTimes: [100, 200, 300] })
-  expect(store.claimDueReminders(100).map(t => t.id)).toEqual([task.id])
+  expect(store.claimDueReminders(100).map(t => t.task.id)).toEqual([task.id])
   store.updateTask(task.id, { title: '新标题', reminderTimes: [100, 200, 300] })
   expect(store.claimDueReminders(100)).toEqual([])
   const restarted = open(file)
@@ -88,4 +88,29 @@ test('new backups, legacy backups and trash preserve scheduling and fired state'
   for (const row of legacy.tables.tasks) { delete row.repeat_rule; delete row.recurrence_index; delete row.reminders; row.recurrence = 'daily'; row.remind_fired_at = 10 }
   store.restoreBackup(legacy)
   expect(store.getTask(task.id)!.reminders).toEqual([{ at: 10, firedAt: 10 }])
+})
+test('子项提醒按子项逐条领取，标题为任务·子项，重启后不重复', () => {
+  const file = path(), store = open(file)
+  const task = store.createTask({ title: '父任务', dueAt: 2000, checklist: [
+    { id: 'a', title: '子项甲', done: false, dueAt: 100, reminders: [{ at: 90, firedAt: null }] },
+    { id: 'b', title: '子项乙', done: false, dueAt: 300, reminders: [{ at: 280, firedAt: null }] }
+  ] })
+  const first = store.claimDueReminders(100)
+  expect(first.map(entry => entry.itemTitle)).toEqual(['子项甲'])
+  expect(store.getTask(task.id)!.checklist![0].reminders![0].firedAt).toBe(100)
+  expect(store.claimDueReminders(200)).toEqual([])
+  const restarted = open(file)
+  const second = restarted.claimDueReminders(300)
+  expect(second.map(entry => entry.itemTitle)).toEqual(['子项乙'])
+  expect(second[0].task.title).toBe('父任务')
+})
+test('同轮任务级与子项级提醒各发一条且原子记录', () => {
+  const store = open()
+  const task = store.createTask({ title: '混合', dueAt: 1000, reminderTimes: [900], checklist: [
+    { id: 'a', title: '步骤', done: false, dueAt: 950, reminders: [{ at: 940, firedAt: null }] }
+  ] })
+  const claimed = store.claimDueReminders(1000)
+  expect(claimed.map(entry => entry.itemTitle ?? null)).toEqual([null, '步骤'])
+  expect(claimed[0].task.remindFiredAt).toBe(1000)
+  expect(store.claimDueReminders(1000)).toEqual([])
 })
