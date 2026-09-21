@@ -44,6 +44,7 @@ export default function ConversationSidebar({
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const operationPending = useRef(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('error')
   const [menuId, setMenuId] = useState<string | null>(null)
@@ -83,6 +84,8 @@ export default function ConversationSidebar({
   }, [menuId])
 
   const run = async (id: string, action: () => Promise<void>) => {
+    if (operationPending.current) return
+    operationPending.current = true
     setBusyId(id)
     setFeedback('')
     try {
@@ -91,6 +94,7 @@ export default function ConversationSidebar({
       setFeedbackType('error')
       setFeedback(error instanceof Error ? error.message : '操作失败，请重试。')
     } finally {
+      operationPending.current = false
       setBusyId(null)
     }
   }
@@ -180,7 +184,8 @@ export default function ConversationSidebar({
                   onClick={() => { if (!active) void run(session.id, () => onSelect(session.id)) }}
                   role="option"
                   aria-selected={active}
-                  disabled={busyId === session.id}
+                  aria-disabled={busyId !== null}
+                  aria-busy={busyId === session.id}
                 >
                   <span className="conversation-item-avatar" aria-hidden="true"><CharacterAvatar character={character} /></span>
                   <span className="conversation-item-body">

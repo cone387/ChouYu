@@ -36,6 +36,7 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
   const fixture: string = await run("window.electronAPI.tasks.create({ title: 'Navigation cache fixture', dueAt: Date.now() }).then(task => task.id)")
   let completedFixture = ''
   let spanningFixture = ''
+  let conversationFixture = ''
   try {
     await waitForRenderer(window, "!!document.querySelector('[data-workspace-nav=tasks] .workspace-nav-badge')")
     await settle()
@@ -137,8 +138,32 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
       await openTab()
       await waitForRenderer(window, `document.querySelector('${selector}') === window.__navigationSettingsTab && !!window.__navigationSettingsTab.getClientRects().length`)
     }
-    console.log('CHOUYU_NAVIGATION_SMOKE_PASSED retained chat geometry, cached board, journal views/drafts, settings and memory animations')
+    await click('[data-workspace-nav=chat]')
+    await run("window.__switchCard = document.querySelector('.conversation-item-main[aria-selected=true]')")
+    await click('.conversation-icon-btn.primary')
+    await waitForRenderer(window, "window.__switchCard.getAttribute('aria-selected') === 'false' && !document.querySelector('.conversation-icon-btn.primary').disabled")
+    conversationFixture = await run("window.electronAPI.db.getSessionWorkspace().then(workspace => workspace.activeSession.id)")
+    const beforeSwitch = await run(`(() => {
+      const card = window.__switchCard;
+      window.__switchDisabled = false;
+      window.__switchObserver = new MutationObserver(records => { if (records.some(record => record.attributeName === 'disabled')) window.__switchDisabled = true });
+      window.__switchObserver.observe(card, { attributes: true });
+      const rect = card.getBoundingClientRect();
+      card.focus({ preventScroll: true }); card.click(); card.click();
+      return { top: rect.top, height: rect.height, width: rect.width };
+    })()`)
+    const switchFrames = await frames(`(() => {
+      const card = window.__switchCard, rect = card.getBoundingClientRect();
+      return { top: rect.top, height: rect.height, width: rect.width, disabled: card.disabled, cursor: getComputedStyle(card).cursor };
+    })()`)
+    await waitForRenderer(window, "window.__switchCard.getAttribute('aria-selected') === 'true' && window.__switchCard.getAttribute('aria-busy') === 'false'")
+    const wasDisabled = await run("window.__switchObserver.disconnect(); window.__switchDisabled")
+    if (wasDisabled || switchFrames.some((frame: any) => frame.disabled || frame.cursor !== 'pointer' || Math.abs(frame.top - beforeSwitch.top) > 1 || Math.abs(frame.height - beforeSwitch.height) > 1 || Math.abs(frame.width - beforeSwitch.width) > 1)) {
+      throw new Error('Conversation click disabled the card or shifted its geometry: ' + JSON.stringify({ beforeSwitch, switchFrames, wasDisabled }))
+    }
+    console.log('CHOUYU_NAVIGATION_SMOKE_PASSED retained chat geometry, stable conversation clicks, cached board, journal views/drafts, settings and memory animations')
   } finally {
+    if (conversationFixture) await run(`window.electronAPI.db.deleteSession('${conversationFixture}')`)
     if (spanningFixture) await run(`window.electronAPI.tasks.remove('${spanningFixture}')`)
     if (completedFixture) await run(`window.electronAPI.tasks.remove('${completedFixture}')`)
     await run(`window.electronAPI.tasks.remove('${fixture}')`)
