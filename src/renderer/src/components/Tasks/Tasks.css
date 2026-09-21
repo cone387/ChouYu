@@ -495,7 +495,7 @@
   .tasks-sidebar { flex: 0 0 220px; max-height: 42%; }
   .tasks-sidebar .tasks-more-views > summary { font-size: 12px; min-height: 32px; padding: 6px 5px; }
   .tasks-sidebar-divider { display: none; }
-  .tasks-sidebar-view-nav { height: auto !important; overflow: visible; flex: none; }
+  .tasks-sidebar-view-nav { height: auto !important; max-height: none !important; overflow: visible; flex: none; }
   .tasks-sidebar-projects { flex: none; overflow: visible; border-top: 1px solid var(--border); }
 }
 
