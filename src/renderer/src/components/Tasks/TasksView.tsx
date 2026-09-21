@@ -22,6 +22,7 @@ import useTaskLayoutOrder from './useTaskLayoutOrder'
 import useTaskViewPreferences from './useTaskViewPreferences'
 import useSidebarSplit from './useSidebarSplit'
 import { applyTaskOrder, assignTaskToGroup, moveTaskInOrder, recommendedTaskPreferences } from './taskViewPreferences'
+import { defaultTaskNavConfig, normalizeTaskNavConfig, parseTaskNavConfig, TASK_VIEW_CONFIG_KEY, type TaskNavConfig } from './taskViewConfig'
 import { GROUP_LABELS, taskGroupMove, type BoardColumn } from './taskGrouping'
 import { useConfirm } from '../common/ConfirmProvider'
 import './Tasks.css'
@@ -60,6 +61,8 @@ interface ViewDraft {
   priorities: TaskPriority[]
   dueRange: TaskDueRange
 }
+
+interface NavEntry { key: Selection; label: string; icon: IconName; custom?: TaskView }
 
 const emptyViewDraft: ViewDraft = { id: '', name: '', projectIds: [], priorities: [], dueRange: 'any' }
 
@@ -105,21 +108,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     setSidebarCollapsed(value => !value)
     requestAnimationFrame(() => sidebarToggleRef.current?.focus())
   }
-  const [visibleViewCount, setVisibleViewCount] = useState(4)
-  useEffect(() => {
-    const sidebar = menusRef.current?.querySelector<HTMLElement>('.tasks-sidebar')
-    if (!sidebar || !active || sidebarCollapsed) return
-    const update = () => {
-      const headerHeight = sidebar.querySelector('header')?.getBoundingClientRect().height ?? 44
-      const height = sidebar.clientHeight
-      const budget = Math.max(0, Math.min(height * .52, height - headerHeight - 120) - 44)
-      setVisibleViewCount(window.innerWidth <= 640 ? 3 : Math.min(SMART_VIEWS.length, Math.floor(budget / 38)))
-    }
-    const observer = new ResizeObserver(update)
-    observer.observe(sidebar)
-    update()
-    return () => observer.disconnect()
-  }, [active, sidebarCollapsed, menusRef])
   const [selection, setSelection] = useState<Selection>(() => {
     try {
       const last = localStorage.getItem('chouyu:task-selection') ?? ''
@@ -143,6 +131,13 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const reloadSequence = useRef(0)
   const [projects, setProjects] = useState<TaskProject[]>([])
   const [views, setViews] = useState<TaskView[]>([])
+  const [navConfig, setNavConfig] = useState<TaskNavConfig>(() => { try { return parseTaskNavConfig(localStorage.getItem(TASK_VIEW_CONFIG_KEY)) } catch { return defaultTaskNavConfig() } })
+  const [navStorageError, setNavStorageError] = useState('')
+  const nav = normalizeTaskNavConfig(navConfig, views)
+  useEffect(() => {
+    try { localStorage.setItem(TASK_VIEW_CONFIG_KEY, JSON.stringify(nav)); setNavStorageError('') }
+    catch { setNavStorageError('视图导航配置暂时无法保存，重启后可能恢复默认。') }
+  }, [nav])
   const [fields, setFields] = useState<TaskSelectField[]>([])
   const preferences = useTaskViewPreferences(selection)
   const { mode, listGrouped, groupMode, groupFieldId, sortMode, hiddenFields, taskOrder, customGroups } = preferences.value
@@ -156,6 +151,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const setSortMode = (value: TaskSortMode) => preferences.set('sortMode', value)
   const setHiddenFields = (value: string[] | ((current: string[]) => string[])) => preferences.set('hiddenFields', value)
   const [viewDraft, setViewDraft] = useState<ViewDraft | null>(null)
+  const [manageViewsOpen, setManageViewsOpen] = useState(false)
   const [draft, updateDraft] = useState<Draft | null>(null)
   const taskOpenerRef = useRef<HTMLElement | null>(null)
   const restoreTaskFocusRef = useRef(false)
@@ -284,20 +280,21 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   useEffect(() => () => { reloadSequence.current += 1 }, [])
   useEffect(() => { setDoneLimit(50) }, [query, filterPriorities, filterProjects, filterDue, selection])
   useEffect(() => {
-    if (!draft && !viewDraft && !fieldsOpen) return
+    if (!draft && !viewDraft && !fieldsOpen && !manageViewsOpen) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       event.preventDefault()
       event.stopPropagation()
       if (!busy && !projectBusy) {
         if (fieldsOpen) setFieldsOpen(false)
+        else if (manageViewsOpen) setManageViewsOpen(false)
         else if (viewDraft) setViewDraft(null)
         else setDraft(null)
       }
     }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [draft, viewDraft, fieldsOpen, busy, projectBusy])
+  }, [draft, viewDraft, fieldsOpen, manageViewsOpen, busy, projectBusy])
   useEffect(() => { if (focusTaskId) { setSelection('all'); setQuery(''); clearFilters(); preferences.update('all', { mode: 'list', statusFilter: 'open' }) } }, [focusTaskId])
   useEffect(() => {
     if (!searchRequest) return
@@ -665,9 +662,17 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     ?? (selection.startsWith('project:') ? projects.find(project => project.id === selection.slice(8))?.name : views.find(view => view.id === selection.slice(5))?.name)
     ?? '任务'
 
-  const visibleSmartViews = SMART_VIEWS.filter(view => view.id !== 'done').slice(0, visibleViewCount)
-  const hiddenSmartViews = SMART_VIEWS.filter(view => !visibleSmartViews.includes(view))
-  const hiddenViewSelected = selection.startsWith('view:') || hiddenSmartViews.some(view => view.id === navigationSelection)
+  const navEntries: NavEntry[] = nav.order.flatMap(key => {
+    if (key.startsWith('view:')) {
+      const custom = views.find(item => `view:${item.id}` === key)
+      return custom ? [{ key: key as Selection, label: custom.name, icon: 'filter' as IconName, custom }] : []
+    }
+    const smart = SMART_VIEWS.find(item => item.id === key)
+    return smart ? [{ key: smart.id as Selection, label: smart.label, icon: SMART_ICONS[smart.id] }] : []
+  })
+  const visibleNavEntries = navEntries.filter(entry => !nav.hidden.includes(entry.key))
+  const hiddenNavEntries = navEntries.filter(entry => nav.hidden.includes(entry.key))
+  const hiddenViewSelected = nav.hidden.includes(selection.startsWith('view:') ? selection : navigationSelection)
 
   const finishListDrag = () => { setListDraggingTask(null); setListCardTarget(null); setListDropGroup(null) }
   useEffect(finishListDrag, [selection, listGrouped, boardGroupMode, groupFieldId])
@@ -772,23 +777,21 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       <header className="tasks-sidebar-title"><span>任务</span><button ref={sidebarCollapsed ? undefined : sidebarToggleRef} type="button" className="tasks-sidebar-toggle" aria-label="收起任务侧栏" title="收起任务侧栏" aria-expanded="true" aria-controls="tasks-sidebar" onClick={toggleSidebar}><TaskIcon name="sidebar" /></button></header>
       <div className="tasks-sidebar-view-nav" role="region" aria-label="视图选择" style={sidebarSplit.height === null ? undefined : { height: sidebarSplit.height, flex: 'none' }}>
         <ul role="list" className="tasks-smart-views">
-          {visibleSmartViews.map(view => <li key={view.id}>
-            <button type="button" data-view-selection={view.id} aria-current={navigationSelection === view.id || undefined} onClick={() => setSelection(view.id)}><TaskIcon name={SMART_ICONS[view.id]} /><span className="tasks-nav-label">{view.label}</span><span className="tasks-count">{countFor(view.id)}</span></button>
+          {visibleNavEntries.map(entry => <li key={entry.key}>
+            <button type="button" data-view-selection={entry.key} aria-current={navigationSelection === entry.key || selection === entry.key || undefined} onClick={() => setSelection(entry.key)}><TaskIcon name={entry.icon} /><span className="tasks-nav-label">{entry.label}</span><span className="tasks-count">{countFor(entry.key)}</span></button>
           </li>)}
         </ul>
         <details className="tasks-tool-menu tasks-more-views">
           <summary aria-label="更多" title={hiddenViewSelected ? `${selectionTitle} · 更多` : '更多'} data-active={hiddenViewSelected || undefined}><TaskIcon name="more" /><span className="tasks-nav-label">{hiddenViewSelected ? selectionTitle : '更多'}</span><TaskIcon name="chevron" /></summary>
           <div className="tasks-item-menu-popover tasks-more-views-popover" role="group" aria-label="更多视图选择">
-            {hiddenSmartViews.map(view => <button key={view.id} type="button" data-view-selection={view.id} aria-current={navigationSelection === view.id || undefined} onClick={() => setSelection(view.id)}><TaskIcon name={SMART_ICONS[view.id]} /><span className="tasks-nav-label">{view.label}</span><span className="tasks-count">{countFor(view.id)}</span></button>)}
-            {views.length > 0 && <p className="tasks-tool-title">自定义视图</p>}
-            {views.map(view => {
-              const id = `view:${view.id}` as Selection
-              return <div className="tasks-more-view-row" key={view.id}>
-                <button type="button" data-view-selection={id} aria-current={selection === id || undefined} onClick={() => setSelection(id)} title={view.name}><TaskIcon name="filter" /><span className="tasks-nav-label">{view.name}</span><span className="tasks-count">{countFor(id)}</span></button>
-                <button type="button" className="tasks-more-view-action" aria-label={`编辑视图 ${view.name}`} title="编辑视图" onClick={() => setViewDraft({ id: view.id, name: view.name, projectIds: [...view.projectIds], priorities: [...view.priorities], dueRange: view.dueRange })}><TaskIcon name="edit" /></button>
-                <button type="button" className="tasks-more-view-action tasks-item-menu-danger" aria-label={`删除视图 ${view.name}`} title="删除视图" onClick={() => removeView(view)}><TaskIcon name="trash" /></button>
+            <button type="button" className="tasks-more-view-create" onClick={() => setManageViewsOpen(true)}><TaskIcon name="fields" />管理视图</button>
+            {hiddenNavEntries.map(entry => entry.custom
+              ? <div className="tasks-more-view-row" key={entry.key}>
+                <button type="button" data-view-selection={entry.key} aria-current={selection === entry.key || undefined} onClick={() => setSelection(entry.key)} title={entry.label}><TaskIcon name={entry.icon} /><span className="tasks-nav-label">{entry.label}</span><span className="tasks-count">{countFor(entry.key)}</span></button>
+                <button type="button" className="tasks-more-view-action" aria-label={`编辑视图 ${entry.label}`} title="编辑视图" onClick={() => setViewDraft({ id: entry.custom!.id, name: entry.custom!.name, projectIds: [...entry.custom!.projectIds], priorities: [...entry.custom!.priorities], dueRange: entry.custom!.dueRange })}><TaskIcon name="edit" /></button>
+                <button type="button" className="tasks-more-view-action tasks-item-menu-danger" aria-label={`删除视图 ${entry.label}`} title="删除视图" onClick={() => removeView(entry.custom!)}><TaskIcon name="trash" /></button>
               </div>
-            })}
+              : <button key={entry.key} type="button" data-view-selection={entry.key} aria-current={navigationSelection === entry.key || selection === entry.key || undefined} onClick={() => setSelection(entry.key)}><TaskIcon name={entry.icon} /><span className="tasks-nav-label">{entry.label}</span><span className="tasks-count">{countFor(entry.key)}</span></button>)}
             <button type="button" className="tasks-more-view-create" onClick={() => setViewDraft({ ...emptyViewDraft })}><TaskIcon name="plus" />新建自定义视图</button>
           </div>
         </details>
@@ -838,6 +841,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       {layoutOrder.storageError && <p role="status" className="tasks-notice">{layoutOrder.storageError}</p>}
       {preferences.storageError && <p role="status" className="tasks-notice">{preferences.storageError}</p>}
       {sidebarSplit.storageError && <p role="status" className="tasks-notice">{sidebarSplit.storageError}</p>}
+      {navStorageError && <p role="status" className="tasks-notice">{navStorageError}</p>}
       {quarantineNotice && <p role="alert" className="tasks-quarantine">{quarantineNotice}</p>}
       {error && !draft && !viewDraft && !fieldsOpen && !collectionDialogOpen && <p role="alert" className="tasks-error">{error}</p>}
       {notice && <p role="status" className="tasks-notice">{notice}<button type="button" aria-label="关闭提示" onClick={() => setNotice('')}>×</button></p>}
