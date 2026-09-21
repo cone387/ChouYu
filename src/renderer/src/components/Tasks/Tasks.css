@@ -808,4 +808,8 @@
 .tasks-manage-row { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 6px; border-radius: 6px; background: var(--bg-secondary); }
 .tasks-manage-row[data-dragging] { opacity: .6; }
 .tasks-manage-drag { color: var(--text-muted); cursor: grab; display: grid; place-items: center; }
-.tasks-manage-check { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-size: 13px; color: var(--text-primary); }
+.tasks-view-dialog .tasks-manage-check { display: flex; flex-direction: row; align-items: center; gap: 8px; flex: 1; min-width: 0; font-size: 13px; color: var(--text-primary); }
+.tasks-manage-check input { flex: 0 0 auto; width: 14px; height: 14px; margin: 0; padding: 0; border: 0; }
+.tasks-manage-row > .tasks-more-view-action { appearance: none; border: 0; border-radius: 5px; background: transparent; color: var(--text-secondary); flex: none; width: 28px; padding: 6px; cursor: pointer; }
+.tasks-manage-row > .tasks-more-view-action:hover, .tasks-manage-row > .tasks-more-view-action:focus-visible { background: var(--hover-bg); color: var(--text-primary); }
+.tasks-manage-row > .tasks-more-view-action.tasks-item-menu-danger:hover, .tasks-manage-row > .tasks-more-view-action.tasks-item-menu-danger:focus-visible { color: var(--error); }
