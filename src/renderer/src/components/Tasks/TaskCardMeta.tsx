@@ -3,11 +3,13 @@ import type { TaskProject, TaskRecord, TaskSelectField, TaskSource } from '../..
 import { formatTaskDue, isOverdue, PRIORITY_LABELS } from '../../../../shared/tasks'
 
 export default function TaskCardMeta({ task, projects, fields, showAllFields = false, onOpenProject, onSource }: { task: TaskRecord; projects: TaskProject[]; fields: TaskSelectField[]; showAllFields?: boolean; onOpenProject: (id: string) => void; onSource?: (source: TaskSource) => void }) {
+  const now = new Date()
   const project = projects.find(item => item.id === task.projectId)
   const values = fields.flatMap(field => {
     const option = field.options.find(item => item.id === task.customFields[field.id])
     return option ? [`${field.name}：${option.name}`] : []
   })
+  const overdueItems = task.checklist?.filter(item => !item.done && item.dueAt != null && item.dueAt < now.getTime()) ?? []
   return <span className="task-card-meta">
     <span className="task-card-properties">
       <span className={`task-card-priority task-card-priority-${task.priority}`}>{PRIORITY_LABELS[task.priority]}优先级</span>
@@ -15,6 +17,7 @@ export default function TaskCardMeta({ task, projects, fields, showAllFields = f
       {task.recurrence !== 'none' && <span className="task-card-detail">{repeatDescription(task.recurrence, task.repeatRule)}</span>}
       {task.remindAt !== null && <span className="task-card-detail">{task.remindFiredAt !== null ? '已提醒' : '有提醒'}</span>}
       {!!task.checklist?.length && <span className="task-card-detail" title="子项完成进度">子项 {task.checklist.filter(item => item.done).length}/{task.checklist.length}</span>}
+      {!!overdueItems.length && <span className="task-card-detail tasks-subitem-overdue" title={overdueItems.map(item => item.title).join('、')}>{overdueItems.length} 个子项过期</span>}
       {task.source && onSource && <button type="button" className="task-card-project" title={task.source.label} onClick={() => onSource(task.source!)}>回看来源</button>}
     </span>
     {values.length > 0 && <span className="tasks-board-card-chips task-card-fields">

@@ -790,3 +790,5 @@
 .tasks-month-days .tasks-repeat-weekdays > button:last-child { grid-column: span 2; white-space: nowrap; }
 .tasks-composer .tasks-calendar-footer { position: static; margin: 0; padding: 8px 0 0; background: var(--bg-primary); }
 .tasks-composer .tasks-date-pages > button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+.tasks-subitem-overdue { color: var(--error); }
