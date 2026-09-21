@@ -27,6 +27,8 @@ describe('Tasks 视图源守卫', () => {
     expect(source).toContain('RECURRENCE_LABELS')
     expect(source).toContain('tasks-checklist-due')
     expect(source).toContain('tasks-checklist-insert')
+    expect(read('TaskViewManageDialog.tsx')).toContain('role="dialog"')
+    expect(read('TaskViewManageDialog.tsx')).toContain('aria-modal="true"')
   })
   test('样式:使用全局 token、窄屏断点与减少动画', () => {
     const css = read('Tasks.css')

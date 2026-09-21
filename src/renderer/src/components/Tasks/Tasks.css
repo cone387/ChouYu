@@ -490,7 +490,6 @@
 .tasks-more-view-row { display: flex; align-items: center; min-width: 0; }
 .tasks-more-view-row > button:first-child { flex: 1; min-width: 0; }
 .tasks-sidebar .tasks-more-view-row > .tasks-more-view-action { flex: none; width: 28px; padding: 6px; }
-.tasks-more-views-popover .tasks-tool-title { padding-top: 8px; }
 .tasks-sidebar .tasks-more-view-create { border-top: 1px solid var(--border); border-radius: 0; margin-top: 4px; }
 @media (max-width: 640px) {
   .tasks-sidebar { flex: 0 0 220px; max-height: 42%; }
@@ -803,3 +802,10 @@
 .tasks-checklist-row input.tasks-checklist-due, .tasks-checklist-row .tasks-checklist-remind { flex: none; font-size: 12px; }
 .tasks-checklist-insert { visibility: hidden; }
 .tasks-checklist-row:hover .tasks-checklist-insert, .tasks-checklist-row:focus-within .tasks-checklist-insert { visibility: visible; }
+
+/* Manage-views dialog rows share the generic [data-order-insert] drop indicator. */
+.tasks-manage-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
+.tasks-manage-row { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 6px; border-radius: 6px; background: var(--bg-secondary); }
+.tasks-manage-row[data-dragging] { opacity: .6; }
+.tasks-manage-drag { color: var(--text-muted); cursor: grab; display: grid; place-items: center; }
+.tasks-manage-check { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-size: 13px; color: var(--text-primary); }

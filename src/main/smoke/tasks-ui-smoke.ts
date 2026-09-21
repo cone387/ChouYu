@@ -628,15 +628,29 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
             const sidebar = document.querySelector('.tasks-sidebar');
             const views = document.querySelector('.tasks-sidebar-view-nav');
             const projects = document.querySelector('.tasks-sidebar-projects');
-            const viewTop = views.getBoundingClientRect().top;
-            views.scrollTop = views.scrollHeight;
-            const viewScroll = views.scrollTop;
-            if (viewScroll !== 0 || views.scrollHeight > views.clientHeight + 1) return false;
+            const divider = document.querySelector('.tasks-sidebar-divider');
+            if (!sidebar || !views || !projects || !divider) return false;
+            if (innerWidth > 640) {
+              // Wide: each region scrolls internally while the sidebar itself stays fixed.
+              const viewTop = views.getBoundingClientRect().top;
+              views.scrollTop = views.scrollHeight;
+              const viewScroll = views.scrollTop;
+              projects.scrollTop = projects.scrollHeight;
+              const buttons = getComputedStyle(projects, '::-webkit-scrollbar-button');
+              return getComputedStyle(views).overflowY === 'auto' && getComputedStyle(projects).overflowY === 'auto'
+                && viewScroll === 0 && views.scrollHeight <= views.clientHeight + 1 && views.getBoundingClientRect().top === viewTop
+                && getComputedStyle(divider).display !== 'none' && getComputedStyle(divider).cursor === 'row-resize'
+                && getComputedStyle(sidebar).overflowY === 'hidden' && sidebar.scrollHeight <= sidebar.clientHeight + 1
+                && buttons.display === 'none';
+            }
+            // Narrow: the divider disappears and the whole sidebar scrolls as one column.
             projects.scrollTop = projects.scrollHeight;
-            const buttons = getComputedStyle(projects, '::-webkit-scrollbar-button');
-            return views.scrollTop === viewScroll && sidebar.scrollHeight <= sidebar.clientHeight + 1
-              && getComputedStyle(views).overflowY === 'hidden' && views.getBoundingClientRect().top === viewTop && getComputedStyle(projects).overflowY === 'auto'
-              && buttons.display === 'none' && (innerWidth > 640 || projects.scrollTop > 0);
+            sidebar.scrollTop = sidebar.scrollHeight;
+            return getComputedStyle(divider).display === 'none'
+              && getComputedStyle(views).overflowY === 'visible' && getComputedStyle(views).maxHeight === 'none'
+              && getComputedStyle(projects).overflowY === 'visible'
+              && getComputedStyle(sidebar).overflowY === 'auto'
+              && projects.scrollTop === 0 && sidebar.scrollTop > 0;
           })()`)
 
           await run("document.querySelectorAll('.tasks-sidebar-view-nav, .tasks-sidebar-projects, .tasks-main').forEach(element => { element.scrollTop = 0; element.scrollLeft = 0 })")

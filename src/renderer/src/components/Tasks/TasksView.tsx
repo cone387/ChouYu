@@ -12,6 +12,7 @@ import TaskCollectionDialog from './TaskCollectionDialog'
 import TaskDisplayGroupDialog from './TaskDisplayGroupDialog'
 import TaskTrashDialog from './TaskTrashDialog'
 import TaskBackupDialog from './TaskBackupDialog'
+import TaskViewManageDialog from './TaskViewManageDialog'
 import type { TaskConversionDraft } from './taskNavigation'
 import type { TaskSource } from '../../../../shared/tasks'
 import TaskSourceDialog from './TaskSourceDialog'
@@ -1027,6 +1028,18 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} error={error} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
       {trashOpen && <TaskTrashDialog onClose={() => setTrashOpen(false)} onChanged={() => reloadRef.current()} />}
       {backupOpen && <TaskBackupDialog onClose={() => setBackupOpen(false)} />}
+      {manageViewsOpen && <TaskViewManageDialog
+        entries={navEntries.map(({ key, label, icon, custom }) => ({ key: key as string, label, icon, custom }))}
+        hidden={nav.hidden}
+        onClose={() => setManageViewsOpen(false)}
+        onToggle={key => setNavConfig(current => {
+          const base = normalizeTaskNavConfig(current, views)
+          return { ...base, hidden: base.hidden.includes(key) ? base.hidden.filter(item => item !== key) : [...base.hidden, key] }
+        })}
+        onReorder={next => setNavConfig(current => normalizeTaskNavConfig({ ...current, order: next }, views))}
+        onEditView={view => { setManageViewsOpen(false); setViewDraft({ id: view.id, name: view.name, projectIds: [...view.projectIds], priorities: [...view.priorities], dueRange: view.dueRange }) }}
+        onDeleteView={view => { void removeView(view) }}
+      />}
       {sourcePreview && <TaskSourceDialog source={sourcePreview} onClose={() => setSourcePreview(null)} onChat={onOpenChat} />}
 
       {(mode === 'board' || listGrouped) && boardGroupMode === 'week' && <p className="tasks-view-description">跨天任务单独展示；单日任务可拖到其他日期改期，跨天任务请编辑起止时间。</p>}
