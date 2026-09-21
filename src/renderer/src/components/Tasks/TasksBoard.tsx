@@ -11,6 +11,7 @@ import { groupTasks, taskGroupMove, type BoardColumn, type BoardGroupMode } from
 export { groupTasks, type BoardGroupMode } from './taskGrouping'
 
 interface TasksBoardProps {
+  weekPeriod?: 'week' | 'nextWeek'
   onSource?: (source: TaskSource) => void
   onQuickEdit?: (id: string, patch: TaskUpdateInput) => Promise<unknown>
   orderScope: string
@@ -37,7 +38,7 @@ interface TasksBoardProps {
   onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => Promise<void>
 }
 
-export default function TasksBoard({ onSource, onQuickEdit, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+export default function TasksBoard({ weekPeriod = 'week', onSource, onQuickEdit, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, DOMRect>())
   const scrollFrame = useRef<number | null>(null)
@@ -54,7 +55,7 @@ export default function TasksBoard({ onSource, onQuickEdit, orderScope, tasks, p
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null)
   const [columnTarget, setColumnTarget] = useState<{ key: string; after: boolean } | null>(null)
   const scope = JSON.stringify([orderScope, groupMode, groupMode === 'field' ? groupFieldId : null])
-  const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId, Date.now(), customGroups, doneCounts).sort((a, b) => {
+  const baseColumns = groupTasks(tasks, projects, groupingFields, groupMode, groupFieldId, Date.now(), customGroups, doneCounts, weekPeriod).sort((a, b) => {
     const rank = (key: string) => { const index = savedOrder.indexOf(key); return index < 0 ? Infinity : index }
     return rank(a.key) - rank(b.key)
   }).map(column => groupMode === 'status' && column.key === 'done' && sortMode !== 'manual' ? { ...column, tasks: sortTasks(column.tasks, 'completed', Date.now()) } : column)

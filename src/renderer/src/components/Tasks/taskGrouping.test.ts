@@ -10,6 +10,14 @@ const task = (id: string, patch: Partial<TaskRecord> = {}): TaskRecord => ({
 
 describe('task display grouping', () => {
   const at = (day: number, hour = 0) => new Date(2026, 8, day, hour).getTime()
+  it('uses next-week columns and move dates without treating next Monday as today', () => {
+    const item = task('next', { dueAt: at(22, 18) })
+    const columns = groupTasks([item], [], [], 'week', null, at(16), [], undefined, 'nextWeek')
+    expect(columns.map(column => column.date)).toEqual([21, 22, 23, 24, 25, 26, 27].map(day => at(day)))
+    expect(columns[1].tasks).toEqual([item])
+    expect(columns.every(column => !column.label.includes('今天'))).toBe(true)
+    expect(taskGroupMove(item, 'week', columns[0], false)?.patch.dueAt).toBe(at(21, 18))
+  })
   it('keeps two status columns and requests real completion transitions', () => {
     const open = task('open'), done = task('done', { status: 'done', completedAt: at(16) })
     const columns = groupTasks([open, done], [], [], 'status', null)

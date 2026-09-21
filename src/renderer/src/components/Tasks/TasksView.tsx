@@ -24,12 +24,11 @@ import { GROUP_LABELS, taskGroupMove, type BoardColumn } from './taskGrouping'
 import { useConfirm } from '../common/ConfirmProvider'
 import './Tasks.css'
 
-type SmartView = 'unplanned' | 'today' | 'tomorrow' | 'week' | 'overdue' | 'all' | 'done'
+type SmartView = 'unplanned' | 'today' | 'tomorrow' | 'week' | 'nextWeek' | 'overdue' | 'all' | 'done'
 type Selection = SmartView | `project:${string}` | `view:${string}`
 
 const SMART_VIEWS: { id: SmartView; label: string }[] = [
   { id: 'today', label: '今天' },
-  { id: 'tomorrow', label: '明天' },
   { id: 'week', label: '本周' },
   { id: 'unplanned', label: '待规划' },
   { id: 'all', label: '全部' },
@@ -37,11 +36,12 @@ const SMART_VIEWS: { id: SmartView; label: string }[] = [
   { id: 'done', label: '已完成' }
 ]
 
-const SMART_ICONS: Record<SmartView, IconName> = { today: 'today', tomorrow: 'today', week: 'week', overdue: 'clock', unplanned: 'unplanned', all: 'all', done: 'done' }
+const SMART_ICONS: Record<SmartView, IconName> = { today: 'today', tomorrow: 'today', week: 'week', nextWeek: 'week', overdue: 'clock', unplanned: 'unplanned', all: 'all', done: 'done' }
 const SMART_DESCRIPTIONS: Record<SmartView, string> = {
   today: '执行时间覆盖今天的未完成任务，以及今天完成的任务；不包含更早的过期任务。',
   tomorrow: '执行时间覆盖明天的未完成任务，按优先级提前安排。',
   week: '执行时间与本周一至周日相交的未完成任务，以及本周完成的任务。',
+  nextWeek: '执行时间与下周一至周日相交的未完成任务，提前安排下一周。',
   unplanned: '开始和截止时间都未设置的任务；安排任一时间后会移出这里。',
   all: '汇总所有清单的任务，默认显示未完成任务。',
   overdue: '截止日期早于今天的任务。',
@@ -122,10 +122,14 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const [selection, setSelection] = useState<Selection>(() => {
     try {
       const last = localStorage.getItem('chouyu:task-selection') ?? ''
+      if (last === 'tomorrow') return 'today'
+      if (last === 'nextWeek') return 'week'
       return SMART_VIEWS.some(view => view.id === last) || /^(project|view):.+$/.test(last) ? last as Selection : 'today'
     } catch { return 'today' }
   })
-  useEffect(() => { try { localStorage.setItem('chouyu:task-selection', selection) } catch { /* Preferences report storage errors separately. */ } }, [selection])
+  const navigationSelection = selection === 'tomorrow' ? 'today' : selection === 'nextWeek' ? 'week' : selection
+  const weekPeriod = selection === 'nextWeek' ? 'nextWeek' : 'week'
+  useEffect(() => { try { localStorage.setItem('chouyu:task-selection', navigationSelection) } catch { /* Preferences report storage errors separately. */ } }, [navigationSelection])
   const [query, setQuery] = useState('')
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [doneTasks, setDoneTasks] = useState<TaskRecord[]>([])
@@ -312,7 +316,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       const view = views.find(item => item.id === target.slice('view:'.length))
       return view ? matchesTaskView(task, view, now) : false
     }
-    if (target === 'today' || target === 'tomorrow' || target === 'week') return matchesTaskSchedule(task, target, now)
+    if (target === 'today' || target === 'tomorrow' || target === 'week' || target === 'nextWeek') return matchesTaskSchedule(task, target, now)
     // Other scopes keep their existing date filters when browsing completed tasks.
     if (task.status === 'done') task = { ...task, status: 'open' }
     if (target === 'overdue') return isOverdue(task, now)
@@ -490,7 +494,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     const view = selection.startsWith('view:') ? views.find(item => item.id === selection.slice(5)) : undefined
     const candidate = selection.startsWith('project:') ? selection.slice(8) : view?.projectIds.length === 1 ? view.projectIds[0] : ''
     const projectId = projects.some(project => project.id === candidate && !project.archivedAt) ? candidate : projects.find(project => project.isDefault)?.id ?? ''
-    const dueDate = selection === 'tomorrow' ? toInputDate(taskScheduleBounds('tomorrow', Date.now())[0]) : selection === 'today' || selection === 'week' || view?.dueRange === 'today' || view?.dueRange === 'week' ? toInputDate(Date.now()) : ''
+    const dueDate = selection === 'tomorrow' || selection === 'nextWeek' ? toInputDate(taskScheduleBounds(selection, Date.now())[0]) : selection === 'today' || selection === 'week' || view?.dueRange === 'today' || view?.dueRange === 'week' ? toInputDate(Date.now()) : ''
     const priority = filterPriorities.length === 1 ? filterPriorities[0] : view?.priorities.length === 1 ? view.priorities[0] : emptyDraft.priority
     return { ...emptyDraft, projectId, dueDate: patch.dueAt != null ? toInputDate(patch.dueAt) : dueDate, priority, title: patch.title ?? '', ...(patch.projectId ? { projectId: patch.projectId } : {}), ...(patch.priority ? { priority: patch.priority } : {}), customFields: Object.fromEntries(Object.entries(patch.customFields ?? {}).filter((entry): entry is [string, string] => entry[1] !== null)) }
   }
@@ -584,7 +588,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const sidebarGroupIds = orderedGroups.map(group => group.id)
   const orderedProjects = orderedGroups.flatMap(group => layoutOrder.sort(`sidebar:projects:${group.id}`, projects.filter(project => project.groupId === group.id).sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault))), project => project.id))
   const groupingProjects = [...orderedProjects, ...projects.filter(project => !orderedProjects.some(item => item.id === project.id))]
-  const listColumns = layoutOrder.sort(columnOrderScope, groupTasks(listTasks, groupingProjects, fields, boardGroupMode, groupFieldId, now, customGroups, doneCounts), column => column.key)
+  const listColumns = layoutOrder.sort(columnOrderScope, groupTasks(listTasks, groupingProjects, fields, boardGroupMode, groupFieldId, now, customGroups, doneCounts, weekPeriod), column => column.key)
     .filter(column => column.totalCount > 0 || (boardGroupMode !== 'week' && !(boardGroupMode === 'priority' && selection === 'unplanned')))
     .map(column => boardGroupMode === 'status' && column.key === 'done' && sortMode !== 'manual' ? { ...column, tasks: sortTasks(column.tasks, 'completed', now) } : column)
   const columnIds = listColumns.map(column => column.key)
@@ -619,13 +623,18 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
           </>}
     </li>
   }
-  const selectionTitle = SMART_VIEWS.find(view => view.id === selection)?.label
+  const periodOptions: { id: SmartView; label: string }[] | null = navigationSelection === 'today'
+    ? [{ id: 'today', label: '今天' }, { id: 'tomorrow', label: '明天' }]
+    : navigationSelection === 'week' ? [{ id: 'week', label: '本周' }, { id: 'nextWeek', label: '下周' }] : null
+  const periodBounds = periodOptions ? taskScheduleBounds(selection as 'today' | 'tomorrow' | 'week' | 'nextWeek', now) : null
+  const periodDate = (at: number) => new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(at)
+  const selectionTitle = periodOptions?.find(view => view.id === selection)?.label ?? SMART_VIEWS.find(view => view.id === selection)?.label
     ?? (selection.startsWith('project:') ? projects.find(project => project.id === selection.slice(8))?.name : views.find(view => view.id === selection.slice(5))?.name)
     ?? '任务'
 
-  const visibleSmartViews = SMART_VIEWS.slice(0, visibleViewCount)
-  const hiddenSmartViews = SMART_VIEWS.slice(visibleViewCount)
-  const hiddenViewSelected = selection.startsWith('view:') || hiddenSmartViews.some(view => view.id === selection)
+  const visibleSmartViews = SMART_VIEWS.filter(view => view.id !== 'done').slice(0, visibleViewCount)
+  const hiddenSmartViews = SMART_VIEWS.filter(view => !visibleSmartViews.includes(view))
+  const hiddenViewSelected = selection.startsWith('view:') || hiddenSmartViews.some(view => view.id === navigationSelection)
 
   const finishListDrag = () => { setListDraggingTask(null); setListCardTarget(null); setListDropGroup(null) }
   useEffect(finishListDrag, [selection, listGrouped, boardGroupMode, groupFieldId])
@@ -640,7 +649,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     if (actionLock.current) return
     const task = listTasks.find(item => item.id === id)
     if (!task || id === target) return
-    const column = groupId === undefined ? undefined : groupTasks(listTasks, groupingProjects, fields, boardGroupMode, groupFieldId, now, customGroups).find(item => item.key === groupId)
+    const column = groupId === undefined ? undefined : groupTasks(listTasks, groupingProjects, fields, boardGroupMode, groupFieldId, now, customGroups, undefined, weekPeriod).find(item => item.key === groupId)
     const plan = column ? taskGroupMove(task, boardGroupMode, column, taskGroupKey(id) === groupId) : { patch }
     if (!plan) return
     actionLock.current = true; setActionPending(true)
@@ -732,13 +741,13 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       <div className="tasks-sidebar-view-nav" role="region" aria-label="视图选择">
         <ul role="list" className="tasks-smart-views">
           {visibleSmartViews.map(view => <li key={view.id}>
-            <button type="button" data-view-selection={view.id} aria-current={selection === view.id || undefined} onClick={() => setSelection(view.id)}><TaskIcon name={SMART_ICONS[view.id]} /><span className="tasks-nav-label">{view.label}</span><span className="tasks-count">{countFor(view.id)}</span></button>
+            <button type="button" data-view-selection={view.id} aria-current={navigationSelection === view.id || undefined} onClick={() => setSelection(view.id)}><TaskIcon name={SMART_ICONS[view.id]} /><span className="tasks-nav-label">{view.label}</span><span className="tasks-count">{countFor(view.id)}</span></button>
           </li>)}
         </ul>
         <details className="tasks-tool-menu tasks-more-views">
           <summary aria-label="更多" title={hiddenViewSelected ? `${selectionTitle} · 更多` : '更多'} data-active={hiddenViewSelected || undefined}><TaskIcon name="more" /><span className="tasks-nav-label">{hiddenViewSelected ? selectionTitle : '更多'}</span><TaskIcon name="chevron" /></summary>
           <div className="tasks-item-menu-popover tasks-more-views-popover" role="group" aria-label="更多视图选择">
-            {hiddenSmartViews.map(view => <button key={view.id} type="button" data-view-selection={view.id} aria-current={selection === view.id || undefined} onClick={() => setSelection(view.id)}><TaskIcon name={SMART_ICONS[view.id]} /><span className="tasks-nav-label">{view.label}</span><span className="tasks-count">{countFor(view.id)}</span></button>)}
+            {hiddenSmartViews.map(view => <button key={view.id} type="button" data-view-selection={view.id} aria-current={navigationSelection === view.id || undefined} onClick={() => setSelection(view.id)}><TaskIcon name={SMART_ICONS[view.id]} /><span className="tasks-nav-label">{view.label}</span><span className="tasks-count">{countFor(view.id)}</span></button>)}
             {views.length > 0 && <p className="tasks-tool-title">自定义视图</p>}
             {views.map(view => {
               const id = `view:${view.id}` as Selection
@@ -800,7 +809,9 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       {notice && <p role="status" className="tasks-notice">{notice}<button type="button" aria-label="关闭提示" onClick={() => setNotice('')}>×</button></p>}
       <header className="tasks-page-heading">
         {sidebarCollapsed && <button ref={sidebarToggleRef} type="button" className="tasks-sidebar-toggle" aria-label="展开任务侧栏" title="展开任务侧栏" aria-expanded="false" aria-controls="tasks-sidebar" onClick={toggleSidebar}><TaskIcon name="sidebar" /></button>}
-        <span className="tasks-heading-icon"><TaskIcon name="task" /></span><h1>{selectionTitle}</h1>
+        <span className="tasks-heading-icon"><TaskIcon name="task" /></span><h1>{periodOptions ? <span className="tasks-period-switch" role="group" aria-label="任务时间范围">
+          {periodOptions.map(period => <button key={period.id} type="button" data-task-period={period.id} aria-pressed={selection === period.id} onClick={() => setSelection(period.id)}>{period.label}</button>)}
+        </span> : selectionTitle}</h1>
         <details className="tasks-tool-menu tasks-heading-menu">
           <summary aria-label="任务视图选项" title="任务视图选项"><TaskIcon name="more" /></summary>
           <div className="tasks-item-menu-popover">
@@ -812,7 +823,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
         </details>
         <span className="tasks-loading-status" role="status" data-loading={loading || undefined}>{loading ? '正在加载任务…' : ''}</span>
       </header>
-      {selection in SMART_DESCRIPTIONS && <p className="tasks-view-description">{SMART_DESCRIPTIONS[selection as SmartView]}</p>}
+      {selection in SMART_DESCRIPTIONS && <p className="tasks-view-description">{periodBounds && <span className="tasks-period-date">{periodDate(periodBounds[0])}{navigationSelection === 'week' ? ` — ${periodDate(periodBounds[1] - 1)}` : ''} · </span>}{SMART_DESCRIPTIONS[selection as SmartView]}</p>}
       {selection !== 'done' && <div className="tasks-tabs" role="group" aria-label="展示方式">
         <button type="button" className="tasks-tab" aria-pressed={mode === 'list'} onClick={() => setMode('list')}><TaskIcon name="list" />列表</button>
         <button type="button" className="tasks-tab" aria-pressed={mode === 'board'} onClick={() => setMode('board')}><TaskIcon name="board" />看板</button>
@@ -846,7 +857,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
               ))}
               <label className="tasks-filter-row">清单<select aria-label="筛选清单" value={filterProjects[0] ?? ''} onChange={e => setFilterProjects(e.target.value ? [e.target.value] : [])}><option value="">全部清单</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}{project.archivedAt ? '（已归档）' : ''}</option>)}</select></label>
               <label className="tasks-filter-row">截止范围<select aria-label="筛选截止范围" value={filterDue} onChange={e => setFilterDue(e.target.value as TaskDueRange)}>{(Object.keys(DUE_RANGE_LABELS) as TaskDueRange[]).map(id => <option key={id} value={id}>{DUE_RANGE_LABELS[id]}</option>)}</select></label>
-              <p className="tasks-tool-title">此处只筛选截止日期；侧栏「今天／明天／本周」按任务执行区间筛选。</p>
+              <p className="tasks-tool-title">此处只筛选截止日期；「今天／明天／本周／下周」按任务执行区间筛选。</p>
               {filterCount > 0 && <button type="button" onClick={clearFilters}>清除筛选</button>}
               {filterCount > 0 && <button type="button" onClick={() => setViewDraft({ ...emptyViewDraft, projectIds: filterProjects, priorities: filterPriorities, dueRange: filterDue })}>保存为新视图</button>}
             </div>
@@ -862,7 +873,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
               ))}
             </div>
           </details>}
-          <details className="tasks-tool-menu tasks-grouping-menu"><summary aria-label="任务分组" title="任务展示分组"><TaskIcon name="group" /><span>分组：{(mode === 'list' || selection === 'done') && !listGrouped ? '不分组' : boardGroupMode === 'field' ? fields.find(field => field.id === groupFieldId)?.name : GROUP_LABELS[boardGroupMode]}</span></summary><div className="tasks-item-menu-popover tasks-tool-popover" role="group" aria-label="看板分组方式">
+          <details className="tasks-tool-menu tasks-grouping-menu"><summary aria-label="任务分组" title="任务展示分组"><TaskIcon name="group" /><span>分组：{(mode === 'list' || selection === 'done') && !listGrouped ? '不分组' : boardGroupMode === 'field' ? fields.find(field => field.id === groupFieldId)?.name : boardGroupMode === 'week' && selection === 'nextWeek' ? '下周日期' : GROUP_LABELS[boardGroupMode]}</span></summary><div className="tasks-item-menu-popover tasks-tool-popover" role="group" aria-label="看板分组方式">
             {[
               ...((mode === 'list' || selection === 'done') ? [{ value: 'none', label: '不分组' }] : []),
               { value: 'custom', label: '自定义分组' },
@@ -870,7 +881,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
               { value: 'due', label: '按截止时间' },
               { value: 'project', label: '按清单' },
               { value: 'status', label: '按完成状态' },
-              ...(selection === 'week' ? [{ value: 'week', label: '按本周日期' }] : []),
+              ...(navigationSelection === 'week' ? [{ value: 'week', label: selection === 'nextWeek' ? '按下周日期' : '按本周日期' }] : []),
               ...(selection === 'overdue' ? [{ value: 'overdue', label: '按逾期时长' }] : []),
               { value: 'completed', label: '按完成日期' },
               ...fields.map(field => ({ value: `field:${field.id}`, label: `按${field.name}` }))
@@ -906,7 +917,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
         <span className="tasks-empty-icon"><TaskIcon name={selection === 'unplanned' ? 'unplanned' : 'task'} /></span>
         {effectiveStatus === 'done'
           ? <><h2>{query.trim() ? '没有匹配的已完成任务' : '还没有已完成的任务'}</h2><p>{query.trim() ? '试试其他关键词，或清空搜索。' : '完成的任务会保留在这里，可随时恢复。'}</p></>
-          : <><h2>{query.trim() ? '没有匹配的任务' : selection === 'unplanned' ? '没有待规划的任务' : selection.startsWith('project:') ? '这个清单还没有任务' : selection.startsWith('view:') ? '这个视图还没有匹配的任务' : '这里没有待办任务'}</h2><p>{query.trim() ? '试试其他关键词，或清空搜索。' : selection === 'unplanned' ? '未设置开始时间和截止时间的任务会显示在这里。' : '点击「新建任务」，记录下一件要做的事。'}</p></>}
+          : <><h2>{query.trim() ? '没有匹配的任务' : periodOptions ? `${selectionTitle}没有匹配的任务` : selection === 'unplanned' ? '没有待规划的任务' : selection.startsWith('project:') ? '这个清单还没有任务' : selection.startsWith('view:') ? '这个视图还没有匹配的任务' : '这里没有待办任务'}</h2><p>{query.trim() ? '试试其他关键词，或清空搜索。' : selection === 'unplanned' ? '未设置开始时间和截止时间的任务会显示在这里。' : '点击「新建任务」，记录下一件要做的事。'}</p></>}
       </div>}
 
       {collectionDialogOpen && <TaskCollectionDialog
@@ -984,7 +995,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       {(mode === 'board' || listGrouped) && (boardGroupMode === 'overdue' || boardGroupMode === 'completed') && <p className="tasks-view-description">分组由实际日期自动计算，可在组内拖动排序。</p>}
       {displayGroupDraft && <TaskDisplayGroupDialog key={displayGroupDraft.id} initialName={displayGroupDraft.name} editing={Boolean(displayGroupDraft.id)} onSave={saveDisplayGroup} onCancel={() => setDisplayGroupDraft(null)} />}
       {selection !== 'done' && mode === 'board'
-        ? <TasksBoard orderScope={selection} tasks={sorted} projects={groupingProjects} fields={displayFields} sortMode={sortMode} doneCounts={doneCounts} groupingFields={fields} customGroups={customGroups} renderGroupActions={renderDisplayGroupActions} onRenameGroup={renameDisplayGroup} onNewGroup={startDisplayGroup} savedOrder={layoutOrder.orders[columnOrderScope] ?? []} onOrder={keys => layoutOrder.save(columnOrderScope, keys)} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
+        ? <TasksBoard weekPeriod={weekPeriod} orderScope={selection} tasks={sorted} projects={groupingProjects} fields={displayFields} sortMode={sortMode} doneCounts={doneCounts} groupingFields={fields} customGroups={customGroups} renderGroupActions={renderDisplayGroupActions} onRenameGroup={renameDisplayGroup} onNewGroup={startDisplayGroup} savedOrder={layoutOrder.orders[columnOrderScope] ?? []} onOrder={keys => layoutOrder.save(columnOrderScope, keys)} hideNote={hiddenFields.includes('note')} groupMode={boardGroupMode} groupFieldId={groupFieldId}
             onOpenProject={openProject}
             onSource={setSourcePreview}
             onQuickEdit={async (id, patch) => { await window.electronAPI.tasks.update(id, patch); reloadRef.current() }}

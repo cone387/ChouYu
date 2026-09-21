@@ -170,6 +170,18 @@ describe('execution schedule presets', () => {
   const at = (day: number, hour = 0) => new Date(2026, 8, day, hour).getTime()
   const now = at(16, 12)
 
+  test('next week uses the following Monday through Sunday, including year boundaries', () => {
+    expect(taskScheduleBounds('nextWeek', now)).toEqual([at(21), at(28)])
+    expect(taskScheduleBounds('nextWeek', new Date(2026, 11, 31).getTime())).toEqual([
+      new Date(2027, 0, 4).getTime(), new Date(2027, 0, 11).getTime()
+    ])
+    expect(matchesTaskSchedule(base({ dueAt: at(20, 23) }), 'nextWeek', now)).toBe(false)
+    expect(matchesTaskSchedule(base({ dueAt: at(21) }), 'nextWeek', now)).toBe(true)
+    expect(matchesTaskSchedule(base({ startAt: at(20), dueAt: at(22) }), 'nextWeek', now)).toBe(true)
+    expect(matchesTaskSchedule(base({ dueAt: at(28) }), 'nextWeek', now)).toBe(false)
+    expect(matchesTaskSchedule(base({ status: 'done', completedAt: at(22) }), 'nextWeek', now)).toBe(true)
+  })
+
   test.each([
     [undefined, null, false], [null, null, false],
     [at(15), null, true], [at(16, 23), null, true], [at(17), null, false],

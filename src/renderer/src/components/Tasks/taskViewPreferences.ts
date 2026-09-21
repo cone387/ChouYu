@@ -38,6 +38,7 @@ export function recommendedTaskPreferences(scope: string): TaskViewPreferences {
   const value = { ...defaultTaskPreferences, hiddenFields: [], taskOrder: [], customGroups: [] }
   switch (scope) {
     case 'today': return { ...value, listGrouped: true, groupMode: 'status', statusFilter: 'all', sortMode: 'priority' }
+    case 'nextWeek':
     case 'week': return { ...value, listGrouped: true, groupMode: 'week', sortMode: 'priority' }
     case 'tomorrow':
     case 'unplanned': return { ...value, listGrouped: true, sortMode: 'priority' }

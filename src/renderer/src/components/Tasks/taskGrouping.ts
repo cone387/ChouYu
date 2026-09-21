@@ -50,7 +50,7 @@ export function taskGroupMove(task: TaskRecord, mode: BoardGroupMode, column: Bo
   return { patch: column.patch }
 }
 
-export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields: TaskSelectField[], groupMode: BoardGroupMode, groupFieldId: string | null, now = Date.now(), customGroups: TaskDisplayGroup[] = [], doneCounts?: Record<string, number>) {
+export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields: TaskSelectField[], groupMode: BoardGroupMode, groupFieldId: string | null, now = Date.now(), customGroups: TaskDisplayGroup[] = [], doneCounts?: Record<string, number>, weekPeriod: 'week' | 'nextWeek' = 'week') {
   const groupField = groupMode === 'field' ? fields.find(field => field.id === groupFieldId) ?? null : null
   const today = new Date(now); today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1)
@@ -64,12 +64,12 @@ export function groupTasks(tasks: TaskRecord[], projects: TaskProject[], fields:
   if (groupMode === 'status') {
     columns.push({ key: 'open', label: '未完成', patch: {} }, { key: 'done', label: '已完成', patch: {}, canCreate: false })
   } else if (groupMode === 'week') {
-    const [monday] = taskScheduleBounds('week', now)
+    const [monday] = taskScheduleBounds(weekPeriod, now)
     for (let index = 0; index < 7; index++) {
       const date = new Date(monday); date.setDate(date.getDate() + index)
       columns.push({ key: dayKey(date.getTime()), label: `周${'一二三四五六日'[index]} ${date.getMonth() + 1}/${date.getDate()}${dayKey(now) === dayKey(date.getTime()) ? ' · 今天' : ''}`, patch: { dueAt: date.getTime() }, date: date.getTime() })
     }
-    columns.push({ key: 'spanning', label: '跨天任务', patch: {}, canCreate: false, hideEmpty: true }, { key: 'other', label: '本周以外／未安排', patch: {}, canCreate: false, hideEmpty: true })
+    columns.push({ key: 'spanning', label: '跨天任务', patch: {}, canCreate: false, hideEmpty: true }, { key: 'other', label: `${weekPeriod === 'nextWeek' ? '下周' : '本周'}以外／未安排`, patch: {}, canCreate: false, hideEmpty: true })
   } else if (groupMode === 'overdue') {
     for (const [key, label] of [['long', '逾期 8 天及以上'], ['medium', '逾期 4–7 天'], ['short', '逾期 1–3 天'], ['other', '未逾期']]) columns.push({ key, label, patch: {}, canCreate: false, hideEmpty: true })
   } else if (groupMode === 'completed') {

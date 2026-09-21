@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { taskScheduleBounds, type TaskGroupingQuery } from '../../shared/tasks'
 
 /** Aggregate the full filtered history before pagination, without loading task bodies. */
-export function countDoneGroups(database: Database.Database, where: string, params: (string | number)[], grouping: TaskGroupingQuery | undefined, now: number): Record<string, number> {
+export function countDoneGroups(database: Database.Database, where: string, params: (string | number)[], grouping: TaskGroupingQuery | undefined, now: number, weekPeriod: 'week' | 'nextWeek' = 'week'): Record<string, number> {
   if (!grouping) return {}
   const args: (string | number)[] = []
   const day = (offset: number) => {
@@ -37,7 +37,7 @@ export function countDoneGroups(database: Database.Database, where: string, para
       args.push(day(0), day(1), day(-1), day(0), day(-6), day(-1))
       break
     case 'week': {
-      const [start, end] = taskScheduleBounds('week', now)
+      const [start, end] = taskScheduleBounds(weekPeriod, now)
       key = "CASE WHEN completed_at >= ? AND completed_at < ? THEN strftime('%Y', completed_at / 1000, 'unixepoch', 'localtime') || '-' || CAST(strftime('%m', completed_at / 1000, 'unixepoch', 'localtime') AS INTEGER) || '-' || CAST(strftime('%d', completed_at / 1000, 'unixepoch', 'localtime') AS INTEGER) ELSE 'other' END"
       args.push(start, end)
       break

@@ -707,7 +707,7 @@ export class TasksStore {
           params.push(...view.priorities)
         }
       }
-    } else if (selection === 'today' || selection === 'tomorrow' || selection === 'week') {
+    } else if (selection === 'today' || selection === 'tomorrow' || selection === 'week' || selection === 'nextWeek') {
       const [start, end] = taskScheduleBounds(selection, now)
       conditions.push('completed_at >= ? AND completed_at < ?')
       params.push(start, end)
@@ -720,7 +720,7 @@ export class TasksStore {
     const done = (this.database.prepare(`SELECT * FROM tasks WHERE ${where} ORDER BY completed_at DESC, rowid DESC LIMIT ?`).all(...params, limit) as TaskRow[]).map(toTask)
     const totalDone = (this.database.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE status = 'done'`).get() as { count: number }).count
     const matchedDone = (this.database.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE ${where}`).get(...params) as { count: number }).count
-    return { open, done, totalDone, matchedDone, doneGroupCounts: countDoneGroups(this.database, where, params, options.doneGrouping, now), quarantinedAt: this.quarantinedAt }
+    return { open, done, totalDone, matchedDone, doneGroupCounts: countDoneGroups(this.database, where, params, options.doneGrouping, now, selection === 'nextWeek' ? 'nextWeek' : 'week'), quarantinedAt: this.quarantinedAt }
   }
 
   /** 原子领取到期提醒:先写 remind_fired_at 再由调用方发通知,保证只发一次。 */

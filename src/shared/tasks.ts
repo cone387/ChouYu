@@ -280,13 +280,13 @@ export function isDueThisWeek(task: TaskRecord, now: number): boolean {
   return task.dueAt >= monday && task.dueAt < addDays(monday, 7)
 }
 
-export type TaskSchedulePeriod = 'today' | 'tomorrow' | 'week'
+export type TaskSchedulePeriod = 'today' | 'tomorrow' | 'week' | 'nextWeek'
 
 /** Local calendar bounds, with an exclusive end (also valid across DST changes). */
 export function taskScheduleBounds(period: TaskSchedulePeriod, now: number): [number, number] {
   const today = startOfDay(now)
-  if (period === 'week') {
-    const monday = addDays(today, -((new Date(today).getDay() + 6) % 7))
+  if (period === 'week' || period === 'nextWeek') {
+    const monday = addDays(today, -((new Date(today).getDay() + 6) % 7) + (period === 'nextWeek' ? 7 : 0))
     return [monday, addDays(monday, 7)]
   }
   const start = period === 'tomorrow' ? addDays(today, 1) : today

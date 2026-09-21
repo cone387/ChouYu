@@ -542,7 +542,7 @@ test('日期预设按完成时间筛选后分页，与前端规则一致，跨�
     }
     clock.mockReturnValue(at(16, 12))
     const allDone = store.listTasks().done
-    for (const period of ['today', 'tomorrow', 'week'] as const) {
+    for (const period of ['today', 'tomorrow', 'week', 'nextWeek'] as const) {
       const expected = allDone.filter(task => matchesTaskSchedule(task, period, Date.now()))
       const result = store.listTasks({ doneSelection: period, doneLimit: 1, doneProjectIds: [project.id] })
       expect(result.matchedDone).toBe(expected.length)
@@ -550,6 +550,7 @@ test('日期预设按完成时间筛选后分页，与前端规则一致，跨�
     }
     expect(store.listTasks({ doneSelection: 'today' }).matchedDone).toBe(2)
     expect(store.listTasks({ doneSelection: 'week' }).matchedDone).toBe(6)
+    expect(store.listTasks({ doneSelection: 'nextWeek', doneGrouping: { mode: 'week' } }).doneGroupCounts).toEqual({ '2026-9-21': 1 })
     expect(store.listTasks({ doneSelection: 'today', doneDueRange: 'today' }).matchedDone).toBe(0)
     clock.mockReturnValue(at(18))
     expect(store.listTasks({ doneSelection: 'today' }).matchedDone).toBe(0)

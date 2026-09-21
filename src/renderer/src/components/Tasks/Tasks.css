@@ -229,6 +229,10 @@
 
 .tasks-page-heading { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0; }
 .tasks-page-heading h1 { margin: 0; font-size: 18px; line-height: 1.4; font-weight: 500; overflow-wrap: anywhere; }
+.tasks-period-switch { display: inline-flex; align-items: center; gap: 16px; vertical-align: middle; }
+.tasks-period-switch button { min-height: 30px; padding: 3px 0; border: 0; border-radius: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 16px; cursor: pointer; white-space: nowrap; }
+.tasks-period-switch button:hover { color: var(--text-primary); }
+.tasks-period-switch button[aria-pressed="true"] { color: var(--text-primary); font-weight: 600; }
 .tasks-loading-status { flex: 0 0 90px; margin-left: auto; font-size: 12px; color: var(--text-muted); opacity: 0; }
 .tasks-loading-status[data-loading] { animation: tasks-loading-reveal 0s 250ms forwards; }
 @keyframes tasks-loading-reveal { to { opacity: 1; } }

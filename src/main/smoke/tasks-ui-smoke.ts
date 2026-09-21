@@ -999,7 +999,33 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await captureGrouping('preset-week-dates')
   await run(`Promise.all(${JSON.stringify([presetFixture.ongoing, presetFixture.dated, presetFixture.done])}.map(id => window.electronAPI.tasks.remove(id)))`)
   // The iteration's primary paths use the same IPC and controls as a real task workspace.
-  await selectView('tomorrow')
+  await assert("!document.querySelector('.tasks-sidebar [data-view-selection=tomorrow]') && !document.querySelector('.tasks-sidebar [data-view-selection=nextWeek]')")
+  await selectView('week')
+  await click('[data-task-period=nextWeek]')
+  await waitForRenderer(window, "document.querySelector('[data-task-period=nextWeek]')?.getAttribute('aria-pressed') === 'true'")
+  await assert("document.querySelector('[data-view-selection=week]').getAttribute('aria-current') === 'true'")
+  const nextWeekFixture = await run(`(async () => {
+    const monday = new Date(); monday.setHours(0,0,0,0); monday.setDate(monday.getDate() - (monday.getDay()+6)%7 + 7);
+    const current = await window.electronAPI.tasks.create({ title: 'Period current week', dueAt: monday.getTime()-1 });
+    const next = await window.electronAPI.tasks.create({ title: 'Period next week', dueAt: monday.getTime() });
+    return { current: current.id, next: next.id, monday: monday.getTime() };
+  })()`)
+  await waitForRenderer(window, `!!document.querySelector('[data-task-id="${nextWeekFixture.next}"]') && !document.querySelector('[data-task-id="${nextWeekFixture.current}"]')`)
+  await captureGrouping('period-next-week-list')
+  await click('.tasks-tabs .tasks-tab:nth-child(2)')
+  await waitForRenderer(window, `document.querySelectorAll('.tasks-board [data-column-key]').length === 7`)
+  await assert(`(() => { const date = new Date(${nextWeekFixture.monday}); return document.querySelector('.tasks-board [data-column-key]').dataset.columnKey === date.getFullYear()+'-'+(date.getMonth()+1)+'-'+date.getDate() })()`)
+  await captureGrouping('period-next-week-board')
+  await selectView('week')
+  await waitForRenderer(window, `document.querySelector('[data-task-period=week]').getAttribute('aria-pressed') === 'true' && !!document.querySelector('[data-task-id="${nextWeekFixture.current}"]') && !document.querySelector('[data-task-id="${nextWeekFixture.next}"]')`)
+  await run(`Promise.all(['${nextWeekFixture.current}', '${nextWeekFixture.next}'].map(id => window.electronAPI.tasks.remove(id)))`)
+  await selectView('today')
+  await click('[data-task-period=tomorrow]')
+  await assert("document.querySelector('[data-view-selection=today]').getAttribute('aria-current') === 'true'")
+  await captureGrouping('period-tomorrow')
+  await selectView('today')
+  await waitForRenderer(window, "document.querySelector('[data-task-period=today]').getAttribute('aria-pressed') === 'true'")
+  await click('[data-task-period=tomorrow]')
   await restoreGrouping()
   await assert("document.querySelector('[data-grouping-value=priority]').getAttribute('aria-pressed') === 'true'")
   await click('.tasks-tabs .tasks-tab:first-child')
