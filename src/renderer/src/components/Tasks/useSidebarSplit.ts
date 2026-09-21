@@ -17,9 +17,11 @@ export default function useSidebarSplit(sidebarRef: RefObject<HTMLElement | null
   const [storageError, setStorageError] = useState('')
   const dragging = useRef(false)
   useEffect(() => {
-    if (height === null) return
-    try { localStorage.setItem(SIDEBAR_SPLIT_KEY, String(height)); setStorageError('') }
-    catch { setStorageError('侧栏分割位置暂时无法保存，重启后可能恢复默认。') }
+    try {
+      if (height === null) localStorage.removeItem(SIDEBAR_SPLIT_KEY)
+      else localStorage.setItem(SIDEBAR_SPLIT_KEY, String(height))
+      setStorageError('')
+    } catch { setStorageError('侧栏分割位置暂时无法保存，重启后可能恢复默认。') }
   }, [height])
   const applyPointer = (event: PointerEvent<HTMLElement>) => {
     const sidebar = sidebarRef.current
@@ -34,10 +36,11 @@ export default function useSidebarSplit(sidebarRef: RefObject<HTMLElement | null
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
       if (event.button !== 0) return
       dragging.current = true
-      event.currentTarget.setPointerCapture(event.pointerId)
+      try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* 指针已失效 */ }
     },
     onPointerMove: (event: PointerEvent<HTMLElement>) => { if (dragging.current) applyPointer(event) },
     onPointerUp: (event: PointerEvent<HTMLElement>) => { dragging.current = false; try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* 已释放 */ } },
+    onPointerCancel: (event: PointerEvent<HTMLElement>) => { dragging.current = false; try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* 已释放 */ } },
     onDoubleClick: () => setHeight(null),
     onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
