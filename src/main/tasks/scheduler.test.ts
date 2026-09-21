@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { openTasksStore } from './store'
+import type { TaskRecord } from '../../shared/tasks'
+import { openTasksStore, type ClaimedReminder } from './store'
 import { startTaskScheduler } from './scheduler'
 
 const directories: string[] = []
@@ -76,6 +77,27 @@ describe('startTaskScheduler', () => {
     expect(reminders).toEqual(['即将到期', '更晚'])
     scheduler.stop()
     store.close()
+  })
+
+  test('子项提醒标题合成为 任务 · 子项', () => {
+    vi.useFakeTimers()
+    let now = 10_000
+    const task = { id: 'task-1', title: '父任务', priority: 'low' } as TaskRecord
+    const due: ClaimedReminder[] = [{ task }, { task, itemTitle: '子项甲' }]
+    let claimed = false
+    const claim = (time: number): ClaimedReminder[] => {
+      if (time <= 10_000 || claimed) return []
+      claimed = true
+      return due
+    }
+    const titles: string[] = []
+    const scheduler = startTaskScheduler(claim, {
+      onReminder: payload => { titles.push(payload.title) },
+      onBacklog: () => {}
+    }, { intervalMs: 1_000, now: () => now })
+    now = 11_000; vi.advanceTimersByTime(1_000)
+    expect(titles).toEqual(['父任务', '父任务 · 子项甲'])
+    scheduler.stop()
   })
 
   test('领取抛错时不回调且不中断后续 tick', () => {
