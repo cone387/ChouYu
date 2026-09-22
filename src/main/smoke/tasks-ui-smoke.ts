@@ -115,8 +115,12 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     return { baseline, ids: tasks.map(task => task.id) };
   })()`)
   await waitForRenderer(window, `document.querySelector('.workspace-nav-badge')?.textContent === '${badgeFixture.baseline + 2}'`)
+  // Navigation counts stay open-only even though Today also displays completed tasks.
+  await waitForRenderer(window, `document.querySelector('[data-view-selection="today"] .tasks-count')?.textContent === '${badgeFixture.baseline + 2}'`)
+  await assert(`document.querySelector('[data-view-selection="done"] .tasks-count')?.textContent === '0'`)
   await run(`window.electronAPI.tasks.complete('${badgeFixture.ids[0]}').then(() => window.dispatchEvent(new Event('chouyu:tasks-changed')))`)
   await waitForRenderer(window, `document.querySelector('.workspace-nav-badge')?.textContent === '${badgeFixture.baseline + 1}'`)
+  await waitForRenderer(window, `document.querySelector('[data-view-selection="today"] .tasks-count')?.textContent === '${badgeFixture.baseline + 1}'`)
   await run(`Promise.all(${JSON.stringify(badgeFixture.ids)}.map(id => window.electronAPI.tasks.remove(id))).then(() => window.dispatchEvent(new Event('chouyu:tasks-changed')))`)
   await waitForRenderer(window, `Number(document.querySelector('.workspace-nav-badge')?.textContent ?? 0) === ${badgeFixture.baseline}`)
   const originalTheme = await run('document.documentElement.dataset.theme')

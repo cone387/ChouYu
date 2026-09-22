@@ -1,6 +1,7 @@
 import type { AssistantMessageKind } from '../shared/assistant-message'
 import type { StorageStatus } from '../shared/storage'
 import { contextBridge, ipcRenderer } from 'electron'
+import { createPendingEvent } from './pending-event'
 import type { JournalAPI } from '../shared/journal'
 import type { TasksAPI, TasksReminderEvent } from '../shared/tasks'
 import type { AppConfig } from '../shared/config'
@@ -9,6 +10,11 @@ import type { CaptureSourceInfo, ScrollCaptureRegion, ScrollCaptureResult } from
 import type { ToolApprovalRequest, ToolCatalogItem, ToolExecutionEvent } from '../shared/tools'
 import type { CapabilityInfo } from '../shared/capabilities'
 import type { EmbeddingRebuildResult, EmbeddingStatus, MemoryCandidateInput, MemoryCleanupSuggestion, MemoryCluster, MemoryConflict, MemoryConflictAction, MemoryFeedbackResult, MemoryFeedbackValue, MemoryImportDecision, MemoryImportPreview, MemoryImportResult, MemoryInsights, MemoryListOptions, MemoryMaintenanceResult, MemoryRecord, MemoryRevision, MemorySearchResult, MemoryStats, MemorySyncStatus } from '../shared/memory'
+
+const openChatPanelEvent = createPendingEvent()
+const openAssistantChatEvent = createPendingEvent()
+ipcRenderer.on('open-chat-panel', () => openChatPanelEvent.emit())
+ipcRenderer.on('open-assistant-chat', () => openAssistantChatEvent.emit())
 
 const api = {
   journal: {
@@ -270,14 +276,8 @@ const api = {
     ipcRenderer.on('assistant-unread-changed', handler)
     return () => { ipcRenderer.removeListener('assistant-unread-changed', handler) }
   },
-  onOpenAssistantChat: (callback: () => void) => {
-    ipcRenderer.on('open-assistant-chat', callback)
-    return () => { ipcRenderer.removeListener('open-assistant-chat', callback) }
-  },
-  onOpenChatPanel: (callback: () => void) => {
-    ipcRenderer.on('open-chat-panel', callback)
-    return () => { ipcRenderer.removeListener('open-chat-panel', callback) }
-  },
+  onOpenAssistantChat: (callback: () => void) => openAssistantChatEvent.subscribe(callback),
+  onOpenChatPanel: (callback: () => void) => openChatPanelEvent.subscribe(callback),
   onOpenJournalPanel: (callback: () => void) => {
     ipcRenderer.on('open-journal-panel', callback)
     return () => { ipcRenderer.removeListener('open-journal-panel', callback) }

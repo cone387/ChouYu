@@ -125,7 +125,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const [query, setQuery] = useState('')
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [doneTasks, setDoneTasks] = useState<TaskRecord[]>([])
-  const [doneViewCounts, setDoneViewCounts] = useState<Record<string, number>>({})
   const [matchedDone, setMatchedDone] = useState(0)
   const [doneLimit, setDoneLimit] = useState(50)
   const [loading, setLoading] = useState(false)
@@ -224,7 +223,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
         setHasLoaded(true)
         setTasks(list.open)
         setDoneTasks(list.done)
-        setDoneViewCounts(list.doneViewCounts)
         setMatchedDone(list.matchedDone)
         setDoneCountsResult({ key: countsKey, counts: list.doneGroupCounts })
         setProjects(projectList)
@@ -360,9 +358,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const sorted = sortMode === 'manual' ? applyTaskOrder(sortedByMode, taskOrder) : sortedByMode
   const countFor = (target: Selection) => {
     const scope = target === navigationSelection ? selection : target
-    const status = scope === 'done' ? 'done' : preferences.forScope(scope).statusFilter
-    const open = status === 'done' ? 0 : tasks.filter(task => matchesKeywordAndFilter(task) && matchesSelection(task, scope)).length
-    return open + (status === 'open' ? 0 : doneViewCounts[scope] ?? 0)
+    return tasks.filter(task => task.status === 'open' && matchesKeywordAndFilter(task) && matchesSelection(task, scope)).length
   }
   const boardGroupMode: BoardGroupMode = groupMode === 'field' && !fields.some(field => field.id === groupFieldId) ? 'priority' : groupMode
 

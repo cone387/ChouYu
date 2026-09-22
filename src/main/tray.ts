@@ -37,22 +37,35 @@ export function setupTray(mainWindow: BrowserWindow): void {
   })
   trayFlasher = flasher
 
-  const openChatPanel = () => {
+  let pendingOpen: (() => void) | null = null
+  mainWindow.webContents.on('did-finish-load', () => {
+    const open = pendingOpen
+    pendingOpen = null
+    open?.()
+  })
+  const whenLoaded = (open: () => void) => {
+    if (mainWindow.isDestroyed()) return
+    if (mainWindow.webContents.isLoadingMainFrame()) pendingOpen = open
+    else open()
+  }
+
+  const openChatPanel = () => whenLoaded(() => {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
+    setWindowMouseIgnored(false)
     mainWindow.focus()
     mainWindow.moveTop()
     mainWindow.webContents.send('open-chat-panel')
-  }
+  })
 
-  const openAssistantChat = () => {
+  const openAssistantChat = () => whenLoaded(() => {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
+    setWindowMouseIgnored(false)
     mainWindow.focus()
     mainWindow.moveTop()
-    setWindowMouseIgnored(false)
     mainWindow.webContents.send('open-assistant-chat')
-  }
+  })
 
   const contextMenu = Menu.buildFromTemplate([
     { label: '工作日志', click: openJournalWorkspace },
