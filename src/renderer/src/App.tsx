@@ -192,8 +192,8 @@ function App() {
   // 主进程广播真实穿透状态，回写认知，防止托盘等主进程侧变更造成认知失步
   useEffect(() => syncMouseEvents(), [])
 
-  // Chromium 的 {forward:true} 转发在 Windows 上会静默失效（睡眠/锁屏/DPI 变化后），
-  // 主进程光标轮询是悬停判定的兜底通道：光标移动即重判穿透
+  // Windows uses coordinate polling instead of Electron's global mouse hook.
+  // On other platforms this also recovers hover after sleep / DPI changes.
   useEffect(() => window.electronAPI.onCursorPosition(({ x, y }) => {
     cursorPosRef.current = { x, y }
     updateIgnoreAt(x, y)

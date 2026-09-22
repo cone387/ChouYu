@@ -43,6 +43,7 @@ function createFakeEnvironment(cursorPositions: Array<{ x: number; y: number }>)
   let cursorIndex = 0
   const cursor = { x: 0, y: 0 }
   const environment = {
+    platform: 'darwin' as NodeJS.Platform,
     screen: {
       getCursorScreenPoint: () => {
         const next = cursorPositions[Math.min(cursorIndex, cursorPositions.length - 1)]
@@ -99,9 +100,9 @@ describe('attachMouseEventsController', () => {
     expect(fake.calls).toContainEqual({ kind: 'send', channel: 'mouse-events-state', payload: false })
   })
 
-  test('光标移动超过阈值才发送 cursor-position，坐标为内容区坐标', () => {
+  test('静止时不重复发送，跨过一个像素的边界也发送内容区坐标', () => {
     const fake = createFakeWindow()
-    const env = createFakeEnvironment([{ x: 500, y: 300 }, { x: 502, y: 301 }, { x: 520, y: 305 }])
+    const env = createFakeEnvironment([{ x: 500, y: 300 }, { x: 500, y: 300 }, { x: 501, y: 300 }])
     attachMouseEventsController(fake.win, env)
     fake.calls.length = 0
     vi.advanceTimersByTime(300)
@@ -111,7 +112,7 @@ describe('attachMouseEventsController', () => {
     expect(fake.calls.filter(c => c.kind === 'send' && c.channel === 'cursor-position')).toHaveLength(0)
     fake.calls.length = 0
     vi.advanceTimersByTime(300)
-    expect(fake.calls).toContainEqual({ kind: 'send', channel: 'cursor-position', payload: { x: 420, y: 255 } })
+    expect(fake.calls).toContainEqual({ kind: 'send', channel: 'cursor-position', payload: { x: 401, y: 250 } })
   })
 
   test('窗口隐藏或销毁时不发送光标，也不应用状态', () => {
@@ -161,5 +162,76 @@ describe('attachMouseEventsController', () => {
     expect(fake.listenerCount('show')).toBe(0)
     expect(fake.listenerCount('restore')).toBe(0)
     expect(fake.listenerCount('focus')).toBe(0)
+    expect(fake.listenerCount('closed')).toBe(0)
+    controller.dispose()
+    controller.setIgnored(false)
+    env.emit('power', 'resume')
+    env.emit('screen', 'display-metrics-changed')
+    expect(fake.calls).toHaveLength(0)
+  })
+
+  test('Windows never enables the global mouse hook, including after resume', () => {
+    const fake = createFakeWindow()
+    const env = createFakeEnvironment([{ x: 500, y: 300 }])
+    const controller = attachMouseEventsController(fake.win, { ...env, platform: 'win32' })
+    controller.setIgnored(false)
+    controller.setIgnored(true)
+    env.emit('power', 'resume')
+    expect(fake.calls.filter(c => c.kind === 'ignore' && c.ignored)).toEqual([
+      { kind: 'ignore', ignored: true, options: { forward: false } },
+      { kind: 'ignore', ignored: true, options: { forward: false } },
+      { kind: 'ignore', ignored: true, options: { forward: false } }
+    ])
+  })
+
+  test('Windows polling detects entry within 75ms without forwarding', () => {
+    const fake = createFakeWindow()
+    attachMouseEventsController(fake.win, { ...createFakeEnvironment([{ x: 500, y: 300 }]), platform: 'win32' })
+    fake.calls.length = 0
+    vi.advanceTimersByTime(74)
+    expect(fake.calls).toHaveLength(0)
+    vi.advanceTimersByTime(1)
+    expect(fake.calls).toEqual([{ kind: 'send', channel: 'cursor-position', payload: { x: 400, y: 250 } }])
+    fake.calls.length = 0
+    vi.advanceTimersByTime(60_000)
+    expect(fake.calls).toHaveLength(0)
+  })
+
+  test('repeated desired states do not repeat native calls', () => {
+    const fake = createFakeWindow()
+    const controller = attachMouseEventsController(fake.win, createFakeEnvironment([{ x: 0, y: 0 }]))
+    fake.calls.length = 0
+    controller.setIgnored(true)
+    expect(fake.calls).toHaveLength(0)
+    controller.setIgnored(false)
+    fake.calls.length = 0
+    controller.setIgnored(false)
+    expect(fake.calls).toHaveLength(0)
+  })
+
+  test('lock pauses polling and unlock/show rechecks a stationary cursor', () => {
+    const fake = createFakeWindow()
+    const env = createFakeEnvironment([{ x: 500, y: 300 }])
+    attachMouseEventsController(fake.win, env)
+    vi.advanceTimersByTime(300)
+    fake.calls.length = 0
+    env.emit('power', 'lock-screen')
+    vi.advanceTimersByTime(3000)
+    expect(fake.calls).toHaveLength(0)
+    env.emit('power', 'unlock-screen')
+    expect(fake.calls).toContainEqual({ kind: 'send', channel: 'cursor-position', payload: { x: 400, y: 250 } })
+    fake.calls.length = 0
+    fake.emitWin('show')
+    expect(fake.calls).toContainEqual({ kind: 'send', channel: 'cursor-position', payload: { x: 400, y: 250 } })
+  })
+
+  test('moving the window updates coordinates even when the mouse is stationary', () => {
+    const fake = createFakeWindow()
+    attachMouseEventsController(fake.win, createFakeEnvironment([{ x: 500, y: 300 }]))
+    vi.advanceTimersByTime(300)
+    fake.calls.length = 0
+    fake.win.getContentBounds = () => ({ x: 200, y: 100, width: 800, height: 600 })
+    vi.advanceTimersByTime(300)
+    expect(fake.calls).toEqual([{ kind: 'send', channel: 'cursor-position', payload: { x: 300, y: 200 } }])
   })
 })
