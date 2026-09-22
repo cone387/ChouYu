@@ -1,6 +1,7 @@
 import { normalizeAssistantMessageKind } from '../shared/assistant-message'
 import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app, shell, powerMonitor } from 'electron'
 import { notifyJournalConfig } from './journal'
+import { setWindowMouseIgnored } from './mouse-events'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
@@ -208,13 +209,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('db:open-data-directory', () => shell.openPath(app.getPath('userData')))
 
   ipcMain.on('set-ignore-mouse-events', (_event, ignore: boolean) => {
-    if (mainWindow) {
-      if (ignore) {
-        mainWindow.setIgnoreMouseEvents(true, { forward: true })
-      } else {
-        mainWindow.setIgnoreMouseEvents(false)
-      }
-    }
+    if (typeof ignore === 'boolean') setWindowMouseIgnored(ignore)
   })
 
   ipcMain.on('set-window-always-on-top', (_event, alwaysOnTop: boolean) => {

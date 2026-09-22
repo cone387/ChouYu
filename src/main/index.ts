@@ -25,6 +25,7 @@ import { runMemoryPaginationSmoke } from './smoke/memory-pagination-smoke'
 import { runMem0V3Smoke } from './smoke/mem0-v3-smoke'
 import { runJournalProjectSmoke } from './smoke/journal-project-smoke'
 import { runJournalPlaybookSmoke } from './smoke/journal-playbook-smoke'
+import { attachMainWindowMouseEvents } from './mouse-events'
 import { runStorageRuntimeSmoke } from './smoke/storage-smoke'
 import { runContactsSmoke } from './smoke/contacts-smoke'
 import { runChatRuntimeSmoke } from './smoke/chat-smoke'
@@ -121,7 +122,7 @@ function createWindow(): void {
     })
   }
 
-  mainWindow.setIgnoreMouseEvents(true, { forward: true })
+  attachMainWindowMouseEvents(mainWindow)
 
   // Intercept keyboard shortcuts
   mainWindow.webContents.on('before-input-event', (_event, input) => {

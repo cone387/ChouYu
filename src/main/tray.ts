@@ -1,6 +1,7 @@
 import { Tray, Menu, BrowserWindow, MenuItem, app, nativeImage, ipcMain } from 'electron'
 import { PET_ICON_PNG_BASE64, TRANSPARENT_ICON_PNG_BASE64 } from '../shared/pet-icon'
 import { TrayFlasher } from './tray-flasher'
+import { setWindowMouseIgnored } from './mouse-events'
 import { openJournalWorkspace, toggleJournalPause, getJournalStatus } from './journal'
 
 let tray: Tray | null = null
@@ -49,7 +50,7 @@ export function setupTray(mainWindow: BrowserWindow): void {
     mainWindow.show()
     mainWindow.focus()
     mainWindow.moveTop()
-    mainWindow.setIgnoreMouseEvents(false)
+    setWindowMouseIgnored(false)
     mainWindow.webContents.send('open-assistant-chat')
   }
 
@@ -78,7 +79,7 @@ export function setupTray(mainWindow: BrowserWindow): void {
       label: '设置',
       click: () => {
         mainWindow.show()
-        mainWindow.setIgnoreMouseEvents(false)
+        setWindowMouseIgnored(false)
         mainWindow.webContents.send('open-settings')
       }
     },

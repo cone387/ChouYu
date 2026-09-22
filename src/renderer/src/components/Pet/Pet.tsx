@@ -3,6 +3,7 @@ import PetSvg from './PetSvg'
 import { PetState } from '../../shared/types'
 import { SNAP_DISTANCE } from '../../shared/constants'
 import { getAttachmentValidationError, readAttachmentFile } from '../../core/attachments'
+import { setMouseIgnored } from '../../core/mouse-events'
 import './Pet.css'
 
 interface PetProps {
@@ -50,7 +51,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
     draggingRef.current = false
     hasDraggedRef.current = false
     ;(window as any).__petDragging = true
-    window.electronAPI.setIgnoreMouseEvents(false)
+    setMouseIgnored(false)
 
     dragStartRef.current = {
       screenX: e.screenX,

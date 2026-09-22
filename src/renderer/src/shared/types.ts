@@ -80,6 +80,8 @@ export interface ElectronAPI {
   setAutoStart: (enabled: boolean) => Promise<void>
   checkForUpdates: () => Promise<void>
   setIgnoreMouseEvents: (ignore: boolean) => void
+  onMouseEventsState: (callback: (ignored: boolean) => void) => () => void
+  onCursorPosition: (callback: (point: { x: number; y: number }) => void) => () => void
   setWindowAlwaysOnTop: (alwaysOnTop: boolean) => void
   log: (msg: string) => void
   takeScreenshot: (hideWindow?: boolean) => Promise<string | null>

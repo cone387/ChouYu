@@ -12,6 +12,7 @@ import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
 import { getCenteredPanelPosition } from './core/panel-position'
 import { getDefaultPanelHeight } from './core/panel-state'
+import { setMouseIgnored, syncMouseEvents } from './core/mouse-events'
 
 function App() {
   const [petPosition, setPetPosition] = useState({ x: window.innerWidth - 180, y: window.innerHeight - 180 })
@@ -36,7 +37,7 @@ function App() {
   const [fileDropError, setFileDropError] = useState<string | null>(null)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const screenshotCallbackRef = useRef<((dataUrl: string) => void) | null>(null)
-  const ignoreRef = useRef(true)
+  const cursorPosRef = useRef({ x: -1, y: -1 })
 
   useEffect(() => {
     const clampPet = () => setPetPosition((position) => ({
@@ -182,6 +183,22 @@ function App() {
     return () => clearTimeout(timer)
   }, [fileDropError])
 
+  const updateIgnoreAt = useCallback((x: number, y: number) => {
+    if ((window as any).__petDragging) return
+    const el = document.elementFromPoint(x, y)
+    setMouseIgnored(!(el && el.closest('[data-interactive]')))
+  }, [])
+
+  // 主进程广播真实穿透状态，回写认知，防止托盘等主进程侧变更造成认知失步
+  useEffect(() => syncMouseEvents(), [])
+
+  // Chromium 的 {forward:true} 转发在 Windows 上会静默失效（睡眠/锁屏/DPI 变化后），
+  // 主进程光标轮询是悬停判定的兜底通道：光标移动即重判穿透
+  useEffect(() => window.electronAPI.onCursorPosition(({ x, y }) => {
+    cursorPosRef.current = { x, y }
+    updateIgnoreAt(x, y)
+  }), [updateIgnoreAt])
+
   useEffect(() => {
     let rafId: number | null = null
     let lastX = 0
@@ -192,20 +209,12 @@ function App() {
       if (Math.abs(e.clientX - lastX) < 4 && Math.abs(e.clientY - lastY) < 4) return
       lastX = e.clientX
       lastY = e.clientY
+      cursorPosRef.current = { x: lastX, y: lastY }
 
       if (rafId !== null) return
       rafId = requestAnimationFrame(() => {
         rafId = null
-        if ((window as any).__petDragging) return
-        const el = document.elementFromPoint(lastX, lastY)
-        const isOverUI = el && el.closest('[data-interactive]')
-        if (isOverUI && ignoreRef.current) {
-          ignoreRef.current = false
-          window.electronAPI.setIgnoreMouseEvents(false)
-        } else if (!isOverUI && !ignoreRef.current) {
-          ignoreRef.current = true
-          window.electronAPI.setIgnoreMouseEvents(true)
-        }
+        updateIgnoreAt(lastX, lastY)
       })
     }
     document.addEventListener('mousemove', handleMouseMove)
@@ -213,7 +222,14 @@ function App() {
       document.removeEventListener('mousemove', handleMouseMove)
       if (rafId !== null) cancelAnimationFrame(rafId)
     }
-  }, [])
+  }, [updateIgnoreAt])
+
+  // 面板出现后立即按当前光标位置重判（面板可能直接出现在光标下方）
+  useEffect(() => {
+    if (!panelVisible) return
+    const { x, y } = cursorPosRef.current
+    if (x >= 0 && y >= 0) updateIgnoreAt(x, y)
+  }, [panelVisible, updateIgnoreAt])
 
   // Disable click-through during external file drag so drop events reach Pet
   useEffect(() => {
@@ -222,16 +238,14 @@ function App() {
       e.preventDefault()
       dragCounter++
       if (dragCounter === 1) {
-        ignoreRef.current = false
-        window.electronAPI.setIgnoreMouseEvents(false)
+        setMouseIgnored(false)
       }
     }
     const onDragLeave = () => {
       dragCounter--
       if (dragCounter <= 0) {
         dragCounter = 0
-        ignoreRef.current = true
-        window.electronAPI.setIgnoreMouseEvents(true)
+        setMouseIgnored(true)
       }
     }
     const onDrop = (e: DragEvent) => {
@@ -239,8 +253,8 @@ function App() {
       dragCounter = 0
       // Restore click-through after a short delay (let the Pet's onDrop fire first)
       setTimeout(() => {
-        ignoreRef.current = true
-        window.electronAPI.setIgnoreMouseEvents(true)
+        const { x, y } = cursorPosRef.current
+        if (x >= 0 && y >= 0) updateIgnoreAt(x, y)
       }, 100)
     }
     const onDragOver = (e: DragEvent) => {
@@ -298,8 +312,7 @@ function App() {
   }, [ensurePanelPosition, panelInitialized])
 
   const restoreClickThrough = useCallback(() => {
-    ignoreRef.current = true
-    window.electronAPI.setIgnoreMouseEvents(true)
+    setMouseIgnored(true)
   }, [])
 
   const hidePanel = useCallback(() => {
@@ -399,7 +412,7 @@ function App() {
     window.electronAPI.takeScreenshot(hidePanel)
       .then((dataUrl) => {
         if (dataUrl) {
-          window.electronAPI.setIgnoreMouseEvents(false)
+          setMouseIgnored(false)
           setScreenshotImage(dataUrl)
           return
         }
@@ -414,8 +427,7 @@ function App() {
 
   const handleScreenshotCapture = useCallback((croppedDataUrl: string) => {
     setScreenshotImage(null)
-    ignoreRef.current = true
-    window.electronAPI.setIgnoreMouseEvents(true)
+    setMouseIgnored(true)
     screenshotCallbackRef.current?.(croppedDataUrl)
     screenshotCallbackRef.current = null
   }, [])
@@ -423,8 +435,7 @@ function App() {
   const handleScreenshotCancel = useCallback(() => {
     setScreenshotImage(null)
     setCaptureMode('crop')
-    ignoreRef.current = true
-    window.electronAPI.setIgnoreMouseEvents(true)
+    setMouseIgnored(true)
     screenshotCallbackRef.current = null
   }, [])
 
@@ -436,7 +447,7 @@ function App() {
     window.electronAPI.takeScreenshot(true)
       .then((dataUrl) => {
         if (dataUrl) {
-          window.electronAPI.setIgnoreMouseEvents(false)
+          setMouseIgnored(false)
           setScreenshotImage(dataUrl)
           return
         }
@@ -456,8 +467,7 @@ function App() {
     setScrollCaptureProgress(0)
     setScreenshotImage(null)
     setCaptureMode('crop')
-    ignoreRef.current = true
-    window.electronAPI.setIgnoreMouseEvents(true)
+    setMouseIgnored(true)
     const callback = screenshotCallbackRef.current
     screenshotCallbackRef.current = null
     if (dataUrl) callback?.(dataUrl)

@@ -128,6 +128,16 @@ const api = {
   setIgnoreMouseEvents: (ignore: boolean) => {
     ipcRenderer.send('set-ignore-mouse-events', ignore)
   },
+  onMouseEventsState: (callback: (ignored: boolean) => void) => {
+    const handler = (_event: unknown, ignored: boolean) => callback(ignored)
+    ipcRenderer.on('mouse-events-state', handler)
+    return () => { ipcRenderer.removeListener('mouse-events-state', handler) }
+  },
+  onCursorPosition: (callback: (point: { x: number; y: number }) => void) => {
+    const handler = (_event: unknown, point: { x: number; y: number }) => callback(point)
+    ipcRenderer.on('cursor-position', handler)
+    return () => { ipcRenderer.removeListener('cursor-position', handler) }
+  },
   setWindowAlwaysOnTop: (alwaysOnTop: boolean) => {
     ipcRenderer.send('set-window-always-on-top', alwaysOnTop)
   },
