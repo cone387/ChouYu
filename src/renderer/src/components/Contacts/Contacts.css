@@ -141,3 +141,6 @@
 .contacts-menu-popover button { display: block; width: 100%; min-height: 32px; padding: 0 10px; border: none; border-radius: 5px; background: transparent; color: var(--text-primary); text-align: left; font-size: 13px; cursor: pointer; }
 .contacts-menu-popover button:hover, .contacts-menu-popover button:focus-visible { background: var(--bg-secondary); outline: none; }
 .contacts-menu-popover button.danger { color: var(--error); }
+.contacts-profile-details { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 10px; }
+.contacts-profile-details > summary { color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.contacts-profile-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

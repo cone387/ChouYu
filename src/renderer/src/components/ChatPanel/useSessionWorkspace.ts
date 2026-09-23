@@ -294,9 +294,11 @@ export function useSessionWorkspace({
     if (activeSessionIdRef.current === sessionId) onPetStateChange('thinking')
     setSessionStreaming(sessionId, true)
 
+    const sessionCharacterId = sessionsRef.current.find((session) => session.id === sessionId)?.characterId
+      || (sessionId === activeSessionIdRef.current ? activeCharacterIdRef.current : DEFAULT_CHARACTER_ID)
     const latestUserMessage = [...conversation].reverse().find((message) => message.role === 'user' && !message.toolData)
     let relevantMemories: Awaited<ReturnType<typeof window.electronAPI.memory.search>> = []
-    if (config.memoryEnabled && latestUserMessage?.content) {
+    if (sessionCharacterId === DEFAULT_CHARACTER_ID && config.memoryEnabled && latestUserMessage?.content) {
       const recallStartedAt = Date.now()
       try {
         relevantMemories = await window.electronAPI.memory.search(latestUserMessage.content, 6)
@@ -323,8 +325,6 @@ export function useSessionWorkspace({
     // Background generations (queued follow-ups, retries) target a session that
     // may no longer be active; resolve the character from the session itself so
     // switching sessions mid-stream cannot leak another persona's credentials.
-    const sessionCharacterId = sessionsRef.current.find((session) => session.id === sessionId)?.characterId
-      || (sessionId === activeSessionIdRef.current ? activeCharacterIdRef.current : DEFAULT_CHARACTER_ID)
     const character = charactersRef.current.find((item) => item.id === sessionCharacterId)
     const soulMd = !character || character.builtIn ? config.soulMd : (character.soulMd || config.soulMd)
     const systemPrompt = buildSystemPrompt(soulMd, [memoryContext, memoryConversationPolicy, continuationPolicy].filter(Boolean).join('\n\n'))

@@ -1,4 +1,5 @@
 import type { AssistantMessageKind } from '../shared/assistant-message'
+import type { AgentAPI } from '../shared/agents'
 import type { StorageStatus } from '../shared/storage'
 import { contextBridge, ipcRenderer } from 'electron'
 import { createPendingEvent } from './pending-event'
@@ -17,6 +18,21 @@ ipcRenderer.on('open-chat-panel', () => openChatPanelEvent.emit())
 ipcRenderer.on('open-assistant-chat', () => openAssistantChatEvent.emit())
 
 const api = {
+  agents: {
+    get: id => ipcRenderer.invoke('agents:get', id),
+    save: (id, settings) => ipcRenderer.invoke('agents:save', id, settings),
+    run: id => ipcRenderer.invoke('agents:run', id),
+    pause: id => ipcRenderer.invoke('agents:pause', id),
+    detail: (id, runId) => ipcRenderer.invoke('agents:detail', id, runId),
+    answer: (id, runId, answer) => ipcRenderer.invoke('agents:answer', id, runId, answer),
+    remember: (id, content) => ipcRenderer.invoke('agents:remember', id, content),
+    forget: (id, memoryId) => ipcRenderer.invoke('agents:forget', id, memoryId),
+    onChanged: callback => {
+      const handler = (_event: unknown, id: string) => callback(id)
+      ipcRenderer.on('agents:changed', handler)
+      return () => ipcRenderer.removeListener('agents:changed', handler)
+    }
+  } satisfies AgentAPI,
   journal: {
     retrySavedOcr: (id) => ipcRenderer.invoke('journal:retrySavedOcr', id),
     onBookmarkSaved: (callback) => {

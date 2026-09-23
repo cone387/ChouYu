@@ -1,0 +1,47 @@
+.contact-agent { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--text-primary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.agent-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.agent-heading h3 { margin: 0; font-size: 16px; }
+.agent-heading > span { color: var(--accent); font-size: 12px; }
+.agent-description, .agent-caption { color: var(--text-secondary); font-size: 12px; }
+.agent-description { margin: 8px 0 14px; }
+.agent-caption { display: block; font-weight: 400; }
+.contact-agent button { border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); border-radius: 7px; padding: 7px 11px; min-height: 34px; cursor: pointer; font: inherit; }
+.contact-agent button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.contact-agent button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.contact-agent button:disabled { opacity: .5; cursor: default; }
+.contact-agent :is(button,input,textarea,a,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.agent-tabs { display: flex; gap: 14px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.agent-tabs button { background: none; border: 0; border-radius: 0; border-bottom: 2px solid transparent; padding: 7px 0; color: var(--text-secondary); }
+.agent-tabs button[aria-pressed=true] { border-bottom-color: var(--accent); color: var(--text-primary); }
+.contact-agent form > label, .agent-settings-row > label { display: flex; flex-direction: column; gap: 5px; margin: 12px 0; font-weight: 500; }
+.contact-agent :is(textarea,input[type=number]) { width: 100%; box-sizing: border-box; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; color: var(--text-primary); background: var(--bg-secondary); font: inherit; }
+.contact-agent textarea { resize: vertical; }
+.agent-settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.contact-agent form > .agent-toggle { flex-direction: row; align-items: center; font-weight: 400; }
+.agent-toggle input { accent-color: var(--accent); }
+.agent-actions, .agent-memory-footer { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.agent-empty { margin: 18px 0; color: var(--text-secondary); }
+.agent-latest { border-left: 2px solid var(--accent); padding-left: 12px; margin: 18px 0; }
+.agent-latest h4, .agent-record h4 { margin: 6px 0; font-size: 14px; }
+.agent-latest p { margin: 6px 0; }
+.agent-latest button { border: 0; background: none; color: var(--accent); padding-left: 0; }
+.agent-error { padding: 10px; color: var(--error); border: 1px solid var(--border); border-radius: 7px; margin: 10px 0; }
+.agent-error button { margin-left: 8px; }
+.agent-question { padding: 12px; border: 1px solid var(--accent); border-radius: 8px; }
+.agent-history, .agent-memories { list-style: none; padding: 0; margin: 0; }
+.agent-history li, .agent-memories li { border-bottom: 1px solid var(--border); padding: 9px 0; }
+.agent-history button { width: 100%; text-align: left; background: none; border: 0; padding: 2px; }
+.agent-history small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 3px; }
+.agent-record { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); }
+.agent-record > ol { padding-left: 18px; }
+.agent-record time { color: var(--text-secondary); font-size: 11px; }
+.agent-record li p { margin: 2px 0 10px; white-space: pre-wrap; }
+.agent-report, .agent-source-text { white-space: pre-wrap; }
+.agent-report { padding: 14px 0; border-top: 1px solid var(--border); }
+.agent-record details { padding: 9px 0; border-top: 1px solid var(--border); }
+.agent-record summary { cursor: pointer; }
+.agent-record a { color: var(--accent); }
+.agent-source-text { max-height: 280px; overflow: auto; padding: 8px; background: var(--bg-secondary); border-radius: 6px; font-size: 12px; }
+.agent-memories p { margin: 4px 0 8px; white-space: pre-wrap; }
+.agent-memory-footer > span { flex: 1; }
+.agent-memory-footer button { padding: 3px 8px; font-size: 12px; }

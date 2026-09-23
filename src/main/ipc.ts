@@ -9,7 +9,8 @@ import { getProviderProfiles, MAX_PROVIDER_PROFILES, sanitizeConfigPatch, saniti
 import type { ResolvedProviderProfile } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
-import { resolveCharacterConfig } from '../shared/characters'
+import { DEFAULT_CHARACTER_ID, resolveCharacterConfig } from '../shared/characters'
+import { agentContext, removeContactAgent } from './agents'
 import {
   type MemoryCandidateInput,
   type MemoryConflictAction,
@@ -346,6 +347,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('memory:propose', async (_event, text: string, sessionId?: string, messageId?: string) => {
     if (typeof text !== 'string' || text.length > 4000) return []
+    // Legacy memories belong to the default companion. Other contacts keep private
+    // conversation history and an explicit memory library, never a shared extraction.
+    if (sessionId && getSession(sessionId)?.characterId !== DEFAULT_CHARACTER_ID) return []
     const { memoryEnabled, memoryWriteMode, memoryAutoWriteConfidence } = getConfig()
     if (!memoryEnabled || memoryWriteMode === 'off') return []
     const currentConfig = getConfig()
@@ -609,6 +613,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('ai:stream', async (event, rawRequest): Promise<AIStreamResult> => {
     const request = parseAIStreamRequest(rawRequest)
     if (!request) return { ok: false, error: 'AI 请求参数无效。' }
+    const owner = request.sessionId ? getSession(request.sessionId)?.characterId : undefined
+    if (request.sessionId && !owner) return { ok: false, error: '会话已不存在，请重新打开对话。' }
+    if (request.characterId && !getCharacter(request.characterId)) return { ok: false, error: '联系人已不存在。' }
+    if (owner && request.characterId && owner !== request.characterId) return { ok: false, error: '会话与联系人不匹配。' }
+    if (owner) request.characterId = owner
 
     const requestKey = getAIRequestKey(event.sender.id, request.requestId)
     activeAIRequests.get(requestKey)?.abort()
@@ -626,9 +635,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     event.sender.once('destroyed', abortWhenDestroyed)
 
     try {
+      let privateContext = ''
+      if (owner) {
+        try { privateContext = await agentContext(owner) } catch { privateContext = '\n独立工作记录暂时无法读取，请勿声称知道未提供的工作经历。' }
+      }
       await streamAIChat(
         request.messages,
-        request.systemPrompt,
+        request.systemPrompt + privateContext,
         effectiveConfig,
         (chunk, done) => {
           if (event.sender.isDestroyed()) return
@@ -836,7 +849,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     return result
   })
-  ipcMain.handle('characters:delete', (_event, id: string) => {
+  ipcMain.handle('characters:delete', async (_event, id: string) => {
+    const character = getCharacter(id)
+    if (character && !character.builtIn) await removeContactAgent(id)
     const workspace = deleteCharacter(id)
     notifyCharactersChanged()
     return workspace

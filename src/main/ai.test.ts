@@ -14,6 +14,13 @@ afterEach(() => {
 })
 
 describe('main-process AI provider routing', () => {
+  it.each(['openai', 'claude'] as const)('passes an explicit background output cap to %s', async provider => {
+    const request = vi.fn(async () => streamResponse(provider === 'openai' ? 'data: [DONE]\n\n' : 'data: {"type":"message_stop"}\n\n'))
+    vi.stubGlobal('fetch', request)
+    await streamAIChat([{ role: 'user', content: '研究资料' }], 'system', { ...DEFAULT_APP_CONFIG, provider, baseUrl: 'https://provider.example/v1', apiKey: 'test', model: 'test' }, () => {}, undefined, undefined, { maxOutputTokens: 2200 })
+    expect(JSON.parse((request.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).max_tokens).toBe(2200)
+    expect(request).toHaveBeenCalledTimes(1)
+  })
   it.each(['as-glm-5.2', 'as-glm-5.3'])('applies disabled thinking only to the explicitly configured model: %s', async model => {
     const request = vi.fn(async () => streamResponse('data: [DONE]\n\n'))
     vi.stubGlobal('fetch', request)

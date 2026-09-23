@@ -503,7 +503,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         updateSessionMessages(originatingSessionId, (previous) => [...previous, { id: Date.now().toString(), role: 'assistant', content: '长期记忆已在设置中关闭。', timestamp: Date.now() }])
         return
       }
-      const candidates = await window.electronAPI.memory.propose(`请记住：${memoryText}`, activeSessionIdRef.current)
+      if (activeCharacterId !== DEFAULT_CHARACTER_ID) {
+        try {
+          await window.electronAPI.agents.remember(activeCharacterId, memoryText)
+          showMemoryWriteNotice('已存入此联系人的独立记忆，可在联系人详情中查看。')
+        } catch (error) { showMemoryWriteNotice(error instanceof Error ? error.message : '独立记忆保存失败，请重试。') }
+        return
+      }
+      const candidates = await window.electronAPI.memory.propose(`请记住：${memoryText}`, originatingSessionId)
       const pendingCandidates = candidates.filter((candidate) => candidate.status === 'pending')
       setMemoryCandidates((previous) => [...previous, ...pendingCandidates.filter((candidate) => !previous.some((item) => item.id === candidate.id))])
       return

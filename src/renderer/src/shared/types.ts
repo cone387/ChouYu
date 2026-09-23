@@ -73,6 +73,7 @@ export interface PluginInfo {
 }
 
 export interface ElectronAPI {
+  agents: import('../../../shared/agents').AgentAPI
   journal: import('../../../shared/journal').JournalAPI
   getAppVersion: () => Promise<string>
   getSystemIdleSeconds: () => Promise<number>

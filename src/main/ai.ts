@@ -1,7 +1,7 @@
 import { readAIUsage, type AIResponseMetadata } from '../shared/ai-usage'
 // Explicit timeoutMs is a total deadline (used by journal generation).
 // Interactive chat defaults to an inactivity deadline while the stream is live.
-export interface AIStreamOptions { timeoutMs?: number; onMetadata?: (metadata: AIResponseMetadata) => void }
+export interface AIStreamOptions { timeoutMs?: number; maxOutputTokens?: number; onMetadata?: (metadata: AIResponseMetadata) => void }
 
 import type { AppConfig } from '../shared/config'
 import { isAIConfigured } from '../shared/config'
@@ -383,6 +383,7 @@ async function streamOpenAIRound(
   const guard = createRequestGuard(signal, Math.min(180_000, Math.max(1000, options.timeoutMs ?? REQUEST_TIMEOUT_MS)), options.timeoutMs === undefined)
   try {
     const requestBody: Record<string, unknown> = { model: config.model, messages: apiMessages, stream: true }
+    if (options.maxOutputTokens) requestBody.max_tokens = options.maxOutputTokens
     if (config.thinkingDisabledModels?.includes(config.model)) requestBody.thinking = { type: 'disabled' }
     if (options.onMetadata) requestBody.stream_options = { include_usage: true }
     if (tools?.length) {
@@ -558,7 +559,7 @@ async function streamClaudeRound(
   try {
     const requestBody: Record<string, unknown> = {
       model: config.model,
-      max_tokens: 4096,
+      max_tokens: options.maxOutputTokens ?? 4096,
       system: systemPrompt,
       messages: apiMessages,
       stream: true

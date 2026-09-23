@@ -51,23 +51,35 @@ export function useChatScroll(
     else container.current.scrollTop = previousTop.current
   }, [active, container, searching, scrollToLatest])
 
+  // Snapshot before an ancestor hides this page. A wheel/scrollbar movement can
+  // precede its deferred scroll event, which would otherwise arrive while hidden.
+  useLayoutEffect(() => {
+    const element = container.current
+    return () => { if (active && element?.clientHeight) previousTop.current = element.scrollTop }
+  }, [active, container])
+
   useEffect(() => {
     const element = container.current
     const list = content.current
     if (!active || !element || !list) return
     let pointerDown = false
-    const onWheel = (event: WheelEvent) => { if (event.deltaY < 0) following.current = false }
+    let towardBottom = false
+    const onWheel = (event: WheelEvent) => {
+      towardBottom = event.deltaY > 0
+      if (event.deltaY < 0) following.current = false
+    }
     const onPointerDown = () => { pointerDown = true }
     const onPointerUp = () => { pointerDown = false }
     const onKeyDown = (event: KeyboardEvent) => {
-      if (['ArrowUp', 'PageUp', 'Home'].includes(event.key)) following.current = false
+      if (['ArrowUp', 'PageUp', 'Home'].includes(event.key)) { following.current = false; towardBottom = false }
+      else if (['ArrowDown', 'PageDown', 'End'].includes(event.key)) towardBottom = true
     }
     const onScroll = () => {
       if (!element.clientHeight) return
       // Virtual row measurements can shrink scrollHeight and adjust scrollTop.
       // Only user input should detach the viewport from the live reply.
       if (pointerDown && element.scrollTop < previousTop.current - 1) following.current = false
-      if (isNearBottom(element.scrollTop, element.scrollHeight, element.clientHeight)) {
+      if ((following.current || pointerDown || towardBottom) && isNearBottom(element.scrollTop, element.scrollHeight, element.clientHeight)) {
         following.current = !searching
         setHasNewContent(false)
       }

@@ -33,6 +33,7 @@ const env = {
   CHOUYU_SMOKE_CHAT_ONLY: process.argv.includes('--chat') ? '1' : '0',
   CHOUYU_SMOKE_TASK_SCHEDULING_ONLY: process.argv.includes('--task-scheduling') ? '1' : '0',
   CHOUYU_SMOKE_TASK_ASSISTANT_ONLY: process.argv.includes('--task-assistant') ? '1' : '0',
+  CHOUYU_SMOKE_AGENTS_ONLY: process.argv.includes('--agents') ? '1' : '0',
   CHOUYU_SMOKE_USER_DATA: smokeUserData
 }
 console.log(nativeCapture ? 'Smoke mode: native capture (requires interactive desktop and recording permission).' : 'Smoke mode: UI/data regression with synthetic capture; native capture is tested separately.')

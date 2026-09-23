@@ -6,9 +6,11 @@ import { app, BrowserWindow, screen, shell, globalShortcut, dialog } from 'elect
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
+import { initializeAgents, closeAgents } from './agents'
 import { initializeTasks, closeTasks } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
 import { runTaskAssistantSmoke } from './smoke/task-assistant-smoke'
+import { runAgentsSmoke } from './smoke/agents-smoke'
 import { runTasksUISmoke } from './smoke/tasks-ui-smoke'
 import { runTaskSchedulingUISmoke } from './smoke/task-scheduling-ui-smoke'
 import { setTrayUnread, setupTray } from './tray'
@@ -39,6 +41,10 @@ const isSmokeTest = process.env['CHOUYU_SMOKE_TEST'] === '1'
 const smokeUserDataDir = process.env['CHOUYU_SMOKE_USER_DATA']
 
 if (isSmokeTest) {
+  process.on('uncaughtException', error => {
+    console.error('CHOUYU_SMOKE_FAILED uncaught-main-error', error)
+    app.exit(1)
+  })
   if (smokeUserDataDir) app.setPath('userData', smokeUserDataDir)
   app.disableHardwareAcceleration()
 }
@@ -115,6 +121,8 @@ function createWindow(): void {
       try {
         if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
           await runNativeCaptureSmoke()
+        } else if (process.env.CHOUYU_SMOKE_AGENTS_ONLY === '1') {
+          await runAgentsSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_TASK_ASSISTANT_ONLY === '1') {
           await runTaskAssistantSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_TASK_SCHEDULING_ONLY === '1') {
@@ -129,6 +137,7 @@ function createWindow(): void {
           await stage('chat', () => runChatRuntimeSmoke(mainWindow!))
           await stage('journal', () => runJournalSmoke(mainWindow!))
           await stage('task-assistant', () => runTaskAssistantSmoke(mainWindow!))
+          await stage('agents', () => runAgentsSmoke(mainWindow!))
         }
         console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
         setTimeout(() => app.quit(), 300)
@@ -328,6 +337,7 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('open-tasks-panel', taskId)
     }
   })
+  initializeAgents()
   createWindow()
 
   // Register IPC handlers immediately after window creation
@@ -383,7 +393,7 @@ app.on('before-quit', (event) => {
     event.preventDefault()
     if (!journalClosing) {
       journalClosing = true
-      void closeJournal().catch(() => {}).finally(() => { journalClosed = true; app.quit() })
+      void Promise.allSettled([closeJournal(), closeAgents()]).finally(() => { journalClosed = true; app.quit() })
     }
     return
   }

@@ -3,6 +3,7 @@ import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABE
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
+import { ContactAgentPanel } from './ContactAgentPanel'
 import './Contacts.css'
 
 interface ContactsViewProps {
@@ -91,7 +92,7 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
     })
   }, [initialWidth])
 
-  // 未手动定高时跟随内容高度，保持垂直居中。
+  // Async Agent content and workspace resizing must remain inside the viewport.
   useEffect(() => {
     const panel = panelRef.current
     const parent = panel?.offsetParent as HTMLElement | null
@@ -99,12 +100,16 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
     const observer = new ResizeObserver(() => {
       if (!panel.getClientRects().length || !parent.clientHeight || !panel.offsetHeight) return
       setRect((current) => {
-        if (!current || current.height !== null) return current
-        const top = Math.max(8, Math.round((parent.clientHeight - panel.offsetHeight) / 2))
-        return top === current.top ? current : { ...current, top }
+        if (!current) return current
+        const width = Math.min(current.width, Math.max(1, parent.clientWidth - 16))
+        const height = current.height === null ? null : Math.min(current.height, Math.max(1, parent.clientHeight - 16))
+        const left = Math.max(8, Math.min(current.left, parent.clientWidth - width - 8))
+        const top = current.height === null ? Math.max(8, Math.round((parent.clientHeight - panel.offsetHeight) / 2)) : Math.max(8, Math.min(current.top, parent.clientHeight - panel.offsetHeight - 8))
+        return top === current.top && left === current.left && width === current.width && height === current.height ? current : { left, top, width, height }
       })
     })
     observer.observe(panel)
+    observer.observe(parent)
     return () => observer.disconnect()
   }, [rect?.width])
 
@@ -157,7 +162,7 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
   return <div className="contacts-scrim" role="presentation">
     <div ref={panelRef} className={className} role={role} aria-modal="true" aria-label={label}
       {...dataAttributes}
-      style={rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height ?? undefined } : undefined}>
+      style={{ ...(rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height ?? undefined } : {}), minWidth: `min(${minWidth}px, calc(100% - 16px))`, maxWidth: 'calc(100% - 16px)', maxHeight: 'calc(100% - 16px)' }}>
       {children}
       {(['n', 's', 'e', 'w'] as const).map((edge) => (
         <div key={edge} className={`contacts-resize contacts-resize-${edge}`} aria-hidden="true"
@@ -471,7 +476,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     </div>
     </>}
     {detail && <ResizableModal className="contacts-detail" role="dialog" label={`角色详情 ${detail.name}`}
-      initialWidth={460} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
+      initialWidth={560} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
       <div>
         <div className="contacts-detail-head">
           <span className="contacts-detail-avatar" aria-hidden="true"><CharacterAvatar character={detail} /></span>
@@ -480,6 +485,9 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <p className="contacts-detail-subtitle">{detail.builtIn ? '内置角色' : '自定义角色'}</p>
           </div>
         </div>
+        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} />}
+        <details className="contacts-profile-details" open={detail.id === ASSISTANT_CHARACTER_ID}>
+        <summary>角色资料</summary>
         <div className="contacts-detail-fields">
           <label className="contacts-field"><span className="contacts-field-name">模型</span>
             <span className="contacts-detail-value">{detail.builtIn ? config.model : detail.model}</span></label>
@@ -494,6 +502,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         </div>
         <p className="contacts-detail-soul-title">人设</p>
         <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
+        </details>
         <div className="contacts-detail-actions">
           <button type="button" data-contacts-close onClick={() => setDetail(null)}>关闭</button>
           <button type="button" className="primary" data-contacts-start-chat={detail.id}
@@ -507,7 +516,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     {confirmDelete && <div className="contacts-scrim" role="presentation">
       <div className="contacts-confirm" role="alertdialog" aria-modal="true" aria-label="删除角色确认">
         <p className="contacts-confirm-title">删除角色</p>
-        <p>删除「{confirmDelete.name}」将同时删除它的 {confirmDelete.sessionCount} 个会话，无法恢复。</p>
+        <p>删除「{confirmDelete.name}」将同时停止它的工作，并删除 {confirmDelete.sessionCount} 个会话、工作记录和独立记忆，无法恢复。</p>
         {error && <div className="contacts-error" role="alert">{error}</div>}
         <div className="contacts-confirm-actions">
           <button type="button" autoFocus onClick={() => setConfirmDelete(null)}>取消</button>
