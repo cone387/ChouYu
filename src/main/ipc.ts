@@ -36,7 +36,7 @@ import { setClipboardWatcherEnabled } from './clipboard'
 import { setTrayUnread } from './tray'
 import { initAutoUpdater } from './updater'
 import { diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
-import { executeRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
+import { prepareRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
 import {
   getMemoryProvider,
   createMemory,
@@ -158,12 +158,14 @@ function requestToolApproval(
   sender: Electron.WebContents,
   requestId: string,
   call: AIToolCall,
-  signal: AbortSignal
+  signal: AbortSignal,
+  preview?: string
 ): Promise<boolean> {
   const definition = getRegisteredTool(call.name)
   if (!definition || sender.isDestroyed()) return Promise.resolve(false)
   const approvalId = randomUUID()
   const approvalRequest: ToolApprovalRequest = {
+    preview,
     requestId,
     approvalId,
     callId: call.id,
@@ -619,6 +621,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       effectiveConfig = { ...config, ...resolution.config }
     }
     activeAIRequests.set(requestKey, controller)
+    let taskMutationRequested = false
     const abortWhenDestroyed = () => controller.abort()
     event.sender.once('destroyed', abortWhenDestroyed)
 
@@ -640,42 +643,49 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             if (!definition) return `工具不存在：${call.name}`
             if (!isToolEnabled(call.name)) return `工具已被用户禁用：${call.name}`
             const arguments_ = parseToolArguments(call.arguments)
-            const needsApproval = shouldConfirmTool(definition, config.toolPermissionMode)
-            sendToolEvent(event.sender, {
-              requestId: request.requestId,
-              callId: call.id,
-              name: definition.name,
-              displayName: definition.displayName,
-              risk: definition.risk,
-              status: needsApproval ? 'requested' : 'running',
-              summary: needsApproval ? '等待用户确认' : '正在执行'
-            })
-            if (needsApproval) {
-              const approved = await requestToolApproval(event.sender, request.requestId, call, controller.signal)
-              if (!approved) {
-                sendToolEvent(event.sender, {
-                  requestId: request.requestId,
-                  callId: call.id,
-                  name: definition.name,
-                  displayName: definition.displayName,
-                  risk: definition.risk,
-                  status: 'denied',
-                  summary: '用户拒绝了此操作'
-                })
-                return '用户拒绝了此工具调用。'
-              }
+            try {
+              if (controller.signal.aborted) throw new Error('AI 请求已取消。')
+              const taskMutation = ['create_task', 'update_task', 'complete_task'].includes(call.name)
+              if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
+              const prepared = prepareRegisteredTool(call.name, arguments_, mainWindow, request.sessionId)
+              if (taskMutation) taskMutationRequested = true
+              const needsApproval = shouldConfirmTool(definition, config.toolPermissionMode)
               sendToolEvent(event.sender, {
                 requestId: request.requestId,
                 callId: call.id,
                 name: definition.name,
                 displayName: definition.displayName,
                 risk: definition.risk,
-                status: 'running',
-                summary: '已授权，正在执行'
+                status: needsApproval ? 'requested' : 'running',
+                summary: needsApproval ? '等待用户确认' : '正在执行'
               })
-            }
-            try {
-              const result = await executeRegisteredTool(call.name, arguments_, mainWindow, request.sessionId)
+              if (needsApproval) {
+                const approved = await requestToolApproval(event.sender, request.requestId, call, controller.signal, prepared.preview)
+                if (!approved) {
+                  sendToolEvent(event.sender, {
+                    requestId: request.requestId,
+                    callId: call.id,
+                    name: definition.name,
+                    displayName: definition.displayName,
+                    risk: definition.risk,
+                    status: 'denied',
+                    summary: '用户拒绝了此操作'
+                  })
+                  return '用户拒绝了此工具调用。'
+                }
+                sendToolEvent(event.sender, {
+                  requestId: request.requestId,
+                  callId: call.id,
+                  name: definition.name,
+                  displayName: definition.displayName,
+                  risk: definition.risk,
+                  status: 'running',
+                  summary: '已授权，正在执行'
+                })
+              }
+              if (controller.signal.aborted) throw new Error('AI 请求已取消。')
+              if (!isToolEnabled(call.name)) throw new Error('工具已被用户禁用。')
+              const result = await prepared.execute()
               sendToolEvent(event.sender, {
                 requestId: request.requestId,
                 callId: call.id,
@@ -683,7 +693,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                 displayName: definition.displayName,
                 risk: definition.risk,
                 status: 'completed',
-                summary: result.summary.slice(0, 500), taskId: result.taskId
+                summary: result.summary.slice(0, 500), taskId: result.taskId, taskRefs: result.taskRefs
               })
               return result.content.slice(0, 50_000)
             } catch (error) {

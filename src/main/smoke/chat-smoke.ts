@@ -137,6 +137,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
   const fixture = createChatSession('UI 验收会话').activeSession.id
   try {
     window.webContents.debugger.attach('1.3')
+    console.log('CHOUYU_CHAT_STAGE debugger-attached')
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
     const reducedMotion = await window.webContents.executeJavaScript("matchMedia('(prefers-reduced-motion: reduce)').matches")
     if (!reducedMotion) throw new Error('Reduced-motion emulation did not apply')
@@ -164,7 +165,9 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     })()`)
     window.webContents.send('open-chat-panel')
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true]') && document.querySelector('.input-textarea') && document.querySelector('table') && document.querySelector('del')")
+    console.log('CHOUYU_CHAT_STAGE panel-ready')
     await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    console.log('CHOUYU_CHAT_STAGE opening-frames-complete')
     const openingFrames = await window.webContents.executeJavaScript('window.__watchChatOpening = false; window.__chatOpeningFrames')
     if (!openingFrames.length || openingFrames.some((frame: any) => !frame.ready || !frame.messages || !frame.input)) throw new Error('Chat revealed an incomplete opening frame')
     const chromeProblem = await window.webContents.executeJavaScript(`(() => {
@@ -179,6 +182,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     })()`)
     if (chromeProblem) throw new Error(chromeProblem)
     await runNavigationSmoke(window)
+    console.log('CHOUYU_CHAT_STAGE navigation-complete')
     if (process.env.CHOUYU_SMOKE_NAVIGATION_ONLY === '1') return
     await snapshots(window, 'chat')
 
@@ -206,13 +210,21 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
         const header = document.querySelector('.workspace-header');
         const rect = header.getBoundingClientRect(), panel = document.querySelector('.chat-panel').getBoundingClientRect();
         let start;
-        for (let y = Math.max(1, rect.top + 2); y < Math.min(innerHeight - 1, rect.bottom - 1) && !start; y += 2) {
-          for (let x = Math.max(1, rect.left + 12); x < Math.min(innerWidth - 1, rect.right - 1); x += 8) {
-            const hit = document.elementFromPoint(x, y);
-            if (hit === header) { start = { x: Math.round(x), y: Math.round(y) }; break; }
+        // Test the exact integer coordinates sent to Electron, with a small
+        // interior margin. Rounding a fractional corner hit can land outside
+        // the panel's rounded clipping boundary at non-integer DPI scales.
+        for (let y = Math.max(3, Math.ceil(rect.top + 6)); y < Math.min(innerHeight - 3, rect.bottom - 3) && !start; y += 2) {
+          for (let x = Math.max(3, Math.ceil(rect.left + 12)); x < Math.min(innerWidth - 3, rect.right - 3); x += 4) {
+            if ([[0, 0], [-2, 0], [2, 0], [0, -2], [0, 2]].every(([dx, dy]) => document.elementFromPoint(x + dx, y + dy) === header)) { start = { x, y }; break; }
           }
         }
         if (!start) throw new Error('No exposed panel drag surface');
+        window.__panelDragCleanup?.();
+        window.__panelDragEvents = [];
+        const trace = event => { if (window.__panelDragEvents.length < 20) window.__panelDragEvents.push({ type: event.type, x: event.clientX, y: event.clientY, screenX: event.screenX, screenY: event.screenY, target: event.target.className, buttons: event.buttons }); };
+        const types = ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture'];
+        for (const type of types) document.addEventListener(type, trace, true);
+        window.__panelDragCleanup = () => { for (const type of types) document.removeEventListener(type, trace, true) };
         const end = ${JSON.stringify(target)} === 'restore'
           ? { x: Math.round(start.x + window.__normalBounds.x - panel.x), y: Math.round(start.y + window.__normalBounds.y - panel.y) }
           : ${JSON.stringify(target)} === 'near' ? { x: 1, y: 1 } : { x: innerWidth - 80, y: innerHeight - 80 };
@@ -356,7 +368,9 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await window.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.journal-search input'))")
     await input(window, '.journal-search input', '导航保留活动')
-    await waitForRenderer(window, "document.querySelector('.journal-status') && document.querySelector('.journal-status').textContent !== '正在加载' && !document.querySelector('.journal-day-panel')?.textContent.includes('正在读取')")
+    // Retained, inactive views deliberately defer fetching after a date change.
+    // Only the visible view must finish loading before the navigation checks.
+    await waitForRenderer(window, "document.querySelector('.journal-status') && document.querySelector('.journal-status').textContent !== '正在加载' && ![...document.querySelectorAll('.journal-shell p, .journal-shell [role=status]')].some(element => element.getClientRects().length && /正在读取|正在加载/.test(element.textContent))")
     await window.webContents.executeJavaScript(`(async () => {
       if (document.querySelector('.workspace-brand-status')) throw new Error('Navigation logo status dot remains');
       const shell = document.querySelector('.journal-shell');
@@ -405,9 +419,12 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await window.webContents.executeJavaScript('new Promise(resolve => setTimeout(resolve, 100))')
     stream!.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '这段新内容不应该把阅读历史的用户拉到底部。' } }] })}\n\n`)
     stream!.end('data: [DONE]\n\n')
-    await waitForRenderer(window, "document.querySelector('.message-jump-latest')")
+    await waitForRenderer(window, "!document.querySelector('[aria-label=\"停止生成\"]')")
     await click(window, '[data-workspace-nav="chat"]')
     await waitForRenderer(window, "document.querySelector('[data-workspace-page=chat]')")
+    // Scroll/measurement hooks intentionally pause on hidden retained pages.
+    // Assert the unread affordance once chat resumes, without moving its viewport.
+    await waitForRenderer(window, "document.querySelector('.message-jump-latest')")
     const top = await window.webContents.executeJavaScript("document.querySelector('.message-area').scrollTop")
     if (top > 2) throw new Error(`Streaming moved the reading position: ${top}`)
     await click(window, '.message-jump-latest')
@@ -563,6 +580,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
   } catch (error) {
     console.error('CHOUYU_CHAT_UI_STATE', await window.webContents.executeJavaScript(`JSON.stringify({
       expectedBounds: window.__normalBounds, actualBounds: document.querySelector('.chat-panel')?.getBoundingClientRect().toJSON(),
+      dragEvents: window.__panelDragEvents,
       composerGrip: window.__composerGrip, composerNow: document.querySelector('.input-textarea')?.getBoundingClientRect().toJSON(), composerMaximum: document.querySelector('.composer-resize-handle')?.getAttribute('aria-valuemax'),
       text: document.body.innerText.slice(-1800),
       inputs: document.querySelectorAll('textarea').length,
@@ -571,6 +589,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     })`))
     throw error
   } finally {
+    await window.webContents.executeJavaScript('window.__panelDragCleanup?.()').catch(() => {})
     if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach()
     ipcMain.removeListener('ai:resolve-tool-request', onResolution)
     stream?.end()

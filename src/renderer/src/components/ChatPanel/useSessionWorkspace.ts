@@ -127,6 +127,12 @@ export function useSessionWorkspace({
   }, [])
 
   const applyWorkspace = useCallback((workspace: SessionWorkspace, preserveSessionOrder = true) => {
+    // A session or character deletion must also evict its cached messages;
+    // otherwise unmount tries to save those deleted sessions again.
+    const existingIds = new Set(workspace.sessions.map(session => session.id))
+    for (const id of sessionMessagesRef.current.keys()) {
+      if (!existingIds.has(id)) sessionMessagesRef.current.delete(id)
+    }
     const sessionId = workspace.activeSession.id
     const cached = sessionMessagesRef.current.get(sessionId)
     const activeMessages = sessionGenerationsRef.current.has(sessionId)
@@ -211,7 +217,7 @@ export function useSessionWorkspace({
         if (activeSessionIdRef.current === sessionId) {
           setSessions((previous) => mergeSessionsInCurrentOrder(previous, workspace.sessions))
         }
-      })
+      }).catch(() => { /* Storage status reports disk failures; deletion can reject an in-flight save. */ })
     }, 450)
     return () => clearTimeout(timer)
   }, [messages, activeSessionId])
@@ -223,6 +229,7 @@ export function useSessionWorkspace({
     if (initializedRef.current) {
       sessionMessagesRef.current.forEach((storedMessages, sessionId) => {
         void window.electronAPI.db.saveSessionMessages(sessionId, storedMessages)
+          .catch(() => { /* Storage status remains available after this component unmounts. */ })
       })
     }
   }, [])
@@ -290,11 +297,14 @@ export function useSessionWorkspace({
     const latestUserMessage = [...conversation].reverse().find((message) => message.role === 'user' && !message.toolData)
     let relevantMemories: Awaited<ReturnType<typeof window.electronAPI.memory.search>> = []
     if (config.memoryEnabled && latestUserMessage?.content) {
+      const recallStartedAt = Date.now()
       try {
         relevantMemories = await window.electronAPI.memory.search(latestUserMessage.content, 6)
       } catch (error) {
         relevantMemories = []
         showMemoryWriteNotice(error instanceof Error ? `Mem0 记忆检索失败：${error.message}` : 'Mem0 记忆检索失败，请检查连接配置')
+      } finally {
+        console.info(`[Chat] memory recall took ${Date.now() - recallStartedAt}ms`)
       }
     }
     const memoryRefs = relevantMemories.map((memory) => ({

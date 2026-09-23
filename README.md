@@ -37,7 +37,7 @@
 
 ## 快速开始
 
-开发环境使用 Node.js 24（见 `.nvmrc`）。当前工作区为 `1.3.0-rc.2` 候选版本，尚未发布；完整进度见 [迭代验收](docs/iteration-acceptance.md)，候选包信息见 [发布验证](docs/release-candidate.md)。Windows 图片附件支持[离线文字识别](docs/offline-ocr.md)。
+开发环境使用 Node.js 24（见 `.nvmrc`）。当前代码版本为 `1.3.4`，工作区另含 AI 任务助手与稳定性收尾改动；功能与验证边界见 [当前状态](docs/current-status.md) 和 [本轮稳定性验收](docs/stability-acceptance-20260923.md)。历史候选包记录不代表当前构建。Windows 图片附件支持[离线文字识别](docs/offline-ocr.md)。
 
 ```bash
 # 安装依赖

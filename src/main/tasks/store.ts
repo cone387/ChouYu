@@ -334,6 +334,34 @@ export class TasksStore {
     const row = this.database.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow | undefined
     return row ? toTask(row) : null
   }
+
+  /** Bounded AI search; filter before pagination, including completed history. */
+  searchTasks(input: { query?: string; status?: string; period?: string; projectId?: string; offset?: number } = {}, now = Date.now()): { items: TaskRecord[]; total: number; nextOffset: number | null } {
+    const { query = '', status = 'open', period = 'any', projectId, offset = 0 } = input
+    if (typeof query !== 'string' || query.length > 200 || !['open', 'done', 'all'].includes(status) ||
+      !['any', 'today', 'tomorrow', 'week', 'nextWeek', 'overdue'].includes(period) || !Number.isSafeInteger(offset) || offset < 0) throw new Error('任务查询条件无效。')
+    if (projectId !== undefined && !this.listProjects().some(project => project.id === projectId && !project.archivedAt)) throw new Error('清单不存在或已归档。请先查询清单。')
+    const where = ['(project_id IS NULL OR project_id NOT IN (SELECT id FROM task_projects WHERE archived_at IS NOT NULL))']
+    const params: (string | number)[] = []
+    if (status !== 'all') { where.push('status = ?'); params.push(status) }
+    if (query.trim()) { where.push("instr(lower(title || ' ' || coalesce(note, '')), ?) > 0"); params.push(query.trim().toLowerCase()) }
+    if (projectId !== undefined) { where.push('project_id = ?'); params.push(projectId) }
+    if (period === 'overdue') {
+      where.push("status = 'open' AND due_at < ?")
+      params.push(taskScheduleBounds('today', now)[0])
+    } else if (period !== 'any') {
+      const [start, end] = taskScheduleBounds(period as 'today' | 'tomorrow' | 'week' | 'nextWeek', now)
+      where.push("((status = 'done' AND completed_at >= ? AND completed_at < ?) OR (status = 'open' AND coalesce(start_at, due_at) < ? AND (due_at IS NULL OR due_at >= ?)))")
+      params.push(start, end, end, start)
+    }
+    const clause = where.join(' AND ')
+    const total = (this.database.prepare(`SELECT count(*) AS count FROM tasks WHERE ${clause}`).get(...params) as { count: number }).count
+    const items = (this.database.prepare(`SELECT * FROM tasks WHERE ${clause}
+      ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END,
+        CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+        due_at IS NULL, due_at, created_at, id LIMIT 20 OFFSET ?`).all(...params, offset) as TaskRow[]).map(toTask)
+    return { items, total, nextOffset: offset + items.length < total ? offset + items.length : null }
+  }
   exportBackup(settings: TaskUISettings) { return createTaskBackup(this.database, settings) }
   validateBackup(input: unknown) { return validateTaskBackup(this.database, input) }
   restoreBackup(input: unknown) { return restoreTaskBackup(this.database, input) }

@@ -3,6 +3,8 @@ export type ToolPermissionMode = 'confirm' | 'auto' | 'full'
 export type ToolSource = 'builtin' | 'plugin'
 export type ToolExecutionStatus = 'requested' | 'running' | 'completed' | 'denied' | 'error'
 
+export interface ToolTaskReference { id: string; title: string; detail?: string }
+
 export interface ToolJsonSchema {
   type: 'object'
   properties: Record<string, {
@@ -36,6 +38,7 @@ export interface AIToolCall {
 }
 
 export interface ToolApprovalRequest {
+  preview?: string
   requestId: string
   approvalId: string
   callId: string
@@ -47,6 +50,7 @@ export interface ToolApprovalRequest {
 }
 
 export interface ToolExecutionEvent {
+  taskRefs?: ToolTaskReference[]
   taskId?: string
   requestId: string
   callId: string
@@ -63,6 +67,7 @@ export interface ToolApprovalResolution {
 }
 
 export interface ToolActivityData {
+  taskRefs?: ToolTaskReference[]
   taskId?: string
   callId: string
   name: string

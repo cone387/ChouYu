@@ -1,7 +1,7 @@
 import { runGlobalSearchSmoke } from './global-search-smoke'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
-import { flushDatabase, getCharacter, getConfig, listCharacters, saveConfig } from '../database'
+import { flushDatabase, getCharacter, getConfig, getSessions, listCharacters, saveConfig } from '../database'
 import { waitForRenderer } from './storage-smoke'
 
 async function input(window: BrowserWindow, selector: string, value: string): Promise<void> {
@@ -45,6 +45,11 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
   const address = server.address()
   const baseUrl = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/v1`
   try {
+    await window.webContents.executeJavaScript(`(() => {
+      window.__contactsUnhandled = [];
+      window.__contactsRejection = event => window.__contactsUnhandled.push(String(event.reason));
+      window.addEventListener('unhandledrejection', window.__contactsRejection);
+    })()`)
     saveConfig({ provider: 'openai', baseUrl, apiKey: 'smoke-key', model: 'default-model' })
 
     // 1) 确保面板可见（本冒烟先于 chat-smoke 运行，不能假设它已铺好状态）。
@@ -154,9 +159,15 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     // 它在主进程直接创建夹具会话，依赖面板挂载时全新加载工作区。
     await click(window, '[aria-label="关闭面板"]')
     await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+    // Include the 450 ms autosave and unmount flush after cascade deletion.
+    await new Promise(resolve => setTimeout(resolve, 600))
+    const unhandled = await window.webContents.executeJavaScript('window.__contactsUnhandled')
+    if (unhandled.length) throw new Error(`Deleting a character and closing chat left unhandled saves: ${JSON.stringify(unhandled)}`)
+    if (getSessions().some(session => session.characterId === character.id)) throw new Error('Deleted character sessions reappeared after unmount')
 
-    console.log('CHOUYU_CONTACTS_SMOKE_PASSED page navigation, character CRUD, per-character stream, cascade delete')
+    console.log('CHOUYU_CONTACTS_SMOKE_PASSED page navigation, character CRUD, per-character stream, cascade delete, clean autosave/unmount')
   } finally {
+    await window.webContents.executeJavaScript("window.removeEventListener('unhandledrejection', window.__contactsRejection)").catch(() => {})
     saveConfig(originalConfig)
     flushDatabase()
     server.closeAllConnections()

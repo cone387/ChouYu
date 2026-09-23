@@ -14,6 +14,75 @@ afterEach(() => {
 })
 
 describe('main-process AI provider routing', () => {
+  it.each(['as-glm-5.2', 'as-glm-5.3'])('applies disabled thinking only to the explicitly configured model: %s', async model => {
+    const request = vi.fn(async () => streamResponse('data: [DONE]\n\n'))
+    vi.stubGlobal('fetch', request)
+    await streamAIChat([{ role: 'user', content: '今天的任务' }], 'system', { ...DEFAULT_APP_CONFIG, baseUrl: 'https://provider.example/v1', apiKey: 'test', model, thinkingDisabledModels: ['as-glm-5.2'] }, () => {})
+    const body = JSON.parse((request.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
+    expect(body.thinking).toEqual(model === 'as-glm-5.2' ? { type: 'disabled' } : undefined)
+  })
+  it.each(['openai', 'claude'] as const)('allows %s to resolve, search, read, mutate and then summarize a task', async provider => {
+    const names = ['list_task_projects', 'search_tasks', 'get_task', 'update_task']
+    let round = 0
+    const fetchMock = vi.fn(async () => {
+      const name = names[round++]
+      const payload = provider === 'openai'
+        ? { choices: [{ delta: name ? { tool_calls: [{ index: 0, id: `call_${round}`, function: { name, arguments: '{}' } }] } : { content: '任务已更新' } }] }
+        : name ? { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: `call_${round}`, name, input: {} } }
+          : { type: 'content_block_delta', delta: { type: 'text_delta', text: '任务已更新' } }
+      return streamResponse(`data: ${JSON.stringify(payload)}\n\ndata: ${provider === 'openai' ? '[DONE]' : '{"type":"message_stop"}'}\n\n`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const execute = vi.fn(async () => '{}'), chunks: string[] = []
+    await streamAIChat([{ role: 'user', content: '修改这个任务' }], 'system', { ...DEFAULT_APP_CONFIG, provider, baseUrl: 'https://provider.example/v1', apiKey: 'test', model: 'test' }, chunk => { if (chunk) chunks.push(chunk) }, undefined, { definitions: [], execute })
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(execute).toHaveBeenCalledTimes(4)
+    expect(chunks).toEqual(['任务已更新'])
+  })
+  it.each(['openai', 'claude'] as const)('finishes %s at the protocol end without waiting for the connection to close', async provider => {
+    const cancel = vi.fn()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(provider === 'openai'
+          ? 'data: {"choices":[{"delta":{"content":"完成"}}]}\n\ndata: [DONE]\n\n'
+          : 'data: {"type":"content_block_delta","delta":{"text":"完成"}}\n\ndata: {"type":"message_stop"}\n\n'))
+      }, cancel
+    }))))
+    const chunk = vi.fn()
+    await streamAIChat([{ role: 'user', content: 'test' }], 'system', { ...DEFAULT_APP_CONFIG, provider, baseUrl: 'https://provider.example/v1', apiKey: 'test', model: 'test' }, chunk)
+    expect(chunk).toHaveBeenCalledWith('完成', false)
+    expect(chunk).toHaveBeenLastCalledWith('', true)
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+
+  it.each(['openai', 'claude'] as const)('keeps active %s streams alive past 60 seconds but aborts a stalled stream', async provider => {
+    vi.useFakeTimers()
+    try {
+      let stream!: ReadableStreamDefaultController<Uint8Array>
+      let signal!: AbortSignal
+      vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+        signal = options.signal
+        return new Response(new ReadableStream({ start(controller) {
+          stream = controller
+          signal.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true })
+        } }))
+      }))
+      const chunk = vi.fn()
+      const outcome = streamAIChat([{ role: 'user', content: 'test' }], 'system', { ...DEFAULT_APP_CONFIG, provider, baseUrl: 'https://provider.example/v1', apiKey: 'test', model: 'test' }, chunk).catch(error => error)
+      const event = provider === 'openai' ? { choices: [{ delta: { content: '继续' } }] } : { type: 'content_block_delta', delta: { text: '继续' } }
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(40_000)
+        stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`))
+        await vi.advanceTimersByTimeAsync(0)
+        expect(signal.aborted).toBe(false)
+      }
+      expect(chunk).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect((await outcome).message).toContain('连续 60 秒未收到新数据')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
   it('requests usage and falls back only when a compatible endpoint rejects that option', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response('unsupported stream_options', { status: 400 })).mockResolvedValueOnce(streamResponse('data: {"model":"actual-model","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}\n\ndata: [DONE]\n\n'))
     vi.stubGlobal('fetch', fetchMock)

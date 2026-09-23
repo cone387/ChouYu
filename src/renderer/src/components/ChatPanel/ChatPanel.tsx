@@ -285,7 +285,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           displayName: event.displayName,
           risk: event.risk,
           status: event.status,
-          summary: event.summary, taskId: event.taskId
+          summary: event.summary, taskId: event.taskId, taskRefs: event.taskRefs
         }
         const existing = previous.find((message) => message.id === id)
         return existing

@@ -138,6 +138,9 @@ function sanitizeToolData(value: unknown): ToolActivityData | undefined {
     name: input.name.slice(0, 64),
     displayName: input.displayName.slice(0, 100),
     taskId: typeof input.taskId === 'string' ? input.taskId.slice(0, 200) : undefined,
+    taskRefs: Array.isArray(input.taskRefs) ? input.taskRefs.slice(0, 20).flatMap(ref =>
+      ref && typeof ref.id === 'string' && typeof ref.title === 'string'
+        ? [{ id: ref.id.slice(0, 200), title: ref.title.slice(0, 200), detail: typeof ref.detail === 'string' ? ref.detail.slice(0, 300) : undefined }] : []) : undefined,
     risk: input.risk as ToolActivityData['risk'],
     status: interrupted ? 'error' : status,
     summary: interrupted

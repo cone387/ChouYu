@@ -1,7 +1,7 @@
 import { BrowserWindow, app, clipboard, desktopCapturer, dialog } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import type { AIToolDefinition, ToolJsonSchema } from '../../shared/tools'
+import type { AIToolDefinition, ToolJsonSchema, ToolTaskReference } from '../../shared/tools'
 import { validateToolArguments } from '../../shared/tools'
 import { filterCaptureSources } from '../../shared/capture'
 
@@ -10,13 +10,20 @@ export interface ToolExecutionContext {
   mainWindow: BrowserWindow
 }
 
+export interface PreparedTool {
+  preview?: string
+  execute: () => Promise<ToolResult> | ToolResult
+}
+
 export interface ToolResult {
+  taskRefs?: ToolTaskReference[]
   taskId?: string
   content: string
   summary: string
 }
 
 export interface RegisteredTool extends AIToolDefinition {
+  prepare?: (arguments_: Record<string, unknown>, context: ToolExecutionContext) => PreparedTool
   execute: (arguments_: Record<string, unknown>, context: ToolExecutionContext) => Promise<ToolResult> | ToolResult
 }
 
@@ -141,13 +148,13 @@ export function registerTool(tool: RegisteredTool): void {
 }
 
 export function getToolDefinitions(): AIToolDefinition[] {
-  return tools.map(({ execute: _execute, ...definition }) => definition)
+  return tools.map(({ execute: _execute, prepare: _prepare, ...definition }) => definition)
 }
 
 export function getRegisteredTool(name: string): AIToolDefinition | null {
   const tool = tools.find((candidate) => candidate.name === name)
   if (!tool) return null
-  const { execute: _execute, ...definition } = tool
+  const { execute: _execute, prepare: _prepare, ...definition } = tool
   return definition
 }
 
@@ -157,7 +164,13 @@ export async function executeRegisteredTool(
   mainWindow: BrowserWindow,
   sessionId?: string
 ): Promise<ToolResult> {
-  const tool = tools.find((candidate) => candidate.name === name)
+  return prepareRegisteredTool(name, arguments_, mainWindow, sessionId).execute()
+}
+
+export function prepareRegisteredTool(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string): PreparedTool {
+  const tool = tools.find(candidate => candidate.name === name)
   if (!tool) throw new Error(`未知工具：${name}`)
-  return tool.execute(validateToolArguments(tool.inputSchema, arguments_), { mainWindow, sessionId })
+  const args = validateToolArguments(tool.inputSchema, arguments_)
+  const context = { mainWindow, sessionId }
+  return tool.prepare ? tool.prepare(args, context) : { execute: () => tool.execute(args, context) }
 }

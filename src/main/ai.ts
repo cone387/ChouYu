@@ -1,4 +1,6 @@
 import { readAIUsage, type AIResponseMetadata } from '../shared/ai-usage'
+// Explicit timeoutMs is a total deadline (used by journal generation).
+// Interactive chat defaults to an inactivity deadline while the stream is live.
 export interface AIStreamOptions { timeoutMs?: number; onMetadata?: (metadata: AIResponseMetadata) => void }
 
 import type { AppConfig } from '../shared/config'
@@ -30,27 +32,57 @@ interface RequestGuard {
   didTimeout: () => boolean
   cleanup: () => void
   timeoutMs: number
+  progress: () => void
+  textProgress: () => void
+  timeoutMessage: () => string
 }
 
-function createRequestGuard(externalSignal?: AbortSignal, timeoutMs = REQUEST_TIMEOUT_MS): RequestGuard {
+function createRequestGuard(externalSignal?: AbortSignal, timeoutMs = REQUEST_TIMEOUT_MS, streaming = false): RequestGuard {
   const controller = new AbortController()
   let timedOut = false
+  let receivedProgress = false
+  let receivedText = false
+  let totalTimeout = false
+  const startedAt = Date.now()
   const abortFromCaller = () => controller.abort(externalSignal?.reason)
 
   if (externalSignal?.aborted) abortFromCaller()
   else externalSignal?.addEventListener('abort', abortFromCaller, { once: true })
 
-  const timer = setTimeout(() => {
+  const expire = () => {
     timedOut = true
     controller.abort()
-  }, timeoutMs)
+  }
+  let timer = setTimeout(expire, timeoutMs)
+  const totalTimer = streaming ? setTimeout(() => { totalTimeout = true; expire() }, 10 * 60_000) : undefined
 
   return {
     signal: controller.signal,
     timeoutMs,
+    progress: () => {
+      if (!receivedProgress) console.log(`[AI] first stream event after ${Date.now() - startedAt}ms`)
+      receivedProgress = true
+      if (streaming && !controller.signal.aborted) {
+        clearTimeout(timer)
+        timer = setTimeout(expire, timeoutMs)
+      }
+    },
+    textProgress: () => {
+      if (!receivedText) console.log(`[AI] first text after ${Date.now() - startedAt}ms`)
+      receivedText = true
+    },
+    timeoutMessage: () => totalTimeout
+      ? '模型本轮响应超过 10 分钟，已停止等待，请重试。'
+      : !streaming
+        ? `请求超过 ${Math.round(timeoutMs / 1000)} 秒未完成，模型服务或网络响应超时，请重试。`
+        : receivedProgress
+          ? `模型响应中断，连续 ${Math.round(timeoutMs / 1000)} 秒未收到新数据，请重试。`
+          : `等待模型响应超过 ${Math.round(timeoutMs / 1000)} 秒，可能是模型排队、推理较慢或网络延迟，请重试。`,
     didTimeout: () => timedOut,
     cleanup: () => {
       clearTimeout(timer)
+      clearTimeout(totalTimer)
+      console.log(`[AI] round finished after ${Date.now() - startedAt}ms; timedOut=${timedOut}`)
       externalSignal?.removeEventListener('abort', abortFromCaller)
     }
   }
@@ -58,7 +90,7 @@ function createRequestGuard(externalSignal?: AbortSignal, timeoutMs = REQUEST_TI
 
 function rethrowRequestError(error: unknown, guard: RequestGuard): never {
   if (guard.didTimeout()) {
-    throw new Error(`请求超过 ${Math.round(guard.timeoutMs / 1000)} 秒未完成，请检查网络后重试。`)
+    throw new Error(guard.timeoutMessage())
   }
   throw error
 }
@@ -291,7 +323,8 @@ async function streamOpenAI(
     function: { name: tool.name, description: tool.description, parameters: tool.inputSchema }
   }))
 
-  for (let round = 0; round < 4; round++) {
+  // Resolve a list, search, read, confirm a change, then summarize the result.
+  for (let round = 0; round < 6; round++) {
     const result = await streamOpenAIRound(apiMessages, config, onChunk, signal, tools, options)
     if (result.toolCalls.length === 0 || !toolRuntime) {
       onChunk('', true)
@@ -347,9 +380,10 @@ async function streamOpenAIRound(
   tools?: Array<Record<string, unknown>>,
   options: AIStreamOptions = {}
 ): Promise<{ text: string; toolCalls: AIToolCall[] }> {
-  const guard = createRequestGuard(signal, Math.min(180_000, Math.max(1000, options.timeoutMs ?? REQUEST_TIMEOUT_MS)))
+  const guard = createRequestGuard(signal, Math.min(180_000, Math.max(1000, options.timeoutMs ?? REQUEST_TIMEOUT_MS)), options.timeoutMs === undefined)
   try {
     const requestBody: Record<string, unknown> = { model: config.model, messages: apiMessages, stream: true }
+    if (config.thinkingDisabledModels?.includes(config.model)) requestBody.thinking = { type: 'disabled' }
     if (options.onMetadata) requestBody.stream_options = { include_usage: true }
     if (tools?.length) {
       requestBody.tools = tools
@@ -389,9 +423,11 @@ async function streamOpenAIRound(
     let metadata: AIResponseMetadata = {}
     let text = ''
     await readSseStream(response.body, (payload) => {
+      guard.progress()
       if (options.onMetadata) { metadata = readAIUsage(payload, 'openai', metadata); options.onMetadata(metadata) }
       const delta = accumulateOpenAIToolCalls(payload, accumulators)
       if (delta.text) {
+        guard.textProgress()
         text += delta.text
         onChunk(delta.text, false)
       }
@@ -452,7 +488,7 @@ async function streamClaude(
     input_schema: tool.inputSchema
   }))
 
-  for (let round = 0; round < 4; round++) {
+  for (let round = 0; round < 6; round++) {
     const result = await streamClaudeRound(apiMessages, systemPrompt, config, onChunk, signal, tools, options)
     if (result.toolCalls.length === 0 || !toolRuntime) {
       onChunk('', true)
@@ -518,7 +554,7 @@ async function streamClaudeRound(
   tools?: Array<Record<string, unknown>>,
   options: AIStreamOptions = {}
 ): Promise<{ text: string; toolCalls: AIToolCall[] }> {
-  const guard = createRequestGuard(signal, Math.min(180_000, Math.max(1000, options.timeoutMs ?? REQUEST_TIMEOUT_MS)))
+  const guard = createRequestGuard(signal, Math.min(180_000, Math.max(1000, options.timeoutMs ?? REQUEST_TIMEOUT_MS)), options.timeoutMs === undefined)
   try {
     const requestBody: Record<string, unknown> = {
       model: config.model,
@@ -552,9 +588,11 @@ async function streamClaudeRound(
     let metadata: AIResponseMetadata = {}
     let text = ''
     await readSseStream(response.body, (payload) => {
+      guard.progress()
       if (options.onMetadata) { metadata = readAIUsage(payload, 'claude', metadata); options.onMetadata(metadata) }
       const delta = accumulateClaudeToolCalls(payload, accumulators)
       if (delta.text) {
+        guard.textProgress()
         text += delta.text
         onChunk(delta.text, false)
       }
@@ -590,23 +628,38 @@ async function readSseStream(body: ReadableStream<Uint8Array>, onPayload: (paylo
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let completed = false
   const consumeLine = (line: string) => {
     const trimmed = line.trim()
     if (!trimmed.startsWith('data:')) return
     const data = trimmed.slice(5).trimStart()
-    if (!data || data === '[DONE]') return
-    try { onPayload(JSON.parse(data)) } catch {}
+    if (!data) return
+    if (data === '[DONE]') { completed = true; return }
+    let payload: any
+    try { payload = JSON.parse(data) } catch { return }
+    onPayload(payload)
+    if (payload?.type === 'message_stop') completed = true
   }
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
-    lines.forEach(consumeLine)
-  }
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        consumeLine(line)
+        if (completed) return
+      }
+    }
 
-  buffer += decoder.decode()
-  if (buffer) buffer.split('\n').forEach(consumeLine)
+    buffer += decoder.decode()
+    if (buffer) buffer.split('\n').forEach(consumeLine)
+  } finally {
+    // Some gateways keep the HTTP connection open after the protocol end event.
+    // Do not wait for transport EOF (or for a potentially stalled cancel).
+    void reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
 }

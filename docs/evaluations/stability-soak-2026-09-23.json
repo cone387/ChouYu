@@ -1,0 +1,115 @@
+{
+  "reports": [
+    {
+      "state": "complete",
+      "pid": 27520,
+      "startedAt": "2026-09-23T07:50:43.190Z",
+      "updatedAt": "2026-09-23T08:00:43.212Z",
+      "elapsedMs": 600021.7792000001,
+      "durationMs": 600000,
+      "intervalMs": 5000,
+      "restartMs": 120000,
+      "native": false,
+      "ocr": true,
+      "output": "D:\\codespace\\ChouYu\\temp\\stability-soak-20260923",
+      "sourceHash": "9aa44d1433d538330020a3cb9041477c6cb5aeca6c3e9a8c058ee700527790ef",
+      "gitHead": "a91aa8be404d5d19976ded35a91e1be96a3556c8",
+      "electron": "44.2.0",
+      "node": "24.20.0",
+      "platform": "win32",
+      "scope": "Isolated capture/SQLite/OCR pipeline using only an owned fixture window. Excludes the full chat/memory UI and activity helper; synthetic mode excludes native screen capture. Scripted recovery restarts storage/OCR/capturer, not the OS.",
+      "cycle": 120,
+      "success": 120,
+      "failures": 0,
+      "recoveries": 4,
+      "metricFailures": 0,
+      "fatal": "",
+      "cycleTiming": {
+        "count": 120,
+        "meanMs": 165.94874416666613,
+        "p50Ms": 124.12100000004284,
+        "p95Ms": 607.3839000000153,
+        "maxMs": 1059.731
+      },
+      "captureTiming": {
+        "count": 120,
+        "meanMs": 11.363965833331486,
+        "p50Ms": 11.363400000031106,
+        "p95Ms": 16.962999999988824,
+        "maxMs": 28.36469999999997
+      },
+      "ocrTiming": {
+        "count": 120,
+        "meanMs": 138.2802691666636,
+        "p50Ms": 98.2560999999987,
+        "p95Ms": 532.7202000000107,
+        "maxMs": 1008.1161999999999
+      },
+      "peakElectronWorkingSetMB": 447.66015625,
+      "firstElectronWorkingSetMB": 432.9296875,
+      "lastElectronWorkingSetMB": 444.6953125,
+      "meanElectronCpuPercent": 0.12139267501655983,
+      "cpuMeaning": "Sum of Electron per-process percentCPUUsage. OCR helper CPU and memory are reported separately on Windows. First CPU observations are omitted; observer PowerShell overhead is excluded.",
+      "metricsPath": "D:\\codespace\\ChouYu\\temp\\stability-soak-20260923\\samples.jsonl"
+    },
+    {
+      "state": "complete",
+      "pid": 6568,
+      "startedAt": "2026-09-23T08:07:42.026Z",
+      "updatedAt": "2026-09-23T08:12:42.047Z",
+      "elapsedMs": 300021.2588,
+      "durationMs": 300000,
+      "intervalMs": 5000,
+      "restartMs": 60000,
+      "native": false,
+      "ocr": true,
+      "output": "D:\\codespace\\ChouYu\\temp\\stability-soak-latency-20260923",
+      "sourceHash": "8553aabb4e64308927ad60f5a2d746d3d2071ae2345f255d4c1dc5d9ddf736b2",
+      "gitHead": "a91aa8be404d5d19976ded35a91e1be96a3556c8",
+      "electron": "44.2.0",
+      "node": "24.20.0",
+      "platform": "win32",
+      "scope": "Isolated capture/SQLite/OCR pipeline using only an owned fixture window. Excludes the full chat/memory UI and activity helper; synthetic mode excludes native screen capture. Scripted recovery restarts storage/OCR/capturer, not the OS.",
+      "cycle": 60,
+      "success": 60,
+      "failures": 0,
+      "recoveries": 4,
+      "metricFailures": 0,
+      "fatal": "",
+      "eventLoopTiming": {
+        "resolutionMs": 20,
+        "count": 9587,
+        "meanMs": 31.290407413372275,
+        "p95Ms": 33.390591,
+        "maxMs": 473.169919
+      },
+      "cycleTiming": {
+        "count": 60,
+        "meanMs": 160.53510499999797,
+        "p50Ms": 63.98240000000078,
+        "p95Ms": 857.9725000000035,
+        "maxMs": 971.7241999999969
+      },
+      "captureTiming": {
+        "count": 60,
+        "meanMs": 9.250533333333987,
+        "p50Ms": 8.064500000007683,
+        "p95Ms": 14.346700000023702,
+        "maxMs": 16.179799999983516
+      },
+      "ocrTiming": {
+        "count": 60,
+        "meanMs": 142.32798000000048,
+        "p50Ms": 50.405999999988126,
+        "p95Ms": 822.4584999999788,
+        "maxMs": 954.847299999994
+      },
+      "peakElectronWorkingSetMB": 304.3125,
+      "firstElectronWorkingSetMB": 289.19921875,
+      "lastElectronWorkingSetMB": 292.5390625,
+      "meanElectronCpuPercent": 0.1289392223217173,
+      "cpuMeaning": "Sum of Electron per-process percentCPUUsage. OCR helper CPU and memory are reported separately on Windows. First CPU observations are omitted; observer PowerShell overhead is excluded.",
+      "metricsPath": "D:\\codespace\\ChouYu\\temp\\stability-soak-latency-20260923\\samples.jsonl"
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
 import { initializeTasks, closeTasks } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
+import { runTaskAssistantSmoke } from './smoke/task-assistant-smoke'
 import { runTasksUISmoke } from './smoke/tasks-ui-smoke'
 import { runTaskSchedulingUISmoke } from './smoke/task-scheduling-ui-smoke'
 import { setTrayUnread, setupTray } from './tray'
@@ -89,27 +90,54 @@ function createWindow(): void {
   })
 
   if (isSmokeTest) {
+    mainWindow.webContents.on('console-message', details => {
+      if (details.level === 'error') console.error(`CHOUYU_SMOKE_RENDERER_ERROR ${details.message}`)
+    })
     mainWindow.webContents.once('did-finish-load', async () => {
+      // Hidden Windows windows can stop producing animation frames even with
+      // backgroundThrottling disabled. Keep the isolated test compositor awake
+      // without showing a window or replacing requestAnimationFrame with timers.
+      let painting = true
+      let paintTimer: ReturnType<typeof setTimeout> | undefined
+      const paint = async () => {
+        if (!painting || !mainWindow || mainWindow.isDestroyed()) return
+        try { await mainWindow.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true }) }
+        catch (error) { if (painting) console.error('CHOUYU_SMOKE_PAINT_ERROR', error) }
+        if (painting) paintTimer = setTimeout(() => { void paint() }, 50)
+      }
+      void paint()
+      const stage = async (name: string, run: () => Promise<void>) => {
+        const started = Date.now()
+        console.log(`CHOUYU_SMOKE_STAGE_START name=${name}`)
+        await run()
+        console.log(`CHOUYU_SMOKE_STAGE_PASSED name=${name} durationMs=${Date.now() - started}`)
+      }
       try {
         if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
           await runNativeCaptureSmoke()
+        } else if (process.env.CHOUYU_SMOKE_TASK_ASSISTANT_ONLY === '1') {
+          await runTaskAssistantSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_TASK_SCHEDULING_ONLY === '1') {
           await runTaskSchedulingUISmoke(mainWindow!)
-        } else if (process.env.CHOUYU_SMOKE_NAVIGATION_ONLY === '1') {
-          await runChatRuntimeSmoke(mainWindow!)
+        } else if (process.env.CHOUYU_SMOKE_NAVIGATION_ONLY === '1' || process.env.CHOUYU_SMOKE_CHAT_ONLY === '1') {
+          await stage('chat', () => runChatRuntimeSmoke(mainWindow!))
         } else {
-          await runStorageRuntimeSmoke(mainWindow!)
-          await runContactsSmoke(mainWindow!)
-          await runTasksUISmoke(mainWindow!)
-          await runProviderProfilesUISmoke(mainWindow!)
-          await runChatRuntimeSmoke(mainWindow!)
-          await runJournalSmoke(mainWindow!)
+          await stage('storage', () => runStorageRuntimeSmoke(mainWindow!))
+          await stage('contacts', () => runContactsSmoke(mainWindow!))
+          await stage('tasks', () => runTasksUISmoke(mainWindow!))
+          await stage('providers', () => runProviderProfilesUISmoke(mainWindow!))
+          await stage('chat', () => runChatRuntimeSmoke(mainWindow!))
+          await stage('journal', () => runJournalSmoke(mainWindow!))
+          await stage('task-assistant', () => runTaskAssistantSmoke(mainWindow!))
         }
         console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
         setTimeout(() => app.quit(), 300)
       } catch (error) {
         console.error(`CHOUYU_SMOKE_FAILED stage=runtime-ui message=${error instanceof Error ? error.message : String(error)}`)
         app.exit(1)
+      } finally {
+        painting = false
+        if (paintTimer) clearTimeout(paintTimer)
       }
     })
     mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {

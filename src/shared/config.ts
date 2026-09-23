@@ -94,6 +94,7 @@ export interface AppConfig {
   baseUrl: string
   apiKey: string
   model: string
+  thinkingDisabledModels: string[]
   searchHotkey: string
   hotkey: string
   autoStart: boolean
@@ -130,6 +131,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   baseUrl: '',
   apiKey: '',
   model: '',
+  thinkingDisabledModels: [],
   searchHotkey: DEFAULT_SEARCH_SHORTCUT,
   hotkey: 'Alt+Space',
   autoStart: false,
@@ -207,6 +209,12 @@ export function isAIConfigured(config: Pick<AppConfig, 'baseUrl' | 'apiKey' | 'm
   return Boolean(config.baseUrl.trim() && config.apiKey.trim() && config.model.trim())
 }
 
+function normalizeThinkingDisabledModels(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(item => item.length > 0 && item.length <= 256))].slice(0, 32)
+    : []
+}
+
 export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
   const source = value ?? {}
   const provider = source.provider === 'claude' ? 'claude' : 'openai'
@@ -226,6 +234,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     baseUrl: typeof source.baseUrl === 'string' ? source.baseUrl.trim() : DEFAULT_APP_CONFIG.baseUrl,
     apiKey: typeof source.apiKey === 'string' ? source.apiKey : '',
     model: typeof source.model === 'string' ? source.model.trim() : '',
+    thinkingDisabledModels: normalizeThinkingDisabledModels(source.thinkingDisabledModels),
     hotkey: typeof source.hotkey === 'string' && source.hotkey.trim() ? source.hotkey.trim() : DEFAULT_APP_CONFIG.hotkey,
     searchHotkey: (() => { try { return normalizeSearchShortcut(source.searchHotkey ?? DEFAULT_SEARCH_SHORTCUT) } catch { return DEFAULT_SEARCH_SHORTCUT } })(),
     autoStart: source.autoStart === true,
@@ -274,6 +283,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.baseUrl === 'string') patch.baseUrl = input.baseUrl.trim().slice(0, 2048)
   if (typeof input.apiKey === 'string') patch.apiKey = input.apiKey.slice(0, 8192)
   if (typeof input.model === 'string') patch.model = input.model.trim().slice(0, 256)
+  if (Array.isArray(input.thinkingDisabledModels)) patch.thinkingDisabledModels = normalizeThinkingDisabledModels(input.thinkingDisabledModels)
   if (input.searchHotkey !== undefined) patch.searchHotkey = normalizeSearchShortcut(input.searchHotkey)
   if (typeof input.hotkey === 'string') patch.hotkey = input.hotkey.trim().slice(0, 128)
   if (typeof input.autoStart === 'boolean') patch.autoStart = input.autoStart

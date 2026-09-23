@@ -3,15 +3,23 @@ import { waitForRenderer } from './storage-smoke'
 
 /** Verify retained pages at paint time, including updates received while hidden. */
 export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
+  console.log('CHOUYU_NAVIGATION_STAGE start')
   const throttled = window.webContents.getBackgroundThrottling()
   window.webContents.setBackgroundThrottling(false)
   await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
   const run = (source: string) => window.webContents.executeJavaScript(source)
   const click = (selector: string) => run(`document.querySelector(${JSON.stringify(selector)}).click()`)
   const settle = () => run('new Promise(resolve => setTimeout(resolve, 350))')
-  const frames = (expression: string) => run(`new Promise(resolve => {
+  const frames = (expression: string) => run(`new Promise((resolve, reject) => {
     const values = [];
-    const sample = () => { values.push(${expression}); if (values.length < 12) requestAnimationFrame(sample); else resolve(values) };
+    const timer = setTimeout(() => reject(new Error('Navigation frame sampling timed out: ' + ${JSON.stringify(expression)})), 5000);
+    const sample = () => {
+      try {
+        values.push(${expression});
+        if (values.length < 12) requestAnimationFrame(sample);
+        else { clearTimeout(timer); resolve(values) }
+      } catch (error) { clearTimeout(timer); reject(error) }
+    };
     requestAnimationFrame(sample);
   })`)
 
@@ -28,6 +36,7 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
   })()`)
   await settle()
   await frames("document.querySelector('.message-area').scrollTop")
+  console.log('CHOUYU_NAVIGATION_STAGE initial-frames-complete')
   const chat = await run(`(() => {
     window.__navigationComposer = document.querySelector('.input-textarea');
     const area = document.querySelector('.message-area');

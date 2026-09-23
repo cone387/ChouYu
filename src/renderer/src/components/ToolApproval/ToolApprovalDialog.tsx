@@ -54,13 +54,13 @@ export default function ToolApprovalDialog({ request, onResolve }: ToolApprovalD
         <div className="tool-approval-copy">
           <span className="tool-approval-kicker">AI 请求使用工具</span>
           <h2 id="tool-approval-title">{request.displayName}</h2>
-          <p id="tool-approval-description">{request.description}</p>
+          <p id="tool-approval-description">{request.preview ? '请核对下方任务及变更，允许后执行本次操作。' : request.description}</p>
         </div>
         <div className="tool-risk-label">
           <span aria-hidden="true" />
           {getToolRiskLabel(request.risk)}
         </div>
-        <pre className="tool-approval-arguments">{formatArguments(request.arguments)}</pre>
+        <pre className={`tool-approval-arguments${request.preview ? ' tool-approval-preview' : ''}`}>{request.preview || formatArguments(request.arguments)}</pre>
         <p className="tool-approval-help">仅本次调用有效。拒绝后 AI 会收到“用户拒绝”结果并继续回答。</p>
         <div className="tool-approval-actions">
           <button type="button" className="secondary" onClick={() => onResolve(false)}>拒绝</button>

@@ -9,6 +9,7 @@ import { startTaskScheduler } from './scheduler'
 import { registerTool, getRegisteredTool } from '../tools/registry'
 import { getSession } from '../database'
 import { createTaskTool } from './task-tool'
+import { createTaskAssistantTools } from './assistant-tools'
 
 let store: TasksStore | undefined
 let scheduler: { stop(): void } | undefined
@@ -48,6 +49,12 @@ export function initializeTasks(options: TasksModuleOptions): void {
     broadcast('tasks:changed')
     return task
   }, getSession))
+  for (const tool of createTaskAssistantTools(() => {
+    if (!store) throw new Error('任务系统尚未就绪。')
+    return store
+  }, () => broadcast('tasks:changed'))) {
+    if (!getRegisteredTool(tool.name)) registerTool(tool)
+  }
   if (store.quarantinedAt) storeRebuilt = true
   scheduler = startTaskScheduler(
     now => store!.claimDueReminders(now),

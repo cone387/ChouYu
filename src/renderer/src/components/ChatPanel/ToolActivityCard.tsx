@@ -25,6 +25,9 @@ export default function ToolActivityCard({ data }: { data: ToolActivityData }) {
       <span className="tool-activity-content">
         <strong>{data.displayName}</strong>
         <span>{data.summary || getToolRiskLabel(data.risk)}</span>
+        {data.status === 'completed' && !!data.taskRefs?.length && <span className="tool-task-sources">{data.taskRefs.map(task =>
+          <button type="button" key={task.id} onClick={() => openTaskWorkspace({ taskId: task.id })}>{task.title}{task.detail ? ` · ${task.detail}` : ''}</button>
+        )}</span>}
       </span>
       <span className="tool-activity-status">{statusLabel}</span>
       {data.status === 'completed' && data.taskId && <button type="button" onClick={() => openTaskWorkspace({ taskId: data.taskId })}>查看任务</button>}

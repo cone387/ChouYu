@@ -1681,6 +1681,28 @@
   font-size: var(--font-sm);
 }
 
+.tool-activity-content .tool-task-sources {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  max-height: 240px;
+  overflow: auto;
+  white-space: normal;
+}
+.tool-task-sources button {
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--accent);
+  text-align: left;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  cursor: pointer;
+}
+
 .status-completed .tool-activity-status {
   color: var(--success);
 }

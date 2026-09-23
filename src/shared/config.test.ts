@@ -14,6 +14,12 @@ import {
 } from './config'
 
 describe('config', () => {
+  it('persists per-model thinking preferences without changing legacy defaults', () => {
+    expect(normalizeConfig().thinkingDisabledModels).toEqual([])
+    const patch = sanitizeConfigPatch({ thinkingDisabledModels: [' as-glm-5.2 ', 'as-glm-5.2', '', 1] })
+    expect(normalizeConfig(patch).thinkingDisabledModels).toEqual(['as-glm-5.2'])
+    expect(sanitizeConfigPatch({ thinkingDisabledModels: [] }).thinkingDisabledModels).toEqual([])
+  })
   it('keeps the bundled SOUL.md aligned with the default persona', () => {
     const normalizeNewlines = (value: string) => value.replace(/\r\n/g, '\n').trim()
     expect(normalizeNewlines(readFileSync(resolve(process.cwd(), 'data/SOUL.md'), 'utf8'))).toBe(normalizeNewlines(DEFAULT_APP_CONFIG.soulMd))

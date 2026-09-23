@@ -49,6 +49,15 @@ afterEach(() => {
 })
 
 describe('durable conversations', () => {
+  it('preserves navigable task query sources across restart', () => {
+    const id = getActiveSession().id
+    const taskRefs = [{ id: 'task-a', title: '周报', detail: '工作清单 · 明天' }, { id: 'task-b', title: '周报', detail: '个人清单 · 下周' }]
+    saveSessionMessages(id, [{ id: 'task-search', role: 'assistant', content: '', timestamp: 1,
+      toolData: { callId: 'call-tasks', name: 'search_tasks', displayName: '查询任务', risk: 'read', status: 'completed', taskRefs } }])
+    flushDatabase()
+    initDatabase()
+    expect(getSession(id)?.messages[0].toolData?.taskRefs).toEqual(taskRefs)
+  })
   it('finds old messages outside titles, previews and the model context after restart', () => {
     const id = getActiveSession().id
     const messages = Array.from({ length: 510 }, (_, index) => message(`history-${index}`, index === 120 ? '唯一的全文命中' : '普通消息'))

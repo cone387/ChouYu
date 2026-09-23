@@ -3,7 +3,7 @@ import { Worker } from 'worker_threads'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { execFile } from 'child_process'
-import { performance } from 'perf_hooks'
+import { monitorEventLoopDelay, performance } from 'perf_hooks'
 import { JournalOcr } from '../journal/ocr'
 import { captureJournalWindow, stopJournalCapture } from '../journal/capture'
 import { cpuFromCounter, summarizeTimings } from './soak-stats'
@@ -65,6 +65,14 @@ app.whenReady().then(async () => {
   const store = new Store(), ocr = new JournalOcr()
   let window: BrowserWindow | undefined
   const began = Date.now(), beganMonotonic = performance.now()
+  const eventLoop = monitorEventLoopDelay({ resolution: 20 })
+  eventLoop.enable()
+  const eventLoopTiming = () => ({
+    resolutionMs: 20, count: eventLoop.count,
+    meanMs: eventLoop.count ? eventLoop.mean / 1e6 : null,
+    p95Ms: eventLoop.count ? eventLoop.percentile(95) / 1e6 : null,
+    maxMs: eventLoop.count ? eventLoop.max / 1e6 : null
+  })
   let suspended = false, stopped = false, cycle = 0, success = 0, failures = 0, recoveries = 0, metricFailures = 0
   let nextMetrics = 0, nextRestart = options.restartMs, lastImageId = '', fatal = ''
   const cycleTimes: number[] = [], captureTimes: number[] = [], ocrTimes: number[] = [], memorySamples: number[] = [], cpuSamples: number[] = []
@@ -74,7 +82,7 @@ app.whenReady().then(async () => {
     state, pid: process.pid, startedAt: new Date(began).toISOString(), updatedAt: new Date().toISOString(), elapsedMs: performance.now() - beganMonotonic,
     ...options, electron: process.versions.electron, node: process.versions.node, platform: process.platform,
     scope: 'Isolated capture/SQLite/OCR pipeline using only an owned fixture window. Excludes the full chat/memory UI and activity helper; synthetic mode excludes native screen capture. Scripted recovery restarts storage/OCR/capturer, not the OS.',
-    cycle, success, failures, recoveries, metricFailures, fatal, cycleTiming: summarizeTimings(cycleTimes), captureTiming: summarizeTimings(captureTimes), ocrTiming: summarizeTimings(ocrTimes),
+    cycle, success, failures, recoveries, metricFailures, fatal, eventLoopTiming: eventLoopTiming(), cycleTiming: summarizeTimings(cycleTimes), captureTiming: summarizeTimings(captureTimes), ocrTiming: summarizeTimings(ocrTimes),
     peakElectronWorkingSetMB: memorySamples.length ? Math.max(...memorySamples) : null,
     firstElectronWorkingSetMB: memorySamples[0] ?? null, lastElectronWorkingSetMB: memorySamples.at(-1) ?? null,
     meanElectronCpuPercent: cpuSamples.length ? cpuSamples.reduce((a, b) => a + b, 0) / cpuSamples.length : null,
@@ -135,7 +143,7 @@ app.whenReady().then(async () => {
         const helperCpuPercent = helper ? cpuFromCounter(previousHelper, helper) : null
         previousHelper = helper
         const captures = await store.request('captures', { from: began - 1000, to: Date.now() + 1 })
-        append({ event: 'metrics', at: Date.now(), elapsedMs: elapsed, cycle, success, failures, processes, helper, helperCpuPercent,
+        append({ event: 'metrics', at: Date.now(), elapsedMs: elapsed, cycle, success, failures, processes, helper, helperCpuPercent, eventLoopTiming: eventLoopTiming(),
           workingSetMB, cpuPercent: memorySamples.length > 1 ? cpuPercent : null, captures: captures.total, mediaBytes: captures.storageBytes, pendingOcr: captures.pendingOcr,
           databaseBytes: size(join(profile, 'journal/journal.db')), walBytes: size(join(profile, 'journal/journal.db-wal')) })
         writeReport(report('running'))
@@ -161,6 +169,7 @@ app.whenReady().then(async () => {
     ocr.stop(); stopJournalCapture()
     try { await store.close() } catch (error) { fatal ||= String(error) }
     window?.destroy()
+    eventLoop.disable()
     const state = fatal || failures || metricFailures ? 'failed' : stopped ? 'stopped' : 'complete'
     writeReport(report(state))
     console.log(`SOAK_FINISHED state=${state} cycles=${cycle} failures=${failures} recoveries=${recoveries}`)
