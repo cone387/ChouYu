@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import type { AgentSettings, AgentRun, AgentOverview, AgentMemory, AgentReport, AgentRunDetail, AgentRunStatus, AgentTopicProgress, AgentTopicStatus } from '../../shared/agents'
-import { DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
+import { agentUsesPlanner, DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 import { containsSecret } from '../../shared/memory'
 import { AgentTopics, canResearch } from './topics'
 import { AgentNotices } from './notices'
@@ -128,7 +128,7 @@ export class AgentStore {
   createRun(id: string, context: string, now = Date.now(), topicId?: string) {
     return this.db.transaction(() => {
       const profile = this.profile(id)
-      if (!profile) throw new Error('请先设置工作方向与资料来源。')
+      if (!profile) throw new Error('请先设置工作方向。')
       const settings = JSON.parse(profile.settings) as AgentSettings
       validateAgentSettings(settings)
       const existing = this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted') LIMIT 1").get(id) as RunRow | undefined
@@ -141,7 +141,7 @@ export class AgentStore {
       const topic = this.topics.get(id, selected)
       if (!canResearch(topic.status)) throw new Error('当前事项已暂停或结束，请继续此事项或选择其他事项。')
       if (this.callCount(id, now) >= settings.dailyCalls) throw new Error('今日模型调用已达上限，明天再试或调整上限。')
-      if (settings.searchEnabled && this.callCount(id, now) + 2 > settings.dailyCalls) throw new Error('自主补证据需预留两次模型调用额度（计划与分析）。')
+      if (agentUsesPlanner(settings) && this.callCount(id, now) + 2 > settings.dailyCalls) throw new Error('自主补证据需预留两次模型调用额度（计划与分析）。')
       const runId = randomUUID()
       const overview = this.overview(id, now)
       const previous = (this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 3').all(topic.id, id) as { value: string }[]).map(row => JSON.parse(row.value) as AgentReport)

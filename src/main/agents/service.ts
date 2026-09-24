@@ -7,6 +7,7 @@ import { streamAIChat } from '../ai'
 import { AgentStore } from './store'
 import { AgentRuntime, type AgentModel } from './runtime'
 import type { AgentSettings, AgentTopicStatus } from '../../shared/agents'
+import { agentUsesPlanner } from '../../shared/agents'
 import { canResearch } from './topics'
 import type { AgentSearcher } from './research'
 
@@ -102,7 +103,8 @@ export class AgentService {
     if (!this.ready || this.closed || this.active) return
     for (const profile of this.store.profiles()) {
       const settings = JSON.parse(profile.settings) as AgentSettings
-      if (settings.searchEnabled && (!this.identities.get(profile.character_id)?.searchKey || this.store.callCount(profile.character_id) + 2 > settings.dailyCalls)) continue
+      if (settings.searchEnabled && !this.identities.get(profile.character_id)?.searchKey) continue
+      if (agentUsesPlanner(settings) && this.store.callCount(profile.character_id) + 2 > settings.dailyCalls) continue
       if (!settings.enabled || profile.next_at > Date.now() || !this.identities.get(profile.character_id)?.config || this.store.callCount(profile.character_id) >= settings.dailyCalls) continue
       if (!profile.focus_topic_id || !canResearch(this.store.topics.get(profile.character_id, profile.focus_topic_id).status)) continue
       try { this.store.createRun(profile.character_id, this.identity(profile.character_id).conversation) } catch { /* invalid profiles remain visible, without a hot retry loop */ }

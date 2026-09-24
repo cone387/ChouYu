@@ -14,6 +14,7 @@ import MessageArea from './MessageArea'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import InputArea, { PendingAttachment } from './InputArea'
 import ContactWorkToolbar from './ContactWorkToolbar'
+import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
 import ContactsView from '../Contacts/ContactsView'
@@ -72,6 +73,7 @@ interface ChatPanelProps {
 
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed, assistantFocusRequest }: ChatPanelProps) {
   const [agentFocus, setAgentFocus] = useState<(AgentFocusRequest & { sessionId: string }) | null>(null)
+  const [agentDiscussion, setAgentDiscussion] = useState<(AgentDiscussion & { sessionId: string }) | null>(null)
   const [activePage, setActivePage] = useState<WorkspacePage>(initialShowSettings ? 'settings' : 'chat')
   const [visitedPages, setVisitedPages] = useState<Partial<Record<WorkspacePage, boolean>>>({ settings: initialShowSettings })
   const [pageLoaded, setPageLoaded] = useState(false)
@@ -669,6 +671,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   // 阅读中不累计未读：当前会话是助手、面板展开且有新消息时自动标读。
   const activeAssistantUnread = sessions.find((session) => session.id === activeSessionId)?.unreadCount ?? 0
   useEffect(() => { setAgentFocus(null) }, [activeSessionId, isChat])
+  useEffect(() => { setAgentDiscussion(null) }, [activeSessionId])
   useEffect(() => {
     if (!visible || !isChat || !workspaceLoaded || !activeAssistantUnread) return
     if (!messages.some(message => message.agentNotice) && activeCharacterId !== ASSISTANT_CHARACTER_ID) return
@@ -841,8 +844,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             {memoryWriteNotice && <div className="memory-write-notice" role="status">{memoryWriteNotice}</div>}
             {visible && isChat && workspaceLoaded && activeCharacter && activeCharacterId !== ASSISTANT_CHARACTER_ID && !(showOnboarding && !customCharacterActive) &&
               <ContactWorkToolbar key={`${activeSessionId}:${activeCharacter.id}`} characterId={activeCharacter.id} focusRequest={agentFocus?.sessionId === activeSessionId ? agentFocus : undefined}
+                onDiscuss={reference => setAgentDiscussion({ ...reference, sessionId: activeSessionId })}
                 name={activeCharacter.name} onClose={() => { setAgentFocus(null); requestComposerFocus() }} />}
             <InputArea
+              discussion={agentDiscussion?.sessionId === activeSessionId ? agentDiscussion : undefined}
+              onDiscussionConsumed={() => setAgentDiscussion(null)}
               sessionId={activeSessionId}
               active={visible && isChat && !toolApprovalRequest}
               onSend={handleSend}

@@ -81,7 +81,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
           {['completed', 'abandoned', 'paused'].includes(topic.status) && <><dt>停止原因</dt><dd>{topic.reason}</dd></>}
         </dl>
         <div className="agent-actions">
-          <button type="button" data-topic-run disabled={busy || settingsDirty || Boolean(editor) || Boolean(currentRun) || !researchable(topic) || !data.settings.sources.length} onClick={() => void onAction(() => window.electronAPI.agents.run(characterId, topic.id))}>推进一轮</button>
+          <button type="button" data-topic-run disabled={busy || settingsDirty || Boolean(editor) || Boolean(currentRun) || !researchable(topic)} onClick={() => void onAction(() => window.electronAPI.agents.run(characterId, topic.id))}>推进一轮</button>
           {data.focusTopicId !== topic.id && researchable(topic) && <button type="button" disabled={busy || Boolean(editor)} onClick={() => void onAction(() => window.electronAPI.agents.focusTopic(characterId, topic.id))}>设为当前事项</button>}
           <button type="button" disabled={busy || Boolean(editor)} onClick={() => edit('edit')}>编辑事项</button>
           <button type="button" data-topic-pause disabled={busy || Boolean(editor)} onClick={() => edit('status', researchable(topic) ? 'paused' : 'planned')}>{researchable(topic) ? '暂停事项' : '继续事项'}</button>

@@ -26,12 +26,14 @@ export async function runAgentsSmoke(window: BrowserWindow) {
   let researching = false, researchCalls = 0
   let fixtureSession = ''
   let toolStep = 0, scenario = '', toolResponses: string[] = []
+  let discussionReceived = ''
   const server = createServer((request, response) => {
     if (request.url === '/v1/models') { response.end(JSON.stringify({ data: [{ id: 'agent-smoke' }] })); return }
     let body = ''; request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       const payload = JSON.parse(body)
       if (payload.tools?.length) {
+        discussionReceived = payload.messages.findLast((message: { role: string; content?: string }) => message.role === 'user' && typeof message.content === 'string' && message.content.includes('【引用联系人工作记录】'))?.content || discussionReceived
         toolResponses = payload.messages.filter((m: { role: string }) => m.role === 'tool').map((m: { content: string }) => m.content)
         const data = toolResponses.flatMap(value => { try { const parsed = JSON.parse(value); return parsed.topics ? [parsed] : [] } catch { return [] } }).at(-1)
         let name = '', args: Record<string, unknown> = {}
@@ -116,6 +118,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       return run(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', {bubbles:true})); })()`)
     }
     await fill('[data-agent-goal]', '持续寻找开发者需求，记录证据和待验证的收入机会。')
+    if (!await run("document.querySelector('[data-agent-permission]').value === 'public' && !document.querySelector('[data-agent-sources]').required")) throw new Error('Public access is not the default')
+    await run("document.querySelector('[data-agent-save]').click()")
+    await waitForRenderer(window, "document.querySelector('[data-agent-run]')?.disabled === false")
+    if ((await get()).settings.sources.length) throw new Error('Saving without references unexpectedly added a source')
+    await run("document.querySelector('.agent-work-settings').open=true; document.querySelector('[data-agent-sources]').closest('details').open=true")
     await fill('[data-agent-sources]', 'https://chouyu-agent-smoke.invalid/research')
     await run("document.querySelector('[data-agent-save]').click()")
     await waitForRenderer(window, "document.querySelector('[data-agent-run]')?.disabled === false")
@@ -210,7 +217,36 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, `document.querySelector('.contact-work-sheet[open] [data-topic-select]')?.value === ${JSON.stringify(topicId)}`)
     await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click(); document.querySelectorAll('.agent-message-links button')[1].click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet .agent-report')?.textContent.includes('个人付费意愿未知')")
-    await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
+    await fill('.input-textarea', '讨论发现时保留的草稿')
+    await run("document.querySelector('.contact-work-sheet .agent-record > button.primary').click()")
+    await waitForRenderer(window, "!document.querySelector('.contact-work-sheet[open]') && Boolean(document.querySelector('.agent-composer-reference'))")
+    if (!await run("document.querySelector('.input-textarea').value === '讨论发现时保留的草稿' && document.querySelector('.agent-composer-reference').textContent.includes('个人付费意愿未知')")) throw new Error('Discussing a finding lost the draft or source')
+    if (directory) {
+      await run("document.querySelector('[aria-label=\"最大化窗口\"]')?.click()")
+      for (const width of [1024, 375]) {
+        window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 900 }, scale: 1 })
+        await run("window.dispatchEvent(new Event('resize'))")
+        await waitForRenderer(window, `innerWidth === ${width}`)
+        await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        const fits = await run("(() => { const el=document.querySelector('.agent-composer-reference'), r=el.getBoundingClientRect(); return el.scrollWidth <= el.clientWidth + 1 && r.left >= 0 && r.right <= innerWidth + 1 && r.bottom <= innerHeight })()")
+        if (!fits) throw new Error('Work reference overflows the composer')
+        await window.webContents.capturePage({ x: 0, y: 0, width, height: 900 }, { stayHidden: true, stayAwake: true })
+        await run('new Promise(resolve => setTimeout(resolve, 160))')
+        writeFileSync(join(directory, `work-discussion-${width}.png`), (await window.webContents.capturePage({ x: 0, y: 0, width, height: 900 }, { stayHidden: true, stayAwake: true })).toPNG())
+      }
+      window.webContents.disableDeviceEmulation()
+      await run("window.dispatchEvent(new Event('resize')); document.querySelector('[aria-label=\"还原窗口\"]')?.click()")
+    }
+    await run("document.querySelector('[aria-label=\"移除工作记录引用\"]').click()")
+    if (!await run("document.querySelector('.input-textarea').value === '讨论发现时保留的草稿'")) throw new Error('Removing a reference changed the draft')
+    if (discussionReceived) throw new Error('Selecting a work reference sent a message automatically')
+    await run("document.querySelector('[data-contact-work-tab=\"history\"]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] .agent-record > button.primary'))")
+    await run("document.querySelector('.contact-work-sheet .agent-record > button.primary').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.agent-composer-reference'))")
+    await run("document.querySelector('[aria-label=\"发送消息\"]').click()")
+    await waitForRenderer(window, "!document.querySelector('.agent-composer-reference') && document.querySelector('.input-textarea').value === '' && !document.querySelector('[aria-label=\"停止生成\"]')", 15000)
+    if (!discussionReceived.includes(topicId) || !discussionReceived.includes(waiting.runs[0].id) || !discussionReceived.includes('讨论发现时保留的草稿')) throw new Error('Chat did not receive the selected work reference and draft')
     await fill('.input-textarea', '保留在聊天输入框中的草稿')
     const chatHeight = await run("document.querySelector('.message-area').getBoundingClientRect().height")
     await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
@@ -243,6 +279,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] [data-agent-goal]')?.value === '尚未保存的联系人工作方向'")
     if (await run("document.querySelector('.input-textarea').value") !== '保留在聊天输入框中的草稿') throw new Error('Toolbar replaced the chat draft')
     await run("document.querySelector('[data-contact-dialog-tab=\"history\"]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-record'))")
+    await run("document.querySelector('.contact-work-sheet .agent-record > button').click()")
+    await waitForRenderer(window, "!document.querySelector('.contact-work-sheet .agent-record') && document.querySelector('.contact-work-sheet .agent-history')?.hidden === false")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-history button'))")
     await run("document.querySelector('.contact-work-sheet .agent-history button').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-report'))")
@@ -275,12 +314,14 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-topic-evidence]'))")
     await run("document.querySelector('.contact-work-sheet [data-topic-evidence]').click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet .agent-report')?.textContent.includes('团队已有免费方案')")
-    await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
+    await run("document.querySelector('.contact-work-sheet .agent-record > button.primary').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.agent-composer-reference'))")
     // Change the active contact through the real session event used by the renderer.
     createChatSession('另一个联系人', other.id)
     window.webContents.send('sessions:changed')
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-work-tools="${other.id}"]'))`)
     if (await run("Boolean(document.querySelector('.contact-work-sheet'))")) throw new Error('Toolbar kept the previous contact panel mounted')
+    if (await run("Boolean(document.querySelector('.agent-composer-reference'))")) throw new Error('Work reference leaked into another contact')
     await run("document.querySelector('[data-contact-work-tab=\"memory\"]').click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet')?.textContent.includes('BOB_PRIVATE_SMOKE')")
     if ((await run("document.querySelector('.contact-work-sheet').textContent")).includes('需求存在的证据')) throw new Error('Toolbar kept previous contact memories')
@@ -326,6 +367,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet .agent-history button')?.textContent.includes('资料没有变化')")
     await run("document.querySelector('.contact-work-sheet .agent-history button').click()")
     await waitForRenderer(window, "document.querySelector('.agent-research-record')?.textContent.includes('团队 免费 替代品') && document.querySelector('.agent-research-record')?.textContent.includes('资料未变')")
+    await run("document.querySelector('.agent-research-record').parentElement.open=true")
     if (directory) {
       await run("document.querySelector('[aria-label=\"最大化窗口\"]')?.click()")
       for (const width of [1024, 375]) {

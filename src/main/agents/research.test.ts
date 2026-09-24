@@ -36,6 +36,38 @@ function fixture() {
 afterEach(() => { vi.unstubAllGlobals(); for (const close of closers.splice(0).reverse()) close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 describe('autonomous evidence research', () => {
+  it('starts without seed URLs and reads a model-selected public page without a search key', async () => {
+    const { store, runtime, reader, searcher } = fixture()
+    store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '研究团队需求', sources: [] })
+    const id = store.createRun('alice', '')
+    const model = vi.fn(async (prompt: string) => JSON.stringify(prompt.startsWith('为联系人') ? { ...plan, action: 'read', query: '', urls: [found] } : draft))
+    await runtime.execute(id, '', model, new AbortController().signal)
+    expect(store.detail('alice', id).report?.evidence[0].url).toBe(found)
+    expect(reader).toHaveBeenCalledWith(found, expect.any(AbortSignal))
+    expect(searcher).not.toHaveBeenCalled()
+    expect(store.callCount('alice')).toBe(2)
+  })
+  it('persists the restricted level and prevents search or empty allowlists', () => {
+    const { store } = fixture()
+    const restricted = { ...DEFAULT_AGENT_SETTINGS, goal: '仅核对参考页面', sources: [seed], permissionLevel: 'sources' as const }
+    store.save('alice', restricted)
+    expect(store.overview('alice').settings.permissionLevel).toBe('sources')
+    expect(() => store.save('alice', { ...restricted, sources: [] })).toThrow()
+    expect(() => store.save('alice', { ...restricted, searchEnabled: true })).toThrow()
+    expect(() => parseResearchPlan(JSON.stringify({ ...plan, action: 'read', urls: [found] }), [seed], 180, 'sources', false)).toThrow()
+    expect(() => parseResearchPlan(JSON.stringify(plan), [seed], 180, 'sources', false)).toThrow()
+    expect(() => parseResearchPlan(JSON.stringify(plan), [], 180, 'public', false)).toThrow()
+    expect(parseResearchPlan(JSON.stringify({ ...plan, action: 'read', urls: [found] }), [], 180, 'public', false).urls).toEqual([found])
+  })
+  it('executes restricted work using only the configured reference', async () => {
+    const { store, runtime, reader, searcher } = fixture()
+    store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '仅核对参考页面', sources: [seed], permissionLevel: 'sources' })
+    const id = store.createRun('alice', '')
+    await runtime.execute(id, '', async () => JSON.stringify(draft), new AbortController().signal)
+    expect(store.detail('alice', id).report?.evidence.map(source => source.url)).toEqual([seed])
+    expect(reader).toHaveBeenCalledTimes(1)
+    expect(searcher).not.toHaveBeenCalled()
+  })
   it('plans, searches, reads original evidence and keeps credentials out of persisted state', async () => {
     const { run, store, dir, searcher } = fixture(), result = await run()
     expect(result.detail.run.status).toBe('completed')

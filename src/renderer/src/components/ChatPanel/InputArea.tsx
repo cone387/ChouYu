@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import CommandMenu, { getFilteredCommands } from './CommandMenu'
 import { useComposerResize } from './useComposerResize'
 import ModelPicker from '../ModelPicker/ModelPicker'
+import { quoteAgentDiscussion, type AgentDiscussion } from '../Contacts/agentDiscussion'
 import WindowCapturePicker, { CaptureAction } from '../WindowCapturePicker/WindowCapturePicker'
 import { PluginInfo } from '../../shared/types'
 import type { CaptureSourceInfo, VisualQuickAction } from '../../../../shared/capture'
@@ -16,6 +17,8 @@ import {
 export type { PendingAttachment } from '../../core/attachments'
 
 interface InputAreaProps {
+  discussion?: AgentDiscussion
+  onDiscussionConsumed?: () => void
   sessionId: string
   onSend: (content: string, attachments?: PendingAttachment[]) => void
   onStop?: () => void
@@ -40,7 +43,7 @@ interface InputAreaProps {
   history?: string[]
 }
 
-export default function InputArea({ sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, fetchModels, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
+export default function InputArea({ discussion, onDiscussionConsumed, sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, fetchModels, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
@@ -64,6 +67,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
     return () => window.removeEventListener('keydown', closePreview, true)
   }, [previewImage])
   const [activePlugin, setActivePlugin] = useState<PluginInfo | null>(null)
+  useEffect(() => { if (discussion) setActivePlugin(null) }, [discussion])
   const [showPluginOverflow, setShowPluginOverflow] = useState(false)
   const [attachmentError, setAttachmentError] = useState('')
   const [ocrBusy, setOcrBusy] = useState(false)
@@ -210,6 +214,7 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
     if ((!trimmed && attachments.length === 0) || disabled) return
+    if (discussion && activePlugin) { setAttachmentError('请先移除工作记录引用，再使用插件。'); return }
     setHistoryIndex(null)
     if (activePlugin) {
       onSend(`/${activePlugin.command} ${trimmed}`)
@@ -220,13 +225,14 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
       restoreComposerFocus()
       return
     }
-    onSend(trimmed, attachments.length > 0 ? attachments : undefined)
+    onSend(discussion ? quoteAgentDiscussion(discussion, trimmed) : trimmed, attachments.length > 0 ? attachments : undefined)
+    onDiscussionConsumed?.()
     setValue('')
     setAttachments([])
     setAttachmentError('')
     setShowCommands(false)
     restoreComposerFocus()
-  }, [value, disabled, onSend, attachments, activePlugin, restoreComposerFocus])
+  }, [value, disabled, onSend, attachments, activePlugin, restoreComposerFocus, discussion, onDiscussionConsumed])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape' && activePlugin) {
@@ -594,6 +600,10 @@ export default function InputArea({ sessionId, onSend, onStop, disabled, isStrea
           </>
         )}
         {ocrNotice && <div className="attachment-ocr-notice" role="status">{ocrNotice}</div>}
+        {discussion && <div className="agent-composer-reference" aria-label="引用的工作记录">
+          <div><strong>正在聊：{discussion.title}</strong><details><summary>查看引用内容</summary><p>{discussion.text}</p></details><small>发送时附上引用；修改工作仍需确认。</small></div>
+          <button type="button" aria-label="移除工作记录引用" onClick={onDiscussionConsumed}>移除</button>
+        </div>}
         <textarea
           ref={textareaRef}
           className="input-textarea"

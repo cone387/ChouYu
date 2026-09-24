@@ -3,6 +3,7 @@ import { ContactAgentPanel, type ContactAgentTab } from '../Contacts/ContactAgen
 import TaskIcon, { type IconName } from '../Tasks/TaskIcon'
 import './ContactWorkToolbar.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
+import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 
 const entries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
   { id: 'work', label: '任务', icon: 'task' },
@@ -11,8 +12,9 @@ const entries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
 ]
 
 /** Mount per conversation: drafts survive closing, never cross contact/session boundaries. */
-export default function ContactWorkToolbar({ characterId, name, onClose, focusRequest }: {
+export default function ContactWorkToolbar({ characterId, name, onClose, focusRequest, onDiscuss }: {
   characterId: string; name: string; onClose: () => void; focusRequest?: AgentFocusRequest
+  onDiscuss: (reference: AgentDiscussion) => void
 }) {
   const [tab, setTab] = useState<ContactAgentTab>('work')
   const [open, setOpen] = useState(false)
@@ -31,7 +33,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
   }, [open])
   const select = (next: ContactAgentTab) => {
     setTab(next)
-    if (content.current) content.current.scrollTop = 0
+    if (next !== tab && content.current) content.current.scrollTop = 0
   }
 
   return <div className="contact-work-tools" data-contact-work-tools={characterId}>
@@ -49,7 +51,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
         </button>)}
       </div>
       <div className="contact-work-sheet-content" ref={content}>
-        <ContactAgentPanel characterId={characterId} name={name} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} />
+        <ContactAgentPanel characterId={characterId} name={name} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={reference => { onDiscuss(reference); close() }} />
       </div>
     </dialog>}
     <div className="contact-work-buttons" role="group" aria-label="联系人快捷工具">
