@@ -847,6 +847,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 onDiscuss={reference => setAgentDiscussion({ ...reference, sessionId: activeSessionId })}
                 name={activeCharacter.name} onClose={() => { setAgentFocus(null); requestComposerFocus() }} />}
             <InputArea
+              contactTasks={Boolean(activeCharacter && activeCharacterId !== ASSISTANT_CHARACTER_ID)}
               discussion={agentDiscussion?.sessionId === activeSessionId ? agentDiscussion : undefined}
               onDiscussionConsumed={() => setAgentDiscussion(null)}
               sessionId={activeSessionId}

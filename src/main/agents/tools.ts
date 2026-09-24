@@ -80,6 +80,25 @@ export function createContactTools(access: Access): RegisteredTool[] {
         runId: { type: 'string', description: '正在 waiting 的轮次 ID', maxLength: 128 },
         answer: { type: 'string', description: '用户对该问题的明确答复', maxLength: 2000 }
       }, required: ['topicId', 'revision', 'runId', 'answer'], additionalProperties: false },
-      prepareAsync: (args, context) => prepare(args, context, true), execute: () => { throw new Error('必须先预览确认。') } }
+      prepareAsync: (args, context) => prepare(args, context, true), execute: () => { throw new Error('必须先预览确认。') } },
+    { source: 'builtin', risk: 'write', requiresConfirmation: false, alwaysConfirm: false,
+      name: 'assign_contact_task', displayName: '接下联系人任务',
+      description: '用户明确把一项需要执行、研究或持续跟进的任务交给当前联系人时使用。普通问答、讨论想法、引用他人话语不创建任务。只需原始任务描述，自动整理方向并开始；不写入个人待办。已有事项的回复或调整使用对应工具。',
+      inputSchema: { type: 'object', properties: { description: { type: 'string', description: '用户交付的单个任务，保留目标和明确约束，不自行添加要求', maxLength: 2000 } }, required: ['description'], additionalProperties: false },
+      async prepareAsync(args, context) {
+        const id = owner(context), description = typeof args.description === 'string' ? args.description.trim() : ''
+        if (!description || description.length > 2000 || containsSecret(description)) throw new Error('请提供有效的任务描述，不要包含密钥。')
+        const overview = await access.request('get', id) as AgentOverview
+        if (overview.runs.some(run => ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))) throw new Error('联系人还有工作未完成，请先处理当前任务或回复待确认问题。')
+        let consumed = false
+        return { preview: `交给当前联系人：${description}\n按联系人的权限与额度整理方向并开始，问题会在聊天中询问。`, execute: async () => {
+          if (consumed) throw new Error('此任务已经提交，请勿重复创建。')
+          consumed = true
+          if (owner(context) !== id) throw new Error('聊天归属已变化，请重新发起。')
+          const result = await access.request('feedback', id, [overview.revision, 'assignTopic', [description]]) as AgentOverview
+          return { content: JSON.stringify({ message: '任务已接下，正在整理方向。不要再次创建，也不要声称研究已经完成。', topicId: result.focusTopicId, run: result.runs[0] }), summary: '已接下任务，正在整理方向' }
+        } }
+      }, execute: () => { throw new Error('请先准备任务。') }
+    }
   ]
 }

@@ -14,7 +14,7 @@ export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
 export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress' }
-export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number }
+export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' }
 export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
 export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undefined {
   if (!value || typeof value !== 'object') return undefined
@@ -78,6 +78,7 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI {
+  savePreferences(characterId: string, settings: AgentSettings): Promise<AgentOverview>
   searchCredential(characterId: string, key?: string): Promise<{ configured: boolean }>
   get(characterId: string): Promise<AgentOverview>
   save(characterId: string, settings: AgentSettings): Promise<AgentOverview>

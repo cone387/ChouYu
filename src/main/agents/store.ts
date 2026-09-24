@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { AgentSettings, AgentRun, AgentOverview, AgentMemory, AgentReport, AgentRunDetail, AgentRunStatus, AgentTopicProgress, AgentTopicStatus } from '../../shared/agents'
 import { agentUsesPlanner, DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 import { containsSecret } from '../../shared/memory'
@@ -22,7 +22,7 @@ export class AgentStore {
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 4) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 5) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -60,19 +60,22 @@ export class AgentStore {
       CREATE INDEX IF NOT EXISTS search_calls_character ON search_calls(character_id,at);
       CREATE TABLE IF NOT EXISTS research (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS research_idle (topic_id TEXT PRIMARY KEY REFERENCES topics(id) ON DELETE CASCADE,streak INTEGER NOT NULL);`)
-    this.db.pragma('user_version = 4')
+    if (version < 5) this.db.transaction(() => {
+      this.db.exec('DROP INDEX IF EXISTS changes_run; CREATE UNIQUE INDEX changes_run ON topic_changes(run_id,kind) WHERE run_id IS NOT NULL;')
+      this.db.pragma('user_version = 5')
+    })()
   }
   close() { this.db.close() }
   profile(id: string) { return this.db.prepare('SELECT * FROM profiles WHERE character_id=?').get(id) as Profile | undefined }
   profiles() { return this.db.prepare('SELECT * FROM profiles ORDER BY next_at').all() as Profile[] }
   ensure(id: string) { this.db.prepare('INSERT OR IGNORE INTO profiles(character_id,settings,revision,next_at) VALUES(?,?,1,0)').run(id, JSON.stringify(DEFAULT_AGENT_SETTINGS)) }
-  save(id: string, raw: unknown, now = Date.now()) {
+  save(id: string, raw: unknown, now = Date.now(), createDefaultTopic = true) {
     const settings = validateAgentSettings(raw)
     this.ensure(id)
     this.db.transaction(() => {
       this.cancel(id, '工作方向或设置已更改。', now)
       this.db.prepare('UPDATE profiles SET settings=?,revision=revision+1,next_at=?,failures=0 WHERE character_id=?').run(JSON.stringify(settings), now, id)
-      if (!this.topics.list(id).length) {
+      if (createDefaultTopic && !this.topics.list(id).length) {
         const topic = this.topics.create(id, { title: settings.goal.slice(0, 160), goal: settings.goal, constraints: '' }, '由首次保存的工作方向建立。', now)
         this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
       }
@@ -153,6 +156,46 @@ export class AgentStore {
       return runId
     })()
   }
+  assignTopic(id: string, description: unknown, conversation: string) {
+    if (typeof description !== 'string' || !description.trim() || description.length > 2000 || containsSecret(description)) throw new Error('请描述需要联系人完成的任务（1–2000 字），不要包含密钥。')
+    return this.db.transaction(() => {
+      if (this.overview(id).runs.some(run => ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))) throw new Error('联系人还有工作未完成，请先回复、等待完成或暂停后再交付新任务。')
+      this.ensure(id)
+      let settings = JSON.parse(this.profile(id)!.settings) as AgentSettings
+      if (!settings.goal) {
+        settings = { ...settings, goal: '根据用户交付的任务整理方向、研究验证并反馈进展。', enabled: true }
+        this.db.prepare('UPDATE profiles SET settings=?,revision=revision+1 WHERE character_id=?').run(JSON.stringify(settings), id)
+      }
+      validateAgentSettings(settings)
+      if (this.callCount(id) + (agentUsesPlanner(settings) ? 3 : 2) > settings.dailyCalls) throw new Error('今日剩余额度不足以整理方向并完成首轮研究，请明日再试或调整工作额度。')
+      const topic = this.topics.create(id, { title: description.trim().slice(0, 80), goal: description.trim(), constraints: '' }, '用户交付任务，等待联系人整理方向。')
+      this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
+      const runId = this.createRun(id, conversation, Date.now(), topic.id)
+      const input = JSON.parse(this.getRun(runId)!.input)
+      this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify({ ...input, assignment: true }), runId)
+      return topic
+    })()
+  }
+  saveBrief(runId: string, brief: { title: string; nextStep: string; question: string }) {
+    this.db.transaction(() => {
+      const run = this.assertLive(runId), input = JSON.parse(run.input)
+      if (input.brief) return
+      const topic = this.topics.plan(run.character_id, run.topic_id!, run.topic_revision!, brief.title, brief.nextStep, runId)
+      this.db.prepare('UPDATE runs SET input=?,topic_revision=? WHERE id=?').run(JSON.stringify({ ...input, brief, topic }), topic.revision, runId)
+      this.event(runId, 'direction', `我准备先这样推进：${brief.nextStep}`)
+      if (!brief.question) this.notices.enqueue({ id: `${runId}:direction`, characterId: run.character_id, topicId: topic.id, runId,
+        topicRevision: topic.revision, kind: 'progress', purpose: 'direction', createdAt: Date.now(), content: `收到「${topic.title}」。\n\n我准备先这样推进：${brief.nextStep}\n\n已经开始处理，你可以随时补充或调整方向。` })
+    })()
+  }
+  saveBriefAnswer(runId: string, answer: string) {
+    this.db.transaction(() => {
+      const run = this.assertLive(runId), input = JSON.parse(run.input)
+      if (input.briefAnswer) return
+      const before = this.topics.get(run.character_id, run.topic_id!)
+      const topic = this.topics.edit(run.character_id, before.id, before.revision, { title: before.title, goal: before.goal, constraints: answer }, '用户补充任务方向。')
+      this.db.prepare('UPDATE runs SET input=?,topic_revision=? WHERE id=?').run(JSON.stringify({ ...input, briefAnswer: answer, topic }), topic.revision, runId)
+    })()
+  }
   assertLive(runId: string) {
     const run = this.getRun(runId)
     const profile = run && this.profile(run.character_id)
@@ -213,7 +256,7 @@ export class AgentStore {
       this.event(id, 'waiting', question)
       if (run.topic_id) {
         const topic = this.topics.get(run.character_id, run.topic_id)
-        this.notices.enqueue({ id: `${id}:question`, characterId: run.character_id, topicId: topic.id, runId: id,
+        this.notices.enqueue({ id: `${id}:question:${createHash('sha256').update(question).digest('hex').slice(0, 16)}`, characterId: run.character_id, topicId: topic.id, runId: id,
           topicRevision: topic.revision, kind: 'question', createdAt: Date.now(), content: `「${topic.title}」需要你确认：\n\n${question}\n\n你可以在这里回复，确认后我会接着处理。` })
       }
     })()

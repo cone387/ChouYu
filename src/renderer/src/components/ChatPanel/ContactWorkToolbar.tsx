@@ -51,7 +51,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
         </button>)}
       </div>
       <div className="contact-work-sheet-content" ref={content}>
-        <ContactAgentPanel characterId={characterId} name={name} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={reference => { onDiscuss(reference); close() }} />
+        <ContactAgentPanel characterId={characterId} name={name} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={reference => { onDiscuss(reference); close() }} onChat={close} />
       </div>
     </dialog>}
     <div className="contact-work-buttons" role="group" aria-label="联系人快捷工具">

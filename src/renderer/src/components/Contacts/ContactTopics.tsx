@@ -3,8 +3,7 @@ import { TOPIC_STATUS, type AgentOverview, type AgentTopic, type AgentTopicDetai
 import './ContactTopics.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
 
-type Editor = { kind: 'create' | 'edit' | 'status'; topicId: string; revision: number; input: AgentTopicInput; status: AgentTopicStatus; reason: string }
-const emptyInput: AgentTopicInput = { title: '', goal: '', constraints: '' }
+type Editor = { kind: 'edit' | 'status'; topicId: string; revision: number; input: AgentTopicInput; status: AgentTopicStatus; reason: string }
 const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_evidence'].includes(topic.status)
 const time = (value: number) => new Date(value).toLocaleString()
 
@@ -18,6 +17,8 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const [detail, setDetail] = useState<AgentTopicDetail | null>(null)
   const [loading, setLoading] = useState(false), [error, setError] = useState('')
   const [editor, setEditor] = useState<Editor | null>(null)
+  // A task assigned from chat becomes the current selection; keep an open edit intact.
+  useEffect(() => { if (!editor && data.focusTopicId) setSelected(data.focusTopicId) }, [data.focusTopicId])
   const epoch = useRef(0)
   const topic = data.topics.find(item => item.id === selected)
   const currentRun = data.runs.find(run => ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
@@ -46,29 +47,26 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   }
   const submit = () => onAction(async () => {
     if (!editor) return
-    if (editor.kind === 'create') {
-      const result = await window.electronAPI.agents.createTopic(characterId, editor.input)
-      setSelected(result.topics[0].id)
-    } else if (editor.kind === 'edit') await window.electronAPI.agents.editTopic(characterId, editor.topicId, editor.revision, editor.input, editor.reason)
+    if (editor.kind === 'edit') await window.electronAPI.agents.editTopic(characterId, editor.topicId, editor.revision, editor.input, editor.reason)
     else await window.electronAPI.agents.topicStatus(characterId, editor.topicId, editor.revision, editor.status, editor.reason)
     setEditor(null)
   })
   return <section className="contact-topics" aria-label="持续推进的事项">
-    <div className="topic-heading"><h4>持续推进的事项</h4><button type="button" data-topic-create disabled={busy || Boolean(editor)} onClick={() => setEditor({ kind: 'create', topicId: '', revision: 0, input: { ...emptyInput }, status: 'planned', reason: '' })}>新建事项</button></div>
+    <div className="topic-heading"><h4>持续推进的事项</h4></div>
     <p className="agent-caption">每轮接着当前事项推进。暂停或结束后不会自动换题；其他事项可单独运行，或设为当前事项。</p>
-    {!data.topics.length && <p className="agent-empty">建立一个具体目标，留下每一轮的判断与依据。首次保存工作方向也会建立首个事项。</p>}
+    {!data.topics.length && <p className="agent-empty">在聊天里直接交代任务，这里会显示进度和每一轮的判断。</p>}
     {data.topics.length > 0 && <label className="topic-picker">查看事项<select data-topic-select value={selected} disabled={busy || Boolean(editor)} onChange={event => setSelected(event.target.value)}>
       {data.topics.map(item => <option key={item.id} value={item.id}>{item.id === data.focusTopicId ? '当前 · ' : ''}{item.title} · {TOPIC_STATUS[item.status]}</option>)}
     </select></label>}
     {editor && <form className="topic-editor" data-topic-editor onSubmit={event => { event.preventDefault(); void submit() }}>
-      <h4>{editor.kind === 'create' ? '新建事项' : editor.kind === 'edit' ? '编辑事项' : `${TOPIC_STATUS[editor.status]}：${editor.input.title}`}</h4>
-      {editor.kind !== 'status' && <>
+      <h4>{editor.kind === 'edit' ? '编辑事项' : `${TOPIC_STATUS[editor.status]}：${editor.input.title}`}</h4>
+      {editor.kind === 'edit' && <>
         <label>事项标题<input data-topic-title value={editor.input.title} maxLength={160} required onChange={event => setEditor({ ...editor, input: { ...editor.input, title: event.target.value } })} /></label>
         <label>要解决的问题与目标<textarea data-topic-goal rows={3} value={editor.input.goal} maxLength={2000} required onChange={event => setEditor({ ...editor, input: { ...editor.input, goal: event.target.value } })} /></label>
         <label>约束与边界<textarea data-topic-constraints rows={2} value={editor.input.constraints} maxLength={2000} onChange={event => setEditor({ ...editor, input: { ...editor.input, constraints: event.target.value } })} placeholder="例如预算、适用人群、不能采用的方案" /></label>
       </>}
-      {editor.kind !== 'create' && <label>调整原因<textarea data-topic-reason rows={2} required maxLength={2000} value={editor.reason} onChange={event => setEditor({ ...editor, reason: event.target.value })} /></label>}
-      <p className="agent-caption">{editor.kind === 'create' ? '创建不会额外调用模型，资料和额度沿用此联系人的工作设置。' : '会停止该事项当前未完成的运行；已有判断与证据保留在历史中。结束事项不等于验证了收益。'}</p>
+      <label>调整原因<textarea data-topic-reason rows={2} required maxLength={2000} value={editor.reason} onChange={event => setEditor({ ...editor, reason: event.target.value })} /></label>
+      <p className="agent-caption">会停止该事项当前未完成的运行，已有判断与证据保留在历史中。</p>
       <div className="agent-actions"><button type="submit" data-topic-save className="primary" disabled={busy}>保存事项</button><button type="button" disabled={busy} onClick={() => setEditor(null)}>取消</button></div>
     </form>}
     {topic && <>
@@ -77,7 +75,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         <dl><dt>目标</dt><dd>{topic.goal}</dd>{topic.constraints && <><dt>约束</dt><dd>{topic.constraints}</dd></>}
           <dt>当前判断</dt><dd data-topic-judgement>{topic.judgement || '尚未开始研究，还没有形成判断。'}</dd>
           <dt>待验证问题</dt><dd>{topic.openQuestions || '尚未记录'}</dd>
-          <dt>下一步</dt><dd>{topic.nextStep || (researchable(topic) ? '先读取授权资料，建立初始判断。' : '已停止推进。')}</dd>
+          <dt>下一步</dt><dd>{topic.nextStep || (researchable(topic) ? '正在整理任务方向。' : '已停止推进。')}</dd>
           {['completed', 'abandoned', 'paused'].includes(topic.status) && <><dt>停止原因</dt><dd>{topic.reason}</dd></>}
         </dl>
         <div className="agent-actions">
@@ -94,7 +92,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         {loading && <p role="status">正在读取事项经历…</p>}
         {error && <p role="alert" className="agent-error">{error}<button type="button" onClick={() => void load()}>重试</button></p>}
         <ol>{detail?.changes.map(change => <li key={change.id} data-topic-change={change.id}>
-          <span className="agent-caption">{time(change.createdAt)} · {change.kind === 'research' ? '本轮研究' : change.kind === 'created' ? '建立事项' : '用户调整'}</span>
+          <span className="agent-caption">{time(change.createdAt)} · {change.kind === 'research' ? '本轮研究' : change.kind === 'created' ? '建立事项' : change.kind === 'planned' ? '联系人整理方向' : '用户调整'}</span>
           <p>{change.reason}</p>
           {change.before && change.before.status !== change.after.status && <p className="agent-caption">{TOPIC_STATUS[change.before.status]} → {TOPIC_STATUS[change.after.status]}</p>}
           <details><summary>查看这次的判断与下一步</summary>

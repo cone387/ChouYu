@@ -8,11 +8,12 @@ import type { AgentDiscussion } from './agentDiscussion'
 
 const time = (value: number) => new Date(value).toLocaleString()
 export type ContactAgentTab = 'work' | 'history' | 'memory'
-export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss }: {
+export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat }: {
   characterId: string; name: string; selectedTab?: ContactAgentTab
   onTabChange?: (tab: ContactAgentTab) => void; compact?: boolean
   focusRequest?: AgentFocusRequest
   onDiscuss?: (reference: AgentDiscussion) => void
+  onChat?: () => void
 }) {
   const [data, setData] = useState<AgentOverview | null>(null)
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
@@ -38,6 +39,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const [readError, setReadError] = useState('')
   const [note, setNote] = useState(''), [answer, setAnswer] = useState('')
   const epoch = useRef(0), mounted = useRef(true), initialized = useRef(false)
+  const draftSnapshot = useRef<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS }), savedSnapshot = useRef<string | null>(null)
   useEffect(() => {
     if (!focusRequest || focusRequest.tab !== 'history') return
     let current = true
@@ -57,7 +59,8 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       setData(next)
       setKeyConfigured(credential.configured)
       setReadError('')
-      if (!initialized.current) { initialized.current = true; setDraft(next.settings); setSources(next.settings.sources.join('\n')) }
+      if (!initialized.current || JSON.stringify(draftSnapshot.current) === savedSnapshot.current) { initialized.current = true; setDraft(next.settings); setSources(next.settings.sources.join('\n')) }
+      savedSnapshot.current = JSON.stringify(next.settings)
     } catch (error) { if (mounted.current && request === epoch.current) setReadError(String(error instanceof Error ? error.message : error)) }
   }
   useEffect(() => {
@@ -71,24 +74,25 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     finally { if (mounted.current) setBusy(false) }
   }
   const settings = { ...draft, sources: sources.split('\n').map(s => s.trim()).filter(Boolean) }
+  draftSnapshot.current = settings
   const dirty = data && JSON.stringify(settings) !== JSON.stringify(data.settings)
   const active = data?.runs.find(r => ['running', 'waiting', 'queued', 'interrupted'].includes(r.status))
   const focusedTopic = data?.topics.find(topic => topic.id === data.focusTopicId)
   const stoppedTopic = focusedTopic && ['paused', 'completed', 'abandoned'].includes(focusedTopic.status)
   const lastRun = data?.runs[0]
   const latestReport = data?.reports[0]
-  const blocked = !data?.settings.goal ? '先填写工作方向，保存后开始第一轮。'
+  const blocked = !data?.topics.length ? '直接在聊天里告诉我需要处理什么，无需填写表单或先做设置。'
     : dirty ? '设置有未保存的修改，保存后才能推进。'
     : active ? active.status === 'waiting' ? '正在等你回复下方问题。' : '这一轮正在进行，完成后可以查看记录。'
     : stoppedTopic ? '当前事项已停止，可在事项中继续或选择其他事项。'
-    : !focusedTopic ? '先建立一个具体事项，再开始研究。'
+    : !focusedTopic ? '可以选中已有事项继续，也可以回到聊天交代新任务。'
     : data.settings.searchEnabled && !keyConfigured ? '缺少搜索密钥，请打开工作设置补充。'
     : data.callsToday + (agentUsesPlanner(data.settings) ? 2 : 1) > data.settings.dailyCalls ? '今日模型额度已用完，明日恢复后可继续。' : ''
   const discuss = (runId: string, topicId: string, text: string) => onDiscuss?.({ runId, topicId, text,
     title: data?.topics.find(topic => topic.id === topicId)?.title || '工作记录' })
   return <section className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId}>
     {(!compact || tab === 'work') && <>
-      <div className="agent-heading"><h3>自己的工作</h3><span role="status">{active ? AGENT_STATUS[active.status] : stoppedTopic ? `当前事项${TOPIC_STATUS[focusedTopic.status]}` : lastRun?.status === 'failed' ? '最近一轮失败' : data?.settings.enabled ? '按计划工作' : data?.settings.goal ? '仅手动运行' : '尚未设置工作方向'}</span></div>
+      <div className="agent-heading"><h3>任务进展</h3><span role="status">{active ? AGENT_STATUS[active.status] : stoppedTopic ? `当前事项${TOPIC_STATUS[focusedTopic.status]}` : lastRun?.status === 'failed' ? '最近一轮失败' : !data?.topics.length ? '还没有任务' : data?.settings.enabled ? '按计划工作' : '仅手动运行'}</span></div>
       <p className="agent-description">开启持续工作后，关闭聊天仍会继续。应用需保持运行；退出或关机期间暂停，重启后恢复。</p>
     </>}
     {!compact && <div className="agent-tabs" aria-label="工作内容">
@@ -98,10 +102,10 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     {!data && !error && !readError && <p role="status">正在读取工作状态…</p>}
     {data && <div hidden={tab !== 'work'}>
       <div className="agent-now">
-        <span className="agent-caption">当前关注</span><strong>{focusedTopic?.title || '给这个联系人一个工作方向'}</strong>
+        <span className="agent-caption">当前关注</span><strong>{focusedTopic?.title || '任务从聊天开始'}</strong>
         <p role="status">{blocked || (data.settings.enabled ? `下次检查：${data.nextAt > Date.now() ? time(data.nextAt) : '等待调度'}` : '当前为手动工作，可以推进一轮或在设置中开启持续工作。')}</p>
-        <div className="agent-actions"><button data-agent-run type="button" className="primary" disabled={busy || Boolean(blocked)} onClick={() => void perform(() => window.electronAPI.agents.run(characterId))}>推进当前事项一轮</button>
-          <button type="button" onClick={event => { const settings = event.currentTarget.closest('section')?.querySelector<HTMLDetailsElement>('.agent-work-settings'); if (settings) { settings.open = true; settings.scrollIntoView({ block: 'start' }); settings.querySelector('textarea')?.focus() } }}>工作设置</button>
+        <div className="agent-actions">{focusedTopic && <button data-agent-run type="button" disabled={busy || Boolean(blocked)} onClick={() => void perform(() => window.electronAPI.agents.run(characterId))}>推进当前事项一轮</button>}
+          {onChat && <button type="button" className="primary" data-agent-chat onClick={onChat}>回到聊天</button>}
           {(data.settings.enabled || active) && <button type="button" disabled={busy} onClick={() => void perform(async () => { await window.electronAPI.agents.pause(characterId); setDraft(previous => ({ ...previous, enabled: false })) })}>暂停工作</button>}
         </div>
       </div>
@@ -115,17 +119,13 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       </form>}
       <ContactTopics characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
         onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />
-      <details className="agent-work-settings" open={!data.settings.goal}>
-      <summary>工作设置与权限</summary>
-      {!data.settings.goal && <p className="agent-caption">填写方向 → 确认权限与额度 → 保存后推进第一轮。无需预先提供网址。</p>}
-      <form onSubmit={e => { e.preventDefault(); void perform(async () => { const result = await window.electronAPI.agents.save(characterId, settings); setDraft(result.settings); setSources(result.settings.sources.join('\n')) }) }}>
-        <h4 className="agent-setup-step">01 · 确定工作方向</h4>
-        <label>长期工作方向<textarea data-agent-goal rows={3} maxLength={2000} required value={draft.goal} onChange={e => setDraft({ ...draft, goal: e.target.value })} placeholder="例如：持续研究独立开发者的收入机会，找真实需求，跟踪上轮假设是否成立。" /></label>
-        <p className="agent-caption">长期方向用于约束所有事项。修改具体事项的目标，请使用上方「编辑事项」。</p>
-        <h4 className="agent-setup-step">02 · 权限与额度</h4>
+      <details className="agent-work-settings">
+      <summary>权限与额度（可选）</summary>
+      <p className="agent-caption">默认配置即可在聊天中派发任务。这里只调整访问范围、运行频率和额度，保存不会创建任务。</p>
+      <form onSubmit={e => { e.preventDefault(); void perform(async () => { const result = await window.electronAPI.agents.savePreferences(characterId, { ...settings, goal: settings.goal || '根据用户交付的任务整理方向、研究验证并反馈进展。' }); setDraft(result.settings); setSources(result.settings.sources.join('\n')) }) }}>
         <label>工作权限<select data-agent-permission value={draft.permissionLevel ?? 'public'} onChange={e => setDraft({ ...draft, permissionLevel: e.target.value as 'public' | 'sources', ...(e.target.value === 'sources' ? { searchEnabled: false } : {}) })}><option value="public">公开网页通行（默认）</option><option value="sources">仅指定资料</option></select><span className="agent-caption">{draft.permissionLevel === 'sources' ? '只读取下方指定网页，不自主搜索。' : '自行选择并读取公开网页，不需要逐个授权。'}</span></label>
         <details><summary>参考资料{draft.permissionLevel === 'sources' ? '（限制访问时必填）' : '（可选）'}</summary><label><span className="agent-caption">可提供希望优先关注的网页，每行一个，最多 5 个。</span><textarea data-agent-sources rows={3} value={sources} onChange={e => setSources(e.target.value)} placeholder="https://…" aria-label="参考资料" /></label></details>
-        <div className="agent-settings-row"><label>间隔（分钟）<input type="number" min={15} max={10080} step={1} required value={draft.intervalMinutes} onChange={e => setDraft({ ...draft, intervalMinutes: Number(e.target.value) })} /></label><label>每日模型调用上限<input type="number" min={2} max={48} step={1} required value={draft.dailyCalls} onChange={e => setDraft({ ...draft, dailyCalls: Number(e.target.value) })} /></label></div>
+        <div className="agent-settings-row"><label>间隔（分钟）<input data-agent-interval type="number" min={15} max={10080} step={1} required value={draft.intervalMinutes} onChange={e => setDraft({ ...draft, intervalMinutes: Number(e.target.value) })} /></label><label>每日模型调用上限<input type="number" min={2} max={48} step={1} required value={draft.dailyCalls} onChange={e => setDraft({ ...draft, dailyCalls: Number(e.target.value) })} /></label></div>
         <label className="agent-toggle"><input data-agent-search-enabled type="checkbox" disabled={draft.permissionLevel === 'sources'} checked={draft.searchEnabled === true} onChange={e => setDraft({ ...draft, searchEnabled: e.target.checked })} />启用搜索服务：围绕疑问发现网页</label>
         {!draft.searchEnabled && draft.permissionLevel !== 'sources' && <p className="agent-caption">未启用搜索时，会直接尝试读取已知公开网址。启用搜索服务后，可以发现更多来源。</p>}
         {draft.searchEnabled && <>
@@ -133,11 +133,10 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
           <label>每日搜索上限<input data-agent-search-limit type="number" min={1} max={24} required value={draft.dailySearches ?? 8} onChange={e => setDraft({ ...draft, dailySearches: Number(e.target.value) })} /></label>
           {!keyConfigured && <p className="agent-error">请先在下方保存搜索密钥，再保存开启设置。</p>}
         </>}
-        <h4 className="agent-setup-step">03 · 选择工作方式</h4>
         <label className="agent-toggle"><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />开启持续工作（会消耗模型额度）</label>
         <label className="agent-toggle"><input type="checkbox" checked={draft.notifyProgress !== false} onChange={e => setDraft({ ...draft, notifyProgress: e.target.checked })} />有重要进展或待确认问题时，主动发到聊天</label>
         <p className="agent-caption">每 24 小时最多 8 条；普通进展至少间隔 30 分钟，待确认问题优先。重复轮次只记历史。</p>
-        <div className="agent-actions"><button data-agent-save type="submit" className="primary" disabled={busy}>保存工作设置</button></div>
+        <div className="agent-actions"><button data-agent-save type="submit" className="primary" disabled={busy}>保存偏好</button></div>
         {dirty && <p className="agent-caption">设置尚未保存。保存会停止当前未完成的工作。</p>}
       </form>
       <details className="agent-search-credentials"><summary>搜索服务 · {keyConfigured ? '已配置 Brave Search' : '尚未配置'}</summary>

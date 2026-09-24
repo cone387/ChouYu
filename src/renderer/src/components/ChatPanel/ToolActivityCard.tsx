@@ -13,7 +13,7 @@ export default function ToolActivityCard({ data }: { data: ToolActivityData }) {
         : data.status === 'denied'
           ? '已拒绝'
           : '执行失败'
-  if (data.status === 'completed' && ['get_contact_topics', 'update_contact_topic', 'answer_contact_question'].includes(data.name)) {
+  if (data.status === 'completed' && ['assign_contact_task', 'get_contact_topics', 'update_contact_topic', 'answer_contact_question'].includes(data.name)) {
     return <details className="contact-tool-result"><summary>{data.displayName} · 已完成</summary><p>{data.summary || getToolRiskLabel(data.risk)}</p></details>
   }
   return (

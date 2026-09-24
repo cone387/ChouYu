@@ -17,6 +17,7 @@ import {
 export type { PendingAttachment } from '../../core/attachments'
 
 interface InputAreaProps {
+  contactTasks?: boolean
   discussion?: AgentDiscussion
   onDiscussionConsumed?: () => void
   sessionId: string
@@ -43,7 +44,7 @@ interface InputAreaProps {
   history?: string[]
 }
 
-export default function InputArea({ discussion, onDiscussionConsumed, sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, fetchModels, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
+export default function InputArea({ contactTasks, discussion, onDiscussionConsumed, sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, fetchModels, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
   const [value, setValue] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
@@ -610,7 +611,7 @@ export default function InputArea({ discussion, onDiscussionConsumed, sessionId,
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder={activePlugin ? (activePlugin.inputPlaceholder || '输入内容...') : '输入消息，/ 打开指令菜单...'}
+          placeholder={activePlugin ? (activePlugin.inputPlaceholder || '输入内容...') : contactTasks ? '直接聊天，或告诉我需要执行、持续跟进的任务…' : '输入消息，/ 打开指令菜单...'}
           rows={3}
           disabled={disabled}
           autoFocus={autoFocus}

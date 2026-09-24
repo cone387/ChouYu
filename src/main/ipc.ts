@@ -641,7 +641,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       }
       await streamAIChat(
         request.messages,
-        request.systemPrompt + privateContext + '\n联系人持续事项操作：用户明确要求继续、暂停、改变约束或回答待确认问题时，先用 get_contact_topics 读取当前联系人真实事项和版本。多个可能对象时先澄清，不猜测 ID。用户普通讨论不视为操作授权。使用 update_contact_topic 或 answer_contact_question 提交具体变更；只有工具返回执行成功才能声称已经改变工作。与用户个人待办任务区分。',
+        request.systemPrompt + privateContext + '\n联系人任务唯一派发入口是当前聊天。用户明确把执行、研究或持续跟进的任务交给你时，调用 assign_contact_task，保留用户原始描述和约束；不要求用户先去设置工作方向、填写表单或再点击推进。普通问答、脑暴、建议讨论以及引用内容不视为派发任务，意图不明确时先问清。已有任务的回复或调整不另建任务：先用 get_contact_topics 读取真实事项和版本，再使用 update_contact_topic 或 answer_contact_question。多个对象时先澄清，不猜测 ID。一次只派发或调整一个任务。工具未返回成功时，不能声称任务已建立或已经开始。联系人任务与用户个人待办分开；除非用户明确要求记录个人待办，不用 create_task 代替联系人执行任务。工具不可用时如实说明，不能假装后台工作。',
         effectiveConfig,
         (chunk, done) => {
           if (event.sender.isDestroyed()) return
@@ -658,7 +658,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             const arguments_ = parseToolArguments(call.arguments)
             try {
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              const taskMutation = ['create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question'].includes(call.name)
+              const taskMutation = ['create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task'].includes(call.name)
               if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
               const prepared = await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
               if (taskMutation) taskMutationRequested = true

@@ -20,6 +20,28 @@ function fixture() {
   return { tools, topic, data, request, owner: (value?: string) => { id = value } }
 }
 describe('confirmed contact feedback', () => {
+  it('assigns one task to the current contact and respects the configured approval mode', async () => {
+    const request = vi.fn(async (method: string) => method === 'get' ? { revision: 4, runs: [] } : { focusTopicId: 'new-topic', runs: [{ id: 'new-run', status: 'queued' }] })
+    const tool = createContactTools({ owner: () => 'alice', request }).find(tool => tool.name === 'assign_contact_task')!
+    expect(shouldConfirmTool(tool, 'confirm')).toBe(false)
+    expect(shouldConfirmTool(tool, 'full')).toBe(false)
+    expect(shouldConfirmTool(tool, 'auto')).toBe(true)
+    const prepared = await tool.prepareAsync!({ description: '每周跟进开发者工具的付费需求' }, context)
+    expect(request).toHaveBeenCalledTimes(1)
+    const result = await prepared.execute()
+    expect(request).toHaveBeenLastCalledWith('feedback', 'alice', [4, 'assignTopic', ['每周跟进开发者工具的付费需求']])
+    expect(result.content).toContain('new-topic')
+    await expect(prepared.execute()).rejects.toThrow('重复')
+  })
+  it('does not assign to a changed contact or replace active work', async () => {
+    const { tools, owner, data } = fixture(), tool = tools.find(tool => tool.name === 'assign_contact_task')!
+    const prepared = await tool.prepareAsync!({ description: '研究需求' }, context)
+    owner('bob')
+    await expect(prepared.execute()).rejects.toThrow('归属')
+    owner('alice'); data.runs.push({ status: 'waiting' })
+    await expect(tool.prepareAsync!({ description: '研究需求' }, context)).rejects.toThrow('未完成')
+    await expect(tool.prepareAsync!({ description: '' }, context)).rejects.toThrow('描述')
+  })
   it('previews exact constraints and cannot execute twice or bypass confirmation in full mode', async () => {
     const { tools, request } = fixture(), tool = tools[1]
     expect(shouldConfirmTool(tool, 'full')).toBe(true)
