@@ -12,10 +12,10 @@ export class AgentNotices {
   enqueue(notice: AgentNotice) {
     this.db.prepare('INSERT OR IGNORE INTO notices(id,character_id,value) VALUES(?,?,?)').run(notice.id, notice.characterId, JSON.stringify(notice))
   }
-  progress(before: AgentTopic, after: AgentTopic, report: AgentReport, previous?: AgentReport) {
+  progress(before: AgentTopic, after: AgentTopic, report: AgentReport, previous?: AgentReport, writing = false) {
     const evidence = (r: AgentReport) => JSON.stringify(r.evidence.map(e => `${e.url}:${e.hash}`).sort())
     const ended = ['completed', 'abandoned'].includes(after.status) && before.status !== after.status
-    if (previous && !ended && !(before.judgement !== after.judgement && evidence(previous) !== evidence(report))) return
+    if (previous && !ended && !(before.judgement !== after.judgement && (evidence(previous) !== evidence(report) || writing && previous.body !== report.body))) return
     const label = ended ? (after.status === 'abandoned' ? '已放弃' : '已结束') : previous ? '有新的判断' : '有第一份成果了'
     this.enqueue({ id: `${report.runId}:progress`, characterId: after.characterId, topicId: after.id, runId: report.runId,
       topicRevision: after.revision, kind: 'progress', createdAt: Date.now(),

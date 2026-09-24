@@ -131,9 +131,7 @@ export class AgentStore {
   createRun(id: string, context: string, now = Date.now(), topicId?: string) {
     return this.db.transaction(() => {
       const profile = this.profile(id)
-      if (!profile) throw new Error('请先设置工作方向。')
-      const settings = JSON.parse(profile.settings) as AgentSettings
-      validateAgentSettings(settings)
+      if (!profile) throw new Error('请先在聊天中交付任务。')
       const existing = this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted') LIMIT 1").get(id) as RunRow | undefined
       if (existing) {
         if (topicId && topicId !== existing.topic_id) throw new Error('联系人已有一轮工作未完成，请先等待或暂停它。')
@@ -143,6 +141,8 @@ export class AgentStore {
       if (!selected) throw new Error('请先选择一个要持续推进的事项。')
       const topic = this.topics.get(id, selected)
       if (!canResearch(topic.status)) throw new Error('当前事项已暂停或结束，请继续此事项或选择其他事项。')
+      // Task goals replace the removed work-direction field, including legacy profiles.
+      const settings = validateAgentSettings({ ...JSON.parse(profile.settings), goal: topic.goal })
       if (this.callCount(id, now) >= settings.dailyCalls) throw new Error('今日模型调用已达上限，明天再试或调整上限。')
       if (agentUsesPlanner(settings) && this.callCount(id, now) + 2 > settings.dailyCalls) throw new Error('自主补证据需预留两次模型调用额度（计划与分析）。')
       const runId = randomUUID()
@@ -288,7 +288,7 @@ export class AgentStore {
         const before = this.topics.get(run.character_id, run.topic_id)
         const previous = this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 1').get(run.topic_id, run.character_id) as { value: string } | undefined
         this.topics.advance(run.character_id, run.topic_id, run.topic_revision!, progress, runId)
-        this.notices.progress(before, this.topics.get(run.character_id, run.topic_id), report, previous ? JSON.parse(previous.value) : undefined)
+        this.notices.progress(before, this.topics.get(run.character_id, run.topic_id), report, previous ? JSON.parse(previous.value) : undefined, this.research(runId)?.plan.action === 'write')
       }
       this.db.prepare('INSERT OR IGNORE INTO reports(run_id,character_id,value) VALUES(?,?,?)').run(runId, run.character_id, JSON.stringify(report))
       for (const memory of memories.slice(0, 3)) {

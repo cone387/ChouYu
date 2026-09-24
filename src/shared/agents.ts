@@ -9,7 +9,7 @@ export interface AgentSettings {
   searchEnabled?: boolean
   dailySearches?: number
 }
-export interface AgentResearchPlan { action: 'search' | 'read' | 'wait'; reason: string; query: string; urls: string[]; checkAfterMinutes: number }
+export interface AgentResearchPlan { action: 'search' | 'read' | 'wait' | 'write'; reason: string; query: string; urls: string[]; checkAfterMinutes: number }
 export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }

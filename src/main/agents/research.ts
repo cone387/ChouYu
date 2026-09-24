@@ -13,12 +13,13 @@ export function researchUrl(value: unknown): string | null {
 export function parseResearchPlan(raw: string, allowed: string[], minimum: number, permission: 'public' | 'sources' = 'sources', searchEnabled = true): AgentResearchPlan {
   let value: any
   try { value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) } catch { throw new Error('研究计划格式无效。') }
-  if (!value || !['search', 'read', 'wait'].includes(value.action) || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 1000) throw new Error('研究计划必须说明动作与原因。')
+  if (!value || !['search', 'read', 'wait', 'write'].includes(value.action) || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 1000) throw new Error('研究计划必须说明动作与原因。')
   const query = typeof value.query === 'string' ? value.query.trim() : ''
   if (query.length > 300 || containsSecret(query) || value.action === 'search' && !query) throw new Error('搜索词无效或包含敏感凭据。')
   if (value.action === 'search' && (!searchEnabled || permission === 'sources')) throw new Error('当前权限或配置不允许自主搜索。')
   if (!Array.isArray(value.urls) || value.urls.length > 5 || value.urls.some((url: unknown) => !researchUrl(url) || permission === 'sources' && !allowed.includes(researchUrl(url)!))) throw new Error('研究计划包含当前权限不允许读取的网页。')
   if (value.action === 'read' && !value.urls.length) throw new Error('读取计划缺少网页。')
+  if (value.action === 'write' && (value.urls.length || query)) throw new Error('直接写作计划不能声称搜索或读取网页。')
   if (!Number.isInteger(value.checkAfterMinutes) || value.checkAfterMinutes < 15 || value.checkAfterMinutes > 10080) throw new Error('下次检查间隔无效。')
   return { action: value.action, reason: value.reason.trim(), query: value.action === 'search' ? query : '', urls: [...new Set(value.urls.map(researchUrl))] as string[], checkAfterMinutes: Math.max(minimum, value.checkAfterMinutes) }
 }
