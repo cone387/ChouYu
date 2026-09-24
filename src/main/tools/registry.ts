@@ -23,6 +23,7 @@ export interface ToolResult {
 }
 
 export interface RegisteredTool extends AIToolDefinition {
+  prepareAsync?: (arguments_: Record<string, unknown>, context: ToolExecutionContext) => Promise<PreparedTool>
   prepare?: (arguments_: Record<string, unknown>, context: ToolExecutionContext) => PreparedTool
   execute: (arguments_: Record<string, unknown>, context: ToolExecutionContext) => Promise<ToolResult> | ToolResult
 }
@@ -148,13 +149,13 @@ export function registerTool(tool: RegisteredTool): void {
 }
 
 export function getToolDefinitions(): AIToolDefinition[] {
-  return tools.map(({ execute: _execute, prepare: _prepare, ...definition }) => definition)
+  return tools.map(({ execute: _execute, prepare: _prepare, prepareAsync: _async, ...definition }) => definition)
 }
 
 export function getRegisteredTool(name: string): AIToolDefinition | null {
   const tool = tools.find((candidate) => candidate.name === name)
   if (!tool) return null
-  const { execute: _execute, prepare: _prepare, ...definition } = tool
+  const { execute: _execute, prepare: _prepare, prepareAsync: _async, ...definition } = tool
   return definition
 }
 
@@ -164,12 +165,19 @@ export async function executeRegisteredTool(
   mainWindow: BrowserWindow,
   sessionId?: string
 ): Promise<ToolResult> {
-  return prepareRegisteredTool(name, arguments_, mainWindow, sessionId).execute()
+  return (await prepareRegisteredToolAsync(name, arguments_, mainWindow, sessionId)).execute()
+}
+
+export async function prepareRegisteredToolAsync(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string): Promise<PreparedTool> {
+  const tool = tools.find(candidate => candidate.name === name)
+  if (!tool) throw new Error(`未知工具：${name}`)
+  return tool.prepareAsync ? tool.prepareAsync(validateToolArguments(tool.inputSchema, arguments_), { mainWindow, sessionId }) : prepareRegisteredTool(name, arguments_, mainWindow, sessionId)
 }
 
 export function prepareRegisteredTool(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string): PreparedTool {
   const tool = tools.find(candidate => candidate.name === name)
   if (!tool) throw new Error(`未知工具：${name}`)
+  if (tool.prepareAsync) throw new Error('此工具需要异步准备与确认。')
   const args = validateToolArguments(tool.inputSchema, arguments_)
   const context = { mainWindow, sessionId }
   return tool.prepare ? tool.prepare(args, context) : { execute: () => tool.execute(args, context) }

@@ -1,6 +1,9 @@
 import { app, BrowserWindow, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
 import { join } from 'node:path'
-import { getCharacter, getConfig, getSession, getSessions, listCharacters } from '../database'
+import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, listCharacters } from '../database'
+import type { AgentNotice } from '../../shared/agents'
+import { createContactTools } from './tools'
+import { getRegisteredTool, registerTool } from '../tools/registry'
 import { ASSISTANT_CHARACTER_ID, resolveCharacterConfig } from '../../shared/characters'
 import type { AgentIdentity } from './service'
 
@@ -11,8 +14,31 @@ let failures = 0
 let sequence = 0
 let syncTimer: ReturnType<typeof setInterval> | undefined
 const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+let delivering = false
+const dirty = new Set<string>()
+async function deliver(id: string) {
+  dirty.add(id)
+  if (delivering || starting || closing) return
+  delivering = true
+  try {
+    while (dirty.size && child && !closing) {
+      const characterId = dirty.values().next().value!
+      dirty.delete(characterId)
+      if (!getCharacter(characterId)) continue
+      try {
+        const notices = await rpc('notices', characterId) as AgentNotice[]
+        for (const notice of notices) {
+          appendAgentNotice(notice)
+          for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('sessions:changed')
+          await rpc('ackNotice', characterId, [notice.id])
+        }
+      } catch { /* Durable outbox is retried by the sync timer after storage/process recovery. */ }
+    }
+  } finally { delivering = false }
+}
 function broadcastChanged(characterId: string) {
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('agents:changed', characterId)
+  void deliver(characterId)
 }
 function rpc(method: string, id = '', args: unknown[] = []): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -69,7 +95,7 @@ async function ensure() {
       for (const identity of current) broadcastChanged(identity.id)
     }
     catch (error) { process.kill(); throw error }
-  })().finally(() => { starting = undefined })
+  })().finally(() => { starting = undefined; for (const id of dirty) void deliver(id) })
   return starting
 }
 export async function agentContext(characterId: string) { await ensure(); return await rpc('context', characterId) as string }
@@ -81,6 +107,13 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  for (const tool of createContactTools({
+    owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
+    request: async (method, id, args) => {
+      if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
+      await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
+    }
+  })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   for (const method of ['get', 'save', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'createTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail']) {
     ipcMain.handle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
@@ -88,7 +121,7 @@ export function initializeAgents() {
     })
   }
   void ensure().catch(() => {})
-  syncTimer = setInterval(() => { if (child && !starting && !closing) void rpc('sync', '', [identities()]).catch(() => {}) }, 30000)
+  syncTimer = setInterval(() => { if (child && !starting && !closing) void rpc('sync', '', [identities()]).then(() => { for (const identity of identities()) void deliver(identity.id) }).catch(() => {}) }, 30000)
 }
 export async function closeAgents() {
   closing = true; clearInterval(syncTimer)

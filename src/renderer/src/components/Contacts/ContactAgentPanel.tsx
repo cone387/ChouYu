@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { AGENT_STATUS, DEFAULT_AGENT_SETTINGS, TOPIC_STATUS, type AgentOverview, type AgentRunDetail, type AgentSettings } from '../../../../shared/agents'
 import './ContactAgentPanel.css'
 import ContactTopics from './ContactTopics'
+import type { AgentFocusRequest } from '../../../../shared/agents'
 
 const time = (value: number) => new Date(value).toLocaleString()
 export type ContactAgentTab = 'work' | 'history' | 'memory'
-export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false }: {
+export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest }: {
   characterId: string; name: string; selectedTab?: ContactAgentTab
   onTabChange?: (tab: ContactAgentTab) => void; compact?: boolean
+  focusRequest?: AgentFocusRequest
 }) {
   const [data, setData] = useState<AgentOverview | null>(null)
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
@@ -20,6 +22,17 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const [readError, setReadError] = useState('')
   const [note, setNote] = useState(''), [answer, setAnswer] = useState('')
   const epoch = useRef(0), mounted = useRef(true), initialized = useRef(false)
+  useEffect(() => {
+    if (!focusRequest || focusRequest.tab !== 'history') return
+    let current = true
+    setDetail(null); setError('')
+    void window.electronAPI.agents.detail(characterId, focusRequest.runId).then(result => {
+      if (!current) return
+      if (result.run.topicId !== focusRequest.topicId) throw new Error('这条记录与事项不匹配。')
+      setDetail(result)
+    }).catch(error => { if (current) setError(String(error instanceof Error ? error.message : error)) })
+    return () => { current = false }
+  }, [characterId, focusRequest])
   const refresh = async () => {
     const request = ++epoch.current
     try {
@@ -63,7 +76,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
         <label>回复<textarea value={answer} maxLength={2000} onChange={e => setAnswer(e.target.value)} rows={3} required /></label>
         <button type="submit" disabled={busy || !answer.trim()}>回复并继续</button>
       </form>}
-      <ContactTopics characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform}
+      <ContactTopics characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
         onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />
       <details className="agent-work-settings" open={!data.settings.goal}>
       <summary>工作设置与资料来源</summary>
@@ -73,6 +86,8 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
         <label>允许读取的资料<span className="agent-caption">每行一个公开 HTTPS 网页，最多 5 个；只读，不执行网页指令。</span><textarea data-agent-sources rows={3} required value={sources} onChange={e => setSources(e.target.value)} placeholder="https://…" /></label>
         <div className="agent-settings-row"><label>间隔（分钟）<input type="number" min={15} max={10080} step={1} required value={draft.intervalMinutes} onChange={e => setDraft({ ...draft, intervalMinutes: Number(e.target.value) })} /></label><label>每日模型调用上限<input type="number" min={2} max={48} step={1} required value={draft.dailyCalls} onChange={e => setDraft({ ...draft, dailyCalls: Number(e.target.value) })} /></label></div>
         <label className="agent-toggle"><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />开启持续工作（会消耗模型额度）</label>
+        <label className="agent-toggle"><input type="checkbox" checked={draft.notifyProgress !== false} onChange={e => setDraft({ ...draft, notifyProgress: e.target.checked })} />有重要进展或待确认问题时，主动发到聊天</label>
+        <p className="agent-caption">每 24 小时最多 8 条；普通进展至少间隔 30 分钟，待确认问题优先。重复轮次只记历史。</p>
         <div className="agent-actions"><button data-agent-save type="submit" className="primary" disabled={busy}>保存工作设置</button><button data-agent-run type="button" disabled={busy || Boolean(dirty) || !data.settings.goal || Boolean(active) || !data.topics.some(t => t.id === data.focusTopicId && ['planned', 'researching', 'needs_evidence'].includes(t.status))} onClick={() => void perform(() => window.electronAPI.agents.run(characterId))}>推进当前事项一轮</button>{(data.settings.enabled || active) && <button type="button" disabled={busy} onClick={() => void perform(async () => { await window.electronAPI.agents.pause(characterId); setDraft(previous => ({ ...previous, enabled: false })) })}>暂停工作</button>}</div>
         {dirty && <p className="agent-caption">设置尚未保存。保存会停止当前未完成的工作。</p>}
       </form>

@@ -1,3 +1,4 @@
+import type { AgentFocusRequest } from '../../../../shared/agents'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { matchesSearchShortcut } from '../../../../shared/search-shortcut'
 import { isOverlayEscape } from '../../core/escape'
@@ -70,6 +71,7 @@ interface ChatPanelProps {
 }
 
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed, assistantFocusRequest }: ChatPanelProps) {
+  const [agentFocus, setAgentFocus] = useState<(AgentFocusRequest & { sessionId: string }) | null>(null)
   const [activePage, setActivePage] = useState<WorkspacePage>(initialShowSettings ? 'settings' : 'chat')
   const [visitedPages, setVisitedPages] = useState<Partial<Record<WorkspacePage, boolean>>>({ settings: initialShowSettings })
   const [pageLoaded, setPageLoaded] = useState(false)
@@ -666,13 +668,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   // 阅读中不累计未读：当前会话是助手、面板展开且有新消息时自动标读。
   const activeAssistantUnread = sessions.find((session) => session.id === activeSessionId)?.unreadCount ?? 0
+  useEffect(() => { setAgentFocus(null) }, [activeSessionId, isChat])
   useEffect(() => {
-    if (!visible || !workspaceLoaded || !activeAssistantUnread) return
-    if (activeCharacterId !== ASSISTANT_CHARACTER_ID) return
+    if (!visible || !isChat || !workspaceLoaded || !activeAssistantUnread) return
+    if (!messages.some(message => message.agentNotice) && activeCharacterId !== ASSISTANT_CHARACTER_ID) return
     void window.electronAPI.db.markSessionRead(activeSessionId)
       .then((workspace) => applyWorkspace(workspace, true))
       .catch(() => { /* 存储故障提示机制兜底 */ })
-  }, [visible, workspaceLoaded, activeAssistantUnread, activeCharacterId, activeSessionId, applyWorkspace])
+  }, [visible, isChat, workspaceLoaded, activeAssistantUnread, activeCharacterId, activeSessionId, applyWorkspace, messages])
 
   // 删除角色会连带删除其会话：先停掉这些会话的在途生成（对齐 deleteSession 的先例），
   // 再按保留侧栏顺序的方式应用新工作区。
@@ -790,6 +793,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             {workspaceError && <div className="memory-candidate-error" role="alert">{workspaceError}<button onClick={retryWorkspace}>重新加载</button></div>}
             {workspaceLoaded && (
               <MessageArea
+                onAgentNotice={(ref, tab) => setAgentFocus({ ...ref, tab, nonce: Date.now(), sessionId: activeSessionId })}
                 active={visible && isChat}
                 character={activeCharacter}
                 key={activeSessionId}
@@ -836,8 +840,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             {memoryCandidateError && <div className="memory-candidate-error" role="alert">{memoryCandidateError}</div>}
             {memoryWriteNotice && <div className="memory-write-notice" role="status">{memoryWriteNotice}</div>}
             {visible && isChat && workspaceLoaded && activeCharacter && activeCharacterId !== ASSISTANT_CHARACTER_ID && !(showOnboarding && !customCharacterActive) &&
-              <ContactWorkToolbar key={`${activeSessionId}:${activeCharacter.id}`} characterId={activeCharacter.id}
-                name={activeCharacter.name} onClose={requestComposerFocus} />}
+              <ContactWorkToolbar key={`${activeSessionId}:${activeCharacter.id}`} characterId={activeCharacter.id} focusRequest={agentFocus?.sessionId === activeSessionId ? agentFocus : undefined}
+                name={activeCharacter.name} onClose={() => { setAgentFocus(null); requestComposerFocus() }} />}
             <InputArea
               sessionId={activeSessionId}
               active={visible && isChat && !toolApprovalRequest}

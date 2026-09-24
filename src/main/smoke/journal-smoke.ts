@@ -300,7 +300,9 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
       }
     }
     await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
-    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志问答').click(); [...document.querySelectorAll('.journal-ask > button')].find(button=>button.textContent==='开始新问答').click()")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志问答').click()")
+    await waitForRenderer(journal, "[...document.querySelectorAll('.journal-ask > button')].some(button => button.textContent === '开始新问答')")
+    await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-ask > button')].find(button=>button.textContent==='开始新问答').click()")
     await waitForRenderer(journal, "!document.querySelector('.journal-answer') && !document.querySelector('.journal-ask textarea').value")
     await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
     // Delete through the actual UI, including its explicit confirmation.

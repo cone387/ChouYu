@@ -4,6 +4,7 @@ import type { AgentSettings, AgentRun, AgentOverview, AgentMemory, AgentReport, 
 import { DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 import { containsSecret } from '../../shared/memory'
 import { AgentTopics, canResearch } from './topics'
+import { AgentNotices } from './notices'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
 type RunRow = { id: string; character_id: string; revision: number; status: AgentRunStatus; created_at: number; updated_at: number; question: string; answer: string; summary: string; error: string; input: string; topic_id: string | null; topic_revision: number | null }
@@ -13,13 +14,14 @@ const dayStart = (now: number) => { const date = new Date(now); date.setHours(0,
 export class AgentStore {
   readonly db: Database.Database
   readonly topics: AgentTopics
+  readonly notices: AgentNotices
   constructor(filename: string) {
     this.db = new Database(filename)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 2) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 3) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -52,6 +54,8 @@ export class AgentStore {
       }
       this.db.pragma('user_version = 2')
     })()
+    this.notices = new AgentNotices(this.db)
+    this.db.pragma('user_version = 3')
   }
   close() { this.db.close() }
   profile(id: string) { return this.db.prepare('SELECT * FROM profiles WHERE character_id=?').get(id) as Profile | undefined }
@@ -164,7 +168,18 @@ export class AgentStore {
     for (const row of rows) { this.setStatus(row.id, 'interrupted'); this.event(row.id, 'interrupted', '执行进程已重启，将从持久化检查点恢复；未完成的只读步骤可能重试。') }
   }
   runnable() { return this.db.prepare("SELECT * FROM runs WHERE status IN ('queued','interrupted') ORDER BY created_at").all() as RunRow[] }
-  wait(id: string, question: string) { this.db.prepare("UPDATE runs SET status='waiting',question=?,updated_at=? WHERE id=?").run(question, Date.now(), id); this.event(id, 'waiting', question) }
+  wait(id: string, question: string) {
+    this.db.transaction(() => {
+      const run = this.assertLive(id)
+      this.db.prepare("UPDATE runs SET status='waiting',question=?,updated_at=? WHERE id=?").run(question, Date.now(), id)
+      this.event(id, 'waiting', question)
+      if (run.topic_id) {
+        const topic = this.topics.get(run.character_id, run.topic_id)
+        this.notices.enqueue({ id: `${id}:question`, characterId: run.character_id, topicId: topic.id, runId: id,
+          topicRevision: topic.revision, kind: 'question', createdAt: Date.now(), content: `「${topic.title}」需要你确认：\n\n${question}\n\n你可以在这里回复，确认后我会接着处理。` })
+      }
+    })()
+  }
   answer(characterId: string, id: string, text: string) {
     const { run } = this.detail(characterId, id)
     if (run.status !== 'waiting') throw new Error('这项工作已不在等待回复。')
@@ -189,7 +204,10 @@ export class AgentStore {
       const run = this.assertLive(runId)
       if (run.topic_id) {
         if (!progress) throw new Error('缺少事项进展，本轮不能提交。')
+        const before = this.topics.get(run.character_id, run.topic_id)
+        const previous = this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 1').get(run.topic_id, run.character_id) as { value: string } | undefined
         this.topics.advance(run.character_id, run.topic_id, run.topic_revision!, progress, runId)
+        this.notices.progress(before, this.topics.get(run.character_id, run.topic_id), report, previous ? JSON.parse(previous.value) : undefined)
       }
       this.db.prepare('INSERT OR IGNORE INTO reports(run_id,character_id,value) VALUES(?,?,?)').run(runId, run.character_id, JSON.stringify(report))
       for (const memory of memories.slice(0, 3)) {
@@ -222,5 +240,15 @@ export class AgentStore {
     if (!canResearch(topic.status)) throw new Error('请先恢复此事项，再设为当前事项。')
     this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topicId, id)
     return this.overview(id)
+  }
+  continueTopic(id: string, topicId: string, revision: number, reason: string, conversation: string) {
+    return this.db.transaction(() => {
+      this.topics.check(id, topicId, revision)
+      const active = this.db.prepare("SELECT status FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").get(id) as { status: string } | undefined
+      if (active) throw new Error(active.status === 'waiting' ? '请先回答当前待确认的问题。' : '联系人已有一轮工作未完成。')
+      this.topics.status(id, topicId, revision, 'planned', reason)
+      this.focusTopic(id, topicId)
+      return this.createRun(id, conversation, Date.now(), topicId)
+    })()
   }
 }

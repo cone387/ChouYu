@@ -232,6 +232,6 @@ describe('message edit and continue generation', () => {
   it('continues stopped assistant messages in place', () => {
     expect(messageAreaSource).toContain('onContinueMessage?: (messageId: string) => void')
     expect(messageAreaSource).toContain('继续生成')
-    expect(messageAreaSource).toContain("msg.responseStatus === 'stopped' && !msg.toolData")
+    expect(messageAreaSource).toContain("msg.responseStatus === 'stopped' && !msg.agentNotice && !msg.toolData")
   })
 })

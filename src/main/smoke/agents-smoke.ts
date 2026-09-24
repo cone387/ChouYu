@@ -2,7 +2,7 @@ import type { BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { getConfig, saveConfig, listCharacters, getActiveSession, selectChatSession, flushDatabase, createChatSession } from '../database'
+import { getConfig, saveConfig, listCharacters, getActiveSession, getSession, selectChatSession, flushDatabase, createChatSession } from '../database'
 import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID } from '../../shared/characters'
 import { restartAgentsForSmoke, agentContext } from '../agents'
 import { waitForRenderer as rendererWait } from './storage-smoke'
@@ -24,10 +24,28 @@ export async function runAgentsSmoke(window: BrowserWindow) {
   })
   let calls = 0, modelRequest: any
   let fixtureSession = ''
+  let toolStep = 0, scenario = '', toolResponses: string[] = []
   const server = createServer((request, response) => {
     if (request.url === '/v1/models') { response.end(JSON.stringify({ data: [{ id: 'agent-smoke' }] })); return }
     let body = ''; request.on('data', chunk => { body += chunk })
     request.on('end', () => {
+      const payload = JSON.parse(body)
+      if (payload.tools?.length) {
+        toolResponses = payload.messages.filter((m: { role: string }) => m.role === 'tool').map((m: { content: string }) => m.content)
+        const data = toolResponses.flatMap(value => { try { const parsed = JSON.parse(value); return parsed.topics ? [parsed] : [] } catch { return [] } }).at(-1)
+        let name = '', args: Record<string, unknown> = {}
+        if (toolStep === 0) name = 'get_contact_topics'
+        if (toolStep === 1) {
+          const topic = data.topics.find((t: { id: string }) => t.id === data.focusTopicId)
+          name = scenario === 'answer' ? 'answer_contact_question' : 'update_contact_topic'
+          args = { topicId: topic.id, revision: topic.revision, ...(scenario === 'answer' ? { runId: data.pending[0].id, answer: '开发者工具' } : { action: 'constraints', constraints: '仅验证开发者工具，预算 200 元', reason: '缩小研究范围' }) }
+        }
+        const step = toolStep++
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        const delta = name ? { tool_calls: [{ index: 0, id: `contact_${scenario}_${step}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] } : { content: '已读取操作结果。' }
+        response.end(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`)
+        return
+      }
       calls++; modelRequest = JSON.parse(body)
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
       const judgements = ['需求存在，个人付费意愿未知。', '个人用户不愿付费，转向核对团队需求。', '团队已有免费方案，暂时放弃该方向。']
@@ -41,6 +59,15 @@ export async function runAgentsSmoke(window: BrowserWindow) {
   if (!address || typeof address === 'string') throw new Error('Agent smoke model unavailable')
   const id = JSON.stringify(DEFAULT_CHARACTER_ID)
   const get = () => run(`window.electronAPI.agents.get(${id})`) as Promise<AgentOverview>
+  const startFeedback = async (name: string) => {
+    scenario = name; toolStep = 0; toolResponses = []
+    await run(`window.__contactFeedback = null; window.electronAPI.ai.startStream(${JSON.stringify({ requestId: `contact_${name}`, sessionId: fixtureSession, characterId: DEFAULT_CHARACTER_ID, systemPrompt: '测试联系人事项的确认操作', messages: [{ role: 'user', content: name === 'answer' ? '我熟悉开发者工具，回复这个问题继续。' : '把事项约束改为仅验证开发者工具，预算 200 元。' }] })}).then(result => { window.__contactFeedback = result }); void 0`)
+    await waitForRenderer(window, "Boolean(document.querySelector('.tool-approval-preview'))", 15000)
+  }
+  const finishFeedback = async () => {
+    await waitForRenderer(window, 'window.__contactFeedback !== null', 15000)
+    if (!(await run('window.__contactFeedback')).ok) throw new Error('Contact chat tools failed')
+  }
   const waitStatus = async (status: string) => {
     const deadline = Date.now() + 20000
     while (Date.now() < deadline) { const result = await get(); if (result.runs[0]?.status === status) return result; if (result.runs[0]?.status === 'failed') throw new Error(result.runs[0].error); await new Promise(r => setTimeout(r, 80)) }
@@ -49,7 +76,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
   try {
     window.webContents.debugger.attach('1.3')
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
-    saveConfig({ provider: 'openai', baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'agent-smoke-secret', model: 'agent-smoke', memoryEnabled: false })
+    saveConfig({ provider: 'openai', baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'agent-smoke-secret', model: 'agent-smoke', memoryEnabled: false, aiToolsEnabled: true, toolPermissionMode: 'full' })
     window.webContents.send('config:changed', getConfig())
     await run("document.querySelector('[aria-label=\"关闭面板\"]')?.click()")
     await waitForRenderer(window, "!document.querySelector('.chat-panel')")
@@ -84,14 +111,24 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run(`window.electronAPI.agents.remember(${JSON.stringify(other.id)}, 'BOB_PRIVATE_SMOKE')`)
     await run("document.querySelector('[data-agent-run]').click()")
     const waiting = await waitStatus('waiting')
+    const noticeDeadline = Date.now() + 10000
+    while (!getSession(fixtureSession)!.messages.some(m => m.agentNotice?.kind === 'question')) {
+      if (Date.now() > noticeDeadline) throw new Error('Proactive question was not delivered')
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    const noticesBefore = getSession(fixtureSession)!.messages.filter(m => m.agentNotice).length
     console.log('CHOUYU_SMOKE_AGENTS_STAGE waiting')
     if (calls !== 1 || modelRequest.max_tokens !== 2200 || JSON.stringify(modelRequest).includes('BOB_PRIVATE_SMOKE')) throw new Error('Agent model budget or isolation failed')
     // Kill the utility process at a durable interrupt; replying must not call the model again.
     await restartAgentsForSmoke()
     console.log('CHOUYU_SMOKE_AGENTS_STAGE restarted')
     await waitStatus('waiting')
-    await fill('.agent-question textarea', '开发者工具')
-    await run("document.querySelector('.agent-question button').click()")
+    if (getSession(fixtureSession)!.messages.filter(m => m.agentNotice).length !== noticesBefore) throw new Error('Restart duplicated the proactive question')
+    await startFeedback('answer')
+    const answerPreview = await run("document.querySelector('.tool-approval-preview').textContent")
+    if (!answerPreview.includes('你更熟悉哪个行业') || !answerPreview.includes('开发者工具')) throw new Error('Contact answer preview is not concrete')
+    await run("document.querySelector('.tool-approval-actions .primary').click()")
+    await finishFeedback()
     const completed = await waitStatus('completed')
     console.log('CHOUYU_SMOKE_AGENTS_STAGE completed')
     if (calls !== 1 || completed.reports.length !== 1 || !completed.reports[0].body.includes('开发者工具') || completed.memories.length !== 1) throw new Error('Agent resume duplicated work or lost results')
@@ -139,6 +176,29 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     }
     await run("document.querySelector('[data-contacts-close]').click(); document.querySelector('[data-workspace-nav=\"chat\"]').click()")
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-work-tools="${DEFAULT_CHARACTER_ID}"]'))`)
+    await waitForRenderer(window, "Boolean(document.querySelector('.agent-message-links button'))")
+    if (directory) {
+      await run("document.querySelector('[aria-label=\"最大化窗口\"]')?.click()")
+      for (const width of [1024, 375]) {
+        window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 900 }, scale: 1 })
+        await waitForRenderer(window, `innerWidth === ${width}`)
+        await run("window.dispatchEvent(new Event('resize')); document.querySelector('[aria-label=\"收起会话列表\"]')?.click()")
+        await waitForRenderer(window, `document.querySelector('.chat-panel').getBoundingClientRect().width <= ${width + 1}`)
+        await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        const fits = await run(`(() => { const el=document.querySelector('.agent-message-links'), r=el.getBoundingClientRect(); return r.x >= 0 && r.right <= ${width} && el.scrollWidth <= el.clientWidth + 1 })()`)
+        if (!fits) throw new Error('Progress links overflow the chat')
+        await window.webContents.capturePage({ x: 0, y: 0, width, height: 900 }, { stayHidden: true, stayAwake: true })
+        await run('new Promise(resolve => setTimeout(resolve, 160))')
+        writeFileSync(join(directory, `contact-message-${width}.png`), (await window.webContents.capturePage({ x: 0, y: 0, width, height: 900 }, { stayHidden: true, stayAwake: true })).toPNG())
+      }
+      window.webContents.disableDeviceEmulation()
+      await run("window.dispatchEvent(new Event('resize')); document.querySelector('[aria-label=\"还原窗口\"]')?.click()")
+    }
+    await run("document.querySelector('.agent-message-links button').click()")
+    await waitForRenderer(window, `document.querySelector('.contact-work-sheet[open] [data-topic-select]')?.value === ${JSON.stringify(topicId)}`)
+    await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click(); document.querySelectorAll('.agent-message-links button')[1].click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet .agent-report')?.textContent.includes('个人付费意愿未知')")
+    await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
     await fill('.input-textarea', '保留在聊天输入框中的草稿')
     const chatHeight = await run("document.querySelector('.message-area').getBoundingClientRect().height")
     await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
@@ -215,8 +275,22 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     selectChatSession(fixtureSession); window.webContents.send('sessions:changed')
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-work-tools="${DEFAULT_CHARACTER_ID}"]'))`)
     await run(`window.electronAPI.agents.pause(${id})`)
+    await startFeedback('deny')
+    await run("document.querySelector('.tool-approval-actions .secondary').click()")
+    await finishFeedback()
+    if (!toolResponses.some(value => value.includes('用户拒绝'))) throw new Error('Contact tool denial was ignored')
+    await startFeedback('stale')
+    const beforeStale = await get(), target = beforeStale.topics.find(t => t.id === beforeStale.focusTopicId)!
+    await run(`window.electronAPI.agents.editTopic(${id}, ${JSON.stringify(target.id)}, ${target.revision}, ${JSON.stringify({ title: target.title, goal: target.goal, constraints: '确认期间手动变更' })}, '验收过期操作')`)
+    await run("document.querySelector('.tool-approval-actions .primary').click()")
+    await finishFeedback()
+    if (!toolResponses.some(value => value.includes('事项已变化'))) throw new Error('Stale contact confirmation was not rejected')
+    await startFeedback('constraints')
+    await run("document.querySelector('.tool-approval-actions .primary').click()")
+    await finishFeedback()
+    if ((await get()).topics.find(t => t.id === target.id)!.constraints !== '仅验证开发者工具，预算 200 元') throw new Error('Confirmed constraints were not saved')
     if (Number(calls) !== 3) throw new Error('Opening the chat toolbar unexpectedly started model work')
-    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 isolatedMemory=true evidence=true chatToolbar=true topics=true')
+    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)
     console.error('CHOUYU_AGENT_UI', await run("document.querySelector('.contact-work-sheet')?.textContent.slice(0, 5000)"))

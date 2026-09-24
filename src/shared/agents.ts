@@ -4,6 +4,16 @@ export interface AgentSettings {
   intervalMinutes: number
   dailyCalls: number
   enabled: boolean
+  notifyProgress?: boolean
+}
+export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress' }
+export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number }
+export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
+export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const ref = value as AgentMessageRef
+  if (!['progress', 'question'].includes(ref.kind) || ![ref.topicId, ref.runId].every(id => typeof id === 'string' && id.length > 0 && id.length <= 128)) return undefined
+  return { topicId: ref.topicId, runId: ref.runId, kind: ref.kind }
 }
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = { goal: '', sources: [], intervalMinutes: 180, dailyCalls: 8, enabled: false }
 export type AgentRunStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
@@ -89,7 +99,8 @@ export function validateAgentSettings(raw: unknown): AgentSettings {
   if (!Number.isInteger(value.intervalMinutes) || value.intervalMinutes < 15 || value.intervalMinutes > 10080) throw new Error('工作间隔应为 15–10080 分钟。')
   if (!Number.isInteger(value.dailyCalls) || value.dailyCalls < 2 || value.dailyCalls > 48) throw new Error('每日模型调用上限应为 2–48 次。')
   if (typeof value.enabled !== 'boolean') throw new Error('启用状态无效。')
-  return { goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled }
+  if (value.notifyProgress !== undefined && typeof value.notifyProgress !== 'boolean') throw new Error('通知设置无效。')
+  return { goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled, ...(value.notifyProgress !== undefined ? { notifyProgress: value.notifyProgress } : {}) }
 }
 export const AGENT_STATUS: Record<AgentRunStatus, string> = {
   queued: '等待执行', running: '正在工作', waiting: '等你回复', completed: '已完成', failed: '执行失败', cancelled: '已取消', interrupted: '等待恢复'

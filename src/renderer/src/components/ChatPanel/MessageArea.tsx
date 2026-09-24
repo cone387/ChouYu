@@ -1,3 +1,4 @@
+import type { AgentMessageRef } from '../../../../shared/agents'
 import { legacyAssistantMessageKind, normalizeAssistantMessageKind } from '../../../../shared/assistant-message'
 import AssistantMessageLabel from './AssistantMessageLabel'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -15,6 +16,7 @@ import { useMessageWindow } from './useMessageWindow'
 import CharacterAvatar, { type AvatarIdentity } from '../CharacterAvatar/CharacterAvatar'
 
 interface MessageAreaProps {
+  onAgentNotice?: (ref: AgentMessageRef, tab: 'work' | 'history') => void
   active?: boolean
   character?: AvatarIdentity | null
   searchOpen?: boolean
@@ -123,7 +125,7 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ active = true, character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze, onSnoozeContent }: MessageAreaProps) {
+export default function MessageArea({ onAgentNotice, active = true, character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze, onSnoozeContent }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState(initialSearch)
@@ -206,9 +208,9 @@ export default function MessageArea({ active = true, character, searchOpen = fal
         <div style={{ height: windowed.startOffset }} aria-hidden="true" />
       )}
       {visibleMessages.map(({ message: msg, index }) => {
-        const assistantKind = canSnooze && msg.role === 'assistant' && !msg.toolData && !msg.pluginData
+        const assistantKind = canSnooze && msg.role === 'assistant' && !msg.agentNotice && !msg.toolData && !msg.pluginData
           ? normalizeAssistantMessageKind(msg.assistantKind) ?? legacyAssistantMessageKind(msg.content) : undefined
-        const canRetry = !isStreaming && getConversationForRetry(messages, msg.id) !== null
+        const canRetry = !msg.agentNotice && !isStreaming && getConversationForRetry(messages, msg.id) !== null
         const memorySourceCount = msg.memoryRefs?.reduce((total, memory) => total + (memory.compressedCount || 1), 0) || 0
         return (
         <div
@@ -287,13 +289,17 @@ export default function MessageArea({ active = true, character, searchOpen = fal
                 msg.content && <span>{searching ? <SearchHighlight text={msg.content} query={normalizedQuery} /> : msg.content}</span>
               )}
             </div>
+            {msg.agentNotice && onAgentNotice && <div className="agent-message-links" role="group" aria-label="工作进展来源">
+              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>{msg.agentNotice.kind === 'question' ? '查看待确认事项' : '查看事项'}</button>
+              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>查看本轮记录</button>
+            </div>}
             <div className="message-meta">
               <span className="message-time">{formatTime(msg.timestamp)}</span>
               {msg.responseStatus === 'stopped' && <span className="message-state">已停止</span>}
               {msg.role === 'assistant' && msg.content && !msg.toolData && (
                 <CopyButton text={msg.content} />
               )}
-              {canSnooze && msg.role === 'assistant' && msg.content && !msg.toolData && !msg.pluginData && onSnoozeContent && (
+              {canSnooze && msg.role === 'assistant' && msg.content && !msg.agentNotice && !msg.toolData && !msg.pluginData && onSnoozeContent && (
                 <button
                   className="message-snooze-btn"
                   onClick={() => onSnoozeContent?.(msg.content)}
@@ -302,7 +308,7 @@ export default function MessageArea({ active = true, character, searchOpen = fal
                   稍后提醒
                 </button>
               )}
-              {msg.role === 'user' && !isStreaming && !msg.toolData && !msg.pluginData && onEditMessage && msg.id !== editingId && (
+              {msg.role === 'user' && !isStreaming && !msg.agentNotice && !msg.toolData && !msg.pluginData && onEditMessage && msg.id !== editingId && (
                 <button
                   className="message-edit-btn"
                   onClick={() => { setEditingId(msg.id); setEditDraft(msg.content) }}
@@ -326,7 +332,7 @@ export default function MessageArea({ active = true, character, searchOpen = fal
                   {msg.responseStatus === 'error' ? '重试' : '重新生成'}
                 </button>
               )}
-              {!isStreaming && index === messages.length - 1 && msg.role === 'assistant' && msg.responseStatus === 'stopped' && !msg.toolData && !msg.pluginData && onContinueMessage && (
+              {!isStreaming && index === messages.length - 1 && msg.role === 'assistant' && msg.responseStatus === 'stopped' && !msg.agentNotice && !msg.toolData && !msg.pluginData && onContinueMessage && (
                 <button
                   className="message-continue-btn"
                   onClick={() => onContinueMessage(msg.id)}

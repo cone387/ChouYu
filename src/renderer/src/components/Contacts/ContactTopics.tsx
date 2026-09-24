@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { TOPIC_STATUS, type AgentOverview, type AgentTopic, type AgentTopicDetail, type AgentTopicInput, type AgentTopicStatus } from '../../../../shared/agents'
 import './ContactTopics.css'
+import type { AgentFocusRequest } from '../../../../shared/agents'
 
 type Editor = { kind: 'create' | 'edit' | 'status'; topicId: string; revision: number; input: AgentTopicInput; status: AgentTopicStatus; reason: string }
 const emptyInput: AgentTopicInput = { title: '', goal: '', constraints: '' }
 const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_evidence'].includes(topic.status)
 const time = (value: number) => new Date(value).toLocaleString()
 
-export default function ContactTopics({ characterId, data, busy, settingsDirty, onAction, onReport }: {
+export default function ContactTopics({ characterId, data, busy, settingsDirty, onAction, onReport, focusRequest }: {
   characterId: string; data: AgentOverview; busy: boolean; settingsDirty: boolean
   onAction: (action: () => Promise<unknown>) => Promise<void>; onReport: (runId: string, topicId: string) => void
+  focusRequest?: AgentFocusRequest
 }) {
   const [selected, setSelected] = useState(data.focusTopicId ?? data.topics[0]?.id ?? '')
+  useEffect(() => { if (focusRequest) setSelected(focusRequest.topicId) }, [focusRequest])
   const [detail, setDetail] = useState<AgentTopicDetail | null>(null)
   const [loading, setLoading] = useState(false), [error, setError] = useState('')
   const [editor, setEditor] = useState<Editor | null>(null)

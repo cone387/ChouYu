@@ -37,7 +37,7 @@ import { setClipboardWatcherEnabled } from './clipboard'
 import { setTrayUnread } from './tray'
 import { initAutoUpdater } from './updater'
 import { diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
-import { prepareRegisteredTool, getRegisteredTool, getToolDefinitions } from './tools/registry'
+import { prepareRegisteredToolAsync, getRegisteredTool, getToolDefinitions } from './tools/registry'
 import {
   getMemoryProvider,
   createMemory,
@@ -641,7 +641,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       }
       await streamAIChat(
         request.messages,
-        request.systemPrompt + privateContext,
+        request.systemPrompt + privateContext + '\n联系人持续事项操作：用户明确要求继续、暂停、改变约束或回答待确认问题时，先用 get_contact_topics 读取当前联系人真实事项和版本。多个可能对象时先澄清，不猜测 ID。用户普通讨论不视为操作授权。使用 update_contact_topic 或 answer_contact_question 提交具体变更；只有工具返回执行成功才能声称已经改变工作。与用户个人待办任务区分。',
         effectiveConfig,
         (chunk, done) => {
           if (event.sender.isDestroyed()) return
@@ -658,9 +658,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             const arguments_ = parseToolArguments(call.arguments)
             try {
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              const taskMutation = ['create_task', 'update_task', 'complete_task'].includes(call.name)
+              const taskMutation = ['create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question'].includes(call.name)
               if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
-              const prepared = prepareRegisteredTool(call.name, arguments_, mainWindow, request.sessionId)
+              const prepared = await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
               if (taskMutation) taskMutationRequested = true
               const needsApproval = shouldConfirmTool(definition, config.toolPermissionMode)
               sendToolEvent(event.sender, {

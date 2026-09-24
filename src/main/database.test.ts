@@ -17,7 +17,7 @@ vi.mock('electron', () => ({
 }))
 
 import {
-  appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase,
+  appendAgentNotice, appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase,
   getActiveSession, getAssistantUnreadCount, getConfig, getSession, getSessionWorkspace, getSessions,
   getStorageStatus, initDatabase, listCharacters, markSessionRead, onStorageStatus, saveConfig, saveSessionMessages,
   selectChatSession, setState, searchSessions, updateCharacter
@@ -543,5 +543,44 @@ describe('assistant messages', () => {
     expect(getSession(secondId)!.messages.map((m) => m.content)).toEqual(['第二条'])
     appendAssistantMessage('第三条', 4000)
     expect(getSession(secondId)!.messages.map((m) => m.content)).toEqual(['第二条', '第三条'])
+  })
+})
+
+
+describe('contact progress delivery', () => {
+  const notice = { id: 'run:progress', characterId: DEFAULT_CHARACTER_ID, topicId: 'topic', runId: 'run', topicRevision: 2, kind: 'progress' as const, content: '新证据改变了判断', createdAt: 1 }
+  it('delivers to the owner without switching chats, survives reload and never resurrects a cleared message', () => {
+    const ownerSession = createChatSession('联系人进展', DEFAULT_CHARACTER_ID).activeSession.id
+    const other = createChatSession('正在看的聊天', ASSISTANT_CHARACTER_ID).activeSession.id
+    appendAgentNotice(notice)
+    expect(getActiveSession().id).toBe(other)
+    expect(getSession(ownerSession)!.messages).toHaveLength(1)
+    expect(getSessions().find(s => s.id === ownerSession)!.unreadCount).toBe(1)
+    initDatabase()
+    appendAgentNotice(notice)
+    expect(getSession(ownerSession)!.messages).toHaveLength(1)
+    selectChatSession(ownerSession)
+    expect(getSessions().find(s => s.id === ownerSession)!.unreadCount).toBe(0)
+    saveSessionMessages(ownerSession, []); flushDatabase()
+    appendAgentNotice(notice)
+    expect(getSession(ownerSession)!.messages).toEqual([])
+  })
+  it('preserves incoming progress during streaming saves and protects its reference metadata', () => {
+    const id = createChatSession('生成中的聊天', DEFAULT_CHARACTER_ID).activeSession.id
+    saveSessionMessages(id, [message('user')])
+    appendAgentNotice(notice)
+    saveSessionMessages(id, [message('user'), { ...message('reply'), role: 'assistant', timestamp: Date.now() + 100 }])
+    expect(getSession(id)!.messages.filter(m => m.agentNotice)).toHaveLength(1)
+    const messages = getSession(id)!.messages.map(m => ({ ...m, agentNotice: undefined }))
+    saveSessionMessages(id, messages)
+    expect(getSession(id)!.messages.find(m => m.agentNotice)!.agentNotice!.topicId).toBe('topic')
+  })
+  it('retries a failed disk write without appending a second message', () => {
+    const id = createChatSession('磁盘恢复', DEFAULT_CHARACTER_ID).activeSession.id
+    const fail = vi.spyOn(fs, 'mkdirSync').mockImplementation(() => { throw new Error('disk failure') })
+    expect(() => appendAgentNotice(notice)).toThrow('保存失败')
+    fail.mockRestore()
+    appendAgentNotice(notice); initDatabase()
+    expect(getSession(id)!.messages.filter(m => m.agentNotice)).toHaveLength(1)
   })
 })

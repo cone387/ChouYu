@@ -32,6 +32,10 @@ async function snapshots(window: BrowserWindow, name: string, focus?: string): P
   if (!directory) return
   if (process.env.CHOUYU_SMOKE_SNAPSHOT_FILTER && !name.includes(process.env.CHOUYU_SMOKE_SNAPSHOT_FILTER)) return
   const originalViewport = await window.webContents.executeJavaScript('({ width: innerWidth, height: innerHeight })')
+  const wasMaximized = await window.webContents.executeJavaScript("document.querySelector('.chat-panel').dataset.maximized === 'true'")
+  // Floating windows intentionally retain their requested size and position,
+  // including beyond the display. Use the real maximize action for viewport QA.
+  if (!wasMaximized) await click(window, '[aria-label="最大化窗口"]')
   fs.mkdirSync(directory, { recursive: true })
   for (const theme of ['light', 'dark']) {
     saveConfig({ theme: theme as 'light' | 'dark' })
@@ -40,6 +44,9 @@ async function snapshots(window: BrowserWindow, name: string, focus?: string): P
     for (const width of [1024, 375]) {
       window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
       await waitForRenderer(window, `innerWidth === ${width}`)
+      // Hidden-window device emulation can expose the new viewport before it
+      // dispatches resize. Exercise the same geometry update as a real resize.
+      await window.webContents.executeJavaScript("window.dispatchEvent(new Event('resize'))")
       if (focus) await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(focus)})?.scrollIntoView({block:'center',behavior:'instant'})`)
       await waitForRenderer(window, "Number(getComputedStyle(document.querySelector('.chat-panel')).opacity) > .99")
       await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
@@ -105,6 +112,10 @@ async function snapshots(window: BrowserWindow, name: string, focus?: string): P
   await waitForRenderer(window, `innerWidth === ${originalViewport.width} && innerHeight === ${originalViewport.height}`)
   // Restore viewport-dependent React state before callers record normal window bounds.
   await window.webContents.executeJavaScript('new Promise(resolve => { window.dispatchEvent(new Event("resize")); requestAnimationFrame(() => requestAnimationFrame(resolve)) })')
+  if (!wasMaximized) {
+    await click(window, '[aria-label="还原窗口"]')
+    await waitForRenderer(window, "document.querySelector('.chat-panel').dataset.maximized === 'false'")
+  }
 }
 
 /** Real ChatPanel, real IPC and a loopback streaming provider; never touches a real account. */
