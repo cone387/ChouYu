@@ -3,11 +3,17 @@ import { AGENT_STATUS, DEFAULT_AGENT_SETTINGS, type AgentOverview, type AgentRun
 import './ContactAgentPanel.css'
 
 const time = (value: number) => new Date(value).toLocaleString()
-export function ContactAgentPanel({ characterId, name }: { characterId: string; name: string }) {
+export type ContactAgentTab = 'work' | 'history' | 'memory'
+export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false }: {
+  characterId: string; name: string; selectedTab?: ContactAgentTab
+  onTabChange?: (tab: ContactAgentTab) => void; compact?: boolean
+}) {
   const [data, setData] = useState<AgentOverview | null>(null)
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
   const [sources, setSources] = useState('')
-  const [tab, setTab] = useState<'work' | 'history' | 'memory'>('work')
+  const [localTab, setLocalTab] = useState<ContactAgentTab>('work')
+  const tab = selectedTab ?? localTab
+  const setTab = (next: ContactAgentTab) => { setLocalTab(next); onTabChange?.(next) }
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [note, setNote] = useState(''), [answer, setAnswer] = useState('')
@@ -36,12 +42,14 @@ export function ContactAgentPanel({ characterId, name }: { characterId: string; 
   const active = data?.runs.find(r => ['running', 'waiting', 'queued', 'interrupted'].includes(r.status))
   const latest = data?.reports[0]
   const lastRun = data?.runs[0]
-  return <section className="contact-agent" aria-label={`${name}的持续工作`} data-contact-agent={characterId}>
-    <div className="agent-heading"><h3>自己的工作</h3><span role="status">{active ? AGENT_STATUS[active.status] : lastRun?.status === 'failed' ? '最近一轮失败' : data?.settings.enabled ? '按计划工作' : data?.settings.goal ? '仅手动运行' : '尚未设置工作方向'}</span></div>
-    <p className="agent-description">关掉聊天后，我会继续推进自己的方向。应用需保持运行；退出或关机期间暂停，重启后恢复。</p>
-    <div className="agent-tabs" aria-label="工作内容">
+  return <section className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId}>
+    {(!compact || tab === 'work') && <>
+      <div className="agent-heading"><h3>自己的工作</h3><span role="status">{active ? AGENT_STATUS[active.status] : lastRun?.status === 'failed' ? '最近一轮失败' : data?.settings.enabled ? '按计划工作' : data?.settings.goal ? '仅手动运行' : '尚未设置工作方向'}</span></div>
+      <p className="agent-description">开启持续工作后，关闭聊天仍会继续。应用需保持运行；退出或关机期间暂停，重启后恢复。</p>
+    </>}
+    {!compact && <div className="agent-tabs" aria-label="工作内容">
       {([['work', '近况'], ['history', '工作记录'], ['memory', '独立记忆']] as const).map(([id, label]) => <button type="button" key={id} aria-pressed={tab === id} onClick={() => setTab(id)}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
-    </div>
+    </div>}
     {error && <div className="agent-error" role="alert">{error}<button type="button" disabled={busy} onClick={() => { setError(''); void refresh() }}>重新读取</button></div>}
     {!data && !error && <p role="status">正在读取工作状态…</p>}
     {data && tab === 'work' && <>

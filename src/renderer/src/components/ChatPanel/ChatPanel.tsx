@@ -12,6 +12,7 @@ import { getWorkspaceGeometry, parseWorkspacePage, WORKSPACE_PAGE_STATE_KEY, typ
 import MessageArea from './MessageArea'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import InputArea, { PendingAttachment } from './InputArea'
+import ContactWorkToolbar from './ContactWorkToolbar'
 import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
 import ContactsView from '../Contacts/ContactsView'
@@ -834,6 +835,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             )}
             {memoryCandidateError && <div className="memory-candidate-error" role="alert">{memoryCandidateError}</div>}
             {memoryWriteNotice && <div className="memory-write-notice" role="status">{memoryWriteNotice}</div>}
+            {visible && isChat && workspaceLoaded && activeCharacter && activeCharacterId !== ASSISTANT_CHARACTER_ID && !(showOnboarding && !customCharacterActive) &&
+              <ContactWorkToolbar key={`${activeSessionId}:${activeCharacter.id}`} characterId={activeCharacter.id}
+                name={activeCharacter.name} onClose={requestComposerFocus} />}
             <InputArea
               sessionId={activeSessionId}
               active={visible && isChat && !toolApprovalRequest}

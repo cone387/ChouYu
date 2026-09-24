@@ -118,8 +118,64 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       }
       window.webContents.disableDeviceEmulation()
     }
+    await run("document.querySelector('[data-contacts-close]').click(); document.querySelector('[data-workspace-nav=\"chat\"]').click()")
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-work-tools="${DEFAULT_CHARACTER_ID}"]'))`)
+    await fill('.input-textarea', '保留在聊天输入框中的草稿')
+    const chatHeight = await run("document.querySelector('.message-area').getBoundingClientRect().height")
+    await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-agent-goal]'))")
+    if (Math.abs(await run("document.querySelector('.message-area').getBoundingClientRect().height") - chatHeight) > 1) throw new Error('Contact dialog changed the chat layout')
+    if (!await run("document.querySelector('.contact-work-sheet').matches(':modal') && document.querySelector('.contact-work-sheet').contains(document.activeElement)")) throw new Error('Contact popup is not a focused modal')
+    await fill('.contact-work-sheet [data-agent-goal]', '尚未保存的联系人工作方向')
+    await run("document.querySelector('[data-contact-dialog-tab=\"memory\"]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-memories li'))")
+    if ((await run("document.querySelector('.contact-work-sheet').textContent")).includes('BOB_PRIVATE_SMOKE')) throw new Error('Chat toolbar exposed another contact memory')
+    await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
+    await waitForRenderer(window, "!document.querySelector('.contact-work-sheet')?.open")
+    await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] [data-agent-goal]')?.value === '尚未保存的联系人工作方向'")
+    if (await run("document.querySelector('.input-textarea').value") !== '保留在聊天输入框中的草稿') throw new Error('Toolbar replaced the chat draft')
+    await run("document.querySelector('[data-contact-dialog-tab=\"history\"]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-history button'))")
+    await run("document.querySelector('.contact-work-sheet .agent-history button').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-report'))")
+    if (directory) {
+      await run("document.querySelector('[aria-label=\"最大化窗口\"]')?.click()")
+      for (const theme of ['light', 'dark']) {
+        saveConfig({ theme: theme as 'light' | 'dark' }); window.webContents.send('config:changed', getConfig())
+        await run(`document.documentElement.dataset.theme='${theme}'`)
+        for (const width of [1024, 375]) {
+          window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
+          await run("window.dispatchEvent(new Event('resize'))")
+          await waitForRenderer(window, `innerWidth === ${width} && document.querySelector('.chat-panel').getBoundingClientRect().width <= ${width + 1}`)
+          await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+          await run('new Promise(resolve => setTimeout(resolve, 160))')
+          const fits = await run(`(() => { const sheet=document.querySelector('.contact-work-sheet'), content=document.querySelector('.contact-work-sheet-content'), input=document.querySelector('.input-area'); const r=sheet.getBoundingClientRect(), i=input.getBoundingClientRect(); return r.x >= 0 && r.right <= ${width + 1} && content.scrollWidth <= content.clientWidth + 1 && i.bottom <= 769 && i.height > 0 })()`)
+          if (!fits) {
+            const bounds = await run("JSON.stringify({ viewport:[innerWidth,innerHeight], panel:document.querySelector('.chat-panel').getBoundingClientRect().toJSON(), sheet:document.querySelector('.contact-work-sheet').getBoundingClientRect().toJSON(), input:document.querySelector('.input-area').getBoundingClientRect().toJSON(), content:[document.querySelector('.contact-work-sheet-content').scrollWidth,document.querySelector('.contact-work-sheet-content').clientWidth] })")
+            throw new Error(`Chat work toolbar overflows the viewport or hides the composer: ${bounds}`)
+          }
+          writeFileSync(join(directory, `chat-work-${theme}-${width}.png`), (await window.webContents.capturePage({ x: 0, y: 0, width, height: 768 }, { stayHidden: true, stayAwake: true })).toPNG())
+        }
+      }
+      window.webContents.disableDeviceEmulation()
+    }
+    await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await waitForRenderer(window, "!document.querySelector('.contact-work-sheet')?.open && Boolean(document.querySelector('.chat-panel'))")
+    // Change the active contact through the real session event used by the renderer.
+    createChatSession('另一个联系人', other.id)
+    window.webContents.send('sessions:changed')
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-work-tools="${other.id}"]'))`)
+    if (await run("Boolean(document.querySelector('.contact-work-sheet'))")) throw new Error('Toolbar kept the previous contact panel mounted')
+    await run("document.querySelector('[data-contact-work-tab=\"memory\"]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet')?.textContent.includes('BOB_PRIVATE_SMOKE')")
+    if ((await run("document.querySelector('.contact-work-sheet').textContent")).includes('需求存在的证据')) throw new Error('Toolbar kept previous contact memories')
+    selectChatSession(fixtureSession); window.webContents.send('sessions:changed')
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-work-tools="${DEFAULT_CHARACTER_ID}"]'))`)
     await run(`window.electronAPI.agents.pause(${id})`)
-    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=1 isolatedMemory=true evidence=true')
+    if (calls !== 1) throw new Error('Opening the chat toolbar unexpectedly started model work')
+    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=1 isolatedMemory=true evidence=true chatToolbar=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)
     throw error
