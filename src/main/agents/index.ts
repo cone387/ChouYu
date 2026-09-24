@@ -11,6 +11,9 @@ let failures = 0
 let sequence = 0
 let syncTimer: ReturnType<typeof setInterval> | undefined
 const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+function broadcastChanged(characterId: string) {
+  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('agents:changed', characterId)
+}
 function rpc(method: string, id = '', args: unknown[] = []): Promise<any> {
   return new Promise((resolve, reject) => {
     if (!child) { reject(new Error('Agent 执行进程不可用，请稍后重试。')); return }
@@ -42,7 +45,7 @@ async function ensure() {
     else process.stderr?.resume()
     const born = Date.now()
     process.on('message', message => {
-      if (message.changed) { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('agents:changed', message.changed); return }
+      if (message.changed) { broadcastChanged(message.changed); return }
       const request = pending.get(message.requestId)
       if (!request) return
       clearTimeout(request.timer); pending.delete(message.requestId)
@@ -57,7 +60,14 @@ async function ensure() {
         if (failures <= 3) setTimeout(() => { void ensure().catch(() => {}) }, failures * 2000)
       }
     })
-    try { await rpc('init', '', [join(app.getPath('userData'), 'contact-agents')]); await rpc('sync', '', [identities()]) }
+    try {
+      await rpc('init', '', [join(app.getPath('userData'), 'contact-agents')])
+      const current = identities()
+      await rpc('sync', '', [current])
+      // In-flight UI reads may have been rejected during the exit. A restored
+      // waiting run emits no new graph event, so explicitly invalidate the UI.
+      for (const identity of current) broadcastChanged(identity.id)
+    }
     catch (error) { process.kill(); throw error }
   })().finally(() => { starting = undefined })
   return starting
@@ -71,7 +81,7 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
-  for (const method of ['get', 'save', 'run', 'pause', 'detail', 'answer', 'remember', 'forget']) {
+  for (const method of ['get', 'save', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'createTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail']) {
     ipcMain.handle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)

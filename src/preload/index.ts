@@ -21,7 +21,12 @@ const api = {
   agents: {
     get: id => ipcRenderer.invoke('agents:get', id),
     save: (id, settings) => ipcRenderer.invoke('agents:save', id, settings),
-    run: id => ipcRenderer.invoke('agents:run', id),
+    run: (id, topicId) => ipcRenderer.invoke('agents:run', id, topicId),
+    createTopic: (id, input) => ipcRenderer.invoke('agents:createTopic', id, input),
+    editTopic: (id, topicId, revision, input, reason) => ipcRenderer.invoke('agents:editTopic', id, topicId, revision, input, reason),
+    topicStatus: (id, topicId, revision, status, reason) => ipcRenderer.invoke('agents:topicStatus', id, topicId, revision, status, reason),
+    focusTopic: (id, topicId) => ipcRenderer.invoke('agents:focusTopic', id, topicId),
+    topicDetail: (id, topicId, cursor) => ipcRenderer.invoke('agents:topicDetail', id, topicId, cursor),
     pause: id => ipcRenderer.invoke('agents:pause', id),
     detail: (id, runId) => ipcRenderer.invoke('agents:detail', id, runId),
     answer: (id, runId, answer) => ipcRenderer.invoke('agents:answer', id, runId, answer),

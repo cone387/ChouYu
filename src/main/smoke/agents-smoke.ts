@@ -30,7 +30,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     request.on('end', () => {
       calls++; modelRequest = JSON.parse(body)
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-      const result = { title: '开发者机会研究 · 第一轮', body: '资料 [1] 显示开发者存在需求，但付费意愿尚未验证。\n本轮新增：把想法缩小到需要访谈验证的假设。', nextStep: '按你熟悉的行业继续核对需求证据。', question: '你更熟悉哪个行业？', memories: ['需求存在的证据不等于付费意愿，下一轮应继续验证。'] }
+      const judgements = ['需求存在，个人付费意愿未知。', '个人用户不愿付费，转向核对团队需求。', '团队已有免费方案，暂时放弃该方向。']
+      const nextStep = calls === 3 ? '' : calls === 2 ? '核对团队已有替代方案与替换意愿。' : '按你熟悉的行业继续核对需求证据。'
+      const result = { title: `开发者机会研究 · 第 ${calls} 轮`, body: `资料 [1] 的本轮判断：${judgements[calls - 1]}\n以上为研究判断，不能视为已验证收益。`, nextStep, question: calls === 1 ? '你更熟悉哪个行业？' : '', memories: calls === 1 ? ['需求存在的证据不等于付费意愿，下一轮应继续验证。'] : [], progress: { judgement: judgements[calls - 1], openQuestions: calls === 3 ? '是否存在其他细分人群仍未知。' : '谁愿意付费、现有方案是否足够？', nextStep, reason: calls === 1 ? '资料 [1] 提供需求线索，尚未证明付费意愿。' : calls === 2 ? '新资料 [1] 否定了个人用户付费假设，缩小到团队。' : '资料 [1] 显示团队已有免费替代方案，因此停止投入。', status: calls === 3 ? 'abandoned' : 'needs_evidence' } }
       response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
     })
   })
@@ -70,7 +72,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run(`document.querySelector('[data-contacts-menu-detail="${DEFAULT_CHARACTER_ID}"]').click()`)
     await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-goal]'))", 20000)
     console.log('CHOUYU_SMOKE_AGENTS_STAGE editor-ready')
-    const fill = (selector: string, value: string) => run(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', {bubbles:true})); })()`)
+    const fill = async (selector: string, value: string) => {
+      await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(selector)}))`)
+      return run(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', {bubbles:true})); })()`)
+    }
     await fill('[data-agent-goal]', '持续寻找开发者需求，记录证据和待验证的收入机会。')
     await fill('[data-agent-sources]', 'https://chouyu-agent-smoke.invalid/research')
     await run("document.querySelector('[data-agent-save]').click()")
@@ -96,6 +101,20 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (mismatched.ok || calls !== 1) throw new Error('A mismatched session was allowed to select another agent identity')
     const record = await run(`window.electronAPI.agents.detail(${id}, ${JSON.stringify(waiting.runs[0].id)})`)
     if (!record.report.evidence[0].hash || !record.events.some((e: { kind: string }) => e.kind === 'answer')) throw new Error('Agent evidence or reply event missing')
+    const topicId = completed.topics[0].id
+    for (const [index, source] of ['counter-evidence', 'team-evidence'].entries()) {
+      if (index === 1) await restartAgentsForSmoke()
+      await run(`window.electronAPI.agents.save(${id}, ${JSON.stringify({ ...completed.settings, sources: [`https://chouyu-agent-smoke.invalid/${source}`] })})`)
+      await run(`window.electronAPI.agents.run(${id}, ${JSON.stringify(topicId)})`)
+      const next = await waitStatus('completed')
+      if (next.runs[0].topicId !== topicId || next.reports.length !== index + 2 || calls !== index + 2) throw new Error('Topic continuity lost across rounds')
+      if (!JSON.stringify(modelRequest).includes(index === 0 ? '需求存在，个人付费意愿未知' : '个人用户不愿付费，转向核对团队需求')) throw new Error('Next round omitted the prior topic judgement')
+    }
+    const topicDetail = await run(`window.electronAPI.agents.topicDetail(${id}, ${JSON.stringify(topicId)})`)
+    if (topicDetail.topic.status !== 'abandoned' || topicDetail.changes.filter((change: { kind: string }) => change.kind === 'research').length !== 3) throw new Error('Topic decisions were not retained')
+    const hashes = new Set((await get()).reports.map(report => report.evidence[0].hash))
+    if (hashes.size !== 3) throw new Error('Topic rounds lost their changing evidence')
+    console.log('CHOUYU_SMOKE_AGENTS_STAGE topic-three-rounds')
     await run("[...document.querySelectorAll('.agent-tabs button')].find(b => b.textContent.includes('工作记录')).click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.agent-history button'))")
     await run("document.querySelector('.agent-history button').click()")
@@ -126,6 +145,22 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-agent-goal]'))")
     if (Math.abs(await run("document.querySelector('.message-area').getBoundingClientRect().height") - chatHeight) > 1) throw new Error('Contact dialog changed the chat layout')
     if (!await run("document.querySelector('.contact-work-sheet').matches(':modal') && document.querySelector('.contact-work-sheet').contains(document.activeElement)")) throw new Error('Contact popup is not a focused modal')
+    await waitForRenderer(window, "document.querySelectorAll('.contact-work-sheet [data-topic-change]').length === 4")
+    if (!await run("document.querySelector('.contact-work-sheet [data-topic-judgement]').textContent.includes('团队已有免费方案') && document.querySelector('.contact-work-sheet [data-topic-run]').disabled")) throw new Error('Task dialog did not show the ended topic')
+    // Create and pause a second topic through the full form, without a model call.
+    await run("document.querySelector('.contact-work-sheet [data-topic-create]').click()")
+    await fill('.contact-work-sheet [data-topic-title]', '研究另一个独立方向')
+    await fill('.contact-work-sheet [data-topic-goal]', '核对团队知识库的检索需求')
+    await fill('.contact-work-sheet [data-topic-constraints]', '只读验证，预算 500 元')
+    await run("document.querySelector('.contact-work-sheet [data-topic-save]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet [data-topic-current]')?.textContent.includes('研究另一个独立方向') && !document.querySelector('.contact-work-sheet [data-topic-editor]')")
+    await run("document.querySelector('.contact-work-sheet [data-topic-pause]').click()")
+    await fill('.contact-work-sheet [data-topic-reason]', '先保留方向，等我补充资料')
+    await run("document.querySelector('.contact-work-sheet [data-topic-save]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet [data-topic-current]')?.textContent.includes('先保留方向，等我补充资料') && !document.querySelector('.contact-work-sheet [data-topic-editor]')")
+    await run(`(() => { const select = document.querySelector('.contact-work-sheet [data-topic-select]'); select.value=${JSON.stringify(topicId)}; select.dispatchEvent(new Event('change',{bubbles:true})); })()`)
+    await waitForRenderer(window, "document.querySelectorAll('.contact-work-sheet [data-topic-change]').length === 4")
+    await run("document.querySelector('.contact-work-sheet .agent-work-settings').open=true")
     await fill('.contact-work-sheet [data-agent-goal]', '尚未保存的联系人工作方向')
     await run("document.querySelector('[data-contact-dialog-tab=\"memory\"]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-memories li'))")
@@ -139,6 +174,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-history button'))")
     await run("document.querySelector('.contact-work-sheet .agent-history button').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-report'))")
+    await run("document.querySelector('[data-contact-dialog-tab=\"work\"]').click(); document.querySelector('.contact-work-sheet .agent-work-settings').open=false")
     if (directory) {
       await run("document.querySelector('[aria-label=\"最大化窗口\"]')?.click()")
       for (const theme of ['light', 'dark']) {
@@ -163,6 +199,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
     await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
     await waitForRenderer(window, "!document.querySelector('.contact-work-sheet')?.open && Boolean(document.querySelector('.chat-panel'))")
+    await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-topic-evidence]'))")
+    await run("document.querySelector('.contact-work-sheet [data-topic-evidence]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet .agent-report')?.textContent.includes('团队已有免费方案')")
+    await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
     // Change the active contact through the real session event used by the renderer.
     createChatSession('另一个联系人', other.id)
     window.webContents.send('sessions:changed')
@@ -174,10 +215,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     selectChatSession(fixtureSession); window.webContents.send('sessions:changed')
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-work-tools="${DEFAULT_CHARACTER_ID}"]'))`)
     await run(`window.electronAPI.agents.pause(${id})`)
-    if (calls !== 1) throw new Error('Opening the chat toolbar unexpectedly started model work')
-    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=1 isolatedMemory=true evidence=true chatToolbar=true')
+    if (Number(calls) !== 3) throw new Error('Opening the chat toolbar unexpectedly started model work')
+    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 isolatedMemory=true evidence=true chatToolbar=true topics=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)
+    console.error('CHOUYU_AGENT_UI', await run("document.querySelector('.contact-work-sheet')?.textContent.slice(0, 5000)"))
     throw error
   } finally {
     if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach()

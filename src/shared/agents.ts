@@ -10,6 +10,7 @@ export type AgentRunStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'f
 export interface AgentEvidence { url: string; title: string; text: string; capturedAt: number; hash: string }
 export interface AgentRun {
   id: string; characterId: string; revision: number; status: AgentRunStatus; createdAt: number; updatedAt: number
+  topicId: string | null
   question: string; answer: string; summary: string; error: string
 }
 export interface AgentEvent { id: number; runId: string; kind: string; text: string; at: number }
@@ -18,12 +19,52 @@ export interface AgentReport { runId: string; title: string; body: string; nextS
 export interface AgentOverview {
   settings: AgentSettings; revision: number; nextAt: number; callsToday: number
   runs: AgentRun[]; memories: AgentMemory[]; reports: AgentReport[]
+  topics: AgentTopic[]; focusTopicId: string | null
+}
+export const TOPIC_STATUS = { planned: '待研究', researching: '研究中', needs_evidence: '待补证据', paused: '已暂停', completed: '已结束', abandoned: '已放弃' } as const
+export type AgentTopicStatus = keyof typeof TOPIC_STATUS
+export interface AgentTopicInput { title: string; goal: string; constraints: string }
+export interface AgentTopic extends AgentTopicInput {
+  id: string; characterId: string; revision: number; status: AgentTopicStatus
+  judgement: string; openQuestions: string; nextStep: string; reason: string; createdAt: number; updatedAt: number
+}
+export interface AgentTopicProgress {
+  judgement: string; openQuestions: string; nextStep: string; reason: string
+  status: 'researching' | 'needs_evidence' | 'completed' | 'abandoned'
+}
+export interface AgentTopicChange {
+  id: number; kind: string; before: AgentTopic | null; after: AgentTopic; reason: string; runId: string | null; createdAt: number
+}
+export interface AgentTopicDetail { topic: AgentTopic; changes: AgentTopicChange[]; nextCursor: number | null }
+export function validateTopicInput(raw: unknown): AgentTopicInput {
+  if (!raw || typeof raw !== 'object') throw new Error('事项内容无效。')
+  const value = raw as AgentTopicInput
+  for (const [key, max, required] of [['title', 160, true], ['goal', 2000, true], ['constraints', 2000, false]] as const) {
+    if (typeof value[key] !== 'string' || value[key].length > max || required && !value[key].trim()) throw new Error(`请填写有效的事项${key === 'title' ? '标题' : key === 'goal' ? '目标' : '约束'}（最多 ${max} 字）。`)
+  }
+  return { title: value.title.trim(), goal: value.goal.trim(), constraints: value.constraints.trim() }
+}
+export function validateTopicProgress(raw: unknown): AgentTopicProgress {
+  if (!raw || typeof raw !== 'object') throw new Error('模型未返回事项进展。')
+  const value = raw as AgentTopicProgress
+  if (!['researching', 'needs_evidence', 'completed', 'abandoned'].includes(value.status)) throw new Error('事项状态无效，不能将推测标为已验证。')
+  for (const [key, max] of [['judgement', 3000], ['openQuestions', 2000], ['nextStep', 1000], ['reason', 2000]] as const) {
+    if (typeof value[key] !== 'string' || value[key].length > max) throw new Error(`事项进展 ${key} 无效。`)
+  }
+  if (!value.judgement.trim() || !value.reason.trim()) throw new Error('事项必须保留当前判断与变化原因。')
+  if (['researching', 'needs_evidence'].includes(value.status) && !value.nextStep.trim()) throw new Error('继续研究的事项必须有下一步。')
+  return { status: value.status, judgement: value.judgement.trim(), openQuestions: value.openQuestions.trim(), nextStep: value.nextStep.trim(), reason: value.reason.trim() }
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null }
 export interface AgentAPI {
   get(characterId: string): Promise<AgentOverview>
   save(characterId: string, settings: AgentSettings): Promise<AgentOverview>
-  run(characterId: string): Promise<AgentOverview>
+  run(characterId: string, topicId?: string): Promise<AgentOverview>
+  createTopic(characterId: string, input: AgentTopicInput): Promise<AgentOverview>
+  editTopic(characterId: string, topicId: string, revision: number, input: AgentTopicInput, reason: string): Promise<AgentOverview>
+  topicStatus(characterId: string, topicId: string, revision: number, status: AgentTopicStatus, reason: string): Promise<AgentOverview>
+  focusTopic(characterId: string, topicId: string): Promise<AgentOverview>
+  topicDetail(characterId: string, topicId: string, cursor?: number): Promise<AgentTopicDetail>
   pause(characterId: string): Promise<AgentOverview>
   detail(characterId: string, runId: string): Promise<AgentRunDetail>
   answer(characterId: string, runId: string, answer: string): Promise<AgentOverview>

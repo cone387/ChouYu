@@ -67,6 +67,13 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, `!!document.querySelector('.tasks-board [data-task-id="${completedFixture}"]') && !document.querySelector('.tasks-loading-status[data-loading]')`)
     const countMatches = await run(`Number(document.querySelector('[data-view-selection=today] .tasks-count').textContent) === new Set([...document.querySelectorAll('.tasks-board [data-task-id]:not([data-completed])')].map(el => el.dataset.taskId)).size`)
     if (!countMatches) throw new Error('Today navigation count must include only unfinished tasks')
+    // The count check above intentionally includes completed tasks. Their pages
+    // are date-scoped and must reload when changing periods; only open tasks
+    // are fully cached. Select that scope before asserting no loading frames.
+    await click('[aria-label="任务完成状态"]')
+    await run("[...document.querySelector('[aria-label=\"任务完成状态\"]').closest('details').querySelectorAll('button')].find(button => button.textContent === '未完成').click()")
+    await run("document.querySelector('[aria-label=\"任务完成状态\"]').closest('details').open = false")
+    await waitForRenderer(window, "document.querySelector('[aria-label=\"任务完成状态\"]').textContent === '未完成' && !document.querySelector('.tasks-loading-status[data-loading]')")
     await settle()
     await run("window.__navigationBoard = document.querySelector('.tasks-board')")
     const rightInset = await run("document.querySelector('.tasks-view').getBoundingClientRect().right - document.querySelector('.tasks-main').getBoundingClientRect().right")

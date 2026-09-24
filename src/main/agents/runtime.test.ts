@@ -14,7 +14,7 @@ const directory = () => { const dir = mkdtempSync(join(tmpdir(), 'chouyu-agents-
 const settings = { ...DEFAULT_AGENT_SETTINGS, goal: '研究真实需求', sources: ['https://example.com/'] }
 const evidence = evidenceFromText(settings.sources[0], '<title>调查</title>' + '这是本轮真实读取的资料，用户愿意为什么付费还需要验证。'.repeat(4))
 const reader = vi.fn(async () => evidence)
-const draft = { title: '本轮机会假设', body: '资料 [1] 提到了需求，尚未验证付费意愿。', nextStep: '下轮跟进需求证据', memories: ['付费意愿仍是待验证假设'], question: '' }
+const draft = { title: '本轮机会假设', body: '资料 [1] 提到了需求，尚未验证付费意愿。', nextStep: '下轮跟进需求证据', memories: ['付费意愿仍是待验证假设'], question: '', progress: { judgement: '需求存在，付费意愿尚未验证。', openQuestions: '用户是否付费？', nextStep: '下轮跟进需求证据', reason: '资料 [1] 提到了需求，但没有付费证据。', status: 'needs_evidence' } }
 afterEach(async () => { reader.mockClear(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 function fixture() {
   const dir = directory(), store = new AgentStore(join(dir, 'store.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'), reader)
