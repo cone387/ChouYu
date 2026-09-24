@@ -5,7 +5,13 @@ export interface AgentSettings {
   dailyCalls: number
   enabled: boolean
   notifyProgress?: boolean
+  searchEnabled?: boolean
+  dailySearches?: number
 }
+export interface AgentResearchPlan { action: 'search' | 'read' | 'wait'; reason: string; query: string; urls: string[]; checkAfterMinutes: number }
+export interface AgentSearchResult { url: string; title: string }
+export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
+export interface AgentResearch { plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
 export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress' }
 export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number }
 export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
@@ -27,6 +33,7 @@ export interface AgentEvent { id: number; runId: string; kind: string; text: str
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
+  searchesToday?: number
   settings: AgentSettings; revision: number; nextAt: number; callsToday: number
   runs: AgentRun[]; memories: AgentMemory[]; reports: AgentReport[]
   topics: AgentTopic[]; focusTopicId: string | null
@@ -65,8 +72,9 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
   if (['researching', 'needs_evidence'].includes(value.status) && !value.nextStep.trim()) throw new Error('继续研究的事项必须有下一步。')
   return { status: value.status, judgement: value.judgement.trim(), openQuestions: value.openQuestions.trim(), nextStep: value.nextStep.trim(), reason: value.reason.trim() }
 }
-export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null }
+export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI {
+  searchCredential(characterId: string, key?: string): Promise<{ configured: boolean }>
   get(characterId: string): Promise<AgentOverview>
   save(characterId: string, settings: AgentSettings): Promise<AgentOverview>
   run(characterId: string, topicId?: string): Promise<AgentOverview>
@@ -100,7 +108,9 @@ export function validateAgentSettings(raw: unknown): AgentSettings {
   if (!Number.isInteger(value.dailyCalls) || value.dailyCalls < 2 || value.dailyCalls > 48) throw new Error('每日模型调用上限应为 2–48 次。')
   if (typeof value.enabled !== 'boolean') throw new Error('启用状态无效。')
   if (value.notifyProgress !== undefined && typeof value.notifyProgress !== 'boolean') throw new Error('通知设置无效。')
-  return { goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled, ...(value.notifyProgress !== undefined ? { notifyProgress: value.notifyProgress } : {}) }
+  if (value.searchEnabled !== undefined && typeof value.searchEnabled !== 'boolean') throw new Error('搜索开关无效。')
+  if (value.dailySearches !== undefined && (!Number.isInteger(value.dailySearches) || value.dailySearches < 1 || value.dailySearches > 24)) throw new Error('每日搜索上限应为 1–24 次。')
+  return { goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled, ...(value.notifyProgress !== undefined ? { notifyProgress: value.notifyProgress } : {}), ...(value.searchEnabled !== undefined ? { searchEnabled: value.searchEnabled } : {}), ...(value.dailySearches !== undefined ? { dailySearches: value.dailySearches } : {}) }
 }
 export const AGENT_STATUS: Record<AgentRunStatus, string> = {
   queued: '等待执行', running: '正在工作', waiting: '等你回复', completed: '已完成', failed: '执行失败', cancelled: '已取消', interrupted: '等待恢复'

@@ -8,8 +8,9 @@ import { AgentStore } from './store'
 import { AgentRuntime, type AgentModel } from './runtime'
 import type { AgentSettings, AgentTopicStatus } from '../../shared/agents'
 import { canResearch } from './topics'
+import type { AgentSearcher } from './research'
 
-export interface AgentIdentity { id: string; soul: string; conversation: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
+export interface AgentIdentity { id: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
   readonly store: AgentStore
   readonly runtime: AgentRuntime
@@ -18,16 +19,16 @@ export class AgentService {
   private closed = false
   private active?: { id: string; characterId: string; controller: AbortController; promise: Promise<void> }
   private timer: ReturnType<typeof setInterval>
-  constructor(directory: string, private changed: (id: string) => void, private modelFactory?: (identity: AgentIdentity) => AgentModel, reader?: ConstructorParameters<typeof AgentRuntime>[2]) {
+  constructor(directory: string, private changed: (id: string) => void, private modelFactory?: (identity: AgentIdentity) => AgentModel, reader?: ConstructorParameters<typeof AgentRuntime>[2], searcher?: AgentSearcher) {
     mkdirSync(directory, { recursive: true })
     this.store = new AgentStore(join(directory, 'agents.db'))
-    this.runtime = new AgentRuntime(this.store, join(directory, 'checkpoints.db'), reader)
+    this.runtime = new AgentRuntime(this.store, join(directory, 'checkpoints.db'), reader, searcher)
     this.store.recover()
     this.timer = setInterval(() => this.tick(), 15000)
   }
   private abort(id: string) { if (this.active?.characterId === id) this.active.controller.abort() }
   async sync(identities: AgentIdentity[]) {
-    const signature = (identity: AgentIdentity) => createHash('sha256').update(JSON.stringify({ soul: identity.soul, config: identity.config })).digest('hex')
+    const signature = (identity: AgentIdentity) => createHash('sha256').update(JSON.stringify({ soul: identity.soul, config: identity.config, searchKey: identity.searchKey })).digest('hex')
     for (const identity of identities) {
       const previous = this.identities.get(identity.id)
       if (previous && signature(previous) !== signature(identity)) { this.abort(identity.id); this.store.cancel(identity.id, '角色人设或模型配置已变化，请重新发起工作。'); this.changed(identity.id) }
@@ -57,6 +58,7 @@ export class AgentService {
       case 'ackNotice': this.store.notices.ack(id, String(args[0])); return null
       case 'continueTopic': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
+        this.checkSearch(id)
         this.store.continueTopic(id, String(args[0]), args[1] as number, String(args[2]), this.identity(id).conversation); break
       }
       case 'answerChecked': {
@@ -80,11 +82,13 @@ export class AgentService {
       case 'focusTopic': this.store.focusTopic(id, String(args[0])); break
       case 'save': {
         if ((args[0] as AgentSettings)?.enabled && !this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
+        if ((args[0] as AgentSettings)?.searchEnabled && !this.identity(id).searchKey) throw new Error('请先保存此联系人的搜索密钥。')
         this.store.save(id, args[0]); this.abort(id); break
       }
       case 'pause': this.store.pause(id); this.abort(id); break
       case 'run': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
+        this.checkSearch(id)
         this.store.createRun(id, this.identity(id).conversation, Date.now(), args[0] === undefined ? undefined : String(args[0])); break
       }
       case 'answer': this.store.answer(id, String(args[0]), args[1] as string); break
@@ -98,11 +102,12 @@ export class AgentService {
     if (!this.ready || this.closed || this.active) return
     for (const profile of this.store.profiles()) {
       const settings = JSON.parse(profile.settings) as AgentSettings
+      if (settings.searchEnabled && (!this.identities.get(profile.character_id)?.searchKey || this.store.callCount(profile.character_id) + 2 > settings.dailyCalls)) continue
       if (!settings.enabled || profile.next_at > Date.now() || !this.identities.get(profile.character_id)?.config || this.store.callCount(profile.character_id) >= settings.dailyCalls) continue
       if (!profile.focus_topic_id || !canResearch(this.store.topics.get(profile.character_id, profile.focus_topic_id).status)) continue
       try { this.store.createRun(profile.character_id, this.identity(profile.character_id).conversation) } catch { /* invalid profiles remain visible, without a hot retry loop */ }
     }
-    const run = this.store.runnable().find(r => this.identities.get(r.character_id)?.config)
+    const run = this.store.runnable().find(r => this.identities.get(r.character_id)?.config && (!JSON.parse(r.input).settings.searchEnabled || this.identities.get(r.character_id)?.searchKey))
     if (!run) return
     const identity = this.identity(run.character_id), controller = new AbortController()
     const deadline = setTimeout(() => controller.abort(new Error('本轮工作超过两分钟。')), 120000)
@@ -111,7 +116,7 @@ export class AgentService {
       await streamAIChat([{ role: 'user', content: prompt }], '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; if (output.length > 24000) throw new Error('成果输出超过上限。') }, signal, undefined, { timeoutMs: 90000, maxOutputTokens: 2200 })
       return output
     })
-    const promise = this.runtime.execute(run.id, identity.soul, model, controller.signal, () => this.changed(run.character_id))
+    const promise = this.runtime.execute(run.id, identity.soul, model, controller.signal, () => this.changed(run.character_id), identity.searchKey)
       .catch(() => {
         if (this.closed) { if (this.store.getRun(run.id)?.status === 'running') this.store.setStatus(run.id, 'interrupted') }
         else this.store.fail(run.id, controller.signal.aborted ? '本轮已停止或超时，可检查设置后重新运行。' : '执行进程发生错误，请检查配置后重试。')
@@ -120,4 +125,7 @@ export class AgentService {
     this.active = { id: run.id, characterId: run.character_id, controller, promise }
   }
   async close() { this.closed = true; clearInterval(this.timer); this.active?.controller.abort(); await this.active?.promise; this.runtime.close(); this.store.close() }
+  private checkSearch(id: string) {
+    if (this.store.overview(id).settings.searchEnabled && !this.identity(id).searchKey) throw new Error('请先配置搜索密钥，或关闭自主补证据。')
+  }
 }

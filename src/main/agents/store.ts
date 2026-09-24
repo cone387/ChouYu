@@ -5,6 +5,7 @@ import { DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agen
 import { containsSecret } from '../../shared/memory'
 import { AgentTopics, canResearch } from './topics'
 import { AgentNotices } from './notices'
+import type { AgentResearch } from '../../shared/agents'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
 type RunRow = { id: string; character_id: string; revision: number; status: AgentRunStatus; created_at: number; updated_at: number; question: string; answer: string; summary: string; error: string; input: string; topic_id: string | null; topic_revision: number | null }
@@ -21,7 +22,7 @@ export class AgentStore {
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 3) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 4) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -55,7 +56,11 @@ export class AgentStore {
       this.db.pragma('user_version = 2')
     })()
     this.notices = new AgentNotices(this.db)
-    this.db.pragma('user_version = 3')
+    this.db.exec(`CREATE TABLE IF NOT EXISTS search_calls (id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS search_calls_character ON search_calls(character_id,at);
+      CREATE TABLE IF NOT EXISTS research (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS research_idle (topic_id TEXT PRIMARY KEY REFERENCES topics(id) ON DELETE CASCADE,streak INTEGER NOT NULL);`)
+    this.db.pragma('user_version = 4')
   }
   close() { this.db.close() }
   profile(id: string) { return this.db.prepare('SELECT * FROM profiles WHERE character_id=?').get(id) as Profile | undefined }
@@ -93,6 +98,7 @@ export class AgentStore {
     return {
       settings: profile ? JSON.parse(profile.settings) : { ...DEFAULT_AGENT_SETTINGS }, revision: profile?.revision ?? 0, nextAt: profile?.next_at ?? 0,
       callsToday: this.callCount(id, now),
+      searchesToday: this.searchCount(id, now),
       topics: this.topics.list(id), focusTopicId: profile?.focus_topic_id ?? null,
       runs: (this.db.prepare('SELECT * FROM runs WHERE character_id=? ORDER BY created_at DESC, rowid DESC LIMIT 30').all(id) as RunRow[]).map(mapRun),
       memories: this.memories(id), reports: (this.db.prepare('SELECT value FROM reports WHERE character_id=? ORDER BY rowid DESC LIMIT 20').all(id) as { value: string }[]).map(r => JSON.parse(r.value))
@@ -116,7 +122,7 @@ export class AgentStore {
     const run = this.getRun(runId)
     if (!run || run.character_id !== characterId) throw new Error('找不到此联系人的工作记录。')
     const report = this.db.prepare('SELECT value FROM reports WHERE run_id=? AND character_id=?').get(runId, characterId) as { value: string } | undefined
-    return { run: mapRun(run), events: (this.db.prepare('SELECT * FROM events WHERE run_id=? ORDER BY id LIMIT 200').all(runId) as { id: number; run_id: string; kind: string; text: string; at: number }[]).map(r => ({ id: r.id, runId: r.run_id, kind: r.kind, text: r.text, at: r.at })), report: report ? JSON.parse(report.value) : null }
+    return { run: mapRun(run), research: this.research(runId), events: (this.db.prepare('SELECT * FROM events WHERE run_id=? ORDER BY id LIMIT 200').all(runId) as { id: number; run_id: string; kind: string; text: string; at: number }[]).map(r => ({ id: r.id, runId: r.run_id, kind: r.kind, text: r.text, at: r.at })), report: report ? JSON.parse(report.value) : null }
   }
   event(runId: string, kind: string, text: string, now = Date.now()) { this.db.prepare('INSERT INTO events(run_id,kind,text,at) VALUES(?,?,?,?)').run(runId, kind, text.slice(0, 6000), now) }
   createRun(id: string, context: string, now = Date.now(), topicId?: string) {
@@ -135,10 +141,12 @@ export class AgentStore {
       const topic = this.topics.get(id, selected)
       if (!canResearch(topic.status)) throw new Error('当前事项已暂停或结束，请继续此事项或选择其他事项。')
       if (this.callCount(id, now) >= settings.dailyCalls) throw new Error('今日模型调用已达上限，明天再试或调整上限。')
+      if (settings.searchEnabled && this.callCount(id, now) + 2 > settings.dailyCalls) throw new Error('自主补证据需预留两次模型调用额度（计划与分析）。')
       const runId = randomUUID()
       const overview = this.overview(id, now)
       const previous = (this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 3').all(topic.id, id) as { value: string }[]).map(row => JSON.parse(row.value) as AgentReport)
-      const input = JSON.stringify({ settings, topic, memories: overview.memories.slice(0, 12).map(m => ({ ...m, content: m.content.slice(0, 600) })), previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(0, 4000) })
+      const baselineRun = this.db.prepare('SELECT topic_revision FROM runs WHERE id=?').get(previous[0]?.runId ?? '') as { topic_revision: number } | undefined
+      const input = JSON.stringify({ researchVersion: 1, baseline: previous[0] ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: overview.memories.slice(0, 12).map(m => ({ ...m, content: m.content.slice(0, 600) })), previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(0, 4000) })
       this.db.prepare('INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input,topic_id,topic_revision) VALUES(?,?,?,\'queued\',?,?,?,?,?)').run(runId, id, profile.revision, now, now, input, topic.id, topic.revision)
       this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(now + settings.intervalMinutes * 60000, id)
       this.event(runId, 'queued', `已安排事项「${topic.title}」的本轮工作。`, now)
@@ -163,6 +171,36 @@ export class AgentStore {
     })()
   }
   setStatus(id: string, status: AgentRunStatus, now = Date.now()) { this.db.prepare('UPDATE runs SET status=?,updated_at=? WHERE id=?').run(status, now, id) }
+  searchCount(id: string, now = Date.now()) { return (this.db.prepare('SELECT count(*) AS n FROM search_calls WHERE character_id=? AND at>=?').get(id, dayStart(now)) as { n: number }).n }
+  chargeSearch(runId: string, now = Date.now()) {
+    this.db.transaction(() => {
+      const run = this.assertLive(runId), settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
+      if (!settings.searchEnabled || this.searchCount(run.character_id, now) >= (settings.dailySearches ?? 8)) throw new Error('搜索未开启或今日搜索已达上限。')
+      this.db.prepare('INSERT INTO search_calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
+    })()
+  }
+  research(runId: string): AgentResearch | undefined {
+    const row = this.db.prepare('SELECT value FROM research WHERE run_id=?').get(runId) as { value: string } | undefined
+    return row ? JSON.parse(row.value) : undefined
+  }
+  saveResearch(runId: string, research: AgentResearch) {
+    this.assertLive(runId)
+    this.db.prepare('INSERT INTO research(run_id,value) VALUES(?,?) ON CONFLICT(run_id) DO UPDATE SET value=excluded.value').run(runId, JSON.stringify(research))
+  }
+  defer(runId: string, reason: string, unchanged = false) {
+    this.db.transaction(() => {
+      const run = this.assertLive(runId), settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
+      const research = this.research(runId)
+      const streak = run.topic_id ? ((this.db.prepare('SELECT streak FROM research_idle WHERE topic_id=?').get(run.topic_id) as { streak: number } | undefined)?.streak ?? 0) : 0
+      const delay = Math.min(10080, Math.max(settings.intervalMinutes, research?.plan.checkAfterMinutes ?? 0) * (unchanged ? 2 ** Math.min(streak + 1, 3) : 1))
+      const nextAt = Date.now() + delay * 60000
+      if (run.topic_id && unchanged) this.db.prepare('INSERT INTO research_idle VALUES(?,?) ON CONFLICT(topic_id) DO UPDATE SET streak=excluded.streak').run(run.topic_id, streak + 1)
+      if (research) this.saveResearch(runId, { ...research, unchanged, nextCheckAt: nextAt })
+      this.db.prepare('UPDATE profiles SET next_at=?,failures=0 WHERE character_id=?').run(nextAt, run.character_id)
+      this.db.prepare("UPDATE runs SET status='completed',summary=?,updated_at=? WHERE id=?").run(reason, Date.now(), runId)
+      this.event(runId, 'deferred', `${reason}\n本轮未生成新报告；下次检查：${new Date(nextAt).toISOString()}`)
+    })()
+  }
   recover() {
     const rows = this.db.prepare("SELECT id FROM runs WHERE status='running'").all() as { id: string }[]
     for (const row of rows) { this.setStatus(row.id, 'interrupted'); this.event(row.id, 'interrupted', '执行进程已重启，将从持久化检查点恢复；未完成的只读步骤可能重试。') }
@@ -216,6 +254,14 @@ export class AgentStore {
       }
       this.db.prepare("UPDATE runs SET status='completed',summary=?,updated_at=? WHERE id=?").run(report.title, Date.now(), runId)
       this.db.prepare('UPDATE profiles SET failures=0 WHERE character_id=?').run(run.character_id)
+      if (run.topic_id) this.db.prepare('DELETE FROM research_idle WHERE topic_id=?').run(run.topic_id)
+      const research = this.research(runId)
+      if (research) {
+        const settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
+        const nextAt = Date.now() + Math.max(settings.intervalMinutes, research.plan.checkAfterMinutes) * 60000
+        this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(nextAt, run.character_id)
+        this.db.prepare('UPDATE research SET value=? WHERE run_id=?').run(JSON.stringify({ ...research, nextCheckAt: nextAt }), runId)
+      }
       this.event(runId, 'completed', report.nextStep || '本轮工作完成。')
     })()
   }

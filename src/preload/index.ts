@@ -19,6 +19,7 @@ ipcRenderer.on('open-assistant-chat', () => openAssistantChatEvent.emit())
 
 const api = {
   agents: {
+    searchCredential: (id, key) => ipcRenderer.invoke('agents:searchCredential', id, key),
     get: id => ipcRenderer.invoke('agents:get', id),
     save: (id, settings) => ipcRenderer.invoke('agents:save', id, settings),
     run: (id, topicId) => ipcRenderer.invoke('agents:run', id, topicId),

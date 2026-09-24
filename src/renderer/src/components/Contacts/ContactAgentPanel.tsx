@@ -3,6 +3,7 @@ import { AGENT_STATUS, DEFAULT_AGENT_SETTINGS, TOPIC_STATUS, type AgentOverview,
 import './ContactAgentPanel.css'
 import ContactTopics from './ContactTopics'
 import type { AgentFocusRequest } from '../../../../shared/agents'
+import ContactResearchRecord from './ContactResearchRecord'
 
 const time = (value: number) => new Date(value).toLocaleString()
 export type ContactAgentTab = 'work' | 'history' | 'memory'
@@ -14,6 +15,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const [data, setData] = useState<AgentOverview | null>(null)
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
   const [sources, setSources] = useState('')
+  const [searchKey, setSearchKey] = useState(''), [keyConfigured, setKeyConfigured] = useState(false)
   const [localTab, setLocalTab] = useState<ContactAgentTab>('work')
   const tab = selectedTab ?? localTab
   const setTab = (next: ContactAgentTab) => { setLocalTab(next); onTabChange?.(next) }
@@ -36,9 +38,10 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const refresh = async () => {
     const request = ++epoch.current
     try {
-      const next = await window.electronAPI.agents.get(characterId)
+      const [next, credential] = await Promise.all([window.electronAPI.agents.get(characterId), window.electronAPI.agents.searchCredential(characterId)])
       if (!mounted.current || request !== epoch.current) return
       setData(next)
+      setKeyConfigured(credential.configured)
       setReadError('')
       if (!initialized.current) { initialized.current = true; setDraft(next.settings); setSources(next.settings.sources.join('\n')) }
     } catch (error) { if (mounted.current && request === epoch.current) setReadError(String(error instanceof Error ? error.message : error)) }
@@ -86,19 +89,33 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
         <label>允许读取的资料<span className="agent-caption">每行一个公开 HTTPS 网页，最多 5 个；只读，不执行网页指令。</span><textarea data-agent-sources rows={3} required value={sources} onChange={e => setSources(e.target.value)} placeholder="https://…" /></label>
         <div className="agent-settings-row"><label>间隔（分钟）<input type="number" min={15} max={10080} step={1} required value={draft.intervalMinutes} onChange={e => setDraft({ ...draft, intervalMinutes: Number(e.target.value) })} /></label><label>每日模型调用上限<input type="number" min={2} max={48} step={1} required value={draft.dailyCalls} onChange={e => setDraft({ ...draft, dailyCalls: Number(e.target.value) })} /></label></div>
         <label className="agent-toggle"><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />开启持续工作（会消耗模型额度）</label>
+        <label className="agent-toggle"><input data-agent-search-enabled type="checkbox" checked={draft.searchEnabled === true} onChange={e => setDraft({ ...draft, searchEnabled: e.target.checked })} />自主补证据：围绕疑问搜索公开网页</label>
+        {draft.searchEnabled && <>
+          <p className="agent-caption">每轮先制定验证计划，再读取网页；有新证据或事项调整才分析。搜索时最多 1 次搜索、3 个结果和 2 个原来源；重查时最多 5 个已知网页。研究问题会发送到 Brave Search，网页正文仍按原模型配置分析。正常一轮最多 2 次模型调用，恢复重试也计入额度。</p>
+          <label>每日搜索上限<input data-agent-search-limit type="number" min={1} max={24} required value={draft.dailySearches ?? 8} onChange={e => setDraft({ ...draft, dailySearches: Number(e.target.value) })} /></label>
+          {!keyConfigured && <p className="agent-error">请先在下方保存搜索密钥，再保存开启设置。</p>}
+        </>}
         <label className="agent-toggle"><input type="checkbox" checked={draft.notifyProgress !== false} onChange={e => setDraft({ ...draft, notifyProgress: e.target.checked })} />有重要进展或待确认问题时，主动发到聊天</label>
         <p className="agent-caption">每 24 小时最多 8 条；普通进展至少间隔 30 分钟，待确认问题优先。重复轮次只记历史。</p>
         <div className="agent-actions"><button data-agent-save type="submit" className="primary" disabled={busy}>保存工作设置</button><button data-agent-run type="button" disabled={busy || Boolean(dirty) || !data.settings.goal || Boolean(active) || !data.topics.some(t => t.id === data.focusTopicId && ['planned', 'researching', 'needs_evidence'].includes(t.status))} onClick={() => void perform(() => window.electronAPI.agents.run(characterId))}>推进当前事项一轮</button>{(data.settings.enabled || active) && <button type="button" disabled={busy} onClick={() => void perform(async () => { await window.electronAPI.agents.pause(characterId); setDraft(previous => ({ ...previous, enabled: false })) })}>暂停工作</button>}</div>
         {dirty && <p className="agent-caption">设置尚未保存。保存会停止当前未完成的工作。</p>}
       </form>
+      <details className="agent-search-credentials"><summary>搜索服务 · {keyConfigured ? '已配置 Brave Search' : '尚未配置'}</summary>
+        <p className="agent-caption">密钥仅用于此联系人，不进入工作记录或模型提示。修改密钥会停止未完成的工作。</p>
+        <label>Brave Search API Key<input data-agent-search-key type="password" autoComplete="new-password" value={searchKey} onChange={e => setSearchKey(e.target.value)} placeholder={keyConfigured ? '已保存，输入新密钥以替换' : '输入搜索服务密钥'} /></label>
+        <div className="agent-actions"><button data-agent-search-key-save type="button" disabled={busy || !searchKey.trim()} onClick={() => void perform(async () => { await window.electronAPI.agents.searchCredential(characterId, searchKey); setSearchKey('') })}>保存搜索密钥</button>{keyConfigured && <button type="button" disabled={busy} onClick={() => void perform(async () => { await window.electronAPI.agents.searchCredential(characterId, ''); setSearchKey('') })}>移除搜索密钥</button>}</div>
+        <a href="https://api-dashboard.search.brave.com/" target="_blank" rel="noopener noreferrer">打开搜索服务控制台</a>
       </details>
-      <p className="agent-caption">今日已调用 {data.callsToday}/{data.settings.dailyCalls} 次{data.settings.enabled && !active ? stoppedTopic ? ' · 当前事项已停止，等待你继续或选择其他事项' : ` · 下轮 ${data.callsToday >= data.settings.dailyCalls ? '明日额度恢复后' : data.nextAt > Date.now() ? time(data.nextAt) : '等待调度'}` : ''}。连续失败 3 轮会自动暂停。</p>
+      </details>
+      {data.settings.searchEnabled && <p className="agent-caption">今日已搜索 {data.searchesToday ?? 0}/{data.settings.dailySearches ?? 8} 次。相同资料会延后检查，不生成重复报告。{!keyConfigured ? '搜索密钥缺失，自动研究已停止调度。' : ''}</p>}
+      <p className="agent-caption">今日已调用 {data.callsToday}/{data.settings.dailyCalls} 次{data.settings.enabled && !active ? stoppedTopic ? ' · 当前事项已停止，等待你继续或选择其他事项' : ` · 下轮 ${data.callsToday + (data.settings.searchEnabled ? 2 : 1) > data.settings.dailyCalls ? '明日额度恢复后' : data.nextAt > Date.now() ? time(data.nextAt) : '等待调度'}` : ''}。连续失败 3 轮会自动暂停。</p>
     </div>}
     {data && tab === 'history' && <>
       <p className="agent-caption">最近 30 轮。回看读到的资料、新的判断，以及接下来要验证什么。</p>
       {!data.runs.length && <p className="agent-empty">还没有工作经历。第一轮完成后，便能回看想法从哪里来。</p>}
       <ol className="agent-history">{data.runs.map(run => <li key={run.id}><button type="button" disabled={busy} onClick={() => void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, run.id)))}><span>{run.summary || AGENT_STATUS[run.status]}</span><small>{time(run.createdAt)} · {AGENT_STATUS[run.status]} · {data.topics.find(topic => topic.id === run.topicId)?.title || '升级前工作记录'}</small></button></li>)}</ol>
       {detail && <article className="agent-record"><h4>{detail.report?.title || AGENT_STATUS[detail.run.status]}</h4>{detail.run.error && <p role="alert">{detail.run.error}</p>}
+        {detail.research && <ContactResearchRecord research={detail.research} />}
         {detail.report && <><div className="agent-report">{detail.report.body}</div><p><strong>下一步：</strong>{detail.report.nextStep || '尚未安排'}</p><h4>当时读到的资料</h4>{detail.report.evidence.map((source, i) => <details key={source.url}><summary>[{i + 1}] {source.title}</summary><a href={source.url} target="_blank" rel="noopener noreferrer">打开原网页</a><p className="agent-caption">读取于 {time(source.capturedAt)} · 保存正文节选，非完整网页<br />SHA-256：{source.hash}</p><div className="agent-source-text">{source.text}</div></details>)}</>}
         <details><summary>查看工作经过 · {detail.events.length} 条记录</summary><ol>{detail.events.map(event => <li key={event.id}><time>{time(event.at)}</time><p>{event.text}</p></li>)}</ol></details>
       </article>}

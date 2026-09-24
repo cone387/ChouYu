@@ -23,6 +23,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     window.webContents.executeJavaScript(code).then(resolve, reject).finally(() => clearTimeout(deadline))
   })
   let calls = 0, modelRequest: any
+  let researching = false, researchCalls = 0
   let fixtureSession = ''
   let toolStep = 0, scenario = '', toolResponses: string[] = []
   const server = createServer((request, response) => {
@@ -45,6 +46,17 @@ export async function runAgentsSmoke(window: BrowserWindow) {
         const delta = name ? { tool_calls: [{ index: 0, id: `contact_${scenario}_${step}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] } : { content: '已读取操作结果。' }
         response.end(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`)
         return
+      }
+      if (researching) {
+        researchCalls++
+        const planning = payload.messages.some((message: { content: string }) => message.content.startsWith('为联系人'))
+        if (body.includes('search-smoke-secret')) throw new Error('Search credential leaked into model input')
+        const result = planning ? { action: 'search', query: '团队 免费 替代品', urls: [], reason: '核对团队免费替代品与定价', checkAfterMinutes: 180 } : {
+          title: '自主搜索发现的证据', body: '原网页 [1] 有团队收费说明，尚待验证真实付费需求。', nextStep: '跟踪该定价页面变化', question: '', memories: [],
+          progress: { judgement: '新来源区分免费个人版和收费团队版', reason: '新读取的网页 [1] 支持进一步核对团队场景', openQuestions: '谁实际愿意付费', nextStep: '跟踪该定价页面变化', status: 'needs_evidence' }
+        }
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`); return
       }
       calls++; modelRequest = JSON.parse(body)
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
@@ -290,7 +302,45 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await finishFeedback()
     if ((await get()).topics.find(t => t.id === target.id)!.constraints !== '仅验证开发者工具，预算 200 元') throw new Error('Confirmed constraints were not saved')
     if (Number(calls) !== 3) throw new Error('Opening the chat toolbar unexpectedly started model work')
-    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true')
+    researching = true
+    await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet [data-agent-search-key]'))")
+    await run("document.querySelector('.contact-work-sheet .agent-work-settings').open=true; document.querySelector('.agent-search-credentials').open=true")
+    await fill('[data-agent-search-key]', 'search-smoke-secret')
+    await run("document.querySelector('[data-agent-search-key-save]').click()")
+    await waitForRenderer(window, "document.querySelector('.agent-search-credentials summary')?.textContent.includes('已配置')")
+    await run("document.querySelector('[data-agent-search-enabled]').click()")
+    await run("document.querySelector('[data-agent-save]').click()")
+    await waitForRenderer(window, "document.querySelector('[data-agent-save]')?.disabled === false && !document.querySelector('.contact-work-sheet').textContent.includes('设置尚未保存')")
+    const researchBefore = await get(), researchTopic = researchBefore.topics.find(t => t.id === target.id)!
+    if (!researchBefore.settings.searchEnabled) throw new Error('Autonomous search setting was not saved')
+    await run(`window.electronAPI.agents.topicStatus(${id}, ${JSON.stringify(target.id)}, ${researchTopic.revision}, 'planned', '补查团队定价')`)
+    await run(`window.electronAPI.agents.run(${id}, ${JSON.stringify(target.id)})`)
+    const discovered = await waitStatus('completed')
+    if (researchCalls !== 2 || discovered.reports[0].evidence[0].url !== 'https://chouyu-agent-smoke.invalid/search-evidence') throw new Error('Autonomous search did not read discovered original evidence')
+    await restartAgentsForSmoke()
+    await run(`window.electronAPI.agents.run(${id}, ${JSON.stringify(target.id)})`)
+    const unchanged = await waitStatus('completed')
+    if (Number(researchCalls) !== 3 || unchanged.reports.length !== discovered.reports.length || unchanged.searchesToday !== 2 || unchanged.nextAt < Date.now() + 359 * 60000) throw new Error('Unchanged evidence repeated analysis or lost search accounting/backoff')
+    await run("document.querySelector('[data-contact-dialog-tab=\"history\"]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet .agent-history button')?.textContent.includes('资料没有变化')")
+    await run("document.querySelector('.contact-work-sheet .agent-history button').click()")
+    await waitForRenderer(window, "document.querySelector('.agent-research-record')?.textContent.includes('团队 免费 替代品') && document.querySelector('.agent-research-record')?.textContent.includes('资料未变')")
+    if (directory) {
+      await run("document.querySelector('[aria-label=\"最大化窗口\"]')?.click()")
+      for (const width of [1024, 375]) {
+        window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 900 }, scale: 1 })
+        await waitForRenderer(window, `innerWidth === ${width}`)
+        await run("window.dispatchEvent(new Event('resize')); document.querySelector('.agent-research-record').scrollIntoView({block:'center'})")
+        await run('new Promise(resolve => setTimeout(resolve, 180))')
+        const fits = await run(`(() => { const e=document.querySelector('.contact-work-sheet'), r=e.getBoundingClientRect(); return r.x >= 0 && r.right <= ${width + 1} && e.scrollWidth <= e.clientWidth + 1 })()`)
+        if (!fits) throw new Error('Research record overflows')
+        writeFileSync(join(directory, `agent-research-${width}.png`), (await window.webContents.capturePage({ x: 0, y: 0, width, height: 900 }, { stayHidden: true, stayAwake: true })).toPNG())
+      }
+      window.webContents.disableDeviceEmulation()
+    }
+    await run(`window.electronAPI.agents.pause(${id})`)
+    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 researchCalls=3 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true autonomousResearch=true unchangedBackoff=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)
     console.error('CHOUYU_AGENT_UI', await run("document.querySelector('.contact-work-sheet')?.textContent.slice(0, 5000)"))

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
 import { join } from 'node:path'
-import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, listCharacters } from '../database'
+import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState } from '../database'
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { getRegisteredTool, registerTool } from '../tools/registry'
@@ -53,7 +53,7 @@ function identities(): AgentIdentity[] {
   return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(character => {
     const resolved = resolveCharacterConfig(character, config)
     const conversation = sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages.slice(-8).map(m => `${m.role}: ${m.content.slice(0, 1500)}`) || []).join('\n').slice(0, 8000)
-    return { id: character.id, soul: character.soulMd || config.soulMd, conversation, config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
+    return { id: character.id, soul: character.soulMd || config.soulMd, conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
   })
 }
 async function ensure() {
@@ -99,7 +99,7 @@ async function ensure() {
   return starting
 }
 export async function agentContext(characterId: string) { await ensure(); return await rpc('context', characterId) as string }
-export async function removeContactAgent(characterId: string) { await ensure(); await rpc('remove', characterId) }
+export async function removeContactAgent(characterId: string) { setState(`agent-search:${characterId}:api_key`, ''); await ensure(); await rpc('remove', characterId) }
 export async function restartAgentsForSmoke() {
   if (process.env.CHOUYU_SMOKE_TEST !== '1') throw new Error('Smoke only')
   const previous = child
@@ -107,6 +107,15 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  ipcMain.handle('agents:searchCredential', async (_event, id: string, key?: string) => {
+    if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
+    if (key !== undefined) {
+      if (typeof key !== 'string' || key.length > 8192 || /[\r\n]/.test(key)) throw new Error('搜索密钥无效。')
+      setState(`agent-search:${id}:api_key`, key.trim())
+      await ensure(); await rpc('sync', '', [identities()]); broadcastChanged(id)
+    }
+    return { configured: Boolean(getState(`agent-search:${id}:api_key`)) }
+  })
   for (const tool of createContactTools({
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
     request: async (method, id, args) => {

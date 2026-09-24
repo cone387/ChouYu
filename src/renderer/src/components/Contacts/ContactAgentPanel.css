@@ -45,3 +45,7 @@
 .agent-memories p { margin: 4px 0 8px; white-space: pre-wrap; }
 .agent-memory-footer > span { flex: 1; }
 .agent-memory-footer button { padding: 3px 8px; font-size: 12px; }
+.agent-research-record { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
+.agent-research-record ul { padding-left: 20px; }
+.agent-search-credentials { margin-top: 12px; }
+.agent-search-credentials input { width: 100%; box-sizing: border-box; }
