@@ -12,7 +12,7 @@ import { canResearch } from './topics'
 import type { AgentSearcher } from './research'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 
-export interface AgentIdentity { id: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
+export interface AgentIdentity { id: string; name?: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
   readonly store: AgentStore
   readonly runtime: AgentRuntime
@@ -36,6 +36,7 @@ export class AgentService {
       const previous = this.identities.get(identity.id)
       if (previous && signature(previous) !== signature(identity)) { this.abort(identity.id); this.store.cancel(identity.id, '角色人设或模型配置已变化，请重新发起工作。'); this.changed(identity.id) }
     }
+    this.runtime.contactSources.names = new Map(identities.map(identity => [identity.id, identity.name || identity.id]))
     this.identities = new Map(identities.map(identity => [identity.id, identity]))
     for (const profile of this.store.profiles()) if (!this.identities.has(profile.character_id)) await this.remove(profile.character_id)
     this.ready = true; this.tick()
@@ -71,6 +72,15 @@ export class AgentService {
         this.store.answer(id, String(args[2]), String(args[3])); break
       }
       case 'get': return this.store.overview(id)
+      case 'enableContinuous': {
+        if (!this.identity(id).config) throw new Error('请先配置模型。')
+        const profile = this.store.profile(id)
+        if (!profile) throw new Error('请先保存工作设置。')
+        const settings = JSON.parse(profile.settings) as AgentSettings
+        if (settings.workUntil && settings.workUntil <= Date.now()) throw new Error('持续工作已到截止时间。')
+        this.store.db.prepare('UPDATE profiles SET settings=? WHERE character_id=?').run(JSON.stringify({ ...settings, enabled: true }), id)
+        break
+      }
       case 'setTaskBudget': this.store.setTaskBudget(id, String(args[0]), args[1] as number, args[2]); break
       case 'delivery': this.store.topics.get(id, String(args[0])); return this.store.deliveries.get(String(args[0]), args[1] as number | undefined)
       case 'reviseTopic': {
@@ -132,6 +142,12 @@ export class AgentService {
     this.changed(id); this.tick(); return this.store.overview(id)
   }
   tick() {
+    if (this.ready && !this.closed) for (const profile of this.store.profiles()) {
+      const settings = JSON.parse(profile.settings) as AgentSettings
+      if (settings.enabled && settings.workUntil && Date.now() >= settings.workUntil) {
+        this.store.pause(profile.character_id); this.abort(profile.character_id); this.changed(profile.character_id)
+      }
+    }
     if (!this.ready || this.closed || this.active || this.deletingTopic) return
     for (const profile of this.store.profiles()) {
       const settings = JSON.parse(profile.settings) as AgentSettings
@@ -139,6 +155,15 @@ export class AgentService {
       if (agentUsesPlanner(settings) && this.store.callCount(profile.character_id) + 2 > settings.dailyCalls) continue
       if (!settings.enabled || profile.next_at > Date.now() || !this.identities.get(profile.character_id)?.config || this.store.callCount(profile.character_id) >= settings.dailyCalls) continue
       if (!profile.focus_topic_id || !canResearch(this.store.topics.get(profile.character_id, profile.focus_topic_id).status)) continue
+      const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === profile.focus_topic_id)
+      const research = last && this.store.research(last.id)
+      if (last?.status === 'completed' && research?.contactQuery !== undefined && settings.readContactDeliveries) {
+        const catalog = this.runtime.contactSources.discover(profile.character_id, profile.focus_topic_id, research.contactQuery)
+        if (!catalog.items.some(item => !item.processed)) {
+          this.store.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(Date.now() + settings.intervalMinutes * 60000, profile.character_id)
+          continue
+        }
+      }
       try { this.store.createRun(profile.character_id, this.identity(profile.character_id).conversation) } catch { /* invalid profiles remain visible, without a hot retry loop */ }
     }
     const run = this.store.runnable().find(r => this.identities.get(r.character_id)?.config && (!JSON.parse(r.input).settings.searchEnabled || this.identities.get(r.character_id)?.searchKey))
@@ -150,7 +175,7 @@ export class AgentService {
       const callId = this.store.latestCallId(run.id)
       let metadata: AIResponseMetadata = { model: identity.config!.model }
       try {
-        await streamAIChat([{ role: 'user', content: prompt }], '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; if (output.length > 24000) throw new Error('成果输出超过上限。') }, signal, undefined, { timeoutMs: 90000, maxOutputTokens: 2200, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
+        await streamAIChat([{ role: 'user', content: prompt }], '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; if (output.length > 24000) throw new Error('成果输出超过上限。') }, signal, undefined, { timeoutMs: 90000, maxOutputTokens: JSON.parse(run.input).settings.readContactDeliveries ? 4000 : 2200, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
       } finally {
         if (callId !== undefined) this.store.recordCallMetadata(callId, metadata)
         this.changed(run.character_id)

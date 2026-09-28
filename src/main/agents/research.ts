@@ -13,10 +13,14 @@ export function researchUrl(value: unknown): string | null {
     url.hash = ''; return url.href
   } catch { return null }
 }
-export function parseResearchPlan(raw: string, allowed: string[], minimum: number, permission: 'public' | 'sources' = 'sources', searchEnabled = true): AgentResearchPlan {
+export function parseResearchPlan(raw: string, allowed: string[], minimum: number, permission: 'public' | 'sources' = 'sources', searchEnabled = true, contactAccess = false): AgentResearchPlan {
   let value: any
   try { value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) } catch { throw new Error('研究计划格式无效。') }
-  if (!value || !['search', 'read', 'wait', 'write'].includes(value.action) || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 1000) throw new Error('研究计划必须说明动作与原因。')
+  if (!value || !['search', 'read', 'wait', 'write', 'discover_contacts', 'read_contacts'].includes(value.action) || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 1000) throw new Error('研究计划必须说明动作与原因。')
+  const contactAction = ['discover_contacts', 'read_contacts'].includes(value.action)
+  if (contactAction && !contactAccess) throw new Error('未授权读取联系人的共享成果。')
+  if (contactAction && (!Array.isArray(value.urls) || value.urls.length)) throw new Error('联系人成果读取不能混用网页地址。')
+  if (value.action === 'read_contacts' && (!Array.isArray(value.contactRefs) || !value.contactRefs.length || value.contactRefs.length > 3 || value.contactRefs.some((ref: any) => !ref || ![ref.characterId, ref.topicId, ref.sectionId].every(id => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) || !Number.isSafeInteger(ref.version) || ref.version < 1))) throw new Error('请从检索结果中选择有效的成果版本与分节。')
   const query = typeof value.query === 'string' ? value.query.trim() : ''
   if (query.length > 300 || containsSecret(query) || value.action === 'search' && !query) throw new Error('搜索词无效或包含敏感凭据。')
   if (value.action === 'search' && (!searchEnabled || permission === 'sources')) throw new Error('当前权限或配置不允许自主搜索。')
@@ -26,7 +30,7 @@ export function parseResearchPlan(raw: string, allowed: string[], minimum: numbe
   if (!Number.isInteger(value.checkAfterMinutes) || value.checkAfterMinutes < 15 || value.checkAfterMinutes > 10080) throw new Error('下次检查间隔无效。')
   const sectionId = typeof value.sectionId === 'string' ? value.sectionId.trim() : value.sectionId
   if (sectionId != null && sectionId !== '' && (typeof sectionId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(sectionId))) throw new InvalidSectionReferenceError('规划中的待修订分节 ID 格式无效。')
-  return { action: value.action, reason: value.reason.trim(), query: value.action === 'search' ? query : '', urls: [...new Set(value.urls.map(researchUrl))] as string[], checkAfterMinutes: Math.max(minimum, value.checkAfterMinutes), ...(sectionId ? { sectionId } : {}), ...(value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }
+  return { action: value.action, reason: value.reason.trim(), query: ['search', 'discover_contacts'].includes(value.action) ? query : '', ...(value.action === 'read_contacts' ? { contactRefs: value.contactRefs.map((ref: any) => ({ characterId: ref.characterId, topicId: ref.topicId, version: ref.version, sectionId: ref.sectionId })) } : {}), urls: [...new Set(value.urls.map(researchUrl))] as string[], checkAfterMinutes: Math.max(minimum, value.checkAfterMinutes), ...(sectionId ? { sectionId } : {}), ...(value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }
 }
 export type AgentSearcher = (query: string, key: string, signal: AbortSignal) => Promise<AgentSearchResult[]>
 /** Fixed API origin; credentials never follow redirects or enter an evidence record. */

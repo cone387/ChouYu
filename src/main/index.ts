@@ -6,7 +6,7 @@ import { app, BrowserWindow, screen, shell, globalShortcut, dialog } from 'elect
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
-import { initializeAgents, closeAgents } from './agents'
+import { initializeAgents, closeAgents, startIdeaLab } from './agents'
 import { initializeTasks, closeTasks } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
 import { runTaskAssistantSmoke } from './smoke/task-assistant-smoke'
@@ -338,6 +338,10 @@ app.whenReady().then(async () => {
     }
   })
   initializeAgents()
+  if (!app.isPackaged && process.argv.includes('--idea-lab')) {
+    try { console.log('CHOUYU_IDEA_LAB_READY', JSON.stringify(await startIdeaLab())) }
+    catch (error) { console.error('CHOUYU_IDEA_LAB_FAILED', error instanceof Error ? error.message : error) }
+  }
   createWindow()
 
   // Register IPC handlers immediately after window creation

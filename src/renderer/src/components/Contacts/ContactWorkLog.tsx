@@ -4,6 +4,7 @@ import './ContactWorkLog.css'
 
 const clock = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false })
 const labels: Record<string, string> = {
+  'contact-discovery': '正在检索共享成果', 'contact-source': '已读取联系人成果',
   'plan-repair': '正在修正章节引用',
   checking: '正在核对成果与阶段状态', continuing: '正文已保存，准备继续创作',
   queued: '已安排本轮工作', briefing: '正在整理任务方向', planning: '正在安排本轮工作',

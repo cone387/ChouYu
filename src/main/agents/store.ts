@@ -432,7 +432,7 @@ export class AgentStore {
       if (research) {
         const settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
         const changedSection = delivery && !previousDelivery?.sections.some(section => section.body.trim() === delivery.section.body.trim())
-        const continueWriting = research.plan.action === 'write' && progress?.status === 'researching' && changedSection && !deliveryInput.feedback
+        const continueWriting = !settings.paceWriting && research.plan.action === 'write' && progress?.status === 'researching' && changedSection && !deliveryInput.feedback
         const nextAt = Date.now() + (continueWriting ? 0 : Math.max(settings.intervalMinutes, research.plan.checkAfterMinutes) * 60000)
         this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(nextAt, run.character_id)
         this.db.prepare('UPDATE research SET value=? WHERE run_id=?').run(JSON.stringify({ ...research, nextCheckAt: nextAt }), runId)
