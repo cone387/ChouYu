@@ -11,6 +11,8 @@ import { AgentDeliveries } from './delivery'
 import { validateDeliveryPlan, type DeliveryPlan, type DeliveryUpdate } from '../../shared/agent-delivery'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import type { AgentTopicMetrics } from '../../shared/agents'
+import { readAnalytics } from './analytics'
+import type { AnalyticsQuery } from '../../shared/agent-analytics'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
 type RunRow = { id: string; character_id: string; revision: number; status: AgentRunStatus; created_at: number; updated_at: number; question: string; answer: string; summary: string; error: string; input: string; topic_id: string | null; topic_revision: number | null }
@@ -34,6 +36,7 @@ export class AgentStore {
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS runs_character ON runs(character_id, created_at DESC);
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, kind TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS events_run_time ON events(run_id,at);
       CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS calls_character_time ON calls(character_id, at);
       CREATE TABLE IF NOT EXISTS reports (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, value TEXT NOT NULL);
@@ -77,6 +80,16 @@ export class AgentStore {
     })()
   }
   close() { this.db.close() }
+  summary(characterId: string): import('../../shared/agents').AgentSummary {
+    const topics = this.topics.list(characterId)
+    const active = new Set((this.db.prepare("SELECT DISTINCT topic_id FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(characterId) as { topic_id: string | null }[]).map(r => r.topic_id))
+    const usage = this.db.prepare(`SELECT COUNT(*) AS calls,
+      COUNT(CASE WHEN json_type(metadata,'$.usage.totalTokens')='integer' AND json_extract(metadata,'$.usage.totalTokens')>=0 THEN 1 END) AS reported,
+      COALESCE(SUM(CASE WHEN json_type(metadata,'$.usage.totalTokens')='integer' AND json_extract(metadata,'$.usage.totalTokens')>=0 THEN json_extract(metadata,'$.usage.totalTokens') ELSE 0 END),0) AS tokens
+      FROM calls WHERE character_id=?`).get(characterId) as { calls: number; reported: number; tokens: number }
+    const memories = (this.db.prepare('SELECT COUNT(*) AS n FROM memories WHERE character_id=?').get(characterId) as { n: number }).n
+    return { tasks: topics.length, activeTasks: topics.filter(t => ['researching', 'needs_evidence'].includes(t.status) || t.status === 'planned' && active.has(t.id)).length, memories, ...usage }
+  }
   profile(id: string) { return this.db.prepare('SELECT * FROM profiles WHERE character_id=?').get(id) as Profile | undefined }
   profiles() { return this.db.prepare('SELECT * FROM profiles ORDER BY next_at').all() as Profile[] }
   ensure(id: string) { this.db.prepare('INSERT OR IGNORE INTO profiles(character_id,settings,revision,next_at) VALUES(?,?,1,0)').run(id, JSON.stringify(DEFAULT_AGENT_SETTINGS)) }
@@ -135,8 +148,9 @@ export class AgentStore {
     const page = rows.slice(0, 50)
     return { items: page.map(row => ({ id: row.id, runId: row.run_id, kind: row.kind, text: row.text, at: row.at, pending: row.kind === 'waiting' && row.status === 'waiting' && !row.superseded })), nextCursor: rows.length > 50 ? page.at(-1)!.id : undefined }
   }
-  recordCallMetadata(callId: number, metadata: AIResponseMetadata) {
-    this.db.prepare('UPDATE calls SET metadata=? WHERE id=?').run(JSON.stringify(metadata), callId)
+  analytics(characterId: string, query: AnalyticsQuery, now = Date.now()) { return readAnalytics(this.db, characterId, query, now) }
+  recordCallMetadata(callId: number, metadata: AIResponseMetadata, now = Date.now()) {
+    this.db.prepare('UPDATE calls SET metadata=? WHERE id=?').run(JSON.stringify({ ...metadata, recordedAt: now }), callId)
   }
   topicMetrics(characterId: string, now = Date.now()): Record<string, AgentTopicMetrics> {
     const result: Record<string, AgentTopicMetrics> = {}
@@ -328,7 +342,11 @@ export class AgentStore {
       this.db.prepare('INSERT INTO calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
     })()
   }
-  setStatus(id: string, status: AgentRunStatus, now = Date.now()) { this.db.prepare('UPDATE runs SET status=?,updated_at=? WHERE id=?').run(status, now, id) }
+  setStatus(id: string, status: AgentRunStatus, now = Date.now()) {
+    const previous = this.getRun(id)?.status
+    this.db.prepare('UPDATE runs SET status=?,updated_at=? WHERE id=?').run(status, now, id)
+    if (status === 'running' && previous !== 'running') this.event(id, 'execution-start', '开始执行本轮工作。', now)
+  }
   searchCount(id: string, now = Date.now()) { return (this.db.prepare('SELECT count(*) AS n FROM search_calls WHERE character_id=? AND at>=?').get(id, dayStart(now)) as { n: number }).n }
   chargeSearch(runId: string, now = Date.now()) {
     this.db.transaction(() => {

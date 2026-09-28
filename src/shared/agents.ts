@@ -97,6 +97,7 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI {
+  summary(characterId: string): Promise<AgentSummary>
   continueTopic(characterId: string, topicId: string, revision: number, reason: string): Promise<AgentOverview>
   setTaskBudget(characterId: string, topicId: string, revision: number, budget: Pick<import('./agent-resources').TaskResourceBudget, 'modelCalls'>): Promise<AgentOverview>
   delivery(characterId: string, topicId: string, version?: number): Promise<import('./agent-delivery').AgentDelivery | null>
@@ -115,6 +116,7 @@ export interface AgentAPI {
   focusTopic(characterId: string, topicId: string): Promise<AgentOverview>
   topicDetail(characterId: string, topicId: string, cursor?: number): Promise<AgentTopicDetail>
   interactions(characterId: string, topicId: string, cursor?: number): Promise<AgentInteractionPage>
+  analytics(characterId: string, query: import('./agent-analytics').AnalyticsQuery): Promise<import('./agent-analytics').AgentAnalytics>
   pause(characterId: string): Promise<AgentOverview>
   detail(characterId: string, runId: string): Promise<AgentRunDetail>
   answer(characterId: string, runId: string, answer: string): Promise<AgentOverview>
@@ -122,6 +124,7 @@ export interface AgentAPI {
   forget(characterId: string, memoryId: string): Promise<AgentOverview>
   onChanged(callback: (characterId: string) => void): () => void
 }
+export interface AgentSummary { tasks: number; activeTasks: number; memories: number; calls: number; reported: number; tokens: number }
 export function validateAgentSettings(raw: unknown): AgentSettings {
   if (!raw || typeof raw !== 'object') throw new Error('工作设置无效。')
   const value = raw as AgentSettings

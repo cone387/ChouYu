@@ -4,6 +4,7 @@ import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from
 import type { SessionWorkspace } from '../../shared/types'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import { ContactAgentPanel } from './ContactAgentPanel'
+import ContactCardStats from './ContactCardStats'
 import './Contacts.css'
 
 interface ContactsViewProps {
@@ -460,6 +461,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
               </span>
             </span>
             <span className="contacts-card-desc">{soulSummary || '未设置人设，使用默认丑鱼人格'}</span>
+            <ContactCardStats characterId={character.id} active={active} />
             <span className="contacts-card-tags">
               {character.category && <span className="contacts-card-tag">{INDUSTRY_LABELS[character.category]}</span>}
               <span className="contacts-card-tag">{profileNameOf(character)}</span>

@@ -1,3 +1,4 @@
+import ContactAnalytics from './ContactAnalytics'
 import ContactMarkdown from './ContactMarkdown'
 import { useEffect, useRef, useState } from 'react'
 import { agentUsesPlanner, AGENT_STATUS, DEFAULT_AGENT_SETTINGS, TOPIC_STATUS, type AgentOverview, type AgentRunDetail, type AgentSettings } from '../../../../shared/agents'
@@ -9,13 +10,14 @@ import ContactWorkLog from './ContactWorkLog'
 import type { AgentDiscussion } from './agentDiscussion'
 
 const time = (value: number) => new Date(value).toLocaleString()
-export type ContactAgentTab = 'work' | 'history' | 'memory' | 'settings'
-export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat }: {
+export type ContactAgentTab = 'work' | 'history' | 'memory' | 'settings' | 'analytics'
+export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset }: {
   characterId: string; name: string; selectedTab?: ContactAgentTab
   onTabChange?: (tab: ContactAgentTab) => void; compact?: boolean
   focusRequest?: AgentFocusRequest
   onDiscuss?: (reference: AgentDiscussion) => void
   onChat?: () => void
+  analyticsReset?: number
 }) {
   const [data, setData] = useState<AgentOverview | null>(null)
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
@@ -25,6 +27,12 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const tab = selectedTab ?? localTab
   const setTab = (next: ContactAgentTab) => { setLocalTab(next); onTabChange?.(next) }
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)
+  const [analyticsTopic, setAnalyticsTopic] = useState<string | undefined>()
+  const [analyticsFilterReset, resetAnalyticsFilter] = useState(0)
+  const [analyticsVisited, setAnalyticsVisited] = useState(false)
+  const [analyticsRecord, setAnalyticsRecord] = useState(false)
+  useEffect(() => { if (tab === 'analytics') setAnalyticsVisited(true) }, [tab])
+  useEffect(() => { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }, [analyticsReset])
   const [historyTopic, setHistoryTopic] = useState('')
   useEffect(() => {
     if (!data) return
@@ -120,12 +128,12 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       <p className="agent-description">开启持续工作后，关闭聊天仍会继续。应用需保持运行；退出或关机期间暂停，重启后恢复。</p>
     </>}
     {!compact && <div className="agent-tabs" aria-label="工作内容">
-      {([['work', '任务'], ['history', '工作记录'], ['memory', '独立记忆'], ['settings', '工作设置']] as const).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-pressed={tab === id} onClick={() => setTab(id)}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
+      {([['work', '任务'], ['history', '工作记录'], ['memory', '独立记忆'], ['settings', '工作设置'], ['analytics', '活动与消耗']] as const).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
     </div>}
     {(error || readError) && <div className="agent-error" role="alert">{error || readError}<button type="button" disabled={busy} onClick={() => { setError(''); setReadError(''); void refresh() }}>重新读取</button></div>}
     {!data && !error && !readError && <p role="status">正在读取工作状态…</p>}
     {data && <div className="agent-task-view" hidden={tab !== 'work'}>
-      <ContactTopics characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
+      <ContactTopics onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
         renderActivity={topicId => {
           const logRun = data.runs.find(run => run.topicId === topicId)
           return <>
@@ -142,6 +150,9 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
         </>}}
         onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />
     </div>}
+    {data && (analyticsVisited || tab === 'analytics') && <div hidden={tab !== 'analytics'}><ContactAnalytics resetKey={analyticsFilterReset} active={tab === 'analytics'} characterId={characterId} name={name} topics={data.topics} initialTopic={analyticsTopic} onBack={() => setTab('work')}
+      onReport={runId => { setAnalyticsRecord(true); setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} /></div>}
+    {tab === 'history' && analyticsRecord && <button type="button" onClick={() => { setAnalyticsRecord(false); setTab('analytics') }}>← 返回活动与消耗</button>}
     {data && <div className="agent-settings-view" hidden={tab !== 'settings'}>
       <h3>工作设置</h3>
       <p className="agent-description">这里管理联系人的每日资源总上限。联系人会参考剩余额度和其他任务的分配，在任务规划时安排累计调用预算；每个任务的用量与预算可在任务概览、阶段计划和本任务设置中查看。</p>

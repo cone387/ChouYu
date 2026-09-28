@@ -1,6 +1,7 @@
-export type IconName = 'eye' | 'eyeOff' | 'grip' | 'task' | 'list' | 'board' | 'filter' | 'sort' | 'fields' | 'group' | 'plus' | 'chevron' | 'disclosure' | 'more' | 'today' | 'week' | 'clock' | 'unplanned' | 'all' | 'done' | 'inbox' | 'folder' | 'search' | 'edit' | 'archive' | 'trash' | 'sidebar'
+export type IconName = 'chart' | 'eye' | 'eyeOff' | 'grip' | 'task' | 'list' | 'board' | 'filter' | 'sort' | 'fields' | 'group' | 'plus' | 'chevron' | 'disclosure' | 'more' | 'today' | 'week' | 'clock' | 'unplanned' | 'all' | 'done' | 'inbox' | 'folder' | 'search' | 'edit' | 'archive' | 'trash' | 'sidebar'
 
 const paths: Record<IconName, string> = {
+  chart: 'M3 3v18h18M7 16v-5M12 16V6M17 16v-8',
   sidebar: 'M862.037333 171.093333A85.333333 85.333333 0 0 1 938.666667 256v512a85.333333 85.333333 0 0 1-76.629334 84.906667L853.333333 853.333333H170.666667a85.333333 85.333333 0 0 1-85.333334-85.333333V256a85.333333 85.333333 0 0 1 85.333334-85.333333h682.666666l8.704 0.426666zM170.666667 230.4a25.6 25.6 0 0 0-25.6 25.6v512a25.6 25.6 0 0 0 25.6 25.6h183.466666V230.4H170.666667z m243.2 563.2H853.333333a25.6 25.6 0 0 0 25.6-25.6V256a25.6 25.6 0 0 0-25.6-25.6H413.866667v563.2z',
   eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
   eyeOff: 'M3 3l18 18M10.5 5.1A11 11 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3 4M6 6.5A21 21 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5-1M9 9a4 4 0 0 0 6 6',

@@ -72,6 +72,8 @@ export class AgentService {
         this.store.answer(id, String(args[2]), String(args[3])); break
       }
       case 'get': return this.store.overview(id)
+      case 'summary': return this.store.summary(id)
+      case 'analytics': return this.store.analytics(id, args[0] as import('../../shared/agent-analytics').AnalyticsQuery)
       case 'enableContinuous': {
         if (!this.identity(id).config) throw new Error('请先配置模型。')
         const profile = this.store.profile(id)

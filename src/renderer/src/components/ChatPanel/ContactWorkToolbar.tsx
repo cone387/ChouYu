@@ -6,11 +6,13 @@ import TaskIcon, { type IconName } from '../Tasks/TaskIcon'
 import './ContactWorkToolbar.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
 import type { AgentDiscussion } from '../Contacts/agentDiscussion'
+import { ACTIVE_TASKS_HINT, summaryTokenHint, summaryTokens, useAgentSummary } from '../Contacts/useAgentSummary'
 
 const entries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
   { id: 'work', label: '任务', icon: 'task' },
   { id: 'history', label: '工作记录', icon: 'clock' },
-  { id: 'memory', label: '记忆', icon: 'archive' }
+  { id: 'memory', label: '记忆', icon: 'archive' },
+  { id: 'analytics', label: '消耗', icon: 'chart' }
 ]
 
 /** Mount per conversation: drafts survive closing, never cross contact/session boundaries. */
@@ -19,6 +21,10 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
   onDiscuss: (reference: AgentDiscussion) => void
 }) {
   const [tab, setTab] = useState<ContactAgentTab>('work')
+  const { data: summary, error: summaryError } = useAgentSummary(characterId)
+  const badge = (entry: ContactAgentTab) => entry === 'work' ? summary?.activeTasks ?? '—' : entry === 'memory' ? summary?.memories ?? '—' : undefined
+  const hint = (entry: ContactAgentTab) => summaryError || (entry === 'work' ? ACTIVE_TASKS_HINT : entry === 'analytics' ? summaryTokenHint(summary) : entry === 'memory' ? '当前保留的独立记忆条数' : '查看工作记录')
+  const [analyticsReset, setAnalyticsReset] = useState(0)
   const [open, setOpen] = useState(false)
   const [visited, setVisited] = useState(false)
   const content = useRef<HTMLDivElement>(null)
@@ -111,18 +117,18 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onCancel={event => { event.preventDefault(); close() }}>
       <header className="contact-work-sheet-heading" onPointerDown={event => beginGesture(event, 'move')} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
-        <strong>{name}的{tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : '记忆'}</strong>
+        <strong>{name}的{tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : '记忆'}</strong>
       <div className="contact-work-buttons contact-work-dialog-tabs" role="group" aria-label="联系人工作内容">
         {entries.map(entry => <button key={entry.id} type="button" data-contact-dialog-tab={entry.id}
-          aria-pressed={tab === entry.id} onClick={() => select(entry.id)}>
-          <TaskIcon name={entry.icon} /><span>{entry.label}</span>
+          aria-label={`${entry.label}${badge(entry.id) !== undefined ? ` ${badge(entry.id)}` : ''}`} title={hint(entry.id)} aria-pressed={tab === entry.id} onClick={() => { if (entry.id === 'analytics') setAnalyticsReset(n => n + 1); select(entry.id) }}>
+          <TaskIcon name={entry.icon} /><span>{entry.label}</span>{badge(entry.id) !== undefined && <small className="contact-work-count">{badge(entry.id)}</small>}
         </button>)}
         <button type="button" className="contact-work-settings-link" data-contact-dialog-tab="settings" aria-pressed={tab === 'settings'} onClick={() => select('settings')}>工作设置</button>
       </div>
         <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
       </header>
       <div className="contact-work-sheet-content" ref={content}>
-        <ContactAgentPanel characterId={characterId} name={name} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={reference => { onDiscuss(reference); close() }} onChat={close} />
+        <ContactAgentPanel characterId={characterId} name={name} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={reference => { onDiscuss(reference); close() }} onChat={close} />
       </div>
       {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const).map(edge => <div key={edge} className={`contact-work-resize contact-work-resize-${edge}`} data-resize-edge={edge} aria-label={`调整窗口大小 ${edge}`} role="separator" tabIndex={0}
         onPointerDown={event => beginGesture(event, edge)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}
@@ -138,11 +144,12 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
     <div className="contact-work-buttons" role="group" aria-label="联系人快捷工具">
       {entries.map(entry => <button key={entry.id} type="button" data-contact-work-tab={entry.id}
         aria-haspopup="dialog" aria-expanded={open && tab === entry.id} aria-controls={visited ? id : undefined}
-        title={`查看${name}的${entry.label}`} onClick={() => {
+        title={`查看${name}的${entry.label}。${hint(entry.id)}`} onClick={() => {
+          if (entry.id === 'analytics') setAnalyticsReset(n => n + 1)
           if (open && tab === entry.id && sheet.current?.dataset.panelActive === 'true') close()
           else { select(entry.id); setVisited(true); setOpen(true); if (open) activatePanel(sheet.current) }
         }}>
-        <TaskIcon name={entry.icon} /><span>{entry.label}</span>
+        <TaskIcon name={entry.icon} /><span>{entry.label}</span>{badge(entry.id) !== undefined && <small className="contact-work-count">{badge(entry.id)}</small>}{entry.id === 'analytics' && <small className="contact-work-usage">{summaryTokens(summary)} Token</small>}
       </button>)}
     </div>
   </div>

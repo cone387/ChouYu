@@ -20,9 +20,10 @@ const elapsedTime = (milliseconds: number) => {
   return `${Math.floor(seconds / 3600) ? `${Math.floor(seconds / 3600)}:` : ''}${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-export default function ContactTopics({ characterId, data, busy, settingsDirty, onAction, onReport, focusRequest, renderActivity }: {
+export default function ContactTopics({ characterId, data, busy, settingsDirty, onAction, onReport, focusRequest, renderActivity, onAnalytics }: {
   characterId: string; data: AgentOverview; busy: boolean; settingsDirty: boolean
   onAction: (action: () => Promise<unknown>) => Promise<void>; onReport: (runId: string, topicId: string) => void
+  onAnalytics: (topicId: string) => void
   focusRequest?: AgentFocusRequest
   renderActivity?: (topicId: string) => ReactNode
 }) {
@@ -168,6 +169,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
                 ? window.electronAPI.agents.topicStatus(characterId, topic.id, topic.revision, 'paused', '用户暂停任务')
                 : window.electronAPI.agents.continueTopic(characterId, topic.id, topic.revision, '用户启动任务')).finally(() => setRunAction(null))
             }}><ContactTaskIcon name={canPause ? 'pause' : 'play'} />{runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '启动中…' : executionLabel}</button>
+          <button type="button" aria-label="查看本任务的活动与消耗" title="活动与消耗" onClick={() => onAnalytics(topic.id)}><TaskIcon name="chart" />消耗</button>
           <button ref={settingsButton} type="button" data-topic-settings aria-expanded={showSettings} aria-controls={`${tabId}-settings`} disabled={busy || Boolean(editor)} onClick={() => setShowSettings(value => !value)}><ContactTaskIcon name="settings" />设置</button>
       </div>
       <div className="topic-content-scroll" ref={scrollPane}>

@@ -1,4 +1,6 @@
 .contact-work-tools { flex-shrink: 0; min-width: 0; color: var(--text-primary); }
+.contact-work-count { min-width: 15px; padding: 0 4px; border-radius: 4px; background: var(--bg-secondary); color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; }
+.contact-work-usage { font-size: 11px; font-variant-numeric: tabular-nums; }
 .contact-work-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 14px; border-top: 1px solid var(--border); }
 .contact-work-buttons button, .contact-work-sheet-heading button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
 .contact-work-buttons button:hover, .contact-work-buttons button[aria-expanded=true], .contact-work-buttons button[aria-pressed=true], .contact-work-sheet-heading button:hover { color: var(--accent); background: var(--bg-secondary); }
@@ -58,4 +60,8 @@
   .contact-work-dialog-tabs { gap: 0; }
   .contact-work-dialog-tabs button { padding: 4px 6px; }
   .contact-work-dialog-tabs svg { display: none; }
+}
+@media (max-width: 760px) {
+  .contact-work-dialog-tabs [data-contact-dialog-tab=analytics] span { display: none; }
+  .contact-work-dialog-tabs [data-contact-dialog-tab=analytics] svg { display: block; }
 }
