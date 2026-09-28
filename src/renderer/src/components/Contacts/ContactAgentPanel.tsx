@@ -8,7 +8,7 @@ import ContactWorkLog from './ContactWorkLog'
 import type { AgentDiscussion } from './agentDiscussion'
 
 const time = (value: number) => new Date(value).toLocaleString()
-export type ContactAgentTab = 'work' | 'history' | 'memory'
+export type ContactAgentTab = 'work' | 'history' | 'memory' | 'settings'
 export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat }: {
   characterId: string; name: string; selectedTab?: ContactAgentTab
   onTabChange?: (tab: ContactAgentTab) => void; compact?: boolean
@@ -24,6 +24,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const tab = selectedTab ?? localTab
   const setTab = (next: ContactAgentTab) => { setLocalTab(next); onTabChange?.(next) }
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)
+  const [historyTopic, setHistoryTopic] = useState('')
   useEffect(() => {
     if (!detail) return
     const runId = detail.run.id
@@ -97,7 +98,6 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const focusedTopic = data?.topics.find(topic => topic.id === data.focusTopicId)
   const stoppedTopic = focusedTopic && ['paused', 'completed', 'abandoned'].includes(focusedTopic.status)
   const lastRun = data?.runs[0]
-  const logRun = data?.runs.find(run => run.topicId === data.focusTopicId)
   const latestReport = data?.reports[0]
   const blocked = !data?.topics.length ? '直接在聊天里告诉我需要处理什么，无需填写表单或先做设置。'
     : dirty ? '设置有未保存的修改，保存后才能推进。'
@@ -109,22 +109,40 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const discuss = (runId: string, topicId: string, text: string) => onDiscuss?.({ runId, topicId, text,
     title: data?.topics.find(topic => topic.id === topicId)?.title || '工作记录' })
   return <section className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId}>
-    {(!compact || tab === 'work') && <>
+    {!compact && <>
       <div className="agent-heading"><h3>任务进展</h3><span role="status">{readError ? '状态读取失败' : !data ? '正在读取状态' : active ? AGENT_STATUS[active.status] : stoppedTopic ? `当前事项${TOPIC_STATUS[focusedTopic.status]}` : lastRun?.status === 'failed' ? '最近一轮失败 · 当前未执行' : !data.topics.length ? '还没有任务' : data.settings.enabled ? '等待下次执行' : '仅手动运行'}</span></div>
       <p className="agent-description">开启持续工作后，关闭聊天仍会继续。应用需保持运行；退出或关机期间暂停，重启后恢复。</p>
     </>}
     {!compact && <div className="agent-tabs" aria-label="工作内容">
-      {([['work', '任务'], ['history', '工作记录'], ['memory', '独立记忆']] as const).map(([id, label]) => <button type="button" key={id} aria-pressed={tab === id} onClick={() => setTab(id)}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
+      {([['work', '任务'], ['history', '工作记录'], ['memory', '独立记忆'], ['settings', '工作设置']] as const).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-pressed={tab === id} onClick={() => setTab(id)}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
     </div>}
     {(error || readError) && <div className="agent-error" role="alert">{error || readError}<button type="button" disabled={busy} onClick={() => { setError(''); setReadError(''); void refresh() }}>重新读取</button></div>}
     {!data && !error && !readError && <p role="status">正在读取工作状态…</p>}
-    {data && <div hidden={tab !== 'work'}>
-      <div className="agent-now">
-        <span className="agent-caption">当前关注</span><strong>{focusedTopic?.title || '任务从聊天开始'}</strong>
-        {tab === 'work' && logRun && <ContactWorkLog key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} busy={busy} canRetry={!blocked}
+    {data && <div className="agent-task-view" hidden={tab !== 'work'}>
+      <ContactTopics characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
+        renderActivity={topicId => {
+          const logRun = data.runs.find(run => run.topicId === topicId)
+          return <>
+        {tab === 'work' && logRun && logRun.topicId === topicId && <ContactWorkLog key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} busy={busy} canRetry={!blocked}
           onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
           onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!))}
           onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} />}
+      {active?.status === 'waiting' && active.topicId === topicId && <form className="agent-question" onSubmit={event => { event.preventDefault(); void perform(async () => { await window.electronAPI.agents.answer(characterId, active.id, answer); setAnswer('') }) }}>
+        <strong>这一步需要你的想法</strong><p>{active.question}</p>
+        {onDiscuss && active.topicId && <button type="button" onClick={() => discuss(active.id, active.topicId!, `待确认问题：${active.question}`)}>带着问题去聊天</button>}
+        <label>回复<textarea value={answer} maxLength={2000} onChange={e => setAnswer(e.target.value)} rows={3} required /></label>
+        <button type="submit" disabled={busy || !answer.trim()}>回复并继续</button>
+      </form>}
+        </>}}
+        onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />
+    </div>}
+    {data && <div className="agent-settings-view" hidden={tab !== 'settings'}>
+      <h3>工作设置</h3>
+      <p className="agent-description">开启持续工作后，应用保持运行时会继续推进任务；退出或关机期间暂停。</p>
+      <details className="agent-overview"><summary>运行状态与最近发现</summary>
+      <div className="agent-now">
+        <span className="agent-caption">当前关注</span><strong>{focusedTopic?.title || '任务从聊天开始'}</strong>
+
         <p role="status">{blocked || (data.settings.enabled ? `下次检查：${data.nextAt > Date.now() ? time(data.nextAt) : '等待调度'}` : '当前为手动工作，可以推进一轮或在设置中开启持续工作。')}</p>
         <div className="agent-actions">{focusedTopic && <button data-agent-run type="button" disabled={busy || Boolean(blocked)} onClick={() => void perform(() => window.electronAPI.agents.run(characterId))}>推进当前事项一轮</button>}
           {onChat && <button type="button" className="primary" data-agent-chat onClick={onChat}>回到聊天</button>}
@@ -133,15 +151,9 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       </div>
       {latestReport && <div className="agent-latest"><span className="agent-caption">最新发现 · {time(latestReport.createdAt)}</span><h4>{latestReport.title}</h4><p className="agent-latest-excerpt">{latestReport.body}</p><p>{latestReport.nextStep || '打开记录查看结论与证据'}</p><button type="button" disabled={busy} onClick={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, latestReport.runId))) }}>查看结论与证据 →</button></div>}
       {lastRun?.status === 'failed' && <p className="agent-error" role="alert">{lastRun.error}</p>}
-      {active?.status === 'waiting' && <form className="agent-question" onSubmit={event => { event.preventDefault(); void perform(async () => { await window.electronAPI.agents.answer(characterId, active.id, answer); setAnswer('') }) }}>
-        <strong>这一步需要你的想法</strong><p>{active.question}</p>
-        {onDiscuss && active.topicId && <button type="button" onClick={() => discuss(active.id, active.topicId!, `待确认问题：${active.question}`)}>带着问题去聊天</button>}
-        <label>回复<textarea value={answer} maxLength={2000} onChange={e => setAnswer(e.target.value)} rows={3} required /></label>
-        <button type="submit" disabled={busy || !answer.trim()}>回复并继续</button>
-      </form>}
-      <ContactTopics characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
-        onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />
-      <details className="agent-work-settings">
+
+      </details>
+      <details className="agent-work-settings" open>
       <summary>权限与额度（可选）</summary>
       <p className="agent-caption">默认配置即可在聊天中派发任务。这里只调整访问范围、运行频率和额度，保存不会创建任务。</p>
       <form onSubmit={e => { e.preventDefault(); void perform(async () => { const result = await window.electronAPI.agents.savePreferences(characterId, { ...settings, goal: settings.goal || '根据用户交付的任务整理方向、研究验证并反馈进展。' }); setDraft(result.settings); setSources(result.settings.sources.join('\n')) }) }}>
@@ -174,7 +186,23 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     {data && tab === 'history' && <>
       {!detail && <p className="agent-caption">最近 30 轮。选择一轮，查看结论与证据。</p>}
       {!data.runs.length && <p className="agent-empty">还没有工作经历。第一轮完成后，便能回看想法从哪里来。</p>}
-      <ol className="agent-history" ref={historyList} hidden={Boolean(detail)}>{data.runs.map(run => <li key={run.id}><button data-run-id={run.id} type="button" disabled={busy} onClick={() => void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, run.id)))}><span>{run.summary || AGENT_STATUS[run.status]}</span><small>{time(run.createdAt)} · {AGENT_STATUS[run.status]} · {data.topics.find(topic => topic.id === run.topicId)?.title || '升级前工作记录'}</small></button></li>)}</ol>
+      {!detail && <label className="agent-history-filter">查看任务<select aria-label="筛选工作记录" value={historyTopic} onChange={event => setHistoryTopic(event.target.value)}><option value="">全部任务</option>{data.topics.map(topic => <option key={topic.id} value={topic.id}>{topic.title}</option>)}</select></label>}
+      <ol className="agent-history" ref={historyList} hidden={Boolean(detail)}>{data.runs.filter(run => !historyTopic || run.topicId === historyTopic).map((run, index, runs) => {
+        const date = new Date(run.createdAt).toLocaleDateString()
+        const startsDay = index === 0 || date !== new Date(runs[index - 1].createdAt).toLocaleDateString()
+        return <li key={run.id}>
+          {startsDay && <h4 className="agent-history-date">{date}</h4>}
+          <div className="agent-history-entry" data-status={run.status}>
+            <time dateTime={new Date(run.createdAt).toISOString()}>{new Date(run.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+            <button data-run-id={run.id} type="button" disabled={busy} onClick={() => void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, run.id)))}>
+              <span className="agent-history-meta"><span>{data.topics.find(topic => topic.id === run.topicId)?.title || '升级前工作记录'}</span><span className="topic-badge">{AGENT_STATUS[run.status]}</span></span>
+              <strong>{run.summary || AGENT_STATUS[run.status]}</strong>
+              <span className="agent-history-link">查看本轮结论与过程 →</span>
+            </button>
+          </div>
+        </li>
+      })}</ol>
+      {!detail && historyTopic && !data.runs.some(run => run.topicId === historyTopic) && <p className="agent-empty">最近 30 轮中没有这个任务的记录。更早的记录可从任务的历史变化中查看。</p>}
       {detail && <article className="agent-record" ref={record} tabIndex={-1} aria-label="工作记录详情"><button type="button" onClick={() => { returnToRun.current = detail.run.id; setDetail(null) }}>← 返回工作记录</button><p className="agent-caption">{time(detail.run.createdAt)} · {AGENT_STATUS[detail.run.status]}</p><h4>{detail.report?.title || detail.run.summary || AGENT_STATUS[detail.run.status]}</h4>{detail.run.error && <p role="alert">{detail.run.error}</p>}
         {detail.run.question && <div className="agent-question"><strong>这一轮的问题</strong><p>{detail.run.question}</p>{detail.run.answer && <p>你的回复：{detail.run.answer}</p>}</div>}
         {onDiscuss && detail.run.topicId && <button type="button" className="primary" onClick={() => discuss(detail.run.id, detail.run.topicId!, detail.report ? `${detail.report.title}\n${detail.report.body}\n下一步：${detail.report.nextStep}\n资料：\n${detail.report.evidence.map(source => `${source.title} ${source.url}`).join('\n')}` : detail.run.question || detail.run.summary)}>聊聊这个{detail.run.status === 'waiting' ? '问题' : '发现'}</button>}

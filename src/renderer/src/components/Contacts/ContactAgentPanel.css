@@ -40,6 +40,24 @@
 .agent-now > p { color: var(--text-secondary); margin: 8px 0 12px; }
 .agent-setup-step { margin: 22px 0 8px; font-size: 13px; color: var(--text-secondary); }
 .agent-history[hidden] { display: none; }
+.agent-overview { margin: 16px 0; }
+.agent-overview > summary { padding: 10px 0; cursor: pointer; font-weight: 500; }
+.agent-history-filter { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
+.agent-history-filter select { min-width: 0; max-width: 75%; }
+.agent-history li { border: 0; padding: 0; }
+.agent-history-date { margin: 24px 0 12px; font-size: 14px; }
+.agent-history-entry { position: relative; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 24px; padding: 0 0 18px; }
+.agent-history-entry::before { content: ''; position: absolute; left: 59px; top: 18px; bottom: -12px; border-left: 1px solid var(--border); }
+.agent-history-entry::after { content: ''; position: absolute; left: 55px; top: 17px; width: 7px; height: 7px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-primary); }
+.agent-history-entry[data-status=running]::after, .agent-history-entry[data-status=waiting]::after { background: var(--accent); border-color: var(--accent); }
+.agent-history li:last-child .agent-history-entry::before { bottom: 18px; }
+.agent-history-entry > time { padding-top: 13px; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.agent-history .agent-history-entry button { padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary); }
+.agent-history-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 12px; }
+.agent-history-meta .topic-badge { flex-shrink: 0; }
+.agent-history-entry strong { display: block; margin: 8px 0; font-size: 14px; font-weight: 500; line-height: 1.7; white-space: pre-wrap; }
+.agent-history-link { font-size: 12px; color: var(--accent); }
+.agent-record { font-size: 14px; line-height: 1.75; }
 .agent-composer-reference { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; margin: 6px 0; border-left: 2px solid var(--accent); background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .agent-composer-reference > div { flex: 1; min-width: 0; }
 .agent-composer-reference strong { color: var(--text-primary); }

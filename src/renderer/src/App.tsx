@@ -185,6 +185,7 @@ function App() {
 
   const updateIgnoreAt = useCallback((x: number, y: number) => {
     if ((window as any).__petDragging) return
+    if (document.querySelector('[data-window-gesture]')) { setMouseIgnored(false); return }
     const el = document.elementFromPoint(x, y)
     setMouseIgnored(!(el && el.closest('[data-interactive]')))
   }, [])

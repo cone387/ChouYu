@@ -43,6 +43,7 @@ import {
   SESSION_SIDEBAR_STATE_KEY
 } from '../../core/panel-state'
 import { usePanelResize } from './usePanelResize'
+import { activatePanel } from '../../core/panel-layer'
 import { useSessionWorkspace } from './useSessionWorkspace'
 import { proactiveEngine } from '../../core/proactive'
 import './ChatPanel.css'
@@ -401,7 +402,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!visible || toolApprovalRequest || event.defaultPrevented || isOverlayEscape(event) || document.querySelector('dialog[open], [aria-modal="true"]')) return
+      if (!visible || toolApprovalRequest || event.defaultPrevented || isOverlayEscape(event) || document.querySelector('dialog[open]:not([aria-modal="false"]), [aria-modal="true"]')) return
       if (matchesSearchShortcut(event, config.searchHotkey, navigator.platform.includes('Mac'))) {
         event.preventDefault(); setShowGlobalSearch(true); return
       }
@@ -745,7 +746,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }
 
   return (
-    <div ref={panelRef} data-interactive data-ready={panelReady}
+    <div ref={panelRef} data-interactive data-ready={panelReady} data-panel-window="main" onPointerDownCapture={event => activatePanel(event.target)}
       className="chat-panel app-workspace"
       data-window-mode={displayMode} data-maximized={maximized}
       data-workspace-page={activePage}

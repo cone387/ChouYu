@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AGENT_STATUS, TOPIC_STATUS, type AgentOverview, type AgentTopic, type AgentTopicDetail, type AgentTopicInput, type AgentTopicStatus } from '../../../../shared/agents'
 import './ContactTopics.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
@@ -8,17 +8,19 @@ type Editor = { kind: 'edit' | 'status'; topicId: string; revision: number; inpu
 const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_evidence'].includes(topic.status)
 const time = (value: number) => new Date(value).toLocaleString()
 
-export default function ContactTopics({ characterId, data, busy, settingsDirty, onAction, onReport, focusRequest }: {
+export default function ContactTopics({ characterId, data, busy, settingsDirty, onAction, onReport, focusRequest, renderActivity }: {
   characterId: string; data: AgentOverview; busy: boolean; settingsDirty: boolean
   onAction: (action: () => Promise<unknown>) => Promise<void>; onReport: (runId: string, topicId: string) => void
   focusRequest?: AgentFocusRequest
+  renderActivity?: (topicId: string) => ReactNode
 }) {
   const [selected, setSelected] = useState(data.focusTopicId ?? data.topics[0]?.id ?? '')
-  useEffect(() => { if (focusRequest) setSelected(focusRequest.topicId) }, [focusRequest])
+  const [mobileDetail, setMobileDetail] = useState(Boolean(focusRequest))
+  useEffect(() => { if (focusRequest) { setSelected(focusRequest.topicId); setMobileDetail(true) } }, [focusRequest])
   const [detail, setDetail] = useState<AgentTopicDetail | null>(null)
   const [loading, setLoading] = useState(false), [error, setError] = useState('')
   const [editor, setEditor] = useState<Editor | null>(null)
-  // A task assigned from chat becomes the current selection; keep an open edit intact.
+  // Explicitly changing the working topic selects it; ordinary refreshes preserve browsing.
   useEffect(() => { if (!editor && data.focusTopicId) setSelected(data.focusTopicId) }, [data.focusTopicId])
   const epoch = useRef(0)
   const topic = data.topics.find(item => item.id === selected)
@@ -54,12 +56,29 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     setEditor(null)
   })
   return <section className="contact-topics" aria-label="持续推进的事项">
-    <div className="topic-heading"><h4>持续推进的事项</h4></div>
-    <p className="agent-caption">每轮接着当前事项推进。暂停或结束后不会自动换题；其他事项可单独运行，或设为当前事项。</p>
     {!data.topics.length && <p className="agent-empty">在聊天里直接交代任务，这里会显示进度和每一轮的判断。</p>}
-    {data.topics.length > 0 && <label className="topic-picker">查看事项<select data-topic-select value={selected} disabled={busy || Boolean(editor)} onChange={event => setSelected(event.target.value)}>
-      {data.topics.map(item => <option key={item.id} value={item.id}>{item.id === data.focusTopicId ? '当前 · ' : ''}{item.title} · {TOPIC_STATUS[item.status]}</option>)}
-    </select></label>}
+    {data.topics.length > 0 && <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}`}>
+      <nav className="topic-list" aria-label="任务列表">
+        <div className="topic-list-heading"><strong>任务列表</strong><span>{data.topics.length}</span></div>
+        {data.topics.map(item => {
+          const run = currentRun?.topicId === item.id ? currentRun : undefined
+          return <button type="button" key={item.id} className="topic-list-card" data-topic-id={item.id}
+            aria-current={selected === item.id ? 'true' : undefined} disabled={busy || Boolean(editor)}
+            onClick={() => { setSelected(item.id); setMobileDetail(true) }}>
+            <span className="topic-card-title">{item.title}</span>
+            <span className="topic-badges">
+              {item.id === data.focusTopicId && <span className="topic-badge topic-badge-focus">当前关注</span>}
+              <span className={`topic-badge${run ? ' topic-badge-active' : ''}`}>{run ? AGENT_STATUS[run.status] : TOPIC_STATUS[item.status]}</span>
+            </span>
+            <span className="topic-card-times">
+              <span title="任务建立时间">开始 <time dateTime={new Date(item.createdAt).toISOString()}>{new Date(item.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</time></span>
+              <span>更新 <time dateTime={new Date(item.updatedAt).toISOString()}>{new Date(item.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</time></span>
+            </span>
+          </button>
+        })}
+      </nav>
+      <div className="topic-detail-pane" key={selected}>
+        <button type="button" className="topic-back" onClick={() => setMobileDetail(false)}>← 返回任务列表</button>
     {editor && <form className="topic-editor" data-topic-editor onSubmit={event => { event.preventDefault(); void submit() }}>
       <h4>{editor.kind === 'edit' ? '编辑事项' : `${TOPIC_STATUS[editor.status]}：${editor.input.title}`}</h4>
       {editor.kind === 'edit' && <>
@@ -75,12 +94,12 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       <article className="topic-current" data-topic-current={topic.id}>
         <div className="topic-heading"><h4>{topic.title}</h4><span className="topic-status">{TOPIC_STATUS[topic.status]}</span></div>
         <p className="agent-caption">本轮执行：{currentRun?.topicId === topic.id ? AGENT_STATUS[currentRun.status] : topicRun?.status === 'failed' ? '最近一轮失败，当前未执行' : topicRun?.status === 'completed' ? '最近一轮已完成，当前未执行' : '当前未执行'}</p>
-        <dl><dt>目标</dt><dd>{topic.goal}</dd>{topic.constraints && <><dt>约束</dt><dd>{topic.constraints}</dd></>}
-          <dt>当前判断</dt><dd data-topic-judgement>{topic.judgement || '尚未开始研究，还没有形成判断。'}</dd>
+        <dl><dt>当前判断</dt><dd data-topic-judgement>{topic.judgement || '尚未开始研究，还没有形成判断。'}</dd>
           <dt>待验证问题</dt><dd>{topic.openQuestions || '尚未记录'}</dd>
           <dt>下一步</dt><dd>{topic.nextStep || (researchable(topic) ? '正在整理任务方向。' : '已停止推进。')}</dd>
           {['completed', 'abandoned', 'paused'].includes(topic.status) && <><dt>停止原因</dt><dd>{topic.reason}</dd></>}
         </dl>
+        <details className="topic-run-activity" open={currentRun?.topicId === topic.id ? true : undefined}><summary>本轮工作过程</summary>{renderActivity?.(topic.id)}</details>
         <div className="agent-actions">
           <button type="button" data-topic-run disabled={busy || settingsDirty || Boolean(editor) || Boolean(currentRun) || !researchable(topic)} onClick={() => void onAction(() => window.electronAPI.agents.run(characterId, topic.id))}>推进一轮</button>
           {data.focusTopicId !== topic.id && researchable(topic) && <button type="button" disabled={busy || Boolean(editor)} onClick={() => void onAction(() => window.electronAPI.agents.focusTopic(characterId, topic.id))}>设为当前事项</button>}
@@ -92,6 +111,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         {currentRun && currentRun.topicId !== topic.id && <p className="agent-caption">联系人正在处理另一事项，完成后可推进这一项。</p>}
       </article>
       <ContactDelivery key={`${characterId}:${topic.id}`} characterId={characterId} topic={topic} busy={busy || Boolean(currentRun) || settingsDirty || Boolean(editor)} onAction={onAction} />
+      <details className="topic-goal"><summary>目标与约束</summary><dl><dt>目标</dt><dd>{topic.goal}</dd>{topic.constraints && <><dt>约束</dt><dd>{topic.constraints}</dd></>}</dl></details>
       <div className="topic-timeline"><h4>判断如何变化</h4>
         {loading && <p role="status">正在读取事项经历…</p>}
         {error && <p role="alert" className="agent-error">{error}<button type="button" onClick={() => void load()}>重试</button></p>}
@@ -111,5 +131,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         {detail?.nextCursor && <button type="button" disabled={loading} onClick={() => void load(detail.nextCursor!)}>更早的经历</button>}
       </div>
     </>}
+      </div>
+    </div>}
   </section>
 }
