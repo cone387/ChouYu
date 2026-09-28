@@ -55,6 +55,14 @@ export default function ContactWorkLog({ characterId, run, busy, canRetry, onRep
   useLayoutEffect(() => {
     if (following.current) follow()
     else setUnread(events.filter(event => event.id > seen.current).length)
+    const node = viewport.current
+    if (!node) return
+    // A hidden task tab has no scrollable height. Restore following when it opens.
+    const observer = new ResizeObserver(() => {
+      if (following.current && node.clientHeight > 0) node.scrollTo({ top: node.scrollHeight, behavior: 'instant' })
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
   }, [lastId])
   // Use the newer snapshot so a late detail response cannot revive a finished run.
   const current = detail && detail.run.updatedAt > run.updatedAt ? detail.run : run

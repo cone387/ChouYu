@@ -10,6 +10,7 @@ import type { AgentSettings, AgentTopicStatus } from '../../shared/agents'
 import { agentUsesPlanner } from '../../shared/agents'
 import { canResearch } from './topics'
 import type { AgentSearcher } from './research'
+import type { AIResponseMetadata } from '../../shared/ai-usage'
 
 export interface AgentIdentity { id: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
@@ -127,7 +128,14 @@ export class AgentService {
     const deadline = setTimeout(() => controller.abort(new Error('本轮工作超过两分钟。')), 120000)
     const model: AgentModel = this.modelFactory?.(identity) || (async (prompt, signal) => {
       let output = ''
-      await streamAIChat([{ role: 'user', content: prompt }], '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; if (output.length > 24000) throw new Error('成果输出超过上限。') }, signal, undefined, { timeoutMs: 90000, maxOutputTokens: 2200 })
+      const callId = this.store.latestCallId(run.id)
+      let metadata: AIResponseMetadata = { model: identity.config!.model }
+      try {
+        await streamAIChat([{ role: 'user', content: prompt }], '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; if (output.length > 24000) throw new Error('成果输出超过上限。') }, signal, undefined, { timeoutMs: 90000, maxOutputTokens: 2200, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
+      } finally {
+        if (callId !== undefined) this.store.recordCallMetadata(callId, metadata)
+        this.changed(run.character_id)
+      }
       return output
     })
     const promise = this.runtime.execute(run.id, identity.soul, model, controller.signal, () => this.changed(run.character_id), identity.searchKey)

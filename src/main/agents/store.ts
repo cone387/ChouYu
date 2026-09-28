@@ -8,6 +8,8 @@ import { AgentNotices } from './notices'
 import type { AgentResearch } from '../../shared/agents'
 import { AgentDeliveries } from './delivery'
 import type { DeliveryUpdate } from '../../shared/agent-delivery'
+import type { AIResponseMetadata } from '../../shared/ai-usage'
+import type { AgentTopicMetrics } from '../../shared/agents'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
 type RunRow = { id: string; character_id: string; revision: number; status: AgentRunStatus; created_at: number; updated_at: number; question: string; answer: string; summary: string; error: string; input: string; topic_id: string | null; topic_revision: number | null }
@@ -25,7 +27,7 @@ export class AgentStore {
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 6) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 7) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -68,7 +70,10 @@ export class AgentStore {
       this.db.pragma('user_version = 5')
     })()
     this.deliveries = new AgentDeliveries(this.db)
-    this.db.pragma('user_version = 6')
+    if (version < 7) this.db.transaction(() => {
+      if (!(this.db.pragma('table_info(calls)') as { name: string }[]).some(column => column.name === 'metadata')) this.db.exec('ALTER TABLE calls ADD COLUMN metadata TEXT;')
+      this.db.pragma('user_version = 7')
+    })()
   }
   close() { this.db.close() }
   profile(id: string) { return this.db.prepare('SELECT * FROM profiles WHERE character_id=?').get(id) as Profile | undefined }
@@ -105,6 +110,7 @@ export class AgentStore {
     const profile = this.profile(id)
     const activity = this.db.prepare('SELECT e.* FROM events e JOIN runs r ON r.id=e.run_id WHERE r.character_id=? ORDER BY e.id DESC LIMIT 1').get(id) as { id: number; run_id: string; kind: string; text: string; at: number } | undefined
     return {
+      topicMetrics: this.topicMetrics(id, now),
       latestActivity: activity ? { id: activity.id, runId: activity.run_id, kind: activity.kind, text: activity.text, at: activity.at } : undefined,
       settings: profile ? JSON.parse(profile.settings) : { ...DEFAULT_AGENT_SETTINGS }, revision: profile?.revision ?? 0, nextAt: profile?.next_at ?? 0,
       callsToday: this.callCount(id, now),
@@ -113,6 +119,41 @@ export class AgentStore {
       runs: (this.db.prepare('SELECT * FROM runs WHERE character_id=? ORDER BY created_at DESC, rowid DESC LIMIT 30').all(id) as RunRow[]).map(mapRun),
       memories: this.memories(id), reports: (this.db.prepare('SELECT value FROM reports WHERE character_id=? ORDER BY rowid DESC LIMIT 20').all(id) as { value: string }[]).map(r => JSON.parse(r.value))
     }
+  }
+  latestCallId(runId: string) {
+    return (this.db.prepare('SELECT id FROM calls WHERE run_id=? ORDER BY id DESC LIMIT 1').get(runId) as { id: number } | undefined)?.id
+  }
+  recordCallMetadata(callId: number, metadata: AIResponseMetadata) {
+    this.db.prepare('UPDATE calls SET metadata=? WHERE id=?').run(JSON.stringify(metadata), callId)
+  }
+  topicMetrics(characterId: string, now = Date.now()): Record<string, AgentTopicMetrics> {
+    const result: Record<string, AgentTopicMetrics> = {}
+    for (const topic of this.topics.list(characterId)) result[topic.id] = { runs: 0, calls: 0, searches: 0, elapsedMs: 0, activeRuns: 0, measuredAt: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, inputReported: 0, outputReported: 0, totalReported: 0, models: [] }
+    const runs = this.db.prepare('SELECT topic_id,status,created_at,updated_at FROM runs WHERE character_id=? AND topic_id IS NOT NULL ORDER BY created_at,rowid').all(characterId) as Pick<RunRow, 'topic_id' | 'status' | 'created_at' | 'updated_at'>[]
+    for (const run of runs) {
+      const metric = result[run.topic_id!]
+      if (!metric) continue
+      if (!metric.latestRun || run.created_at >= metric.latestRun.createdAt) metric.latestRun = { createdAt: run.created_at, status: run.status }
+      const active = ['queued', 'running', 'waiting'].includes(run.status)
+      if (active) metric.measuredAt = now
+      metric.runs++; metric.activeRuns += Number(active)
+      metric.elapsedMs += Math.max(0, (active ? now : run.updated_at) - run.created_at)
+    }
+    const calls = this.db.prepare('SELECT r.topic_id,c.metadata FROM calls c JOIN runs r ON r.id=c.run_id WHERE c.character_id=?').all(characterId) as { topic_id: string; metadata: string | null }[]
+    for (const call of calls) {
+      const metric = result[call.topic_id]
+      if (!metric) continue
+      metric.calls++
+      const metadata: AIResponseMetadata = call.metadata ? JSON.parse(call.metadata) : {}
+      if (metadata.model && !metric.models.includes(metadata.model)) metric.models.push(metadata.model)
+      for (const [key, reported] of [['inputTokens', 'inputReported'], ['outputTokens', 'outputReported'], ['totalTokens', 'totalReported']] as const) {
+        const value = metadata.usage?.[key]
+        if (value !== undefined && Number.isSafeInteger(value) && value >= 0) { metric[key] += value; metric[reported]++ }
+      }
+    }
+    const searches = this.db.prepare('SELECT r.topic_id,COUNT(*) AS n FROM search_calls c JOIN runs r ON r.id=c.run_id WHERE c.character_id=? GROUP BY r.topic_id').all(characterId) as { topic_id: string; n: number }[]
+    for (const search of searches) if (result[search.topic_id]) result[search.topic_id].searches = search.n
+    return result
   }
   memories(id: string): AgentMemory[] {
     return (this.db.prepare('SELECT * FROM memories WHERE character_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100').all(id) as { id: string; content: string; run_id: string | null; created_at: number }[]).map(r => ({ id: r.id, content: r.content, runId: r.run_id, createdAt: r.created_at }))

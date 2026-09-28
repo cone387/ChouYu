@@ -25,9 +25,14 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
   const sheet = useRef<HTMLDialogElement>(null)
   const id = useId()
   const gesture = useRef<{ kind: 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'; x: number; y: number; left: number; top: number; width: number; height: number } | null>(null)
+  const positioned = useRef(false)
   const keepInView = () => {
     const dialog = sheet.current
     if (!dialog?.open || gesture.current) return
+    if (!positioned.current) {
+      Object.assign(dialog.style, { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' })
+      return
+    }
     const rect = dialog.getBoundingClientRect()
     const width = Math.min(rect.width, window.innerWidth - 16)
     const height = Math.min(rect.height, window.innerHeight - 16)
@@ -38,6 +43,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
     const dialog = sheet.current
     if (!dialog) return
     const rect = dialog.getBoundingClientRect()
+    positioned.current = true
     gesture.current = { kind, x: event.screenX, y: event.screenY, left: rect.left, top: rect.top, width: rect.width, height: rect.height }
     dialog.dataset.windowGesture = kind
     Object.assign(dialog.style, { left: `${rect.left}px`, top: `${rect.top}px`, transform: 'none' })
@@ -74,7 +80,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
   }, [focusRequest])
   useEffect(() => {
     const dialog = sheet.current
-    if (open && dialog && !dialog.open) { dialog.show(); keepInView(); activatePanel(dialog) }
+    if (open && dialog && !dialog.open) { positioned.current = false; dialog.show(); keepInView(); activatePanel(dialog) }
     return () => { if (dialog?.open) dialog.close() }
   }, [open])
   useEffect(() => {

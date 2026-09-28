@@ -37,11 +37,20 @@ export interface AgentEvent { id: number; runId: string; kind: string; text: str
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
+  topicMetrics?: Record<string, AgentTopicMetrics>
   latestActivity?: AgentEvent
   searchesToday?: number
   settings: AgentSettings; revision: number; nextAt: number; callsToday: number
   runs: AgentRun[]; memories: AgentMemory[]; reports: AgentReport[]
   topics: AgentTopic[]; focusTopicId: string | null
+}
+export interface AgentTopicMetrics {
+  runs: number; calls: number; searches: number
+  elapsedMs: number; activeRuns: number; measuredAt: number
+  inputTokens: number; outputTokens: number; totalTokens: number
+  inputReported: number; outputReported: number; totalReported: number
+  models: string[]
+  latestRun?: Pick<AgentRun, 'createdAt' | 'status'>
 }
 export const TOPIC_STATUS = { planned: '待开始', researching: '尚未完成', needs_evidence: '待补证据', paused: '已暂停', completed: '已结束', abandoned: '已放弃' } as const
 export type AgentTopicStatus = keyof typeof TOPIC_STATUS
@@ -79,6 +88,7 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI {
+  continueTopic(characterId: string, topicId: string, revision: number, reason: string): Promise<AgentOverview>
   delivery(characterId: string, topicId: string, version?: number): Promise<import('./agent-delivery').AgentDelivery | null>
   exportDelivery(characterId: string, topicId: string, version: number): Promise<boolean>
   reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string): Promise<AgentOverview>

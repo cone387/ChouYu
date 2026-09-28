@@ -40,7 +40,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           progress: { judgement: '需求存在，个人付费意愿未知。', openQuestions: '谁愿意付费？', nextStep: '核对反对证据', reason: '采用用户回复，聚焦开发者工具。', status: 'needs_evidence' },
           delivery: { completionCriteria: '核对开发者需求和付费假设，给出证据与局限', summary: '已根据用户回复聚焦开发者工具。', stages: [{ id: 'research', title: '验证需求', status: 'active' }, { id: 'conclusion', title: '形成判断', status: 'pending' }], section: { id: 'findings', title: '开发者需求', body: '按用户回复只研究开发者工具。资料 [1] 尚不足以验证收益。' } } }
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
+        response.end(`data: ${JSON.stringify({ model: 'agent-smoke', usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }, choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
         return
       }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.startsWith('你是联系人，刚收到'))) {
@@ -75,14 +75,14 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           ...(revisingDelivery ? { delivery: { completionCriteria: '核对团队需求和证据局限', summary: '按用户意见明确证据局限', stages: [{ id: 'verify', title: '验证需求', status: 'active' }], section: { id: revisedSectionId, title: '团队需求与局限', body: '已按修改意见补充局限：资料 [1] 的价格不能证明团队愿意付费。' } } } : {})
         }
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`); return
+        response.end(`data: ${JSON.stringify({ model: 'agent-smoke', usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }, choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`); return
       }
       calls++; modelRequest = JSON.parse(body)
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
       const judgements = ['需求存在，个人付费意愿未知。', '个人用户不愿付费，转向核对团队需求。', '团队已有免费方案，暂时放弃该方向。']
       const nextStep = calls === 3 ? '' : calls === 2 ? '核对团队已有替代方案与替换意愿。' : '按你熟悉的行业继续核对需求证据。'
       const result = { title: `开发者机会研究 · 第 ${calls} 轮`, body: `资料 [1] 的本轮判断：${judgements[calls - 1]}\n以上为研究判断，不能视为已验证收益。`, nextStep, question: calls === 1 ? '你更熟悉哪个行业？' : '', memories: calls === 1 ? ['需求存在的证据不等于付费意愿，下一轮应继续验证。'] : [], progress: { judgement: judgements[calls - 1], openQuestions: calls === 3 ? '是否存在其他细分人群仍未知。' : '谁愿意付费、现有方案是否足够？', nextStep, reason: calls === 1 ? '资料 [1] 提供需求线索，尚未证明付费意愿。' : calls === 2 ? '新资料 [1] 否定了个人用户付费假设，缩小到团队。' : '资料 [1] 显示团队已有免费替代方案，因此停止投入。', status: calls === 3 ? 'abandoned' : 'needs_evidence' } }
-      response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
+      response.end(`data: ${JSON.stringify({ model: 'agent-smoke', usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }, choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -152,9 +152,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     const waiting = await waitStatus('waiting')
     await waitForRenderer(window, "document.querySelector('[data-topic-id][aria-current=true]')?.disabled === false")
     await run("document.querySelector('[data-topic-id][aria-current=true]').click()")
+    await run("document.querySelector('.topic-content-tabs [id$=activity]').click()")
     const logDirectory = process.env.CHOUYU_SMOKE_ARTIFACTS
     await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-work-log] li[data-kind=waiting]'))")
-    if (!await run("(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.clientHeight === 150 && el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")) throw new Error('Work log did not follow the latest real event')
+    await waitForRenderer(window, "(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.clientHeight === 150 && el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")
     await run("Array.from(document.querySelectorAll('[data-agent-work-log] button')).find(b => b.textContent === '去回复').click()")
     if (!await run("document.activeElement === document.querySelector('.agent-question textarea')")) throw new Error('Work log reply did not focus the answer')
     if (logDirectory) {
@@ -235,6 +236,8 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     const hashes = new Set((await get()).reports.map(report => report.evidence[0].hash))
     if (hashes.size !== 3) throw new Error('Topic rounds lost their changing evidence')
     console.log('CHOUYU_SMOKE_AGENTS_STAGE topic-three-rounds')
+    const taskMetrics = (await get()).topicMetrics![topicId]
+    if (taskMetrics.calls !== 4 || taskMetrics.totalTokens !== 480 || taskMetrics.totalReported !== 4 || taskMetrics.runs !== 3 || taskMetrics.models[0] !== 'agent-smoke') throw new Error('Task metrics did not persist real model usage across rounds and restart')
     await run("[...document.querySelectorAll('.agent-tabs button')].find(b => b.textContent.includes('工作记录')).click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.agent-history button'))")
     await run("document.querySelector('.agent-history button').click()")
@@ -255,6 +258,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           writeFileSync(join(directory, `contact-agent-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
           await run("document.querySelector('.agent-tabs button').click()")
           await run("document.querySelector('[data-topic-id][aria-current=true]')?.click()")
+          await run("document.querySelector('.topic-content-tabs [id$=delivery]').click()")
           await waitForRenderer(window, "document.querySelector('.contact-delivery')?.getBoundingClientRect().width > 0")
           await run("document.querySelector('.contact-delivery')?.scrollIntoView({block:'start'})")
           await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
@@ -338,9 +342,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run('window.__stopFloatingMouseState(); delete window.__stopFloatingMouseState; delete window.__floatingMouseIgnored')
     await run("document.querySelector('.input-textarea').focus()")
     if (!await run("document.activeElement === document.querySelector('.input-textarea') && document.querySelector('.contact-work-sheet').open")) throw new Error('Floating work panel blocks the chat composer')
+    if (!await run("(() => { const r=document.querySelector('.contact-work-sheet').getBoundingClientRect(); return Math.abs(r.left+r.width/2-innerWidth/2)<2 && Math.abs(r.top+r.height/2-innerHeight/2)<2 })()")) throw new Error('Contact popup is not centered after loading')
     const floatingStyle = await run("document.querySelector('.contact-work-sheet').getAttribute('style')")
     await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     const floatingBefore = await run("document.querySelector('.contact-work-sheet').getBoundingClientRect().toJSON()")
+    const listWidthBefore = await run("document.querySelector('.contact-work-sheet .topic-list').getBoundingClientRect().width")
     const pointerDrag = async (x: number, y: number, dx: number, dy: number) => {
       await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
       await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 })
@@ -354,6 +360,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await pointerDrag(floatingMoved.right - 6, floatingMoved.bottom - 6, -70, -50)
     const floatingResized = await run("document.querySelector('.contact-work-sheet').getBoundingClientRect().toJSON()")
     if (Math.abs(floatingResized.width - floatingMoved.width + 70) > 2 || Math.abs(floatingResized.height - floatingMoved.height + 50) > 2) throw new Error('Resize handle did not change both dimensions')
+    if (floatingResized.width > 660 && Math.abs(await run("document.querySelector('.contact-work-sheet .topic-list').getBoundingClientRect().width") - listWidthBefore) > 1) throw new Error('Task list width changed with dialog resize')
     await pointerDrag(floatingResized.left + 2, floatingResized.top + floatingResized.height / 2, 24, 0)
     const leftResized = await run("document.querySelector('.contact-work-sheet').getBoundingClientRect().toJSON()")
     if (Math.abs(leftResized.left - floatingResized.left - 24) > 2 || Math.abs(leftResized.right - floatingResized.right) > 2) throw new Error('Left edge resize did not preserve the opposite edge')
@@ -370,7 +377,16 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (!await run("Array.from(document.querySelectorAll('.contact-work-sheet .topic-card-times')).every(el => el.querySelectorAll('time[datetime]').length === 2)")) throw new Error('Task timestamps are missing')
     await run(`document.querySelector('.contact-work-sheet').setAttribute('style', ${JSON.stringify(floatingStyle)}); delete document.querySelector('.contact-work-sheet').dataset.resized`)
     await waitForRenderer(window, "document.querySelectorAll('.contact-work-sheet [data-topic-change]').length === 4")
-    if (!await run("document.querySelector('.contact-work-sheet [data-topic-judgement]').textContent.includes('团队已有免费方案') && document.querySelector('.contact-work-sheet [data-topic-run]').disabled")) throw new Error('Task dialog did not show the ended topic')
+    if (!await run("document.querySelector('.contact-work-sheet [data-topic-judgement]').textContent.includes('团队已有免费方案') && document.querySelector('.contact-work-sheet [data-topic-run]').textContent.includes('启动')")) throw new Error('Task dialog did not show the ended topic')
+    await run("document.querySelector('.contact-work-sheet .topic-content-tabs [id$=history]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet .topic-timeline').getBoundingClientRect().height > 0")
+    if (!await run("(() => { const sheet=document.querySelector('.contact-work-sheet'), header=sheet.querySelector('.topic-fixed-header'), scroll=sheet.querySelector('.topic-content-scroll'), before=header.getBoundingClientRect().top; scroll.scrollTop=scroll.scrollHeight; return scroll.scrollTop>0 && Math.abs(header.getBoundingClientRect().top-before)<1 && sheet.querySelectorAll('[data-topic-run], [data-topic-pause]').length===1 })()")) throw new Error('Task controls did not stay fixed while scrolling')
+    await run("document.querySelector('.contact-work-sheet [data-topic-settings]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet .topic-settings').getBoundingClientRect().height > 0")
+    if (!await run("document.querySelector('.contact-work-sheet .topic-settings').textContent.includes('以下调整仅针对当前任务') && document.querySelector('.contact-work-sheet .topic-content-tabs').getBoundingClientRect().height===0")) throw new Error('Task settings are not separate from contact settings')
+    await run("document.querySelector('.contact-work-sheet [data-topic-settings]').click(); document.querySelector('.contact-work-sheet .topic-content-tabs [id$=overview]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet [data-topic-overview]').getBoundingClientRect().height > 0")
+    if (!await run("document.querySelector('.contact-work-sheet [data-topic-tokens]').textContent === '480' && document.querySelector('.contact-work-sheet [data-topic-calls]').textContent.includes('4') && document.querySelector('.contact-work-sheet [data-topic-run] svg') && document.querySelector('.contact-work-sheet [data-topic-settings] svg')")) throw new Error('Overview metrics or task button icons are missing')
     // The only assignment entry is the actual chat composer and model tool execution.
     if (await run("Boolean(document.querySelector('[data-topic-create]') || document.querySelector('[data-agent-goal]'))")) throw new Error('Duplicate task entry remains')
     await run("document.querySelector('[data-agent-chat]').click()")
@@ -386,9 +402,8 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet [data-topic-current]')?.textContent.includes('研究另一个独立方向') && !document.querySelector('.contact-work-sheet [data-topic-editor]')")
     await run("document.querySelector('.contact-work-sheet [data-topic-pause]').click()")
-    await fill('.contact-work-sheet [data-topic-reason]', '先保留方向，等我补充资料')
-    await run("document.querySelector('.contact-work-sheet [data-topic-save]').click()")
-    await waitForRenderer(window, "document.querySelector('.contact-work-sheet [data-topic-current]')?.textContent.includes('先保留方向，等我补充资料') && !document.querySelector('.contact-work-sheet [data-topic-editor]')")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet [data-topic-current]')?.textContent.includes('已暂停') && document.querySelector('.contact-work-sheet [data-topic-run]')?.textContent.includes('启动') && !document.querySelector('.contact-work-sheet [data-topic-editor]')")
+    if ((await get()).runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status))) throw new Error('Pause left an active run')
     await run(`Array.from(document.querySelectorAll('.contact-work-sheet [data-topic-id]')).find(button => button.dataset.topicId === ${JSON.stringify(topicId)}).click()`)
     if ((await get()).focusTopicId === topicId) throw new Error('Browsing a task changed the scheduling focus')
     await waitForRenderer(window, "document.querySelectorAll('.contact-work-sheet [data-topic-change]').length === 4")
@@ -510,6 +525,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       window.webContents.disableDeviceEmulation()
     }
     await run("document.querySelector('[data-contact-dialog-tab=\"work\"]').click()")
+    await run("document.querySelector('.topic-content-tabs [id$=delivery]').click()")
     await waitForRenderer(window, "document.querySelector('.contact-delivery')?.clientWidth > 0 && Boolean(document.querySelector('[data-delivery-feedback]'))")
     const beforeRevision = await run(`window.electronAPI.agents.delivery(${id}, ${JSON.stringify(target.id)})`)
     revisedSectionId = beforeRevision.sections[0].id; revisingDelivery = true
@@ -517,10 +533,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('[data-delivery-submit]')?.disabled === false")
     await run("document.querySelector('[data-delivery-submit]').click()")
     await waitForRenderer(window, `document.querySelector('.contact-delivery')?.dataset.deliveryVersion === '${beforeRevision.version + 1}'`, 20000)
-    if (!await run("document.querySelector('.delivery-body')?.textContent.includes('已按修改意见补充局限')")) throw new Error('Revision form did not update the deliverable')
+    if (!await run("document.querySelector('.delivery-reader')?.textContent.includes('已按修改意见补充局限')")) throw new Error('Revision form did not update the deliverable')
     await run("document.querySelector('[data-delivery-prev]').click()")
     await waitForRenderer(window, `document.querySelector('.contact-delivery')?.dataset.deliveryVersion === '${beforeRevision.version}'`)
-    if (await run("document.querySelector('.delivery-body')?.textContent.includes('已按修改意见补充局限')")) throw new Error('Old artifact version was overwritten')
+    if (await run("document.querySelector('.delivery-reader')?.textContent.includes('已按修改意见补充局限')")) throw new Error('Old artifact version was overwritten')
     await run("document.querySelector('[data-delivery-next]').click()")
     await waitForRenderer(window, `document.querySelector('.contact-delivery')?.dataset.deliveryVersion === '${beforeRevision.version + 1}'`)
     await run(`window.electronAPI.agents.pause(${id})`)
