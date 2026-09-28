@@ -493,6 +493,14 @@ export function getSessionWorkspace(): SessionWorkspace {
 
 export function createChatSession(title?: string, characterId: string = DEFAULT_CHARACTER_ID): SessionWorkspace {
   const owner = getCharacter(characterId) ? characterId : DEFAULT_CHARACTER_ID
+  // Interactive new-chat requests are idempotent while a default blank exists.
+  // Named sessions are intentional workspaces and must not be repurposed.
+  if (title === undefined) {
+    const blanks = store.sessions.filter(candidate => candidate.characterId === owner && candidate.messages.length === 0 && candidate.title === DEFAULT_SESSION_TITLE)
+    const reusable = blanks.find(candidate => candidate.id === store.activeSessionId)
+      ?? blanks.sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    if (reusable) return selectChatSession(reusable.id)
+  }
   const session = createSession([], title, Date.now(), owner)
   store.sessions.unshift(session)
   store.activeSessionId = session.id

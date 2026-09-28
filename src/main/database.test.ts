@@ -49,6 +49,44 @@ afterEach(() => {
 })
 
 describe('durable conversations', () => {
+  it('reuses the current blank on repeated new-chat requests and after restart', () => {
+    const initial = getActiveSession().id
+    for (let i = 0; i < 10; i++) expect(createChatSession().activeSession.id).toBe(initial)
+    expect(getSessions()).toHaveLength(1)
+    flushDatabase(); initDatabase()
+    expect(createChatSession().activeSession.id).toBe(initial)
+  })
+
+  it('reuses only the same contact blank, preserving named sessions and real messages', () => {
+    const firstBlank = getActiveSession().id
+    const named = createChatSession('有意保留的工作区').activeSession.id
+    expect(createChatSession().activeSession.id).toBe(firstBlank)
+    expect(getSession(named)?.title).toBe('有意保留的工作区')
+    saveSessionMessages(firstBlank, [{ ...message('image-only', ''), imageUrl: image }])
+    const blank = createChatSession().activeSession.id
+    expect(blank).not.toBe(firstBlank)
+    const count = getSessions().length
+    selectChatSession(firstBlank)
+    expect(createChatSession().activeSession.id).toBe(blank)
+    expect(getSessions()).toHaveLength(count)
+    const contact = createCharacter({ name: '另一个联系人', avatar: '', soulMd: '', category: '', model: 'test-model' })
+    const other = createChatSession(undefined, contact.id).activeSession.id
+    expect(other).not.toBe(blank)
+    expect(createChatSession(undefined, contact.id).activeSession.id).toBe(other)
+    expect(createChatSession().activeSession.id).toBe(blank)
+    expect(getSession(firstBlank)?.messages[0].imageUrl).toBe(image)
+  })
+  it('prefers the active blank without deleting legacy empty conversations', () => {
+    const first = getActiveSession().id
+    vi.advanceTimersByTime(1000)
+    const newer = createChatSession('新对话').activeSession.id
+    selectChatSession(first)
+    expect(createChatSession().activeSession.id).toBe(first)
+    expect(getSession(newer)).not.toBeNull()
+    const named = createChatSession('named').activeSession.id
+    expect(createChatSession().activeSession.id).toBe(newer)
+    expect(getSession(named)).not.toBeNull()
+  })
   it('preserves navigable task query sources across restart', () => {
     const id = getActiveSession().id
     const taskRefs = [{ id: 'task-a', title: '周报', detail: '工作清单 · 明天' }, { id: 'task-b', title: '周报', detail: '个人清单 · 下周' }]
