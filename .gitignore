@@ -1,6 +1,8 @@
 node_modules/
 out/
 dist/
+# Local smoke-test screenshots and logs
+/artifacts/
 *.local
 *.tsbuildinfo
 temp/
