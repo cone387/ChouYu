@@ -112,8 +112,6 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
       onCancel={event => { event.preventDefault(); close() }}>
       <header className="contact-work-sheet-heading" onPointerDown={event => beginGesture(event, 'move')} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
         <strong>{name}的{tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : '记忆'}</strong>
-        <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
-      </header>
       <div className="contact-work-buttons contact-work-dialog-tabs" role="group" aria-label="联系人工作内容">
         {entries.map(entry => <button key={entry.id} type="button" data-contact-dialog-tab={entry.id}
           aria-pressed={tab === entry.id} onClick={() => select(entry.id)}>
@@ -121,6 +119,8 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
         </button>)}
         <button type="button" className="contact-work-settings-link" data-contact-dialog-tab="settings" aria-pressed={tab === 'settings'} onClick={() => select('settings')}>工作设置</button>
       </div>
+        <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
+      </header>
       <div className="contact-work-sheet-content" ref={content}>
         <ContactAgentPanel characterId={characterId} name={name} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={reference => { onDiscuss(reference); close() }} onChat={close} />
       </div>

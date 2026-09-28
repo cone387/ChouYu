@@ -22,6 +22,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   renderActivity?: (topicId: string) => ReactNode
 }) {
   const tabId = useId()
+  const [listCollapsed, setListCollapsed] = useState(false)
   const [taskDialog, setTaskDialog] = useState<'create' | AgentTopic | null>(null)
   const [menu, setMenu] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -94,9 +95,10 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       if (taskDialog === 'create') { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(true) }
       else if (selected === taskDialog.id) { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(false) }
     }} />}
-    <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}`}>
-      <nav className="topic-list" aria-label="任务列表">
-        <div className="topic-list-heading"><strong>任务列表</strong><span>{data.topics.length}</span></div>
+    <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}${listCollapsed ? ' topic-list-collapsed' : ''}`}>
+      <aside className="topic-list-rail">
+        <div className="topic-list-toolbar"><span>任务列表 · {data.topics.length}</span></div>
+      <nav id={`${tabId}-list`} className="topic-list" aria-label="任务列表">
         <button type="button" className="topic-create" data-topic-create disabled={busy || Boolean(editor)} onClick={() => setTaskDialog('create')}><TaskIcon name="plus" />新建任务</button>
         {!data.topics.length && <p className="agent-empty">还没有任务，描述你想完成的事情即可。</p>}
         {data.topics.map(item => {
@@ -119,13 +121,25 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
           </div></div>
         })}
       </nav>
+      </aside>
+      <aside className="topic-stage-nav" aria-label="任务阶段导航">
+        <div className="topic-stage-heading">任务阶段<button type="button" className="topic-list-toggle" aria-label={listCollapsed ? '展开任务列表' : '折叠任务列表'} title={listCollapsed ? '展开任务列表' : '折叠任务列表'} aria-expanded={!listCollapsed} aria-controls={`${tabId}-list`} onClick={() => { setListCollapsed(value => !value); setMenu(null) }}><TaskIcon name="sidebar" /></button></div>
+        <button type="button" className="topic-back" onClick={() => setMobileDetail(false)}>← 任务列表</button>
+        {topic ? <>
+      <div className="topic-content-tabs" role="tablist" aria-label="任务阶段" aria-orientation="vertical">
+        {tabs.map(([id, label], index) => <button type="button" role="tab" key={id} id={`${tabId}-${id}`} aria-controls={`${tabId}-${id}-panel`} aria-selected={tab === id} tabIndex={tab === id ? 0 : -1}
+          onClick={() => { setTab(id); setShowSettings(false) }} onKeyDown={event => {
+            const next = (event.key === 'ArrowDown' || event.key === 'ArrowRight') ? (index + 1) % tabs.length : (event.key === 'ArrowUp' || event.key === 'ArrowLeft') ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
+            if (next < 0) return
+            event.preventDefault(); setShowSettings(false); setTab(tabs[next][0]); document.getElementById(`${tabId}-${tabs[next][0]}`)?.focus()
+          }}>{label}{id === 'overview' && waiting && <span className="topic-waiting">待回复</span>}</button>)}
+      </div>
+        </> : <p className="agent-caption">选择任务后查看</p>}
+      </aside>
       <div className="topic-detail-pane" key={selected}>
         {!topic && <p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '新建任务后，AI 会在这里展示进度与成果。'}</p>}
-        <button type="button" className="topic-back" onClick={() => setMobileDetail(false)}>← 返回任务列表</button>
     {topic && <>
-      <header className="topic-fixed-header" data-topic-current={topic.id}>
-        <div className="topic-title-group"><h4>{topic.title}</h4></div>
-        <div className="topic-header-actions">
+      <div className="topic-floating-action">
           <button type="button" className="primary" data-topic-run={!canPause || undefined} data-topic-pause={canPause || undefined}
             disabled={busy || Boolean(editor) || Boolean(runAction) || (!canPause && (settingsDirty || Boolean(currentRun)))}
             onClick={() => {
@@ -134,18 +148,15 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
                 ? window.electronAPI.agents.topicStatus(characterId, topic.id, topic.revision, 'paused', '用户暂停任务')
                 : window.electronAPI.agents.continueTopic(characterId, topic.id, topic.revision, '用户启动任务')).finally(() => setRunAction(null))
             }}><ContactTaskIcon name={canPause ? 'pause' : 'play'} />{runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '启动中…' : canPause ? '暂停' : '启动'}</button>
+      </div>
+      <div className="topic-content-scroll" ref={scrollPane}>
+      <header className="topic-content-header" data-topic-current={topic.id}>
+        <div className="topic-title-group"><h4>{topic.title}</h4></div>
+        <div className="topic-header-actions">
+
           <button ref={settingsButton} type="button" data-topic-settings aria-expanded={showSettings} aria-controls={`${tabId}-settings`} disabled={busy || Boolean(editor)} onClick={() => setShowSettings(value => !value)}><ContactTaskIcon name="settings" />设置</button>
         </div>
       </header>
-      <div className="topic-content-tabs" role="tablist" aria-label="任务内容" hidden={showSettings}>
-        {tabs.map(([id, label], index) => <button type="button" role="tab" key={id} id={`${tabId}-${id}`} aria-controls={`${tabId}-${id}-panel`} aria-selected={tab === id} tabIndex={tab === id ? 0 : -1}
-          onClick={() => setTab(id)} onKeyDown={event => {
-            const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
-            if (next < 0) return
-            event.preventDefault(); setTab(tabs[next][0]); document.getElementById(`${tabId}-${tabs[next][0]}`)?.focus()
-          }}>{label}{id === 'overview' && waiting && <span className="topic-waiting">待回复</span>}</button>)}
-      </div>
-      <div className="topic-content-scroll" ref={scrollPane}>
       <div ref={settingsPane} id={`${tabId}-settings`} className="topic-settings" hidden={!showSettings} tabIndex={-1} aria-label="本任务设置">
         <div className="topic-heading"><h4>本任务设置</h4><button type="button" disabled={Boolean(editor)} onClick={() => { setShowSettings(false); settingsButton.current?.focus() }}>返回任务</button></div>
         <p className="agent-caption">以下调整仅针对当前任务。</p>
