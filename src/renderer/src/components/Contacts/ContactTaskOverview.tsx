@@ -36,7 +36,7 @@ export default function ContactTaskOverview({ topic, data, visible, children }: 
     </dl>
     {children}
     <details className="topic-metric-notes"><summary>统计口径与任务信息</summary>
-    <p className="agent-caption">统计仅包含本任务的全部轮次。耗时为各轮起止时间之和，包含等待回复；调用次数包含失败和重试。</p>
+    <p className="agent-caption">累计耗时为本任务所有轮次的起止时间之和，包含失败、重试、排队和等待回复；运行按钮只显示当前这一轮的耗时。调用次数包含失败和重试。</p>
     {metric && metric.calls > metric.totalReported && <p className="agent-caption">Token 已记录 {metric.totalReported} / {metric.calls} 次调用，历史缺失或供应商未返回的用量未计入。</p>}
     <dl className="topic-overview-meta">
       <div><dt>任务目标</dt><dd>{topic.goal}</dd></div>

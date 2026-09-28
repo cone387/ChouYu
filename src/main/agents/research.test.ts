@@ -36,6 +36,12 @@ function fixture() {
 afterEach(() => { vi.unstubAllGlobals(); for (const close of closers.splice(0).reverse()) close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 describe('autonomous evidence research', () => {
+  it.each([undefined, null, '', '   '])('treats optional empty sectionId %j as a new section', sectionId => {
+    expect(parseResearchPlan(JSON.stringify({ ...plan, action: 'write', urls: [], query: '', sectionId }), [], 180, 'public').sectionId).toBeUndefined()
+  })
+  it('trims an existing section ID without inventing or converting it', () => {
+    expect(parseResearchPlan(JSON.stringify({ ...plan, action: 'write', urls: [], query: '', sectionId: ' chapter1 ' }), [], 180, 'public').sectionId).toBe('chapter1')
+  })
   it('starts without seed URLs and reads a model-selected public page without a search key', async () => {
     const { store, runtime, reader, searcher } = fixture()
     store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '研究团队需求', sources: [] })
@@ -163,7 +169,7 @@ describe('autonomous evidence research', () => {
     store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '预算验证', sources: [seed], searchEnabled: true, dailyCalls: 2 })
     const id = store.createRun('alice', '')
     store.charge(id); store.cancel('alice', '测试停止')
-    expect(() => store.createRun('alice', '')).toThrow('预留两次')
+    expect(() => store.createRun('alice', '')).toThrow('联系人今日资源不足')
     expect(store.overview('alice').runs).toHaveLength(1)
   })
 })

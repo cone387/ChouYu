@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { containsSecret } from '../../shared/memory'
+import { validateTaskResourceBudget } from '../../shared/agent-resources'
 import { validateTopicInput, validateTopicProgress, type AgentTopic, type AgentTopicChange, type AgentTopicDetail, type AgentTopicProgress, type AgentTopicStatus } from '../../shared/agents'
 
 export const canResearch = (status: AgentTopicStatus) => ['planned', 'researching', 'needs_evidence'].includes(status)
@@ -52,6 +53,13 @@ export class AgentTopics {
     if (!nextStep.trim() || nextStep.length > 1000 || containsSecret(title + nextStep)) throw new Error('任务方向无效。')
     const after = { ...before, initialPlan, title: title.trim(), nextStep: nextStep.trim(), revision: before.revision + 1, updatedAt: Date.now(), reason: '根据用户描述整理初步方向与阶段计划，尚未验证。' }
     this.record(before, after, 'planned', after.reason, runId)
+    return after
+  }
+  budget(characterId: string, id: string, revision: number, raw: unknown, runId: string | null = null) {
+    const before = this.check(characterId, id, revision), resourceBudget = validateTaskResourceBudget(raw)
+    this.reason(resourceBudget.reason)
+    const after = { ...before, resourceBudget, revision: before.revision + 1, updatedAt: Date.now(), reason: resourceBudget.reason }
+    this.record(before, after, 'resources', resourceBudget.reason, runId)
     return after
   }
   status(characterId: string, id: string, revision: number, status: AgentTopicStatus, reason: string) {

@@ -1,5 +1,8 @@
 import type { AgentResearchPlan, AgentSearchResult } from '../../shared/agents'
+import { validateTaskResourceBudget } from '../../shared/agent-resources'
 import { containsSecret } from '../../shared/memory'
+
+export class InvalidSectionReferenceError extends Error {}
 
 export function researchUrl(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 2000) return null
@@ -21,8 +24,9 @@ export function parseResearchPlan(raw: string, allowed: string[], minimum: numbe
   if (value.action === 'read' && !value.urls.length) throw new Error('读取计划缺少网页。')
   if (value.action === 'write' && (value.urls.length || query)) throw new Error('直接写作计划不能声称搜索或读取网页。')
   if (!Number.isInteger(value.checkAfterMinutes) || value.checkAfterMinutes < 15 || value.checkAfterMinutes > 10080) throw new Error('下次检查间隔无效。')
-  if (value.sectionId !== undefined && (typeof value.sectionId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(value.sectionId))) throw new Error('待修订分节 ID 无效。')
-  return { action: value.action, reason: value.reason.trim(), query: value.action === 'search' ? query : '', urls: [...new Set(value.urls.map(researchUrl))] as string[], checkAfterMinutes: Math.max(minimum, value.checkAfterMinutes), ...(value.sectionId ? { sectionId: value.sectionId } : {}) }
+  const sectionId = typeof value.sectionId === 'string' ? value.sectionId.trim() : value.sectionId
+  if (sectionId != null && sectionId !== '' && (typeof sectionId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(sectionId))) throw new InvalidSectionReferenceError('规划中的待修订分节 ID 格式无效。')
+  return { action: value.action, reason: value.reason.trim(), query: value.action === 'search' ? query : '', urls: [...new Set(value.urls.map(researchUrl))] as string[], checkAfterMinutes: Math.max(minimum, value.checkAfterMinutes), ...(sectionId ? { sectionId } : {}), ...(value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }
 }
 export type AgentSearcher = (query: string, key: string, signal: AbortSignal) => Promise<AgentSearchResult[]>
 /** Fixed API origin; credentials never follow redirects or enter an evidence record. */

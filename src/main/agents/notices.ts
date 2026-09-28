@@ -39,8 +39,8 @@ export class AgentNotices {
     const notifyProgress = JSON.parse(profile.settings).notifyProgress !== false
     const recent = this.db.prepare("SELECT count(*) AS n,max(sent_at) AS last FROM notices WHERE character_id=? AND state='sent' AND sent_at>? AND json_extract(value,'$.purpose') IS NOT 'direction'").get(id, now - 86400000) as { n: number; last: number | null }
     // One per drain makes the persisted cooldown effective even after a long offline period.
-    return valid.sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question') || a.createdAt - b.createdAt)
-      .filter(n => n.kind === 'question' || notifyProgress && (n.purpose === 'direction' || recent.n < 8 && (!recent.last || now - recent.last >= 1800000))).slice(0, 1)
+    return valid.sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question') || Number(b.purpose === 'resources') - Number(a.purpose === 'resources') || a.createdAt - b.createdAt)
+      .filter(n => n.kind === 'question' || n.purpose === 'resources' || notifyProgress && (n.purpose === 'direction' || recent.n < 8 && (!recent.last || now - recent.last >= 1800000))).slice(0, 1)
   }
   ack(id: string, noticeId: string, now = Date.now()) {
     this.db.prepare("UPDATE notices SET state='sent',sent_at=? WHERE id=? AND character_id=? AND state='pending'").run(now, noticeId, id)

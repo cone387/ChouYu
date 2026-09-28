@@ -7,6 +7,7 @@ import ContactTaskIcon from './ContactTaskIcon'
 import ContactTaskOverview from './ContactTaskOverview'
 import ContactTaskInteractions from './ContactTaskInteractions'
 import ContactTaskDialog from './ContactTaskDialog'
+import ContactTaskResources from './ContactTaskResources'
 import TaskIcon from '../Tasks/TaskIcon'
 
 type Editor = { kind: 'edit' | 'status'; topicId: string; revision: number; input: AgentTopicInput; status: AgentTopicStatus; reason: string }
@@ -14,6 +15,10 @@ const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_ev
 const tabs = [['overview', '概览'], ['stages', '阶段计划'], ['delivery', '任务成果'], ['interactions', '互动记录'], ['history', '历史记录']] as const
 type TopicTab = typeof tabs[number][0]
 const time = (value: number) => new Date(value).toLocaleString()
+const elapsedTime = (milliseconds: number) => {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000))
+  return `${Math.floor(seconds / 3600) ? `${Math.floor(seconds / 3600)}:` : ''}${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+}
 
 export default function ContactTopics({ characterId, data, busy, settingsDirty, onAction, onReport, focusRequest, renderActivity }: {
   characterId: string; data: AgentOverview; busy: boolean; settingsDirty: boolean
@@ -61,6 +66,20 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     scrollPane.current?.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus()
   }, [tab, showSettings, waiting, focusRequest])
   const topicRun = data.runs.find(run => run.topicId === topic?.id)
+  const activeRun = currentRun?.topicId === topic?.id ? currentRun : undefined
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    setNow(Date.now())
+    if (activeRun?.status !== 'running') return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [activeRun?.id, activeRun?.status])
+  const executionLabel = activeRun?.status === 'running' ? `运行中 · 本轮 ${elapsedTime(now - activeRun.createdAt)}`
+    : activeRun?.status === 'waiting' ? '待回复 · 暂停'
+    : activeRun?.status === 'queued' ? '排队中 · 暂停'
+    : activeRun?.status === 'interrupted' ? '恢复中 · 暂停'
+    : canPause ? '等待续跑 · 暂停'
+    : topicRun?.status === 'failed' ? '执行失败 · 重试' : '启动'
   useEffect(() => {
     // A just-created topic can arrive before the parent's overview refresh.
     // Keep its selected ID while that response is in flight.
@@ -139,27 +158,28 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       <div className="topic-detail-pane" key={selected}>
         {!topic && <p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '新建任务后，AI 会在这里展示进度与成果。'}</p>}
     {topic && <>
-      <div className="topic-floating-action">
+      <div className="topic-floating-action" data-running={activeRun?.status === 'running' || undefined}>
           <button type="button" className="primary" data-topic-run={!canPause || undefined} data-topic-pause={canPause || undefined}
+            title={activeRun?.status === 'running' ? '本轮从开始到现在的耗时（含排队和等待回复），点击暂停；累计耗时见概览统计。' : canPause ? '点击暂停当前任务' : '启动本任务一轮工作'}
             disabled={busy || Boolean(editor) || Boolean(runAction) || (!canPause && (settingsDirty || Boolean(currentRun)))}
             onClick={() => {
               setRunAction(canPause ? 'pause' : 'start')
               void onAction(() => canPause
                 ? window.electronAPI.agents.topicStatus(characterId, topic.id, topic.revision, 'paused', '用户暂停任务')
                 : window.electronAPI.agents.continueTopic(characterId, topic.id, topic.revision, '用户启动任务')).finally(() => setRunAction(null))
-            }}><ContactTaskIcon name={canPause ? 'pause' : 'play'} />{runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '启动中…' : canPause ? '暂停' : '启动'}</button>
+            }}><ContactTaskIcon name={canPause ? 'pause' : 'play'} />{runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '启动中…' : executionLabel}</button>
+          <button ref={settingsButton} type="button" data-topic-settings aria-expanded={showSettings} aria-controls={`${tabId}-settings`} disabled={busy || Boolean(editor)} onClick={() => setShowSettings(value => !value)}><ContactTaskIcon name="settings" />设置</button>
       </div>
       <div className="topic-content-scroll" ref={scrollPane}>
       <header className="topic-content-header" data-topic-current={topic.id}>
         <div className="topic-title-group"><h4>{topic.title}</h4></div>
-        <div className="topic-header-actions">
-
-          <button ref={settingsButton} type="button" data-topic-settings aria-expanded={showSettings} aria-controls={`${tabId}-settings`} disabled={busy || Boolean(editor)} onClick={() => setShowSettings(value => !value)}><ContactTaskIcon name="settings" />设置</button>
-        </div>
       </header>
+      {!activeRun && topicRun?.status === 'failed' && <p className="agent-error" role="alert">本轮执行失败：{topicRun.error || '请查看工作日志了解原因。'}</p>}
+      {!activeRun && topicRun?.status === 'completed' && !data.settings.enabled && researchable(topic) && <p className="agent-caption">本轮已完成，任务尚未结束。当前未开启持续工作，可再次启动一轮，或在工作设置中开启持续工作。</p>}
       <div ref={settingsPane} id={`${tabId}-settings`} className="topic-settings" hidden={!showSettings} tabIndex={-1} aria-label="本任务设置">
         <div className="topic-heading"><h4>本任务设置</h4><button type="button" disabled={Boolean(editor)} onClick={() => { setShowSettings(false); settingsButton.current?.focus() }}>返回任务</button></div>
         <p className="agent-caption">以下调整仅针对当前任务。</p>
+        <ContactTaskResources topic={topic} data={data} editable busy={busy || Boolean(editor)} onAction={onAction} />
         {!editor && <><dl><dt>目标</dt><dd>{topic.goal}</dd><dt>约束与边界</dt><dd>{topic.constraints || '未设置约束。'}</dd></dl>
         <div className="agent-actions"><button type="button" disabled={busy} onClick={() => edit('edit')}>编辑任务</button>
         {researchable(topic) && <><button type="button" disabled={busy} onClick={() => edit('status', 'completed')}>结束事项</button><button type="button" disabled={busy} onClick={() => edit('status', 'abandoned')}>放弃事项</button></>}
@@ -179,10 +199,12 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       <div hidden={showSettings}>
       <section role="tabpanel" id={`${tabId}-overview-panel`} aria-labelledby={`${tabId}-overview`} hidden={tab !== 'overview'} tabIndex={0}>
         <ContactTaskOverview topic={topic} data={data} visible={tab === 'overview' && !showSettings}>
+          <ContactTaskResources topic={topic} data={data} />
           {topicRun ? renderActivity?.(topic.id) : <p className="agent-empty">任务尚未启动，执行后会在这里显示实时日志。</p>}
         </ContactTaskOverview>
       </section>
       <section role="tabpanel" id={`${tabId}-${tab === 'stages' ? 'stages' : 'delivery'}-panel`} aria-labelledby={`${tabId}-${tab === 'stages' ? 'stages' : 'delivery'}`} hidden={tab !== 'stages' && tab !== 'delivery'} tabIndex={0}>
+      {tab === 'stages' && <ContactTaskResources topic={topic} data={data} />}
       <ContactDelivery key={`${characterId}:${topic.id}`} view={tab === 'stages' ? 'stages' : 'delivery'} characterId={characterId} topic={topic} busy={busy || Boolean(currentRun) || settingsDirty || Boolean(editor)} onAction={onAction} onReport={topicRun ? () => onReport(topicRun.id, topic.id) : undefined} />
       <div hidden={tab !== 'stages'}>
       <article className="topic-current">

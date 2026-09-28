@@ -71,6 +71,7 @@ export class AgentService {
         this.store.answer(id, String(args[2]), String(args[3])); break
       }
       case 'get': return this.store.overview(id)
+      case 'setTaskBudget': this.store.setTaskBudget(id, String(args[0]), args[1] as number, args[2]); break
       case 'delivery': this.store.topics.get(id, String(args[0])); return this.store.deliveries.get(String(args[0]), args[1] as number | undefined)
       case 'reviseTopic': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')

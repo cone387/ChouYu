@@ -22,6 +22,7 @@ const api = {
     interactions: (id, topicId, cursor) => ipcRenderer.invoke('agents:interactions', id, topicId, cursor),
     delivery: (id, topicId, version) => ipcRenderer.invoke('agents:delivery', id, topicId, version),
     exportDelivery: (id, topicId, version) => ipcRenderer.invoke('agents:exportDelivery', id, topicId, version),
+    setTaskBudget: (id, topicId, revision, budget) => ipcRenderer.invoke('agents:setTaskBudget', id, topicId, revision, budget),
     continueTopic: (id, topicId, revision, reason) => ipcRenderer.invoke('agents:continueTopic', id, topicId, revision, reason),
     reviseTopic: (id, topicId, revision, feedback, sectionId) => ipcRenderer.invoke('agents:reviseTopic', id, topicId, revision, feedback, sectionId),
     searchCredential: (id, key) => ipcRenderer.invoke('agents:searchCredential', id, key),

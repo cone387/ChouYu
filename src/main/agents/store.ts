@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { AgentSettings, AgentRun, AgentOverview, AgentMemory, AgentReport, AgentRunDetail, AgentRunStatus, AgentTopicProgress, AgentTopicStatus } from '../../shared/agents'
 import { agentUsesPlanner, DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 import { containsSecret } from '../../shared/memory'
+import { validateTaskResourceBudget, type TaskResourceBudget } from '../../shared/agent-resources'
 import { AgentTopics, canResearch } from './topics'
 import { AgentNotices } from './notices'
 import type { AgentResearch } from '../../shared/agents'
@@ -187,6 +188,51 @@ export class AgentStore {
     return { run: mapRun(run), research: this.research(runId), events: (this.db.prepare('SELECT * FROM events WHERE run_id=? ORDER BY id LIMIT 200').all(runId) as { id: number; run_id: string; kind: string; text: string; at: number }[]).map(r => ({ id: r.id, runId: r.run_id, kind: r.kind, text: r.text, at: r.at })), report: report ? JSON.parse(report.value) : null }
   }
   event(runId: string, kind: string, text: string, now = Date.now()) { this.db.prepare('INSERT INTO events(run_id,kind,text,at) VALUES(?,?,?,?)').run(runId, kind, text.slice(0, 6000), now) }
+  taskCallCount(id: string, topicId: string) {
+    return (this.db.prepare('SELECT count(*) AS n FROM calls c JOIN runs r ON r.id=c.run_id WHERE c.character_id=? AND r.topic_id=?').get(id, topicId) as { n: number }).n
+  }
+  resourceContext(id: string, topicId: string, now = Date.now()) {
+    const settings = JSON.parse(this.profile(id)!.settings) as AgentSettings
+    const topics = this.topics.list(id)
+    const allocations = topics.filter(t => t.id !== topicId && t.resourceBudget && !['completed', 'abandoned'].includes(t.status))
+      .map(t => ({ title: t.title, remaining: Math.max(0, t.resourceBudget!.modelCalls - this.taskCallCount(id, t.id)) }))
+    const dailyRemaining = Math.max(0, settings.dailyCalls - this.callCount(id, now))
+    return { contactDailyLimit: settings.dailyCalls, dailyRemaining, taskUsed: this.taskCallCount(id, topicId),
+      taskBudget: topics.find(t => t.id === topicId)?.resourceBudget,
+      allocatableCalls: Math.max(0, dailyRemaining - allocations.reduce((n, t) => n + t.remaining, 0)), otherTasks: allocations }
+  }
+  assertTaskBudget(id: string, topicId: string, needed: number) {
+    const topic = this.topics.get(id, topicId)
+    if (!topic.resourceBudget) return
+    const used = this.taskCallCount(id, topicId)
+    if (used + needed > topic.resourceBudget.modelCalls) throw new Error(`本任务调用预算不足：已用 ${used}/${topic.resourceBudget.modelCalls} 次，本轮需预留 ${needed} 次。已有成果保留，请在本任务设置中调整资源预算。`)
+  }
+  setTaskBudget(id: string, topicId: string, revision: number, raw: unknown) {
+    return this.db.transaction(() => {
+      this.topics.check(id, topicId, revision)
+      if (this.db.prepare("SELECT 1 FROM runs WHERE topic_id=? AND status IN ('queued','running','waiting','interrupted')").get(topicId)) throw new Error('请先暂停本任务，再调整资源预算。')
+      const budget = validateTaskResourceBudget({ modelCalls: (raw as Partial<TaskResourceBudget> | null)?.modelCalls, reason: '用户手动调整任务预算。' }), resources = this.resourceContext(id, topicId)
+      if (budget.modelCalls < resources.taskUsed) throw new Error(`预算不能低于已使用的 ${resources.taskUsed} 次调用。`)
+      if (budget.modelCalls > (resources.taskBudget?.modelCalls ?? 0) && budget.modelCalls > resources.taskUsed + resources.allocatableCalls) throw new Error(`联系人当前可分配 ${resources.allocatableCalls} 次，请提高联系人资源上限或释放其他任务预算。`)
+      return this.topics.budget(id, topicId, revision, budget)
+    })()
+  }
+  allocateTaskBudget(runId: string, raw?: TaskResourceBudget) {
+    return this.db.transaction(() => {
+      const run = this.assertLive(runId), topic = this.topics.get(run.character_id, run.topic_id!)
+      if (topic.resourceBudget) return topic
+      if (!raw) return topic
+      const resources = this.resourceContext(run.character_id, topic.id)
+      const requested = validateTaskResourceBudget(raw)
+      const modelCalls = Math.max(resources.taskUsed, Math.min(requested.modelCalls, resources.taskUsed + resources.allocatableCalls))
+      const budget = { modelCalls: Math.max(1, modelCalls), reason: requested.reason.slice(0, 950) + (modelCalls < requested.modelCalls ? '（已按联系人可分配额度收紧。）' : '') }
+      const next = this.topics.budget(run.character_id, topic.id, topic.revision, budget, runId)
+      const input = JSON.parse(run.input)
+      this.db.prepare('UPDATE runs SET input=?,topic_revision=? WHERE id=?').run(JSON.stringify({ ...input, topic: next }), next.revision, runId)
+      this.event(runId, 'resources', `任务累计调用预算：${budget.modelCalls} 次；已用 ${resources.taskUsed} 次。${budget.reason}`)
+      return next
+    })()
+  }
   createRun(id: string, context: string, now = Date.now(), topicId?: string) {
     return this.db.transaction(() => {
       const profile = this.profile(id)
@@ -203,7 +249,10 @@ export class AgentStore {
       // Task goals replace the removed work-direction field, including legacy profiles.
       const settings = validateAgentSettings({ ...JSON.parse(profile.settings), goal: topic.goal })
       if (this.callCount(id, now) >= settings.dailyCalls) throw new Error('今日模型调用已达上限，明天再试或调整上限。')
-      if (agentUsesPlanner(settings) && this.callCount(id, now) + 2 > settings.dailyCalls) throw new Error('自主补证据需预留两次模型调用额度（计划与分析）。')
+      const needed = agentUsesPlanner(settings) ? 2 : 1
+      if (this.callCount(id, now) + needed > settings.dailyCalls) throw new Error(`联系人今日资源不足：已用 ${this.callCount(id, now)}/${settings.dailyCalls} 次，本轮需预留 ${needed} 次（规划与执行）。可等明日恢复或调整联系人资源上限。`)
+      this.assertTaskBudget(id, topic.id, needed)
+      if (!topic.resourceBudget && this.resourceContext(id, topic.id, now).allocatableCalls < needed) throw new Error('联系人资源已分配给其他任务，请释放其他任务预算或提高联系人资源上限。')
       const runId = randomUUID()
       const overview = this.overview(id, now)
       const previous = (this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 3').all(topic.id, id) as { value: string }[]).map(row => JSON.parse(row.value) as AgentReport)
@@ -230,6 +279,7 @@ export class AgentStore {
       validateAgentSettings(settings)
       if (this.callCount(id) + (agentUsesPlanner(settings) ? 3 : 2) > settings.dailyCalls) throw new Error('今日剩余额度不足以整理方向并完成首轮研究，请明日再试或调整工作额度。')
       const topic = this.topics.create(id, { title: description.trim().slice(0, 80), goal: description.trim(), constraints: '' }, '用户交付任务，等待联系人整理方向。')
+      if (this.resourceContext(id, topic.id).allocatableCalls < (agentUsesPlanner(settings) ? 3 : 2)) throw new Error('联系人可分配资源不足以规划并执行新任务，请先释放其他任务预算或调整资源上限。')
       this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
       const runId = this.createRun(id, conversation, Date.now(), topic.id)
       const input = JSON.parse(this.getRun(runId)!.input)
@@ -237,13 +287,14 @@ export class AgentStore {
       return topic
     })()
   }
-  saveBrief(runId: string, brief: { title: string; nextStep: string; question: string; plan: DeliveryPlan }) {
+  saveBrief(runId: string, brief: { title: string; nextStep: string; question: string; plan: DeliveryPlan; resourceBudget?: TaskResourceBudget }) {
     this.db.transaction(() => {
       const run = this.assertLive(runId), input = JSON.parse(run.input)
       if (input.brief) return
       const plan = validateDeliveryPlan(brief.plan)
-      const topic = this.topics.plan(run.character_id, run.topic_id!, run.topic_revision!, brief.title, brief.nextStep, runId, plan)
+      let topic: import('../../shared/agents').AgentTopic = this.topics.plan(run.character_id, run.topic_id!, run.topic_revision!, brief.title, brief.nextStep, runId, plan)
       this.db.prepare('UPDATE runs SET input=?,topic_revision=? WHERE id=?').run(JSON.stringify({ ...input, brief, topic, delivery: this.deliveries.context(topic.id) }), topic.revision, runId)
+      topic = this.allocateTaskBudget(runId, brief.resourceBudget)
       this.event(runId, 'direction', `我准备先这样推进：${brief.nextStep}`)
       if (!brief.question) this.notices.enqueue({ id: `${runId}:direction`, characterId: run.character_id, topicId: topic.id, runId,
         topicRevision: topic.revision, kind: 'progress', purpose: 'direction', createdAt: Date.now(), content: `收到「${topic.title}」。\n\n我准备先这样推进：${brief.nextStep}\n\n已经开始处理，你可以随时补充或调整方向。` })
@@ -272,6 +323,8 @@ export class AgentStore {
     this.db.transaction(() => {
       const run = this.assertLive(runId), settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
       if (this.callCount(run.character_id, now) >= settings.dailyCalls) throw new Error('今日模型调用已达上限。')
+      if (run.topic_id) this.assertTaskBudget(run.character_id, run.topic_id, 1)
+      if (run.topic_id && !this.topics.get(run.character_id, run.topic_id).resourceBudget && this.resourceContext(run.character_id, run.topic_id, now).allocatableCalls < 1) throw new Error('联系人可分配资源已用尽，其他任务的预留额度不可挪用。')
       this.db.prepare('INSERT INTO calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
     })()
   }
@@ -304,6 +357,7 @@ export class AgentStore {
       this.db.prepare('UPDATE profiles SET next_at=?,failures=0 WHERE character_id=?').run(nextAt, run.character_id)
       this.db.prepare("UPDATE runs SET status='completed',summary=?,updated_at=? WHERE id=?").run(reason, Date.now(), runId)
       this.event(runId, 'deferred', `${reason}\n本轮未生成新报告；下次检查：${new Date(nextAt).toISOString()}`)
+      this.pauseForTaskBudget(runId)
     })()
   }
   recover() {
@@ -330,6 +384,7 @@ export class AgentStore {
     this.assertLive(id)
     const input = JSON.parse(this.getRun(id)!.input)
     const needed = input.assignment && input.brief?.question && !input.briefAnswer && agentUsesPlanner(input.settings) ? 2 : 1
+    if (run.topicId) this.assertTaskBudget(characterId, run.topicId, needed)
     if (input.deliveryVersion === 1 && this.callCount(characterId) + needed > JSON.parse(this.profile(characterId)!.settings).dailyCalls) throw new Error('今日模型额度不足以处理回复，请明日再试或调整额度。')
     this.db.prepare("UPDATE runs SET status='queued',answer=?,updated_at=? WHERE id=?").run(text.trim(), Date.now(), id)
     this.event(id, 'answer', text.trim())
@@ -339,6 +394,7 @@ export class AgentStore {
     if (!run || ['cancelled', 'completed'].includes(run.status)) return
     this.db.prepare("UPDATE runs SET status='failed',error=?,updated_at=? WHERE id=?").run(error.slice(0, 600), Date.now(), id)
     this.event(id, 'failed', error)
+    if (this.pauseForTaskBudget(id)) return
     const profile = this.profile(run.character_id)!
     const settings = JSON.parse(profile.settings) as AgentSettings
     if (profile.failures >= 2) settings.enabled = false
@@ -384,6 +440,7 @@ export class AgentStore {
         else if (research.plan.action === 'write' && !changedSection) this.event(runId, 'deferred', '本轮没有新增或修改正文，按工作间隔再检查，避免重复消耗额度。')
       }
       this.event(runId, 'completed', report.nextStep || '本轮工作完成。')
+      this.pauseForTaskBudget(runId)
     })()
   }
   createTopic(id: string, input: unknown) {
@@ -393,6 +450,20 @@ export class AgentStore {
       if (!this.profile(id)!.focus_topic_id) this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
       return this.overview(id)
     })()
+  }
+  private pauseForTaskBudget(runId: string) {
+    const run = this.getRun(runId)
+    if (!run?.topic_id) return false
+    const topic = this.topics.get(run.character_id, run.topic_id)
+    if (!topic.resourceBudget || !canResearch(topic.status)) return false
+    const settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
+    const used = this.taskCallCount(run.character_id, topic.id), needed = agentUsesPlanner(settings) ? 2 : 1
+    if (used + needed <= topic.resourceBudget.modelCalls) return false
+    const reason = `任务资源预算不足以继续下一轮：已用 ${used}/${topic.resourceBudget.modelCalls} 次，下一轮需 ${needed} 次。已有成果保留，请在本任务设置中调整预算后继续。`
+    const next = this.topics.status(run.character_id, topic.id, topic.revision, 'paused', reason)
+    this.event(runId, 'resources-paused', reason)
+    this.notices.enqueue({ id: `${runId}:resources`, characterId: run.character_id, topicId: topic.id, runId, topicRevision: next.revision, kind: 'progress', purpose: 'resources', createdAt: Date.now(), content: `「${topic.title}」已暂停。${reason}` })
+    return true
   }
   deleteTopic(id: string, topicId: string, revision: number) {
     return this.db.transaction(() => {

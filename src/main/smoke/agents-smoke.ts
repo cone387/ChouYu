@@ -23,6 +23,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     window.webContents.executeJavaScript(code).then(resolve, reject).finally(() => clearTimeout(deadline))
   })
   let calls = 0, modelRequest: any
+  let releaseFirstRun: (() => void) | undefined
   let revisionCalls = 0
   let researching = false, researchCalls = 0
   let revisingDelivery = false, revisedSectionId = ''
@@ -82,7 +83,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       const judgements = ['需求存在，个人付费意愿未知。', '个人用户不愿付费，转向核对团队需求。', '团队已有免费方案，暂时放弃该方向。']
       const nextStep = calls === 3 ? '' : calls === 2 ? '核对团队已有替代方案与替换意愿。' : '按你熟悉的行业继续核对需求证据。'
       const result = { title: `开发者机会研究 · 第 ${calls} 轮`, body: `资料 [1] 的本轮判断：${judgements[calls - 1]}\n以上为研究判断，不能视为已验证收益。`, nextStep, question: calls === 1 ? '你更熟悉哪个行业？' : '', memories: calls === 1 ? ['需求存在的证据不等于付费意愿，下一轮应继续验证。'] : [], progress: { judgement: judgements[calls - 1], openQuestions: calls === 3 ? '是否存在其他细分人群仍未知。' : '谁愿意付费、现有方案是否足够？', nextStep, reason: calls === 1 ? '资料 [1] 提供需求线索，尚未证明付费意愿。' : calls === 2 ? '新资料 [1] 否定了个人用户付费假设，缩小到团队。' : '资料 [1] 显示团队已有免费替代方案，因此停止投入。', status: calls === 3 ? 'abandoned' : 'needs_evidence' } }
-      response.end(`data: ${JSON.stringify({ model: 'agent-smoke', usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }, choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
+      const finishResponse = () => response.end(`data: ${JSON.stringify({ model: 'agent-smoke', usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }, choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
+      if (calls === 1) releaseFirstRun = finishResponse
+      else finishResponse()
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -149,7 +152,13 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run(`window.electronAPI.agents.remember(${JSON.stringify(other.id)}, 'BOB_PRIVATE_SMOKE')`)
     await run("document.querySelector('[data-agent-run]').click()")
     await run("document.querySelector('[data-agent-tab=work]').click(); document.querySelector('[data-topic-id][aria-current=true]')?.click()")
+    await waitForRenderer(window, "document.querySelector('[data-topic-pause]')?.textContent.includes('运行中 · 本轮')")
+    const runningLabel = await run("document.querySelector('[data-topic-pause]').textContent")
+    await waitForRenderer(window, `document.querySelector('[data-topic-pause]')?.textContent !== ${JSON.stringify(runningLabel)}`)
+    if (!releaseFirstRun) throw new Error('Running timer was shown before the model started')
+    releaseFirstRun()
     const waiting = await waitStatus('waiting')
+    await waitForRenderer(window, "document.querySelector('[data-topic-pause]')?.textContent.includes('待回复')")
     await waitForRenderer(window, "document.querySelector('[data-topic-id][aria-current=true]')?.disabled === false")
     await run("document.querySelector('[data-topic-id][aria-current=true]').click()")
     await run("document.querySelector('.topic-content-tabs [id$=overview]').click()")
@@ -586,7 +595,15 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('.topic-content-tabs [id$=stages]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-initial-plan]'))")
     if (!await run("document.querySelector('[data-initial-plan]').textContent.includes('核对团队需求并交付分析')")) throw new Error('Initial task plan is missing before the first deliverable')
-    await waitForRenderer(window, `Boolean(document.querySelector('[data-task-menu="${newTaskId}"]'))`)
+    await run(`window.electronAPI.agents.pause(${id})`)
+    await run("document.querySelector('[data-topic-settings]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-task-budget-calls]'))")
+    const taskCalls = (await get()).topicMetrics![newTaskId!].calls
+    await fill('[data-task-budget-calls]', String(taskCalls + 2))
+    await run("document.querySelector('[data-task-budget-save]').click()")
+    await waitForRenderer(window, `window.electronAPI.agents.get(${id}).then(data => data.topics.find(t => t.id === ${JSON.stringify(newTaskId)})?.resourceBudget?.modelCalls === ${taskCalls + 2})`)
+    await waitForRenderer(window, "document.querySelector('.topic-settings .topic-resources').textContent.includes('用户手动调整任务预算') && !document.querySelector('[data-task-budget-reason]')")
+    await waitForRenderer(window, `document.querySelector('[data-task-menu="${newTaskId}"]')?.disabled === false`)
     await run(`document.querySelector('[data-task-menu="${newTaskId}"]').click()`)
     await waitForRenderer(window, "Boolean(document.querySelector('[data-task-delete]'))")
     await run('new Promise(resolve => setTimeout(resolve, 180))')

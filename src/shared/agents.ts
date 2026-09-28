@@ -9,12 +9,12 @@ export interface AgentSettings {
   searchEnabled?: boolean
   dailySearches?: number
 }
-export interface AgentResearchPlan { action: 'search' | 'read' | 'wait' | 'write'; reason: string; query: string; urls: string[]; checkAfterMinutes: number; sectionId?: string }
+export interface AgentResearchPlan { action: 'search' | 'read' | 'wait' | 'write'; reason: string; query: string; urls: string[]; checkAfterMinutes: number; sectionId?: string; resourceBudget?: import('./agent-resources').TaskResourceBudget }
 export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
 export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress' }
-export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' }
+export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' }
 export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
 export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undefined {
   if (!value || typeof value !== 'object') return undefined
@@ -58,6 +58,7 @@ export const TOPIC_STATUS = { planned: '待开始', researching: '尚未完成',
 export type AgentTopicStatus = keyof typeof TOPIC_STATUS
 export interface AgentTopicInput { title: string; goal: string; constraints: string }
 export interface AgentTopic extends AgentTopicInput {
+  resourceBudget?: import('./agent-resources').TaskResourceBudget
   initialPlan?: import('./agent-delivery').DeliveryPlan
   id: string; characterId: string; revision: number; status: AgentTopicStatus
   judgement: string; openQuestions: string; nextStep: string; reason: string; createdAt: number; updatedAt: number
@@ -92,6 +93,7 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI {
   continueTopic(characterId: string, topicId: string, revision: number, reason: string): Promise<AgentOverview>
+  setTaskBudget(characterId: string, topicId: string, revision: number, budget: Pick<import('./agent-resources').TaskResourceBudget, 'modelCalls'>): Promise<AgentOverview>
   delivery(characterId: string, topicId: string, version?: number): Promise<import('./agent-delivery').AgentDelivery | null>
   exportDelivery(characterId: string, topicId: string, version: number): Promise<boolean>
   reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string): Promise<AgentOverview>
@@ -133,7 +135,7 @@ export function validateAgentSettings(raw: unknown): AgentSettings {
     return parsed.href
   })
   if (!Number.isInteger(value.intervalMinutes) || value.intervalMinutes < 15 || value.intervalMinutes > 10080) throw new Error('工作间隔应为 15–10080 分钟。')
-  if (!Number.isInteger(value.dailyCalls) || value.dailyCalls < 2 || value.dailyCalls > 48) throw new Error('每日模型调用上限应为 2–48 次。')
+  if (!Number.isSafeInteger(value.dailyCalls) || value.dailyCalls < 2) throw new Error('每日模型调用上限应为不小于 2 的有效整数。')
   if (typeof value.enabled !== 'boolean') throw new Error('启用状态无效。')
   if (value.notifyProgress !== undefined && typeof value.notifyProgress !== 'boolean') throw new Error('通知设置无效。')
   if (value.searchEnabled !== undefined && typeof value.searchEnabled !== 'boolean') throw new Error('搜索开关无效。')

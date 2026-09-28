@@ -93,7 +93,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   }, [characterId])
   const perform = async (action: () => Promise<unknown>) => {
     setBusy(true); setError('')
-    try { await action(); await refresh() } catch (error) { if (mounted.current) setError(error instanceof Error ? error.message : '操作失败，请重试。') }
+    try { await action(); await refresh() } catch (error) { if (mounted.current) setError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '') : '操作失败，请重试。') }
     finally { if (mounted.current) setBusy(false) }
   }
   const settings = { ...draft, sources: sources.split('\n').map(s => s.trim()).filter(Boolean) }
@@ -143,6 +143,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     </div>}
     {data && <div className="agent-settings-view" hidden={tab !== 'settings'}>
       <h3>工作设置</h3>
+      <p className="agent-description">这里管理联系人的每日资源总上限。联系人会参考剩余额度和其他任务的分配，在任务规划时安排累计调用预算；每个任务的用量与预算可在任务概览、阶段计划和本任务设置中查看。</p>
       <p className="agent-description">开启持续工作后，应用保持运行时会继续推进任务；退出或关机期间暂停。</p>
       <details className="agent-overview"><summary>运行状态与最近发现</summary>
       <div className="agent-now">
@@ -164,7 +165,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       <form onSubmit={e => { e.preventDefault(); void perform(async () => { const result = await window.electronAPI.agents.savePreferences(characterId, { ...settings, goal: settings.goal || '根据用户交付的任务整理方向、研究验证并反馈进展。' }); setDraft(result.settings); setSources(result.settings.sources.join('\n')) }) }}>
         <label>工作权限<select data-agent-permission value={draft.permissionLevel ?? 'public'} onChange={e => setDraft({ ...draft, permissionLevel: e.target.value as 'public' | 'sources', ...(e.target.value === 'sources' ? { searchEnabled: false } : {}) })}><option value="public">公开网页通行（默认）</option><option value="sources">仅指定资料</option></select><span className="agent-caption">{draft.permissionLevel === 'sources' ? '只读取下方指定网页，不自主搜索。' : '自行选择并读取公开网页，不需要逐个授权。'}</span></label>
         <details><summary>参考资料{draft.permissionLevel === 'sources' ? '（限制访问时必填）' : '（可选）'}</summary><label><span className="agent-caption">可提供希望优先关注的网页，每行一个，最多 5 个。</span><textarea data-agent-sources rows={3} value={sources} onChange={e => setSources(e.target.value)} placeholder="https://…" aria-label="参考资料" /></label></details>
-        <div className="agent-settings-row"><label>间隔（分钟）<input data-agent-interval type="number" min={15} max={10080} step={1} required value={draft.intervalMinutes} onChange={e => setDraft({ ...draft, intervalMinutes: Number(e.target.value) })} /></label><label>每日模型调用上限<input type="number" min={2} max={48} step={1} required value={draft.dailyCalls} onChange={e => setDraft({ ...draft, dailyCalls: Number(e.target.value) })} /></label></div>
+        <div className="agent-settings-row"><label>间隔（分钟）<input data-agent-interval type="number" min={15} max={10080} step={1} required value={draft.intervalMinutes} onChange={e => setDraft({ ...draft, intervalMinutes: Number(e.target.value) })} /></label><label>联系人每日资源上限（模型调用次数）<input type="number" min={2} step={1} required value={draft.dailyCalls} onChange={e => setDraft({ ...draft, dailyCalls: Number(e.target.value) })} /></label></div>
         <label className="agent-toggle"><input data-agent-search-enabled type="checkbox" disabled={draft.permissionLevel === 'sources'} checked={draft.searchEnabled === true} onChange={e => setDraft({ ...draft, searchEnabled: e.target.checked })} />启用搜索服务：围绕疑问发现网页</label>
         {!draft.searchEnabled && draft.permissionLevel !== 'sources' && <p className="agent-caption">未启用搜索时，会直接尝试读取已知公开网址。启用搜索服务后，可以发现更多来源。</p>}
         {draft.searchEnabled && <>

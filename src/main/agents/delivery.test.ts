@@ -163,6 +163,50 @@ describe('durable deliverables', () => {
     expect(f.store.detail('alice', run).run.status).toBe('failed')
     expect(f.store.deliveries.get(f.store.overview('alice').focusTopicId!)).toBeNull()
   })
+  it.each(['chapter2', '第二章', { id: 'chapter2' }, ['chapter2']])('corrects a new chapter reference %j and keeps the old chapter intact', async sectionId => {
+    const f = fixture(); await write(f, 1)
+    const topicId = f.store.overview('alice').focusTopicId!
+    const before = f.store.deliveries.get(topicId)!
+    const run = f.store.createRun('alice', '')
+    const model = vi.fn(async (prompt: string) => {
+      if (prompt.startsWith('为联系人修正')) {
+        expect(prompt).toContain('chapter1')
+        expect(prompt).toContain('新增章节')
+        return JSON.stringify(plan)
+      }
+      if (prompt.startsWith('为联系人')) return JSON.stringify({ ...plan, sectionId })
+      return draft(delivery(2))
+    })
+    await f.runtime.execute(run, '', model, new AbortController().signal)
+    expect(f.store.detail('alice', run).run.status).toBe('completed')
+    expect(model).toHaveBeenCalledTimes(3)
+    expect(f.store.callCount('alice')).toBe(5)
+    expect(f.store.deliveries.get(topicId)?.sections[0]).toEqual(before.sections[0])
+    expect(f.store.deliveries.get(topicId)?.sections[1].id).toBe('chapter2')
+    expect(f.store.detail('alice', run).events.some(e => e.kind === 'plan-repair')).toBe(true)
+  })
+  it('stops after one unsuccessful malformed-reference repair without changing existing text', async () => {
+    const f = fixture(); await write(f, 1)
+    const topicId = f.store.overview('alice').focusTopicId!, before = f.store.deliveries.get(topicId)
+    const run = f.store.createRun('alice', '')
+    const model = vi.fn(async () => JSON.stringify({ ...plan, sectionId: '第二章' }))
+    await f.runtime.execute(run, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(f.store.detail('alice', run).run.error).toContain('规划修正后分节 ID 格式仍无效')
+    expect(f.store.detail('alice', run).run.error).not.toContain('检查模型配置')
+    expect(f.store.deliveries.get(topicId)).toEqual(before)
+  })
+  it('does not spend a repair call when the task cannot afford both repair and execution', async () => {
+    const f = fixture(), topic = f.store.overview('alice').topics[0]
+    f.store.setTaskBudget('alice', topic.id, topic.revision, { modelCalls: 2 })
+    const run = f.store.createRun('alice', '')
+    const model = vi.fn(async () => JSON.stringify({ ...plan, sectionId: 'chapter1' }))
+    await f.runtime.execute(run, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(1)
+    expect(f.store.taskCallCount('alice', topic.id)).toBe(1)
+    expect(f.store.topics.get('alice', topic.id).status).toBe('paused')
+    expect(f.store.deliveries.get(topic.id)).toBeNull()
+  })
   it('preserves an unanswered revision failure as feedback for a new run', async () => {
     const f = fixture(); await write(f, 1)
     const run = f.store.createRun('alice', '')
