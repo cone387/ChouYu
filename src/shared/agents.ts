@@ -34,6 +34,8 @@ export interface AgentRun {
   question: string; answer: string; summary: string; error: string
 }
 export interface AgentEvent { id: number; runId: string; kind: string; text: string; at: number }
+export interface AgentInteraction extends AgentEvent { kind: 'waiting' | 'answer'; pending: boolean }
+export interface AgentInteractionPage { items: AgentInteraction[]; nextCursor?: number }
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
@@ -102,6 +104,7 @@ export interface AgentAPI {
   topicStatus(characterId: string, topicId: string, revision: number, status: AgentTopicStatus, reason: string): Promise<AgentOverview>
   focusTopic(characterId: string, topicId: string): Promise<AgentOverview>
   topicDetail(characterId: string, topicId: string, cursor?: number): Promise<AgentTopicDetail>
+  interactions(characterId: string, topicId: string, cursor?: number): Promise<AgentInteractionPage>
   pause(characterId: string): Promise<AgentOverview>
   detail(characterId: string, runId: string): Promise<AgentRunDetail>
   answer(characterId: string, runId: string, answer: string): Promise<AgentOverview>

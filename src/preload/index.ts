@@ -19,6 +19,7 @@ ipcRenderer.on('open-assistant-chat', () => openAssistantChatEvent.emit())
 
 const api = {
   agents: {
+    interactions: (id, topicId, cursor) => ipcRenderer.invoke('agents:interactions', id, topicId, cursor),
     delivery: (id, topicId, version) => ipcRenderer.invoke('agents:delivery', id, topicId, version),
     exportDelivery: (id, topicId, version) => ipcRenderer.invoke('agents:exportDelivery', id, topicId, version),
     continueTopic: (id, topicId, revision, reason) => ipcRenderer.invoke('agents:continueTopic', id, topicId, revision, reason),

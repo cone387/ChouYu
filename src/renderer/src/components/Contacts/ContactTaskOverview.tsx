@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import TaskIcon from '../Tasks/TaskIcon'
 import { AGENT_STATUS, TOPIC_STATUS, type AgentOverview, type AgentTopic } from '../../../../shared/agents'
 
 const time = (value: number) => new Date(value).toLocaleString('zh-CN', { hour12: false })
@@ -10,7 +11,7 @@ function duration(ms: number) {
   return `${Math.floor(seconds / 3600)} 小时 ${Math.floor(seconds % 3600 / 60)} 分`
 }
 
-export default function ContactTaskOverview({ topic, data, visible }: { topic: AgentTopic; data: AgentOverview; visible: boolean }) {
+export default function ContactTaskOverview({ topic, data, visible, children }: { topic: AgentTopic; data: AgentOverview; visible: boolean; children?: ReactNode }) {
   const metric = data.topicMetrics?.[topic.id]
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -26,13 +27,15 @@ export default function ContactTaskOverview({ topic, data, visible }: { topic: A
   return <div className="topic-overview" data-topic-overview>
     <div className="topic-overview-status"><span className="topic-badge">{active ? AGENT_STATUS[latest.status] : TOPIC_STATUS[topic.status]}</span><span>{active ? '当前轮次进行中' : '当前未执行'}</span></div>
     <dl className="topic-metrics">
-      <div><dt>累计耗时</dt><dd data-topic-elapsed>{elapsed}</dd></div>
-      <div><dt>消耗 Token</dt><dd data-topic-tokens>{token(metric?.totalTokens, metric?.totalReported)}</dd></div>
-      <div><dt>模型调用</dt><dd data-topic-calls>{metric ? `${metric.calls.toLocaleString()} 次` : '—'}</dd></div>
-      <div><dt>执行轮次</dt><dd>{metric ? `${metric.runs.toLocaleString()} 轮` : '—'}</dd></div>
-      <div><dt>输入 Token</dt><dd>{token(metric?.inputTokens, metric?.inputReported)}</dd></div>
-      <div><dt>输出 Token</dt><dd>{token(metric?.outputTokens, metric?.outputReported)}</dd></div>
+      <div className="metric-time"><dt><TaskIcon name="clock" />累计耗时</dt><dd data-topic-elapsed>{elapsed}</dd></div>
+      <div className="metric-tokens"><dt><TaskIcon name="all" />消耗 Token</dt><dd data-topic-tokens>{token(metric?.totalTokens, metric?.totalReported)}</dd></div>
+      <div className="metric-calls"><dt><TaskIcon name="task" />模型调用</dt><dd data-topic-calls>{metric ? `${metric.calls.toLocaleString()} 次` : '—'}</dd></div>
+      <div className="metric-rounds"><dt><TaskIcon name="list" />执行轮次</dt><dd>{metric ? `${metric.runs.toLocaleString()} 轮` : '—'}</dd></div>
+      <div className="metric-input"><dt><TaskIcon name="inbox" />输入 Token</dt><dd>{token(metric?.inputTokens, metric?.inputReported)}</dd></div>
+      <div className="metric-output"><dt><TaskIcon name="done" />输出 Token</dt><dd>{token(metric?.outputTokens, metric?.outputReported)}</dd></div>
     </dl>
+    {children}
+    <details className="topic-metric-notes"><summary>统计口径与任务信息</summary>
     <p className="agent-caption">统计仅包含本任务的全部轮次。耗时为各轮起止时间之和，包含等待回复；调用次数包含失败和重试。</p>
     {metric && metric.calls > metric.totalReported && <p className="agent-caption">Token 已记录 {metric.totalReported} / {metric.calls} 次调用，历史缺失或供应商未返回的用量未计入。</p>}
     <dl className="topic-overview-meta">
@@ -47,5 +50,6 @@ export default function ContactTaskOverview({ topic, data, visible }: { topic: A
       <div><dt>最近一轮</dt><dd>{latest ? `${time(latest.createdAt)} · ${AGENT_STATUS[latest.status]}` : '尚未执行'}</dd></div>
       <div><dt>任务 ID</dt><dd className="topic-metadata-id">{topic.id}</dd></div>
     </dl>
+    </details>
   </div>
 }

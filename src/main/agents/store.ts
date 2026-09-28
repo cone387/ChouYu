@@ -123,6 +123,17 @@ export class AgentStore {
   latestCallId(runId: string) {
     return (this.db.prepare('SELECT id FROM calls WHERE run_id=? ORDER BY id DESC LIMIT 1').get(runId) as { id: number } | undefined)?.id
   }
+  interactions(characterId: string, topicId: string, cursor?: number): import('../../shared/agents').AgentInteractionPage {
+    this.topics.get(characterId, topicId)
+    if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 1)) throw new Error('互动记录游标无效。')
+    const rows = this.db.prepare(`SELECT e.*, r.status,
+      EXISTS(SELECT 1 FROM events later WHERE later.run_id=e.run_id AND later.id>e.id AND later.kind IN ('waiting','answer')) AS superseded
+      FROM events e JOIN runs r ON r.id=e.run_id
+      WHERE r.character_id=? AND r.topic_id=? AND e.kind IN ('waiting','answer') AND e.id<? ORDER BY e.id DESC LIMIT 51`)
+      .all(characterId, topicId, cursor ?? Number.MAX_SAFE_INTEGER) as { id: number; run_id: string; kind: 'waiting' | 'answer'; text: string; at: number; status: string; superseded: number }[]
+    const page = rows.slice(0, 50)
+    return { items: page.map(row => ({ id: row.id, runId: row.run_id, kind: row.kind, text: row.text, at: row.at, pending: row.kind === 'waiting' && row.status === 'waiting' && !row.superseded })), nextCursor: rows.length > 50 ? page.at(-1)!.id : undefined }
+  }
   recordCallMetadata(callId: number, metadata: AIResponseMetadata) {
     this.db.prepare('UPDATE calls SET metadata=? WHERE id=?').run(JSON.stringify(metadata), callId)
   }

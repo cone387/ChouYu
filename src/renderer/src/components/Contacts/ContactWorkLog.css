@@ -9,7 +9,7 @@
 .agent-work-log-scroll ol { list-style: none; padding: 6px 8px; margin: 0; }
 .agent-work-log-scroll li { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; padding: 5px 0; line-height: 1.6; }
 .agent-work-log-scroll time { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.agent-work-log-scroll summary { cursor: pointer; overflow-wrap: anywhere; }
+.agent-work-log-scroll summary { cursor: pointer; overflow-wrap: anywhere; color: var(--text-primary); }
 .agent-work-log-scroll details p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); }
 .agent-work-log-scroll li[data-kind=failed] summary, .agent-work-log-scroll li[data-kind=source-failed] summary { color: var(--error); }
 .agent-work-log-scroll li[data-kind=completed] summary { color: var(--accent); font-weight: 500; }

@@ -230,7 +230,8 @@ export default function MessageArea({ onAgentNotice, active = true, character, s
           <div className="message-body">
             {msg.role === 'assistant' && <span className="message-sender">{character?.name || '联系人'}</span>}
             {searching && (msg.role !== 'user' || msg.toolData) && <SearchMatch text={searchableMessageText(msg)} query={normalizedQuery} />}
-            <div className="message-bubble">
+            <div className={`message-bubble${msg.agentNotice?.kind === 'question' ? ' agent-confirmation-card' : ''}`}>
+              {msg.agentNotice?.kind === 'question' && <strong className="agent-confirmation-heading">任务确认</strong>}
               {assistantKind && <AssistantMessageLabel kind={assistantKind} />}
               {msg.imageUrl && (
                 <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
@@ -288,9 +289,13 @@ export default function MessageArea({ onAgentNotice, active = true, character, s
               ) : (
                 msg.content && <span>{searching ? <SearchHighlight text={msg.content} query={normalizedQuery} /> : msg.content}</span>
               )}
+              {msg.agentNotice?.kind === 'question' && onAgentNotice && <div className="agent-message-links" role="group" aria-label="任务确认操作">
+                <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>查看并回复</button>
+                <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>查看本轮记录</button>
+              </div>}
             </div>
-            {msg.agentNotice && onAgentNotice && <div className="agent-message-links" role="group" aria-label="工作进展来源">
-              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>{msg.agentNotice.kind === 'question' ? '查看待确认事项' : '查看事项'}</button>
+            {msg.agentNotice && msg.agentNotice.kind !== 'question' && onAgentNotice && <div className="agent-message-links" role="group" aria-label="工作进展来源">
+              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>查看事项</button>
               <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>查看本轮记录</button>
             </div>}
             <div className="message-meta">

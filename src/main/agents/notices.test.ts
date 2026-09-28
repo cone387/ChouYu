@@ -23,6 +23,27 @@ function finish(store: AgentStore, hash = 'one', change = progress) {
 afterEach(() => { for (const store of stores.splice(0)) store.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 describe('contact notice outbox', () => {
+  it('keeps every question and reply across pagination and restart, isolated by owner', () => {
+    const { store, path, topic } = fixture()
+    const run = store.createRun('alice', '')
+    for (let i = 0; i < 27; i++) { store.wait(run, `确认 ${i}`); store.answer('alice', run, `回复 ${i}`) }
+    store.wait(run, '最后一个问题')
+    const first = store.interactions('alice', topic.id)
+    expect(first.items).toHaveLength(50)
+    expect(first.items[0]).toMatchObject({ kind: 'waiting', text: '最后一个问题', pending: true })
+    expect(first.items[1]).toMatchObject({ kind: 'answer', text: '回复 26', pending: false })
+    expect(first.items.filter(item => item.pending)).toHaveLength(1)
+    const older = store.interactions('alice', topic.id, first.nextCursor)
+    expect(older.items).toHaveLength(5)
+    expect(older.nextCursor).toBeUndefined()
+    expect(new Set([...first.items, ...older.items].map(item => item.id)).size).toBe(55)
+    expect(() => store.interactions('bob', topic.id)).toThrow()
+    store.cancel('alice', '暂停')
+    expect(store.interactions('alice', topic.id).items[0].pending).toBe(false)
+    store.close(); stores.splice(stores.indexOf(store), 1)
+    const reopened = new AgentStore(path); stores.push(reopened)
+    expect(reopened.interactions('alice', topic.id).items[0].text).toBe('最后一个问题')
+  })
   it('survives restart, isolates owners, and does not enqueue duplicate commits', () => {
     const { store, path } = fixture(), runId = finish(store)
     store.finish(runId, store.detail('alice', runId).report!, [], progress)
@@ -64,15 +85,16 @@ describe('contact notice outbox', () => {
     finish(store)
     expect(store.notices.pending('alice', now + 86400000)).toEqual([])
   })
-  it('caps all notices at eight per rolling day including questions', () => {
+  it('always delivers blocking questions, even beyond the progress cap or with progress notifications off', () => {
     const { store } = fixture(), now = Date.now()
+    store.save('alice', { ...settings, notifyProgress: false })
     for (let i = 0; i < 9; i++) {
       const run = store.createRun('alice', ''); store.wait(run, `问题 ${i}`)
       const pending = store.notices.pending('alice', now + i)
-      expect(pending).toHaveLength(i < 8 ? 1 : 0)
-      if (i < 8) { store.notices.ack('alice', pending[0].id, now + i); store.cancel('alice', '下一轮') }
+      expect(pending).toHaveLength(1)
+      store.notices.ack('alice', pending[0].id, now + i); store.cancel('alice', '下一轮')
     }
-    expect(store.notices.pending('alice', now + 86400010)).toHaveLength(1)
+    expect(store.notices.pending('alice', now + 86400010)).toHaveLength(0)
   })
   it('rolls back the outbox with a failed report and removes it with its owner', () => {
     const { store } = fixture()

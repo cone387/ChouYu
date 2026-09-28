@@ -5,10 +5,11 @@ import type { AgentFocusRequest } from '../../../../shared/agents'
 import ContactDelivery from './ContactDelivery'
 import ContactTaskIcon from './ContactTaskIcon'
 import ContactTaskOverview from './ContactTaskOverview'
+import ContactTaskInteractions from './ContactTaskInteractions'
 
 type Editor = { kind: 'edit' | 'status'; topicId: string; revision: number; input: AgentTopicInput; status: AgentTopicStatus; reason: string }
 const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_evidence'].includes(topic.status)
-const tabs = [['overview', '概览'], ['stages', '阶段计划'], ['delivery', '任务成果'], ['activity', '工作过程'], ['history', '历史记录']] as const
+const tabs = [['overview', '概览'], ['stages', '阶段计划'], ['delivery', '任务成果'], ['interactions', '互动记录'], ['history', '历史记录']] as const
 type TopicTab = typeof tabs[number][0]
 const time = (value: number) => new Date(value).toLocaleString()
 
@@ -40,7 +41,11 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const currentRun = data.runs.find(run => ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
   const canPause = Boolean(topic && (currentRun?.topicId === topic.id || (data.settings.enabled && data.focusTopicId === topic.id && researchable(topic))))
   const waiting = currentRun?.topicId === topic?.id && currentRun?.status === 'waiting'
-  useEffect(() => { setTab(focusRequest?.topicId === selected && focusRequest.kind === 'question' ? 'activity' : 'overview'); setShowSettings(false) }, [selected, focusRequest])
+  useEffect(() => { setTab('overview'); setShowSettings(false) }, [selected, focusRequest])
+  useEffect(() => {
+    if (tab !== 'overview' || showSettings || !waiting || focusRequest?.kind !== 'question') return
+    scrollPane.current?.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus()
+  }, [tab, showSettings, waiting, focusRequest])
   const topicRun = data.runs.find(run => run.topicId === topic?.id)
   useEffect(() => {
     // A just-created topic can arrive before the parent's overview refresh.
@@ -97,7 +102,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         <button type="button" className="topic-back" onClick={() => setMobileDetail(false)}>← 返回任务列表</button>
     {topic && <>
       <header className="topic-fixed-header" data-topic-current={topic.id}>
-        <div className="topic-title-group"><h4>{topic.title}</h4><span className="topic-status">{TOPIC_STATUS[topic.status]}</span></div>
+        <div className="topic-title-group"><h4>{topic.title}</h4></div>
         <div className="topic-header-actions">
           <button type="button" className="primary" data-topic-run={!canPause || undefined} data-topic-pause={canPause || undefined}
             disabled={busy || Boolean(editor) || Boolean(runAction) || (!canPause && (settingsDirty || Boolean(currentRun)))}
@@ -116,7 +121,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
             const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
             if (next < 0) return
             event.preventDefault(); setTab(tabs[next][0]); document.getElementById(`${tabId}-${tabs[next][0]}`)?.focus()
-          }}>{label}{id === 'activity' && waiting && <span className="topic-waiting">待回复</span>}</button>)}
+          }}>{label}{id === 'overview' && waiting && <span className="topic-waiting">待回复</span>}</button>)}
       </div>
       <div className="topic-content-scroll" ref={scrollPane}>
       <div ref={settingsPane} id={`${tabId}-settings`} className="topic-settings" hidden={!showSettings} tabIndex={-1} aria-label="本任务设置">
@@ -140,7 +145,9 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       </div>
       <div hidden={showSettings}>
       <section role="tabpanel" id={`${tabId}-overview-panel`} aria-labelledby={`${tabId}-overview`} hidden={tab !== 'overview'} tabIndex={0}>
-        <ContactTaskOverview topic={topic} data={data} visible={tab === 'overview' && !showSettings} />
+        <ContactTaskOverview topic={topic} data={data} visible={tab === 'overview' && !showSettings}>
+          {topicRun ? renderActivity?.(topic.id) : <p className="agent-empty">任务尚未启动，执行后会在这里显示实时日志。</p>}
+        </ContactTaskOverview>
       </section>
       <section role="tabpanel" id={`${tabId}-${tab === 'stages' ? 'stages' : 'delivery'}-panel`} aria-labelledby={`${tabId}-${tab === 'stages' ? 'stages' : 'delivery'}`} hidden={tab !== 'stages' && tab !== 'delivery'} tabIndex={0}>
       <ContactDelivery key={`${characterId}:${topic.id}`} view={tab === 'stages' ? 'stages' : 'delivery'} characterId={characterId} topic={topic} busy={busy || Boolean(currentRun) || settingsDirty || Boolean(editor)} onAction={onAction} onReport={topicRun ? () => onReport(topicRun.id, topic.id) : undefined} />
@@ -156,9 +163,9 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       <details className="topic-goal"><summary>目标与约束</summary><dl><dt>目标</dt><dd>{topic.goal}</dd>{topic.constraints && <><dt>约束</dt><dd>{topic.constraints}</dd></>}</dl></details>
       </div>
       </section>
-      <section role="tabpanel" id={`${tabId}-activity-panel`} aria-labelledby={`${tabId}-activity`} hidden={tab !== 'activity'} tabIndex={0}>
-        <h4>{waiting ? '需要你回复' : '工作过程'}</h4>
-        {topicRun ? renderActivity?.(topic.id) : <p className="agent-empty">任务尚未启动，执行后会在这里显示工作过程。</p>}
+      <section role="tabpanel" id={`${tabId}-interactions-panel`} aria-labelledby={`${tabId}-interactions`} hidden={tab !== 'interactions'} tabIndex={0}>
+        <ContactTaskInteractions key={topic.id} characterId={characterId} topicId={topic.id} visible={tab === 'interactions' && !showSettings}
+          onReply={() => { setTab('overview'); requestAnimationFrame(() => scrollPane.current?.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus()) }} onReport={runId => onReport(runId, topic.id)} />
       </section>
       <section role="tabpanel" id={`${tabId}-history-panel`} aria-labelledby={`${tabId}-history`} hidden={tab !== 'history'} tabIndex={0}>
       <div className="topic-timeline"><h4>历史记录</h4>

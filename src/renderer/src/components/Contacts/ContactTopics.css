@@ -14,7 +14,7 @@
 .topic-badge-focus { color: var(--accent); border: 1px solid var(--border); }
 .topic-badge-active { color: var(--on-accent); background: var(--accent); }
 .topic-detail-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; font-size: 14px; line-height: 1.75; }
-.topic-fixed-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px 12px; flex: none; }
+.topic-fixed-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 12px; flex: none; }
 .topic-title-group { min-width: 0; }
 .topic-title-group h4 { margin: 0 0 4px; font-size: 16px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .topic-header-actions { display: flex; align-items: center; gap: 6px; flex: none; }
@@ -23,9 +23,20 @@
 .topic-overview { padding-top: 16px; }
 .topic-overview-status { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; }
 .topic-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
-.topic-metrics > div { padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
-.topic-metrics dt { color: var(--text-secondary); font-size: 12px; }
-.topic-metrics dd { margin: 5px 0 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.topic-metrics > div { --metric-color: var(--accent); padding: 10px 12px; background: linear-gradient(135deg, color-mix(in srgb, var(--metric-color) 11%, var(--bg-primary)), var(--bg-primary)); border: 1px solid color-mix(in srgb, var(--metric-color) 24%, var(--border)); border-radius: 10px; min-width: 0; box-shadow: inset 0 2px color-mix(in srgb, var(--metric-color) 55%, transparent); }
+.topic-metrics .metric-time, .topic-metrics .metric-rounds { --metric-color: var(--warning); }
+.topic-metrics .metric-calls, .topic-metrics .metric-output { --metric-color: var(--success); }
+.topic-metrics dt { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; }
+.topic-metrics dt svg { color: var(--metric-color); flex: none; }
+.topic-metrics dd { margin: 6px 0 0; color: var(--metric-color); font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.topic-metric-notes { margin-top: 18px; }
+.topic-metric-notes summary { cursor: pointer; color: var(--text-secondary); padding: 8px 0; }
+.topic-interactions ol { padding: 0; list-style: none; }
+.topic-interaction-card { margin: 12px 0; padding: 14px; border: 1px solid var(--warning-border); border-left: 3px solid var(--warning); border-radius: 10px; background: var(--warning-bg); }
+.topic-interaction-card.is-answer { border-color: var(--success-border); border-left-color: var(--success); background: var(--success-bg); }
+.topic-interaction-card header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+.topic-interaction-card time { color: var(--text-secondary); font-size: 11px; }
+.topic-interaction-card p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .topic-overview-meta { margin: 20px 0 0; }
 .topic-overview-meta > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
 .topic-overview-meta dt { color: var(--text-secondary); font-size: 12px; }
