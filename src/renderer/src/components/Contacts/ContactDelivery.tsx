@@ -1,3 +1,4 @@
+import ContactMarkdown from './ContactMarkdown'
 import { useEffect, useRef, useState } from 'react'
 import type { AgentDelivery } from '../../../../shared/agent-delivery'
 import type { AgentTopic } from '../../../../shared/agents'
@@ -50,7 +51,7 @@ export default function ContactDelivery({ characterId, topic, busy, onAction, on
     {!loading && !error && !artifact && <div className="delivery-empty"><p>尚未保存可阅读的成果正文。</p><p className="agent-caption">进展中提到“已完成”不代表已有正文。旧任务的内容可能保存在工作报告中。</p>{onReport && <button type="button" onClick={onReport}>查看最近工作报告</button>}</div>}
     {artifact && !loading && <>
       <nav className="delivery-directory" aria-label="成果目录">{artifact.sections.map(section => <button type="button" key={section.id} aria-pressed={readingId === section.id} onClick={() => setReadingId(section.id)}>{section.title}</button>)}</nav>
-      {artifact.sections.filter(section => section.id === readingId).map(section => <article className="delivery-reader" key={section.id} aria-label={section.title}><h5>{section.title}</h5><div>{section.body}</div>{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><a href={source.url} target="_blank" rel="noopener noreferrer">[{i + 1}] {source.title}</a></li>)}</ol></details> : null}</article>)}
+      {artifact.sections.filter(section => section.id === readingId).map(section => <article className="delivery-reader" key={section.id} aria-label={section.title}><h5>{section.title}</h5><ContactMarkdown>{section.body}</ContactMarkdown>{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><a href={source.url} target="_blank" rel="noopener noreferrer">[{i + 1}] {source.title}</a></li>)}</ol></details> : null}</article>)}
       <details><summary>版本与导出</summary>
       <div className="agent-actions">
         <button data-delivery-prev type="button" disabled={artifact.version <= 1} onClick={() => void load(artifact.version - 1)}>上一版</button>
@@ -59,7 +60,7 @@ export default function ContactDelivery({ characterId, topic, busy, onAction, on
       </div>
       {previous && <details><summary>与上一版比较</summary>{artifact.sections.filter(s => { const old = previous.sections.find(p => p.id === s.id); return !old || old.body !== s.body || old.title !== s.title }).map(s => {
         const old = previous.sections.find(p => p.id === s.id)
-        return <article className="delivery-diff" key={s.id}><h5>{s.title} · {old ? '已修改' : '新增'}</h5>{old && <><strong>修改前</strong><div>{old.body}</div></>}<strong>修改后</strong><div>{s.body}</div></article>
+        return <article className="delivery-diff" key={s.id}><h5>{s.title} · {old ? '已修改' : '新增'}</h5>{old && <><strong>修改前</strong><ContactMarkdown>{old.body}</ContactMarkdown></>}<strong>修改后</strong><ContactMarkdown>{s.body}</ContactMarkdown></article>
       })}<p className="agent-caption">完成条件与阶段以当前查看版本为准；未列出的分节正文保持不变。</p></details>}
       </details>
     </>}
