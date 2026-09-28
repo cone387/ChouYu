@@ -17,6 +17,7 @@ export function parseResearchPlan(raw: string, allowed: string[], minimum: numbe
   let value: any
   try { value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) } catch { throw new Error('研究计划格式无效。') }
   if (!value || !['search', 'read', 'wait', 'write', 'discover_contacts', 'read_contacts'].includes(value.action) || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 1000) throw new Error('研究计划必须说明动作与原因。')
+  if (value.evaluation !== undefined && typeof value.evaluation !== 'boolean') throw new Error('评分计划标记必须为布尔值。')
   const contactAction = ['discover_contacts', 'read_contacts'].includes(value.action)
   if (contactAction && !contactAccess) throw new Error('未授权读取联系人的共享成果。')
   if (contactAction && (!Array.isArray(value.urls) || value.urls.length)) throw new Error('联系人成果读取不能混用网页地址。')
@@ -30,7 +31,7 @@ export function parseResearchPlan(raw: string, allowed: string[], minimum: numbe
   if (!Number.isInteger(value.checkAfterMinutes) || value.checkAfterMinutes < 15 || value.checkAfterMinutes > 10080) throw new Error('下次检查间隔无效。')
   const sectionId = typeof value.sectionId === 'string' ? value.sectionId.trim() : value.sectionId
   if (sectionId != null && sectionId !== '' && (typeof sectionId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(sectionId))) throw new InvalidSectionReferenceError('规划中的待修订分节 ID 格式无效。')
-  return { action: value.action, reason: value.reason.trim(), query: ['search', 'discover_contacts'].includes(value.action) ? query : '', ...(value.action === 'read_contacts' ? { contactRefs: value.contactRefs.map((ref: any) => ({ characterId: ref.characterId, topicId: ref.topicId, version: ref.version, sectionId: ref.sectionId })) } : {}), urls: [...new Set(value.urls.map(researchUrl))] as string[], checkAfterMinutes: Math.max(minimum, value.checkAfterMinutes), ...(sectionId ? { sectionId } : {}), ...(value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }
+  return { ...(value.evaluation !== undefined ? { evaluation: value.evaluation } : {}), action: value.action, reason: value.reason.trim(), query: ['search', 'discover_contacts'].includes(value.action) ? query : '', ...(value.action === 'read_contacts' ? { contactRefs: value.contactRefs.map((ref: any) => ({ characterId: ref.characterId, topicId: ref.topicId, version: ref.version, sectionId: ref.sectionId })) } : {}), urls: [...new Set(value.urls.map(researchUrl))] as string[], checkAfterMinutes: Math.max(minimum, value.checkAfterMinutes), ...(sectionId ? { sectionId } : {}), ...(value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }
 }
 export type AgentSearcher = (query: string, key: string, signal: AbortSignal) => Promise<AgentSearchResult[]>
 /** Fixed API origin; credentials never follow redirects or enter an evidence record. */

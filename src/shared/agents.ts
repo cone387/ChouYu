@@ -14,7 +14,7 @@ export interface AgentSettings {
   dailySearches?: number
 }
 export interface ContactDeliveryRef { characterId: string; topicId: string; version: number; sectionId: string }
-export interface AgentResearchPlan { action: 'search' | 'read' | 'wait' | 'write' | 'discover_contacts' | 'read_contacts'; contactRefs?: ContactDeliveryRef[]; reason: string; query: string; urls: string[]; checkAfterMinutes: number; sectionId?: string; resourceBudget?: import('./agent-resources').TaskResourceBudget }
+export interface AgentResearchPlan { evaluation?: boolean; action: 'search' | 'read' | 'wait' | 'write' | 'discover_contacts' | 'read_contacts'; contactRefs?: ContactDeliveryRef[]; reason: string; query: string; urls: string[]; checkAfterMinutes: number; sectionId?: string; resourceBudget?: import('./agent-resources').TaskResourceBudget }
 export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { contactQuery?: string; plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
@@ -42,7 +42,7 @@ export interface AgentEvent { id: number; runId: string; kind: string; text: str
 export interface AgentInteraction extends AgentEvent { kind: 'waiting' | 'answer'; pending: boolean }
 export interface AgentInteractionPage { items: AgentInteraction[]; nextCursor?: number }
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
-export interface AgentReport { runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
+export interface AgentReport { evaluations?: import('./agent-evaluation').AgentEvaluation[]; runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
   topicMetrics?: Record<string, AgentTopicMetrics>
   latestActivity?: AgentEvent
