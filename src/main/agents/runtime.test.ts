@@ -23,6 +23,37 @@ function fixture() {
   return { dir, store, runtime }
 }
 describe('contact agent durability and isolation', () => {
+  it('repairs malformed output once and charges the additional call before committing', async () => {
+    const { store, runtime } = fixture(), run = store.createRun('alice', '')
+    const model = vi.fn().mockResolvedValueOnce('invalid JSON').mockResolvedValueOnce(JSON.stringify(draft))
+    await runtime.execute(run, '', model, new AbortController().signal)
+    expect(store.detail('alice', run).run.status).toBe('completed')
+    expect(store.overview('alice').reports).toHaveLength(1)
+    expect(store.callCount('alice')).toBe(2)
+    expect(store.detail('alice', run).events.some(e => e.kind === 'format-repaired')).toBe(true)
+    expect(store.overview('alice').latestActivity?.kind).toBe('completed')
+    expect(store.overview('bob').latestActivity).toBeUndefined()
+  })
+  it('stops after one unsuccessful repair without creating a report or memory', async () => {
+    const { store, runtime } = fixture(), run = store.createRun('alice', '')
+    const model = vi.fn(async () => 'invalid JSON')
+    await runtime.execute(run, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(store.detail('alice', run).run.status).toBe('failed')
+    expect(store.overview('alice').reports).toEqual([])
+    expect(store.overview('alice').memories).toEqual([])
+    expect(store.overview('alice').latestActivity?.kind).toBe('failed')
+  })
+  it('does not exceed the daily budget for format repair', async () => {
+    const { store, runtime } = fixture()
+    store.save('alice', { ...settings, dailyCalls: 2 })
+    const run = store.createRun('alice', ''), model = vi.fn(async () => 'invalid JSON')
+    store.charge(run)
+    await runtime.execute(run, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(1)
+    expect(store.callCount('alice')).toBe(2)
+    expect(store.detail('alice', run).run.status).toBe('failed')
+  })
   it('commits evidence and private memories once, without leaking another contact', async () => {
     const { store, runtime } = fixture()
     store.remember('bob', 'BOB_PRIVATE')
@@ -37,9 +68,11 @@ describe('contact agent durability and isolation', () => {
     expect(store.overview('alice').reports).toHaveLength(1)
     expect(store.callCount('alice')).toBe(1)
   })
-  it('resumes a persisted human interrupt after reopening both databases, without another model call', async () => {
+  it('resumes a legacy persisted human interrupt without another model call', async () => {
     const { dir, store, runtime } = fixture()
     const run = store.createRun('alice', '')
+    const legacyInput = JSON.parse(store.getRun(run)!.input); delete legacyInput.deliveryVersion; delete legacyInput.delivery
+    store.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(legacyInput), run)
     await runtime.execute(run, 'Alice', async () => JSON.stringify({ ...draft, question: '你更熟悉哪个行业？' }), new AbortController().signal)
     expect(store.detail('alice', run).run.status).toBe('waiting')
     runtime.close(); store.close(); cleanups.splice(0)

@@ -1,4 +1,6 @@
-import { app, BrowserWindow, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
+import { writeFile } from 'node:fs/promises'
+import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
 import { join } from 'node:path'
 import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState } from '../database'
 import type { AgentNotice } from '../../shared/agents'
@@ -107,6 +109,19 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  ipcMain.handle('agents:exportDelivery', async (event, id: string, topicId: string, version: number) => {
+    if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
+    await ensure()
+    const artifact = await rpc('delivery', id, [topicId, version]) as AgentDelivery | null
+    const detail = await rpc('topicDetail', id, [topicId])
+    if (!artifact) throw new Error('尚无可导出的成果。')
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const options = { title: '导出此版本成果', defaultPath: `${detail.topic.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80)}-v${artifact.version}.md`, filters: [{ name: 'Markdown', extensions: ['md'] }] }
+    const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return false
+    await writeFile(result.filePath, deliveryMarkdown(detail.topic.title, artifact), 'utf8')
+    return true
+  })
   ipcMain.handle('agents:searchCredential', async (_event, id: string, key?: string) => {
     if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     if (key !== undefined) {
@@ -123,7 +138,7 @@ export function initializeAgents() {
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const method of ['get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'createTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail']) {
+  for (const method of ['get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'createTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'delivery', 'reviseTopic']) {
     ipcMain.handle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)

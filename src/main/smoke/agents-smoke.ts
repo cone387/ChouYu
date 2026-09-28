@@ -1,6 +1,6 @@
-import type { BrowserWindow } from 'electron'
+import { app, dialog, type BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getConfig, saveConfig, listCharacters, getActiveSession, getSession, selectChatSession, flushDatabase, createChatSession } from '../database'
 import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID } from '../../shared/characters'
@@ -23,7 +23,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     window.webContents.executeJavaScript(code).then(resolve, reject).finally(() => clearTimeout(deadline))
   })
   let calls = 0, modelRequest: any
+  let revisionCalls = 0
   let researching = false, researchCalls = 0
+  let revisingDelivery = false, revisedSectionId = ''
   let fixtureSession = ''
   let toolStep = 0, scenario = '', toolResponses: string[] = []
   let discussionReceived = ''
@@ -32,6 +34,15 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     let body = ''; request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       const payload = JSON.parse(body)
+      if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.startsWith('根据用户对待确认问题'))) {
+        revisionCalls++
+        const result = { title: '开发者机会研究 · 根据回复修订', body: '按回复聚焦开发者工具。需求存在，个人付费意愿未知。', nextStep: '核对反对证据', question: '', memories: ['需求存在的证据不等于付费意愿，下一轮应继续验证。'],
+          progress: { judgement: '需求存在，个人付费意愿未知。', openQuestions: '谁愿意付费？', nextStep: '核对反对证据', reason: '采用用户回复，聚焦开发者工具。', status: 'needs_evidence' },
+          delivery: { completionCriteria: '核对开发者需求和付费假设，给出证据与局限', summary: '已根据用户回复聚焦开发者工具。', stages: [{ id: 'research', title: '验证需求', status: 'active' }, { id: 'conclusion', title: '形成判断', status: 'pending' }], section: { id: 'findings', title: '开发者需求', body: '按用户回复只研究开发者工具。资料 [1] 尚不足以验证收益。' } } }
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
+        return
+      }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.startsWith('你是联系人，刚收到'))) {
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })
         response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify({ title: '研究另一个独立方向', nextStep: '先核对团队检索场景', question: '团队通常检索什么内容？' }) } }] })}\n\ndata: [DONE]\n\n`)
@@ -58,9 +69,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
         researchCalls++
         const planning = payload.messages.some((message: { content: string }) => message.content.startsWith('为联系人'))
         if (body.includes('search-smoke-secret')) throw new Error('Search credential leaked into model input')
-        const result = planning ? { action: 'search', query: '团队 免费 替代品', urls: [], reason: '核对团队免费替代品与定价', checkAfterMinutes: 180 } : {
+        const result = planning ? { action: 'search', query: '团队 免费 替代品', urls: [], reason: '核对团队免费替代品与定价', checkAfterMinutes: 180, ...(revisingDelivery ? { sectionId: revisedSectionId } : {}) } : {
           title: '自主搜索发现的证据', body: '原网页 [1] 有团队收费说明，尚待验证真实付费需求。', nextStep: '跟踪该定价页面变化', question: '', memories: [],
-          progress: { judgement: '新来源区分免费个人版和收费团队版', reason: '新读取的网页 [1] 支持进一步核对团队场景', openQuestions: '谁实际愿意付费', nextStep: '跟踪该定价页面变化', status: 'needs_evidence' }
+          progress: { judgement: '新来源区分免费个人版和收费团队版', reason: '新读取的网页 [1] 支持进一步核对团队场景', openQuestions: '谁实际愿意付费', nextStep: '跟踪该定价页面变化', status: 'needs_evidence' },
+          ...(revisingDelivery ? { delivery: { completionCriteria: '核对团队需求和证据局限', summary: '按用户意见明确证据局限', stages: [{ id: 'verify', title: '验证需求', status: 'active' }], section: { id: revisedSectionId, title: '团队需求与局限', body: '已按修改意见补充局限：资料 [1] 的价格不能证明团队愿意付费。' } } } : {})
         }
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })
         response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`); return
@@ -191,7 +203,15 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await finishFeedback()
     const completed = await waitStatus('completed')
     console.log('CHOUYU_SMOKE_AGENTS_STAGE completed')
-    if (calls !== 1 || completed.reports.length !== 1 || !completed.reports[0].body.includes('开发者工具') || completed.memories.length !== 1) throw new Error('Agent resume duplicated work or lost results')
+    if (calls !== 1 || revisionCalls !== 1 || completed.callsToday !== 2 || completed.reports.length !== 1 || !completed.reports[0].body.includes('开发者工具') || completed.memories.length !== 1) throw new Error('Agent resume duplicated work or lost results')
+    const artifact = await run(`window.electronAPI.agents.delivery(${id}, ${JSON.stringify(completed.focusTopicId)})`)
+    if (artifact.version !== 1 || !artifact.sections[0].body.includes('只研究开发者工具')) throw new Error('Feedback did not revise the actual deliverable')
+    const exportPath = join(app.getPath('userData'), 'delivery-smoke.md'), originalSaveDialog = dialog.showSaveDialog
+    try {
+      dialog.showSaveDialog = (async () => ({ canceled: false, filePath: exportPath })) as typeof dialog.showSaveDialog
+      if (!await run(`window.electronAPI.agents.exportDelivery(${id}, ${JSON.stringify(completed.focusTopicId)}, 1)`)) throw new Error('Deliverable export cancelled')
+      if (!readFileSync(exportPath, 'utf8').includes('按用户回复只研究开发者工具')) throw new Error('Export omitted revised text')
+    } finally { dialog.showSaveDialog = originalSaveDialog }
     const ownContext = await agentContext(DEFAULT_CHARACTER_ID), otherContext = await agentContext(other.id)
     if (!ownContext.includes('开发者机会研究') || ownContext.includes('BOB_PRIVATE_SMOKE') || otherContext.includes('开发者机会研究')) throw new Error('Private chat recall crossed contacts')
     const mismatched = await run(`window.electronAPI.ai.startStream(${JSON.stringify({ requestId: 'agent-owner-boundary', sessionId: fixtureSession, characterId: other.id, systemPrompt: 'test', messages: [{ role: 'user', content: 'test' }] })})`)
@@ -230,6 +250,14 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           if (geometry.scroll > geometry.client + 1 || geometry.x < 0 || geometry.right > width + 1) throw new Error(`Agent panel overflows: ${JSON.stringify(geometry)}`)
           await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
           writeFileSync(join(directory, `contact-agent-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+          await run("document.querySelector('.agent-tabs button').click()")
+          await waitForRenderer(window, "document.querySelector('.contact-delivery')?.getBoundingClientRect().width > 0")
+          await run("document.querySelector('.contact-delivery')?.scrollIntoView({block:'start'})")
+          await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+          const deliveryFits = await run("(() => { const el=document.querySelector('.contact-delivery'); return Boolean(el && el.clientWidth > 0 && el.scrollWidth <= el.clientWidth + 1) })()")
+          if (!deliveryFits) throw new Error('Deliverable content overflows')
+          writeFileSync(join(directory, `delivery-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+          await run("document.querySelectorAll('.agent-tabs button')[1].click()")
         }
       }
       window.webContents.disableDeviceEmulation()
@@ -392,6 +420,8 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if ((await get()).topics.find(t => t.id === target.id)!.constraints !== '仅验证开发者工具，预算 200 元') throw new Error('Confirmed constraints were not saved')
     if (Number(calls) !== 3) throw new Error('Opening the chat toolbar unexpectedly started model work')
     researching = true
+    const budgetSettings = (await get()).settings
+    await run(`window.electronAPI.agents.savePreferences(${id}, ${JSON.stringify({ ...budgetSettings, dailyCalls: 16 })})`)
     await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet [data-agent-search-key]'))")
     await run("document.querySelector('.contact-work-sheet .agent-work-settings').open=true; document.querySelector('.agent-search-credentials').open=true")
@@ -429,8 +459,22 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       }
       window.webContents.disableDeviceEmulation()
     }
+    await run("document.querySelector('[data-contact-dialog-tab=\"work\"]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-delivery')?.clientWidth > 0 && Boolean(document.querySelector('[data-delivery-feedback]'))")
+    const beforeRevision = await run(`window.electronAPI.agents.delivery(${id}, ${JSON.stringify(target.id)})`)
+    revisedSectionId = beforeRevision.sections[0].id; revisingDelivery = true
+    await fill('[data-delivery-feedback]', '明确指出团队付费仍缺乏证据')
+    await waitForRenderer(window, "document.querySelector('[data-delivery-submit]')?.disabled === false")
+    await run("document.querySelector('[data-delivery-submit]').click()")
+    await waitForRenderer(window, `document.querySelector('.contact-delivery')?.dataset.deliveryVersion === '${beforeRevision.version + 1}'`, 20000)
+    if (!await run("document.querySelector('.delivery-body')?.textContent.includes('已按修改意见补充局限')")) throw new Error('Revision form did not update the deliverable')
+    await run("document.querySelector('[data-delivery-prev]').click()")
+    await waitForRenderer(window, `document.querySelector('.contact-delivery')?.dataset.deliveryVersion === '${beforeRevision.version}'`)
+    if (await run("document.querySelector('.delivery-body')?.textContent.includes('已按修改意见补充局限')")) throw new Error('Old artifact version was overwritten')
+    await run("document.querySelector('[data-delivery-next]').click()")
+    await waitForRenderer(window, `document.querySelector('.contact-delivery')?.dataset.deliveryVersion === '${beforeRevision.version + 1}'`)
     await run(`window.electronAPI.agents.pause(${id})`)
-    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 researchCalls=3 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true autonomousResearch=true unchangedBackoff=true')
+    console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 feedbackRevisionCalls=1 researchCalls=5 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true autonomousResearch=true unchangedBackoff=true deliverableVersions=true export=true revisionForm=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)
     console.error('CHOUYU_AGENT_UI', await run("document.querySelector('.contact-work-sheet')?.textContent.slice(0, 5000)"))

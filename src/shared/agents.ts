@@ -9,7 +9,7 @@ export interface AgentSettings {
   searchEnabled?: boolean
   dailySearches?: number
 }
-export interface AgentResearchPlan { action: 'search' | 'read' | 'wait' | 'write'; reason: string; query: string; urls: string[]; checkAfterMinutes: number }
+export interface AgentResearchPlan { action: 'search' | 'read' | 'wait' | 'write'; reason: string; query: string; urls: string[]; checkAfterMinutes: number; sectionId?: string }
 export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
@@ -37,6 +37,7 @@ export interface AgentEvent { id: number; runId: string; kind: string; text: str
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
+  latestActivity?: AgentEvent
   searchesToday?: number
   settings: AgentSettings; revision: number; nextAt: number; callsToday: number
   runs: AgentRun[]; memories: AgentMemory[]; reports: AgentReport[]
@@ -78,6 +79,9 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI {
+  delivery(characterId: string, topicId: string, version?: number): Promise<import('./agent-delivery').AgentDelivery | null>
+  exportDelivery(characterId: string, topicId: string, version: number): Promise<boolean>
+  reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string): Promise<AgentOverview>
   savePreferences(characterId: string, settings: AgentSettings): Promise<AgentOverview>
   searchCredential(characterId: string, key?: string): Promise<{ configured: boolean }>
   get(characterId: string): Promise<AgentOverview>

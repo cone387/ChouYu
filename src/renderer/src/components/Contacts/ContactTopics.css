@@ -18,3 +18,16 @@
 .topic-timeline summary, .agent-work-settings > summary { cursor: pointer; color: var(--text-secondary); padding: 7px 0; }
 .topic-timeline button { margin-top: 8px; }
 .agent-work-settings { border-top: 1px solid var(--border); padding-top: 8px; }
+.contact-delivery { border-block: 1px solid var(--border); padding: 16px 0; margin-top: 16px; min-width: 0; }
+.contact-delivery p, .delivery-body article div, .delivery-diff div { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.delivery-stages { padding-left: 22px; }
+.delivery-stages li { padding: 6px 0; }
+.delivery-stages li > span + span { margin-left: 12px; }
+.contact-delivery summary { cursor: pointer; padding: 12px 0; }
+.contact-delivery h5 { font-size: 14px; margin: 18px 0 8px; }
+.contact-delivery form { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
+.contact-delivery button { min-height: 36px; }
+.delivery-diff { border-left: 2px solid var(--border); padding-left: 12px; }
+.delivery-diff strong { display: block; margin: 12px 0 6px; }
+.contact-delivery :is(button, summary, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 480px) { .contact-delivery button { min-height: 44px; } }

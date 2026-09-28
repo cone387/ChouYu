@@ -20,6 +20,15 @@ function fixture() {
   return { tools, topic, data, request, owner: (value?: string) => { id = value } }
 }
 describe('confirmed contact feedback', () => {
+  it('previews revision feedback and keeps the captured topic and profile versions', async () => {
+    const { tools, request } = fixture(), tool = tools[1]
+    const prepared = await tool.prepareAsync!({ topicId: 'topic', revision: 2, action: 'revise', reason: '第二节改为团队场景，保留证据局限' }, context)
+    expect(shouldConfirmTool(tool, 'full')).toBe(true)
+    expect(prepared.preview).toContain('保留证据局限')
+    expect(request).toHaveBeenCalledTimes(1)
+    await prepared.execute()
+    expect(request).toHaveBeenLastCalledWith('feedback', 'alice', [1, 'reviseTopic', ['topic', 2, '第二节改为团队场景，保留证据局限']])
+  })
   it('assigns one task to the current contact and respects the configured approval mode', async () => {
     const request = vi.fn(async (method: string) => method === 'get' ? { revision: 4, runs: [] } : { focusTopicId: 'new-topic', runs: [{ id: 'new-run', status: 'queued' }] })
     const tool = createContactTools({ owner: () => 'alice', request }).find(tool => tool.name === 'assign_contact_task')!

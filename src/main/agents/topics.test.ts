@@ -70,9 +70,9 @@ describe('persistent contact topics', () => {
         const recoveredStore = store, recoveredRuntime = runtime
         closers.push(() => recoveredStore.close(), () => recoveredRuntime.close())
         store.recover(); store.answer('alice', runId, '继续研究团队，只读验证')
-        const unusedModel = vi.fn(async () => output())
+        const unusedModel = vi.fn(async () => output({ ...progress, judgement: conclusions[round] }))
         await runtime.execute(runId, 'Alice', unusedModel, new AbortController().signal)
-        expect(unusedModel).not.toHaveBeenCalled()
+        expect(unusedModel).toHaveBeenCalledTimes(1)
       }
       expect(store.topics.get('alice', topicId).judgement).toBe(conclusions[round])
     }
@@ -85,7 +85,7 @@ describe('persistent contact topics', () => {
     expect(store.detail('alice', runIds[0]).report?.evidence[0].hash).not.toBe(store.detail('alice', runIds[1]).report?.evidence[0].hash)
     store.finish(runIds[2], store.detail('alice', runIds[2]).report!, [], progress)
     expect(store.topics.detail('alice', topicId).changes).toHaveLength(4)
-    expect(store.callCount('alice')).toBe(3)
+    expect(store.callCount('alice')).toBe(4)
     expect(() => store.topics.detail('bob', topicId)).toThrow()
   })
 
@@ -173,6 +173,7 @@ describe('persistent contact topics', () => {
     const { store, runtime, dir, topic } = fixture(), runId = store.createRun('alice', '')
     const input = JSON.parse(store.getRun(runId)!.input)
     delete input.topic
+    delete input.deliveryVersion; delete input.delivery
     store.db.prepare('UPDATE runs SET topic_id=NULL,topic_revision=NULL,input=? WHERE id=?').run(JSON.stringify(input), runId)
     const legacy = JSON.parse(output(progress, '旧版本遗留的问题'))
     delete legacy.progress

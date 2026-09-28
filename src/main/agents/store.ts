@@ -6,6 +6,8 @@ import { containsSecret } from '../../shared/memory'
 import { AgentTopics, canResearch } from './topics'
 import { AgentNotices } from './notices'
 import type { AgentResearch } from '../../shared/agents'
+import { AgentDeliveries } from './delivery'
+import type { DeliveryUpdate } from '../../shared/agent-delivery'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
 type RunRow = { id: string; character_id: string; revision: number; status: AgentRunStatus; created_at: number; updated_at: number; question: string; answer: string; summary: string; error: string; input: string; topic_id: string | null; topic_revision: number | null }
@@ -16,13 +18,14 @@ export class AgentStore {
   readonly db: Database.Database
   readonly topics: AgentTopics
   readonly notices: AgentNotices
+  readonly deliveries: AgentDeliveries
   constructor(filename: string) {
     this.db = new Database(filename)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 5) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 6) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -64,6 +67,8 @@ export class AgentStore {
       this.db.exec('DROP INDEX IF EXISTS changes_run; CREATE UNIQUE INDEX changes_run ON topic_changes(run_id,kind) WHERE run_id IS NOT NULL;')
       this.db.pragma('user_version = 5')
     })()
+    this.deliveries = new AgentDeliveries(this.db)
+    this.db.pragma('user_version = 6')
   }
   close() { this.db.close() }
   profile(id: string) { return this.db.prepare('SELECT * FROM profiles WHERE character_id=?').get(id) as Profile | undefined }
@@ -98,7 +103,9 @@ export class AgentStore {
   remove(id: string) { const runs = (this.db.prepare('SELECT id FROM runs WHERE character_id=?').all(id) as { id: string }[]).map(r => r.id); this.db.prepare('DELETE FROM profiles WHERE character_id=?').run(id); return runs }
   overview(id: string, now = Date.now()): AgentOverview {
     const profile = this.profile(id)
+    const activity = this.db.prepare('SELECT e.* FROM events e JOIN runs r ON r.id=e.run_id WHERE r.character_id=? ORDER BY e.id DESC LIMIT 1').get(id) as { id: number; run_id: string; kind: string; text: string; at: number } | undefined
     return {
+      latestActivity: activity ? { id: activity.id, runId: activity.run_id, kind: activity.kind, text: activity.text, at: activity.at } : undefined,
       settings: profile ? JSON.parse(profile.settings) : { ...DEFAULT_AGENT_SETTINGS }, revision: profile?.revision ?? 0, nextAt: profile?.next_at ?? 0,
       callsToday: this.callCount(id, now),
       searchesToday: this.searchCount(id, now),
@@ -149,7 +156,9 @@ export class AgentStore {
       const overview = this.overview(id, now)
       const previous = (this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 3').all(topic.id, id) as { value: string }[]).map(row => JSON.parse(row.value) as AgentReport)
       const baselineRun = this.db.prepare('SELECT topic_revision FROM runs WHERE id=?').get(previous[0]?.runId ?? '') as { topic_revision: number } | undefined
-      const input = JSON.stringify({ researchVersion: 1, baseline: previous[0] ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: overview.memories.slice(0, 12).map(m => ({ ...m, content: m.content.slice(0, 600) })), previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(0, 4000) })
+      const last = this.db.prepare('SELECT * FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id, topic.id) as RunRow | undefined
+      const feedback = last?.status === 'failed' ? [JSON.parse(last.input).feedback, last.answer ? `对问题「${last.question}」的回复：${last.answer}` : ''].filter(Boolean).join('\n').slice(0, 4000) : undefined
+      const input = JSON.stringify({ revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: overview.memories.filter(m => !m.runId || this.getRun(m.runId)?.topic_id === topic.id).slice(0, 12).map(m => ({ ...m, content: m.content.slice(0, 600) })), previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(0, 4000) })
       this.db.prepare('INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input,topic_id,topic_revision) VALUES(?,?,?,\'queued\',?,?,?,?,?)').run(runId, id, profile.revision, now, now, input, topic.id, topic.revision)
       this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(now + settings.intervalMinutes * 60000, id)
       this.event(runId, 'queued', `已安排事项「${topic.title}」的本轮工作。`, now)
@@ -266,6 +275,9 @@ export class AgentStore {
     if (run.status !== 'waiting') throw new Error('这项工作已不在等待回复。')
     if (typeof text !== 'string' || !text.trim() || text.length > 2000 || containsSecret(text)) throw new Error('请填写 1–2000 字的回复，不要包含密钥。')
     this.assertLive(id)
+    const input = JSON.parse(this.getRun(id)!.input)
+    const needed = input.assignment && input.brief?.question && !input.briefAnswer && agentUsesPlanner(input.settings) ? 2 : 1
+    if (input.deliveryVersion === 1 && this.callCount(characterId) + needed > JSON.parse(this.profile(characterId)!.settings).dailyCalls) throw new Error('今日模型额度不足以处理回复，请明日再试或调整额度。')
     this.db.prepare("UPDATE runs SET status='queued',answer=?,updated_at=? WHERE id=?").run(text.trim(), Date.now(), id)
     this.event(id, 'answer', text.trim())
   }
@@ -279,10 +291,12 @@ export class AgentStore {
     if (profile.failures >= 2) settings.enabled = false
     this.db.prepare('UPDATE profiles SET failures=failures+1,settings=?,next_at=? WHERE character_id=?').run(JSON.stringify(settings), Date.now() + Math.max(settings.intervalMinutes * 60000, 15 * 60000), run.character_id)
   }
-  finish(runId: string, report: AgentReport, memories: string[], progress?: AgentTopicProgress) {
+  finish(runId: string, report: AgentReport, memories: string[], progress?: AgentTopicProgress, delivery?: DeliveryUpdate) {
     this.db.transaction(() => {
       if (this.getRun(runId)?.status === 'completed') return
       const run = this.assertLive(runId)
+      const deliveryInput = JSON.parse(run.input)
+      if (deliveryInput.revisionSectionId && delivery?.section.id !== deliveryInput.revisionSectionId) throw new Error('成果没有更新指定分节，本轮未提交。')
       if (run.topic_id) {
         if (!progress) throw new Error('缺少事项进展，本轮不能提交。')
         const before = this.topics.get(run.character_id, run.topic_id)
@@ -291,6 +305,7 @@ export class AgentStore {
         this.notices.progress(before, this.topics.get(run.character_id, run.topic_id), report, previous ? JSON.parse(previous.value) : undefined, this.research(runId)?.plan.action === 'write')
       }
       this.db.prepare('INSERT OR IGNORE INTO reports(run_id,character_id,value) VALUES(?,?,?)').run(runId, run.character_id, JSON.stringify(report))
+      if (run.topic_id && progress && JSON.parse(run.input).deliveryVersion === 1) this.deliveries.commit(run.topic_id, report, progress, delivery)
       for (const memory of memories.slice(0, 3)) {
         // A full library must not lose the report; record the reason explicitly.
         try { this.remember(run.character_id, memory, runId) } catch { this.event(runId, 'memory-skipped', '一条记忆未保存：内容含敏感信息或记忆库已满；成果仍保留。') }
@@ -314,6 +329,24 @@ export class AgentStore {
       const topic = this.topics.create(id, input)
       if (!this.profile(id)!.focus_topic_id) this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
       return this.overview(id)
+    })()
+  }
+  reviseTopic(id: string, topicId: string, revision: number, feedback: unknown, conversation: string, sectionId?: string) {
+    if (typeof feedback !== 'string' || !feedback.trim() || feedback.length > 2000 || containsSecret(feedback)) throw new Error('请填写 1–2000 字的修改意见，不要包含密钥。')
+    return this.db.transaction(() => {
+      const topic = this.topics.check(id, topicId, revision)
+      if (sectionId !== undefined && !this.deliveries.get(topicId)?.sections.some(s => s.id === sectionId)) throw new Error('找不到要修订的成果分节，请重新选择。')
+      if (this.overview(id).runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status))) throw new Error('请先完成、回复或暂停当前工作，再提交修改意见。')
+      this.topics.status(id, topicId, revision, 'planned', feedback.trim())
+      const runId = this.createRun(id, conversation, Date.now(), topicId)
+      const input = JSON.parse(this.getRun(runId)!.input)
+      // Include earlier sections when explicitly revising; never replace the full artifact with a truncated copy.
+      input.feedback = feedback.trim()
+      input.revisionSectionId = sectionId
+      input.topic = { ...input.topic, nextStep: `根据用户修改意见修订：${feedback.trim()}` }
+      this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), runId)
+      this.event(runId, 'feedback', `用户对「${topic.title}」的修改意见：${feedback.trim()}`)
+      return runId
     })()
   }
   changeTopic(id: string, topicId: string, revision: number, change: { input: unknown; reason: string } | { status: AgentTopicStatus; reason: string }) {

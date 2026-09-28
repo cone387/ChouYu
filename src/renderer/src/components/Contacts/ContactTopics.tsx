@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AGENT_STATUS, TOPIC_STATUS, type AgentOverview, type AgentTopic, type AgentTopicDetail, type AgentTopicInput, type AgentTopicStatus } from '../../../../shared/agents'
 import './ContactTopics.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
+import ContactDelivery from './ContactDelivery'
 
 type Editor = { kind: 'edit' | 'status'; topicId: string; revision: number; input: AgentTopicInput; status: AgentTopicStatus; reason: string }
 const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_evidence'].includes(topic.status)
@@ -90,6 +91,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         {settingsDirty && <p className="agent-caption">工作设置尚未保存，保存后再推进事项。</p>}
         {currentRun && currentRun.topicId !== topic.id && <p className="agent-caption">联系人正在处理另一事项，完成后可推进这一项。</p>}
       </article>
+      <ContactDelivery key={`${characterId}:${topic.id}`} characterId={characterId} topic={topic} busy={busy || Boolean(currentRun) || settingsDirty || Boolean(editor)} onAction={onAction} />
       <div className="topic-timeline"><h4>判断如何变化</h4>
         {loading && <p role="status">正在读取事项经历…</p>}
         {error && <p role="alert" className="agent-error">{error}<button type="button" onClick={() => void load()}>重试</button></p>}

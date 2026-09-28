@@ -58,6 +58,7 @@ describe('description-only task assignment', () => {
     const runId = store.overview('alice').runs[0].id
     const model = vi.fn(async (prompt: string) => {
       if (prompt.startsWith('你是联系人，刚收到')) return JSON.stringify(brief)
+      if (prompt.startsWith('根据用户对待确认问题')) return JSON.stringify({ ...draft, body: '根据用户同意访谈的回复，下一步安排访谈问题；尚未联系任何人。' })
       expect(prompt).toContain('每周五小时')
       return JSON.stringify({ ...draft, question: '是否愿意访谈潜在用户？' })
     })
@@ -79,7 +80,7 @@ describe('description-only task assignment', () => {
     expect(secondQuestion.content).toContain('是否愿意访谈')
     store.answer('alice', runId, '可以访谈')
     await runtime.execute(runId, '', model, new AbortController().signal)
-    expect(model).toHaveBeenCalledTimes(2)
+    expect(model).toHaveBeenCalledTimes(3)
     expect(read).toHaveBeenCalledTimes(1)
     expect(store.detail('alice', runId).run.status, JSON.stringify(store.detail('alice', runId))).toBe('completed')
     expect(store.topics.get('alice', topic.id).constraints).toBe('每周五小时')

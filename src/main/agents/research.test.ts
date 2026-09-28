@@ -121,7 +121,7 @@ describe('autonomous evidence research', () => {
     expect(searcher).toHaveBeenCalledTimes(2); expect(store.searchCount('alice')).toBe(2)
     expect(last.detail.research?.searches[0].error).toBeTruthy()
   })
-  it('resumes a durable question without repeating planning, search, or analysis', async () => {
+  it('revises after a durable answer without repeating planning or search', async () => {
     const { run, store, runtime, dir, reader, searcher } = fixture()
     const waiting = await run(plan, { ...draft, question: '你是否熟悉团队场景？' })
     expect(waiting.detail.run.status).toBe('waiting')
@@ -129,9 +129,9 @@ describe('autonomous evidence research', () => {
     const recovered = new AgentStore(join(dir, 'agents.db')), graph = new AgentRuntime(recovered, join(dir, 'checkpoints.db'), reader, searcher)
     closers.push(() => recovered.close(), () => graph.close())
     recovered.answer('alice', waiting.id, '熟悉，只研究团队')
-    const model = vi.fn(async () => '')
+    const model = vi.fn(async () => JSON.stringify({ ...draft, body: '按回复缩小到团队，只研究团队。资料仍需验证 [1]。' }))
     await graph.execute(waiting.id, '', model, new AbortController().signal, () => {}, 'SEARCH_SECRET')
-    expect(model).not.toHaveBeenCalled(); expect(searcher).toHaveBeenCalledTimes(1)
+    expect(model).toHaveBeenCalledTimes(1); expect(searcher).toHaveBeenCalledTimes(1)
     expect(recovered.detail('alice', waiting.id).report?.body).toContain('只研究团队')
   })
   it('does not create evidence or progress if all candidate pages fail', async () => {

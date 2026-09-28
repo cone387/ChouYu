@@ -38,11 +38,14 @@ export function createContactTools(access: Access): RegisteredTool[] {
         if (overview.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status))) throw new Error('联系人仍有未完成工作；若正在等你回复，请使用回答问题工具。')
         method = 'continueTopic'; values = [topicId, revision, reason]
         preview = `事项：${topic.title}\n设为当前事项，并立即运行一轮。\n持续工作：${overview.settings.enabled ? '保持开启' : '保持关闭'}\n按现有来源与调用预算执行。\n原因：${reason}`
+      } else if (args.action === 'revise') {
+        method = 'reviseTopic'; values = [topicId, revision, reason]
+        preview = `事项：${topic.title}\n修改意见：${reason}\n按原额度立即修订一轮，保留旧成果版本；不自动开启持续工作。`
       } else if (args.action === 'constraints') {
         if (typeof args.constraints !== 'string' || containsSecret(args.constraints)) throw new Error('请提供完整的新约束，不要包含密钥。')
         method = 'editTopic'; values = [topicId, revision, { title: topic.title, goal: topic.goal, constraints: args.constraints }, reason]
         preview = `事项：${topic.title}\n原约束：${topic.constraints || '无'}\n新约束：${args.constraints || '无'}\n本事项未完成的轮次会停止，后续按新约束工作。\n原因：${reason}`
-      } else throw new Error('操作应为 continue、pause 或 constraints。')
+      } else throw new Error('操作应为 continue、pause、constraints 或 revise。')
     }
     let consumed = false
     return { preview, execute: async () => {
@@ -67,9 +70,9 @@ export function createContactTools(access: Access): RegisteredTool[] {
         return { content: JSON.stringify({ topics: data.topics, focusTopicId: data.focusTopicId, pending: data.runs.filter(r => ['waiting', 'queued', 'running', 'interrupted'].includes(r.status)), settings: data.settings }), summary: `已读取 ${data.topics.length} 个事项` }
       } },
     { ...common, name: 'update_contact_topic', displayName: '调整联系人事项',
-      description: '用户明确要求时继续、暂停或修改当前联系人事项约束。先读取事项，展示变更并确认后才执行；不能凭聊天文字声称执行成功。不修改个人任务。',
+      description: '用户明确要求时继续、暂停、修改事项约束，或按修改意见修订成果。修订使用 revise，reason 完整保留用户修改意见。先读取事项，展示变更并确认后执行。不修改个人任务。',
       inputSchema: { type: 'object', properties: { ...topicProperties,
-        action: { type: 'string', description: '只接受 continue（继续）、pause（暂停）、constraints（替换约束）', maxLength: 20 },
+        action: { type: 'string', description: 'continue（继续）、pause（暂停）、constraints（替换约束）、revise（按 reason 中的意见修订成果）', maxLength: 20 },
         constraints: { type: 'string', description: 'constraints 操作时必填，完整新约束；空串表示移除约束', maxLength: 2000 },
         reason: { type: 'string', description: '用户要求的调整原因', maxLength: 2000 }
       }, required: ['topicId', 'revision', 'action', 'reason'], additionalProperties: false },
