@@ -16,7 +16,7 @@ function directory() {
   return dir
 }
 const settings = { ...DEFAULT_AGENT_SETTINGS, goal: '研究方向', sources: ['https://example.com/'] }
-const brief = { title: '下班后的独立项目', nextStep: '先核对可投入时间，再研究合适的方向', question: '每周可以投入多少时间？' }
+const brief = { title: '下班后的独立项目', nextStep: '先核对可投入时间，再研究合适的方向', question: '每周可以投入多少时间？', plan: { completionCriteria: '提出有证据的项目方向和验证方案', stages: [{ id: 'research', title: '核对需求', status: 'pending' }] } }
 const draft = { title: '初步研究', body: '资料 [1] 仅提供线索，需求仍需验证。', nextStep: '继续核对需求', memories: [], question: '', progress: { judgement: '需求尚待验证', openQuestions: '真实需求', nextStep: '继续核对需求', reason: '依据资料 [1]', status: 'needs_evidence' } }
 const reader = () => evidenceFromText(settings.sources[0], '公开网页提供了线索，仍需验证。'.repeat(20))
 
@@ -65,10 +65,13 @@ describe('description-only task assignment', () => {
     await runtime.execute(runId, '', model, new AbortController().signal)
     expect(read).not.toHaveBeenCalled()
     const firstQuestion = store.notices.pending('alice')[0]
+    expect(store.topics.get('alice', topic.id).initialPlan).toEqual(brief.plan)
+    expect(store.deliveries.get(topic.id)).toBeNull()
     expect(firstQuestion.content).toContain(brief.question)
     store.notices.ack('alice', firstQuestion.id)
     runtime.close(); store.close()
     store = new AgentStore(join(dir, 'agents.db')); runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'), read)
+    expect(store.topics.get('alice', topic.id).initialPlan).toEqual(brief.plan)
     store.answer('alice', runId, '每周五小时')
     await runtime.execute(runId, '', model, new AbortController().signal)
     expect(model).toHaveBeenCalledTimes(2)

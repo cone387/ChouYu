@@ -46,11 +46,11 @@ export class AgentTopics {
     this.record(before, after, 'edited', after.reason)
     return after
   }
-  plan(characterId: string, id: string, revision: number, title: string, nextStep: string, runId: string) {
+  plan(characterId: string, id: string, revision: number, title: string, nextStep: string, runId: string, initialPlan?: AgentTopic['initialPlan']) {
     const before = this.check(characterId, id, revision)
     validateTopicInput({ ...before, title })
     if (!nextStep.trim() || nextStep.length > 1000 || containsSecret(title + nextStep)) throw new Error('任务方向无效。')
-    const after = { ...before, title: title.trim(), nextStep: nextStep.trim(), revision: before.revision + 1, updatedAt: Date.now(), reason: '根据用户描述整理初步方向，尚未验证。' }
+    const after = { ...before, initialPlan, title: title.trim(), nextStep: nextStep.trim(), revision: before.revision + 1, updatedAt: Date.now(), reason: '根据用户描述整理初步方向与阶段计划，尚未验证。' }
     this.record(before, after, 'planned', after.reason, runId)
     return after
   }

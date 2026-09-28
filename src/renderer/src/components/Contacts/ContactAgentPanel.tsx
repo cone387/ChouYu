@@ -173,6 +173,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
           {!keyConfigured && <p className="agent-error">请先在下方保存搜索密钥，再保存开启设置。</p>}
         </>}
         <label className="agent-toggle"><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />开启持续工作（会消耗模型额度）</label>
+        <p className="agent-caption">创作有新正文时会在额度内连续推进；资料监测、等待外部变化或正文未变化时，按工作间隔检查。需要回复时暂停等待，单次修改意见只立即修订一轮。</p>
         <label className="agent-toggle"><input type="checkbox" checked={draft.notifyProgress !== false} onChange={e => setDraft({ ...draft, notifyProgress: e.target.checked })} />有重要进展时，主动发到聊天</label>
         <p className="agent-caption">普通进展每 24 小时最多 8 条，至少间隔 30 分钟。需要你确认的问题始终发送，回复后继续；重复轮次只记历史。</p>
         <div className="agent-actions"><button data-agent-save type="submit" className="primary" disabled={busy}>保存偏好</button></div>

@@ -22,6 +22,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
   const [open, setOpen] = useState(false)
   const [visited, setVisited] = useState(false)
   const content = useRef<HTMLDivElement>(null)
+  const toolbar = useRef<HTMLDivElement>(null)
   const sheet = useRef<HTMLDialogElement>(null)
   const id = useId()
   const gesture = useRef<{ kind: 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'; x: number; y: number; left: number; top: number; width: number; height: number } | null>(null)
@@ -30,7 +31,13 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
     const dialog = sheet.current
     if (!dialog?.open || gesture.current) return
     if (!positioned.current) {
-      Object.assign(dialog.style, { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' })
+      const main = toolbar.current?.closest('.chat-panel')?.getBoundingClientRect()
+      Object.assign(dialog.style, {
+        left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+        width: `${Math.min(main?.width ?? 820, window.innerWidth - 16)}px`,
+        height: `${Math.min(main?.height ?? 640, window.innerHeight - 16)}px`
+      })
+      dialog.dataset.resized = 'true'
       return
     }
     const rect = dialog.getBoundingClientRect()
@@ -98,7 +105,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
     if (next !== tab && content.current) content.current.scrollTop = 0
   }
 
-  return <div className="contact-work-tools" data-contact-work-tools={characterId}>
+  return <div ref={toolbar} className="contact-work-tools" data-contact-work-tools={characterId}>
     {visited && createPortal(<dialog className="contact-work-sheet" id={id} ref={sheet} data-view={tab} data-interactive aria-modal="false" data-panel-window="contact" onPointerDownCapture={event => activatePanel(event.target)}
       aria-label={`${name} · ${tab === 'settings' ? '工作设置' : entries.find(entry => entry.id === tab)!.label}`}
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}

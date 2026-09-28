@@ -36,7 +36,7 @@ export default function ContactDelivery({ characterId, topic, busy, onAction, on
       <div className="topic-heading"><h4>阶段计划</h4>{artifact && <span className="agent-caption">版本 {artifact.version} / {latest}</span>}</div>
       {loading && <p role="status">正在读取阶段计划…</p>}
       {error && <p role="alert">{error}<button type="button" onClick={() => void load()}>重试</button></p>}
-      {!loading && !error && !artifact && <p className="agent-empty">尚未生成阶段计划，任务推进后会在这里显示。</p>}
+      {!loading && !error && !artifact && (topic.initialPlan ? <div data-initial-plan><p className="agent-caption">接单时的初步计划，后续会随执行更新。</p><p><strong>完成条件：</strong>{topic.initialPlan.completionCriteria}</p><ol className="delivery-stages">{topic.initialPlan.stages.map(stage => <li key={stage.id}><span>{stage.title}</span><span className="agent-caption">{stageLabel[stage.status]}</span></li>)}</ol></div> : <p className="agent-empty">正在梳理任务，阶段计划会在这里显示。</p>)}
       {artifact && !loading && <>      <div><p><strong>完成条件：</strong>{artifact.completionCriteria}</p>
       <ol className="delivery-stages">{artifact.stages.map(stage => <li key={stage.id}><span>{stage.title}</span><span className="agent-caption">{stageLabel[stage.status]}</span></li>)}</ol>
       <p className="delivery-summary">{artifact.summary}</p>

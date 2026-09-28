@@ -129,6 +129,7 @@
 .contact-task-dialog p { line-height:1.7; overflow-wrap:anywhere; }
 .contact-task-dialog label { display:block; font-size:13px; margin-bottom:8px; }
 .contact-task-dialog textarea { box-sizing:border-box; width:100%; resize:vertical; min-height:120px; padding:12px; font:inherit; line-height:1.6; color:var(--text-primary); background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; }
+.contact-task-dialog textarea:focus, .contact-task-dialog textarea:focus-visible { outline:none !important; box-shadow:none; border-color:var(--border); }
 .contact-task-dialog footer { display:flex; justify-content:flex-end; gap:8px; margin-top:24px; }
 .contact-task-dialog button { cursor:pointer; padding:8px 16px; border:1px solid var(--border); border-radius:7px; background:var(--bg-secondary); color:var(--text-primary); }
 .contact-task-dialog button.primary { background:var(--accent); color:white; border-color:var(--accent); }

@@ -58,6 +58,7 @@ export const TOPIC_STATUS = { planned: '待开始', researching: '尚未完成',
 export type AgentTopicStatus = keyof typeof TOPIC_STATUS
 export interface AgentTopicInput { title: string; goal: string; constraints: string }
 export interface AgentTopic extends AgentTopicInput {
+  initialPlan?: import('./agent-delivery').DeliveryPlan
   id: string; characterId: string; revision: number; status: AgentTopicStatus
   judgement: string; openQuestions: string; nextStep: string; reason: string; createdAt: number; updatedAt: number
 }

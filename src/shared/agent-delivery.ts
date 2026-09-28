@@ -1,4 +1,11 @@
 export interface DeliveryStage { id: string; title: string; status: 'pending' | 'active' | 'done' }
+export interface DeliveryPlan { completionCriteria: string; stages: DeliveryStage[] }
+export function validateDeliveryPlan(raw: unknown): DeliveryPlan {
+  const plan = raw as DeliveryPlan | undefined
+  if (!plan || typeof plan.completionCriteria !== 'string' || !plan.completionCriteria.trim() || plan.completionCriteria.length > 1000) throw new Error('阶段计划必须有完成条件。')
+  if (!Array.isArray(plan.stages) || !plan.stages.length || plan.stages.length > 30 || plan.stages.some(s => !s || typeof s.id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(s.id) || typeof s.title !== 'string' || !s.title.trim() || s.title.length > 160 || !['pending', 'active', 'done'].includes(s.status)) || new Set(plan.stages.map(s => s.id)).size !== plan.stages.length) throw new Error('阶段计划无效。')
+  return { completionCriteria: plan.completionCriteria.trim(), stages: plan.stages.map(s => ({ id: s.id, title: s.title.trim(), status: s.status })) }
+}
 export interface DeliverySection { id: string; title: string; body: string; runId: string; sources?: { url: string; title: string; capturedAt: number }[] }
 export interface DeliveryUpdate {
   completionCriteria: string

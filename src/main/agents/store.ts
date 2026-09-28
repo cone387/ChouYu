@@ -7,7 +7,7 @@ import { AgentTopics, canResearch } from './topics'
 import { AgentNotices } from './notices'
 import type { AgentResearch } from '../../shared/agents'
 import { AgentDeliveries } from './delivery'
-import type { DeliveryUpdate } from '../../shared/agent-delivery'
+import { validateDeliveryPlan, type DeliveryPlan, type DeliveryUpdate } from '../../shared/agent-delivery'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import type { AgentTopicMetrics } from '../../shared/agents'
 
@@ -237,12 +237,13 @@ export class AgentStore {
       return topic
     })()
   }
-  saveBrief(runId: string, brief: { title: string; nextStep: string; question: string }) {
+  saveBrief(runId: string, brief: { title: string; nextStep: string; question: string; plan: DeliveryPlan }) {
     this.db.transaction(() => {
       const run = this.assertLive(runId), input = JSON.parse(run.input)
       if (input.brief) return
-      const topic = this.topics.plan(run.character_id, run.topic_id!, run.topic_revision!, brief.title, brief.nextStep, runId)
-      this.db.prepare('UPDATE runs SET input=?,topic_revision=? WHERE id=?').run(JSON.stringify({ ...input, brief, topic }), topic.revision, runId)
+      const plan = validateDeliveryPlan(brief.plan)
+      const topic = this.topics.plan(run.character_id, run.topic_id!, run.topic_revision!, brief.title, brief.nextStep, runId, plan)
+      this.db.prepare('UPDATE runs SET input=?,topic_revision=? WHERE id=?').run(JSON.stringify({ ...input, brief, topic, delivery: this.deliveries.context(topic.id) }), topic.revision, runId)
       this.event(runId, 'direction', `我准备先这样推进：${brief.nextStep}`)
       if (!brief.question) this.notices.enqueue({ id: `${runId}:direction`, characterId: run.character_id, topicId: topic.id, runId,
         topicRevision: topic.revision, kind: 'progress', purpose: 'direction', createdAt: Date.now(), content: `收到「${topic.title}」。\n\n我准备先这样推进：${brief.nextStep}\n\n已经开始处理，你可以随时补充或调整方向。` })
@@ -348,6 +349,12 @@ export class AgentStore {
       if (this.getRun(runId)?.status === 'completed') return
       const run = this.assertLive(runId)
       const deliveryInput = JSON.parse(run.input)
+      const previousDelivery = run.topic_id ? this.deliveries.get(run.topic_id) : null
+      if (run.topic_id && progress?.status === 'completed' && this.topics.get(run.character_id, run.topic_id).initialPlan) {
+        if (!delivery) throw new Error('尚未提交实际成果和阶段验收，不能完成任务。')
+        const requiredStages = [...this.topics.get(run.character_id, run.topic_id).initialPlan!.stages, ...(previousDelivery?.stages ?? [])]
+        if (requiredStages.some(stage => !delivery.stages.some(next => next.id === stage.id && next.status === 'done'))) throw new Error('仍有计划阶段未交付或被遗漏，不能完成任务。')
+      }
       if (deliveryInput.revisionSectionId && delivery?.section.id !== deliveryInput.revisionSectionId) throw new Error('成果没有更新指定分节，本轮未提交。')
       if (run.topic_id) {
         if (!progress) throw new Error('缺少事项进展，本轮不能提交。')
@@ -368,9 +375,13 @@ export class AgentStore {
       const research = this.research(runId)
       if (research) {
         const settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
-        const nextAt = Date.now() + Math.max(settings.intervalMinutes, research.plan.checkAfterMinutes) * 60000
+        const changedSection = delivery && !previousDelivery?.sections.some(section => section.body.trim() === delivery.section.body.trim())
+        const continueWriting = research.plan.action === 'write' && progress?.status === 'researching' && changedSection && !deliveryInput.feedback
+        const nextAt = Date.now() + (continueWriting ? 0 : Math.max(settings.intervalMinutes, research.plan.checkAfterMinutes) * 60000)
         this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(nextAt, run.character_id)
         this.db.prepare('UPDATE research SET value=? WHERE run_id=?').run(JSON.stringify({ ...research, nextCheckAt: nextAt }), runId)
+        if (continueWriting && settings.enabled) this.event(runId, 'continuing', '本轮正文已保存，额度允许时将继续创作下一部分。')
+        else if (research.plan.action === 'write' && !changedSection) this.event(runId, 'deferred', '本轮没有新增或修改正文，按工作间隔再检查，避免重复消耗额度。')
       }
       this.event(runId, 'completed', report.nextStep || '本轮工作完成。')
     })()

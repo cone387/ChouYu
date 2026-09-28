@@ -20,9 +20,10 @@ export class AgentDeliveries {
   }
   commit(topicId: string, report: AgentReport, progress: AgentTopicProgress, update?: DeliveryUpdate) {
     const previous = this.get(topicId)
+    const initial = this.context(topicId)
     const value = update ? validateDeliveryUpdate(update) : {
-      completionCriteria: previous?.completionCriteria || '尚未明确完成条件，请在聊天中补充。',
-      stages: previous?.stages || [{ id: 'delivery', title: '推进并检查交付成果', status: 'active' as const }],
+      completionCriteria: initial?.completionCriteria || '尚未明确完成条件，请在聊天中补充。',
+      stages: initial?.stages || [{ id: 'delivery', title: '推进并检查交付成果', status: 'active' as const }],
       summary: progress.judgement,
       section: { id: report.runId, title: report.title, body: report.body }
     }
@@ -37,7 +38,11 @@ export class AgentDeliveries {
   }
   context(topicId: string) {
     const value = this.get(topicId)
-    if (!value) return null
+    if (!value) {
+      const row = this.db.prepare('SELECT value FROM topics WHERE id=?').get(topicId) as { value: string } | undefined
+      const plan = row && (JSON.parse(row.value) as import('../../shared/agents').AgentTopic).initialPlan
+      return plan ? { ...plan, version: 0, summary: '接单时的初步计划，尚未交付成果。', directory: [], sections: [] } : null
+    }
     // Stable directory and cumulative summary survive beyond the recent-three-report window.
     return { version: value.version, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary,
       directory: value.sections.map(s => ({ id: s.id, title: s.title })),

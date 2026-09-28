@@ -45,7 +45,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.startsWith('你是联系人，刚收到'))) {
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify({ title: '研究另一个独立方向', nextStep: '先核对团队检索场景', question: '团队通常检索什么内容？' }) } }] })}\n\ndata: [DONE]\n\n`)
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify({ title: '研究另一个独立方向', nextStep: '先核对团队检索场景', question: '团队通常检索什么内容？', plan: { completionCriteria: '核对团队需求并交付分析', stages: [{ id: 'research', title: '验证需求', status: 'pending' }] } }) } }] })}\n\ndata: [DONE]\n\n`)
         return
       }
       if (payload.tools?.length) {
@@ -333,6 +333,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-agent-interval]'))")
     if (Math.abs(await run("document.querySelector('.message-area').getBoundingClientRect().height") - chatHeight) > 1) throw new Error('Contact dialog changed the chat layout')
     if (!await run("!document.querySelector('.contact-work-sheet').matches(':modal') && document.querySelector('.contact-work-sheet').open")) throw new Error('Contact popup must be non-modal')
+    if (!await run("(() => { const main=document.querySelector('.chat-panel').getBoundingClientRect(), sheet=document.querySelector('.contact-work-sheet').getBoundingClientRect(); return Math.abs(sheet.width-Math.min(main.width,innerWidth-16))<2 && Math.abs(sheet.height-Math.min(main.height,innerHeight-16))<2 })()")) throw new Error('Contact popup does not default to the main window size')
     // A portal no longer inherits the main panel's interactive region. Verify the
     // real main-process click-through state, which CDP clicks alone bypass.
     await run("window.__floatingMouseIgnored = null; window.__stopFloatingMouseState = window.electronAPI.onMouseEventsState(value => { window.__floatingMouseIgnored = value }); window.electronAPI.setIgnoreMouseEvents(false)")
@@ -378,7 +379,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (!await run("(() => { const el=document.querySelector('.contact-work-sheet'), r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+20)?.closest('[data-panel-window]') === el })()")) throw new Error('Floating window did not regain pointer hits after activation')
     if (!await run("document.querySelector('.contact-work-sheet').open && Number(getComputedStyle(document.querySelector('.contact-work-sheet')).zIndex) > Number(getComputedStyle(document.querySelector('.chat-panel')).zIndex)")) throw new Error('Task entry closed the covered panel instead of bringing it forward')
     if (!await run("Array.from(document.querySelectorAll('.contact-work-sheet .topic-card-times')).every(el => el.querySelectorAll('time[datetime]').length === 2)")) throw new Error('Task timestamps are missing')
-    await run(`document.querySelector('.contact-work-sheet').setAttribute('style', ${JSON.stringify(floatingStyle)}); delete document.querySelector('.contact-work-sheet').dataset.resized`)
+    await run(`document.querySelector('.contact-work-sheet').setAttribute('style', ${JSON.stringify(floatingStyle)}); document.querySelector('.contact-work-sheet').dataset.resized='true'`)
     await waitForRenderer(window, "document.querySelectorAll('.contact-work-sheet [data-topic-change]').length === 4")
     if (!await run("document.querySelector('.contact-work-sheet [data-topic-judgement]').textContent.includes('团队已有免费方案') && document.querySelector('.contact-work-sheet [data-topic-run]').textContent.includes('启动')")) throw new Error('Task dialog did not show the ended topic')
     await run("document.querySelector('.contact-work-sheet .topic-content-tabs [id$=history]').click()")
@@ -407,6 +408,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...taskInputHit })
     window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...taskInputHit })
     await waitForRenderer(window, "document.activeElement === document.querySelector('[data-task-description]')")
+    if (!await run("(() => { const s=getComputedStyle(document.querySelector('[data-task-description]')); return s.outlineStyle==='none' && s.boxShadow==='none' })()")) throw new Error('Task description still shows a colored focus highlight')
     await window.webContents.insertText('点击输入验收')
     await waitForRenderer(window, "document.querySelector('[data-task-description]').value === '点击输入验收' && !document.querySelector('[data-task-dialog-submit]').disabled")
     await run('window.__stopTaskMouseState(); delete window.__stopTaskMouseState; delete window.__taskMouseIgnored')
@@ -459,7 +461,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
           await run('new Promise(resolve => setTimeout(resolve, 160))')
           const fits = await run(`(() => { const sheet=document.querySelector('.contact-work-sheet'), content=document.querySelector('.contact-work-sheet-content'), input=document.querySelector('.input-area'); const r=sheet.getBoundingClientRect(), i=input.getBoundingClientRect(); return r.x >= 0 && r.right <= ${width + 1} && content.scrollWidth <= content.clientWidth + 1 && i.bottom <= 769 && i.height > 0 })()`)
-          if (!await run("(() => { const sheet=document.querySelector('.contact-work-sheet'), card=sheet.querySelector('[data-topic-id]'), settings=sheet.querySelector('.agent-settings-view'); return sheet.clientHeight < innerHeight - 100 && card.clientHeight < 125 && settings.getBoundingClientRect().height === 0 })()")) throw new Error('Task dialog density or settings separation regressed')
+          if (!await run("(() => { const sheet=document.querySelector('.contact-work-sheet'), card=sheet.querySelector('[data-topic-id]'), settings=sheet.querySelector('.agent-settings-view'); return sheet.clientHeight <= innerHeight - 16 && card.clientHeight < 125 && settings.getBoundingClientRect().height === 0 })()")) throw new Error('Task dialog density or settings separation regressed')
           if (!fits) {
             const bounds = await run("JSON.stringify({ viewport:[innerWidth,innerHeight], panel:document.querySelector('.chat-panel').getBoundingClientRect().toJSON(), sheet:document.querySelector('.contact-work-sheet').getBoundingClientRect().toJSON(), input:document.querySelector('.input-area').getBoundingClientRect().toJSON(), content:[document.querySelector('.contact-work-sheet-content').scrollWidth,document.querySelector('.contact-work-sheet-content').clientWidth] })")
             throw new Error(`Chat work toolbar overflows the viewport or hides the composer: ${bounds}`)
@@ -574,6 +576,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "!document.querySelector('.contact-task-dialog')")
     await waitStatus('waiting')
     const newTaskId = (await get()).focusTopicId
+    await run("document.querySelector('.topic-content-tabs [id$=stages]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-initial-plan]'))")
+    if (!await run("document.querySelector('[data-initial-plan]').textContent.includes('核对团队需求并交付分析')")) throw new Error('Initial task plan is missing before the first deliverable')
     await waitForRenderer(window, `Boolean(document.querySelector('[data-task-menu="${newTaskId}"]'))`)
     await run(`document.querySelector('[data-task-menu="${newTaskId}"]').click()`)
     await waitForRenderer(window, "Boolean(document.querySelector('[data-task-delete]'))")
