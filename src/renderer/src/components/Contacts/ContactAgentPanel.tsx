@@ -26,6 +26,11 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)
   const [historyTopic, setHistoryTopic] = useState('')
   useEffect(() => {
+    if (!data) return
+    if (detail?.run.topicId && !data.topics.some(topic => topic.id === detail.run.topicId)) setDetail(null)
+    if (historyTopic && !data.topics.some(topic => topic.id === historyTopic)) setHistoryTopic('')
+  }, [data?.topics, detail?.run.topicId, historyTopic])
+  useEffect(() => {
     if (!detail) return
     const runId = detail.run.id
     let alive = true, request = 0

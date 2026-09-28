@@ -100,6 +100,8 @@ export interface AgentAPI {
   save(characterId: string, settings: AgentSettings): Promise<AgentOverview>
   run(characterId: string, topicId?: string): Promise<AgentOverview>
   createTopic(characterId: string, input: AgentTopicInput): Promise<AgentOverview>
+  assignTopic(characterId: string, description: string): Promise<AgentOverview>
+  deleteTopic(characterId: string, topicId: string, revision: number): Promise<AgentOverview>
   editTopic(characterId: string, topicId: string, revision: number, input: AgentTopicInput, reason: string): Promise<AgentOverview>
   topicStatus(characterId: string, topicId: string, revision: number, status: AgentTopicStatus, reason: string): Promise<AgentOverview>
   focusTopic(characterId: string, topicId: string): Promise<AgentOverview>

@@ -383,6 +383,18 @@ export class AgentStore {
       return this.overview(id)
     })()
   }
+  deleteTopic(id: string, topicId: string, revision: number) {
+    return this.db.transaction(() => {
+      this.topics.check(id, topicId, revision)
+      const runs = this.db.prepare('SELECT id FROM runs WHERE character_id=? AND topic_id=?').all(id, topicId) as { id: string }[]
+      this.db.prepare("DELETE FROM notices WHERE character_id=? AND json_extract(value,'$.topicId')=?").run(id, topicId)
+      this.db.prepare('DELETE FROM memories WHERE character_id=? AND run_id IN (SELECT id FROM runs WHERE character_id=? AND topic_id=?)').run(id, id, topicId)
+      this.db.prepare('DELETE FROM runs WHERE character_id=? AND topic_id=?').run(id, topicId)
+      this.db.prepare('DELETE FROM topics WHERE character_id=? AND id=?').run(id, topicId)
+      this.db.prepare('UPDATE profiles SET focus_topic_id=NULL WHERE character_id=? AND focus_topic_id=?').run(id, topicId)
+      return runs.map(run => run.id)
+    })()
+  }
   reviseTopic(id: string, topicId: string, revision: number, feedback: unknown, conversation: string, sectionId?: string) {
     if (typeof feedback !== 'string' || !feedback.trim() || feedback.length > 2000 || containsSecret(feedback)) throw new Error('请填写 1–2000 字的修改意见，不要包含密钥。')
     return this.db.transaction(() => {

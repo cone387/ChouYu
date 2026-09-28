@@ -19,6 +19,7 @@ export class AgentService {
   private identities = new Map<string, AgentIdentity>()
   private ready = false
   private closed = false
+  private deletingTopic = false
   private active?: { id: string; characterId: string; controller: AbortController; promise: Promise<void> }
   private timer: ReturnType<typeof setInterval>
   constructor(directory: string, private changed: (id: string) => void, private modelFactory?: (identity: AgentIdentity) => AgentModel, reader?: ConstructorParameters<typeof AgentRuntime>[2], searcher?: AgentSearcher) {
@@ -81,6 +82,22 @@ export class AgentService {
       case 'topicDetail': return this.store.topics.detail(id, String(args[0]), args[1] as number | undefined)
       case 'interactions': return this.store.interactions(id, String(args[0]), args[1] as number | undefined)
       case 'createTopic': this.store.createTopic(id, args[0]); break
+      case 'deleteTopic': {
+        const topicId = String(args[0])
+        const active = this.active?.characterId === id && this.store.getRun(this.active.id)?.topic_id === topicId ? this.active : undefined
+        const runs = this.store.deleteTopic(id, topicId, args[1] as number)
+        this.deletingTopic = true
+        try {
+          active?.controller.abort()
+          await active?.promise
+          for (const runId of runs) {
+            // Briefing can be cancelled before the graph creates its first checkpoint.
+            await this.runtime.checkpoints.getTuple({ configurable: { thread_id: runId } })
+            await this.runtime.checkpoints.deleteThread(runId)
+          }
+        } finally { this.deletingTopic = false }
+        break
+      }
       case 'assignTopic': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         this.checkSearch(id)
@@ -114,7 +131,7 @@ export class AgentService {
     this.changed(id); this.tick(); return this.store.overview(id)
   }
   tick() {
-    if (!this.ready || this.closed || this.active) return
+    if (!this.ready || this.closed || this.active || this.deletingTopic) return
     for (const profile of this.store.profiles()) {
       const settings = JSON.parse(profile.settings) as AgentSettings
       if (settings.searchEnabled && !this.identities.get(profile.character_id)?.searchKey) continue

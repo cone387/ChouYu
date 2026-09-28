@@ -6,6 +6,8 @@ import ContactDelivery from './ContactDelivery'
 import ContactTaskIcon from './ContactTaskIcon'
 import ContactTaskOverview from './ContactTaskOverview'
 import ContactTaskInteractions from './ContactTaskInteractions'
+import ContactTaskDialog from './ContactTaskDialog'
+import TaskIcon from '../Tasks/TaskIcon'
 
 type Editor = { kind: 'edit' | 'status'; topicId: string; revision: number; input: AgentTopicInput; status: AgentTopicStatus; reason: string }
 const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_evidence'].includes(topic.status)
@@ -20,6 +22,17 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   renderActivity?: (topicId: string) => ReactNode
 }) {
   const tabId = useId()
+  const [taskDialog, setTaskDialog] = useState<'create' | AgentTopic | null>(null)
+  const [menu, setMenu] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menu) return
+    const close = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenu(null) }
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenu(null); document.querySelector<HTMLButtonElement>(`[data-task-menu="${menu}"]`)?.focus() } }
+    document.addEventListener('pointerdown', close); document.addEventListener('keydown', escape)
+    menuRef.current?.querySelector<HTMLButtonElement>('[data-task-delete]')?.focus()
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', escape) }
+  }, [menu])
   const [tab, setTab] = useState<TopicTab>('overview')
   const [showSettings, setShowSettings] = useState(false)
   const [runAction, setRunAction] = useState<'start' | 'pause' | null>(null)
@@ -77,13 +90,18 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     setEditor(null)
   })
   return <section className="contact-topics" aria-label="持续推进的事项">
-    {!data.topics.length && <p className="agent-empty">在聊天里直接交代任务，这里会显示进度和每一轮的判断。</p>}
-    {data.topics.length > 0 && <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}`}>
+    {taskDialog && <ContactTaskDialog characterId={characterId} task={taskDialog === 'create' ? undefined : taskDialog} onClose={() => setTaskDialog(null)} onAction={onAction} onDone={next => {
+      if (taskDialog === 'create') { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(true) }
+      else if (selected === taskDialog.id) { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(false) }
+    }} />}
+    <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}`}>
       <nav className="topic-list" aria-label="任务列表">
         <div className="topic-list-heading"><strong>任务列表</strong><span>{data.topics.length}</span></div>
+        <button type="button" className="topic-create" data-topic-create disabled={busy || Boolean(editor)} onClick={() => setTaskDialog('create')}><TaskIcon name="plus" />新建任务</button>
+        {!data.topics.length && <p className="agent-empty">还没有任务，描述你想完成的事情即可。</p>}
         {data.topics.map(item => {
           const run = currentRun?.topicId === item.id ? currentRun : undefined
-          return <button type="button" key={item.id} className="topic-list-card" data-topic-id={item.id}
+          return <div key={item.id} className="topic-list-item"><button type="button" className="topic-list-card" data-topic-id={item.id}
             aria-current={selected === item.id ? 'true' : undefined} disabled={busy || Boolean(editor)}
             onClick={() => { setSelected(item.id); setMobileDetail(true) }}>
             <span className="topic-card-title">{item.title}</span>
@@ -95,10 +113,14 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
               <span title="任务建立时间">开始 <time dateTime={new Date(item.createdAt).toISOString()}>{new Date(item.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</time></span>
               <span>更新 <time dateTime={new Date(item.updatedAt).toISOString()}>{new Date(item.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</time></span>
             </span>
-          </button>
+          </button><div className={`topic-card-menu${menu === item.id ? ' is-open' : ''}`} ref={menu === item.id ? menuRef : undefined}>
+            <button type="button" data-task-menu={item.id} aria-label={`「${item.title}」的操作`} aria-expanded={menu === item.id} disabled={busy || Boolean(editor)} onClick={() => setMenu(menu === item.id ? null : item.id)}><TaskIcon name="more" /></button>
+            {menu === item.id && <div className="topic-card-menu-popover"><button type="button" data-task-delete onClick={() => { setMenu(null); setTaskDialog(item) }}><TaskIcon name="trash" />删除任务</button></div>}
+          </div></div>
         })}
       </nav>
       <div className="topic-detail-pane" key={selected}>
+        {!topic && <p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '新建任务后，AI 会在这里展示进度与成果。'}</p>}
         <button type="button" className="topic-back" onClick={() => setMobileDetail(false)}>← 返回任务列表</button>
     {topic && <>
       <header className="topic-fixed-header" data-topic-current={topic.id}>
@@ -191,6 +213,6 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       </div>
     </>}
       </div>
-    </div>}
+    </div>
   </section>
 }
