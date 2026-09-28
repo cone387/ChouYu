@@ -137,6 +137,40 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run(`window.electronAPI.agents.remember(${JSON.stringify(other.id)}, 'BOB_PRIVATE_SMOKE')`)
     await run("document.querySelector('[data-agent-run]').click()")
     const waiting = await waitStatus('waiting')
+    const logDirectory = process.env.CHOUYU_SMOKE_ARTIFACTS
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-work-log] li[data-kind=waiting]'))")
+    if (!await run("(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.clientHeight === 150 && el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")) throw new Error('Work log did not follow the latest real event')
+    await run("Array.from(document.querySelectorAll('[data-agent-work-log] button')).find(b => b.textContent === '去回复').click()")
+    if (!await run("document.activeElement === document.querySelector('.agent-question textarea')")) throw new Error('Work log reply did not focus the answer')
+    if (logDirectory) {
+      mkdirSync(logDirectory, { recursive: true })
+      await run("document.querySelector('[data-agent-work-log]').scrollIntoView({block:'center'})")
+      writeFileSync(join(logDirectory, 'work-log-waiting.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+    }
+    if (process.env.CHOUYU_SMOKE_WORK_LOG_ONLY === '1') {
+      await run("document.querySelector('.agent-work-log-scroll details').open=true")
+      await run("const log=document.querySelector('.agent-work-log-scroll'); log.scrollTop=0; log.dispatchEvent(new Event('scroll'))")
+      await run(`window.electronAPI.agents.answer(${id}, ${JSON.stringify(waiting.runs[0].id)}, '开发者工具')`)
+      await waitStatus('completed')
+      await waitForRenderer(window, "Boolean(document.querySelector('.agent-log-new'))")
+      if (!await run("document.querySelector('.agent-work-log-scroll').scrollTop === 0")) throw new Error('New work events moved the reader away from older logs')
+      await run("document.querySelector('.agent-log-new').click()")
+      await waitForRenderer(window, "!document.querySelector('.agent-log-new')")
+      await waitForRenderer(window, "(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")
+      if (!await run("document.querySelector('.agent-log-follow').getAttribute('aria-pressed') === 'true'")) throw new Error('Work log did not resume automatic following')
+      if (!await run("(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")) throw new Error('New records button did not restore following')
+      if (logDirectory) for (const theme of ['light', 'dark']) for (const width of [1024, 375]) {
+        await run(`document.documentElement.dataset.theme='${theme}'`)
+        window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
+        await run("document.querySelector('[data-agent-work-log]').scrollIntoView({block:'center'}); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        if (!await run("(() => {const log=document.querySelector('[data-agent-work-log]'); return log.scrollWidth <= log.clientWidth+1})()")) throw new Error('Work log overflows')
+        writeFileSync(join(logDirectory, `work-log-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+      }
+      await run("Array.from(document.querySelectorAll('[data-agent-work-log] button')).find(b => b.textContent === '查看成果').click()")
+      await waitForRenderer(window, "Boolean(document.querySelector('.agent-report'))")
+      console.log('CHOUYU_SMOKE_WORK_LOG_PASSED follow=true unread=true reply=true report=true')
+      return
+    }
     const noticeDeadline = Date.now() + 10000
     while (!getSession(fixtureSession)!.messages.some(m => m.agentNotice?.kind === 'question')) {
       if (Date.now() > noticeDeadline) throw new Error('Proactive question was not delivered')

@@ -42,7 +42,7 @@ export interface AgentOverview {
   runs: AgentRun[]; memories: AgentMemory[]; reports: AgentReport[]
   topics: AgentTopic[]; focusTopicId: string | null
 }
-export const TOPIC_STATUS = { planned: '待研究', researching: '研究中', needs_evidence: '待补证据', paused: '已暂停', completed: '已结束', abandoned: '已放弃' } as const
+export const TOPIC_STATUS = { planned: '待开始', researching: '尚未完成', needs_evidence: '待补证据', paused: '已暂停', completed: '已结束', abandoned: '已放弃' } as const
 export type AgentTopicStatus = keyof typeof TOPIC_STATUS
 export interface AgentTopicInput { title: string; goal: string; constraints: string }
 export interface AgentTopic extends AgentTopicInput {

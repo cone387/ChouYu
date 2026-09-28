@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { TOPIC_STATUS, type AgentOverview, type AgentTopic, type AgentTopicDetail, type AgentTopicInput, type AgentTopicStatus } from '../../../../shared/agents'
+import { AGENT_STATUS, TOPIC_STATUS, type AgentOverview, type AgentTopic, type AgentTopicDetail, type AgentTopicInput, type AgentTopicStatus } from '../../../../shared/agents'
 import './ContactTopics.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
 
@@ -22,6 +22,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const epoch = useRef(0)
   const topic = data.topics.find(item => item.id === selected)
   const currentRun = data.runs.find(run => ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
+  const topicRun = data.runs.find(run => run.topicId === topic?.id)
   useEffect(() => {
     // A just-created topic can arrive before the parent's overview refresh.
     // Keep its selected ID while that response is in flight.
@@ -71,7 +72,8 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     </form>}
     {topic && <>
       <article className="topic-current" data-topic-current={topic.id}>
-        <div className="topic-heading"><h4>{topic.title}</h4><span className="topic-status">{currentRun?.topicId === topic.id && currentRun.status === 'waiting' ? '等你回复' : TOPIC_STATUS[topic.status]}</span></div>
+        <div className="topic-heading"><h4>{topic.title}</h4><span className="topic-status">{TOPIC_STATUS[topic.status]}</span></div>
+        <p className="agent-caption">本轮执行：{currentRun?.topicId === topic.id ? AGENT_STATUS[currentRun.status] : topicRun?.status === 'failed' ? '最近一轮失败，当前未执行' : topicRun?.status === 'completed' ? '最近一轮已完成，当前未执行' : '当前未执行'}</p>
         <dl><dt>目标</dt><dd>{topic.goal}</dd>{topic.constraints && <><dt>约束</dt><dd>{topic.constraints}</dd></>}
           <dt>当前判断</dt><dd data-topic-judgement>{topic.judgement || '尚未开始研究，还没有形成判断。'}</dd>
           <dt>待验证问题</dt><dd>{topic.openQuestions || '尚未记录'}</dd>

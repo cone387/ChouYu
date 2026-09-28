@@ -4,6 +4,7 @@ import './ContactAgentPanel.css'
 import ContactTopics from './ContactTopics'
 import type { AgentFocusRequest } from '../../../../shared/agents'
 import ContactResearchRecord from './ContactResearchRecord'
+import ContactWorkLog from './ContactWorkLog'
 import type { AgentDiscussion } from './agentDiscussion'
 
 const time = (value: number) => new Date(value).toLocaleString()
@@ -23,6 +24,21 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const tab = selectedTab ?? localTab
   const setTab = (next: ContactAgentTab) => { setLocalTab(next); onTabChange?.(next) }
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)
+  useEffect(() => {
+    if (!detail) return
+    const runId = detail.run.id
+    let alive = true, request = 0
+    const update = async () => {
+      const current = ++request
+      try {
+        const next = await window.electronAPI.agents.detail(characterId, runId)
+        if (alive && current === request) setDetail(next)
+      } catch { /* Overview refresh exposes connection failures. */ }
+    }
+    const dispose = window.electronAPI.agents.onChanged(id => { if (id === characterId) void update() })
+    const timer = window.setInterval(() => { void update() }, 5000)
+    return () => { alive = false; dispose(); window.clearInterval(timer) }
+  }, [characterId, detail?.run.id])
   const historyList = useRef<HTMLOListElement>(null)
   const record = useRef<HTMLElement>(null)
   const returnToRun = useRef<string | null>(null)
@@ -66,7 +82,8 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   useEffect(() => {
     mounted.current = true; void refresh()
     const dispose = window.electronAPI.agents.onChanged(id => { if (id === characterId) void refresh() })
-    return () => { mounted.current = false; epoch.current++; dispose() }
+    const timer = window.setInterval(() => { void refresh() }, 5000)
+    return () => { mounted.current = false; epoch.current++; dispose(); window.clearInterval(timer) }
   }, [characterId])
   const perform = async (action: () => Promise<unknown>) => {
     setBusy(true); setError('')
@@ -80,6 +97,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const focusedTopic = data?.topics.find(topic => topic.id === data.focusTopicId)
   const stoppedTopic = focusedTopic && ['paused', 'completed', 'abandoned'].includes(focusedTopic.status)
   const lastRun = data?.runs[0]
+  const logRun = data?.runs.find(run => run.topicId === data.focusTopicId)
   const latestReport = data?.reports[0]
   const blocked = !data?.topics.length ? '直接在聊天里告诉我需要处理什么，无需填写表单或先做设置。'
     : dirty ? '设置有未保存的修改，保存后才能推进。'
@@ -92,7 +110,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     title: data?.topics.find(topic => topic.id === topicId)?.title || '工作记录' })
   return <section className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId}>
     {(!compact || tab === 'work') && <>
-      <div className="agent-heading"><h3>任务进展</h3><span role="status">{active ? AGENT_STATUS[active.status] : stoppedTopic ? `当前事项${TOPIC_STATUS[focusedTopic.status]}` : lastRun?.status === 'failed' ? '最近一轮失败' : !data?.topics.length ? '还没有任务' : data?.settings.enabled ? '按计划工作' : '仅手动运行'}</span></div>
+      <div className="agent-heading"><h3>任务进展</h3><span role="status">{readError ? '状态读取失败' : !data ? '正在读取状态' : active ? AGENT_STATUS[active.status] : stoppedTopic ? `当前事项${TOPIC_STATUS[focusedTopic.status]}` : lastRun?.status === 'failed' ? '最近一轮失败 · 当前未执行' : !data.topics.length ? '还没有任务' : data.settings.enabled ? '等待下次执行' : '仅手动运行'}</span></div>
       <p className="agent-description">开启持续工作后，关闭聊天仍会继续。应用需保持运行；退出或关机期间暂停，重启后恢复。</p>
     </>}
     {!compact && <div className="agent-tabs" aria-label="工作内容">
@@ -103,6 +121,10 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     {data && <div hidden={tab !== 'work'}>
       <div className="agent-now">
         <span className="agent-caption">当前关注</span><strong>{focusedTopic?.title || '任务从聊天开始'}</strong>
+        {tab === 'work' && logRun && <ContactWorkLog key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} busy={busy} canRetry={!blocked}
+          onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
+          onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!))}
+          onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} />}
         <p role="status">{blocked || (data.settings.enabled ? `下次检查：${data.nextAt > Date.now() ? time(data.nextAt) : '等待调度'}` : '当前为手动工作，可以推进一轮或在设置中开启持续工作。')}</p>
         <div className="agent-actions">{focusedTopic && <button data-agent-run type="button" disabled={busy || Boolean(blocked)} onClick={() => void perform(() => window.electronAPI.agents.run(characterId))}>推进当前事项一轮</button>}
           {onChat && <button type="button" className="primary" data-agent-chat onClick={onChat}>回到聊天</button>}
