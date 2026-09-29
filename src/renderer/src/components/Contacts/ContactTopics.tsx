@@ -7,6 +7,7 @@ import ContactTaskIcon from './ContactTaskIcon'
 import ContactTaskOverview from './ContactTaskOverview'
 import ContactTaskInteractions from './ContactTaskInteractions'
 import ContactTaskDialog from './ContactTaskDialog'
+import ContactTaskSettingsDialog from './ContactTaskSettingsDialog'
 import ContactTaskResources from './ContactTaskResources'
 import TaskIcon from '../Tasks/TaskIcon'
 
@@ -29,6 +30,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
 }) {
   const tabId = useId()
   const [listCollapsed, setListCollapsed] = useState(false)
+  const [stagesCollapsed, setStagesCollapsed] = useState(false)
   const [taskDialog, setTaskDialog] = useState<'create' | AgentTopic | null>(null)
   const [menu, setMenu] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -43,11 +45,10 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const [tab, setTab] = useState<TopicTab>('overview')
   const [showSettings, setShowSettings] = useState(false)
   const [runAction, setRunAction] = useState<'start' | 'pause' | null>(null)
+  const [settingsError, setSettingsError] = useState('')
   const settingsButton = useRef<HTMLButtonElement>(null)
-  const settingsPane = useRef<HTMLDivElement>(null)
   const scrollPane = useRef<HTMLDivElement>(null)
-  useEffect(() => { if (showSettings) settingsPane.current?.focus() }, [showSettings])
-  useEffect(() => { scrollPane.current?.scrollTo(0, 0) }, [tab, showSettings])
+  useEffect(() => { scrollPane.current?.scrollTo(0, 0) }, [tab])
   const [selected, setSelected] = useState(data.focusTopicId ?? data.topics[0]?.id ?? '')
   const [mobileDetail, setMobileDetail] = useState(Boolean(focusRequest))
   useEffect(() => { if (focusRequest) { setSelected(focusRequest.topicId); setMobileDetail(true) } }, [focusRequest])
@@ -61,7 +62,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const currentRun = data.runs.find(run => ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
   const canPause = Boolean(topic && (currentRun?.topicId === topic.id || (data.settings.enabled && data.focusTopicId === topic.id && researchable(topic))))
   const waiting = currentRun?.topicId === topic?.id && currentRun?.status === 'waiting'
-  useEffect(() => { setTab('overview'); setShowSettings(false) }, [selected, focusRequest])
+  useEffect(() => { setTab('overview'); setShowSettings(false); setEditor(null); setSettingsError('') }, [selected, focusRequest])
   useEffect(() => {
     if (tab !== 'overview' || showSettings || !waiting || focusRequest?.kind !== 'question') return
     scrollPane.current?.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus()
@@ -104,18 +105,27 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const edit = (kind: 'edit' | 'status', status: AgentTopicStatus = 'planned') => {
     if (topic) setEditor({ kind, topicId: topic.id, revision: topic.revision, input: { title: topic.title, goal: topic.goal, constraints: topic.constraints }, status, reason: '' })
   }
-  const submit = () => onAction(async () => {
+  const settingsAction = (action: () => Promise<unknown>) => {
+    setSettingsError('')
+    return onAction(async () => {
+      try { return await action() }
+      catch (error) { setSettingsError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '') : '保存失败，请重试。'); throw error }
+    })
+  }
+  const submit = () => settingsAction(async () => {
     if (!editor) return
     if (editor.kind === 'edit') await window.electronAPI.agents.editTopic(characterId, editor.topicId, editor.revision, editor.input, editor.reason)
     else await window.electronAPI.agents.topicStatus(characterId, editor.topicId, editor.revision, editor.status, editor.reason)
     setEditor(null)
   })
+  const stageToggle = <button type="button" className="topic-stage-toggle" aria-label={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} title={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} aria-expanded={!stagesCollapsed} aria-controls={`${tabId}-stages-nav`} onClick={() => setStagesCollapsed(value => !value)}><TaskIcon name="sidebar" /></button>
+  const closeSettings = () => { setShowSettings(false); setEditor(null); setSettingsError('') }
   return <section className="contact-topics" aria-label="持续推进的事项">
     {taskDialog && <ContactTaskDialog characterId={characterId} task={taskDialog === 'create' ? undefined : taskDialog} onClose={() => setTaskDialog(null)} onAction={onAction} onDone={next => {
       if (taskDialog === 'create') { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(true) }
       else if (selected === taskDialog.id) { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(false) }
     }} />}
-    <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}${listCollapsed ? ' topic-list-collapsed' : ''}`}>
+    <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}${listCollapsed ? ' topic-list-collapsed' : ''}${stagesCollapsed ? ' topic-stages-collapsed' : ''}`}>
       <aside className="topic-list-rail">
         <div className="topic-list-toolbar"><span>任务列表 · {data.topics.length}</span></div>
       <nav id={`${tabId}-list`} className="topic-list" aria-label="任务列表">
@@ -142,8 +152,8 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         })}
       </nav>
       </aside>
-      <aside className="topic-stage-nav" aria-label="任务阶段导航">
-        <div className="topic-stage-heading">任务阶段<button type="button" className="topic-list-toggle" aria-label={listCollapsed ? '展开任务列表' : '折叠任务列表'} title={listCollapsed ? '展开任务列表' : '折叠任务列表'} aria-expanded={!listCollapsed} aria-controls={`${tabId}-list`} onClick={() => { setListCollapsed(value => !value); setMenu(null) }}><TaskIcon name="sidebar" /></button></div>
+      <aside id={`${tabId}-stages-nav`} className="topic-stage-nav" aria-label="任务阶段导航">
+        <div className="topic-stage-heading"><button type="button" className="topic-list-toggle" aria-label={listCollapsed ? '展开任务列表' : '折叠任务列表'} title={listCollapsed ? '展开任务列表' : '折叠任务列表'} aria-expanded={!listCollapsed} aria-controls={`${tabId}-list`} onClick={() => { setListCollapsed(value => !value); setMenu(null) }}><TaskIcon name="sidebar" /></button><span>任务阶段</span></div>
         <button type="button" className="topic-back" onClick={() => setMobileDetail(false)}>← 任务列表</button>
         {topic ? <>
       <div className="topic-content-tabs" role="tablist" aria-label="任务阶段" aria-orientation="vertical">
@@ -157,7 +167,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         </> : <p className="agent-caption">选择任务后查看</p>}
       </aside>
       <div className="topic-detail-pane" key={selected}>
-        {!topic && <p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '新建任务后，AI 会在这里展示进度与成果。'}</p>}
+        {!topic && <div className="topic-content-scroll"><header className="topic-content-header"><div className="topic-title-group">{stageToggle}<h4>任务详情</h4></div></header><p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '新建任务后，AI 会在这里展示进度与成果。'}</p></div>}
     {topic && <>
       <div className="topic-floating-action" data-running={activeRun?.status === 'running' || undefined}>
           <button type="button" className="primary" data-topic-run={!canPause || undefined} data-topic-pause={canPause || undefined}
@@ -170,18 +180,19 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
                 : window.electronAPI.agents.continueTopic(characterId, topic.id, topic.revision, '用户启动任务')).finally(() => setRunAction(null))
             }}><ContactTaskIcon name={canPause ? 'pause' : 'play'} />{runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '启动中…' : executionLabel}</button>
           <button type="button" aria-label="查看本任务的活动与消耗" title="活动与消耗" onClick={() => onAnalytics(topic.id)}><TaskIcon name="chart" />消耗</button>
-          <button ref={settingsButton} type="button" data-topic-settings aria-expanded={showSettings} aria-controls={`${tabId}-settings`} disabled={busy || Boolean(editor)} onClick={() => setShowSettings(value => !value)}><ContactTaskIcon name="settings" />设置</button>
+          <button ref={settingsButton} type="button" data-topic-settings aria-haspopup="dialog" aria-expanded={showSettings} aria-controls={showSettings ? `${tabId}-settings` : undefined} disabled={busy} onClick={() => setShowSettings(true)}><ContactTaskIcon name="settings" />设置</button>
       </div>
       <div className="topic-content-scroll" ref={scrollPane}>
       <header className="topic-content-header" data-topic-current={topic.id}>
-        <div className="topic-title-group"><h4>{topic.title}</h4></div>
+        {stagesCollapsed && <button type="button" className="topic-back topic-detail-back" onClick={() => setMobileDetail(false)}>← 任务列表</button>}
+        <div className="topic-title-group">{stageToggle}<h4>{topic.title}</h4></div>
       </header>
       {!activeRun && topicRun?.status === 'failed' && <p className="agent-error" role="alert">本轮执行失败：{topicRun.error || '请查看工作日志了解原因。'}</p>}
       {!activeRun && topicRun?.status === 'completed' && !data.settings.enabled && researchable(topic) && <p className="agent-caption">本轮已完成，任务尚未结束。当前未开启持续工作，可再次启动一轮，或在工作设置中开启持续工作。</p>}
-      <div ref={settingsPane} id={`${tabId}-settings`} className="topic-settings" hidden={!showSettings} tabIndex={-1} aria-label="本任务设置">
-        <div className="topic-heading"><h4>本任务设置</h4><button type="button" disabled={Boolean(editor)} onClick={() => { setShowSettings(false); settingsButton.current?.focus() }}>返回任务</button></div>
+      {showSettings && <ContactTaskSettingsDialog id={`${tabId}-settings`} taskTitle={topic.title} busy={busy} returnFocus={settingsButton} onClose={closeSettings}>
         <p className="agent-caption">以下调整仅针对当前任务。</p>
-        <ContactTaskResources topic={topic} data={data} editable busy={busy || Boolean(editor)} onAction={onAction} />
+        {settingsError && <p className="agent-error" role="alert">{settingsError}</p>}
+        <ContactTaskResources topic={topic} data={data} editable busy={busy || Boolean(editor)} onAction={settingsAction} />
         {!editor && <><dl><dt>目标</dt><dd>{topic.goal}</dd><dt>约束与边界</dt><dd>{topic.constraints || '未设置约束。'}</dd></dl>
         <div className="agent-actions"><button type="button" disabled={busy} onClick={() => edit('edit')}>编辑任务</button>
         {researchable(topic) && <><button type="button" disabled={busy} onClick={() => edit('status', 'completed')}>结束事项</button><button type="button" disabled={busy} onClick={() => edit('status', 'abandoned')}>放弃事项</button></>}
@@ -197,8 +208,8 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       <p className="agent-caption">会停止该事项当前未完成的运行，已有判断与证据保留在历史中。</p>
       <div className="agent-actions"><button type="submit" data-topic-save className="primary" disabled={busy}>保存事项</button><button type="button" disabled={busy} onClick={() => setEditor(null)}>取消</button></div>
     </form>}
-      </div>
-      <div hidden={showSettings}>
+      </ContactTaskSettingsDialog>}
+      <div>
       <section role="tabpanel" id={`${tabId}-overview-panel`} aria-labelledby={`${tabId}-overview`} hidden={tab !== 'overview'} tabIndex={0}>
         <ContactTaskOverview topic={topic} data={data} visible={tab === 'overview' && !showSettings}>
           <ContactTaskResources topic={topic} data={data} />
