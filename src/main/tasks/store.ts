@@ -670,6 +670,21 @@ export class TasksStore {
     return this.requireTask(id)
   }
 
+  /** Read and change one item in a transaction, never overwrite a stale checklist from a card. */
+  setChecklistItemDone(id: string, itemId: string, done: boolean): TaskRecord {
+    if (typeof id !== 'string' || !id || typeof itemId !== 'string' || !itemId || typeof done !== 'boolean') throw new Error('子项状态无效。')
+    return this.database.transaction(() => {
+      const task = this.requireTask(id)
+      const item = task.checklist?.find(value => value.id === itemId)
+      if (!item) throw new Error('子项已被删除，请刷新后重试。')
+      if (item.done === done) return task
+      const checklist = task.checklist!.map(value => value.id === itemId ? { ...value, done } : value)
+      this.database.prepare('UPDATE tasks SET checklist = ?, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify(checklist), Date.now(), id)
+      return this.requireTask(id)
+    }).immediate()
+  }
+
   /** 过滤空值与字段/选项不存在的引用,顺带清理失效数据。 */
   private cleanCustomFieldValues(values: Record<string, string | null>): Record<string, string> {
     const fields = this.database.prepare('SELECT id, options FROM task_fields').all() as FieldRow[]

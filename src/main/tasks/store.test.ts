@@ -20,6 +20,58 @@ afterEach(() => {
 })
 
 describe('TasksStore', () => {
+  test('卡片只更新一个子项状态，保留最新内容、提醒和父任务状态', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    try {
+      const dueAt = Date.now() + 86400000
+      const task = store.createTask({ title: '父任务', note: '原备注', dueAt, recurrence: 'daily', checklist: [
+        { id: 'a', title: '步骤 A', done: false, dueAt, reminders: [{ at: dueAt - 60000, firedAt: 123 }] },
+        { id: 'b', title: '步骤 B', done: false }
+      ] })
+      const latest = store.updateTask(task.id, { note: '新备注', checklist: task.checklist!.map(item => item.id === 'a' ? { ...item, title: '新步骤 A' } : item) })
+      store.setChecklistItemDone(task.id, 'a', true)
+      const saved = store.setChecklistItemDone(task.id, 'b', true)
+      expect(saved.note).toBe('新备注')
+      expect(saved.checklist).toEqual(latest.checklist!.map(item => ({ ...item, done: true })))
+      expect(saved.status).toBe('open')
+      expect(store.listTasks().open).toHaveLength(1)
+      expect(store.setChecklistItemDone(task.id, 'b', true)).toEqual(saved)
+      const restored = store.setChecklistItemDone(task.id, 'a', false)
+      expect(restored.checklist![0]).toEqual(latest.checklist![0])
+      store.completeTask(task.id)
+      expect(store.listTasks().open[0].checklist!.every(item => !item.done)).toBe(true)
+    } finally { store.close() }
+  })
+
+  test('子项状态输入无效或子项已删除时不修改任务', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    try {
+      const task = store.createTask({ title: '父任务', checklist: [{ id: 'a', title: '步骤', done: false }] })
+      expect(() => store.setChecklistItemDone(task.id, 'a', 'true' as unknown as boolean)).toThrow('子项状态无效')
+      expect(store.getTask(task.id)).toEqual(task)
+      const latest = store.updateTask(task.id, { checklist: [] })
+      expect(() => store.setChecklistItemDone(task.id, 'a', true)).toThrow('子项已被删除')
+      expect(store.getTask(task.id)).toEqual(latest)
+      store.deleteTask(task.id)
+      expect(() => store.setChecklistItemDone(task.id, 'a', true)).toThrow('任务不存在')
+    } finally { store.close() }
+  })
+
+  test('完成子项后停止未发提醒，恢复后保留原提醒发送状态', () => {
+    const store = openTasksStore(tempFile('tasks.db'))
+    try {
+      const task = store.createTask({ title: '父任务', checklist: [{ id: 'a', title: '步骤', done: false, dueAt: 1000, reminders: [{ at: 100, firedAt: null }] }] })
+      store.setChecklistItemDone(task.id, 'a', true)
+      expect(store.claimDueReminders(200)).toEqual([])
+      store.setChecklistItemDone(task.id, 'a', false)
+      expect(store.claimDueReminders(200)).toHaveLength(1)
+      store.setChecklistItemDone(task.id, 'a', true)
+      store.setChecklistItemDone(task.id, 'a', false)
+      expect(store.claimDueReminders(300)).toEqual([])
+      expect(store.getTask(task.id)!.checklist![0].reminders![0].firedAt).toBe(200)
+    } finally { store.close() }
+  })
+
   test('打开即建表,重复打开保留数据', () => {
     const file = tempFile('tasks.db')
     const store = openTasksStore(file)

@@ -9,6 +9,7 @@ import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 import { ACTIVE_TASKS_HINT, summaryTokenHint, summaryTokens, useAgentSummary } from '../Contacts/useAgentSummary'
 
 const entries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
+  { id: 'overview', label: '概览', icon: 'today' },
   { id: 'work', label: '任务', icon: 'task' },
   { id: 'history', label: '工作记录', icon: 'clock' },
   { id: 'memory', label: '记忆', icon: 'archive' },
@@ -16,17 +17,18 @@ const entries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
 ]
 
 /** Mount per conversation: drafts survive closing, never cross contact/session boundaries. */
-export default function ContactWorkToolbar({ characterId, name, onClose, focusRequest, onDiscuss }: {
+export default function ContactWorkToolbar({ characterId, name, onClose, focusRequest, onDiscuss, initialTab = 'work', standalone = false }: {
   characterId: string; name: string; onClose: () => void; focusRequest?: AgentFocusRequest
-  onDiscuss: (reference: AgentDiscussion) => void
+  onDiscuss?: (reference: AgentDiscussion) => void
+  initialTab?: ContactAgentTab; standalone?: boolean
 }) {
-  const [tab, setTab] = useState<ContactAgentTab>('work')
+  const [tab, setTab] = useState<ContactAgentTab>(initialTab)
   const { data: summary, error: summaryError } = useAgentSummary(characterId)
   const badge = (entry: ContactAgentTab) => entry === 'work' ? summary?.activeTasks ?? '—' : entry === 'memory' ? summary?.memories ?? '—' : undefined
-  const hint = (entry: ContactAgentTab) => summaryError || (entry === 'work' ? ACTIVE_TASKS_HINT : entry === 'analytics' ? summaryTokenHint(summary) : entry === 'memory' ? '当前保留的独立记忆条数' : '查看工作记录')
+  const hint = (entry: ContactAgentTab) => summaryError || (entry === 'overview' ? '查看今日趋势、24 小时工作记录与任务日志' : entry === 'work' ? ACTIVE_TASKS_HINT : entry === 'analytics' ? summaryTokenHint(summary) : entry === 'memory' ? '当前保留的独立记忆条数' : '查看工作记录')
   const [analyticsReset, setAnalyticsReset] = useState(0)
-  const [open, setOpen] = useState(false)
-  const [visited, setVisited] = useState(false)
+  const [open, setOpen] = useState(standalone)
+  const [visited, setVisited] = useState(standalone)
   const content = useRef<HTMLDivElement>(null)
   const toolbar = useRef<HTMLDivElement>(null)
   const sheet = useRef<HTMLDialogElement>(null)
@@ -111,13 +113,13 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
     if (next !== tab && content.current) content.current.scrollTop = 0
   }
 
-  return <div ref={toolbar} className="contact-work-tools" data-contact-work-tools={characterId}>
+  return <div ref={toolbar} className="contact-work-tools" data-contact-work-tools={characterId} style={standalone ? { display: 'none' } : undefined}>
     {visited && createPortal(<dialog className="contact-work-sheet" id={id} ref={sheet} data-view={tab} data-interactive aria-modal="false" data-panel-window="contact" onPointerDownCapture={event => activatePanel(event.target)}
       aria-label={`${name} · ${tab === 'settings' ? '工作设置' : entries.find(entry => entry.id === tab)!.label}`}
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onCancel={event => { event.preventDefault(); close() }}>
       <header className="contact-work-sheet-heading" onPointerDown={event => beginGesture(event, 'move')} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
-        <strong>{name}的{tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : '记忆'}</strong>
+        <strong>{name}的{tab === 'overview' ? '今日概览' : tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : '记忆'}</strong>
       <div className="contact-work-buttons contact-work-dialog-tabs" role="group" aria-label="联系人工作内容">
         {entries.map(entry => <button key={entry.id} type="button" data-contact-dialog-tab={entry.id}
           aria-label={`${entry.label}${badge(entry.id) !== undefined ? ` ${badge(entry.id)}` : ''}`} title={hint(entry.id)} aria-pressed={tab === entry.id} onClick={() => { if (entry.id === 'analytics') setAnalyticsReset(n => n + 1); select(entry.id) }}>
@@ -128,7 +130,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
         <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
       </header>
       <div className="contact-work-sheet-content" ref={content}>
-        <ContactAgentPanel characterId={characterId} name={name} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={reference => { onDiscuss(reference); close() }} onChat={close} />
+        <ContactAgentPanel characterId={characterId} name={name} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={close} />
       </div>
       {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const).map(edge => <div key={edge} className={`contact-work-resize contact-work-resize-${edge}`} data-resize-edge={edge} aria-label={`调整窗口大小 ${edge}`} role="separator" tabIndex={0}
         onPointerDown={event => beginGesture(event, edge)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}
@@ -141,7 +143,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
           dialog.dataset.resized = 'true'
         }} />)}
     </dialog>, document.body)}
-    <div className="contact-work-buttons" role="group" aria-label="联系人快捷工具">
+    <div className="contact-work-buttons" role="group" aria-label="联系人快捷工具" hidden={standalone}>
       {entries.map(entry => <button key={entry.id} type="button" data-contact-work-tab={entry.id}
         aria-haspopup="dialog" aria-expanded={open && tab === entry.id} aria-controls={visited ? id : undefined}
         title={`查看${name}的${entry.label}。${hint(entry.id)}`} onClick={() => {

@@ -14,6 +14,7 @@ import { runTasksSmoke } from './smoke/tasks-smoke'
 import { runTaskAssistantSmoke } from './smoke/task-assistant-smoke'
 import { runAgentsSmoke } from './smoke/agents-smoke'
 import { runTasksUISmoke } from './smoke/tasks-ui-smoke'
+import { runTaskEditUISmoke } from './smoke/task-edit-ui-smoke'
 import { runTaskSchedulingUISmoke } from './smoke/task-scheduling-ui-smoke'
 import { setTrayUnread, setupTray } from './tray'
 import { registerHotkey } from './hotkey'
@@ -131,6 +132,8 @@ function createWindow(): void {
           await runContactsSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_TASK_ASSISTANT_ONLY === '1') {
           await runTaskAssistantSmoke(mainWindow!)
+        } else if (process.env.CHOUYU_SMOKE_TASK_EDIT_ONLY === '1') {
+          await runTaskEditUISmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_TASK_SCHEDULING_ONLY === '1') {
           await runTaskSchedulingUISmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_NAVIGATION_ONLY === '1' || process.env.CHOUYU_SMOKE_CHAT_ONLY === '1') {

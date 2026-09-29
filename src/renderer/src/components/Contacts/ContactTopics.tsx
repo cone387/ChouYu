@@ -21,12 +21,13 @@ const elapsedTime = (milliseconds: number) => {
   return `${Math.floor(seconds / 3600) ? `${Math.floor(seconds / 3600)}:` : ''}${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-export default function ContactTopics({ characterId, data, busy, settingsDirty, onAction, onReport, focusRequest, renderActivity, onAnalytics }: {
+export default function ContactTopics({ characterId, data, busy, settingsDirty, onAction, onReport, focusRequest, renderActivity, onAnalytics, active = true }: {
   characterId: string; data: AgentOverview; busy: boolean; settingsDirty: boolean
   onAction: (action: () => Promise<unknown>) => Promise<void>; onReport: (runId: string, topicId: string) => void
   onAnalytics: (topicId: string) => void
   focusRequest?: AgentFocusRequest
   renderActivity?: (topicId: string) => ReactNode
+  active?: boolean
 }) {
   const tabId = useId()
   const [listCollapsed, setListCollapsed] = useState(false)
@@ -211,7 +212,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       </ContactTaskSettingsDialog>}
       <div>
       <section role="tabpanel" id={`${tabId}-overview-panel`} aria-labelledby={`${tabId}-overview`} hidden={tab !== 'overview'} tabIndex={0}>
-        <ContactTaskOverview topic={topic} data={data} visible={tab === 'overview' && !showSettings}>
+        <ContactTaskOverview topic={topic} data={data} visible={active && tab === 'overview' && !showSettings}>
           <ContactTaskResources topic={topic} data={data} />
           {topicRun ? renderActivity?.(topic.id) : <p className="agent-empty">任务尚未启动，执行后会在这里显示实时日志。</p>}
         </ContactTaskOverview>

@@ -122,6 +122,7 @@ const api = {
     },
     create: input => ipcRenderer.invoke('tasks:create', input),
     update: (id, patch) => ipcRenderer.invoke('tasks:update', id, patch),
+    setChecklistItemDone: (id, itemId, done) => ipcRenderer.invoke('tasks:setChecklistItemDone', id, itemId, done),
     complete: id => ipcRenderer.invoke('tasks:complete', id),
     reopen: id => ipcRenderer.invoke('tasks:reopen', id),
     remove: id => ipcRenderer.invoke('tasks:delete', id),

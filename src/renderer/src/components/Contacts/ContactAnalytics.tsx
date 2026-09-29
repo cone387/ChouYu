@@ -11,7 +11,7 @@ const tokenPart = (value: UsageTotals, part: 'input' | 'output') => !value.sampl
 const stamp = (at: number) => new Date(at).toLocaleString('zh-CN', { hour12: false })
 const stateNames = { running: '执行', waiting: '等待回复', queued: '排队', interrupted: '中断' }
 
-function Trend({ data, time, cumulative, days, onDay }: { data: AgentAnalytics; time?: boolean; cumulative: boolean; days: number; onDay: (date: string) => void }) {
+export function Trend({ data, time, cumulative, days, onDay }: { data: AgentAnalytics; time?: boolean; cumulative: boolean; days: number; onDay: (date: string) => void }) {
   const [selected, setSelected] = useState<number | null>(null)
   const chart = useRef<SVGSVGElement>(null)
   const [width, setWidth] = useState(720)

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import TaskIcon from '../Tasks/TaskIcon'
+import ContactDailyOverview from './ContactDailyOverview'
 import { AGENT_STATUS, TOPIC_STATUS, type AgentOverview, type AgentTopic } from '../../../../shared/agents'
 
 const time = (value: number) => new Date(value).toLocaleString('zh-CN', { hour12: false })
@@ -34,6 +35,7 @@ export default function ContactTaskOverview({ topic, data, visible, children }: 
       <div className="metric-input"><dt><TaskIcon name="inbox" />输入 Token</dt><dd>{token(metric?.inputTokens, metric?.inputReported)}</dd></div>
       <div className="metric-output"><dt><TaskIcon name="done" />输出 Token</dt><dd>{token(metric?.outputTokens, metric?.outputReported)}</dd></div>
     </dl>
+    <ContactDailyOverview characterId={topic.characterId} topicId={topic.id} active={visible} timelineOnly />
     {children}
     <details className="topic-metric-notes"><summary>统计口径与任务信息</summary>
     <p className="agent-caption">累计耗时为本任务所有轮次的起止时间之和，包含失败、重试、排队和等待回复；运行按钮只显示当前这一轮的耗时。调用次数包含失败和重试。</p>

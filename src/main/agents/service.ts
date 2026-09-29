@@ -162,6 +162,7 @@ export class AgentService {
       }
     }
     if (!this.ready || this.closed) return
+    this.store.recordHeartbeats()
     for (const profile of this.store.profiles()) {
       if (this.active.has(profile.character_id) || this.deleting.has(profile.character_id)) continue
       const settings = JSON.parse(profile.settings) as AgentSettings

@@ -1,3 +1,4 @@
+import TaskFieldEditor, { type EditableTaskField } from './TaskFieldEditor'
 import { draftDueAt, draftReminderTimes, draftScheduleFromTask } from './taskDraftScheduling'
 import { repeatRuleFor, validateReminderTimes } from '../../../../shared/taskScheduling'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
@@ -96,6 +97,8 @@ const dueLabel = (at: number): string =>
 
 export default function TasksView({ active, focusTaskId, searchRequest, conversionRequest, taskOpenRequest, onRequestConsumed, onOpenChat }: { active: boolean; focusTaskId?: string; searchRequest?: { id: string; done: boolean; query: string; nonce: number }; conversionRequest?: { id: number; draft: TaskConversionDraft }; taskOpenRequest?: { id: number; taskId: string }; onRequestConsumed?: () => void; onOpenChat?: (id: string) => Promise<void> }) {
   const consumedTaskOpen = useRef<number>()
+  const [fieldEdit, setFieldEdit] = useState<{ task: TaskRecord; field: EditableTaskField } | null>(null)
+  const editField = (task: TaskRecord, field: EditableTaskField) => { setError(''); setFieldEdit({ task, field }) }
   const [sourcePreview, setSourcePreview] = useState<TaskSource | null>(null)
   const consumedConversion = useRef<number>()
   const layoutOrder = useTaskLayoutOrder()
@@ -283,14 +286,14 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   useEffect(() => {
     if (!draft && !viewDraft && !fieldsOpen && !manageViewsOpen) return
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (event.key !== 'Escape' || event.defaultPrevented || draft) return
       event.preventDefault()
       event.stopPropagation()
       if (!busy && !projectBusy) {
         if (fieldsOpen) setFieldsOpen(false)
         else if (manageViewsOpen) setManageViewsOpen(false)
         else if (viewDraft) setViewDraft(null)
-        else setDraft(null)
+        // The task editor handles Escape and unsaved changes itself.
       }
     }
     document.addEventListener('keydown', closeOnEscape)
@@ -776,10 +779,10 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
               <button type="button" className="tasks-item-title tasks-title-button" onClick={() => setDraft(draftFromTask(task))}>{task.title}</button>
             </div>
             {!hiddenFields.includes('note') && task.note && <p className="tasks-item-note" title={task.note}>{task.note}</p>}
-            <TaskCardMeta task={task} projects={projects} fields={displayFields} onOpenProject={openProject} onSource={setSourcePreview} showAllFields />
+            <TaskCardMeta onEditField={editField} task={task} projects={projects} fields={displayFields} onOpenProject={openProject} onSource={setSourcePreview} showAllFields />
             <div className="tasks-card-schedule">
               {!hiddenFields.includes('start') && task.startAt != null && <span className="tasks-start-cell"><TaskIcon name="today" /><span>开始 <time dateTime={new Date(task.startAt).toISOString()}>{dueLabel(task.startAt)}</time></span></span>}
-              {!hiddenFields.includes('due') && task.dueAt !== null && <span className="tasks-due-cell"><span>截止</span><TaskCardDue task={task} /></span>}
+              {!hiddenFields.includes('due') && <span className="tasks-due-cell"><span>截止</span><TaskCardDue task={task} onEditField={editField} /></span>}
               {task.startAt == null && task.dueAt === null && task.status === 'open' && (!hiddenFields.includes('start') || !hiddenFields.includes('due')) && <span className="tasks-card-unplanned"><TaskIcon name="unplanned" />待规划 · 未安排时间</span>}
               {task.status === 'done' && <span className="tasks-card-completed">已完成{task.completedAt ? ` · ${dueLabel(task.completedAt)}` : ''}</span>}
             </div>
@@ -989,6 +992,11 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
         onSubmit={groupRenaming ? submitGroupRename : newProject !== null ? submitProject : submitGroup}
         onClose={closeCollectionDialog} />}
 
+      {fieldEdit && <TaskFieldEditor task={fieldEdit.task} field={fieldEdit.field} onClose={() => setFieldEdit(null)} onSaved={saved => {
+        setTasks(current => current.map(task => task.id === saved.id ? saved : task))
+        setDoneTasks(current => current.map(task => task.id === saved.id ? saved : task))
+        setNotice(matchesKeywordAndFilter(saved) && matchesSelection(saved, selection) ? '修改已保存。' : '修改已保存，该任务已移出当前视图。')
+      }} />}
       {draft && <TaskEditorDialog draft={draft} projects={projects} groups={groups} displayGroups={customGroups} fields={fields} busy={busy || projectBusy} error={error} dialogRef={taskDialogRef} onChange={setDraft} onCreateProject={createDraftProject} onClose={() => { if (!busy && !projectBusy) setDraft(null) }} onSubmit={submitDraft} />}
 
       {viewDraft && <div className="tasks-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setViewDraft(null) }}>
@@ -1075,7 +1083,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
             onComplete={complete}
             onReopen={reopen}
             onCreate={(patch, groupId) => { setError(''); setDraft({ ...createDraft(patch), displayGroupId: boardGroupMode === 'custom' ? groupId : '' }) }}
-            onMove={persistTaskMove} />
+            onEditField={editField} onMove={persistTaskMove} />
         : listGrouped
         ? <div className="tasks-grouped-list">{listColumns.map(column => <div className="tasks-content-group-shell" key={column.key || 'none'} data-drop-target={listDropGroup === column.key || undefined}
             onDragOver={event => { if (listDraggingTask && canMoveToColumn(listDraggingTask, column) && event.dataTransfer.types.includes('application/x-chouyu-list-task')) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setListDropGroup(column.key) } }}
