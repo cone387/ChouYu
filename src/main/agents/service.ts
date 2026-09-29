@@ -190,13 +190,13 @@ export class AgentService {
   }
   private startRun(run: NonNullable<ReturnType<AgentStore['getRun']>>) {
     const identity = this.identity(run.character_id), controller = new AbortController()
-    const model: AgentModel = this.modelFactory?.(identity) || (async (prompt, signal) => {
+    const model: AgentModel = this.modelFactory?.(identity) || (async (prompt, signal, options) => {
       let output = ''
       const callId = this.store.latestCallId(run.id)
       let metadata: AIResponseMetadata = { model: identity.config!.model }
       try {
-        await streamAIChat([{ role: 'user', content: prompt }], '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; if (output.length > 24000) throw new AgentOutputTruncatedError() }, signal, undefined, { timeoutMs: 180000, maxOutputTokens: AGENT_OUTPUT_TOKENS, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
-        if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError()
+        await streamAIChat([{ role: 'user', content: prompt }], options?.plainText ? '按工作指令输出纯文本正文，不输出 JSON。' : '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) }, signal, undefined, { timeoutMs: 180000, maxOutputTokens: AGENT_OUTPUT_TOKENS, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
+        if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError(output)
       } finally {
         if (callId !== undefined) this.store.recordCallMetadata(callId, metadata)
         this.changed(run.character_id)
