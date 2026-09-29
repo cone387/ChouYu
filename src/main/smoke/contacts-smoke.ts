@@ -95,12 +95,22 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
     if (!await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-close]')) && Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-start-chat]')) && document.querySelector('.contacts-detail-actions').getBoundingClientRect().top < document.querySelector('.contact-agent').getBoundingClientRect().top")) throw new Error('Contact detail actions are not at the top')
-    if (!await window.webContents.executeJavaScript("(() => { const head=document.querySelector('.contacts-detail-head').getBoundingClientRect(); const actions=document.querySelector('.contacts-detail-actions').getBoundingClientRect(); const profile=document.querySelector('.contacts-profile-details'); const agent=document.querySelector('.contact-agent'); return actions.left >= head.right && actions.top < head.bottom && profile.getBoundingClientRect().top < agent.getBoundingClientRect().top && !agent.nextElementSibling })()")) throw new Error('Details must place actions beside the name and profile before the final task panel')
-    if (!await window.webContents.executeJavaScript("(() => { const profile=document.querySelector('.contacts-profile-details'); const sizes=Array.from(document.querySelectorAll('.contacts-detail-actions button')).map(el => el.getBoundingClientRect()); return profile.tagName === 'SECTION' && !profile.querySelector('summary') && sizes.every(rect => rect.height === sizes[0].height && rect.width === sizes[0].width) })()")) throw new Error('Profile must stay expanded and header buttons must have matching sizes')
+    if (!await window.webContents.executeJavaScript("(() => { const head=document.querySelector('.contacts-detail-head').getBoundingClientRect(); const actions=document.querySelector('.contacts-detail-actions').getBoundingClientRect(); const agent=document.querySelector('.contact-agent'); return actions.left >= head.right && actions.top < head.bottom && !document.querySelector('.contacts-profile-details') && !agent.nextElementSibling })()")) throw new Error('Details must place actions beside the name and keep the profile inside its tab')
+    if (!await window.webContents.executeJavaScript("(() => { const sizes=Array.from(document.querySelectorAll('.contacts-detail-actions button')).map(el => el.getBoundingClientRect()); return sizes.every(rect => rect.height === sizes[0].height && rect.width === sizes[0].width) })()")) throw new Error('Header buttons must have matching sizes')
     const detailHeight = await window.webContents.executeJavaScript("document.querySelector('.contacts-detail').getBoundingClientRect().height")
     if (!await window.webContents.executeJavaScript("document.querySelector('[data-agent-tab=overview]').getAttribute('aria-pressed') === 'true'")) throw new Error('Contact details must default to overview')
+    await click(window, '[data-agent-tab=profile]')
+    await waitForRenderer(window, "document.querySelector('.contact-agent .contacts-detail-soul')?.textContent.includes('冒烟猫人设')")
+    await click(window, '[data-agent-expand]')
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open][data-view=profile] .contacts-detail-soul'))")
+    await click(window, '.contact-work-sheet-heading > button')
+    if (artifacts) {
+      await window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+      await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+      writeFileSync(join(artifacts, 'contact-profile-tab.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+    }
     if (await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail .agent-heading, .contacts-detail .contact-agent > .agent-description, .contacts-activity footer'))")) throw new Error('Removed contact description blocks returned')
-    for (const tab of ['overview', 'history', 'memory', 'settings', 'analytics', 'work']) {
+    for (const tab of ['overview', 'history', 'memory', 'settings', 'analytics', 'profile', 'work']) {
       await click(window, `[data-agent-tab=${tab}]`)
       await window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
       if (await window.webContents.executeJavaScript("document.querySelector('.contacts-detail').getBoundingClientRect().height") !== detailHeight) throw new Error(`Contact detail height changed on ${tab} tab`)

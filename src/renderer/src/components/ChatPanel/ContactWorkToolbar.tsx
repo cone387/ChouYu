@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useId, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { activatePanel } from '../../core/panel-layer'
 import { ContactAgentPanel, type ContactAgentTab } from '../Contacts/ContactAgentPanel'
@@ -8,7 +8,7 @@ import type { AgentFocusRequest } from '../../../../shared/agents'
 import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 import { ACTIVE_TASKS_HINT, summaryTokenHint, summaryTokens, useAgentSummary } from '../Contacts/useAgentSummary'
 
-const entries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
+const baseEntries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
   { id: 'overview', label: '概览', icon: 'today' },
   { id: 'work', label: '任务', icon: 'task' },
   { id: 'history', label: '工作记录', icon: 'clock' },
@@ -17,11 +17,13 @@ const entries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
 ]
 
 /** Mount per conversation: drafts survive closing, never cross contact/session boundaries. */
-export default function ContactWorkToolbar({ characterId, name, onClose, focusRequest, onDiscuss, initialTab = 'overview', standalone = false }: {
+export default function ContactWorkToolbar({ characterId, name, onClose, focusRequest, onDiscuss, initialTab = 'overview', standalone = false, profile }: {
   characterId: string; name: string; onClose: () => void; focusRequest?: AgentFocusRequest
   onDiscuss?: (reference: AgentDiscussion) => void
   initialTab?: ContactAgentTab; standalone?: boolean
+  profile?: ReactNode
 }) {
+  const entries = profile ? [...baseEntries, { id: 'profile' as const, label: '人设', icon: 'edit' as const }] : baseEntries
   const [tab, setTab] = useState<ContactAgentTab>(initialTab)
   const { data: summary, error: summaryError } = useAgentSummary(characterId)
   const badge = (entry: ContactAgentTab) => entry === 'work' ? summary?.activeTasks ?? '—' : entry === 'memory' ? summary?.memories ?? '—' : undefined
@@ -127,7 +129,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
         <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
       </header>
       <div className="contact-work-sheet-content" ref={content}>
-        <ContactAgentPanel characterId={characterId} name={name} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={close} />
+        <ContactAgentPanel characterId={characterId} name={name} profile={profile} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={close} />
       </div>
       {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const).map(edge => <div key={edge} className={`contact-work-resize contact-work-resize-${edge}`} data-resize-edge={edge} aria-label={`调整窗口大小 ${edge}`} role="separator" tabIndex={0}
         onPointerDown={event => beginGesture(event, edge)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}

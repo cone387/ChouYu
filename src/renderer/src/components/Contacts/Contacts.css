@@ -76,7 +76,7 @@
 .contacts-field { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 0; font-size: 13px; }
 .contacts-field-name { flex: none; width: 44px; color: var(--text-secondary); }
 .contacts-detail-soul-title { margin: 8px 0 5px; font-size: 12px; color: var(--text-muted); }
-.contacts-detail-soul { max-height: 120px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.contacts-detail-soul { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 .contacts-detail-actions { display: flex; flex: none; gap: 6px; margin: 0 0 0 auto; }
 .contacts-detail-actions button { display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; width: 64px; height: 32px; min-height: 32px; padding: 0; white-space: nowrap; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 12px; font-weight: 500; line-height: 1; box-shadow: none; cursor: pointer; transition: background-color .16s ease; }
 .contacts-detail-actions button:hover:not(:disabled) { background: color-mix(in srgb, var(--text-muted) 18%, transparent); }

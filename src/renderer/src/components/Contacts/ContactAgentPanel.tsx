@@ -1,7 +1,7 @@
 import ContactAnalytics from './ContactAnalytics'
 import ContactDailyOverview from './ContactDailyOverview'
 import ContactMarkdown from './ContactMarkdown'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { agentUsesPlanner, AGENT_STATUS, DEFAULT_AGENT_SETTINGS, type AgentOverview, type AgentRunDetail, type AgentSettings } from '../../../../shared/agents'
 import './ContactAgentPanel.css'
 import ContactTopics from './ContactTopics'
@@ -11,8 +11,8 @@ import ContactWorkLog from './ContactWorkLog'
 import type { AgentDiscussion } from './agentDiscussion'
 
 const time = (value: number) => new Date(value).toLocaleString()
-export type ContactAgentTab = 'overview' | 'work' | 'history' | 'memory' | 'settings' | 'analytics'
-export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset, onExpand }: {
+export type ContactAgentTab = 'overview' | 'work' | 'history' | 'memory' | 'settings' | 'analytics' | 'profile'
+export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset, onExpand, profile }: {
   characterId: string; name: string; selectedTab?: ContactAgentTab
   onTabChange?: (tab: ContactAgentTab) => void; compact?: boolean
   focusRequest?: AgentFocusRequest
@@ -20,6 +20,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   onChat?: () => void
   analyticsReset?: number
   onExpand?: (tab: ContactAgentTab) => void
+  profile?: ReactNode
 }) {
   const [data, setData] = useState<AgentOverview | null>(null)
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
@@ -127,10 +128,12 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   return <section className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId}>
     {!compact && <div className="agent-tabs" aria-label="工作内容">
       {([['overview', '概览'], ['work', '任务'], ['history', '工作记录'], ['memory', '独立记忆'], ['settings', '工作设置'], ['analytics', '活动与消耗']] as const).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
+      {profile && <button type="button" data-agent-tab="profile" aria-pressed={tab === 'profile'} onClick={() => setTab('profile')}>人设</button>}
       {onExpand && <button type="button" className="agent-expand" data-agent-expand aria-label="在大窗口中打开" title="在大窗口中打开" onClick={() => onExpand(tab)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg></button>}
     </div>}
-    {(error || readError) && <div className="agent-error" role="alert">{error || readError}<button type="button" disabled={busy} onClick={() => { setError(''); setReadError(''); void refresh() }}>重新读取</button></div>}
-    {!data && !error && !readError && <p role="status">正在读取工作状态…</p>}
+    {tab !== 'profile' && (error || readError) && <div className="agent-error" role="alert">{error || readError}<button type="button" disabled={busy} onClick={() => { setError(''); setReadError(''); void refresh() }}>重新读取</button></div>}
+    {!data && !error && !readError && tab !== 'profile' && <p role="status">正在读取工作状态…</p>}
+    {tab === 'profile' && profile}
     {tab === 'overview' && <ContactDailyOverview characterId={characterId} />}
     {data && <div className="agent-task-view" hidden={tab !== 'work'}>
       <ContactTopics active={tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}

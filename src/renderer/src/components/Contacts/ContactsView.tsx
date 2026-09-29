@@ -406,6 +406,21 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     return () => window.removeEventListener('keydown', closeOnEscape, true)
   }, [active, detail, form, confirmDelete, expandedTab])
 
+  const detailProfile = detail && (
+        <section className="contacts-profile-details" aria-label="角色资料">
+        <h3>角色资料</h3>
+        <dl className="contacts-detail-fields">
+          <div><dt>模型</dt><dd>{detail.builtIn ? config.model : detail.model}</dd></div>
+          <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
+          <div><dt>档案</dt><dd>{profileNameOf(detail)}</dd></div>
+          <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
+          <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
+        </dl>
+        <p className="contacts-detail-soul-title">人设</p>
+        <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
+        </section>
+  )
+
   return <div className={detailOnly ? 'contacts-view contacts-view-overlay' : 'contacts-view'} data-contacts-root>
     {!detailOnly && <>
     <div className="contacts-toolbar">
@@ -524,22 +539,15 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
         </div>
         </div>
-        <section className="contacts-profile-details" aria-label="角色资料">
-        <h3>角色资料</h3>
-        <dl className="contacts-detail-fields">
-          <div><dt>模型</dt><dd>{detail.builtIn ? config.model : detail.model}</dd></div>
-          <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
-          <div><dt>档案</dt><dd>{profileNameOf(detail)}</dd></div>
-          <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
-          <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
-        </dl>
-        <p className="contacts-detail-soul-title">人设</p>
-        <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
-        </section>
-        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} onExpand={setExpandedTab} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
+
+        {detail.id === ASSISTANT_CHARACTER_ID && <section className="contact-agent">
+          <div className="agent-tabs"><button type="button" data-agent-tab="profile" aria-pressed="true">人设</button></div>
+          {detailProfile}
+        </section>}
+        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} profile={detailProfile} onExpand={setExpandedTab} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
       </div>
     </ResizableModal>}
-    {detail && expandedTab && <ContactWorkToolbar key={detail.id} characterId={detail.id} name={detail.name} standalone initialTab={expandedTab} onClose={() => setExpandedTab(null)} />}
+    {detail && expandedTab && <ContactWorkToolbar key={detail.id} characterId={detail.id} name={detail.name} standalone profile={detailProfile} initialTab={expandedTab} onClose={() => setExpandedTab(null)} />}
     {confirmDelete && <div className="contacts-scrim" role="presentation">
       <div className="contacts-confirm" role="alertdialog" aria-modal="true" aria-label="删除角色确认">
         <p className="contacts-confirm-title">删除角色</p>
