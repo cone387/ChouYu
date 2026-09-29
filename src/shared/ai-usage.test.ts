@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { readAIUsage } from './ai-usage'
 
 describe('provider-reported token usage', () => {
+  it.each(['openai', 'claude'] as const)('preserves %s stop reasons across a later usage-only chunk', provider => {
+    const stopped = readAIUsage(provider === 'openai'
+      ? { choices: [{ finish_reason: 'length' }] }
+      : { delta: { stop_reason: 'max_tokens' } }, provider)
+    const final = readAIUsage({ usage: provider === 'openai' ? { completion_tokens: 8192 } : { output_tokens: 8192 } }, provider, stopped)
+    expect(final.finishReason).toBe(provider === 'openai' ? 'length' : 'max_tokens')
+    expect(final.usage?.outputTokens).toBe(8192)
+  })
   it('reads the final OpenAI usage-only chunk and preserves the resolved model', () => {
     const initial = readAIUsage({ model: 'resolved-model', choices: [], usage: null }, 'openai')
     expect(readAIUsage({ choices: [], usage: { prompt_tokens: 100, completion_tokens: 25, total_tokens: 125, prompt_tokens_details: { cached_tokens: 70 } } }, 'openai', initial)).toEqual({ model: 'resolved-model', usage: { inputTokens: 100, outputTokens: 25, totalTokens: 125, cacheReadTokens: 70 } })

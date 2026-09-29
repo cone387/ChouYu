@@ -23,6 +23,32 @@ function fixture() {
   return { dir, store, runtime }
 }
 describe('contact agent durability and isolation', () => {
+  it.each(['stop', 'length'])('handles provider output ending with %s without a blind repair', async finishReason => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      expect(JSON.parse(String(init?.body)).max_tokens).toBe(8192)
+      const payloads = [
+        { choices: [{ delta: { content: finishReason === 'stop' ? JSON.stringify(draft) : '{"body":"unfinished' } }] },
+        { choices: [{ delta: {}, finish_reason: finishReason }] },
+        { choices: [], usage: { completion_tokens: finishReason === 'stop' ? 3000 : 8192 } }
+      ]
+      return new Response(payloads.map(p => `data: ${JSON.stringify(p)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+    })
+    cleanups.push(() => fetchMock.mockRestore())
+    const service = new AgentService(directory(), () => {}, undefined, reader)
+    cleanups.push(() => service.close())
+    await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
+    await service.request('save', 'alice', [settings])
+    await service.request('run', 'alice')
+    await vi.waitFor(() => expect(service.store.overview('alice').runs[0]?.status).toBe(finishReason === 'stop' ? 'completed' : 'failed'))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const run = service.store.overview('alice').runs[0]
+    expect(service.store.detail('alice', run.id).events.some(e => e.kind === 'format-repair')).toBe(false)
+    if (finishReason === 'length') {
+      expect(run.error).toContain('被截断')
+      expect(service.store.overview('alice').reports).toEqual([])
+      expect(service.store.overview('alice').memories).toEqual([])
+    }
+  })
   it('repairs malformed output once and charges the additional call before committing', async () => {
     const { store, runtime } = fixture(), run = store.createRun('alice', '')
     const model = vi.fn().mockResolvedValueOnce('invalid JSON').mockResolvedValueOnce(JSON.stringify(draft))

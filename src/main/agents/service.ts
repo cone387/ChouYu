@@ -11,6 +11,7 @@ import { agentUsesPlanner } from '../../shared/agents'
 import { canResearch } from './topics'
 import type { AgentSearcher } from './research'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
+import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from './model-output'
 
 export interface AgentIdentity { id: string; name?: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
@@ -194,7 +195,8 @@ export class AgentService {
       const callId = this.store.latestCallId(run.id)
       let metadata: AIResponseMetadata = { model: identity.config!.model }
       try {
-        await streamAIChat([{ role: 'user', content: prompt }], '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; if (output.length > 24000) throw new Error('成果输出超过上限。') }, signal, undefined, { timeoutMs: 90000, maxOutputTokens: JSON.parse(run.input).settings.readContactDeliveries ? 4000 : 2200, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
+        await streamAIChat([{ role: 'user', content: prompt }], '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; if (output.length > 24000) throw new AgentOutputTruncatedError() }, signal, undefined, { timeoutMs: 180000, maxOutputTokens: AGENT_OUTPUT_TOKENS, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
+        if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError()
       } finally {
         if (callId !== undefined) this.store.recordCallMetadata(callId, metadata)
         this.changed(run.character_id)
