@@ -347,7 +347,7 @@ export function useSessionWorkspace({
         if (existing) {
           // 续写针对同一条用户消息重新检索记忆，保留原引用（含用户反馈标记）而不是整组替换。
           return previous.map((message) => message.id === targetMessageId
-            ? { ...message, content, responseStatus: undefined, memoryRefs: options.appendTo ? message.memoryRefs : memoryRefs }
+            ? { ...message, content, responseStatus: undefined, replyCompletedAt: undefined, memoryRefs: options.appendTo ? message.memoryRefs : memoryRefs }
             : message)
         }
         return [...previous, { id: targetMessageId, role: 'assistant', content, timestamp: Date.now(), memoryRefs }]
@@ -366,6 +366,8 @@ export function useSessionWorkspace({
       if (sessionGenerationsRef.current.get(sessionId) !== generation) return
       sessionGenerationsRef.current.delete(sessionId)
       if (generation.requestId) requestSessionRef.current.delete(generation.requestId)
+      const storedMessages = sessionMessagesRef.current.get(sessionId) || []
+      persistSessionMessages(sessionId, storedMessages)
       if (pendingGenerationsRef.current.has(sessionId)) {
         pendingGenerationsRef.current.delete(sessionId)
         const queuedConversation = sessionMessagesRef.current.get(sessionId) || []
@@ -373,8 +375,6 @@ export function useSessionWorkspace({
         return
       }
       setSessionStreaming(sessionId, false)
-      const storedMessages = sessionMessagesRef.current.get(sessionId) || []
-      persistSessionMessages(sessionId, storedMessages)
     }
 
     try {
@@ -386,6 +386,12 @@ export function useSessionWorkspace({
           if (controller.signal.aborted) return
           if (done) {
             renderAccumulated()
+            // Publish one unread reply only after the final content is available.
+            // Completion time matters when the first chunk was read before the panel closed.
+            updateSessionMessages(sessionId, previous => previous.map(message =>
+              message.id === aiMsgId && message.content.trim() && !message.toolData
+                ? { ...message, replyCompletedAt: Date.now() }
+                : message))
             finishGeneration()
             if (activeSessionIdRef.current === sessionId) finishPetResponse()
             return

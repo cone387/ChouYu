@@ -232,6 +232,7 @@ export interface Message {
   taskReminder?: import('../../../shared/reminders').TaskReminderRef
   assistantKind?: AssistantMessageKind
   responseStatus?: 'error' | 'stopped'
+  replyCompletedAt?: number
   toolData?: ToolActivityData
   memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>
   /** Plugin result data - if present, render as plugin card instead of markdown */

@@ -36,6 +36,7 @@ export interface Message {
   taskReminder?: TaskReminderRef
   assistantKind?: AssistantMessageKind
   responseStatus?: 'error' | 'stopped'
+  replyCompletedAt?: number
   toolData?: ToolActivityData
   memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>
   pluginData?: unknown
@@ -184,6 +185,9 @@ function sanitizeMessages(value: unknown): Message[] {
       id: String(message.id || randomUUID()).slice(0, 128),
       content: String(message.content ?? ''),
       timestamp: Number.isFinite(message.timestamp) ? message.timestamp : Date.now(),
+      replyCompletedAt: message.role === 'assistant' && !message.toolData && !message.responseStatus
+        && String(message.content ?? '').trim() && Number.isFinite(message.replyCompletedAt) && Number(message.replyCompletedAt) > 0
+        ? Number(message.replyCompletedAt) : undefined,
       responseStatus: message.responseStatus === 'error' || message.responseStatus === 'stopped'
         ? message.responseStatus
         : undefined,
@@ -245,6 +249,15 @@ function cloneSession(session: ChatSession): ChatSession {
   }) }
 }
 
+function messageReadTimestamp(message: Message): number {
+  return Math.max(message.timestamp, message.replyCompletedAt ?? 0)
+}
+
+function isUnreadMessage(session: ChatSession, message: Message): boolean {
+  return (isAssistantCharacter(session.characterId) || Boolean(message.agentNotice) || Boolean(message.replyCompletedAt))
+    && messageReadTimestamp(message) > (session.lastReadAt ?? 0)
+}
+
 function toSummary(session: ChatSession): ChatSessionSummary {
   return {
     id: session.id,
@@ -254,7 +267,7 @@ function toSummary(session: ChatSession): ChatSessionSummary {
     characterId: session.characterId,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
-    unreadCount: session.messages.filter(message => (isAssistantCharacter(session.characterId) || message.agentNotice) && message.timestamp > (session.lastReadAt ?? 0)).length
+    unreadCount: session.messages.filter(message => isUnreadMessage(session, message)).length
   }
 }
 
@@ -521,9 +534,9 @@ export function selectChatSession(id: string): SessionWorkspace {
   return getSessionWorkspace()
 }
 
-/** 查看会话即标记已读：取当前时间与最新消息时间戳的较大者，避免未来时间戳消息卡住角标。 */
+/** 显式已读回执包含回复完成时间，避免流式生成时的旧时间戳吞掉新回复。 */
 function markSessionReadUpToNow(session: ChatSession): void {
-  const latest = session.messages.reduce((latest, message) => Math.max(latest, message.timestamp), 0)
+  const latest = session.messages.reduce((latest, message) => Math.max(latest, messageReadTimestamp(message)), 0)
   session.lastReadAt = Math.max(Date.now(), latest)
 }
 
@@ -572,9 +585,10 @@ export function markSessionRead(id: string, messageId?: string): SessionWorkspac
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
   if (messageId) {
-    const message = session.messages.find(m => m.id === messageId)
-    if (!message) return getSessionWorkspace()
-    session.lastReadAt = Math.max(session.lastReadAt ?? 0, message.timestamp)
+    const index = session.messages.findIndex(m => m.id === messageId)
+    if (index < 0) return getSessionWorkspace()
+    session.lastReadAt = session.messages.slice(0, index + 1)
+      .reduce((latest, message) => Math.max(latest, messageReadTimestamp(message)), session.lastReadAt ?? 0)
   } else markSessionReadUpToNow(session)
   persist(false)
   return getSessionWorkspace()
@@ -589,9 +603,8 @@ export function getAssistantUnreadPreview(): string {
   let latest: { session: ChatSession; message: Message } | undefined
   for (const session of store.sessions) {
     for (const message of session.messages) {
-      if (!(isAssistantCharacter(session.characterId) || message.agentNotice)
-        || message.timestamp <= (session.lastReadAt ?? 0)) continue
-      if (!latest || message.timestamp > latest.message.timestamp) latest = { session, message }
+      if (!isUnreadMessage(session, message)) continue
+      if (!latest || messageReadTimestamp(message) > messageReadTimestamp(latest.message)) latest = { session, message }
     }
   }
   if (!latest) return ''

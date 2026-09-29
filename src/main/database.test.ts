@@ -480,11 +480,73 @@ describe('assistant messages', () => {
     expect(getAssistantUnreadPreview()).toBe('')
   })
 
-  it('keeps unread badges exclusive to assistant sessions', () => {
+  it('does not count outgoing messages as unread', () => {
     const id = getActiveSession().id
     saveSessionMessages(id, [message('普通消息')])
     expect(getSessions().find((session) => session.id === id)?.unreadCount).toBe(0)
     expect(getAssistantUnreadCount()).toBe(0)
+  })
+
+  it('notifies once for a completed contact reply, retains it across restart, and clears on read', () => {
+    const id = getActiveSession().id
+    const at = Date.now()
+    const reply = { id: 'reply', role: 'assistant' as const, content: '已写好第二章', timestamp: at }
+    // Existing history and partial streaming content must not become new notifications.
+    saveSessionMessages(id, [message('question'), reply])
+    expect(getAssistantUnreadCount()).toBe(0)
+    const completed = { ...reply, replyCompletedAt: at + 1000 }
+    saveSessionMessages(id, [message('question'), completed])
+    expect(getAssistantUnreadCount()).toBe(1)
+    expect(getAssistantUnreadPreview()).toContain('已写好第二章')
+    saveSessionMessages(id, [message('question'), completed])
+    expect(getAssistantUnreadCount()).toBe(1)
+    flushDatabase(); initDatabase()
+    expect(getAssistantUnreadCount()).toBe(1)
+    selectChatSession(id)
+    expect(getAssistantUnreadCount()).toBe(1)
+    markSessionRead(id, 'reply')
+    expect(getAssistantUnreadCount()).toBe(0)
+    expect(getAssistantUnreadPreview()).toBe('')
+    saveSessionMessages(id, [message('question'), completed])
+    expect(getAssistantUnreadCount()).toBe(0)
+  })
+
+  it('notifies for completion after a partial reply was read before closing the panel', () => {
+    const id = getActiveSession().id
+    const at = Date.now()
+    const reply = { id: 'reply', role: 'assistant' as const, content: '正在写', timestamp: at }
+    saveSessionMessages(id, [reply])
+    markSessionRead(id, reply.id)
+    saveSessionMessages(id, [{ ...reply, content: '写完了', replyCompletedAt: at + 1000 }])
+    expect(getAssistantUnreadCount()).toBe(1)
+    markSessionRead(id, reply.id)
+    expect(getAssistantUnreadCount()).toBe(0)
+  })
+
+  it('excludes errors, stopped responses, empty replies and tool cards from reply notifications', () => {
+    const id = getActiveSession().id
+    const base = { role: 'assistant' as const, content: '回复', timestamp: Date.now(), replyCompletedAt: Date.now() + 1000 }
+    saveSessionMessages(id, [
+      { ...base, id: 'outgoing', role: 'user' },
+      { ...base, id: 'error', responseStatus: 'error' },
+      { ...base, id: 'stopped', responseStatus: 'stopped' },
+      { ...base, id: 'empty', content: '' },
+      { ...base, id: 'tool', toolData: { callId: 'call', name: 'tool', displayName: '工具', risk: 'safe', status: 'completed' } }
+    ])
+    expect(getAssistantUnreadCount()).toBe(0)
+    expect(getAssistantUnreadPreview()).toBe('')
+  })
+
+  it('chooses the preview by reply completion time and preserves other sessions when reading one', () => {
+    const id = getActiveSession().id
+    const at = Date.now()
+    appendAssistantMessage('休息提醒', at + 500)
+    saveSessionMessages(id, [{ id: 'reply', role: 'assistant', content: '联系人刚刚写完', timestamp: at, replyCompletedAt: at + 1000 }])
+    expect(getAssistantUnreadCount()).toBe(2)
+    expect(getAssistantUnreadPreview()).toContain('联系人刚刚写完')
+    markSessionRead(id, 'reply')
+    expect(getAssistantUnreadCount()).toBe(1)
+    expect(getAssistantUnreadPreview()).toBe('助手：休息提醒')
   })
 
   it('keeps lastReadAt across restart', () => {
