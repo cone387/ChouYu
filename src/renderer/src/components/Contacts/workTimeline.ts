@@ -96,7 +96,7 @@ export function workSegments(data: AgentAnalytics): WorkSegment[] {
     if (!winner) continue
     const segment = { ...winner, start, end, state: winner.state === 'running' ? 'running' as const : 'heartbeat' as const, key: `${winner.key}:${start}` }
     const previous = periods.at(-1)
-    const sameState = previous && previous.state === segment.state && (segment.state !== 'running' || previous.topicId === segment.topicId)
+    const sameState = previous && previous.state === segment.state && (segment.state !== 'running' || previous.topicId === segment.topicId && previous.runId === segment.runId)
     const adjacent = previous && (previous.end === start || segment.state === 'heartbeat' && start - previous.end <= 60000)
     if (sameState && adjacent) {
       previous.end = segment.end
@@ -105,9 +105,15 @@ export function workSegments(data: AgentAnalytics): WorkSegment[] {
   }
   const phases: Record<string, string> = { briefing: '梳理任务', planning: '制定计划', plan: '制定计划', search: '搜索资料', reading: '阅读资料', read: '阅读资料', analysis: '分析资料', drafting: '撰写内容', revising: '修改内容', checking: '检查成果', completed: '完成本轮' }
   return periods.map(period => {
-    const steps = [...new Set((data.logs ?? []).filter(event => event.topicId === period.topicId && event.at >= period.start && event.at <= period.end)
+    const logs = (data.logs ?? []).filter(event => event.runId === period.runId && event.at >= period.start && event.at <= period.end)
+    const steps = [...new Set(logs
       .sort((a, b) => a.at - b.at).map(event => phases[event.kind]).filter(Boolean))]
     const title = data.tasks.find(task => task.id === period.topicId)?.title || '处理任务'
-    return { ...period, text: period.state === 'running' ? `${title}${steps.length ? ` · ${steps.join('、')}` : ''}` : timelineStates[period.state] }
+    const summary = data.runSummaries?.find(run => run.runId === period.runId)?.title.trim()
+    const action = [...logs].reverse().find(event => ['research-plan', 'contact-discovery'].includes(event.kind) && event.text.trim())
+    const detail = action?.text.replace(/^[a-z_]+[：:]\s*/i, '').split(/\r?\n/)[0].trim()
+    const failed = logs.some(event => event.kind === 'failed')
+    const text = summary || `${failed ? '本轮未完成 · ' : ''}${detail || `${title}${steps.length ? ` · ${steps.join('、')}` : ''}`}`
+    return { ...period, text: period.state === 'running' ? text : timelineStates[period.state] }
   })
 }

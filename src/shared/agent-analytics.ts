@@ -6,6 +6,7 @@ export interface UsageBucket extends UsageTotals { start: number; end: number }
 export interface ActivitySpan { runId: string; topicId: string | null; start: number; end: number; state: 'running' | 'waiting' | 'queued' | 'interrupted'; approximate: boolean }
 export interface UsageActivity { runId: string; topicId: string | null; at: number; kind: 'report' | 'failed' }
 export interface AgentAnalytics {
+  runSummaries?: { runId: string; title: string }[]
   heartbeats?: { id: number; topicId: string; start: number; end: number }[]
   logs?: { id: number; runId: string; topicId: string | null; at: number; kind: string; text: string }[]
   logsTruncated?: boolean

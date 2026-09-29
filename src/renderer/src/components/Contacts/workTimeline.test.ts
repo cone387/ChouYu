@@ -2,6 +2,19 @@ import { expect, it } from 'vitest'
 import { emptyUsage, type AgentAnalytics } from '../../../../shared/agent-analytics'
 import { workSegments, workTimelineRows, workTimelineBlocks, workTimelineScale } from './workTimeline'
 
+it('describes each round using its own output or action instead of repeating the long-running topic', () => {
+  const data: AgentAnalytics = { start: 0, end: 10000, measuredAt: 10000, totals: emptyUsage(), buckets: [], activity: [], legacyCalls: 0,
+    tasks: [{ id: 'reviews', title: '持续评价产品', ...emptyUsage() }],
+    spans: ['first', 'second', 'third'].map((runId, i) => ({ runId, topicId: 'reviews', start: i * 1000, end: (i + 1) * 1000, state: 'running', approximate: false })),
+    runSummaries: [{ runId: 'first', title: 'Idea #18：IT 工单转写器 独立评价' }, { runId: 'other', title: '别人的成果' }],
+    logs: [{ id: 1, runId: 'second', topicId: 'reviews', at: 1500, kind: 'research-plan', text: 'read_contacts：读取 Idea #19 的正文，核对需求。' },
+      { id: 2, runId: 'third', topicId: 'reviews', at: 2500, kind: 'contact-discovery', text: '检索共享成果：阿想 Idea；找到 19 个分节。' },
+      { id: 3, runId: 'third', topicId: 'reviews', at: 3000, kind: 'failed', text: '读取失败' }] }
+  expect(workTimelineBlocks(data).map(block => block.text)).toEqual([
+    'Idea #18：IT 工单转写器 独立评价', '读取 Idea #19 的正文，核对需求。', '本轮未完成 · 检索共享成果：阿想 Idea；找到 19 个分节。'
+  ])
+})
+
 it('summarizes steps into work periods, clips boundaries and leaves unrecorded gaps blank', () => {
   const data: AgentAnalytics = { start: 100, end: 1000, measuredAt: 800, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
     spans: [{ runId: 'a', topicId: 'task', start: 50, end: 400, state: 'running', approximate: false }, { runId: 'b', topicId: 'task', start: 600, end: 900, state: 'waiting', approximate: true }],

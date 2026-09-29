@@ -4,9 +4,12 @@
 .daily-heading h3, .daily-timeline h4, .daily-logs h4 { margin: 0 0 4px; font-size: 14px; }
 .daily-heading time, .daily-heading span, .daily-note, .daily-timeline > header > span { color: var(--text-secondary); font-size: 12px; }
 .daily-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 18px 0; }
-.daily-metrics > div { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary); }
+.daily-metrics > div { --metric-color: var(--accent); padding: 12px; border: 1px solid color-mix(in srgb, var(--metric-color) 22%, var(--border)); border-top: 3px solid var(--metric-color); border-radius: 10px; background: color-mix(in srgb, var(--metric-color) 7%, var(--bg-primary)); }
+.daily-metrics [data-metric=tasks] { --metric-color: var(--hljs-title); }
+.daily-metrics [data-metric=calls] { --metric-color: var(--warning); }
+.daily-metrics [data-metric=reports] { --metric-color: var(--success); }
 .daily-metrics dt { color: var(--text-secondary); font-size: 12px; }
-.daily-metrics dd { margin: 6px 0 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.daily-metrics dd { margin: 6px 0 0; color: var(--metric-color); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .daily-metrics small { font-size: 12px; font-weight: 400; }
 .daily-timeline { container-type: inline-size; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-primary); }
 .daily-key-running, .daily-key-heartbeat { display: inline-block; width: 8px; height: 8px; border-radius: 3px; background: var(--accent); }

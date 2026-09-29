@@ -38,8 +38,9 @@ export function readAnalytics(db: Database.Database, characterId: string, query:
       bucket[key] += value; result.totals[key] += value; task(topic)[key] += value
     }
   }
-  const runs = db.prepare(`SELECT id,topic_id,status,created_at,updated_at FROM runs WHERE character_id=? AND created_at<? AND (updated_at>=? OR status IN ('queued','running','waiting','interrupted')) ${query.topicId ? 'AND topic_id=?' : ''}`)
-    .all(characterId, Math.min(end, now + 1), start, ...(query.topicId ? [query.topicId] : [])) as { id: string; topic_id: string | null; status: string; created_at: number; updated_at: number }[]
+  const runs = db.prepare(`SELECT id,topic_id,status,created_at,updated_at,substr(summary,1,240) AS summary FROM runs WHERE character_id=? AND created_at<? AND (updated_at>=? OR status IN ('queued','running','waiting','interrupted')) ${query.topicId ? 'AND topic_id=?' : ''}`)
+    .all(characterId, Math.min(end, now + 1), start, ...(query.topicId ? [query.topicId] : [])) as { id: string; topic_id: string | null; status: string; created_at: number; updated_at: number; summary: string }[]
+  if (query.timeline) result.runSummaries = runs.filter(run => run.summary.trim()).map(run => ({ runId: run.id, title: run.summary }))
   for (const run of runs) {
     const events = db.prepare('SELECT kind,at FROM events WHERE run_id=? ORDER BY at,id').all(run.id) as { kind: string; at: number }[]
     const precise = events.some(e => e.kind === 'execution-start')

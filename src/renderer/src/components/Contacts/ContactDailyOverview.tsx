@@ -40,10 +40,10 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
     {!timelineOnly && <>
       <header className="daily-heading"><div><h3>今日概览</h3><span>{day(new Date(data.start))}</span></div><time>更新于 {clock(data.measuredAt)}</time></header>
       <dl className="daily-metrics">
-        <div><dt>执行时长</dt><dd>{duration(totals.executionMs)}</dd></div>
-        <div><dt>参与任务</dt><dd>{new Set([...segments.map(s => s.topicId), ...logs.map(log => log.topicId)].filter(Boolean)).size}<small> 个</small></dd></div>
-        <div><dt>模型调用</dt><dd>{totals.calls}<small> 次</small></dd></div>
-        <div><dt>产出成果</dt><dd>{totals.reports}<small> 份</small></dd></div>
+        <div data-metric="time"><dt>执行时长</dt><dd>{duration(totals.executionMs)}</dd></div>
+        <div data-metric="tasks"><dt>参与任务</dt><dd>{new Set([...segments.map(s => s.topicId), ...logs.map(log => log.topicId)].filter(Boolean)).size}<small> 个</small></dd></div>
+        <div data-metric="calls"><dt>模型调用</dt><dd>{totals.calls}<small> 次</small></dd></div>
+        <div data-metric="reports"><dt>产出成果</dt><dd>{totals.reports}<small> 份</small></dd></div>
       </dl>
     </>}
     {error && <p className="agent-error" role="status">{error}</p>}

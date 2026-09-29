@@ -6,6 +6,7 @@ import './ContactDailyOverview.css'
 const clock = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false })
 export default function WorkTimelineChart({ data, timelineOnly = false, onReport }: { data: AgentAnalytics; timelineOnly?: boolean; onReport?: (runId: string) => void }) {
   const [selected, setSelected] = useState<string | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
   const chart = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(720)
   useEffect(() => {
@@ -41,21 +42,24 @@ export default function WorkTimelineChart({ data, timelineOnly = false, onReport
       <div className="daily-gantt-scroll" tabIndex={0} aria-label="按工作时段汇总的全天时间图">
         <div className="daily-gantt" ref={chart} data-expanded-time={expanded}>
           {rows.map((row, index) => {
-            const last = row.ranges.at(-1)!
+            const last = row.ranges.find(segment => segment.key === hovered) ?? row.ranges.find(segment => segment.key === selected) ?? row.ranges.at(-1)!
+            const description = row.running ? last.text : row.text
             const flip = percent(last.end) > 65
             return <div className="daily-lane" key={row.key} data-timeline-row={row.key}>
               <div className="daily-track">
                 {ticks.map(tick => <i className="daily-grid-line" key={tick.at} style={{ left: `${tick.left}%` }} />)}
                 <div className="daily-future" style={{ left: `${Math.min(100, percent(data.measuredAt))}%` }} />
                 {row.ranges.map(segment => {
-                  const label = `${row.text} · ${clock(segment.start)}–${clock(segment.end)}\n实际执行 ${Math.round(segment.executionMs / 1000)} 秒 · 实际休息 ${Math.round(segment.restMs / 1000)} 秒`
+                  const label = `${segment.text}\n${clock(segment.start)}–${clock(segment.end)}\n实际执行 ${Math.round(segment.executionMs / 1000)} 秒 · 实际休息 ${Math.round(segment.restMs / 1000)} 秒${row.running ? `\n所属任务：${row.text}` : ''}`
                   return <button type="button" key={segment.key} className="daily-segment" data-start={segment.start} data-end={segment.end} data-state={row.running ? 'running' : 'heartbeat'} data-color={index % 3}
                     aria-label={label} title={label} aria-pressed={pick?.key === segment.key}
                     style={{ left: `${percent(segment.start)}%`, width: `${percent(segment.end) - percent(segment.start)}%` }}
+                    onMouseEnter={() => setHovered(segment.key)} onMouseLeave={() => setHovered(null)}
+                    onFocus={() => setHovered(segment.key)} onBlur={() => setHovered(null)}
                     onClick={() => { setSelected(segment.key); if (segment.runId) onReport?.(segment.runId) }}><span aria-hidden="true" /></button>
                 })}
-                <span className="daily-line-tip" data-flip={flip} title={row.text}
-                  style={flip ? { right: `calc(${100 - percent(last.end)}% + 10px)`, top: '10px' } : { left: `calc(${percent(last.end)}% + 18px)`, maxWidth: `calc(${100 - percent(last.end)}% - 18px)` }}>{row.text}</span>
+                <span className="daily-line-tip" data-flip={flip} title={description}
+                  style={flip ? { right: `calc(${100 - percent(last.end)}% + 10px)`, top: '10px' } : { left: `calc(${percent(last.end)}% + 18px)`, maxWidth: `calc(${100 - percent(last.end)}% - 18px)`, top: '10px' }}>{description}</span>
               </div>
             </div>
           })}
