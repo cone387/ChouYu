@@ -53,13 +53,8 @@ function summarizeSoulMd(soulMd: string): string {
   return soulMd.replace(/^#{1,6}\s*/gm, '').replace(/\*\*/g, '').trim()
 }
 
-function defaultServiceLabel(config: Pick<AppConfig, 'provider' | 'baseUrl'>): string {
-  let endpoint = '未设置接口'
-  try {
-    const url = new URL(config.baseUrl)
-    endpoint = `${url.origin}${url.pathname.replace(/\/$/, '')}`
-  } catch { /* Do not display an invalid URL or embedded credentials. */ }
-  return `全局默认 · ${config.provider === 'claude' ? 'Claude' : 'OpenAI 兼容'} · ${endpoint}`
+function defaultServiceLabel(config: Pick<AppConfig, 'provider'>): string {
+  return `全局默认 · ${config.provider === 'claude' ? 'Claude' : 'OpenAI 兼容'}`
 }
 
 const SORT_OPTIONS: readonly { value: SortKey; label: string }[] = [
@@ -333,7 +328,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     if (id === DEFAULT_PROFILE_ID) return defaultServiceLabel(config)
     const profile = profiles.find((item) => item.id === id)
     return profile?.name ?? '未找到服务配置'
-  }, [profiles, config.provider, config.baseUrl])
+  }, [profiles, config.provider])
 
   const openForm = useCallback((character?: CharacterStats) => {
     setError('')
