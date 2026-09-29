@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AgentAnalytics } from '../../../../shared/agent-analytics'
 import { Trend } from './ContactAnalytics'
-import { timelineStates, workSegments } from './workTimeline'
+import { workSegments, workTimelineRows } from './workTimeline'
 import './ContactDailyOverview.css'
 
 const day = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const clock = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false })
-const minute = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
 const duration = (ms: number) => ms < 60000 ? `${Math.floor(ms / 1000)} 秒` : `${Math.floor(ms / 3600000)} 小时 ${Math.floor(ms / 60000) % 60} 分`
 
 export default function ContactDailyOverview({ characterId, topicId, active = true, timelineOnly = false }: {
@@ -32,6 +31,7 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
     return () => { alive = false; window.clearInterval(timer); dispose() }
   }, [characterId, topicId, active])
   const segments = useMemo(() => data ? workSegments(data) : [], [data])
+  const rows = useMemo(() => data ? workTimelineRows(data) : [], [data])
   if (!active) return null
   if (!data) return <p className="agent-caption" role="status">{error || '正在读取今日工作记录…'}</p>
   const title = (id: string | null) => data.tasks.find(task => task.id === id)?.title || '未归属任务'
@@ -54,28 +54,29 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
       <header><h4>{timelineOnly ? '任务工作时间 · 今天' : '24h 工作记录'}</h4><span>执行 <i className="daily-key-running" />　心跳 <i className="daily-key-heartbeat" /></span></header>
       <div className="daily-gantt-scroll" tabIndex={0} aria-label="按工作时段汇总的全天时间图">
         <div className="daily-gantt">
-          {segments.map((segment, index) => {
-              const label = `${clock(segment.start)}–${clock(segment.end)} · ${timelineStates[segment.state]} · ${segment.text}${segment.approximate ? '（历史推算）' : ''}`
-              return <div className="daily-lane" key={segment.key} data-selected={pick?.key === segment.key}>
-                <div className="daily-lane-name" title={`${title(segment.topicId)} · ${label}`}>
-                  <strong>{segment.state === 'running' ? segment.text : timelineStates[segment.state]}</strong>
-                  <time>{minute(segment.start)}–{minute(segment.end)}</time>
-                </div>
-                <div className="daily-track">
-                  <div className="daily-future" style={{ left: `${Math.min(100, percent(data.measuredAt))}%` }} />
-                  <button type="button" className="daily-segment" data-state={segment.state} data-color={index % 3} aria-label={`${title(segment.topicId)} · ${label}`} title={label} aria-pressed={pick?.key === segment.key}
-                style={{ left: `min(${percent(segment.start)}%, calc(100% - 16px))`, width: `${percent(segment.end) - percent(segment.start)}%` }} onClick={() => setSelected(segment.key)}>
-                    <span aria-hidden="true" />
-                  </button>
-                </div>
+          {rows.map((row, index) => {
+            const last = row.ranges.at(-1)!
+            const flip = percent(last.end) > 65
+            return <div className="daily-lane" key={row.key} data-timeline-row={row.key}>
+              <div className="daily-track">
+                <div className="daily-future" style={{ left: `${Math.min(100, percent(data.measuredAt))}%` }} />
+                {row.ranges.map(segment => {
+                  const label = `${row.text} · ${clock(segment.start)}–${clock(segment.end)}`
+                  return <button type="button" key={segment.key} className="daily-segment" data-state={row.running ? 'running' : 'heartbeat'} data-color={index % 3}
+                    aria-label={label} title={label} aria-pressed={pick?.key === segment.key}
+                    style={{ left: `min(${percent(segment.start)}%, calc(100% - 16px))`, width: `${percent(segment.end) - percent(segment.start)}%` }}
+                    onClick={() => setSelected(segment.key)}><span aria-hidden="true" /></button>
+                })}
+                <span className="daily-line-tip" data-flip={flip} title={row.text}
+                  style={flip ? { right: `calc(${100 - percent(last.end)}% + 10px)`, top: '10px' } : { left: `min(calc(${percent(last.end)}% + 22px), calc(100% - 160px))` }}>{row.text}</span>
               </div>
+            </div>
           })}
-          <div className="daily-gantt-heading"><span>时间</span><div className="daily-axis">{[0, 4, 8, 12, 16, 20, 24].map(hour => <span key={hour}>{String(hour).padStart(2, '0')}:00</span>)}</div></div>
+          <div className="daily-gantt-heading"><div className="daily-axis">{[0, 4, 8, 12, 16, 20, 24].map(hour => <span key={hour}>{String(hour).padStart(2, '0')}:00</span>)}</div></div>
         </div>
       </div>
       {!segments.length && <p className="agent-empty">今天还没有工作时段记录。</p>}
-      {pick && <div className="daily-selection" aria-live="polite"><time>{clock(pick.start)}–{clock(pick.end)}</time><strong>{timelineStates[pick.state]} · {title(pick.topicId)}</strong><p>{pick.text}{pick.approximate ? '（历史记录推算时段）' : ''}</p></div>}
-      <p className="daily-note">连续工作汇总为一个时段，心跳单独画线；悬停查看起止时间。</p>
+
     </section>
     {!timelineOnly && <>
       <div className="daily-trends"><Trend data={data} time cumulative={false} days={1} onDay={() => {}} /><Trend data={data} cumulative={false} days={1} onDay={() => {}} /></div>

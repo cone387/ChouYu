@@ -3,6 +3,29 @@ import type { AgentAnalytics, ActivitySpan } from '../../../../shared/agent-anal
 export const timelineStates = { running: '执行', waiting: '心跳 · 等待回复', queued: '心跳 · 等待调度', interrupted: '心跳 · 等待恢复', heartbeat: '心跳' }
 export type WorkSegment = Omit<ActivitySpan, 'state'> & { state: ActivitySpan['state'] | 'heartbeat'; key: string; text: string }
 
+export function workTimelineRows(data: AgentAnalytics) {
+  const segments = workSegments(data)
+  const rows = new Map<string, { key: string; text: string; running: boolean; ranges: WorkSegment[] }>()
+  for (const segment of segments) {
+    const running = segment.state === 'running'
+    const key = running ? `task:${segment.topicId ?? 'legacy'}` : 'heartbeat'
+    let row = rows.get(key)
+    if (!row) {
+      row = { key, running, text: running ? data.tasks.find(task => task.id === segment.topicId)?.title || '处理任务' : '心跳', ranges: [] }
+      rows.set(key, row)
+    }
+    const previous = row.ranges.at(-1)
+    // Sampling boundaries can differ by seconds. Do not bridge another activity
+    // or a real offline gap, but never create extra rows for another run.
+    const intervening = previous && segments.some(other => (other.state === 'running') !== running && other.start < segment.start && other.end > previous.end)
+    if (previous && segment.start <= previous.end + 60000 && !intervening) {
+      previous.end = Math.max(previous.end, segment.end)
+      previous.approximate ||= segment.approximate
+    } else row.ranges.push({ ...segment })
+  }
+  return [...rows.values()]
+}
+
 /** Only recorded run intervals become bars; gaps and future time remain blank. */
 export function workSegments(data: AgentAnalytics): WorkSegment[] {
   const segments: WorkSegment[] = data.spans.flatMap(span => {
