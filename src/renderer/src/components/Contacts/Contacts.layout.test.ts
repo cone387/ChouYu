@@ -98,7 +98,7 @@ describe('contacts layout', () => {
   it('keeps the detail panel compact so it fits without an outer scrollbar', () => {
     expect(cssSource).toMatch(/\.contacts-detail-soul \{[^}]*max-height: 120px/)
     expect(cssSource).toMatch(/\.contacts-field \{[^}]*min-height: 36px/)
-    expect(cssSource).toMatch(/\.contacts-detail-actions button \{[^}]*min-height: 30px/)
+    expect(cssSource).toMatch(/\.contacts-detail-actions button \{[^}]*min-height: 32px/)
   })
 
   it('closes detail, confirm and form dialogs on Escape before the panel swallows it', () => {
