@@ -31,6 +31,8 @@ describe('contact agent durability and isolation', () => {
     expect(store.overview('alice').reports).toHaveLength(1)
     expect(store.callCount('alice')).toBe(2)
     expect(store.detail('alice', run).events.some(e => e.kind === 'format-repaired')).toBe(true)
+    expect(model.mock.calls[1][0]).toContain('校验错误：')
+    expect(model.mock.calls[1][0]).toContain('模型未返回有效的结构化成果')
     expect(store.overview('alice').latestActivity?.kind).toBe('completed')
     expect(store.overview('bob').latestActivity).toBeUndefined()
   })
@@ -42,6 +44,7 @@ describe('contact agent durability and isolation', () => {
     expect(store.detail('alice', run).run.status).toBe('failed')
     expect(store.overview('alice').reports).toEqual([])
     expect(store.overview('alice').memories).toEqual([])
+    expect(store.detail('alice', run).run.error).toContain('模型未返回有效的结构化成果')
     expect(store.overview('alice').latestActivity?.kind).toBe('failed')
   })
   it('does not exceed the daily budget for format repair', async () => {
