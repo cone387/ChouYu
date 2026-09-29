@@ -903,10 +903,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     notifyAssistantUnread()
     return workspace
   })
-  ipcMain.handle('db:save-session-messages', (_event, id: string, messages) => {
+  ipcMain.handle('db:save-session-messages', (_event, id: string, messages, readMessageId?: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
     if (!Array.isArray(messages)) throw new Error('Invalid session messages')
-    const workspace = saveSessionMessages(id, messages)
+    if (readMessageId !== undefined && (typeof readMessageId !== 'string' || !readMessageId || readMessageId.length > 128)) throw new Error('Invalid read message id')
+    const workspace = saveSessionMessages(id, messages, readMessageId)
     notifyAssistantUnread()
     return workspace
   })

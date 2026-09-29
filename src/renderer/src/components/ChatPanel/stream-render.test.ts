@@ -51,7 +51,12 @@ describe('stream render throttling', () => {
     expect(workspaceSource).toContain('generation.flushRender = renderAccumulated')
     expect(workspaceSource).toContain('generation.flushRender?.()')
     const doneIndex = workspaceSource.indexOf('if (done) {')
-    expect(workspaceSource.indexOf('renderAccumulated()', doneIndex)).toBeLessThan(workspaceSource.indexOf('finishGeneration()', doneIndex))
+    const flushIndex = workspaceSource.indexOf('flushSync(() => renderAccumulated())', doneIndex)
+    const visibilityIndex = workspaceSource.indexOf('const viewport = replyViewportRef.current', doneIndex)
+    const finishIndex = workspaceSource.indexOf('finishGeneration(viewport?', doneIndex)
+    expect(flushIndex).toBeGreaterThan(doneIndex)
+    expect(flushIndex).toBeLessThan(visibilityIndex)
+    expect(visibilityIndex).toBeLessThan(finishIndex)
   })
 })
 

@@ -190,7 +190,7 @@ export interface ElectronAPI {
     selectSession: (id: string) => Promise<SessionWorkspace>
     renameSession: (id: string, title: string) => Promise<ChatSessionSummary[]>
     deleteSession: (id: string) => Promise<SessionWorkspace>
-    saveSessionMessages: (id: string, msgs: Message[]) => Promise<SessionWorkspace>
+    saveSessionMessages: (id: string, msgs: Message[], readMessageId?: string) => Promise<SessionWorkspace>
     markSessionRead: (id: string, messageId?: string) => Promise<SessionWorkspace>
     exportSession: (id: string) => Promise<{ ok: boolean; canceled: boolean; filePath?: string }>
     getState: (key: string) => Promise<string | null>
@@ -233,6 +233,7 @@ export interface Message {
   assistantKind?: AssistantMessageKind
   responseStatus?: 'error' | 'stopped'
   replyCompletedAt?: number
+  replyReadAt?: number
   toolData?: ToolActivityData
   memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>
   /** Plugin result data - if present, render as plugin card instead of markdown */

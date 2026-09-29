@@ -37,6 +37,7 @@ export interface Message {
   assistantKind?: AssistantMessageKind
   responseStatus?: 'error' | 'stopped'
   replyCompletedAt?: number
+  replyReadAt?: number
   toolData?: ToolActivityData
   memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>
   pluginData?: unknown
@@ -188,6 +189,7 @@ function sanitizeMessages(value: unknown): Message[] {
       replyCompletedAt: message.role === 'assistant' && !message.toolData && !message.responseStatus
         && String(message.content ?? '').trim() && Number.isFinite(message.replyCompletedAt) && Number(message.replyCompletedAt) > 0
         ? Number(message.replyCompletedAt) : undefined,
+      replyReadAt: Number.isFinite(message.replyReadAt) && Number(message.replyReadAt) > 0 ? Number(message.replyReadAt) : undefined,
       responseStatus: message.responseStatus === 'error' || message.responseStatus === 'stopped'
         ? message.responseStatus
         : undefined,
@@ -254,7 +256,8 @@ function messageReadTimestamp(message: Message): number {
 }
 
 function isUnreadMessage(session: ChatSession, message: Message): boolean {
-  return (isAssistantCharacter(session.characterId) || Boolean(message.agentNotice) || Boolean(message.replyCompletedAt))
+  return (isAssistantCharacter(session.characterId) || Boolean(message.agentNotice)
+    || Boolean(message.replyCompletedAt && message.replyCompletedAt > (message.replyReadAt ?? 0)))
     && messageReadTimestamp(message) > (session.lastReadAt ?? 0)
 }
 
@@ -581,14 +584,18 @@ export function appendAgentNotice(notice: AgentNotice): SessionWorkspace {
   return getSessionWorkspace()
 }
 
+function markSessionReadThrough(session: ChatSession, messageId: string): void {
+  const index = session.messages.findIndex(m => m.id === messageId)
+  if (index < 0) return
+  session.lastReadAt = session.messages.slice(0, index + 1)
+    .reduce((latest, message) => Math.max(latest, messageReadTimestamp(message)), session.lastReadAt ?? 0)
+}
+
 export function markSessionRead(id: string, messageId?: string): SessionWorkspace {
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
   if (messageId) {
-    const index = session.messages.findIndex(m => m.id === messageId)
-    if (index < 0) return getSessionWorkspace()
-    session.lastReadAt = session.messages.slice(0, index + 1)
-      .reduce((latest, message) => Math.max(latest, messageReadTimestamp(message)), session.lastReadAt ?? 0)
+    markSessionReadThrough(session, messageId)
   } else markSessionReadUpToNow(session)
   persist(false)
   return getSessionWorkspace()
@@ -712,15 +719,19 @@ export function deleteCharacter(id: string): SessionWorkspace {
   return getSessionWorkspace()
 }
 
-export function saveSessionMessages(id: string, messages: Message[]): SessionWorkspace {
+export function saveSessionMessages(id: string, messages: Message[], readMessageId?: string): SessionWorkspace {
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
   const previousImages = new Map(session.messages.filter((message) => message.imageUrl && isAttachmentReference(message.imageUrl)).map((message) => [message.id, message.imageUrl]))
   const previousSnoozeKeys = new Map(session.messages.filter(m => m.snoozeKey).map(m => [m.id, m.snoozeKey]))
   const previousReminders = new Map(session.messages.filter(m => m.taskReminder).map(m => [m.id, m.taskReminder]))
   const previousNotices = new Map(session.messages.filter(message => message.agentNotice).map(message => [message.id, message.agentNotice]))
+  const previousReplies = new Map(session.messages.filter(message => message.replyReadAt).map(message => [message.id, message]))
   let nextMessages: Message[] = sanitizeMessages(messages).map((message) => ({
     ...message,
+    // Preserve the receipt when an autosave still carries the pre-receipt renderer snapshot.
+    replyReadAt: previousReplies.get(message.id)?.replyCompletedAt === message.replyCompletedAt
+      ? previousReplies.get(message.id)?.replyReadAt : undefined,
     agentNotice: message.role === 'assistant' ? previousNotices.get(message.id) : undefined,
     taskReminder: message.role === 'assistant' ? previousReminders.get(message.id) : undefined,
     snoozeKey: message.role === 'assistant' ? previousSnoozeKeys.get(message.id) : undefined,
@@ -740,6 +751,9 @@ export function saveSessionMessages(id: string, messages: Message[]): SessionWor
     nextMessages = [...nextMessages, ...session.messages.filter(message => message.agentNotice && !known.has(message.id))].sort((a, b) => a.timestamp - b.timestamp)
   }
   session.messages = nextMessages
+  // A receipt for this reply must not acknowledge unrelated proactive deliveries.
+  const readReply = readMessageId ? session.messages.find(message => message.id === readMessageId) : undefined
+  if (readReply?.replyCompletedAt) readReply.replyReadAt = readReply.replyCompletedAt
   session.updatedAt = Date.now()
   // Saving/streaming can happen in the background; only a visible read receipt clears unread.
   if (session.title === DEFAULT_SESSION_TITLE) session.title = deriveSessionTitle(session.messages)

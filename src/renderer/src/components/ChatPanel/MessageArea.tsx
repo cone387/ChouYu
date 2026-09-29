@@ -1,11 +1,11 @@
 import ReminderActions from './ReminderActions'
 import AgentQuestionState from './AgentQuestionState'
-import { useReminderRead } from './useReminderRead'
+import { useReminderRead, isLatestMessageVisible, type ReplyViewport } from './useReminderRead'
 import type { AssistantSnooze } from '../../../../shared/reminders'
 import type { AgentMessageRef } from '../../../../shared/agents'
 import { legacyAssistantMessageKind, normalizeAssistantMessageKind } from '../../../../shared/assistant-message'
 import AssistantMessageLabel from './AssistantMessageLabel'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../../../../shared/conversation-search'
@@ -20,6 +20,7 @@ import { useMessageWindow } from './useMessageWindow'
 import CharacterAvatar, { type AvatarIdentity } from '../CharacterAvatar/CharacterAvatar'
 
 interface MessageAreaProps {
+  replyViewportRef?: MutableRefObject<ReplyViewport | null>
   sessionId?: string
   onRead?: () => void
   onAgentNotice?: (ref: AgentMessageRef, tab: 'work' | 'history') => void
@@ -132,7 +133,7 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ sessionId = '', onRead, onAgentNotice, active = true, character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze }: MessageAreaProps) {
+export default function MessageArea({ sessionId = '', replyViewportRef, onRead, onAgentNotice, active = true, character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState(initialSearch)
@@ -162,7 +163,13 @@ export default function MessageArea({ sessionId = '', onRead, onAgentNotice, act
   const sessionKey = messages.length > 0 ? messages[0].id : ''
   const { hasNewContent, scrollToLatest } = useChatScroll(scrollRef, listRef, sessionKey, messages, searching, active)
   const windowed = useMessageWindow(scrollRef, messages.length, [sessionKey, searching], active)
-  useReminderRead(scrollRef, bottomRef, active && !searching, onRead)
+  useReminderRead(scrollRef, bottomRef, active && !searching && !previewImage, onRead)
+  useLayoutEffect(() => {
+    if (!replyViewportRef) return
+    const viewport = { sessionId, isVisible: () => isLatestMessageVisible(scrollRef.current, bottomRef.current, active && !searching && !previewImage) }
+    replyViewportRef.current = viewport
+    return () => { if (replyViewportRef.current === viewport) replyViewportRef.current = null }
+  }, [replyViewportRef, sessionId, active, searching, previewImage])
   const [snoozes, setSnoozes] = useState<AssistantSnooze[]>([])
   useEffect(() => {
     if (!active || !canSnooze) return

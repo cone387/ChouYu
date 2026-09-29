@@ -1,14 +1,25 @@
 import { useEffect, type RefObject } from 'react'
+
+export interface ReplyViewport {
+  sessionId: string
+  isVisible: () => boolean
+}
+
+export function isLatestMessageVisible(area: HTMLElement | null, last: HTMLElement | null, active: boolean): boolean {
+  if (!active || !area || !last) return false
+  const document = area.ownerDocument
+  const a = area.getBoundingClientRect(), b = last.getBoundingClientRect()
+  return document.hasFocus() && document.visibilityState === 'visible' && !document.querySelector('[aria-modal="true"]')
+    && area.clientHeight > 0 && b.top >= a.top && b.bottom <= a.bottom + 1
+}
+
 /** Only acknowledge when the latest content is visible in the focused conversation. */
 export function useReminderRead(container: RefObject<HTMLElement>, end: RefObject<HTMLElement>, active: boolean, onRead?: () => void): void {
   useEffect(() => {
     const area = container.current, last = end.current
     if (!active || !area || !last || !onRead) return
     let timer: ReturnType<typeof setTimeout> | undefined
-    const visible = () => {
-      const a = area.getBoundingClientRect(), b = last.getBoundingClientRect()
-      return document.hasFocus() && document.visibilityState === 'visible' && area.clientHeight > 0 && b.top >= a.top && b.bottom <= a.bottom + 1
-    }
+    const visible = () => isLatestMessageVisible(area, last, active)
     const check = () => {
       if (timer) clearTimeout(timer)
       timer = undefined

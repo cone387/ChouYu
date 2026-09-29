@@ -523,6 +523,33 @@ describe('assistant messages', () => {
     expect(getAssistantUnreadCount()).toBe(0)
   })
 
+  it('saves a visible reply as read atomically without a transient unread count or stale autosave resurrection', () => {
+    const id = getActiveSession().id
+    const at = Date.now()
+    const reply = { id: 'visible', role: 'assistant' as const, content: '正在看的回复', timestamp: at, replyCompletedAt: at + 1000 }
+    const workspace = saveSessionMessages(id, [reply], reply.id)
+    expect(workspace.sessions.find(session => session.id === id)?.unreadCount).toBe(0)
+    expect(getAssistantUnreadCount()).toBe(0)
+    expect(getAssistantUnreadPreview()).toBe('')
+    saveSessionMessages(id, [reply])
+    expect(getAssistantUnreadCount()).toBe(0)
+    flushDatabase(); initDatabase()
+    expect(getAssistantUnreadCount()).toBe(0)
+    // A later completion of the same message (continuation) needs a new receipt.
+    saveSessionMessages(id, [{ ...reply, content: '稍后续写的内容', replyCompletedAt: at + 2000 }])
+    expect(getAssistantUnreadCount()).toBe(1)
+  })
+
+  it('a visible reply receipt does not mark unseen messages in the same session as read', () => {
+    const id = getActiveSession().id
+    const at = Date.now()
+    const earlier = { id: 'unseen', role: 'assistant' as const, content: '仍未读的回复', timestamp: at, replyCompletedAt: at + 100 }
+    const visible = { id: 'visible', role: 'assistant' as const, content: '当前回复', timestamp: at + 200, replyCompletedAt: at + 300 }
+    saveSessionMessages(id, [earlier, visible], visible.id)
+    expect(getAssistantUnreadCount()).toBe(1)
+    expect(getAssistantUnreadPreview()).toContain('仍未读的回复')
+  })
+
   it('excludes errors, stopped responses, empty replies and tool cards from reply notifications', () => {
     const id = getActiveSession().id
     const base = { role: 'assistant' as const, content: '回复', timestamp: Date.now(), replyCompletedAt: Date.now() + 1000 }

@@ -1,5 +1,7 @@
 import { mergeForeignMessages } from '../../core/notification-messages'
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { flushSync } from 'react-dom'
+import type { ReplyViewport } from './useReminderRead'
 import type { Dispatch, SetStateAction } from 'react'
 import type { ToolApprovalRequest } from '../../../../shared/tools'
 import { formatMemoryContext } from '../../../../shared/memory'
@@ -91,6 +93,7 @@ export function useSessionWorkspace({
   const initializedRef = useRef(false)
   const latestMessagesRef = useRef<Message[]>([])
   const activeSessionIdRef = useRef('')
+  const replyViewportRef = useRef<ReplyViewport | null>(null)
   const isStreaming = activeSessionId ? streamingSessionIds.has(activeSessionId) : false
 
   const setSessionStreaming = useCallback((sessionId: string, streaming: boolean) => {
@@ -114,8 +117,8 @@ export function useSessionWorkspace({
     return next
   }, [])
 
-  const persistSessionMessages = useCallback((sessionId: string, nextMessages: Message[]) => {
-    void window.electronAPI.db.saveSessionMessages(sessionId, nextMessages).then((workspace) => {
+  const persistSessionMessages = useCallback((sessionId: string, nextMessages: Message[], readMessageId?: string) => {
+    void window.electronAPI.db.saveSessionMessages(sessionId, nextMessages, readMessageId).then((workspace) => {
       setSessions((previous) => mergeSessionsInCurrentOrder(previous, workspace.sessions))
     }).catch(() => {})
   }, [])
@@ -362,12 +365,12 @@ export function useSessionWorkspace({
     }
     generation.flushRender = renderAccumulated
 
-    const finishGeneration = () => {
+    const finishGeneration = (readMessageId?: string) => {
       if (sessionGenerationsRef.current.get(sessionId) !== generation) return
       sessionGenerationsRef.current.delete(sessionId)
       if (generation.requestId) requestSessionRef.current.delete(generation.requestId)
       const storedMessages = sessionMessagesRef.current.get(sessionId) || []
-      persistSessionMessages(sessionId, storedMessages)
+      persistSessionMessages(sessionId, storedMessages, readMessageId)
       if (pendingGenerationsRef.current.has(sessionId)) {
         pendingGenerationsRef.current.delete(sessionId)
         const queuedConversation = sessionMessagesRef.current.get(sessionId) || []
@@ -385,14 +388,16 @@ export function useSessionWorkspace({
         (chunk, done) => {
           if (controller.signal.aborted) return
           if (done) {
-            renderAccumulated()
+            // Commit the final text and scroll layout before checking actual visibility.
+            flushSync(() => renderAccumulated())
             // Publish one unread reply only after the final content is available.
             // Completion time matters when the first chunk was read before the panel closed.
             updateSessionMessages(sessionId, previous => previous.map(message =>
               message.id === aiMsgId && message.content.trim() && !message.toolData
                 ? { ...message, replyCompletedAt: Date.now() }
                 : message))
-            finishGeneration()
+            const viewport = replyViewportRef.current
+            finishGeneration(viewport?.sessionId === sessionId && viewport.isVisible() ? aiMsgId : undefined)
             if (activeSessionIdRef.current === sessionId) finishPetResponse()
             return
           }
@@ -497,6 +502,7 @@ export function useSessionWorkspace({
   }, [messages, isStreaming, generateAIResponse])
 
   return {
+    replyViewportRef,
     messages,
     sessions,
     activeSessionId,

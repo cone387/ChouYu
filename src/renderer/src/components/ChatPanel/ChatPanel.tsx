@@ -165,6 +165,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
 
   const {
     messages,
+    replyViewportRef,
     sessions,
     activeSessionId,
     characters,
@@ -799,7 +800,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             {workspaceLoaded && (
               <MessageArea
                 onAgentNotice={(ref, tab) => setAgentFocus({ ...ref, tab, nonce: Date.now(), sessionId: activeSessionId })}
-                active={visible && isChat}
+                active={visible && isChat && !toolApprovalRequest && !confirmClear}
                 character={activeCharacter}
                 key={activeSessionId}
                 searchOpen={showMessageSearch}
@@ -815,6 +816,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 onCorrectMemory={correctMemory}
                 canSnooze={activeCharacterId === ASSISTANT_CHARACTER_ID}
                 sessionId={activeSessionId}
+                replyViewportRef={replyViewportRef}
                 onRead={activeAssistantUnread ? markVisibleMessagesRead : undefined}
               />
             )}
