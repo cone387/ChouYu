@@ -27,7 +27,7 @@
 .contact-agent .daily-segment[data-color="1"] { color: var(--success); }
 .contact-agent .daily-segment[data-color="2"] { color: var(--text-secondary); }
 .contact-agent .daily-segment:not([data-state=running]) { color: var(--warning); }
-.daily-segment span { display: block; height: 5px; width: 100%; border-radius: 3px; background: currentColor; }
+.daily-segment span { display: block; height: 3px; width: 100%; border-radius: 1px; background: currentColor; }
 .contact-agent .daily-segment[aria-pressed=true] span { filter: brightness(.8); }
 .contact-agent .daily-segment:hover:not(:disabled) { background: transparent; }
 .daily-note { margin: 10px 0 0; }

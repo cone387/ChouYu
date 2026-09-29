@@ -3,6 +3,34 @@ import type { AgentAnalytics, ActivitySpan } from '../../../../shared/agent-anal
 export const timelineStates = { running: '执行', waiting: '心跳 · 休息', queued: '心跳 · 休息', interrupted: '心跳 · 休息', heartbeat: '心跳 · 休息' }
 export type WorkSegment = Omit<ActivitySpan, 'state'> & { state: ActivitySpan['state'] | 'heartbeat'; key: string; text: string }
 
+export type WorkBlock = { key: string; start: number; end: number; running: boolean; topicIds: (string | null)[]; text: string; executionMs: number; restMs: number; runId: string }
+
+/** The overview is a half-hour activity mosaic, not a seconds-level duration plot. */
+export function workTimelineBlocks(data: AgentAnalytics): WorkBlock[] {
+  const periods = workSegments(data)
+  const blocks: WorkBlock[] = []
+  const step = 30 * 60000
+  for (let start = data.start; start < Math.min(data.end, data.measuredAt); start += step) {
+    const end = Math.min(start + step, data.end)
+    const records = periods.filter(period => period.start < end && period.end > start)
+    if (!records.length) continue
+    const work = records.filter(period => period.state === 'running')
+    const topicIds = [...new Set(work.map(period => period.topicId))].sort()
+    const running = work.length > 0
+    const signature = running ? JSON.stringify(topicIds) : 'rest'
+    const sum = (executing: boolean) => records.filter(period => (period.state === 'running') === executing)
+      .reduce((total, period) => total + Math.min(end, period.end) - Math.max(start, period.start), 0)
+    const previous = blocks.at(-1)
+    if (previous && previous.end === start && previous.running === running && JSON.stringify(previous.topicIds) === JSON.stringify(topicIds)) {
+      previous.end = end; previous.executionMs += sum(true); previous.restMs += sum(false)
+      continue
+    }
+    blocks.push({ key: `${signature}@${start}`, start, end, running, topicIds, executionMs: sum(true), restMs: sum(false),
+      runId: work[0]?.runId || '', text: running ? topicIds.map(id => data.tasks.find(task => task.id === id)?.title || '处理任务').join('、') : '心跳 / 休息' })
+  }
+  return blocks
+}
+
 export function workTimelineRows(data: AgentAnalytics) {
   const segments = workSegments(data)
   const rows = new Map<string, { key: string; text: string; running: boolean; ranges: WorkSegment[] }>()

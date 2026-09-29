@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { emptyUsage, type AgentAnalytics } from '../../../../shared/agent-analytics'
-import { workSegments, workTimelineRows } from './workTimeline'
+import { workSegments, workTimelineRows, workTimelineBlocks } from './workTimeline'
 
 it('summarizes steps into work periods, clips boundaries and leaves unrecorded gaps blank', () => {
   const data: AgentAnalytics = { start: 100, end: 1000, measuredAt: 800, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
@@ -13,6 +13,19 @@ it('summarizes steps into work periods, clips boundaries and leaves unrecorded g
   expect(segments[1].state).toBe('heartbeat')
   expect(segments[1].text).toContain('休息')
   expect(segments[1].approximate).toBe(true)
+})
+it('renders short runs as exclusive half-hour summary blocks and combines adjacent task blocks', () => {
+  const hour = 3600000
+  const data: AgentAnalytics = { start: 0, end: 24 * hour, measuredAt: 4 * hour, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
+    spans: [{ runId: 'one', topicId: 'a', start: hour + 1000, end: hour + 3000, state: 'running', approximate: false },
+      { runId: 'two', topicId: 'a', start: hour * 1.5 + 1000, end: hour * 1.5 + 4000, state: 'running', approximate: false }],
+    heartbeats: [{ id: 1, topicId: 'a', start: hour, end: 3 * hour }] }
+  const blocks = workTimelineBlocks(data)
+  expect(blocks.map(b => [b.start, b.end, b.running])).toEqual([[hour, 2 * hour, true], [2 * hour, 3 * hour, false]])
+  expect(blocks[0].executionMs).toBe(5000)
+  expect(blocks[0].restMs).toBe(hour - 5000)
+  expect(blocks[1].restMs).toBe(hour)
+  expect(blocks.every((block, index) => !index || block.start >= blocks[index - 1].end)).toBe(true)
 })
 it('keeps repeated task runs in one row and merges 14:15–14:17 / 14:17–14:31 heartbeats', () => {
   const minute = 60000
