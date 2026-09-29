@@ -213,7 +213,7 @@ describe('assistant contact wiring', () => {
     expect(panelSource).toContain('assistantFocusRequest?: number')
     expect(panelSource).toContain('openCharacterChat(ASSISTANT_CHARACTER_ID)')
     expect(panelSource).toContain('onSessionsChanged')
-    expect(panelSource).toContain('db.markSessionRead(activeSessionId)')
+    expect(panelSource).toContain('db.markSessionRead(activeSessionId, messages[messages.length - 1]?.id)')
     expect(workspaceHookSource).toContain('mergeForeignMessages')
   })
 
@@ -225,9 +225,9 @@ describe('assistant contact wiring', () => {
 
   it('offers snooze only on assistant replies', () => {
     expect(messageSource).toContain('canSnooze?: boolean')
-    expect(messageSource).toContain('onSnoozeContent?.(msg.content)')
+    expect(messageSource).toContain('<ReminderActions sessionId={sessionId}')
     expect(panelSource).toContain('canSnooze={activeCharacterId === ASSISTANT_CHARACTER_ID}')
-    expect(panelSource).toContain('proactiveEngine.snoozeContent')
+    expect(panelSource).toContain('sessionId={activeSessionId}')
     expect(stylesheet).toContain('.message-snooze-btn')
   })
 })

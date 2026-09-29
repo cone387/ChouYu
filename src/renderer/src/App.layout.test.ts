@@ -29,7 +29,7 @@ describe('panel opening placement', () => {
 describe('assistant message pipeline', () => {
   it('routes proactive messages into the assistant session instead of a standalone center', () => {
     expect(source).toContain('proactiveAppend')
-    expect(source).toContain('restoreSnoozes')
+    expect(source).not.toContain('restoreSnoozes') // main process owns durable scheduling
     expect(source).toContain('onAssistantUnread(setAssistantUnread)')
     expect(source).toContain('hasUnread={assistantUnread > 0}')
     expect(source).toContain('onOpenAssistantChat(')

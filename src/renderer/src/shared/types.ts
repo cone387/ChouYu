@@ -147,9 +147,10 @@ export interface ElectronAPI {
   onTogglePanel: (callback: () => void) => () => void
   onSetPetVisible: (callback: (visible: boolean) => void) => () => void
   notifyPetVisible: (visible: boolean) => void
-  proactiveAppend: (content: string, timestamp?: number, kind?: AssistantMessageKind) => Promise<void>
+  reminders: import('../../../shared/reminders').ReminderAPI
+  proactiveAppend: (content: string, timestamp?: number, kind?: AssistantMessageKind, deliveryId?: string) => Promise<void>
   getAssistantUnread: () => Promise<number>
-  onSessionsChanged: (callback: () => void) => () => void
+  onSessionsChanged: (callback: (reminderOnly?: boolean) => void) => () => void
   onAssistantUnread: (callback: (count: number) => void) => () => void
   onOpenAssistantChat: (callback: () => void) => () => void
   onOpenChatPanel: (callback: () => void) => () => void
@@ -190,7 +191,7 @@ export interface ElectronAPI {
     renameSession: (id: string, title: string) => Promise<ChatSessionSummary[]>
     deleteSession: (id: string) => Promise<SessionWorkspace>
     saveSessionMessages: (id: string, msgs: Message[]) => Promise<SessionWorkspace>
-    markSessionRead: (id: string) => Promise<SessionWorkspace>
+    markSessionRead: (id: string, messageId?: string) => Promise<SessionWorkspace>
     exportSession: (id: string) => Promise<{ ok: boolean; canceled: boolean; filePath?: string }>
     getState: (key: string) => Promise<string | null>
     setState: (key: string, value: string) => Promise<void>
@@ -227,6 +228,8 @@ export interface Message {
   content: string
   timestamp: number
   imageUrl?: string
+  snoozeKey?: string
+  taskReminder?: import('../../../shared/reminders').TaskReminderRef
   assistantKind?: AssistantMessageKind
   responseStatus?: 'error' | 'stopped'
   toolData?: ToolActivityData

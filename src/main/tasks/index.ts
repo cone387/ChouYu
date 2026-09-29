@@ -7,7 +7,9 @@ import type { TaskBackup } from './backup'
 import { openTasksStore, type TasksStore } from './store'
 import { startTaskScheduler } from './scheduler'
 import { registerTool, getRegisteredTool } from '../tools/registry'
-import { getSession } from '../database'
+import { getSession, appendAssistantMessage, getState, flushDatabase } from '../database'
+import { notifyReminderChanges } from '../reminder-events'
+import type { TaskReminderRef } from '../../shared/reminders'
 import { createTaskTool } from './task-tool'
 import { createTaskAssistantTools } from './assistant-tools'
 
@@ -57,7 +59,22 @@ export function initializeTasks(options: TasksModuleOptions): void {
   }
   if (store.quarantinedAt) storeRebuilt = true
   scheduler = startTaskScheduler(
-    now => store!.claimDueReminders(now),
+    (now, backlog) => store!.claimDueReminders(now, entries => {
+      if (!entries.length) return
+      const identified = entries.map(entry => ({ entry, id: JSON.stringify([entry.task.id, entry.itemId ?? '', entry.reminderAt, entry.task.updatedAt]) }))
+      const unsent = identified.filter(item => !getState(`reminder-receipt:${item.id}`))
+      if (backlog && unsent.length) {
+        appendAssistantMessage(`错过了 ${unsent.length} 条任务提醒。打开任务查看当前安排。`, undefined, 'task-backlog', { receiptIds: unsent.map(item => item.id) })
+      } else for (const { entry, id } of unsent) {
+        appendAssistantMessage(`任务提醒：${entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title}`, undefined, 'task', {
+          receiptIds: [id], taskReminder: { taskId: entry.task.id, checklistId: entry.itemId, reminderAt: entry.reminderAt! }
+        })
+      }
+      // A failed JSON write may have left an in-memory receipt. Flush it before SQL commits.
+      const status = flushDatabase()
+      if (status.error) throw new Error(status.error)
+      notifyReminderChanges()
+    }),
     {
       onBacklog: count => {
         if (readyDelivered) broadcast('tasks:reminder', { backlog: count })
@@ -164,4 +181,17 @@ export function closeTasks(): void {
   scheduler = undefined
   try { store?.close() } catch { /* 退出路径上尽力关闭 */ }
   store = undefined
+}
+
+/** Revalidate against live task state before postponing or re-delivering a reminder. */
+export function resolveTaskReminder(ref: TaskReminderRef): string | null {
+  if (!store) throw new Error('任务系统尚未就绪。')
+  const task = store.getTask(ref.taskId)
+  if (!task || task.status !== 'open') return null
+  if (task.projectId && store.listProjects().some(p => p.id === task.projectId && p.archivedAt)) return null
+  if (ref.checklistId) {
+    const item = task.checklist?.find(i => i.id === ref.checklistId)
+    return item && !item.done && item.reminders?.some(r => r.at === ref.reminderAt) ? `${task.title} · ${item.title}` : null
+  }
+  return task.reminders?.some(r => r.at === ref.reminderAt) ? task.title : null
 }

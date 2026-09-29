@@ -1,4 +1,3 @@
-import type { AssistantMessageKind } from '../../shared/assistant-message'
 import type { TaskConversionDraft, TaskNavigation } from './components/Tasks/taskNavigation'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import StorageNotice from './components/StorageNotice/StorageNotice'
@@ -128,35 +127,23 @@ function App() {
 
   // Proactive engine - respect config
   useEffect(() => {
-    const append = (message: string, kind?: AssistantMessageKind) => {
-      void window.electronAPI.proactiveAppend(message, undefined, kind).catch(() => { /* storage notice covers persistence failures */ })
-    }
-    proactiveEngine.start((msg, kind) => {
-      if (kind === 'return') {
-        const now = new Date()
-        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-        const to = Date.now()
-        const from = to - 30 * 60_000
-        void Promise.all([
-          window.electronAPI.journal.overview({ from: start, to }),
-          window.electronAPI.journal.list({ from, to, offset: 0 })
-        ]).then(([day, recent]) => {
-          const titles = [...new Set(recent.items.map(item => item.title.trim()).filter(Boolean))].slice(0, 3)
-          const where = titles.length ? `刚才停在：${titles.join('、')}。` : ''
-          append(day.activityCount > 0
-            ? `欢迎回来。今天已经记录 ${day.activityCount} 段工作。${where}要接着刚才的工作吗？`
-            : `欢迎回来。${where}要接着刚才的工作吗？`, 'return')
-        }).catch(() => append(msg, 'return'))
-      } else {
-        append(msg, kind)
+    let active = true
+    proactiveEngine.start(async (message, kind, deliveryId, context) => {
+      const requestedAt = Date.now()
+      if (kind === 'return' && context) {
+        try {
+          const recent = await window.electronAPI.journal.list({ from: context.leftAt - 30 * 60_000, to: context.leftAt + 1000, offset: 0 })
+          const latest = [...recent.items].sort((a, b) => b.startedAt - a.startedAt).find(item => item.title.trim())
+          if (latest) message += ` 离开前的记录：${latest.title.trim().slice(0, 160)}。`
+        } catch { /* Companionship still works when activity recording is disabled/unavailable. */ }
       }
-    }, { greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder })
-    void window.electronAPI.db.getState('assistant-snoozes').then(value => {
-      if (!value) return
-      try { proactiveEngine.restoreSnoozes(JSON.parse(value)) } catch { /* ignore malformed snooze history */ }
-    }).catch(() => {})
-    return () => proactiveEngine.stop()
-  }, [config.proactiveGreeting, config.proactiveRestReminder])
+      if (!active || kind === 'return' && Date.now() - requestedAt > 30_000) return
+      await window.electronAPI.proactiveAppend(message, undefined, kind, deliveryId)
+    }, {
+      greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder, returnReminder: config.proactiveReturn
+    })
+    return () => { active = false; proactiveEngine.stop() }
+  }, [config.proactiveGreeting, config.proactiveRestReminder, config.proactiveReturn])
 
   // 助手未读驱动宠物红点；托盘由主进程驱动。
   useEffect(() => {
@@ -166,15 +153,11 @@ function App() {
 
   // Task reminders from the main-process scheduler land in the assistant session.
   useEffect(() => {
-    const cleanup = window.electronAPI.tasks.onTasksReminder(payload => {
-      if ('task' in payload) void window.electronAPI.proactiveAppend(`任务提醒：${payload.task.title}`, undefined, 'task')
-      else if (payload.backlog > 0) void window.electronAPI.proactiveAppend(`错过了 ${payload.backlog} 条任务提醒`, undefined, 'task-backlog')
-    })
     const rebuiltCleanup = window.electronAPI.tasks.onTasksStoreRebuilt(() => {
       void window.electronAPI.proactiveAppend('任务数据文件无法读取，已重建空库，原文件已隔离保存。', undefined, 'warning')
     })
     window.electronAPI.tasks.ready()
-    return () => { cleanup(); rebuiltCleanup() }
+    return () => { rebuiltCleanup() }
   }, [])
 
   useEffect(() => {

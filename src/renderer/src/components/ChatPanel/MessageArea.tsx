@@ -1,3 +1,7 @@
+import ReminderActions from './ReminderActions'
+import AgentQuestionState from './AgentQuestionState'
+import { useReminderRead } from './useReminderRead'
+import type { AssistantSnooze } from '../../../../shared/reminders'
 import type { AgentMessageRef } from '../../../../shared/agents'
 import { legacyAssistantMessageKind, normalizeAssistantMessageKind } from '../../../../shared/assistant-message'
 import AssistantMessageLabel from './AssistantMessageLabel'
@@ -16,6 +20,8 @@ import { useMessageWindow } from './useMessageWindow'
 import CharacterAvatar, { type AvatarIdentity } from '../CharacterAvatar/CharacterAvatar'
 
 interface MessageAreaProps {
+  sessionId?: string
+  onRead?: () => void
   onAgentNotice?: (ref: AgentMessageRef, tab: 'work' | 'history') => void
   active?: boolean
   character?: AvatarIdentity | null
@@ -31,7 +37,6 @@ interface MessageAreaProps {
   onMemoryFeedback?: (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => Promise<void>
   onCorrectMemory?: (memoryId: string) => void
   canSnooze?: boolean
-  onSnoozeContent?: (content: string) => void
 }
 
 function formatTime(ts: number) {
@@ -125,7 +130,7 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ onAgentNotice, active = true, character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze, onSnoozeContent }: MessageAreaProps) {
+export default function MessageArea({ sessionId = '', onRead, onAgentNotice, active = true, character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState(initialSearch)
@@ -155,6 +160,20 @@ export default function MessageArea({ onAgentNotice, active = true, character, s
   const sessionKey = messages.length > 0 ? messages[0].id : ''
   const { hasNewContent, scrollToLatest } = useChatScroll(scrollRef, listRef, sessionKey, messages, searching, active)
   const windowed = useMessageWindow(scrollRef, messages.length, [sessionKey, searching], active)
+  useReminderRead(scrollRef, bottomRef, active && !searching, onRead)
+  const [snoozes, setSnoozes] = useState<AssistantSnooze[]>([])
+  useEffect(() => {
+    if (!active || !canSnooze) return
+    let disposed = false, revision = 0
+    const refresh = () => {
+      const request = ++revision
+      void window.electronAPI.reminders.list().then(items => { if (!disposed && request === revision) setSnoozes(items) }).catch(() => {})
+    }
+    refresh()
+    const off = window.electronAPI.onSessionsChanged(refresh)
+    return () => { disposed = true; off() }
+  }, [active, canSnooze, sessionId])
+
 
   const submitMemoryFeedback = async (messageId: string, memoryId: string, sourceIds: string[] | undefined, value: MemoryFeedbackValue) => {
     if (!onMemoryFeedback) return
@@ -231,7 +250,7 @@ export default function MessageArea({ onAgentNotice, active = true, character, s
             {msg.role === 'assistant' && <span className="message-sender">{character?.name || '联系人'}</span>}
             {searching && (msg.role !== 'user' || msg.toolData) && <SearchMatch text={searchableMessageText(msg)} query={normalizedQuery} />}
             <div className={`message-bubble${msg.agentNotice?.kind === 'question' ? ' agent-confirmation-card' : ''}`}>
-              {msg.agentNotice?.kind === 'question' && <strong className="agent-confirmation-heading">任务确认</strong>}
+              {msg.agentNotice?.kind === 'question' && <><strong className="agent-confirmation-heading">任务确认</strong>{character?.id && <AgentQuestionState characterId={character.id} runId={msg.agentNotice.runId} content={msg.content} />}</>}
               {assistantKind && <AssistantMessageLabel kind={assistantKind} />}
               {msg.imageUrl && (
                 <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
@@ -298,20 +317,12 @@ export default function MessageArea({ onAgentNotice, active = true, character, s
               <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>查看事项</button>
               <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>查看本轮记录</button>
             </div>}
+              {sessionId && assistantKind && ['rest', 'task', 'snooze', 'task-backlog'].includes(assistantKind) && <ReminderActions sessionId={sessionId} message={msg} pending={snoozes} canPostpone={assistantKind !== 'task-backlog'} />}
             <div className="message-meta">
               <span className="message-time">{formatTime(msg.timestamp)}</span>
               {msg.responseStatus === 'stopped' && <span className="message-state">已停止</span>}
               {msg.role === 'assistant' && msg.content && !msg.toolData && (
                 <CopyButton text={msg.content} />
-              )}
-              {canSnooze && msg.role === 'assistant' && msg.content && !msg.agentNotice && !msg.toolData && !msg.pluginData && onSnoozeContent && (
-                <button
-                  className="message-snooze-btn"
-                  onClick={() => onSnoozeContent?.(msg.content)}
-                  aria-label="十分钟后再次提醒"
-                >
-                  稍后提醒
-                </button>
               )}
               {msg.role === 'user' && !isStreaming && !msg.agentNotice && !msg.toolData && !msg.pluginData && onEditMessage && msg.id !== editingId && (
                 <button
@@ -394,7 +405,7 @@ export default function MessageArea({ onAgentNotice, active = true, character, s
           </div>
         </div>
       )}
-      <div ref={bottomRef} />
+      <div ref={bottomRef} style={{ height: 1 }} />
       </div>
     </div>
       {!searching && hasNewContent && <button type="button" className="message-jump-latest" onClick={scrollToLatest}>有新内容 · 回到最新消息 ↓</button>}

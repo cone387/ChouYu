@@ -712,11 +712,15 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                 </label>
               </div>
               <div className="settings-field settings-field-row">
-                <label>久坐提醒</label>
+                <label>回来时打招呼</label>
+                <label className="settings-switch"><input type="checkbox" aria-label="回来时打招呼" checked={config.proactiveReturn} onChange={e => save({ proactiveReturn: e.target.checked })} /><span className="settings-switch-slider" /></label>
+              </div>
+              <div className="settings-field settings-field-row">
+                <label>休息提醒</label>
                 <label className="settings-switch">
                   <input
                     type="checkbox"
-                    aria-label="久坐提醒"
+                    aria-label="休息提醒"
                     checked={config.proactiveRestReminder}
                     onChange={(e) => save({ proactiveRestReminder: e.target.checked })}
                   />
@@ -724,7 +728,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                 </label>
               </div>
               <div className="settings-field settings-field-row">
-                <label>任务到期通知</label>
+                <label>任务系统通知（仍保留聊天提醒）</label>
                 <label className="settings-switch">
                   <input
                     type="checkbox"

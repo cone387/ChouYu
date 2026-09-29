@@ -1,3 +1,4 @@
+import { mergeForeignMessages } from '../../core/notification-messages'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { ToolApprovalRequest } from '../../../../shared/tools'
@@ -42,13 +43,6 @@ interface GenerationOptions {
  */
 export const STREAM_RENDER_INTERVAL_MS = 80
 
-/** 流式生成期间主进程追加的助手消息不能被渲染层缓存掩盖：把缓存里没有的消息按时间戳并进来。 */
-function mergeForeignMessages(cached: Message[], incoming: Message[]): Message[] {
-  const known = new Set(cached.map((message) => message.id))
-  const foreign = incoming.filter((message) => !known.has(message.id))
-  if (foreign.length === 0) return cached
-  return [...cached, ...foreign].sort((a, b) => a.timestamp - b.timestamp)
-}
 
 interface UseSessionWorkspaceParams {
   config: AppConfig
@@ -126,7 +120,14 @@ export function useSessionWorkspace({
     }).catch(() => {})
   }, [])
 
-  const applyWorkspace = useCallback((workspace: SessionWorkspace, preserveSessionOrder = true) => {
+  const applyWorkspace = useCallback((workspace: SessionWorkspace, preserveSessionOrder = true, notificationRefresh = false) => {
+    // A notification/read response can arrive after navigation or the final stream chunk.
+    // It must not switch back to an old session or replace locally completed text.
+    if (notificationRefresh && workspace.activeSession.id !== activeSessionIdRef.current
+      && workspace.sessions.some(s => s.id === activeSessionIdRef.current)) {
+      setSessions(previous => mergeSessionsInCurrentOrder(previous, workspace.sessions))
+      return
+    }
     // A session or character deletion must also evict its cached messages;
     // otherwise unmount tries to save those deleted sessions again.
     const existingIds = new Set(workspace.sessions.map(session => session.id))
@@ -135,7 +136,7 @@ export function useSessionWorkspace({
     }
     const sessionId = workspace.activeSession.id
     const cached = sessionMessagesRef.current.get(sessionId)
-    const activeMessages = sessionGenerationsRef.current.has(sessionId)
+    const activeMessages = notificationRefresh || sessionGenerationsRef.current.has(sessionId)
       ? (cached ? mergeForeignMessages(cached, workspace.activeSession.messages) : workspace.activeSession.messages)
       : workspace.activeSession.messages
     activeSessionIdRef.current = sessionId

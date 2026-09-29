@@ -1,3 +1,5 @@
+import { runRemindersSmoke } from './smoke/reminders-smoke'
+import { initializeReminders, closeReminders } from './reminders'
 import { runJournalMigrationSmoke } from './smoke/journal-migration-smoke'
 import { runMemoryFullDataSmoke } from './smoke/memory-full-data-smoke'
 import { runJournalSemanticCacheSmoke } from './smoke/journal-semantic-cache-smoke'
@@ -121,6 +123,8 @@ function createWindow(): void {
       try {
         if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
           await runNativeCaptureSmoke()
+        } else if (process.env.CHOUYU_SMOKE_REMINDERS_ONLY === '1') {
+          await stage('reminders', () => runRemindersSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_AGENTS_ONLY === '1') {
           await runAgentsSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_CONTACTS_ONLY === '1') {
@@ -140,6 +144,7 @@ function createWindow(): void {
           await stage('journal', () => runJournalSmoke(mainWindow!))
           await stage('task-assistant', () => runTaskAssistantSmoke(mainWindow!))
           await stage('agents', () => runAgentsSmoke(mainWindow!))
+          await stage('reminders', () => runRemindersSmoke(mainWindow!))
         }
         console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
         setTimeout(() => app.quit(), 300)
@@ -339,6 +344,7 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('open-tasks-panel', taskId)
     }
   })
+  initializeReminders()
   initializeAgents()
   if (!app.isPackaged && process.argv.includes('--idea-lab')) {
     try { console.log('CHOUYU_IDEA_LAB_READY', JSON.stringify(await startIdeaLab())) }
@@ -404,6 +410,7 @@ app.on('before-quit', (event) => {
     return
   }
   stopClipboardWatcher()
+  closeReminders()
   closeTasks()
   closeMemory()
   globalShortcut.unregisterAll()

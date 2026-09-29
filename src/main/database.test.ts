@@ -453,7 +453,7 @@ describe('assistant messages', () => {
     expect(getSessions().find((session) => session.id === id)?.unreadCount).toBe(2)
   })
 
-  it('clears unread via markSessionRead and via selecting the assistant session', () => {
+  it('only clears unread with an explicit read receipt, not session selection', () => {
     const workspace = appendAssistantMessage('新消息', Date.now())
     const id = workspace.sessions.find((session) => session.characterId === 'assistant')!.id
     expect(getAssistantUnreadCount()).toBe(1)
@@ -462,6 +462,8 @@ describe('assistant messages', () => {
     appendAssistantMessage('又一条', Date.now() + 10)
     expect(getAssistantUnreadCount()).toBe(1)
     selectChatSession(id)
+    expect(getAssistantUnreadCount()).toBe(1)
+    markSessionRead(id)
     expect(getAssistantUnreadCount()).toBe(0)
     expect(getSessions().find((session) => session.id === id)?.unreadCount).toBe(0)
   })
@@ -598,6 +600,8 @@ describe('contact progress delivery', () => {
     appendAgentNotice(notice)
     expect(getSession(ownerSession)!.messages).toHaveLength(1)
     selectChatSession(ownerSession)
+    expect(getAssistantUnreadCount()).toBeGreaterThan(0)
+    markSessionRead(ownerSession)
     expect(getSessions().find(s => s.id === ownerSession)!.unreadCount).toBe(0)
     saveSessionMessages(ownerSession, []); flushDatabase()
     appendAgentNotice(notice)
@@ -621,4 +625,49 @@ describe('contact progress delivery', () => {
     appendAgentNotice(notice); initDatabase()
     expect(getSession(id)!.messages.filter(m => m.agentNotice)).toHaveLength(1)
   })
+})
+
+
+describe('reminder delivery receipts', () => {
+  it('keeps task identity across renderer saves and restart, deduplicating delivery retries', () => {
+    const ref = { taskId: 'task-1', reminderAt: 1200 }
+    appendAssistantMessage('task', 2000, 'task', { receiptIds: ['task-event'], taskReminder: ref })
+    appendAssistantMessage('duplicate', 2000, 'task', { receiptIds: ['task-event'], taskReminder: ref })
+    const id = getSessions().find(s => s.characterId === ASSISTANT_CHARACTER_ID)!.id
+    const messages = getSession(id)!.messages.map(m => ({ ...m, taskReminder: undefined }))
+    saveSessionMessages(id, messages); flushDatabase(); initDatabase()
+    expect(getSession(id)!.messages).toHaveLength(1)
+    expect(getSession(id)!.messages[0].taskReminder).toEqual(ref)
+    expect(getAssistantUnreadCount()).toBe(1)
+    saveSessionMessages(id, []); flushDatabase(); initDatabase()
+    appendAssistantMessage('must not resurrect', 2000, 'task', { receiptIds: ['task-event'], taskReminder: ref })
+    expect(getSession(id)!.messages).toEqual([])
+  })
+  it('read receipt stops at rendered message and never clears a later delivery', () => {
+    appendAssistantMessage('first', 1000, 'rest')
+    const id = getSessions().find(s => s.characterId === ASSISTANT_CHARACTER_ID)!.id
+    const first = getSession(id)!.messages[0].id
+    appendAssistantMessage('later', 2000, 'rest')
+    markSessionRead(id, first)
+    expect(getAssistantUnreadCount()).toBe(1)
+    markSessionRead(id, 'missing'); expect(getAssistantUnreadCount()).toBe(1)
+  })
+})
+
+
+it('retries failed assistant persistence without duplicating its event', () => {
+  const fail = vi.spyOn(fs, 'mkdirSync').mockImplementation(() => { throw new Error('disk failure') })
+  expect(() => appendAssistantMessage('event', undefined, 'rest', { receiptIds: ['rest:retry'] })).toThrow('保存失败')
+  fail.mockRestore()
+  appendAssistantMessage('event', undefined, 'rest', { receiptIds: ['rest:retry'] }); initDatabase()
+  const id = getSessions().find(s => s.characterId === ASSISTANT_CHARACTER_ID)!.id
+  expect(getSession(id)!.messages).toHaveLength(1)
+})
+
+
+it('a new reminder in the same millisecond as reading is still unread', () => {
+  appendAssistantMessage('one', undefined, 'rest')
+  const id = getSessions().find(s => s.characterId === ASSISTANT_CHARACTER_ID)!.id
+  markSessionRead(id); appendAssistantMessage('two', undefined, 'rest')
+  expect(getAssistantUnreadCount()).toBe(1)
 })

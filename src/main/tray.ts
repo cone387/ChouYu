@@ -76,7 +76,7 @@ export function setupTray(mainWindow: BrowserWindow): void {
       click: openChatPanel
     },
     {
-      label: '助手消息',
+      label: '查看消息',
       click: openAssistantChat
     },
     {

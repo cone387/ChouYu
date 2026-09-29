@@ -1748,3 +1748,13 @@
   line-height: 1.5;
 }
 .assistant-message-label svg { flex-shrink: 0; }
+
+.reminder-actions { font-size: var(--font-sm); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); width: 100%; }
+.reminder-actions button, .reminder-actions select { font: inherit; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-3) var(--space-4); min-height: 30px; }
+.reminder-actions button { cursor: pointer; }
+.reminder-actions button:disabled { opacity: .6; cursor: wait; }
+.reminder-actions [role="alert"] { color: var(--error); width: 100%; }
+.agent-question-state { display: block; font-size: 12px; margin: var(--space-2) 0 var(--space-4); color: var(--text-secondary); }
+
+.message:has(.reminder-actions) .message-body { flex: 1; }
+.reminder-actions [role="status"] { color: var(--text-secondary); }

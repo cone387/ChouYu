@@ -19,7 +19,7 @@ const toReminderPayload = (entry: ClaimedReminder): TaskReminderPayload => ({
 })
 
 export function startTaskScheduler(
-  claim: (now: number) => ClaimedReminder[],
+  claim: (now: number, backlog?: boolean) => ClaimedReminder[],
   handlers: TaskSchedulerHandlers,
   options: TaskSchedulerOptions = {}
 ): { stop(): void } {
@@ -32,7 +32,7 @@ export function startTaskScheduler(
   // 启动积压:应用没开时错过的提醒合并成一条,不逐条轰炸
   let backlog: ClaimedReminder[] = []
   try {
-    backlog = claim(now())
+    backlog = claim(now(), true)
   } catch (error) {
     console.error('tasks scheduler backlog failed:', error)
   }
@@ -46,7 +46,7 @@ export function startTaskScheduler(
     const interrupted = currentTime - lastTickAt > Math.max(intervalMs * 3, 60_000)
     let due: ClaimedReminder[]
     try {
-      due = claim(currentTime)
+      due = claim(currentTime, interrupted)
     } catch (error) {
       console.error('tasks scheduler tick failed:', error)
       return

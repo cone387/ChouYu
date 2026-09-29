@@ -27,7 +27,7 @@ async function click(window: BrowserWindow, selector: string): Promise<void> {
   })()`).catch(error => { throw new Error(`Could not click ${selector}: ${String(error)}`) })
 }
 
-async function snapshots(window: BrowserWindow, name: string, focus?: string): Promise<void> {
+export async function snapshots(window: BrowserWindow, name: string, focus?: string): Promise<void> {
   const directory = process.env['CHOUYU_SMOKE_ARTIFACTS']
   if (!directory) return
   if (process.env.CHOUYU_SMOKE_SNAPSHOT_FILTER && !name.includes(process.env.CHOUYU_SMOKE_SNAPSHOT_FILTER)) return

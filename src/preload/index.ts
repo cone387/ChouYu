@@ -299,11 +299,17 @@ const api = {
   notifyPetVisible: (visible: boolean) => {
     ipcRenderer.send('pet-visibility-changed', visible)
   },
-  proactiveAppend: (content: string, timestamp?: number, kind?: AssistantMessageKind) => ipcRenderer.invoke('proactive:append', content, timestamp, kind) as Promise<void>,
+  reminders: {
+    list: () => ipcRenderer.invoke('reminders:list'),
+    schedule: (sessionId: string, messageId: string, minutes: number) => ipcRenderer.invoke('reminders:schedule', sessionId, messageId, minutes),
+    cancel: (key: string) => ipcRenderer.invoke('reminders:cancel', key)
+  },
+  proactiveAppend: (content: string, timestamp?: number, kind?: AssistantMessageKind, deliveryId?: string) => ipcRenderer.invoke('proactive:append', content, timestamp, kind, deliveryId) as Promise<void>,
   getAssistantUnread: () => ipcRenderer.invoke('proactive:get-unread') as Promise<number>,
-  onSessionsChanged: (callback: () => void) => {
-    ipcRenderer.on('sessions:changed', callback)
-    return () => { ipcRenderer.removeListener('sessions:changed', callback) }
+  onSessionsChanged: (callback: (reminderOnly?: boolean) => void) => {
+    const handler = (_event: unknown, reminderOnly?: boolean) => callback(reminderOnly === true)
+    ipcRenderer.on('sessions:changed', handler)
+    return () => { ipcRenderer.removeListener('sessions:changed', handler) }
   },
   onAssistantUnread: (callback: (count: number) => void) => {
     const handler = (_e: unknown, count: number) => callback(count)
@@ -359,7 +365,7 @@ const api = {
     renameSession: (id: string, title: string) => ipcRenderer.invoke('db:rename-session', id, title),
     deleteSession: (id: string) => ipcRenderer.invoke('db:delete-session', id),
     saveSessionMessages: (id: string, msgs: unknown[]) => ipcRenderer.invoke('db:save-session-messages', id, msgs),
-    markSessionRead: (id: string) => ipcRenderer.invoke('db:mark-session-read', id),
+    markSessionRead: (id: string, messageId?: string) => ipcRenderer.invoke('db:mark-session-read', id, messageId),
     exportSession: (id: string) => ipcRenderer.invoke('db:export-session', id),
     getState: (key: string) => ipcRenderer.invoke('db:get-state', key),
     setState: (key: string, value: string) => ipcRenderer.invoke('db:set-state', key, value)

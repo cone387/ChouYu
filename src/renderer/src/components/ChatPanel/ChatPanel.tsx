@@ -45,7 +45,6 @@ import {
 import { usePanelResize } from './usePanelResize'
 import { activatePanel } from '../../core/panel-layer'
 import { useSessionWorkspace } from './useSessionWorkspace'
-import { proactiveEngine } from '../../core/proactive'
 import './ChatPanel.css'
 
 interface ChatPanelProps {
@@ -654,9 +653,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   }, [sessions, selectSession, createSession, navigate])
 
   // 主进程在别的入口追加了助手消息（或会话结构变化）：重拉工作区，保留侧栏顺序。
-  useEffect(() => window.electronAPI.onSessionsChanged(() => {
+  useEffect(() => window.electronAPI.onSessionsChanged((reminderOnly) => {
     void window.electronAPI.db.getSessionWorkspace()
-      .then((workspace) => applyWorkspace(workspace, true))
+      .then((workspace) => applyWorkspace(workspace, true, reminderOnly === true))
       .catch(() => { /* 保留现有工作区，下次事件重试 */ })
   }), [applyWorkspace])
 
@@ -666,20 +665,22 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     if (!workspaceLoaded) return
     if (!assistantFocusRequest || assistantFocusRequest === handledAssistantFocusRef.current) return
     handledAssistantFocusRef.current = assistantFocusRequest
-    void openCharacterChat(ASSISTANT_CHARACTER_ID)
-  }, [workspaceLoaded, assistantFocusRequest, openCharacterChat])
+    void window.electronAPI.db.getSessionWorkspace().then(async workspace => {
+      const unread = workspace.sessions.filter(s => (s.unreadCount ?? 0) > 0).sort((a, b) => a.updatedAt - b.updatedAt)[0]
+      if (unread) { await selectSession(unread.id); navigate('chat') }
+      else await openCharacterChat(ASSISTANT_CHARACTER_ID)
+    }).catch(() => {})
+  }, [workspaceLoaded, assistantFocusRequest, openCharacterChat, selectSession, navigate])
 
-  // 阅读中不累计未读：当前会话是助手、面板展开且有新消息时自动标读。
+  // 仅在获得焦点且读到最新内容时，按渲染层已展示的消息边界标读。
   const activeAssistantUnread = sessions.find((session) => session.id === activeSessionId)?.unreadCount ?? 0
   useEffect(() => { setAgentFocus(null) }, [activeSessionId, isChat])
   useEffect(() => { setAgentDiscussion(null) }, [activeSessionId])
-  useEffect(() => {
+  const markVisibleMessagesRead = useCallback(() => {
     if (!visible || !isChat || !workspaceLoaded || !activeAssistantUnread) return
-    if (!messages.some(message => message.agentNotice) && activeCharacterId !== ASSISTANT_CHARACTER_ID) return
-    void window.electronAPI.db.markSessionRead(activeSessionId)
-      .then((workspace) => applyWorkspace(workspace, true))
-      .catch(() => { /* 存储故障提示机制兜底 */ })
-  }, [visible, isChat, workspaceLoaded, activeAssistantUnread, activeCharacterId, activeSessionId, applyWorkspace, messages])
+    void window.electronAPI.db.markSessionRead(activeSessionId, messages[messages.length - 1]?.id)
+      .then(workspace => applyWorkspace(workspace, true, true)).catch(() => {})
+  }, [visible, isChat, workspaceLoaded, activeAssistantUnread, activeSessionId, applyWorkspace, messages])
 
   // 删除角色会连带删除其会话：先停掉这些会话的在途生成（对齐 deleteSession 的先例），
   // 再按保留侧栏顺序的方式应用新工作区。
@@ -813,7 +814,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 onMemoryFeedback={submitMemoryFeedback}
                 onCorrectMemory={correctMemory}
                 canSnooze={activeCharacterId === ASSISTANT_CHARACTER_ID}
-                onSnoozeContent={(content) => proactiveEngine.snoozeContent(content)}
+                sessionId={activeSessionId}
+                onRead={activeAssistantUnread ? markVisibleMessagesRead : undefined}
               />
             )}
             {confirmClear && (

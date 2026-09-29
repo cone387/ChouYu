@@ -1,3 +1,4 @@
+import { notifyReminderChanges } from '../reminder-events'
 import { app, BrowserWindow, dialog, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
@@ -32,7 +33,7 @@ async function deliver(id: string) {
         const notices = await rpc('notices', characterId) as AgentNotice[]
         for (const notice of notices) {
           appendAgentNotice(notice)
-          for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('sessions:changed')
+          notifyReminderChanges()
           await rpc('ackNotice', characterId, [notice.id])
         }
       } catch { /* Durable outbox is retried by the sync timer after storage/process recovery. */ }

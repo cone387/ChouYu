@@ -162,3 +162,24 @@ describe('startTaskScheduler', () => {
     store.close()
   })
 })
+
+
+describe('durable reminder claim boundary', () => {
+  test('rolls back fired markers when chat persistence fails and retries after restart', () => {
+    const file = tempFile(), store = openTasksStore(file)
+    const task = store.createTask({ title: 'persist before claim', remindAt: 100 })
+    expect(() => store.claimDueReminders(200, () => { throw new Error('disk full') })).toThrow('disk full')
+    expect(store.getTask(task.id)!.reminders![0].firedAt).toBeNull()
+    store.close()
+    const restored = openTasksStore(file)
+    const writes: string[] = []
+    restored.claimDueReminders(300, entries => { writes.push(...entries.map(e => e.task.id)) })
+    expect(writes).toEqual([task.id]); expect(restored.claimDueReminders(400)).toEqual([])
+    restored.close()
+  })
+  test('completed checklist items never generate a reminder', () => {
+    const store = openTasksStore(tempFile())
+    store.createTask({ title: 'parent', checklist: [{ id: 'i', title: 'done', done: true, dueAt: 100, reminders: [{ at: 100, firedAt: null }] }] })
+    expect(store.claimDueReminders(200)).toEqual([]); store.close()
+  })
+})

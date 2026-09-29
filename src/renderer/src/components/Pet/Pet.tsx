@@ -232,7 +232,7 @@ export default function Pet({ position, onPositionChange, onClick, onOpenSetting
           data-escape-overlay className="pet-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
-          <button onClick={() => { setContextMenu(null); onOpenAssistantChat() }}>助手消息</button>
+          <button onClick={() => { setContextMenu(null); onOpenAssistantChat() }}>查看消息</button>
           <button onClick={() => { setContextMenu(null); onOpenSettings() }}>设置</button>
           <button onClick={() => { setContextMenu(null); void window.electronAPI.quitApp() }}>退出</button>
         </div>

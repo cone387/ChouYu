@@ -289,7 +289,7 @@ const isCorruptionError = (error: unknown): boolean => {
 }
 
 /** 被领取的提醒：任务级或某个子项级；itemTitle 存在即子项提醒。 */
-export interface ClaimedReminder { task: TaskRecord; itemTitle?: string }
+export interface ClaimedReminder { task: TaskRecord; itemTitle?: string; itemId?: string; reminderAt?: number }
 
 export class TasksStore {
   readonly quarantinedAt: number | null = null
@@ -814,7 +814,7 @@ export class TasksStore {
   }
 
   /** 原子记录各提醒的发送状态，再由调用方通知。任务级与子项级同轮各自领取，积压由调用方合并。 */
-  claimDueReminders(now: number): ClaimedReminder[] {
+  claimDueReminders(now: number, beforeCommit?: (entries: ClaimedReminder[]) => void): ClaimedReminder[] {
     return this.database.transaction(() => {
       const rows = this.database.prepare(`SELECT * FROM tasks
         WHERE status = 'open'
@@ -823,10 +823,10 @@ export class TasksStore {
       const claimed: ClaimedReminder[] = []
       for (const row of rows) {
         const checklist = validateTaskChecklist(JSON.parse(row.checklist ?? '[]'))
-        const firedItems: string[] = []
+        const firedItems: { id: string; title: string; at: number }[] = []
         const nextChecklist = checklist.map(item => {
-          if (!item.reminders?.some(r => r.firedAt === null && r.at <= now)) return item
-          firedItems.push(item.title)
+          if (item.done || !item.reminders?.some(r => r.firedAt === null && r.at <= now)) return item
+          firedItems.push({ id: item.id, title: item.title, at: Math.max(...item.reminders.filter(r => r.firedAt === null && r.at <= now).map(r => r.at)) })
           return { ...item, reminders: item.reminders.map(r => r.firedAt === null && r.at <= now ? { ...r, firedAt: now } : r) }
         })
         const reminders = rowReminders(row)
@@ -837,9 +837,10 @@ export class TasksStore {
             .run(JSON.stringify(updatedReminders), taskDue ? firedSummary(updatedReminders) : row.remind_fired_at, JSON.stringify(nextChecklist), row.id)
         }
         const snapshot = toTask({ ...row, reminders: JSON.stringify(updatedReminders), remind_fired_at: taskDue ? firedSummary(updatedReminders) : row.remind_fired_at, checklist: JSON.stringify(nextChecklist) })
-        if (taskDue) claimed.push({ task: snapshot })
-        for (const title of firedItems) claimed.push({ task: snapshot, itemTitle: title })
+        if (taskDue) claimed.push({ task: snapshot, reminderAt: Math.max(...reminders.filter(r => r.firedAt === null && r.at <= now).map(r => r.at)) })
+        for (const item of firedItems) claimed.push({ task: snapshot, itemTitle: item.title, itemId: item.id, reminderAt: item.at })
       }
+      beforeCommit?.(claimed)
       return claimed
     }).immediate()
   }

@@ -42,7 +42,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { nav: 'general', navLabel: '通用', label: '全局搜索快捷键', keywords: ['搜索', '快捷键', 'hotkey', '通讯录', '任务'], fieldId: 'settings-search-hotkey' },
   { nav: 'general', navLabel: '通用', label: '唤出面板', keywords: ['快捷键', 'hotkey', '呼出'], fieldId: 'settings-hotkey' },
   { nav: 'general', navLabel: '通用', label: '开机问好', keywords: ['问候', '主动打招呼'] },
-  { nav: 'general', navLabel: '通用', label: '久坐提醒', keywords: ['休息提醒', '健康'] },
+  { nav: 'general', navLabel: '通用', label: '休息提醒', keywords: ['久坐提醒', '健康'] },
+  { nav: 'general', navLabel: '通用', label: '回来时打招呼', keywords: ['欢迎回来', '主动提醒'] },
   { nav: 'general', navLabel: '通用', label: '剪贴板感知', keywords: ['复制', 'clipboard'] },
   // 关于
   { nav: 'about', navLabel: '关于', label: '检查更新', keywords: ['版本', '升级', 'update'] }

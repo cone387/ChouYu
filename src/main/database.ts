@@ -1,3 +1,4 @@
+import { normalizeTaskReminderRef, type TaskReminderRef } from '../shared/reminders'
 import { normalizeAssistantMessageKind, type AssistantMessageKind } from '../shared/assistant-message'
 import { app, safeStorage } from 'electron'
 import { randomUUID } from 'crypto'
@@ -31,6 +32,8 @@ export interface Message {
   content: string
   timestamp: number
   imageUrl?: string
+  snoozeKey?: string
+  taskReminder?: TaskReminderRef
   assistantKind?: AssistantMessageKind
   responseStatus?: 'error' | 'stopped'
   toolData?: ToolActivityData
@@ -184,6 +187,8 @@ function sanitizeMessages(value: unknown): Message[] {
       responseStatus: message.responseStatus === 'error' || message.responseStatus === 'stopped'
         ? message.responseStatus
         : undefined,
+      snoozeKey: typeof message.snoozeKey === 'string' ? message.snoozeKey.slice(0, 1000) : undefined,
+      taskReminder: message.role === 'assistant' ? normalizeTaskReminderRef(message.taskReminder) : undefined,
       assistantKind: message.role === 'assistant' ? normalizeAssistantMessageKind(message.assistantKind) : undefined,
       agentNotice: message.role === 'assistant' ? sanitizeAgentMessageRef(message.agentNotice) : undefined,
       toolData: sanitizeToolData(message.toolData),
@@ -512,7 +517,6 @@ export function selectChatSession(id: string): SessionWorkspace {
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
   store.activeSessionId = id
-  markSessionReadUpToNow(session)
   persist()
   return getSessionWorkspace()
 }
@@ -524,8 +528,12 @@ function markSessionReadUpToNow(session: ChatSession): void {
 }
 
 /** 主动提醒的唯一入口：写入助手会话并即时落盘，托盘角标据此更新。 */
-export function appendAssistantMessage(content: string, timestamp?: number, kind?: AssistantMessageKind): SessionWorkspace {
-  const at = Number.isFinite(timestamp) ? Number(timestamp) : Date.now()
+export function appendAssistantMessage(content: string, timestamp?: number, kind?: AssistantMessageKind, delivery?: { receiptIds: string[]; taskReminder?: TaskReminderRef; snoozeKey?: string }): SessionWorkspace {
+  if (delivery?.receiptIds.length && delivery.receiptIds.every(id => store.state[`reminder-receipt:${id}`])) {
+    persist() // retry an earlier failed disk write without appending twice
+    return getSessionWorkspace()
+  }
+  let at = Number.isFinite(timestamp) ? Number(timestamp) : Date.now()
   let session = store.sessions
     .filter((candidate) => isAssistantCharacter(candidate.characterId))
     .reduce<ChatSession | null>((latest, candidate) => (!latest || candidate.updatedAt > latest.updatedAt ? candidate : latest), null)
@@ -533,9 +541,11 @@ export function appendAssistantMessage(content: string, timestamp?: number, kind
     session = createSession([], '助手消息', at, ASSISTANT_CHARACTER_ID)
     store.sessions.unshift(session)
   }
-  session.messages.push({ id: randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at, assistantKind: normalizeAssistantMessageKind(kind) })
+  if (!Number.isFinite(timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
+  session.messages.push({ id: randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at, assistantKind: normalizeAssistantMessageKind(kind), taskReminder: delivery?.taskReminder, snoozeKey: delivery?.snoozeKey })
   session.updatedAt = at
-  persist(false)
+  for (const id of delivery?.receiptIds ?? []) store.state[`reminder-receipt:${id}`] = 'delivered'
+  persist()
   return getSessionWorkspace()
 }
 
@@ -544,9 +554,10 @@ export function appendAgentNotice(notice: AgentNotice): SessionWorkspace {
   if (!getCharacter(notice.characterId) || isAssistantCharacter(notice.characterId)) throw new Error('联系人不存在。')
   const key = `agent-notice:${notice.characterId}:${notice.id}`
   if (!store.state[key]) {
-    const at = Date.now()
+    let at = Date.now()
     let session = store.sessions.filter(s => s.characterId === notice.characterId).sort((a, b) => b.updatedAt - a.updatedAt)[0]
     if (!session) { session = createSession([], '工作进展', at, notice.characterId); store.sessions.unshift(session) }
+    at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
     session.messages.push({ id: `agent:${notice.id}`, role: 'assistant', content: notice.content.slice(0, 20000), timestamp: at,
       agentNotice: { topicId: notice.topicId, runId: notice.runId, kind: notice.kind } })
     session.updatedAt = at
@@ -557,18 +568,21 @@ export function appendAgentNotice(notice: AgentNotice): SessionWorkspace {
   return getSessionWorkspace()
 }
 
-export function markSessionRead(id: string): SessionWorkspace {
+export function markSessionRead(id: string, messageId?: string): SessionWorkspace {
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
-  markSessionReadUpToNow(session)
+  if (messageId) {
+    const message = session.messages.find(m => m.id === messageId)
+    if (!message) return getSessionWorkspace()
+    session.lastReadAt = Math.max(session.lastReadAt ?? 0, message.timestamp)
+  } else markSessionReadUpToNow(session)
   persist(false)
   return getSessionWorkspace()
 }
 
 export function getAssistantUnreadCount(): number {
   return store.sessions
-    .filter((session) => isAssistantCharacter(session.characterId))
-    .reduce((total, session) => total + session.messages.filter((message) => message.timestamp > (session.lastReadAt ?? 0)).length, 0)
+    .reduce((total, session) => total + toSummary(session).unreadCount, 0)
 }
 
 export function renameChatSession(id: string, title: string): ChatSessionSummary[] {
@@ -675,10 +689,14 @@ export function saveSessionMessages(id: string, messages: Message[]): SessionWor
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
   const previousImages = new Map(session.messages.filter((message) => message.imageUrl && isAttachmentReference(message.imageUrl)).map((message) => [message.id, message.imageUrl]))
+  const previousSnoozeKeys = new Map(session.messages.filter(m => m.snoozeKey).map(m => [m.id, m.snoozeKey]))
+  const previousReminders = new Map(session.messages.filter(m => m.taskReminder).map(m => [m.id, m.taskReminder]))
   const previousNotices = new Map(session.messages.filter(message => message.agentNotice).map(message => [message.id, message.agentNotice]))
   let nextMessages: Message[] = sanitizeMessages(messages).map((message) => ({
     ...message,
     agentNotice: message.role === 'assistant' ? previousNotices.get(message.id) : undefined,
+    taskReminder: message.role === 'assistant' ? previousReminders.get(message.id) : undefined,
+    snoozeKey: message.role === 'assistant' ? previousSnoozeKeys.get(message.id) : undefined,
     // A missing file must not erase its durable reference when the renderer saves text updates.
     imageUrl: message.imageUrl ?? previousImages.get(message.id)
   }))
@@ -696,8 +714,7 @@ export function saveSessionMessages(id: string, messages: Message[]): SessionWor
   }
   session.messages = nextMessages
   session.updatedAt = Date.now()
-  // 渲染层保存消息说明用户正在助手会话对话：AI 回复不当未读。
-  if (isAssistantCharacter(session.characterId)) markSessionReadUpToNow(session)
+  // Saving/streaming can happen in the background; only a visible read receipt clears unread.
   if (session.title === DEFAULT_SESSION_TITLE) session.title = deriveSessionTitle(session.messages)
   schedulePersist()
   return getSessionWorkspace()

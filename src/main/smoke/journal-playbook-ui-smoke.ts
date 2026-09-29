@@ -7,7 +7,11 @@ import { createMemory, getMemoryProvider } from '../memory/service'
 
 export async function runJournalPlaybookUISmoke(window: BrowserWindow, savedId: string): Promise<void> {
   const js = (code: string) => window.webContents.executeJavaScript(code)
-  const click = (text: string) => js(`[...document.querySelectorAll('.journal-playbook button')].find(button=>button.textContent===${JSON.stringify(text)}).click()`)
+  const click = async (text: string) => {
+    // A status message can appear before run() finishes its reload; wait for the control.
+    await waitForRenderer(window, `[...document.querySelectorAll('.journal-playbook button')].some(button=>button.textContent===${JSON.stringify(text)} && !button.disabled)`)
+    await js(`[...document.querySelectorAll('.journal-playbook button')].find(button=>button.textContent===${JSON.stringify(text)}).click()`)
+  }
   const fill = (label: string, value: string) => js(`(() => { const input=document.querySelector('[aria-label='+${JSON.stringify(label)}+']'); Object.getOwnPropertyDescriptor(input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(value)}); input.dispatchEvent(new Event('input',{bubbles:true})) })()`)
   const select = (label: string, value: string) => js(`(() => { const input=document.querySelector('[aria-label='+${JSON.stringify(label)}+']'); input.value=${JSON.stringify(value)}; input.dispatchEvent(new Event('change',{bubbles:true})) })()`)
   await js("[...document.querySelectorAll('.journal-view-nav button')].find(button=>button.textContent==='踩坑手册').click()")

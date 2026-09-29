@@ -197,7 +197,10 @@ function requestToolApproval(
 }
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
-  ipcMain.handle('system-idle-seconds', () => powerMonitor.getSystemIdleTime())
+  ipcMain.handle('system-idle-seconds', () => {
+    const idle = powerMonitor.getSystemIdleTime()
+    return powerMonitor.getSystemIdleState(300) === 'locked' ? Math.max(300, idle) : idle
+  })
   const unsubscribeStorage = onStorageStatus((status) => {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('db:storage-status', status)
   })
@@ -818,17 +821,18 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('assistant-unread-changed', count)
   }
 
-  ipcMain.handle('proactive:append', (_event, content: unknown, timestamp?: unknown, kind?: unknown) => {
+  ipcMain.handle('proactive:append', (_event, content: unknown, timestamp?: unknown, kind?: unknown, deliveryId?: unknown) => {
     if (typeof content !== 'string' || !content.trim() || content.length > 20_000) throw new Error('Invalid proactive content')
     const at = typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : undefined
-    appendAssistantMessage(content, at, normalizeAssistantMessageKind(kind) ?? 'notification')
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sessions:changed')
+    if (deliveryId !== undefined && (typeof deliveryId !== 'string' || !deliveryId || deliveryId.length > 200)) throw new Error('Invalid delivery id')
+    appendAssistantMessage(content, at, normalizeAssistantMessageKind(kind) ?? 'notification', typeof deliveryId === 'string' ? { receiptIds: [`companion:${deliveryId}`] } : undefined)
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sessions:changed', true)
     notifyAssistantUnread()
   })
   ipcMain.handle('proactive:get-unread', () => getAssistantUnreadCount())
-  ipcMain.handle('db:mark-session-read', (_event, id: string) => {
+  ipcMain.handle('db:mark-session-read', (_event, id: string, messageId?: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
-    const workspace = markSessionRead(id)
+    const workspace = markSessionRead(id, messageId)
     notifyAssistantUnread()
     return workspace
   })
@@ -854,6 +858,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (character && !character.builtIn) await removeContactAgent(id)
     const workspace = deleteCharacter(id)
     notifyCharactersChanged()
+    notifyAssistantUnread()
     return workspace
   })
   ipcMain.handle('characters:fetch-models', async (_event, profileId: string): Promise<AIModelListResult> => {

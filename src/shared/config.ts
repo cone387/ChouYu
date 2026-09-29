@@ -101,6 +101,7 @@ export interface AppConfig {
   petSize: number
   theme: 'system' | 'light' | 'dark'
   palette: PaletteId
+  proactiveReturn: boolean
   proactiveGreeting: boolean
   proactiveRestReminder: boolean
   taskNotifications: boolean
@@ -138,6 +139,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   petSize: 80,
   theme: 'system',
   palette: 'purple',
+  proactiveReturn: true,
   proactiveGreeting: true,
   proactiveRestReminder: true,
   taskNotifications: true,
@@ -240,6 +242,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     autoStart: source.autoStart === true,
     theme: source.theme === 'light' || source.theme === 'dark' ? source.theme : 'system',
     palette: isPaletteId(source.palette) ? source.palette : 'purple',
+    proactiveReturn: source.proactiveReturn !== false,
     proactiveGreeting: source.proactiveGreeting !== false,
     proactiveRestReminder: source.proactiveRestReminder !== false,
     taskNotifications: source.taskNotifications !== false,
@@ -290,6 +293,7 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (input.theme === 'system' || input.theme === 'light' || input.theme === 'dark') patch.theme = input.theme
   if (isPaletteId(input.palette)) patch.palette = input.palette
   if (typeof input.petSize === 'number' && Number.isFinite(input.petSize)) patch.petSize = input.petSize
+  if (typeof input.proactiveReturn === 'boolean') patch.proactiveReturn = input.proactiveReturn
   if (typeof input.proactiveGreeting === 'boolean') patch.proactiveGreeting = input.proactiveGreeting
   if (typeof input.proactiveRestReminder === 'boolean') patch.proactiveRestReminder = input.proactiveRestReminder
   if (typeof input.taskNotifications === 'boolean') patch.taskNotifications = input.taskNotifications
