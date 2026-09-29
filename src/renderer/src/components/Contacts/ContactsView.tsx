@@ -321,9 +321,9 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
 
   const profileNameOf = useCallback((character: CharacterStats): string => {
     const id = character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId
+    if (id === DEFAULT_PROFILE_ID) return '跟随全局设置'
     const profile = profiles.find((item) => item.id === id)
-    if (!profile) return id
-    return profile.builtIn ? `${profile.name}（设置页默认）` : profile.name
+    return profile?.name ?? '未找到服务配置'
   }, [profiles])
 
   const openForm = useCallback((character?: CharacterStats) => {
@@ -491,7 +491,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <ContactCardStats data={dashboard?.contacts[character.id]?.summary} error={dashboardError} lastWorkedAt={dashboard?.contacts[character.id]?.lastWorkedAt} />
             <span className="contacts-card-tags">
               {character.category && <span className="contacts-card-tag">{INDUSTRY_LABELS[character.category]}</span>}
-              <span className="contacts-card-tag">{profileNameOf(character)}</span>
+              <span className="contacts-card-tag" title={`AI 服务：${profileNameOf(character)}`}>{profileNameOf(character)}</span>
               <span className="contacts-card-tag">{character.sessionCount} 个会话</span>
             </span>
           </button>
@@ -535,7 +535,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           <dl className="contacts-detail-fields">
             <div><dt>模型</dt><dd>{detail.builtIn ? config.model : detail.model}</dd></div>
             <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
-            <div><dt>档案</dt><dd>{profileNameOf(detail)}</dd></div>
+            <div><dt>AI 服务</dt><dd title="角色使用的服务商与接口连接配置；模型由模型字段指定。">{profileNameOf(detail)}</dd></div>
             <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
             <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
           </dl>
@@ -572,10 +572,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           {AVATAR_CHOICES.map((emoji) => <button key={emoji} type="button" className="contacts-avatar-option"
             aria-pressed={form.avatar === emoji} onClick={() => setForm({ ...form, avatar: emoji })}>{emoji}</button>)}
         </div>
-        <label className="contacts-field"><span className="contacts-field-name">档案</span>
+        <label className="contacts-field"><span className="contacts-field-name">AI 服务</span>
           <select data-contacts-profile value={form.providerProfileId} disabled={form.id === DEFAULT_CHARACTER_ID}
             onChange={(event) => setForm({ ...form, providerProfileId: event.target.value })}>
-            {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.builtIn ? '（设置页默认）' : ''}</option>)}
+            {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.builtIn ? '跟随全局设置' : profile.name}</option>)}
           </select></label>
         <label className="contacts-field"><span className="contacts-field-name">行业</span>
           <select data-contacts-category value={form.category}
