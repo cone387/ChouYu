@@ -100,7 +100,86 @@ describe('agent-planned contact deliverable tools', () => {
     const raw = JSON.stringify({ ...plan, action: 'read_contacts', contactRefs: [{ characterId: 'writer', topicId: 'topic', sectionId: 'idea1', version: 1 }] })
     expect(() => parseResearchPlan(raw, [], 15)).toThrow('未授权')
     expect(parseResearchPlan(raw, [], 15, 'public', false, true).action).toBe('read_contacts')
-    expect(() => parseResearchPlan(raw.replace('"version":1', '"version":0'), [], 15, 'public', false, true)).toThrow('有效')
+    expect(() => parseResearchPlan(raw.replace('"version":1', '"version":0'), [], 15, 'public', false, true)).toThrow('version 无效')
+  })
+  it.each(['missing', 'string-version', 'unknown', 'duplicate'])('repairs %s contact selections once using the real catalog', async fault => {
+    const f = fixture(); f.publish()
+    const ref = f.runtime.contactSources.discover('reviewer', f.topic('reviewer'), '').items[0].ref
+    const run = f.store.createRun('reviewer', '')
+    const refs = fault === 'missing' ? undefined : fault === 'string-version' ? [{ ...ref, version: '1' }]
+      : fault === 'unknown' ? [{ ...ref, sectionId: 'guessed' }] : [ref, ref]
+    let calls = 0
+    await f.runtime.execute(run, '', async prompt => {
+      calls++
+      if (calls === 1) return JSON.stringify({ ...plan, action: 'discover_contacts' })
+      if (calls === 2) return JSON.stringify({ ...plan, action: 'read_contacts', contactRefs: refs })
+      if (calls === 3) {
+        expect(prompt).toContain('修正本轮读取共享成果')
+        expect(prompt).toContain(ref.topicId)
+        expect(prompt).not.toContain('帮助小团队')
+        return JSON.stringify({ ...plan, action: 'read_contacts', contactRefs: [ref], resourceBudget: { modelCalls: 9999, reason: '不应增加' } })
+      }
+      expect(prompt).toContain('帮助小团队')
+      return JSON.stringify({ title: '评价', body: '有待验证 [1]', nextStep: '继续', memories: [], question: '', progress })
+    }, new AbortController().signal)
+    expect(calls).toBe(4)
+    const detail = f.store.detail('reviewer', run)
+    expect(detail.run.status).toBe('completed')
+    expect(detail.report?.evidence).toHaveLength(1)
+    expect(detail.events.filter(event => event.kind === 'contact-plan-repair')).toHaveLength(1)
+    expect(f.store.db.prepare('SELECT COUNT(*) AS count FROM calls WHERE run_id=?').get(run)).toEqual({ count: 4 })
+  })
+  it.each(['invalid-again', 'skip-reading'])('stops without publishing when contact correction returns %s', async fault => {
+    const f = fixture(); f.publish()
+    const run = f.store.createRun('reviewer', '')
+    let calls = 0
+    await f.runtime.execute(run, '', async () => {
+      calls++
+      if (calls === 1) return JSON.stringify({ ...plan, action: 'discover_contacts' })
+      if (calls === 3 && fault === 'skip-reading') return JSON.stringify(plan)
+      return JSON.stringify({ ...plan, action: 'read_contacts', contactRefs: [] })
+    }, new AbortController().signal)
+    expect(calls).toBe(3)
+    const detail = f.store.detail('reviewer', run)
+    expect(detail.run.status).toBe('failed')
+    expect(detail.run.error).toContain('自动修正后仍失败')
+    expect(detail.report).toBeNull()
+    expect(detail.events.some(event => event.kind === 'contact-source')).toBe(false)
+    expect(f.runtime.contactSources.discover('reviewer', f.topic('reviewer'), '').items[0].processed).toBe(false)
+  })
+  it('does not spend a repair call when daily resources cannot cover repair and analysis', async () => {
+    const f = fixture(); f.publish()
+    f.store.save('reviewer', { ...f.store.overview('reviewer').settings, dailyCalls: 3 })
+    const run = f.store.createRun('reviewer', '')
+    const model = vi.fn(async () => JSON.stringify({ ...plan, action: model.mock.calls.length === 1 ? 'discover_contacts' : 'read_contacts', contactRefs: [] }))
+    await f.runtime.execute(run, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(f.store.detail('reviewer', run).run.error).toContain('额度不足')
+    expect(f.store.detail('reviewer', run).report).toBeNull()
+  })
+  it('provides a real catalog for an invalid initial read plan and permits waiting without a fabricated report', async () => {
+    const f = fixture(); f.publish()
+    const run = f.store.createRun('reviewer', '')
+    let calls = 0
+    await f.runtime.execute(run, '', async prompt => {
+      calls++
+      if (calls === 1) return JSON.stringify({ ...plan, action: 'read_contacts', contactRefs: [] })
+      expect(prompt).toContain('idea1')
+      return JSON.stringify({ ...plan, action: 'wait', reason: '暂时没有合适的新增评审对象' })
+    }, new AbortController().signal)
+    expect(calls).toBe(2)
+    expect(f.store.detail('reviewer', run).run.status).toBe('completed')
+    expect(f.store.detail('reviewer', run).report).toBeNull()
+  })
+  it('does not invoke correction or discovery without contact read permission', async () => {
+    const f = fixture(); f.publish()
+    const run = f.store.createRun('private', '')
+    const discover = vi.spyOn(f.runtime.contactSources, 'discover')
+    const model = vi.fn(async () => JSON.stringify({ ...plan, action: 'read_contacts', contactRefs: [] }))
+    await f.runtime.execute(run, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(1)
+    expect(discover).not.toHaveBeenCalled()
+    expect(f.store.detail('private', run).run.error).toContain('未授权')
   })
   it('defers without analysis when no shared outputs exist', async () => {
     const f = fixture(), run = f.store.createRun('reviewer', '')

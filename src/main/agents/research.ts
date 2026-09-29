@@ -3,6 +3,20 @@ import { validateTaskResourceBudget } from '../../shared/agent-resources'
 import { containsSecret } from '../../shared/memory'
 
 export class InvalidSectionReferenceError extends Error {}
+export class InvalidContactReferenceError extends Error {}
+
+export function validateContactSelection(plan: AgentResearchPlan, items: { ref: NonNullable<AgentResearchPlan['contactRefs']>[number]; processed: boolean }[]): void {
+  if (plan.action !== 'read_contacts') return
+  const seen = new Set<string>()
+  for (const [index, ref] of (plan.contactRefs ?? []).entries()) {
+    const key = JSON.stringify([ref.characterId, ref.topicId, ref.sectionId, ref.version])
+    if (seen.has(key)) throw new InvalidContactReferenceError(`contactRefs[${index}] 重复选择同一成果分节。`)
+    seen.add(key)
+    if (!items.some(item => !item.processed && item.ref.characterId === ref.characterId && item.ref.topicId === ref.topicId && item.ref.sectionId === ref.sectionId && item.ref.version === ref.version)) {
+      throw new InvalidContactReferenceError(`contactRefs[${index}] 不在本次检索的未处理成果目录中，版本或分节无效。`)
+    }
+  }
+}
 
 export function researchUrl(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 2000) return null
@@ -21,7 +35,15 @@ export function parseResearchPlan(raw: string, allowed: string[], minimum: numbe
   const contactAction = ['discover_contacts', 'read_contacts'].includes(value.action)
   if (contactAction && !contactAccess) throw new Error('未授权读取联系人的共享成果。')
   if (contactAction && (!Array.isArray(value.urls) || value.urls.length)) throw new Error('联系人成果读取不能混用网页地址。')
-  if (value.action === 'read_contacts' && (!Array.isArray(value.contactRefs) || !value.contactRefs.length || value.contactRefs.length > 3 || value.contactRefs.some((ref: any) => !ref || ![ref.characterId, ref.topicId, ref.sectionId].every(id => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) || !Number.isSafeInteger(ref.version) || ref.version < 1))) throw new Error('请从检索结果中选择有效的成果版本与分节。')
+  if (value.action === 'read_contacts') {
+    if (!Array.isArray(value.contactRefs) || !value.contactRefs.length || value.contactRefs.length > 3) throw new InvalidContactReferenceError('contactRefs 必须是包含 1–3 个有效成果引用的数组。')
+    for (const [index, ref] of value.contactRefs.entries()) {
+      for (const field of ['characterId', 'topicId', 'sectionId']) {
+        if (!ref || typeof ref[field] !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(ref[field])) throw new InvalidContactReferenceError(`contactRefs[${index}].${field} 缺失或格式无效，必须逐字使用目录中的 ID。`)
+      }
+      if (!Number.isSafeInteger(ref.version) || ref.version < 1) throw new InvalidContactReferenceError(`contactRefs[${index}].version 无效，必须使用目录中的正整数版本号。`)
+    }
+  }
   const query = typeof value.query === 'string' ? value.query.trim() : ''
   if (query.length > 300 || containsSecret(query) || value.action === 'search' && !query) throw new Error('搜索词无效或包含敏感凭据。')
   if (value.action === 'search' && (!searchEnabled || permission === 'sources')) throw new Error('当前权限或配置不允许自主搜索。')
