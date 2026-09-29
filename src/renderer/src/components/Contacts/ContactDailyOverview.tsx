@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AgentAnalytics } from '../../../../shared/agent-analytics'
 import { Trend } from './ContactAnalytics'
-import { workSegments, workTimelineRows } from './workTimeline'
+import { workSegments } from './workTimeline'
+import WorkTimelineChart from './WorkTimelineChart'
 import './ContactDailyOverview.css'
 
 const day = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -13,11 +14,10 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
 }) {
   const [data, setData] = useState<AgentAnalytics | null>(null)
   const [error, setError] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
   useEffect(() => {
     if (!active) return
     let alive = true, request = 0
-    setData(null); setError(''); setSelected(null)
+    setData(null); setError('')
     const refresh = async () => {
       const current = ++request
       try {
@@ -31,12 +31,9 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
     return () => { alive = false; window.clearInterval(timer); dispose() }
   }, [characterId, topicId, active])
   const segments = useMemo(() => data ? workSegments(data) : [], [data])
-  const rows = useMemo(() => data ? workTimelineRows(data) : [], [data])
   if (!active) return null
   if (!data) return <p className="agent-caption" role="status">{error || '正在读取今日工作记录…'}</p>
   const title = (id: string | null) => data.tasks.find(task => task.id === id)?.title || '未归属任务'
-  const pick = segments.find(segment => segment.key === selected) ?? segments.at(-1)
-  const percent = (at: number) => (at - data.start) / (data.end - data.start) * 100
   const logs = data.logs ?? []
   const totals = data.totals
   return <section className={`contact-daily${timelineOnly ? ' contact-daily-inline' : ''}`} data-contact-daily={topicId || 'all'} aria-label={timelineOnly ? '任务工作时间图' : '联系人今日概览'}>
@@ -50,34 +47,8 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
       </dl>
     </>}
     {error && <p className="agent-error" role="status">{error}</p>}
-    <section className="daily-timeline" aria-label="24 小时工作记录">
-      <header><h4>{timelineOnly ? '任务工作时间 · 今天' : '24h 工作记录'}</h4><span>执行 <i className="daily-key-running" />　心跳 <i className="daily-key-heartbeat" /></span></header>
-      <div className="daily-gantt-scroll" tabIndex={0} aria-label="按工作时段汇总的全天时间图">
-        <div className="daily-gantt">
-          {rows.map((row, index) => {
-            const last = row.ranges.at(-1)!
-            const flip = percent(last.end) > 65
-            return <div className="daily-lane" key={row.key} data-timeline-row={row.key}>
-              <div className="daily-track">
-                <div className="daily-future" style={{ left: `${Math.min(100, percent(data.measuredAt))}%` }} />
-                {row.ranges.map(segment => {
-                  const label = `${row.text} · ${clock(segment.start)}–${clock(segment.end)}`
-                  return <button type="button" key={segment.key} className="daily-segment" data-state={row.running ? 'running' : 'heartbeat'} data-color={index % 3}
-                    aria-label={label} title={label} aria-pressed={pick?.key === segment.key}
-                    style={{ left: `min(${percent(segment.start)}%, calc(100% - 16px))`, width: `${percent(segment.end) - percent(segment.start)}%` }}
-                    onClick={() => setSelected(segment.key)}><span aria-hidden="true" /></button>
-                })}
-                <span className="daily-line-tip" data-flip={flip} title={row.text}
-                  style={flip ? { right: `calc(${100 - percent(last.end)}% + 10px)`, top: '10px' } : { left: `min(calc(${percent(last.end)}% + 22px), calc(100% - 160px))` }}>{row.text}</span>
-              </div>
-            </div>
-          })}
-          <div className="daily-gantt-heading"><div className="daily-axis">{[0, 4, 8, 12, 16, 20, 24].map(hour => <span key={hour}>{String(hour).padStart(2, '0')}:00</span>)}</div></div>
-        </div>
-      </div>
-      {!segments.length && <p className="agent-empty">今天还没有工作时段记录。</p>}
+    <WorkTimelineChart data={data} timelineOnly={timelineOnly} />
 
-    </section>
     {!timelineOnly && <>
       <div className="daily-trends"><Trend data={data} time cumulative={false} days={1} onDay={() => {}} /><Trend data={data} cumulative={false} days={1} onDay={() => {}} /></div>
       <section className="daily-logs"><h4>今日任务日志</h4>

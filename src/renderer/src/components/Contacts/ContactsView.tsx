@@ -505,7 +505,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     </div>
     </>}
     {detail && <ResizableModal className="contacts-detail" role="dialog" label={`角色详情 ${detail.name}`}
-      initialWidth={560} initialHeight={680} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
+      initialWidth={860} initialHeight={680} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
       <div>
         <div className="contacts-detail-topbar">
         <div className="contacts-detail-head">

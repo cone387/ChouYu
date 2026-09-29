@@ -25,7 +25,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
   const [sources, setSources] = useState('')
   const [searchKey, setSearchKey] = useState(''), [keyConfigured, setKeyConfigured] = useState(false)
-  const [localTab, setLocalTab] = useState<ContactAgentTab>('work')
+  const [localTab, setLocalTab] = useState<ContactAgentTab>('overview')
   const tab = selectedTab ?? localTab
   const setTab = (next: ContactAgentTab) => { setLocalTab(next); onTabChange?.(next) }
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)

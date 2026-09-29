@@ -8,11 +8,11 @@
 .daily-metrics dt { color: var(--text-secondary); font-size: 12px; }
 .daily-metrics dd { margin: 6px 0 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .daily-metrics small { font-size: 12px; font-weight: 400; }
-.daily-timeline { padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-primary); }
+.daily-timeline { container-type: inline-size; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-primary); }
 .daily-key-running, .daily-key-heartbeat { display: inline-block; width: 8px; height: 8px; border-radius: 3px; background: var(--accent); }
 .daily-key-heartbeat { background: var(--warning); }
 .daily-gantt-scroll { margin-top: 14px; max-height: 440px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
-.daily-gantt { min-width: 580px; }
+.daily-gantt { min-width: 0; width: 100%; }
 .daily-gantt-heading, .daily-lane { display: block; }
 .daily-gantt-heading { position: sticky; bottom: 0; z-index: 3; background: var(--bg-primary); color: var(--text-secondary); font-size: 11px; border-top: 1px solid var(--border); }
 .daily-gantt-heading > span { padding: 10px; }
@@ -38,3 +38,4 @@
 .daily-trends > * { min-width: 0; }
 .daily-logs p { margin: 3px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .daily-logs strong { font-size: 12px; }
+@container (max-width: 360px) { .daily-axis span:nth-child(even) { display: none; } .daily-line-tip { max-width: 45%; } }

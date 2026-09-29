@@ -1,3 +1,4 @@
+import WorkTimelineChart from './WorkTimelineChart'
 import { useEffect, useRef, useState } from 'react'
 import type { AgentAnalytics, AnalyticsQuery, UsageBucket, UsageTotals } from '../../../../shared/agent-analytics'
 import type { AgentTopic } from '../../../../shared/agents'
@@ -9,7 +10,7 @@ const duration = (ms: number) => ms <= 0 ? '0 秒' : ms < 1000 ? '不足 1 秒' 
 const tokens = (value: UsageTotals) => !value.samples ? '0' : !value.reported ? '未记录' : `${number(value.tokens)}${value.reported < value.samples ? '（部分）' : ''}`
 const tokenPart = (value: UsageTotals, part: 'input' | 'output') => !value.samples ? '0' : !value[`${part}Reported`] ? '未记录' : `${number(value[part])}${value[`${part}Reported`] < value.samples ? '（部分）' : ''}`
 const stamp = (at: number) => new Date(at).toLocaleString('zh-CN', { hour12: false })
-const stateNames = { running: '执行', waiting: '等待回复', queued: '排队', interrupted: '中断' }
+
 
 export function Trend({ data, time, cumulative, days, onDay }: { data: AgentAnalytics; time?: boolean; cumulative: boolean; days: number; onDay: (date: string) => void }) {
   const [selected, setSelected] = useState<number | null>(null)
@@ -70,7 +71,7 @@ export default function ContactAnalytics({ characterId, name, topics, initialTop
     setData(null); setError('')
     const refresh = async () => {
       const current = ++sequence
-      try { const result = await window.electronAPI.agents.analytics(characterId, query); if (alive && current === sequence) { setData(result); setError('') } }
+      try { const result = await window.electronAPI.agents.analytics(characterId, { ...query, timeline: query.days === 1 }); if (alive && current === sequence) { setData(result); setError('') } }
       catch (e) { if (alive && current === sequence) setError(e instanceof Error ? e.message : '统计读取失败') }
     }
     void refresh()
@@ -92,16 +93,7 @@ export default function ContactAnalytics({ characterId, name, topics, initialTop
     {data && <>
       <div className="usage-summary">{[['Token 消耗', tokens(data.totals)], ['执行耗时', duration(data.totals.executionMs)], ['模型调用', `${number(data.totals.calls)} 次`], ['报告 / 失败轮次', `${data.totals.reports} / ${data.totals.failures}`]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
       <p className="usage-note">{new Date(data.start).toLocaleDateString()} — {query.date} · 已记录用量 {data.totals.reported} / {data.totals.samples} 笔 · 排队、等待回复及中断 {duration(data.totals.waitingMs)}</p>
-      {query.days === 1 && <section className="usage-timeline"><h4>一天的活动 <small>点击执行片段或标记查看工作记录</small></h4>
-        <div className="usage-legend"><span>━ 执行</span><span>▧ 等待回复 / 排队 / 中断</span><span>◆ 报告</span><span>× 失败</span></div>
-        <div className="usage-timeline-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-        {!data.spans.length && !data.activity.length && <p className="agent-empty">当天还没有工作活动。</p>}
-        {data.tasks.filter(t => data.spans.some(s => s.topicId === t.id) || data.activity.some(s => s.topicId === t.id)).map(t => <div className="usage-timeline-row" key={t.id ?? 'unassigned'}><span title={t.title}>{t.title}</span><div className="usage-track">
-          {data.spans.filter(s => s.topicId === t.id).map((s, i) => <button key={`${s.runId}-${i}`} className={`usage-span usage-${s.state}`} style={{ left: `${(s.start - data.start) / (data.end - data.start) * 100}%`, width: `${(s.end - s.start) / (data.end - data.start) * 100}%` }}
-            title={`${t.title} · ${stateNames[s.state]} · ${stamp(s.start)} — ${stamp(s.end)} · ${duration(s.end - s.start)}${s.approximate ? '（历史阶段推算）' : ''}`} aria-label={`${t.title} ${stateNames[s.state]} ${stamp(s.start)} ${duration(s.end - s.start)}，查看记录`} onClick={() => onReport(s.runId)} />)}
-          {data.activity.filter(a => a.topicId === t.id).map(a => <button key={`${a.runId}-${a.kind}`} className={`usage-marker usage-${a.kind}`} style={{ left: `clamp(0px, ${(a.at - data.start) / (data.end - data.start) * 100}%, calc(100% - 16px))` }} title={`${stamp(a.at)} · ${a.kind === 'report' ? '发布报告' : '执行失败'}`} aria-label={`${t.title} ${stamp(a.at)} ${a.kind === 'report' ? '发布报告' : '执行失败'}，查看记录`} onClick={() => onReport(a.runId)}>{a.kind === 'report' ? '◆' : '×'}</button>)}
-        </div></div>)}
-      </section>}
+      {query.days === 1 && <WorkTimelineChart data={data} onReport={onReport} />}
       <div className="usage-mode"><span>消耗走势</span><button aria-pressed={!cumulative} onClick={() => setCumulative(false)}>分时</button><button aria-pressed={cumulative} onClick={() => setCumulative(true)}>累计</button></div>
       <Trend data={data} days={query.days} cumulative={cumulative} onDay={day} />
       <Trend data={data} days={query.days} cumulative={cumulative} time onDay={day} />

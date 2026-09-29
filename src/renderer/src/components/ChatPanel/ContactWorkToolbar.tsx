@@ -17,7 +17,7 @@ const entries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
 ]
 
 /** Mount per conversation: drafts survive closing, never cross contact/session boundaries. */
-export default function ContactWorkToolbar({ characterId, name, onClose, focusRequest, onDiscuss, initialTab = 'work', standalone = false }: {
+export default function ContactWorkToolbar({ characterId, name, onClose, focusRequest, onDiscuss, initialTab = 'overview', standalone = false }: {
   characterId: string; name: string; onClose: () => void; focusRequest?: AgentFocusRequest
   onDiscuss?: (reference: AgentDiscussion) => void
   initialTab?: ContactAgentTab; standalone?: boolean
@@ -48,10 +48,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
       dialog.dataset.resized = 'true'
       return
     }
-    const rect = dialog.getBoundingClientRect()
-    const width = Math.min(rect.width, window.innerWidth - 16)
-    const height = Math.min(rect.height, window.innerHeight - 16)
-    Object.assign(dialog.style, { left: `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`, top: `${Math.max(8, Math.min(rect.top, window.innerHeight - height - 8))}px`, transform: 'none' })
+    // Once moved by the user, keep that position even beyond viewport edges.
   }
   const beginGesture = (event: PointerEvent<HTMLElement>, kind: NonNullable<typeof gesture.current>['kind']) => {
     if (event.button !== 0 || (kind === 'move' && (event.target as HTMLElement).closest('button'))) return
@@ -70,8 +67,8 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
     if (!start || !dialog) return
     const dx = event.screenX - start.x, dy = event.screenY - start.y
     if (start.kind === 'move') {
-      dialog.style.left = `${Math.max(8, Math.min(start.left + dx, window.innerWidth - start.width - 8))}px`
-      dialog.style.top = `${Math.max(8, Math.min(start.top + dy, window.innerHeight - start.height - 8))}px`
+      dialog.style.left = `${start.left + dx}px`
+      dialog.style.top = `${start.top + dy}px`
     } else {
       const right = start.left + start.width, bottom = start.top + start.height
       const minWidth = Math.min(340, window.innerWidth - 16), minHeight = Math.min(240, window.innerHeight - 16)
