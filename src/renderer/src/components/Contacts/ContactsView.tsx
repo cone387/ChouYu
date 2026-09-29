@@ -519,7 +519,6 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
         </div>
         </div>
-        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
         <details className="contacts-profile-details" open={detail.id === ASSISTANT_CHARACTER_ID}>
         <summary>角色资料</summary>
         <div className="contacts-detail-fields">
@@ -537,6 +536,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <p className="contacts-detail-soul-title">人设</p>
         <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
         </details>
+        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
       </div>
     </ResizableModal>}
     {confirmDelete && <div className="contacts-scrim" role="presentation">

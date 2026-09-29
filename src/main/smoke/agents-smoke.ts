@@ -177,7 +177,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, `document.querySelector('.contacts-activity-viewport').textContent !== ${JSON.stringify(previousLog)}`)
     if (!await run("document.querySelectorAll('[data-contacts-activity] li[data-kind=heartbeat]').length === 1 && document.querySelector('[data-contacts-activity] li[data-kind=heartbeat]') === window.__heartbeatRow")) throw new Error('Heartbeat updates appended duplicate rows')
     if (!await run("getComputedStyle(document.querySelector('.contacts-body')).overflowY === 'auto' && getComputedStyle(document.querySelector('.contacts-scroll')).overflowY === 'visible'")) throw new Error('Contact scrollbar is not on the outer right edge')
-    await waitForRenderer(window, "(() => {const el=document.querySelector('.contacts-activity-viewport'); return el.scrollHeight-el.clientHeight-el.scrollTop < 17})()")
+    await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
+    const rollBefore = await run("document.querySelector('.contacts-activity-viewport').scrollTop")
+    await waitForRenderer(window, `Math.abs(document.querySelector('.contacts-activity-viewport').scrollTop - ${rollBefore}) > 5`)
+    await waitForRenderer(window, "(() => { const el=document.querySelector('.contacts-activity-viewport'); return el.scrollTop > 8 && el.scrollTop < el.scrollHeight-el.clientHeight-8 })()")
     const cardCount = await run("document.querySelectorAll('[data-contacts-item]').length")
     for (const metric of ['tokens', 'tasks']) {
       await run(`document.querySelector('[data-contacts-sort-key=${metric}]').click()`)
@@ -202,8 +205,13 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       window.webContents.disableDeviceEmulation()
       await run(`document.querySelector('.chat-panel').setAttribute('style', ${JSON.stringify(panelStyle ?? '')})`)
     }
+    await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
     await run("document.querySelector('[data-contacts-activity] li[data-kind=waiting] button').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-topic-id][aria-current=true]'))")
+    if (logDirectory) {
+      await run("document.querySelector('.contacts-detail').scrollTop=0")
+      writeFileSync(join(logDirectory, 'contact-detail-header.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+    }
     await run("document.querySelector('[data-topic-id][aria-current=true]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-work-log] li[data-kind=waiting]'))")
     await run("Array.from(document.querySelectorAll('[data-agent-work-log] button')).find(b => b.textContent === '去回复').click()")

@@ -81,6 +81,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
     if (!await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-close]')) && Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-start-chat]')) && document.querySelector('.contacts-detail-actions').getBoundingClientRect().top < document.querySelector('.contact-agent').getBoundingClientRect().top")) throw new Error('Contact detail actions are not at the top')
+    if (!await window.webContents.executeJavaScript("(() => { const head=document.querySelector('.contacts-detail-head').getBoundingClientRect(); const actions=document.querySelector('.contacts-detail-actions').getBoundingClientRect(); const profile=document.querySelector('.contacts-profile-details'); const agent=document.querySelector('.contact-agent'); return actions.left >= head.right && actions.top < head.bottom && profile.getBoundingClientRect().top < agent.getBoundingClientRect().top && !agent.nextElementSibling })()")) throw new Error('Details must place actions beside the name and profile before the final task panel')
     await click(window, '[data-contacts-close]')
     // The menu trigger keeps focus while details are open: no focusin is fired
     // on dismissal. Use real Escape input to reproduce its keyboard highlight.
@@ -145,7 +146,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await click(window, `[data-contacts-menu="${character.id}"]`)
     await click(window, `[data-contacts-menu-delete="${character.id}"]`)
     await click(window, '[data-contacts-confirm-delete]')
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await waitForRenderer(window, `!document.querySelector('[data-contacts-confirm-delete]') && !document.querySelector('[data-contacts-item="${character.id}"]')`)
     if (getCharacter(character.id)) throw new Error('Character was not deleted')
 
     // 8) 回到聊天页：chat-smoke 的首个等待依赖 .input-textarea。

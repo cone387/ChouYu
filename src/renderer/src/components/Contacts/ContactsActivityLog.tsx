@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AgentDashboard } from '../../../../shared/agents'
 import type { CharacterStats } from '../../../../shared/characters'
 import { workLogActivity } from './workLogActivity'
@@ -29,19 +29,36 @@ export default function ContactsActivityLog({ data, error, characters, active, o
     ...(data?.events.map(event => ({ key: `event-${event.id}`, ...event })) ?? []),
     ...monitors.map(monitor => ({ key: `heartbeat-${monitor.characterId}`, at: now, characterId: monitor.characterId, text: monitor.text, kind: 'heartbeat' }))
   ]
-  const latest = rows.at(-1)?.key
-  useLayoutEffect(() => {
-    if (!active) return
-    const node = viewport.current
-    node?.scrollTo({ top: node.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
-  }, [latest, now, active])
+  // A clock update must not restart the roll. Real events or contact status
+  // changes restart from the newest entries, then cycle through the history.
+  const revision = rows.map(row => row.key).join('|')
   useEffect(() => {
     const node = viewport.current
-    if (!node) return
-    const observer = new ResizeObserver(() => node.scrollTo({ top: node.scrollHeight, behavior: 'instant' }))
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [])
+    if (!active || !node) return
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let frame = 0, previous = 0, holdUntil = 0, position = 0
+    node.scrollTo({ top: node.scrollHeight, behavior: 'instant' })
+    const roll = (at: number) => {
+      const elapsed = previous ? Math.min(at - previous, 100) : 0
+      if (!previous) holdUntil = at + 1500
+      previous = at
+      const max = Math.max(0, node.scrollHeight - node.clientHeight)
+      if (!node.clientHeight) { holdUntil = at + 1500 }
+      else if (reducedMotion.matches || max === 0) { node.scrollTop = max; position = max }
+      else if (at >= holdUntil) {
+        if (node.scrollTop >= max - 1) {
+          position = 0; node.scrollTop = 0; holdUntil = at + 1000
+        } else {
+          position = Math.max(position, node.scrollTop) + elapsed * 0.025
+          node.scrollTop = Math.min(position, max)
+          if (position >= max) holdUntil = at + 1500
+        }
+      }
+      frame = requestAnimationFrame(roll)
+    }
+    frame = requestAnimationFrame(roll)
+    return () => cancelAnimationFrame(frame)
+  }, [active, revision])
   const running = monitors.filter(monitor => monitor.label === 'RUNNING').length
   return <section className="contacts-activity" data-contacts-activity aria-label="所有联系人活动日志">
     <header><strong><i aria-hidden="true" data-live={Boolean(monitors.length && !error)} />全员活动</strong>
