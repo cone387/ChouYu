@@ -5,6 +5,9 @@ import type { SessionWorkspace } from '../../shared/types'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import { ContactAgentPanel } from './ContactAgentPanel'
 import ContactCardStats from './ContactCardStats'
+import ContactsActivityLog from './ContactsActivityLog'
+import { useContactsDashboard } from './useContactsDashboard'
+import { compareMetrics, matchesMetrics, type MetricSort, type TaskFilter, type TokenFilter } from './contactMetrics'
 import './Contacts.css'
 
 interface ContactsViewProps {
@@ -29,7 +32,7 @@ interface FormState {
 }
 
 type CategoryFilter = 'all' | 'other' | string
-type SortKey = 'pinyin' | 'popular' | 'recent'
+type SortKey = 'pinyin' | 'popular' | 'recent' | MetricSort
 
 const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '' }
 
@@ -173,10 +176,9 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
   </div>
 }
 
-function ContactMenu({ character, active, onDetail, onEdit, onDelete }: {
+function ContactMenu({ character, active, onEdit, onDelete }: {
   character: CharacterStats
   active: boolean
-  onDetail: () => void
   onEdit: () => void
   onDelete: () => void
 }) {
@@ -235,7 +237,6 @@ function ContactMenu({ character, active, onDetail, onEdit, onDelete }: {
           : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
         items[next]?.focus()
       }}>
-      <button type="button" role="menuitem" data-contacts-menu-detail={character.id} onClick={() => choose(onDetail)}>查看详情</button>
       {character.id !== ASSISTANT_CHARACTER_ID && <button type="button" role="menuitem" data-contacts-menu-edit={character.id} onClick={() => choose(onEdit)}>编辑</button>}
       {!character.builtIn && <button type="button" role="menuitem" className="danger" data-contacts-menu-delete={character.id} onClick={() => choose(onDelete)}>删除</button>}
     </div>}
@@ -249,6 +250,9 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [modelFilter, setModelFilter] = useState('all')
   const [sort, setSort] = useState<SortKey>('pinyin')
+  const [tokenFilter, setTokenFilter] = useState<TokenFilter>('all')
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
+  const { data: dashboard, error: dashboardError } = useContactsDashboard(active && !detailOnly)
   const [detail, setDetail] = useState<CharacterStats | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [error, setError] = useState('')
@@ -305,8 +309,11 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       .filter((character) => !normalized
         || character.name.toLowerCase().includes(normalized)
         || character.model.toLowerCase().includes(normalized))
-      .sort((a, b) => compareBySort(a, b, sort))
-  }, [characters, query, category, modelFilter, sort])
+      .filter(character => matchesMetrics(dashboard?.contacts[character.id]?.summary, tokenFilter, taskFilter))
+      .sort((a, b) => sort.startsWith('tokens-') || sort.startsWith('tasks-')
+        ? compareMetrics(dashboard?.contacts[a.id]?.summary, dashboard?.contacts[b.id]?.summary, sort as MetricSort) || sortByName(a, b)
+        : compareBySort(a, b, sort))
+  }, [characters, query, category, modelFilter, sort, dashboard, tokenFilter, taskFilter])
 
   const profileNameOf = useCallback((character: CharacterStats): string => {
     const id = character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId
@@ -429,8 +436,24 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           aria-pressed={modelFilter === model} onClick={() => setModelFilter(model)}>{model}</button>)}
       </div>}
     </div>
+    <div className="contacts-metric-filters" data-contacts-metric-filters aria-label="按任务消耗与数量筛选">
+      <label>Token 消耗<select data-contacts-token-filter value={tokenFilter} onChange={event => setTokenFilter(event.target.value as TokenFilter)}>
+        <option value="all">全部消耗</option><option value="zero">无消耗</option><option value="under10k">0–1 万（不含）</option>
+        <option value="10kTo100k">1 万–10 万（不含）</option><option value="over100k">10 万及以上</option><option value="unreported">用量有缺失</option>
+      </select></label>
+      <label>任务数量<select data-contacts-task-filter value={taskFilter} onChange={event => setTaskFilter(event.target.value as TaskFilter)}>
+        <option value="all">全部任务数</option><option value="zero">无任务</option><option value="1to5">1–5 个</option><option value="over5">6 个及以上</option>
+      </select></label>
+      <label>指标排序<select data-contacts-metric-sort value={sort.includes('-') ? sort : ''} onChange={event => setSort(event.target.value ? event.target.value as MetricSort : 'pinyin')}>
+        <option value="">默认排序</option><option value="tokens-desc">Token 从多到少</option><option value="tokens-asc">Token 从少到多</option>
+        <option value="tasks-desc">任务从多到少</option><option value="tasks-asc">任务从少到多</option>
+      </select></label>
+      <button type="button" onClick={() => { setTokenFilter('all'); setTaskFilter('all'); setSort('pinyin') }}>重置指标</button>
+      <span title="按任务累计 Token 筛选，不含普通聊天；部分用量缺失时按已记录值筛选，完全未记录时不按零消耗计算。">{filtered.length} 位联系人 · 任务累计用量{dashboardError ? ' · 数据待刷新' : !dashboard ? ' · 读取中' : ''}</span>
+    </div>
     {error && !form && !confirmDelete && <div className="contacts-error" role="alert">{error}</div>}
     <div className="contacts-scroll">
+      <ContactsActivityLog data={dashboard} error={dashboardError} characters={characters} active={active} onDetail={setDetail} />
       <div className="contacts-grid">
         <div className="contacts-card-container">
         <button type="button" className="contacts-card" data-contacts-item={ASSISTANT_CHARACTER_ID}
@@ -444,8 +467,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           </span>
           <span className="contacts-card-desc">问候、休息与任务提醒会以聊天消息出现，可以随时回复。</span>
         </button>
-        {assistant && <ContactMenu character={assistant} active={active}
-          onDetail={() => setDetail(assistant)} onEdit={() => {}} onDelete={() => {}} />}
+        {assistant && <button type="button" className="contacts-card-detail" data-contacts-card-detail={assistant.id} onClick={() => setDetail(assistant)}>详情</button>}
         </div>
         {filtered.map((character) => {
           const model = character.builtIn ? config.model : character.model
@@ -461,15 +483,16 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
               </span>
             </span>
             <span className="contacts-card-desc">{soulSummary || '未设置人设，使用默认丑鱼人格'}</span>
-            <ContactCardStats characterId={character.id} active={active} />
+            <ContactCardStats data={dashboard?.contacts[character.id]?.summary} error={dashboardError} />
             <span className="contacts-card-tags">
               {character.category && <span className="contacts-card-tag">{INDUSTRY_LABELS[character.category]}</span>}
               <span className="contacts-card-tag">{profileNameOf(character)}</span>
               <span className="contacts-card-tag">{character.sessionCount} 个会话</span>
             </span>
           </button>
+          <button type="button" className="contacts-card-detail" data-contacts-card-detail={character.id} aria-label={`查看${character.name}的详情`} onClick={() => setDetail(character)}>详情</button>
           <ContactMenu character={character} active={active}
-            onDetail={() => setDetail(character)} onEdit={() => openForm(character)}
+            onEdit={() => openForm(character)}
             onDelete={() => { setError(''); setConfirmDelete(character) }} />
           </div>
         })}

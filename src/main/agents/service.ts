@@ -55,6 +55,11 @@ export class AgentService {
   async request(method: string, id: string, args: unknown[] = []): Promise<any> {
     // Newly created contacts may be deleted before the next identity sync.
     if (method === 'remove') { await this.remove(id); return null }
+    // This read is scoped by the main process's current contact list, not a single identity.
+    if (method === 'dashboard') {
+      if (!Array.isArray(args[0]) || !args[0].every(value => typeof value === 'string')) throw new Error('联系人列表无效。')
+      return this.store.dashboard(args[0])
+    }
     this.identity(id)
     switch (method) {
       case 'feedback': {

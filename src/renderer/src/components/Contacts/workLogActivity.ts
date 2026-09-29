@@ -1,6 +1,6 @@
-import { agentUsesPlanner, type AgentEvent, type AgentOverview, type AgentRun } from '../../../../shared/agents'
+import { agentUsesPlanner, type AgentEvent, type AgentActivityContext, type AgentRun } from '../../../../shared/agents'
 
-export function workLogActivity(run: AgentRun, data: AgentOverview, last: AgentEvent | undefined, now: number, error: string) {
+export function workLogActivity(run: AgentRun, data: AgentActivityContext, last: AgentEvent | undefined, now: number, error: string) {
   if (error) return { label: 'RECONNECTING', text: '日志连接中断，正在重新连接', moving: true }
   const seconds = Math.max(0, Math.floor((now - (last?.at ?? run.updatedAt)) / 1000))
   if (run.status === 'running') return { label: 'RUNNING', text: `正在执行 · ${last?.text.split('\n')[0].slice(0, 90) || '处理本轮任务'} · 当前步骤 ${seconds} 秒`, moving: true }

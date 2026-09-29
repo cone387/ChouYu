@@ -97,6 +97,7 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI {
+  dashboard(): Promise<AgentDashboard>
   summary(characterId: string): Promise<AgentSummary>
   continueTopic(characterId: string, topicId: string, revision: number, reason: string): Promise<AgentOverview>
   setTaskBudget(characterId: string, topicId: string, revision: number, budget: Pick<import('./agent-resources').TaskResourceBudget, 'modelCalls'>): Promise<AgentOverview>
@@ -125,6 +126,9 @@ export interface AgentAPI {
   onChanged(callback: (characterId: string) => void): () => void
 }
 export interface AgentSummary { tasks: number; activeTasks: number; memories: number; calls: number; reported: number; tokens: number }
+export type AgentActivityContext = Pick<AgentOverview, 'settings' | 'focusTopicId' | 'topics' | 'nextAt' | 'callsToday'>
+export interface AgentDashboardContact extends AgentActivityContext { summary: AgentSummary; run?: AgentRun; latestActivity?: AgentEvent }
+export interface AgentDashboard { contacts: Record<string, AgentDashboardContact>; events: (AgentEvent & { characterId: string; topicTitle: string })[] }
 export function validateAgentSettings(raw: unknown): AgentSettings {
   if (!raw || typeof raw !== 'object') throw new Error('工作设置无效。')
   const value = raw as AgentSettings

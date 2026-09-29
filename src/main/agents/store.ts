@@ -80,6 +80,28 @@ export class AgentStore {
     })()
   }
   close() { this.db.close() }
+  dashboard(characterIds: string[]): import('../../shared/agents').AgentDashboard {
+    const contacts: import('../../shared/agents').AgentDashboard['contacts'] = {}
+    for (const id of characterIds) {
+      const profile = this.profile(id)
+      const row = this.db.prepare('SELECT * FROM runs WHERE character_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id) as RunRow | undefined
+      const event = row && this.db.prepare('SELECT * FROM events WHERE run_id=? ORDER BY id DESC LIMIT 1').get(row.id) as { id: number; run_id: string; kind: string; text: string; at: number } | undefined
+      contacts[id] = {
+        summary: this.summary(id), settings: profile ? JSON.parse(profile.settings) : { ...DEFAULT_AGENT_SETTINGS },
+        focusTopicId: profile?.focus_topic_id ?? null,
+        topics: profile?.focus_topic_id ? [this.topics.get(id, profile.focus_topic_id)] : [],
+        nextAt: profile?.next_at ?? 0, callsToday: this.callCount(id), run: row ? mapRun(row) : undefined,
+        latestActivity: event ? { id: event.id, runId: event.run_id, kind: event.kind, text: event.text, at: event.at } : undefined
+      }
+    }
+    // Only return existing contacts. The bounded window includes every run and topic,
+    // rather than just the latest event of each contact.
+    const rows = this.db.prepare(`SELECT e.*,r.character_id,COALESCE(json_extract(t.value,'$.title'),'') AS topic_title
+      FROM events e JOIN runs r ON r.id=e.run_id LEFT JOIN topics t ON t.id=r.topic_id
+      WHERE r.character_id IN (SELECT value FROM json_each(?)) ORDER BY e.id DESC LIMIT 120`)
+      .all(JSON.stringify(characterIds)) as { id: number; run_id: string; character_id: string; topic_title: string; kind: string; text: string; at: number }[]
+    return { contacts, events: rows.reverse().map(e => ({ id: e.id, runId: e.run_id, characterId: e.character_id, topicTitle: e.topic_title, kind: e.kind, text: e.text, at: e.at })) }
+  }
   summary(characterId: string): import('../../shared/agents').AgentSummary {
     const topics = this.topics.list(characterId)
     const active = new Set((this.db.prepare("SELECT DISTINCT topic_id FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(characterId) as { topic_id: string | null }[]).map(r => r.topic_id))

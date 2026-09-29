@@ -75,16 +75,15 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     const character = listCharacters().find((item) => item.name === '冒烟猫')
     if (!character) throw new Error('Character was not created')
 
-    // 卡片菜单可查看详情和直接编辑，操作期间保持在通讯录。
-    await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-menu="${character.id}"]'))`)
-    await click(window, `[data-contacts-menu="${character.id}"]`)
-    await click(window, `[data-contacts-menu-detail="${character.id}"]`)
+    // 卡片直接打开详情；菜单只保留编辑和删除，操作期间保持在通讯录。
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-card-detail="${character.id}"]'))`)
+    await click(window, `[data-contacts-card-detail="${character.id}"]`)
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
     await click(window, '[data-contacts-close]')
     // The menu trigger keeps focus while details are open: no focusin is fired
     // on dismissal. Use real Escape input to reproduce its keyboard highlight.
-    for (const action of ['detail', 'edit', 'delete']) {
+    for (const action of ['edit', 'delete']) {
       await click(window, `[data-contacts-menu="${character.id}"]`)
       await click(window, `[data-contacts-menu-${action}="${character.id}"]`)
       await waitForRenderer(window, "!!document.querySelector('.contacts-scrim')")

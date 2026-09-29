@@ -114,6 +114,10 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  ipcMain.handle('agents:dashboard', async () => {
+    await ensure()
+    return rpc('dashboard', '', [listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id)])
+  })
   ipcMain.handle('agents:exportDelivery', async (event, id: string, topicId: string, version: number) => {
     if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     await ensure()

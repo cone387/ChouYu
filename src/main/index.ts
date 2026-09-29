@@ -123,6 +123,8 @@ function createWindow(): void {
           await runNativeCaptureSmoke()
         } else if (process.env.CHOUYU_SMOKE_AGENTS_ONLY === '1') {
           await runAgentsSmoke(mainWindow!)
+        } else if (process.env.CHOUYU_SMOKE_CONTACTS_ONLY === '1') {
+          await runContactsSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_TASK_ASSISTANT_ONLY === '1') {
           await runTaskAssistantSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_TASK_SCHEDULING_ONLY === '1') {
