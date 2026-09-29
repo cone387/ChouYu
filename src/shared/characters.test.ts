@@ -20,9 +20,10 @@ describe('sanitizeCharacterDraft', () => {
     expect(sanitizeCharacterDraft({ name: ' 小猫 ', model: ' m1 ', soulMd: 'x', providerProfileId: 'default' }))
       .toEqual({ name: '小猫', avatar: '小', category: '', soulMd: 'x', providerProfileId: 'default', model: 'm1' })
   })
-  it('rejects missing name or model', () => {
+  it('rejects missing names and requires a model for a separate service', () => {
     expect(sanitizeCharacterDraft({ name: '', model: 'm' })).toBeNull()
-    expect(sanitizeCharacterDraft({ name: 'a', model: '' })).toBeNull()
+    expect(sanitizeCharacterDraft({ name: 'a', model: '', providerProfileId: 'other' })).toBeNull()
+    expect(sanitizeCharacterDraft({ name: 'a', model: '' })?.model).toBe('')
     expect(sanitizeCharacterDraft('junk')).toBeNull()
   })
   it('keeps the full emoji when deriving the avatar from an astral name', () => {
@@ -151,8 +152,15 @@ describe('resolveCharacterConfig', () => {
     const result = resolveCharacterConfig({ ...customCharacter, soulMd: '' }, baseConfig)
     expect(result.ok && result.config.soulMd).toBe(DEFAULT_SOUL_MD)
   })
-  it('errors when a custom character has a blank model', () => {
-    const result = resolveCharacterConfig({ ...customCharacter, model: '   ' }, baseConfig)
+  it('resolves a blank model live from system defaults, including after persistence', () => {
+    const character = normalizeCharacters([{ ...customCharacter, model: '' }]).find(c => c.id === customCharacter.id)!
+    const first = resolveCharacterConfig(character, baseConfig)
+    const changed = resolveCharacterConfig(character, { ...baseConfig, model: 'as-glm-5.2' })
+    expect(first.ok && first.config.model).toBe('gpt-test')
+    expect(changed.ok && changed.config.model).toBe('as-glm-5.2')
+  })
+  it('errors when neither the contact nor global configuration has a model', () => {
+    const result = resolveCharacterConfig({ ...customCharacter, model: '   ' }, { ...baseConfig, model: '' })
     expect(result.ok).toBe(false)
     expect((result as { error: string }).error).toContain('尚未设置模型')
   })

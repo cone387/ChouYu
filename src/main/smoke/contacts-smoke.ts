@@ -137,7 +137,16 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await click(window, `[data-contacts-menu-edit="${character.id}"]`)
     await waitForRenderer(window, `document.querySelector('[data-contacts-name]')?.value === '冒烟猫'
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
-    await window.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    await click(window, '[data-contacts-model-default]')
+    await waitForRenderer(window, "document.querySelector('[data-contacts-model]')?.value === '' && !document.querySelector('[data-contacts-model]').required")
+    await click(window, '[data-contacts-save]')
+    await waitForRenderer(window, `!document.querySelector('[data-contacts-form]') && document.querySelector('[data-contacts-item="${character.id}"] .contacts-card-subtitle')?.textContent.includes('default-model')`)
+    if (getCharacter(character.id)?.model !== '') throw new Error('Following the system model must persist without freezing the current model name')
+    await click(window, `[data-contacts-menu="${character.id}"]`)
+    await click(window, `[data-contacts-menu-edit="${character.id}"]`)
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-contacts-model]'))")
+    await input(window, '[data-contacts-model]', 'cat-model')
+    await click(window, '[data-contacts-save]')
     await waitForRenderer(window, "!document.querySelector('[data-contacts-form]')")
 
     // 5) 点击角色卡片直接进入会话页，联系人信息条可见（等列表异步刷新渲染出该角色的卡片再点）

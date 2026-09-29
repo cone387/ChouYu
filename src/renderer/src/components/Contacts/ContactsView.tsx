@@ -299,9 +299,9 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const assistant = characters.find((character) => character.id === ASSISTANT_CHARACTER_ID)
 
   const distinctModels = useMemo(
-    () => [...new Set(characters.map((character) => character.model).filter(Boolean))]
+    () => [...new Set(characters.map((character) => character.builtIn || !character.model ? config.model : character.model).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b)),
-    [characters])
+    [characters, config.model])
 
   // 行业 tab：只列出已有角色的行业，顺序固定；未归类的角色落在「其他」。
   const industryTabs = useMemo(
@@ -314,14 +314,14 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       .filter((character) => character.id !== ASSISTANT_CHARACTER_ID)
       .filter((character) => category === 'all'
         || (category === 'other' ? !character.category : character.category === category))
-      .filter((character) => modelFilter === 'all' || character.model === modelFilter)
+      .filter((character) => modelFilter === 'all' || (character.builtIn || !character.model ? config.model : character.model) === modelFilter)
       .filter((character) => !normalized
         || character.name.toLowerCase().includes(normalized)
-        || character.model.toLowerCase().includes(normalized))
+        || (character.builtIn || !character.model ? config.model : character.model).toLowerCase().includes(normalized))
       .sort((a, b) => sort === 'tokens' || sort === 'tasks'
         ? compareMetrics(dashboard?.contacts[a.id]?.summary, dashboard?.contacts[b.id]?.summary, `${sort}-${sortDirection}`) || sortByName(a, b)
         : compareBySort(a, b, sort) * (sort === 'pinyin' ? sortDirection === 'asc' ? 1 : -1 : sortDirection === 'desc' ? 1 : -1))
-  }, [characters, query, category, modelFilter, sort, dashboard, sortDirection])
+  }, [characters, query, category, modelFilter, sort, dashboard, sortDirection, config.model])
 
   const profileNameOf = useCallback((character: CharacterStats): string => {
     const id = character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId
@@ -479,7 +479,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         {assistant && <button type="button" className="contacts-card-detail" data-contacts-card-detail={assistant.id} onClick={() => setDetail(assistant)}>详情</button>}
         </div>
         {filtered.map((character) => {
-          const model = character.builtIn ? config.model : character.model
+          const model = character.builtIn || !character.model ? `跟随默认 · ${config.model}` : character.model
           const soulSummary = summarizeSoulMd(character.builtIn ? config.soulMd : character.soulMd)
           return <div key={character.id} className="contacts-card-container">
           <button type="button" data-contacts-item={character.id}
@@ -537,7 +537,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <section className="contacts-profile-details" aria-label="角色资料">
           <h3>角色资料</h3>
           <dl className="contacts-detail-fields">
-            <div><dt>模型</dt><dd>{detail.builtIn ? config.model : detail.model}</dd></div>
+            <div><dt>模型</dt><dd>{detail.builtIn || !detail.model ? `跟随默认 · ${config.model}` : detail.model}</dd></div>
             <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
             <div><dt>AI 服务</dt><dd title={`角色使用的服务连接：${profileNameOf(detail)}；模型由模型字段指定。`}>{profileNameOf(detail)}</dd></div>
             <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
@@ -588,7 +588,8 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             {INDUSTRIES.map((industry) => <option key={industry.id} value={industry.id}>{industry.label}</option>)}
           </select></label>
         <label className="contacts-field"><span className="contacts-field-name">模型</span>
-          <input data-contacts-model value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} required list="contacts-model-options" />
+          <input data-contacts-model value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} required={form.id === DEFAULT_CHARACTER_ID || form.providerProfileId !== DEFAULT_PROFILE_ID} placeholder={form.providerProfileId === DEFAULT_PROFILE_ID ? `留空跟随系统默认（${config.model}）` : '填写模型名称'} list="contacts-model-options" />
+          {form.id !== DEFAULT_CHARACTER_ID && form.providerProfileId === DEFAULT_PROFILE_ID && <button type="button" className="contacts-fetch" data-contacts-model-default aria-pressed={!form.model} title={`跟随系统默认：${config.model}`} onClick={() => setForm({ ...form, model: '' })}>跟随默认</button>}
           <button type="button" className="contacts-fetch" data-contacts-fetch-models onClick={() => { void loadModels() }} disabled={busy}>获取模型</button>
           <datalist id="contacts-model-options">{models.map((model) => <option key={model} value={model} />)}</datalist>
         </label>

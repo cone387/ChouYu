@@ -91,10 +91,10 @@ export function sanitizeCharacterDraft(value: unknown): CharacterDraft | null {
   const name = typeof input.name === 'string' ? clampCodePoints(input.name.replace(/\s+/g, ' ').trim(), MAX_CHARACTER_NAME_LENGTH) : ''
   if (!name) return null
   const model = typeof input.model === 'string' ? input.model.trim().slice(0, 256) : ''
-  if (!model) return null
   const providerProfileId = typeof input.providerProfileId === 'string' && input.providerProfileId.trim()
     ? input.providerProfileId.trim().slice(0, 128)
     : DEFAULT_PROFILE_ID
+  if (!model && providerProfileId !== DEFAULT_PROFILE_ID) return null
   const avatar = typeof input.avatar === 'string' && input.avatar.trim() ? clampCodePoints(input.avatar.trim(), 8) : Array.from(name)[0] ?? ''
   const category = typeof input.category === 'string' && input.category in INDUSTRY_LABELS ? input.category : ''
   const soulMd = typeof input.soulMd === 'string' ? input.soulMd.slice(0, 50_000) : ''
@@ -205,9 +205,10 @@ export function resolveCharacterConfig(character: Character | undefined | null, 
   if (!profile.baseUrl.trim() || !profile.apiKey.trim()) {
     return { ok: false, error: `档案「${profile.name}」缺少 Base URL 或 API Key，请到设置页补全。` }
   }
-  if (!character.model.trim()) return { ok: false, error: `角色「${character.name}」尚未设置模型，请在通讯录中补全。` }
+  const model = character.model.trim() || (character.providerProfileId === DEFAULT_PROFILE_ID ? config.model.trim() : '')
+  if (!model) return { ok: false, error: `角色「${character.name}」尚未设置模型，请在通讯录或系统设置中补全。` }
   return {
     ok: true,
-    config: { provider: profile.provider, baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: character.model, soulMd: character.soulMd || DEFAULT_SOUL_MD }
+    config: { provider: profile.provider, baseUrl: profile.baseUrl, apiKey: profile.apiKey, model, soulMd: character.soulMd || DEFAULT_SOUL_MD }
   }
 }

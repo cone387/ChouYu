@@ -790,7 +790,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                   <span className="character-context-avatar" aria-hidden="true"><CharacterAvatar character={activeCharacter} /></span>
                   <span className="character-context-name">{activeCharacter.name}</span>
                   {activeCharacter.builtIn && <em className="character-context-badge">内置</em>}
-                  <span className="character-context-model">{activeCharacter.builtIn ? config.model : activeCharacter.model}</span>
+                  <span className="character-context-model">{activeCharacter.builtIn || !activeCharacter.model ? config.model : activeCharacter.model}</span>
                   {activeCharacter.category && <span className="character-context-category">{INDUSTRY_LABELS[activeCharacter.category] ?? activeCharacter.category}</span>}
                 </button>
               </div>
@@ -862,7 +862,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
               disabled={!workspaceLoaded}
               isStreaming={isStreaming}
               focusRequest={composerFocusRequest}
-              model={activeCharacter && !activeCharacter.builtIn ? activeCharacter.model : config.model}
+              model={activeCharacter && !activeCharacter.builtIn && activeCharacter.model ? activeCharacter.model : config.model}
               onModelChange={handleModelChange}
               fetchModels={activeCharacter && !activeCharacter.builtIn
                 ? () => window.electronAPI.characters.fetchModels(activeCharacter.providerProfileId)
