@@ -80,6 +80,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await click(window, `[data-contacts-card-detail="${character.id}"]`)
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
+    if (!await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-close]')) && Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-start-chat]')) && document.querySelector('.contacts-detail-actions').getBoundingClientRect().top < document.querySelector('.contact-agent').getBoundingClientRect().top")) throw new Error('Contact detail actions are not at the top')
     await click(window, '[data-contacts-close]')
     // The menu trigger keeps focus while details are open: no focusin is fired
     // on dismissal. Use real Escape input to reproduce its keyboard highlight.

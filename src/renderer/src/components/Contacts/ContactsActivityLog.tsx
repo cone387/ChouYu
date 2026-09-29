@@ -10,9 +10,7 @@ export default function ContactsActivityLog({ data, error, characters, active, o
   data?: AgentDashboard; error: string; characters: CharacterStats[]; active: boolean; onDetail(character: CharacterStats): void
 }) {
   const [now, setNow] = useState(Date.now())
-  const [beats, setBeats] = useState<Row[]>([])
   const viewport = useRef<HTMLDivElement>(null)
-  const rotation = useRef(0)
   useEffect(() => {
     if (!active) return
     setNow(Date.now())
@@ -25,14 +23,12 @@ export default function ContactsActivityLog({ data, error, characters, active, o
     const activity = workLogActivity(contact.run, contact, contact.latestActivity, now, error)
     return activity.moving ? [{ characterId: character.id, ...activity }] : []
   })
-  useEffect(() => {
-    if (!active || !monitors.length || document.hidden) return
-    const monitor = monitors[rotation.current++ % monitors.length]
-    setBeats(previous => [...previous, { key: `beat-${now}`, at: now, characterId: monitor.characterId, text: monitor.text, kind: 'heartbeat' }].slice(-60))
-  }, [now, active])
+  // Each contact has one live row. Clock/countdown changes update it in place;
+  // only persisted work events add history rows.
   const rows: Row[] = [
-    ...(data?.events.map(event => ({ key: `event-${event.id}`, ...event })) ?? []), ...beats
-  ].sort((a, b) => a.at - b.at || a.key.localeCompare(b.key))
+    ...(data?.events.map(event => ({ key: `event-${event.id}`, ...event })) ?? []),
+    ...monitors.map(monitor => ({ key: `heartbeat-${monitor.characterId}`, at: now, characterId: monitor.characterId, text: monitor.text, kind: 'heartbeat' }))
+  ]
   const latest = rows.at(-1)?.key
   useLayoutEffect(() => {
     if (!active) return
@@ -67,6 +63,6 @@ export default function ContactsActivityLog({ data, error, characters, active, o
         </li>
       })}</ol>
     </div>
-    <footer>{error || '所有联系人 · 最近 120 条工作日志 · 每秒轮播状态心跳，心跳不计入成果'}</footer>
+    <footer>{error || '最近 120 条工作日志 · 当前状态每秒更新，同一联系人不重复刷屏'}</footer>
   </section>
 }

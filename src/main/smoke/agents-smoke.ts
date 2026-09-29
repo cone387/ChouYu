@@ -164,16 +164,19 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     const logDirectory = process.env.CHOUYU_SMOKE_ARTIFACTS
     await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-work-log] li[data-kind=waiting]'))")
     await waitForRenderer(window, "(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.clientHeight === 216 && el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")
-    await waitForRenderer(window, "document.querySelectorAll('[data-agent-work-log] li[data-kind=heartbeat]').length >= 2")
+    await waitForRenderer(window, "document.querySelectorAll('[data-agent-work-log] li[data-kind=heartbeat]').length === 1")
     if (!await run("document.querySelector('.agent-log-live strong').textContent === 'WAITING'")) throw new Error('Waiting work must keep a live heartbeat without claiming to be running')
     // The sidebar runs automatically; metric buttons sort cards without filtering them.
     await run("document.querySelector('[data-contacts-close]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-contacts-activity] li[data-kind=waiting]'))")
-    await waitForRenderer(window, "document.querySelectorAll('[data-contacts-activity] li[data-kind=heartbeat]').length >= 2")
+    await waitForRenderer(window, "document.querySelectorAll('[data-contacts-activity] li[data-kind=heartbeat]').length === 1")
+    await run("window.__heartbeatRow = document.querySelector('[data-contacts-activity] li[data-kind=heartbeat]')")
     if (await run("Boolean(document.querySelector('[data-contacts-activity] header button, [data-contacts-metric-filters]'))")) throw new Error('Manual log controls or metric filters are still present')
     const previousLog = await run("document.querySelector('.contacts-activity-viewport').textContent")
     await run("document.querySelector('.contacts-activity-viewport').dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true}))")
     await waitForRenderer(window, `document.querySelector('.contacts-activity-viewport').textContent !== ${JSON.stringify(previousLog)}`)
+    if (!await run("document.querySelectorAll('[data-contacts-activity] li[data-kind=heartbeat]').length === 1 && document.querySelector('[data-contacts-activity] li[data-kind=heartbeat]') === window.__heartbeatRow")) throw new Error('Heartbeat updates appended duplicate rows')
+    if (!await run("getComputedStyle(document.querySelector('.contacts-body')).overflowY === 'auto' && getComputedStyle(document.querySelector('.contacts-scroll')).overflowY === 'visible'")) throw new Error('Contact scrollbar is not on the outer right edge')
     await waitForRenderer(window, "(() => {const el=document.querySelector('.contacts-activity-viewport'); return el.scrollHeight-el.clientHeight-el.scrollTop < 17})()")
     const cardCount = await run("document.querySelectorAll('[data-contacts-item]').length")
     for (const metric of ['tokens', 'tasks']) {
@@ -186,7 +189,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('[data-contacts-sort-key=pinyin]').click()")
     if (logDirectory) {
       mkdirSync(logDirectory, { recursive: true })
-      await run("document.querySelector('.contacts-scroll').scrollTop=0")
+      await run("document.querySelector('.contacts-body').scrollTop=0")
       writeFileSync(join(logDirectory, 'contacts-live-dashboard.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
       const panelStyle = await run("document.querySelector('.chat-panel').getAttribute('style')")
       await run("document.querySelector('.chat-panel').style.cssText += ';position:absolute!important;inset:0!important;transform:none!important;width:100%!important;height:100%!important;min-width:0!important;max-width:100%!important'")

@@ -446,6 +446,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     </div>
     {error && !form && !confirmDelete && <div className="contacts-error" role="alert">{error}</div>}
     <div className="contacts-body">
+    <div className="contacts-columns">
     <div className="contacts-scroll">
       <div className="contacts-grid">
         <div className="contacts-card-container">
@@ -496,16 +497,27 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       <ContactsActivityLog data={dashboard} error={dashboardError} characters={characters} active={active} onDetail={setDetail} />
     </aside>
     </div>
+    </div>
     </>}
     {detail && <ResizableModal className="contacts-detail" role="dialog" label={`角色详情 ${detail.name}`}
       initialWidth={560} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
       <div>
+        <div className="contacts-detail-topbar">
         <div className="contacts-detail-head">
           <span className="contacts-detail-avatar" aria-hidden="true"><CharacterAvatar character={detail} /></span>
           <div>
             <p className="contacts-detail-title">{detail.name}{detail.builtIn && <em className="contacts-builtin">内置</em>}</p>
             <p className="contacts-detail-subtitle">{detail.builtIn ? '内置角色' : '自定义角色'}</p>
           </div>
+        </div>
+        <div className="contacts-detail-actions">
+          <button type="button" data-contacts-close onClick={() => setDetail(null)}>关闭</button>
+          <button type="button" className="primary" data-contacts-start-chat={detail.id}
+            onClick={() => { onOpenChat(detail.id); setDetail(null) }}>开始对话</button>
+          {detail.id !== ASSISTANT_CHARACTER_ID && <button type="button" data-contacts-edit={detail.id} onClick={() => { setDetail(null); openForm(detail) }}>编辑</button>}
+          {!detail.builtIn && <button type="button" className="danger" data-contacts-delete={detail.id}
+            onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
+        </div>
         </div>
         {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
         <details className="contacts-profile-details" open={detail.id === ASSISTANT_CHARACTER_ID}>
@@ -525,14 +537,6 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <p className="contacts-detail-soul-title">人设</p>
         <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
         </details>
-        <div className="contacts-detail-actions">
-          <button type="button" data-contacts-close onClick={() => setDetail(null)}>关闭</button>
-          <button type="button" className="primary" data-contacts-start-chat={detail.id}
-            onClick={() => { onOpenChat(detail.id); setDetail(null) }}>开始对话</button>
-          {detail.id !== ASSISTANT_CHARACTER_ID && <button type="button" data-contacts-edit={detail.id} onClick={() => { setDetail(null); openForm(detail) }}>编辑</button>}
-          {!detail.builtIn && <button type="button" className="danger" data-contacts-delete={detail.id}
-            onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
-        </div>
       </div>
     </ResizableModal>}
     {confirmDelete && <div className="contacts-scrim" role="presentation">
