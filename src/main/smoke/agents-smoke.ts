@@ -166,23 +166,38 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.clientHeight === 216 && el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")
     await waitForRenderer(window, "document.querySelectorAll('[data-agent-work-log] li[data-kind=heartbeat]').length >= 2")
     if (!await run("document.querySelector('.agent-log-live strong').textContent === 'WAITING'")) throw new Error('Waiting work must keep a live heartbeat without claiming to be running')
-    // The global board remains independent from card filters and keeps waiting contacts alive.
+    // The sidebar runs automatically; metric buttons sort cards without filtering them.
     await run("document.querySelector('[data-contacts-close]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-contacts-activity] li[data-kind=waiting]'))")
     await waitForRenderer(window, "document.querySelectorAll('[data-contacts-activity] li[data-kind=heartbeat]').length >= 2")
-    await run("document.querySelector('[data-contacts-activity] header button').click()")
-    const frozenLog = await run("document.querySelector('.contacts-activity-viewport').textContent")
-    await new Promise(resolve => setTimeout(resolve, 1100))
-    if (await run("document.querySelector('.contacts-activity-viewport').textContent") !== frozenLog) throw new Error('Paused global activity board kept moving')
-    await run("document.querySelector('[data-contacts-activity] header button').click()")
-    await run("(() => { const el=document.querySelector('[data-contacts-task-filter]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(el,'zero'); el.dispatchEvent(new Event('change',{bubbles:true})); })()")
-    await waitForRenderer(window, `!document.querySelector('[data-contacts-item="${DEFAULT_CHARACTER_ID}"]')`)
-    if (!await run("Boolean(document.querySelector('[data-contacts-activity] li[data-kind=waiting]'))")) throw new Error('Filtering contact cards removed global work logs')
-    await run("document.querySelector('[data-contacts-metric-filters] button').click()")
+    if (await run("Boolean(document.querySelector('[data-contacts-activity] header button, [data-contacts-metric-filters]'))")) throw new Error('Manual log controls or metric filters are still present')
+    const previousLog = await run("document.querySelector('.contacts-activity-viewport').textContent")
+    await run("document.querySelector('.contacts-activity-viewport').dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true}))")
+    await waitForRenderer(window, `document.querySelector('.contacts-activity-viewport').textContent !== ${JSON.stringify(previousLog)}`)
+    await waitForRenderer(window, "(() => {const el=document.querySelector('.contacts-activity-viewport'); return el.scrollHeight-el.clientHeight-el.scrollTop < 17})()")
+    const cardCount = await run("document.querySelectorAll('[data-contacts-item]').length")
+    for (const metric of ['tokens', 'tasks']) {
+      await run(`document.querySelector('[data-contacts-sort-key=${metric}]').click()`)
+      await waitForRenderer(window, "document.querySelector('[data-contacts-sort-direction]')?.dataset.contactsSortDirection === 'desc'")
+      await run("document.querySelector('[data-contacts-sort-direction]').click()")
+      await waitForRenderer(window, "document.querySelector('[data-contacts-sort-direction]')?.dataset.contactsSortDirection === 'asc'")
+      if (await run("document.querySelectorAll('[data-contacts-item]').length") !== cardCount) throw new Error('Metric sorting filtered out contacts')
+    }
+    await run("document.querySelector('[data-contacts-sort-key=pinyin]').click()")
     if (logDirectory) {
       mkdirSync(logDirectory, { recursive: true })
       await run("document.querySelector('.contacts-scroll').scrollTop=0")
       writeFileSync(join(logDirectory, 'contacts-live-dashboard.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+      const panelStyle = await run("document.querySelector('.chat-panel').getAttribute('style')")
+      await run("document.querySelector('.chat-panel').style.cssText += ';position:absolute!important;inset:0!important;transform:none!important;width:100%!important;height:100%!important;min-width:0!important;max-width:100%!important'")
+      for (const width of [1024, 375]) {
+        window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 900 }, scale: 1 })
+        await run("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        if (!await run("(() => { const el=document.querySelector('.contacts-body'); return el.scrollWidth <= el.clientWidth+1 })()")) throw new Error('Contacts sidebar layout overflows')
+        writeFileSync(join(logDirectory, `contacts-sidebar-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+      }
+      window.webContents.disableDeviceEmulation()
+      await run(`document.querySelector('.chat-panel').setAttribute('style', ${JSON.stringify(panelStyle ?? '')})`)
     }
     await run("document.querySelector('[data-contacts-activity] li[data-kind=waiting] button').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-topic-id][aria-current=true]'))")

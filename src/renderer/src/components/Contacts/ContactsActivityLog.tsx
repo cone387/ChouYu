@@ -11,11 +11,8 @@ export default function ContactsActivityLog({ data, error, characters, active, o
 }) {
   const [now, setNow] = useState(Date.now())
   const [beats, setBeats] = useState<Row[]>([])
-  const [paused, setPaused] = useState<Row[] | null>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const rotation = useRef(0)
-  const isPaused = useRef(false)
-  isPaused.current = paused !== null
   useEffect(() => {
     if (!active) return
     setNow(Date.now())
@@ -29,7 +26,7 @@ export default function ContactsActivityLog({ data, error, characters, active, o
     return activity.moving ? [{ characterId: character.id, ...activity }] : []
   })
   useEffect(() => {
-    if (!active || paused || !monitors.length || document.hidden) return
+    if (!active || !monitors.length || document.hidden) return
     const monitor = monitors[rotation.current++ % monitors.length]
     setBeats(previous => [...previous, { key: `beat-${now}`, at: now, characterId: monitor.characterId, text: monitor.text, kind: 'heartbeat' }].slice(-60))
   }, [now, active])
@@ -38,36 +35,27 @@ export default function ContactsActivityLog({ data, error, characters, active, o
   ].sort((a, b) => a.at - b.at || a.key.localeCompare(b.key))
   const latest = rows.at(-1)?.key
   useLayoutEffect(() => {
-    if (paused) return
+    if (!active) return
     const node = viewport.current
     node?.scrollTo({ top: node.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
-  }, [latest, paused])
+  }, [latest, now, active])
   useEffect(() => {
     const node = viewport.current
     if (!node) return
-    const observer = new ResizeObserver(() => { if (!isPaused.current) node.scrollTo({ top: node.scrollHeight, behavior: 'instant' }) })
+    const observer = new ResizeObserver(() => node.scrollTo({ top: node.scrollHeight, behavior: 'instant' }))
     observer.observe(node)
     return () => observer.disconnect()
   }, [])
-  const pause = () => {
-    if (paused) return
-    setPaused(rows)
-    const node = viewport.current
-    node?.scrollTo({ top: node.scrollTop, behavior: 'instant' })
-  }
   const running = monitors.filter(monitor => monitor.label === 'RUNNING').length
   return <section className="contacts-activity" data-contacts-activity aria-label="所有联系人活动日志">
     <header><strong><i aria-hidden="true" data-live={Boolean(monitors.length && !error)} />全员活动</strong>
       <span>{error ? '正在重连' : `${running} 执行 · ${monitors.length - running} 等待`}</span>
       <time aria-live="off">{clock(now)}</time>
-      <button type="button" aria-pressed={paused === null} onClick={() => paused ? setPaused(null) : pause()}>{paused ? '继续滚动' : '暂停滚动'}</button>
     </header>
-    <div ref={viewport} className="contacts-activity-viewport" role="log" aria-label="全员最近活动与状态心跳" aria-live="off" tabIndex={0}
-      onWheel={event => { if (event.deltaY < 0) pause() }} onTouchStart={pause}
-      onKeyDown={event => { if (['ArrowUp', 'PageUp', 'Home'].includes(event.key)) pause() }}>
+    <div ref={viewport} className="contacts-activity-viewport" role="log" aria-label="全员最近活动与状态心跳" aria-live="off">
       {!data && <p>{error || '正在读取所有联系人的活动…'}</p>}
       {data && !rows.length && <p>暂无工作日志，联系人开始任务后会自动出现在这里。</p>}
-      <ol>{(paused ?? rows).map(row => {
+      <ol>{rows.map(row => {
         const character = characters.find(item => item.id === row.characterId)
         if (!character) return null
         return <li key={row.key} data-kind={row.kind}>

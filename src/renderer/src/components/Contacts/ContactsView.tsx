@@ -7,7 +7,7 @@ import { ContactAgentPanel } from './ContactAgentPanel'
 import ContactCardStats from './ContactCardStats'
 import ContactsActivityLog from './ContactsActivityLog'
 import { useContactsDashboard } from './useContactsDashboard'
-import { compareMetrics, matchesMetrics, type MetricSort, type TaskFilter, type TokenFilter } from './contactMetrics'
+import { compareMetrics } from './contactMetrics'
 import './Contacts.css'
 
 interface ContactsViewProps {
@@ -32,7 +32,7 @@ interface FormState {
 }
 
 type CategoryFilter = 'all' | 'other' | string
-type SortKey = 'pinyin' | 'popular' | 'recent' | MetricSort
+type SortKey = 'pinyin' | 'popular' | 'recent' | 'tokens' | 'tasks'
 
 const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '' }
 
@@ -55,7 +55,9 @@ function summarizeSoulMd(soulMd: string): string {
 const SORT_OPTIONS: readonly { value: SortKey; label: string }[] = [
   { value: 'pinyin', label: '拼音' },
   { value: 'popular', label: '最热' },
-  { value: 'recent', label: '最新' }
+  { value: 'recent', label: '最新' },
+  { value: 'tokens', label: 'Token 消耗' },
+  { value: 'tasks', label: '任务数量' }
 ]
 
 const AVATAR_CHOICES: readonly string[] = ['🐟', '🦊', '🐱', '🐶', '🐼', '🦉', '🐧', '🍀', '🌙', '⚡', '💡', '🎯', '🩺', '⚖️', '🎨', '🧭']
@@ -250,8 +252,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [modelFilter, setModelFilter] = useState('all')
   const [sort, setSort] = useState<SortKey>('pinyin')
-  const [tokenFilter, setTokenFilter] = useState<TokenFilter>('all')
-  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const { data: dashboard, error: dashboardError } = useContactsDashboard(active && !detailOnly)
   const [detail, setDetail] = useState<CharacterStats | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
@@ -309,11 +310,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       .filter((character) => !normalized
         || character.name.toLowerCase().includes(normalized)
         || character.model.toLowerCase().includes(normalized))
-      .filter(character => matchesMetrics(dashboard?.contacts[character.id]?.summary, tokenFilter, taskFilter))
-      .sort((a, b) => sort.startsWith('tokens-') || sort.startsWith('tasks-')
-        ? compareMetrics(dashboard?.contacts[a.id]?.summary, dashboard?.contacts[b.id]?.summary, sort as MetricSort) || sortByName(a, b)
-        : compareBySort(a, b, sort))
-  }, [characters, query, category, modelFilter, sort, dashboard, tokenFilter, taskFilter])
+      .sort((a, b) => sort === 'tokens' || sort === 'tasks'
+        ? compareMetrics(dashboard?.contacts[a.id]?.summary, dashboard?.contacts[b.id]?.summary, `${sort}-${sortDirection}`) || sortByName(a, b)
+        : compareBySort(a, b, sort) * (sort === 'pinyin' ? sortDirection === 'asc' ? 1 : -1 : sortDirection === 'desc' ? 1 : -1))
+  }, [characters, query, category, modelFilter, sort, dashboard, sortDirection])
 
   const profileNameOf = useCallback((character: CharacterStats): string => {
     const id = character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId
@@ -412,7 +412,15 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       <div className="contacts-sort" data-contacts-sort role="group" aria-label="排序方式">
         {SORT_OPTIONS.map((option) => <button key={option.value} type="button"
           className="contacts-sort-option" aria-pressed={sort === option.value}
-          onClick={() => setSort(option.value)}>{option.label}</button>)}
+          data-contacts-sort-key={option.value}
+          title={sort === option.value ? '再次点击切换升序／降序' : `按${option.label}排序`}
+          onClick={() => {
+            if (sort === option.value) setSortDirection(direction => direction === 'asc' ? 'desc' : 'asc')
+            else { setSort(option.value); setSortDirection(option.value === 'pinyin' ? 'asc' : 'desc') }
+          }}>{option.label}</button>)}
+        <button type="button" className="contacts-sort-option contacts-sort-direction" data-contacts-sort-direction={sortDirection}
+          aria-label={`当前${sortDirection === 'asc' ? '升序' : '降序'}，点击切换为${sortDirection === 'asc' ? '降序' : '升序'}`}
+          onClick={() => setSortDirection(direction => direction === 'asc' ? 'desc' : 'asc')}>{sortDirection === 'asc' ? '升序 ↑' : '降序 ↓'}</button>
       </div>
       <button type="button" data-contacts-new className="contacts-new" onClick={() => openForm()}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
@@ -436,24 +444,9 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           aria-pressed={modelFilter === model} onClick={() => setModelFilter(model)}>{model}</button>)}
       </div>}
     </div>
-    <div className="contacts-metric-filters" data-contacts-metric-filters aria-label="按任务消耗与数量筛选">
-      <label>Token 消耗<select data-contacts-token-filter value={tokenFilter} onChange={event => setTokenFilter(event.target.value as TokenFilter)}>
-        <option value="all">全部消耗</option><option value="zero">无消耗</option><option value="under10k">0–1 万（不含）</option>
-        <option value="10kTo100k">1 万–10 万（不含）</option><option value="over100k">10 万及以上</option><option value="unreported">用量有缺失</option>
-      </select></label>
-      <label>任务数量<select data-contacts-task-filter value={taskFilter} onChange={event => setTaskFilter(event.target.value as TaskFilter)}>
-        <option value="all">全部任务数</option><option value="zero">无任务</option><option value="1to5">1–5 个</option><option value="over5">6 个及以上</option>
-      </select></label>
-      <label>指标排序<select data-contacts-metric-sort value={sort.includes('-') ? sort : ''} onChange={event => setSort(event.target.value ? event.target.value as MetricSort : 'pinyin')}>
-        <option value="">默认排序</option><option value="tokens-desc">Token 从多到少</option><option value="tokens-asc">Token 从少到多</option>
-        <option value="tasks-desc">任务从多到少</option><option value="tasks-asc">任务从少到多</option>
-      </select></label>
-      <button type="button" onClick={() => { setTokenFilter('all'); setTaskFilter('all'); setSort('pinyin') }}>重置指标</button>
-      <span title="按任务累计 Token 筛选，不含普通聊天；部分用量缺失时按已记录值筛选，完全未记录时不按零消耗计算。">{filtered.length} 位联系人 · 任务累计用量{dashboardError ? ' · 数据待刷新' : !dashboard ? ' · 读取中' : ''}</span>
-    </div>
     {error && !form && !confirmDelete && <div className="contacts-error" role="alert">{error}</div>}
+    <div className="contacts-body">
     <div className="contacts-scroll">
-      <ContactsActivityLog data={dashboard} error={dashboardError} characters={characters} active={active} onDetail={setDetail} />
       <div className="contacts-grid">
         <div className="contacts-card-container">
         <button type="button" className="contacts-card" data-contacts-item={ASSISTANT_CHARACTER_ID}
@@ -498,6 +491,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         })}
       </div>
       {filtered.length === 0 && <p className="contacts-empty">没有匹配的角色</p>}
+    </div>
+    <aside className="contacts-activity-sidebar" aria-label="联系人活动侧栏">
+      <ContactsActivityLog data={dashboard} error={dashboardError} characters={characters} active={active} onDetail={setDetail} />
+    </aside>
     </div>
     </>}
     {detail && <ResizableModal className="contacts-detail" role="dialog" label={`角色详情 ${detail.name}`}
