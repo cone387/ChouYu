@@ -8,11 +8,11 @@ it('summarizes steps into work periods, clips boundaries and leaves unrecorded g
     logs: [{ id: 1, runId: 'a', topicId: 'task', at: 200, text: '搜索资料', kind: 'search' }, { id: 2, runId: 'a', topicId: 'task', at: 300, text: '撰写结论\n细节', kind: 'drafting' }],
     heartbeats: [{ id: 1, topicId: 'task', start: 450, end: 500 }] }
   const segments = workSegments(data)
-  expect(segments.map(s => [s.start, s.end])).toEqual([[100, 400], [450, 500], [600, 800]])
+  expect(segments.map(s => [s.start, s.end])).toEqual([[100, 400], [450, 800]])
   expect(segments[0].text).toContain('搜索资料、撰写内容')
   expect(segments[1].state).toBe('heartbeat')
-  expect(segments[2].text).toContain('心跳')
-  expect(segments[2].approximate).toBe(true)
+  expect(segments[1].text).toContain('休息')
+  expect(segments[1].approximate).toBe(true)
 })
 it('keeps repeated task runs in one row and merges 14:15–14:17 / 14:17–14:31 heartbeats', () => {
   const minute = 60000
@@ -25,10 +25,25 @@ it('keeps repeated task runs in one row and merges 14:15–14:17 / 14:17–14:31
   expect(rows[1].text).toBe('心跳')
   expect(rows[1].ranges.map(r => [r.start, r.end])).toEqual([[855 * minute, 871 * minute]])
 })
-it('absorbs brief dispatch into work and combines adjoining heartbeat periods', () => {
+it('keeps dispatch as rest and combines adjoining rest periods', () => {
   const data: AgentAnalytics = { start: 0, end: 100000, measuredAt: 90000, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
     spans: [{ runId: 'a', topicId: 'task', start: 0, end: 100, state: 'queued', approximate: false }, { runId: 'a', topicId: 'task', start: 100, end: 10000, state: 'running', approximate: false }, { runId: 'a', topicId: 'task', start: 10000, end: 20000, state: 'waiting', approximate: false }],
     heartbeats: [{ id: 1, topicId: 'task', start: 20000, end: 50000 }] }
   const periods = workSegments(data)
-  expect(periods.map(p => [p.start, p.end, p.state])).toEqual([[0, 10000, 'running'], [10000, 50000, 'heartbeat']])
+  expect(periods.map(p => [p.start, p.end, p.state])).toEqual([[0, 100, 'heartbeat'], [100, 10000, 'running'], [10000, 50000, 'heartbeat']])
+})
+it('partitions stale waits, overlapping runs and heartbeat into mutually exclusive states', () => {
+  const data: AgentAnalytics = { start: 0, end: 1000000, measuredAt: 900000, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
+    spans: [{ runId: 'old', topicId: 'a', start: 0, end: 900000, state: 'waiting', approximate: false },
+      { runId: 'a1', topicId: 'a', start: 120000, end: 600000, state: 'running', approximate: false },
+      { runId: 'b1', topicId: 'b', start: 240000, end: 360000, state: 'running', approximate: false }],
+    heartbeats: [{ id: 1, topicId: 'a', start: 60000, end: 700000 }] }
+  const periods = workSegments(data)
+  expect(periods.map(p => [p.start, p.end, p.state, p.state === 'running' ? p.topicId : null])).toEqual([
+    [0, 120000, 'heartbeat', null], [120000, 240000, 'running', 'a'], [240000, 360000, 'running', 'b'],
+    [360000, 600000, 'running', 'a'], [600000, 900000, 'heartbeat', null]
+  ])
+  const plotted = workTimelineRows(data).flatMap(row => row.ranges).sort((a, b) => a.start - b.start)
+  for (let index = 1; index < plotted.length; index++) expect(plotted[index].start).toBeGreaterThanOrEqual(plotted[index - 1].end)
+  expect(plotted.reduce((sum, span) => sum + span.end - span.start, 0)).toBe(900000)
 })
