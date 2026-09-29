@@ -14,18 +14,25 @@ it('summarizes steps into work periods, clips boundaries and leaves unrecorded g
   expect(segments[1].text).toContain('休息')
   expect(segments[1].approximate).toBe(true)
 })
-it('renders short runs as exclusive half-hour summary blocks and combines adjacent task blocks', () => {
+it('preserves all rest in mixed half-hour blocks instead of letting a brief task occupy the whole block', () => {
   const hour = 3600000
   const data: AgentAnalytics = { start: 0, end: 24 * hour, measuredAt: 4 * hour, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
     spans: [{ runId: 'one', topicId: 'a', start: hour + 1000, end: hour + 3000, state: 'running', approximate: false },
       { runId: 'two', topicId: 'a', start: hour * 1.5 + 1000, end: hour * 1.5 + 4000, state: 'running', approximate: false }],
     heartbeats: [{ id: 1, topicId: 'a', start: hour, end: 3 * hour }] }
   const blocks = workTimelineBlocks(data)
-  expect(blocks.map(b => [b.start, b.end, b.running])).toEqual([[hour, 2 * hour, true], [2 * hour, 3 * hour, false]])
-  expect(blocks[0].executionMs).toBe(5000)
-  expect(blocks[0].restMs).toBe(hour - 5000)
-  expect(blocks[1].restMs).toBe(hour)
+  expect(blocks.filter(b => b.running)).toHaveLength(2)
+  expect(blocks.filter(b => !b.running)).toHaveLength(3)
+  expect(blocks.reduce((sum, b) => sum + b.executionMs, 0)).toBe(5000)
+  expect(blocks.reduce((sum, b) => sum + b.restMs, 0)).toBe(2 * hour - 5000)
+  for (const block of blocks) expect(block.end - block.start).toBe(block.executionMs + block.restMs)
   expect(blocks.every((block, index) => !index || block.start >= blocks[index - 1].end)).toBe(true)
+})
+it('does not turn missing records or future time into rest', () => {
+  const data: AgentAnalytics = { start: 0, end: 86400000, measuredAt: 120000, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
+    spans: [{ runId: 'one', topicId: 'a', start: 90000, end: 91000, state: 'running', approximate: false }], heartbeats: [] }
+  const blocks = workTimelineBlocks(data)
+  expect(blocks.map(b => [b.start, b.end, b.executionMs, b.restMs])).toEqual([[90000, 91000, 1000, 0]])
 })
 it('keeps repeated task runs in one row and merges 14:15–14:17 / 14:17–14:31 heartbeats', () => {
   const minute = 60000

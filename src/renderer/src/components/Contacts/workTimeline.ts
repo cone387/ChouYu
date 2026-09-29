@@ -5,28 +5,37 @@ export type WorkSegment = Omit<ActivitySpan, 'state'> & { state: ActivitySpan['s
 
 export type WorkBlock = { key: string; start: number; end: number; running: boolean; topicIds: (string | null)[]; text: string; executionMs: number; restMs: number; runId: string }
 
-/** The overview is a half-hour activity mosaic, not a seconds-level duration plot. */
+/** Within each half-hour, preserve every state's duration, including rest.
+ * Work and rest are summarized side by side, never laid over one another. */
 export function workTimelineBlocks(data: AgentAnalytics): WorkBlock[] {
   const periods = workSegments(data)
   const blocks: WorkBlock[] = []
   const step = 30 * 60000
   for (let start = data.start; start < Math.min(data.end, data.measuredAt); start += step) {
-    const end = Math.min(start + step, data.end)
+    const end = Math.min(start + step, data.end, data.measuredAt)
     const records = periods.filter(period => period.start < end && period.end > start)
     if (!records.length) continue
-    const work = records.filter(period => period.state === 'running')
-    const topicIds = [...new Set(work.map(period => period.topicId))].sort()
-    const running = work.length > 0
-    const signature = running ? JSON.stringify(topicIds) : 'rest'
-    const sum = (executing: boolean) => records.filter(period => (period.state === 'running') === executing)
-      .reduce((total, period) => total + Math.min(end, period.end) - Math.max(start, period.start), 0)
-    const previous = blocks.at(-1)
-    if (previous && previous.end === start && previous.running === running && JSON.stringify(previous.topicIds) === JSON.stringify(topicIds)) {
-      previous.end = end; previous.executionMs += sum(true); previous.restMs += sum(false)
-      continue
+    const states = new Map<string, { running: boolean; topicIds: (string | null)[]; ms: number; runId: string }>()
+    for (const record of records) {
+      const running = record.state === 'running'
+      const key = running ? `task:${record.topicId}` : 'rest'
+      const state = states.get(key) ?? { running, topicIds: running ? [record.topicId] : [], ms: 0, runId: running ? record.runId : '' }
+      state.ms += Math.min(end, record.end) - Math.max(start, record.start)
+      states.set(key, state)
     }
-    blocks.push({ key: `${signature}@${start}`, start, end, running, topicIds, executionMs: sum(true), restMs: sum(false),
-      runId: work[0]?.runId || '', text: running ? topicIds.map(id => data.tasks.find(task => task.id === id)?.title || '处理任务').join('、') : '心跳 / 休息' })
+    let cursor = Math.max(start, records[0].start)
+    for (const [signature, state] of states) {
+      const blockEnd = cursor + state.ms
+      const previous = blocks.at(-1)
+      if (previous && previous.end === cursor && previous.running === state.running && JSON.stringify(previous.topicIds) === JSON.stringify(state.topicIds)) {
+        previous.end = blockEnd
+        previous.executionMs += state.running ? state.ms : 0
+        previous.restMs += state.running ? 0 : state.ms
+      } else blocks.push({ key: `${signature}@${cursor}`, start: cursor, end: blockEnd, running: state.running, topicIds: state.topicIds,
+        executionMs: state.running ? state.ms : 0, restMs: state.running ? 0 : state.ms, runId: state.runId,
+        text: state.running ? data.tasks.find(task => task.id === state.topicIds[0])?.title || '处理任务' : '心跳 / 休息' })
+      cursor = blockEnd
+    }
   }
   return blocks
 }

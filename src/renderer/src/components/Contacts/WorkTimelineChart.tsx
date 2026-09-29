@@ -45,7 +45,7 @@ export default function WorkTimelineChart({ data, timelineOnly = false, onReport
         </div>
       </div>
       {!segments.length && <p className="agent-empty">今天还没有工作时段记录。</p>}
-      <p className="daily-note">每 30 分钟汇总，连续同类时段合并。横条表示该时段内的活动；实际工作与休息时长见悬停提示。</p>
+      <p className="daily-note">每半小时内按实际时长汇总排列任务与休息，不重叠、不省略休息；横条为汇总位置，原始时间见任务日志。</p>
 
     </section>
   )
