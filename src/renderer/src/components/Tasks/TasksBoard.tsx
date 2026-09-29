@@ -1,3 +1,4 @@
+import type { EditableTaskField } from './TaskFieldEditor'
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import type { TaskProject, TaskRecord, TaskSelectField, TaskUpdateInput, TaskSortMode } from '../../../../shared/tasks'
 import TaskIcon from './TaskIcon'
@@ -32,13 +33,14 @@ interface TasksBoardProps {
   doneCounts?: Record<string, number>
   groupFieldId: string | null
   onOpenProject: (id: string) => void
+  onEditField: (task: TaskRecord, field: EditableTaskField) => void
   onEdit: (task: TaskRecord) => void
   onRemove: (id: string) => void
   onComplete: (id: string) => void
   onMove: (id: string, patch: TaskUpdateInput, targetId: string | null, after: boolean, groupId?: string) => Promise<void>
 }
 
-export default function TasksBoard({ active, weekPeriod = 'week', onSource, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEdit, onRemove, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
+export default function TasksBoard({ active, weekPeriod = 'week', onSource, orderScope, tasks, projects, fields, groupingFields, customGroups, renderGroupActions, onRenameGroup, onNewGroup, savedOrder, onOrder, hideNote, groupMode, sortMode, doneCounts, groupFieldId, onOpenProject, onEditField, onEdit, onRemove, onComplete, onMove, onCreate, onReopen }: TasksBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, DOMRect>())
   const scrollFrame = useRef<number | null>(null)
@@ -255,8 +257,8 @@ export default function TasksBoard({ active, weekPeriod = 'week', onSource, orde
                   <span className="tasks-board-card-title">{task.title}</span>
                 </span>
                 {!hideNote && task.note && <span className="tasks-board-card-note">{task.note}</span>}
-                <span className="tasks-board-card-chips"><TaskCardMeta task={task} projects={projects} fields={fields} onOpenProject={onOpenProject} onSource={onSource} /></span>
-                {(task.startAt != null || task.dueAt !== null) && <span className="tasks-board-card-footer">{task.startAt != null && <span className="tasks-start-cell tasks-board-start" title={`开始时间：${formatTaskDue(task.startAt)}`}><TaskIcon name="today" />{formatTaskDue(task.startAt)} 开始</span>}<TaskCardDue task={task} /></span>}
+                <span className="tasks-board-card-chips"><TaskCardMeta onEditField={onEditField} task={task} projects={projects} fields={fields} onOpenProject={onOpenProject} onSource={onSource} /></span>
+                <span className="tasks-board-card-footer">{task.startAt != null && <span className="tasks-start-cell tasks-board-start" title={`开始时间：${formatTaskDue(task.startAt)}`}><TaskIcon name="today" />{formatTaskDue(task.startAt)} 开始</span>}<TaskCardDue task={task} onEditField={onEditField} /></span>
               </div>
               <details className="tasks-item-menu">
                 <summary aria-label={`更多操作 ${task.title}`} title="更多操作"><TaskIcon name="more" /></summary>

@@ -1,4 +1,5 @@
-import { useState, type FormEvent, type RefObject } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react'
+import { useConfirm } from '../common/ConfirmProvider'
 import type { RemindChoiceId, TaskChecklistItem, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField } from '../../../../shared/tasks'
 import { PRIORITY_LABELS, REMIND_CHOICES, remindAtFromChoice } from '../../../../shared/tasks'
 import TaskDatePicker from './TaskDatePicker'
@@ -50,6 +51,27 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
   const [projectName, setProjectName] = useState('')
   const [newItem, setNewItem] = useState('')
   const [insertedId, setInsertedId] = useState('')
+  const original = useRef(JSON.stringify(draft))
+  const confirm = useConfirm()
+  const closing = useRef(false)
+  const requestClose = async () => {
+    if (busy || closing.current) return
+    closing.current = true
+    try {
+      const dirty = JSON.stringify(draft) !== original.current || !!newItem.trim() || !!projectName.trim()
+      if (!dirty || await confirm({ title: '放弃未保存的修改？', message: '关闭后，本次修改和尚未添加的子项内容将丢失。取消可返回编辑并保存。', confirmLabel: '放弃修改' })) onClose()
+    } finally { closing.current = false }
+  }
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      event.stopPropagation()
+      void requestClose()
+    }
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  })
   const toDateTimeLocal = (at: number | null | undefined): string => {
     if (at == null) return ''
     const date = new Date(at)
@@ -88,11 +110,11 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
     const project = await onCreateProject(projectName.trim(), groupId)
     if (project) { onChange({ ...draft, projectId: project.id }); setProjectName('') }
   }
-  return <div className="tasks-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
+  return <div className="tasks-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) void requestClose() }}>
         <div ref={dialogRef} className="tasks-dialog tasks-composer" role="dialog" aria-modal="true" aria-labelledby="tasks-dialog-title" onMouseDown={event => event.stopPropagation()}>
           <header className="tasks-dialog-header">
             <h2 id="tasks-dialog-title"><TaskIcon name="task" />{draft.id ? '编辑任务' : '新建任务'}</h2>
-            <button type="button" aria-label="关闭任务弹窗" disabled={busy} onClick={() => onClose()}>×</button>
+            <button type="button" aria-label="关闭任务弹窗" disabled={busy} onClick={() => void requestClose()}>×</button>
           </header>
           <form className="tasks-form" onSubmit={onSubmit} aria-label={draft.id ? '编辑任务' : '新建任务'}>
         {error && <p role="alert" className="tasks-error">{error}</p>}
@@ -160,7 +182,7 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
           </div>)}
         </div>}
         <div className="tasks-form-actions"><span className="tasks-composer-hint">{draft.id ? "修改后保存即可更新任务" : "填写标题即可创建任务"}</span>
-          <button type="button" disabled={busy} onClick={() => onClose()}>取消</button>
+          <button type="button" disabled={busy} onClick={() => void requestClose()}>取消</button>
           <button type="submit" disabled={busy || !draft.title.trim() || !hasSelectedProject}>{busy ? '保存中…' : draft.id ? '保存' : '创建'}</button>
         </div>
           </form>

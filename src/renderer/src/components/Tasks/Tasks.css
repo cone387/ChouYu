@@ -813,3 +813,25 @@
 .tasks-manage-row > .tasks-more-view-action { appearance: none; border: 0; border-radius: 5px; background: transparent; color: var(--text-secondary); flex: none; width: 28px; padding: 6px; cursor: pointer; }
 .tasks-manage-row > .tasks-more-view-action:hover, .tasks-manage-row > .tasks-more-view-action:focus-visible { background: var(--hover-bg); color: var(--text-primary); }
 .tasks-manage-row > .tasks-more-view-action.tasks-item-menu-danger:hover, .tasks-manage-row > .tasks-more-view-action.tasks-item-menu-danger:focus-visible { color: var(--error); }
+.tasks-card-field-button { font: inherit; border: 0; background: transparent; cursor: pointer; padding: 3px 5px; border-radius: 4px; }
+.tasks-card-field-button:hover { background: var(--bg-secondary); }
+.tasks-card-field-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.tasks-field-editor { position: fixed; inset: 0; margin: auto; box-sizing: border-box; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: min(420px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; }
+.tasks-field-editor::backdrop { background: #0006; }
+.tasks-field-editor h2 { margin: 0 0 8px; font-size: 18px; }
+.tasks-field-editor label { display: grid; gap: 8px; margin: 16px 0; }
+.tasks-field-editor input, .tasks-field-editor select { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font: inherit; }
+.tasks-field-task-title { overflow-wrap: anywhere; color: var(--text-secondary); }
+.tasks-field-editor .tasks-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+.tasks-field-editor .tasks-composer-hint { display: block; margin-top: 12px; line-height: 1.6; }
+.tasks-field-editor button { cursor: pointer; }
+.tasks-field-editor button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.task-card-checklist { display: block; width: 100%; min-width: 0; }
+.task-card-checklist-toggle { color: var(--text-secondary); font-size: 12px; }
+.task-card-checklist-items { display: grid; gap: 4px; margin-top: 6px; padding: 8px; border-radius: 6px; background: var(--bg-secondary); }
+.task-card-checklist-row { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; font-size: 12px; line-height: 1.6; cursor: pointer; }
+.task-card-checklist-row input { flex: 0 0 auto; margin: 3px 0 0; accent-color: var(--accent); }
+.task-card-checklist-row span { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.task-card-checklist-row[data-done] span { text-decoration: line-through; color: var(--text-muted); }
+.task-card-checklist-row input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.task-card-checklist-status { min-height: 16px; font-size: 11px; color: var(--text-muted); }

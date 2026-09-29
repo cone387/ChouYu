@@ -373,6 +373,7 @@ export interface TasksAPI {
   list(options?: TaskListOptions): Promise<TaskListResult>
   create(input: TaskCreateInput): Promise<TaskRecord>
   update(id: string, patch: TaskUpdateInput): Promise<TaskRecord>
+  setChecklistItemDone(id: string, itemId: string, done: boolean): Promise<TaskRecord>
   complete(id: string): Promise<TaskRecord>
   reopen(id: string): Promise<TaskRecord>
   remove(id: string): Promise<void>

@@ -121,6 +121,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
   ipcMain.handle('tasks:create', (_event, input) => notifyChange(() => store!.createTask(input ?? {})))
   ipcMain.handle('tasks:get', (_event, id: string) => store!.getTask(id))
   ipcMain.handle('tasks:update', (_event, id: string, patch) => notifyChange(() => store!.updateTask(id, patch ?? {})))
+  ipcMain.handle('tasks:setChecklistItemDone', (_event, id: string, itemId: string, done: boolean) => notifyChange(() => store!.setChecklistItemDone(id, itemId, done)))
   ipcMain.handle('tasks:complete', (_event, id: string) => notifyChange(() => store!.completeTask(id)))
   ipcMain.handle('tasks:reopen', (_event, id: string) => notifyChange(() => store!.reopenTask(id)))
   ipcMain.handle('tasks:delete', (_event, id: string) => notifyChange(() => store!.deleteTask(id)))
@@ -153,6 +154,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
 
 export function closeTasks(): void {
   shuttingDown = true
+  ipcMain.removeHandler('tasks:setChecklistItemDone')
   pendingBackups.clear()
   for (const channel of ['tasks:get', 'tasks:trash', 'tasks:restoreTrash', 'tasks:purgeTrash', 'tasks:exportBackup', 'tasks:selectBackup', 'tasks:restoreBackup']) ipcMain.removeHandler(channel)
   for (const channel of ['tasks:groups', 'tasks:createGroup', 'tasks:renameGroup', 'tasks:deleteGroup', 'tasks:moveProject', 'tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:deleteProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView', 'tasks:fields', 'tasks:createField', 'tasks:updateField', 'tasks:deleteField']) ipcMain.removeHandler(channel)
