@@ -137,7 +137,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
         renderActivity={topicId => {
           const logRun = data.runs.find(run => run.topicId === topicId)
           return <>
-        {tab === 'work' && logRun && logRun.topicId === topicId && <ContactWorkLog key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} busy={busy} canRetry={!blocked}
+        {tab === 'work' && logRun && logRun.topicId === topicId && <ContactWorkLog key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} data={data} busy={busy} canRetry={!blocked}
           onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
           onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!))}
           onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} />}

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { AGENT_STATUS, type AgentEvent, type AgentRun, type AgentRunDetail } from '../../../../shared/agents'
+import { AGENT_STATUS, type AgentEvent, type AgentOverview, type AgentRun, type AgentRunDetail } from '../../../../shared/agents'
+import { workLogActivity } from './workLogActivity'
 import './ContactWorkLog.css'
 
 const clock = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false })
@@ -15,14 +16,15 @@ const labels: Record<string, string> = {
 }
 const summary = (event: AgentEvent) => labels[event.kind] || event.text.split('\n')[0].slice(0, 70)
 
-export default function ContactWorkLog({ characterId, run, busy, canRetry, onReport, onRetry, onReply }: {
-  characterId: string; run: AgentRun; busy: boolean; canRetry: boolean
+export default function ContactWorkLog({ characterId, run, data, busy, canRetry, onReport, onRetry, onReply }: {
+  characterId: string; run: AgentRun; data: AgentOverview; busy: boolean; canRetry: boolean
   onReport(): void; onRetry(): void; onReply(): void
 }) {
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)
   const [error, setError] = useState(''), [now, setNow] = useState(Date.now())
   const [unread, setUnread] = useState(0)
   const [isFollowing, setIsFollowing] = useState(true)
+  const [heartbeats, setHeartbeats] = useState<{ at: number; text: string }[]>([])
   const autoScrolling = useRef(false)
   const viewport = useRef<HTMLDivElement>(null), following = useRef(true), seen = useRef(0)
   useEffect(() => {
@@ -58,6 +60,8 @@ export default function ContactWorkLog({ characterId, run, busy, canRetry, onRep
   useLayoutEffect(() => {
     if (following.current) follow()
     else setUnread(events.filter(event => event.id > seen.current).length)
+  }, [lastId, heartbeats])
+  useLayoutEffect(() => {
     const node = viewport.current
     if (!node) return
     // A hidden task tab has no scrollable height. Restore following when it opens.
@@ -66,19 +70,29 @@ export default function ContactWorkLog({ characterId, run, busy, canRetry, onRep
     })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [lastId])
+  }, [])
   // Use the newer snapshot so a late detail response cannot revive a finished run.
   const current = detail && detail.run.updatedAt > run.updatedAt ? detail.run : run
   useEffect(() => {
-    if (current.status !== 'running') return
     setNow(Date.now())
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [current.status])
   const last = events.at(-1)
+  const activity = workLogActivity(current, data, last, now, error)
+  useEffect(() => {
+    if (!activity.moving || !isFollowing || !viewport.current?.clientHeight || document.hidden) return
+    // Display-only heartbeats: never persist these as completed work or spend model calls.
+    setHeartbeats(previous => [...previous.filter(beat => beat.at !== now), { at: now, text: activity.text }].slice(-60))
+  }, [now, activity.moving, isFollowing])
+  const rows = [
+    ...events.map(event => ({ key: `event-${event.id}`, at: event.at, event, text: '' })),
+    ...heartbeats.map(beat => ({ key: `beat-${beat.at}`, at: beat.at, event: null, text: beat.text }))
+  ].sort((a, b) => a.at - b.at)
   const seconds = Math.max(0, Math.floor((now - (last?.at ?? current.updatedAt)) / 1000))
   return <section className="agent-work-log" aria-label="实时工作日志" data-agent-work-log>
-    <header><strong>工作日志</strong><span>{error ? '连接中断' : AGENT_STATUS[current.status]}</span><button type="button" className="agent-log-follow" aria-pressed={isFollowing} onClick={() => isFollowing ? pauseFollowing() : follow()}>{isFollowing ? '自动跟随' : '继续跟随 ↓'}</button></header>
+    <header><strong>活动日志</strong><span>{error ? '连接中断' : AGENT_STATUS[current.status]}</span><button type="button" className="agent-log-follow" aria-pressed={isFollowing} onClick={() => isFollowing ? pauseFollowing() : follow()}>{isFollowing ? '暂停滚动' : '继续滚动 ↓'}</button></header>
+    <div className="agent-log-live" data-active={activity.moving}><i aria-hidden="true" /><strong>{activity.label}</strong><span>{activity.text}</span><time>{clock(now)}</time></div>
     <div className="agent-work-log-scroll" ref={viewport} tabIndex={0} role="log" aria-label="本轮执行记录" aria-live="off"
       onWheel={event => { if (event.deltaY < 0) pauseFollowing() }} onTouchStart={pauseFollowing}
       onPointerDown={() => { if (autoScrolling.current) pauseFollowing() }}
@@ -87,21 +101,20 @@ export default function ContactWorkLog({ characterId, run, busy, canRetry, onRep
       const atBottom = node.scrollHeight - node.clientHeight - node.scrollTop < 16
       if (autoScrolling.current && !atBottom) return
       autoScrolling.current = false
-      following.current = atBottom; setIsFollowing(atBottom)
       if (following.current) { seen.current = lastId; setUnread(0) }
     }}>
       {!detail && <p className="agent-caption">正在读取日志…</p>}
       {detail && !events.length && <p className="agent-caption">本轮尚无执行记录。</p>}
-      <ol>{events.map(event => <li key={event.id} data-kind={event.kind}>
-        <time dateTime={new Date(event.at).toISOString()} title={new Date(event.at).toLocaleString()}>{clock(event.at)}</time>
-        <details onToggle={e => { if (e.currentTarget.open) pauseFollowing() }}>
-          <summary>{summary(event)}</summary><p>{event.text}</p>
-        </details>
+      <ol>{rows.map(row => <li key={row.key} data-kind={row.event?.kind ?? 'heartbeat'}>
+        <time dateTime={new Date(row.at).toISOString()} title={new Date(row.at).toLocaleString()}>{clock(row.at)}</time>
+        {row.event ? <details onToggle={e => { if (e.currentTarget.open) pauseFollowing() }}>
+          <summary>{summary(row.event)}</summary><p>{row.event.text}</p>
+        </details> : <span className="agent-log-heartbeat"><b>心跳</b>{row.text}</span>}
       </li>)}</ol>
     </div>
     {unread > 0 && <button className="agent-log-new" type="button" onClick={follow}>有 {unread} 条新记录 ↓</button>}
     <footer>
-      {error ? <span role="status">{error}</span> : current.status === 'running' ? <span>
+      {error ? <span role="status">{error}</span> : activity.moving && current.status !== 'running' ? <span>每秒刷新状态 · 心跳不计入工作成果</span> : current.status === 'running' ? <span>
         {last && ['briefing', 'planning', 'analysis', 'format-repair'].includes(last.kind) ? '等待模型返回' : '距上次步骤更新'} · {seconds} 秒
         {seconds >= 60 && '，暂未收到新步骤记录'}
       </span> : <span>{last ? `最后更新 ${clock(last.at)}` : '等待执行记录'}</span>}

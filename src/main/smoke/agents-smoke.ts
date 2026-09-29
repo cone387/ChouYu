@@ -165,7 +165,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (!await run("document.querySelector('[data-agent-work-log]')?.closest('[role=tabpanel]')?.id.endsWith('overview-panel') && !document.querySelector('.topic-fixed-header .topic-status')")) throw new Error('Overview log placement or duplicate title status regressed')
     const logDirectory = process.env.CHOUYU_SMOKE_ARTIFACTS
     await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-work-log] li[data-kind=waiting]'))")
-    await waitForRenderer(window, "(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.clientHeight === 150 && el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")
+    await waitForRenderer(window, "(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.clientHeight === 216 && el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")
+    await waitForRenderer(window, "document.querySelectorAll('[data-agent-work-log] li[data-kind=heartbeat]').length >= 2")
+    if (!await run("document.querySelector('.agent-log-live strong').textContent === 'WAITING'")) throw new Error('Waiting work must keep a live heartbeat without claiming to be running')
     await run("Array.from(document.querySelectorAll('[data-agent-work-log] button')).find(b => b.textContent === '去回复').click()")
     if (!await run("document.activeElement === document.querySelector('.agent-question textarea')")) throw new Error('Work log reply did not focus the answer')
     if (logDirectory) {
