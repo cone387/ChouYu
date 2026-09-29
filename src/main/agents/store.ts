@@ -16,7 +16,7 @@ import type { AnalyticsQuery } from '../../shared/agent-analytics'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
 type RunRow = { id: string; character_id: string; revision: number; status: AgentRunStatus; created_at: number; updated_at: number; question: string; answer: string; summary: string; error: string; input: string; topic_id: string | null; topic_revision: number | null }
-const mapRun = (row: RunRow): AgentRun => ({ id: row.id, characterId: row.character_id, revision: row.revision, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, question: row.question, answer: row.answer, summary: row.summary, error: row.error, topicId: row.topic_id })
+const mapRun = (row: RunRow): AgentRun => ({ id: row.id, characterId: row.character_id, revision: row.revision, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, question: row.question, answer: row.answer, summary: row.summary, error: row.error, topicId: row.topic_id, ...(row.status === 'waiting' && JSON.parse(row.input).questionInputs ? { inputFields: JSON.parse(row.input).questionInputs } : {}) })
 const dayStart = (now: number) => { const date = new Date(now); date.setHours(0, 0, 0, 0); return date.getTime() }
 
 export class AgentStore {
@@ -433,9 +433,10 @@ export class AgentStore {
     for (const row of rows) { this.setStatus(row.id, 'interrupted'); this.event(row.id, 'interrupted', '执行进程已重启，将从持久化检查点恢复；未完成的只读步骤可能重试。') }
   }
   runnable() { return this.db.prepare("SELECT * FROM runs WHERE status IN ('queued','interrupted') ORDER BY created_at").all() as RunRow[] }
-  wait(id: string, question: string) {
+  wait(id: string, question: string, inputs?: import('../../shared/agent-delivery').TaskInputField[]) {
     this.db.transaction(() => {
       const run = this.assertLive(id)
+      this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify({ ...JSON.parse(run.input), questionInputs: inputs }), id)
       this.db.prepare("UPDATE runs SET status='waiting',question=?,updated_at=? WHERE id=?").run(question, Date.now(), id)
       this.event(id, 'waiting', question)
       if (run.topic_id) {
@@ -445,16 +446,29 @@ export class AgentStore {
       }
     })()
   }
-  answer(characterId: string, id: string, text: string) {
+  answer(characterId: string, id: string, text: string, answers?: unknown) {
     const { run } = this.detail(characterId, id)
     if (run.status !== 'waiting') throw new Error('这项工作已不在等待回复。')
     if (typeof text !== 'string' || !text.trim() || text.length > 2000 || containsSecret(text)) throw new Error('请填写 1–2000 字的回复，不要包含密钥。')
     this.assertLive(id)
     const input = JSON.parse(this.getRun(id)!.input)
+    if (answers !== undefined) {
+      const fields = input.questionInputs as import('../../shared/agent-delivery').TaskInputField[] | undefined
+      if (!fields?.length || !answers || typeof answers !== 'object' || Array.isArray(answers)) throw new Error('任务需求回复无效。')
+      const values = answers as Record<string, unknown>
+      if (Object.keys(values).some(key => !fields.some(field => field.id === key))) throw new Error('回复包含未知的需求项。')
+      const supplied = fields.map(field => {
+        const value = values[field.id]
+        if (typeof value !== 'string' || value.length > 1000 || field.required && !value.trim() || containsSecret(value)) throw new Error('请填写有效的任务需求。')
+        return { ...field, value: value.trim() }
+      })
+      const previous = (input.answeredInputs ?? []) as import('../../shared/agent-delivery').TaskInputField[]
+      input.answeredInputs = [...previous.filter(field => !supplied.some(answer => answer.id === field.id)), ...supplied]
+    } else delete input.answeredInputs // A later free-text reply may supersede earlier form values.
     const needed = input.assignment && input.brief?.question && !input.briefAnswer && agentUsesPlanner(input.settings) ? 2 : 1
     if (run.topicId) this.assertTaskBudget(characterId, run.topicId, needed)
     if (input.deliveryVersion === 1 && this.callCount(characterId) + needed > JSON.parse(this.profile(characterId)!.settings).dailyCalls) throw new Error('今日模型额度不足以处理回复，请明日再试或调整额度。')
-    this.db.prepare("UPDATE runs SET status='queued',answer=?,updated_at=? WHERE id=?").run(text.trim(), Date.now(), id)
+    this.db.prepare("UPDATE runs SET status='queued',answer=?,updated_at=?,input=? WHERE id=?").run(text.trim(), Date.now(), JSON.stringify(input), id)
     this.event(id, 'answer', text.trim())
   }
   fail(id: string, error: string) {
@@ -474,12 +488,18 @@ export class AgentStore {
       const run = this.assertLive(runId)
       const deliveryInput = JSON.parse(run.input)
       const previousDelivery = run.topic_id ? this.deliveries.get(run.topic_id) : null
+      if (deliveryInput.answeredInputs?.length) {
+        const supplied = deliveryInput.answeredInputs as import('../../shared/agent-delivery').TaskInputField[]
+        const existing = delivery?.inputs ?? previousDelivery?.inputs ?? supplied
+        const inputs = [...existing.filter(field => !supplied.some(answer => answer.id === field.id)), ...supplied]
+        if (delivery) delivery = { ...delivery, inputs }
+      }
       if (run.topic_id && progress?.status === 'completed' && this.topics.get(run.character_id, run.topic_id).initialPlan) {
         if (!delivery) throw new Error('尚未提交实际成果和阶段验收，不能完成任务。')
         const requiredStages = [...this.topics.get(run.character_id, run.topic_id).initialPlan!.stages, ...(previousDelivery?.stages ?? [])]
-        if (requiredStages.some(stage => !delivery.stages.some(next => next.id === stage.id && next.status === 'done'))) throw new Error('仍有计划阶段未交付或被遗漏，不能完成任务。')
+        if (requiredStages.some(stage => !delivery!.stages.some(next => next.id === stage.id && next.status === 'done'))) throw new Error('仍有计划阶段未交付或被遗漏，不能完成任务。')
       }
-      if (deliveryInput.revisionSectionId && delivery?.section.id !== deliveryInput.revisionSectionId) throw new Error('成果没有更新指定分节，本轮未提交。')
+      if (deliveryInput.revisionSectionId && delivery?.section?.id !== deliveryInput.revisionSectionId) throw new Error('成果没有更新指定分节，本轮未提交。')
       if (run.topic_id) {
         if (!progress) throw new Error('缺少事项进展，本轮不能提交。')
         const before = this.topics.get(run.character_id, run.topic_id)
@@ -499,7 +519,7 @@ export class AgentStore {
       const research = this.research(runId)
       if (research) {
         const settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
-        const changedSection = delivery && !previousDelivery?.sections.some(section => section.body.trim() === delivery.section.body.trim())
+        const changedSection = delivery?.section && !previousDelivery?.sections.some(section => section.body.trim() === delivery!.section!.body.trim())
         const continueWriting = !settings.paceWriting && research.plan.action === 'write' && progress?.status === 'researching' && changedSection && !deliveryInput.feedback
         const nextAt = Date.now() + (continueWriting ? 0 : Math.max(settings.intervalMinutes, research.plan.checkAfterMinutes) * 60000)
         this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(nextAt, run.character_id)

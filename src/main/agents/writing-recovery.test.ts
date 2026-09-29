@@ -44,7 +44,7 @@ it('continues truncated prose and assembles metadata without regenerating the bo
     return '第一弦。\n[[SECTION_END]]'
   })
   const result = parseDraft(await generate(f, model))
-  expect(result.delivery?.section.body).toBe('陆沉拨响第一弦。')
+  expect(result.delivery?.section?.body).toBe('陆沉拨响第一弦。')
   expect(model).toHaveBeenCalledTimes(3)
   expect(f.store.callCount('writer')).toBe(3)
   expect(f.store.overview('writer').reports).toEqual([])
@@ -62,7 +62,7 @@ it('bounds continuous truncation and resumes the persisted prefix after reopenin
     expect(prompt).toContain('接续接续接续')
     return '收束。[[SECTION_END]]'
   })
-  expect(parseDraft(await generate(f, resumed)).delivery?.section.body).toBe('接续接续接续收束。')
+  expect(parseDraft(await generate(f, resumed)).delivery?.section?.body).toBe('接续接续接续收束。')
   expect(resumed).toHaveBeenCalledTimes(2)
 })
 
@@ -71,7 +71,7 @@ it('keeps complete prose when metadata fails and retries only metadata on the ne
   await expect(generate(f, async (_prompt, _signal, options) => options?.plainText ? '已完成正文。[[SECTION_END]]' : '{')).rejects.toThrow('进度信息恢复仍未通过')
   f.reopen()
   const model = vi.fn<AgentModel>(async (_prompt, _signal, options) => { expect(options?.plainText).not.toBe(true); return metadata })
-  expect(parseDraft(await generate(f, model)).delivery?.section.body).toBe('已完成正文。')
+  expect(parseDraft(await generate(f, model)).delivery?.section?.body).toBe('已完成正文。')
   expect(model).toHaveBeenCalledTimes(1)
 })
 

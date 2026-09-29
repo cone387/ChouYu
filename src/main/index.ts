@@ -1,3 +1,4 @@
+import { runDeliveryPresentationSmoke } from './smoke/delivery-presentation-smoke'
 import { runRemindersSmoke } from './smoke/reminders-smoke'
 import { initializeReminders, closeReminders } from './reminders'
 import { runJournalMigrationSmoke } from './smoke/journal-migration-smoke'
@@ -126,6 +127,8 @@ function createWindow(): void {
           await runNativeCaptureSmoke()
         } else if (process.env.CHOUYU_SMOKE_REMINDERS_ONLY === '1') {
           await stage('reminders', () => runRemindersSmoke(mainWindow!))
+        } else if (process.env.CHOUYU_SMOKE_PRESENTATION_ONLY === '1') {
+          await runDeliveryPresentationSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_AGENTS_ONLY === '1') {
           await runAgentsSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_CONTACTS_ONLY === '1') {

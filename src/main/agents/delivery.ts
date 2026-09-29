@@ -21,7 +21,7 @@ export class AgentDeliveries {
   commit(topicId: string, report: AgentReport, progress: AgentTopicProgress, update?: DeliveryUpdate) {
     const previous = this.get(topicId)
     const initial = this.context(topicId)
-    const value = update ? validateDeliveryUpdate(update) : {
+    const value: DeliveryUpdate = update ? validateDeliveryUpdate(update) : {
       completionCriteria: initial?.completionCriteria || '尚未明确完成条件，请在聊天中补充。',
       stages: initial?.stages || [{ id: 'delivery', title: '推进并检查交付成果', status: 'active' as const }],
       summary: progress.judgement,
@@ -29,11 +29,17 @@ export class AgentDeliveries {
     }
     if (update && progress.status === 'completed' && value.stages.some(s => s.status !== 'done')) throw new Error('阶段尚未完成，不能结束整个事项。')
     const sections = [...(previous?.sections || [])]
-    const index = sections.findIndex(s => s.id === value.section.id)
-    const section = { ...value.section, runId: report.runId, sources: report.evidence.map(({ url, title, capturedAt }) => ({ url, title, capturedAt })) }
-    if (index < 0) sections.push(section); else sections[index] = section
+    if (value.section) {
+      const index = sections.findIndex(s => s.id === value.section!.id)
+      const section = { ...value.section, runId: report.runId, sources: report.evidence.map(({ url, title, capturedAt }) => ({ url, title, capturedAt })) }
+      if (index < 0) sections.push(section); else sections[index] = section
+    }
+    if (!sections.length) throw new Error('首次交付必须包含实际正文。')
+    if (!value.section && previous && (value.completionCriteria !== previous.completionCriteria || JSON.stringify(value.stages) !== JSON.stringify(previous.stages))) throw new Error('仅更新展示或需求时不能改变完成条件与阶段进度。')
     if (sections.length > 300 || sections.reduce((n, s) => n + s.body.length, 0) > 1000000) throw new Error('单个成果已达到容量上限，请结束此事项并分卷继续。')
-    const artifact: AgentDelivery = { version: (previous?.version ?? 0) + 1, runId: report.runId, createdAt: report.createdAt, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, sections }
+    const presentation = value.presentation === undefined ? previous?.presentation : value.presentation ?? undefined
+    const inputs = value.inputs ?? previous?.inputs ?? initial?.inputs
+    const artifact: AgentDelivery = { version: (previous?.version ?? 0) + 1, runId: report.runId, createdAt: report.createdAt, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, sections, ...(presentation ? { presentation } : {}), ...(inputs ? { inputs } : {}) }
     this.db.prepare('INSERT INTO delivery_versions VALUES(?,?,?,?)').run(topicId, artifact.version, report.runId, JSON.stringify(artifact))
   }
   context(topicId: string) {
@@ -44,7 +50,7 @@ export class AgentDeliveries {
       return plan ? { ...plan, version: 0, summary: '接单时的初步计划，尚未交付成果。', directory: [], sections: [] } : null
     }
     // Stable directory and cumulative summary survive beyond the recent-three-report window.
-    return { version: value.version, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary,
+    return { version: value.version, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, inputs: value.inputs, presentation: value.presentation,
       directory: value.sections.map(s => ({ id: s.id, title: s.title })),
       sections: value.sections.slice(-3) }
   }

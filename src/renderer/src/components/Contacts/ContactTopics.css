@@ -180,3 +180,11 @@
   .topic-floating-action > button:last-child { flex: none; }
   .topic-content-header { padding-right: 0; padding-top: 84px; }
 }
+
+.contact-presentation iframe { display: block; width: 100%; height: min(70vh, 760px); min-height: 380px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); }
+.contact-presentation { margin: 12px 0; min-width: 0; }
+.contact-input-form { display: grid; gap: 12px; margin: 12px 0 20px; }
+.contact-input-form label { display: grid; gap: 6px; }
+.contact-input-form textarea { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; }
+.contact-input-form > button { justify-self: start; }
+.delivery-inputs > summary { padding: 12px 0; font-weight: 600; cursor: pointer; }

@@ -29,7 +29,7 @@ function delivery(n = 1, body = `第${n}章正文`): DeliveryUpdate {
     stages: Array.from({ length: 5 }, (_, i) => ({ id: `chapter${i + 1}`, title: `第${i + 1}章`, status: i < n ? 'done' : 'pending' })),
     section: { id: `chapter${n}`, title: `第${n}章`, body } }
 }
-const draft = (update: DeliveryUpdate, question = '', p = progress) => JSON.stringify({ title: update.section.title, body: '已更新本轮成果', nextStep: p.nextStep, memories: [], question, progress: p, delivery: update })
+const draft = (update: DeliveryUpdate, question = '', p = progress) => JSON.stringify({ title: update.section?.title ?? '排版调整', body: '已更新本轮成果', nextStep: p.nextStep, memories: [], question, progress: p, delivery: update })
 async function write(f: ReturnType<typeof fixture>, n: number) {
   const run = f.store.createRun('alice', '')
   await f.runtime.execute(run, '', async prompt => JSON.stringify(prompt.startsWith('为联系人') ? plan : JSON.parse(draft(delivery(n)))), new AbortController().signal)
@@ -38,6 +38,36 @@ async function write(f: ReturnType<typeof fixture>, n: number) {
 }
 
 describe('durable deliverables', () => {
+  it('versions presentation separately, inherits it for new chapters and never rewrites prose for style changes', async () => {
+    const f = fixture(), topicId = f.store.overview('alice').focusTopicId!
+    const first = { ...delivery(), presentation: { title: '书页', html: '<div id="content"></div>', css: '.body{line-height:2}', script: '' }, inputs: [{ id: 'genre', label: '题材', value: '奇幻', required: true }] }
+    const run = f.store.createRun('alice', '')
+    await f.runtime.execute(run, '', async prompt => prompt.startsWith('为联系人') ? JSON.stringify(plan) : draft(first), new AbortController().signal)
+    const original = f.store.deliveries.get(topicId)!
+    f.reopen()
+    const topic = f.store.topics.get('alice', topicId)
+    const revision = f.store.reviseTopic('alice', topicId, topic.revision, '只调整排版，保留正文', '')
+    const update = { completionCriteria: first.completionCriteria, stages: first.stages, summary: first.summary, presentation: { ...first.presentation, css: '.body{line-height:2.2}' } }
+    await f.runtime.execute(revision, '', async prompt => {
+      if (prompt.startsWith('为联系人')) return JSON.stringify(plan)
+      expect(prompt).toContain(first.presentation.css)
+      return draft(update)
+    }, new AbortController().signal)
+    expect(f.store.detail('alice', revision).run.status).toBe('completed')
+    expect(f.store.deliveries.get(topicId)!.sections).toEqual(original.sections)
+    expect(f.store.deliveries.get(topicId)!.inputs).toEqual(first.inputs)
+    expect(f.store.deliveries.get(topicId, 1)!.presentation).toEqual(first.presentation)
+    await write(f, 2)
+    expect(f.store.deliveries.get(topicId)!.presentation).toEqual(update.presentation)
+    expect(f.store.deliveries.get(topicId)!.sections).toHaveLength(2)
+  })
+  it('does not create a first delivery or finish stages from presentation alone', () => {
+    const f = fixture(), run = f.store.createRun('alice', '')
+    const update = delivery(); delete update.section
+    update.presentation = { title: '未交付', html: '', css: '', script: '' }
+    expect(() => f.store.finish(run, { runId: run, title: '样式', body: '样式', nextStep: '继续', evidence: [], createdAt: Date.now() }, [], progress, update)).toThrow('首次交付')
+    expect(f.store.overview('alice').reports).toHaveLength(0)
+  })
   it('accumulates five chapters across restart and revises an early chapter using its original text', async () => {
     const f = fixture(), topicId = f.store.overview('alice').focusTopicId!
     for (let n = 1; n <= 5; n++) { await write(f, n); if (n === 2) f.reopen() }

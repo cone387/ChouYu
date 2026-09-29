@@ -34,6 +34,7 @@ export function agentUsesPlanner(settings: AgentSettings): boolean {
 export type AgentRunStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
 export interface AgentEvidence { url: string; title: string; text: string; capturedAt: number; hash: string }
 export interface AgentRun {
+  inputFields?: import('./agent-delivery').TaskInputField[]
   id: string; characterId: string; revision: number; status: AgentRunStatus; createdAt: number; updatedAt: number
   topicId: string | null
   question: string; answer: string; summary: string; error: string
@@ -102,7 +103,7 @@ export interface AgentAPI {
   continueTopic(characterId: string, topicId: string, revision: number, reason: string): Promise<AgentOverview>
   setTaskBudget(characterId: string, topicId: string, revision: number, budget: Pick<import('./agent-resources').TaskResourceBudget, 'modelCalls'>): Promise<AgentOverview>
   delivery(characterId: string, topicId: string, version?: number): Promise<import('./agent-delivery').AgentDelivery | null>
-  exportDelivery(characterId: string, topicId: string, version: number): Promise<boolean>
+  exportDelivery(characterId: string, topicId: string, version: number, format?: 'markdown' | 'html'): Promise<boolean>
   reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string): Promise<AgentOverview>
   savePreferences(characterId: string, settings: AgentSettings): Promise<AgentOverview>
   searchCredential(characterId: string, key?: string): Promise<{ configured: boolean }>
@@ -120,7 +121,7 @@ export interface AgentAPI {
   analytics(characterId: string, query: import('./agent-analytics').AnalyticsQuery): Promise<import('./agent-analytics').AgentAnalytics>
   pause(characterId: string): Promise<AgentOverview>
   detail(characterId: string, runId: string): Promise<AgentRunDetail>
-  answer(characterId: string, runId: string, answer: string): Promise<AgentOverview>
+  answer(characterId: string, runId: string, answer: string, inputs?: Record<string, string>): Promise<AgentOverview>
   remember(characterId: string, content: string): Promise<AgentOverview>
   forget(characterId: string, memoryId: string): Promise<AgentOverview>
   onChanged(callback: (characterId: string) => void): () => void

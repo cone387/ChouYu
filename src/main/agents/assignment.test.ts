@@ -21,6 +21,36 @@ const draft = { title: '初步研究', body: '资料 [1] 仅提供线索，需�
 const reader = () => evidenceFromText(settings.sources[0], '公开网页提供了线索，仍需验证。'.repeat(20))
 
 describe('description-only task assignment', () => {
+  it('organizes known inputs and persists a missing required input as a question across restart', async () => {
+    const dir = directory()
+    let store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+    cleanups.push(() => { runtime.close(); store.close() })
+    const topic = store.assignTopic('writer', '写一篇奇幻短篇', '用户之前说喜欢宋体排版')
+    const run = store.overview('writer').runs[0].id
+    const inputs = [{ id: 'genre', label: '题材', value: '奇幻', required: true }, { id: 'reader', label: '读者', value: '', required: true, options: ['成人', '儿童'] }]
+    await runtime.execute(run, '作家', async prompt => {
+      expect(prompt).toContain('plan.inputs'); expect(prompt).toContain('喜欢宋体排版')
+      return JSON.stringify({ ...brief, question: '', plan: { ...brief.plan, inputs } })
+    }, new AbortController().signal)
+    expect(store.detail('writer', run).run.question).toContain('请补充：读者')
+    expect(store.detail('writer', run).run.inputFields).toEqual(inputs)
+    runtime.close(); store.close()
+    store = new AgentStore(join(dir, 'agents.db')); runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+    expect(store.topics.get('writer', topic.id).initialPlan?.inputs).toEqual(inputs)
+    expect(store.overview('writer').runs[0].inputFields).toEqual(inputs)
+    expect(store.notices.pending('writer')[0].kind).toBe('question')
+    expect(() => store.answer('writer', run, '读者：成人', { genre: '奇幻', unknown: '成人' })).toThrow('未知')
+    expect(() => store.answer('writer', run, '读者：成人', { genre: '奇幻', reader: '' })).toThrow('有效')
+    store.answer('writer', run, '题材：奇幻\n读者：成人', { genre: '奇幻', reader: '成人' })
+    await runtime.execute(run, '作家', async prompt => {
+      if (prompt.startsWith('为联系人')) return JSON.stringify({ action: 'write', reason: '开始写作', query: '', urls: [], checkAfterMinutes: 180 })
+      expect(prompt).toContain('读者：成人')
+      return JSON.stringify({ ...draft, delivery: { ...brief.plan, inputs, summary: '开始写作', section: { id: 'opening', title: '开篇', body: '雨落在长廊上。' } } })
+    }, new AbortController().signal)
+    expect(store.detail('writer', run).run.status).toBe('completed')
+    // User form values take precedence even if the model echoes stale input values.
+    expect(store.deliveries.get(topic.id)?.inputs?.find(field => field.id === 'reader')?.value).toBe('成人')
+  })
   it('creates the default profile, focused topic and first run atomically from one description', () => {
     const store = new AgentStore(join(directory(), 'agents.db')); cleanups.push(() => store.close())
     const topic = store.assignTopic('alice', '帮我研究下班后能做的项目', '')

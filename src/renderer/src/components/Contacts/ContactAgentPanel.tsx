@@ -1,3 +1,4 @@
+import ContactTaskInputForm from './ContactTaskInputForm'
 import ContactAnalytics from './ContactAnalytics'
 import ContactDailyOverview from './ContactDailyOverview'
 import ContactMarkdown from './ContactMarkdown'
@@ -144,12 +145,14 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
           onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
           onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!))}
           onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} />}
-      {active?.status === 'waiting' && active.topicId === topicId && <form className="agent-question" onSubmit={event => { event.preventDefault(); void perform(async () => { await window.electronAPI.agents.answer(characterId, active.id, answer); setAnswer('') }) }}>
+      {active?.status === 'waiting' && active.topicId === topicId && <section className="agent-question"><form onSubmit={event => { event.preventDefault(); void perform(async () => { await window.electronAPI.agents.answer(characterId, active.id, answer); setAnswer('') }) }}>
         <strong>这一步需要你的想法</strong><p>{active.question}</p>
         {onDiscuss && active.topicId && <button type="button" onClick={() => discuss(active.id, active.topicId!, `待确认问题：${active.question}`)}>带着问题去聊天</button>}
         <label>回复<textarea value={answer} maxLength={2000} onChange={e => setAnswer(e.target.value)} rows={3} required /></label>
         <button type="submit" disabled={busy || !answer.trim()}>回复并继续</button>
-      </form>}
+      </form>
+      {active.inputFields?.length ? <details open><summary>按任务需求填写</summary><ContactTaskInputForm key={`${active.id}:${active.question}`} fields={active.inputFields} busy={busy} onSubmit={async (reply, values) => { await perform(async () => { await window.electronAPI.agents.answer(characterId, active.id, reply, values); setAnswer('') }) }} /></details> : null}
+      </section>}
         </>}}
         onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />
     </div>}

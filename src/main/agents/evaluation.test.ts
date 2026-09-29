@@ -17,7 +17,7 @@ it('requires structured scores when the plan requests evaluation', () => {
   expect(() => parseDraft(JSON.stringify({ ...draft, evaluations: undefined }), 0, true)).toThrow('结构化')
   const parsed = parseDraft(JSON.stringify(draft), 0, true)
   expect(parsed.body).toBe('idea：80/100（系统计算）')
-  expect(parsed.delivery?.section.body).toContain('系统计算总分：80/100')
+  expect(parsed.delivery?.section?.body).toContain('系统计算总分：80/100')
   expect(parsed.evaluations?.[0].claimedTotal).toBe(60)
 })
 it('persists computed totals in reports, versioned deliverables and Markdown export', async () => {

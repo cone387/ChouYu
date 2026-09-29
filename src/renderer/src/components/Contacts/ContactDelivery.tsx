@@ -1,13 +1,16 @@
+import ContactPresentation from './ContactPresentation'
+import ContactTaskInputForm from './ContactTaskInputForm'
 import ContactMarkdown from './ContactMarkdown'
 import { useEffect, useRef, useState } from 'react'
 import type { AgentDelivery } from '../../../../shared/agent-delivery'
 import type { AgentTopic } from '../../../../shared/agents'
 
 const stageLabel = { pending: '待开始', active: '进行中', done: '已完成' }
-export default function ContactDelivery({ characterId, topic, busy, onAction, onReport, view = 'delivery' }: {
+export default function ContactDelivery({ characterId, topic, busy, onAction, onReport, view = 'delivery', active = true }: {
   characterId: string; topic: AgentTopic; busy: boolean
   onAction: (action: () => Promise<unknown>) => Promise<void>
   view?: 'stages' | 'delivery'
+  active?: boolean
   onReport?: () => void
 }) {
   const [artifact, setArtifact] = useState<AgentDelivery | null>(null)
@@ -16,6 +19,8 @@ export default function ContactDelivery({ characterId, topic, busy, onAction, on
   const [error, setError] = useState(''), [feedback, setFeedback] = useState(''), [notice, setNotice] = useState('')
   const [sectionId, setSectionId] = useState('')
   const [readingId, setReadingId] = useState('')
+  const [plain, setPlain] = useState(false)
+  const inputs = artifact?.inputs ?? topic.initialPlan?.inputs
   const epoch = useRef(0)
   const load = async (version?: number) => {
     const request = ++epoch.current
@@ -34,6 +39,7 @@ export default function ContactDelivery({ characterId, topic, busy, onAction, on
   useEffect(() => { setArtifact(null); setPrevious(null); void load(); return () => { epoch.current++ } }, [characterId, topic.id, topic.revision])
   return <section className="contact-delivery" aria-label="阶段计划与成果" data-delivery-version={artifact?.version}>
     <div hidden={view !== 'stages'}>
+      {inputs?.length ? <details className="delivery-inputs" open><summary>任务需求</summary><ContactTaskInputForm key={`${topic.id}:${artifact?.version ?? 0}:${topic.revision}`} fields={inputs} busy={busy} label="更新需求并继续" onSubmit={async reply => { await onAction(async () => { await window.electronAPI.agents.reviseTopic(characterId, topic.id, topic.revision, reply); setNotice('需求已提交，联系人会据此继续工作。') }) }} />{busy && <p className="agent-caption">有待回复的问题时，请在任务概览中补充；其他调整可在本轮结束或暂停后提交。</p>}</details> : null}
       <div className="topic-heading"><h4>阶段计划</h4>{artifact && <span className="agent-caption">版本 {artifact.version} / {latest}</span>}</div>
       {loading && <p role="status">正在读取阶段计划…</p>}
       {error && <p role="alert">{error}<button type="button" onClick={() => void load()}>重试</button></p>}
@@ -50,15 +56,20 @@ export default function ContactDelivery({ characterId, topic, busy, onAction, on
     {error && <p role="alert">{error}<button type="button" onClick={() => void load()}>重试</button></p>}
     {!loading && !error && !artifact && <div className="delivery-empty"><p>尚未保存可阅读的成果正文。</p><p className="agent-caption">进展中提到“已完成”不代表已有正文。旧任务的内容可能保存在工作报告中。</p>{onReport && <button type="button" onClick={onReport}>查看最近工作报告</button>}</div>}
     {artifact && !loading && <>
+      {artifact.presentation && <div className="agent-actions" aria-label="成果阅读方式"><button type="button" aria-pressed={!plain} onClick={() => setPlain(false)}>{artifact.presentation.title}</button><button type="button" aria-pressed={plain} onClick={() => setPlain(true)}>正文</button></div>}
+      {artifact.presentation && !plain && view === 'delivery' && active && <ContactPresentation key={`${topic.id}:${artifact.version}`} characterId={characterId} topicId={topic.id} artifact={artifact} onFallback={() => setPlain(true)} />}
+      <div hidden={Boolean(artifact.presentation && !plain)}>
       <nav className="delivery-directory" aria-label="成果目录">{artifact.sections.map(section => <button type="button" key={section.id} aria-pressed={readingId === section.id} onClick={() => setReadingId(section.id)}>{section.title}</button>)}</nav>
       {artifact.sections.filter(section => section.id === readingId).map(section => <article className="delivery-reader" key={section.id} aria-label={section.title}><h5>{section.title}</h5><ContactMarkdown>{section.body}</ContactMarkdown>{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><a href={source.url} target="_blank" rel="noopener noreferrer">[{i + 1}] {source.title}</a></li>)}</ol></details> : null}</article>)}
+      </div>
       <details><summary>版本与导出</summary>
       <div className="agent-actions">
         <button data-delivery-prev type="button" disabled={artifact.version <= 1} onClick={() => void load(artifact.version - 1)}>上一版</button>
         <button data-delivery-next type="button" disabled={artifact.version >= latest} onClick={() => void load(artifact.version + 1)}>下一版</button>
         <button type="button" disabled={busy} onClick={() => void onAction(async () => { if (await window.electronAPI.agents.exportDelivery(characterId, topic.id, artifact.version)) setNotice('此版本已导出。') })}>导出此版本</button>
+        {artifact.presentation && <button type="button" disabled={busy} onClick={() => void onAction(async () => { if (await window.electronAPI.agents.exportDelivery(characterId, topic.id, artifact.version, 'html')) setNotice('阅读页面已导出。') })}>导出阅读页面</button>}
       </div>
-      {previous && <details><summary>与上一版比较</summary>{artifact.sections.filter(s => { const old = previous.sections.find(p => p.id === s.id); return !old || old.body !== s.body || old.title !== s.title }).map(s => {
+      {previous && <details><summary>与上一版比较</summary>{JSON.stringify(previous.presentation) !== JSON.stringify(artifact.presentation) && <p>本版更新了阅读样式，正文变化列在下方。</p>}{JSON.stringify(previous.inputs) !== JSON.stringify(artifact.inputs) && <p>本版更新了任务需求。</p>}{artifact.sections.filter(s => { const old = previous.sections.find(p => p.id === s.id); return !old || old.body !== s.body || old.title !== s.title }).map(s => {
         const old = previous.sections.find(p => p.id === s.id)
         return <article className="delivery-diff" key={s.id}><h5>{s.title} · {old ? '已修改' : '新增'}</h5>{old && <><strong>修改前</strong><ContactMarkdown>{old.body}</ContactMarkdown></>}<strong>修改后</strong><ContactMarkdown>{s.body}</ContactMarkdown></article>
       })}<p className="agent-caption">完成条件与阶段以当前查看版本为准；未列出的分节正文保持不变。</p></details>}
@@ -67,12 +78,13 @@ export default function ContactDelivery({ characterId, topic, busy, onAction, on
     <details><summary>提出修改意见</summary>
     <form onSubmit={event => { event.preventDefault(); void onAction(async () => { await window.electronAPI.agents.reviseTopic(characterId, topic.id, topic.revision, feedback, sectionId || undefined); setFeedback(''); setNotice('修改意见已提交，将按当前成果修订一轮。') }) }}>
       {artifact && <label>修订位置<select value={sectionId} onChange={e => setSectionId(e.target.value)}><option value="">由联系人根据意见安排</option>{artifact.sections.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>}
-      <label>修改意见<textarea data-delivery-feedback value={feedback} onChange={e => setFeedback(e.target.value)} maxLength={2000} rows={2} required placeholder="例如：第二章改用主角视角，保留结尾" /></label>
+      <label>修改意见<textarea data-delivery-feedback value={feedback} onChange={e => setFeedback(e.target.value)} maxLength={2000} rows={2} required placeholder="例如：第二章改用主角视角；或只调整排版，正文使用宋体并加大行距" /></label>
       <p className="agent-caption">按最新成果立即修订一轮，保留旧版本并使用现有额度。多节修改会分轮推进。</p>
       <button data-delivery-submit type="submit" disabled={busy || !feedback.trim()}>提交并修订</button>
     </form>
     </details>
     {notice && <p role="status">{notice}</p>}
     </div>
+    {view === 'stages' && notice && <p role="status">{notice}</p>}
   </section>
 }

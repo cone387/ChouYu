@@ -148,7 +148,7 @@ export class AgentService {
         this.checkSearch(id)
         this.store.createRun(id, this.identity(id).conversation, Date.now(), args[0] === undefined ? undefined : String(args[0])); break
       }
-      case 'answer': this.store.answer(id, String(args[0]), args[1] as string); break
+      case 'answer': this.store.answer(id, String(args[0]), args[1] as string, args[2]); break
       case 'remember': this.store.remember(id, args[0] as string); break
       case 'forget': this.store.forget(id, String(args[0])); this.store.cancel(id, '独立记忆已修改，本轮停止。'); this.abort(id); break
       default: throw new Error('未知 Agent 操作。')

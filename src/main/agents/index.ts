@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import { registerPresentationProtocol } from './presentation-protocol'
+import { deliveryHtmlExport } from '../../shared/delivery-presentation'
 import { notifyReminderChanges } from '../reminder-events'
 import { app, BrowserWindow, dialog, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
 import { writeFile } from 'node:fs/promises'
@@ -115,21 +118,29 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  registerPresentationProtocol(async (id, topicId, version) => {
+    if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
+    await ensure()
+    const artifact = await rpc('delivery', id, [topicId, version]) as AgentDelivery | null
+    const detail = await rpc('topicDetail', id, [topicId])
+    return { title: detail.topic.title, artifact }
+  })
   ipcMain.handle('agents:dashboard', async () => {
     await ensure()
     return rpc('dashboard', '', [listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id)])
   })
-  ipcMain.handle('agents:exportDelivery', async (event, id: string, topicId: string, version: number) => {
+  ipcMain.handle('agents:exportDelivery', async (event, id: string, topicId: string, version: number, format: 'markdown' | 'html' = 'markdown') => {
     if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     await ensure()
     const artifact = await rpc('delivery', id, [topicId, version]) as AgentDelivery | null
     const detail = await rpc('topicDetail', id, [topicId])
     if (!artifact) throw new Error('尚无可导出的成果。')
+    if (!['markdown', 'html'].includes(format)) throw new Error('导出格式无效。')
     const parent = BrowserWindow.fromWebContents(event.sender)
-    const options = { title: '导出此版本成果', defaultPath: `${detail.topic.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80)}-v${artifact.version}.md`, filters: [{ name: 'Markdown', extensions: ['md'] }] }
+    const options = { title: '导出此版本成果', defaultPath: `${detail.topic.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80)}-v${artifact.version}.${format === 'html' ? 'html' : 'md'}`, filters: [{ name: format === 'html' ? 'HTML 阅读页面' : 'Markdown', extensions: [format === 'html' ? 'html' : 'md'] }] }
     const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
     if (result.canceled || !result.filePath) return false
-    await writeFile(result.filePath, deliveryMarkdown(detail.topic.title, artifact), 'utf8')
+    await writeFile(result.filePath, format === 'html' ? deliveryHtmlExport(detail.topic.title, artifact, randomUUID()) : deliveryMarkdown(detail.topic.title, artifact), 'utf8')
     return true
   })
   ipcMain.handle('agents:searchCredential', async (_event, id: string, key?: string) => {
