@@ -19,8 +19,8 @@ export class AgentService {
   private identities = new Map<string, AgentIdentity>()
   private ready = false
   private closed = false
-  private deletingTopic = false
-  private active?: { id: string; characterId: string; controller: AbortController; promise: Promise<void> }
+  private deleting = new Set<string>()
+  private active = new Map<string, { id: string; controller: AbortController; promise: Promise<void> }>()
   private timer: ReturnType<typeof setInterval>
   constructor(directory: string, private changed: (id: string) => void, private modelFactory?: (identity: AgentIdentity) => AgentModel, reader?: ConstructorParameters<typeof AgentRuntime>[2], searcher?: AgentSearcher) {
     mkdirSync(directory, { recursive: true })
@@ -29,7 +29,7 @@ export class AgentService {
     this.store.recover()
     this.timer = setInterval(() => this.tick(), 15000)
   }
-  private abort(id: string) { if (this.active?.characterId === id) this.active.controller.abort() }
+  private abort(id: string) { this.active.get(id)?.controller.abort() }
   async sync(identities: AgentIdentity[]) {
     const signature = (identity: AgentIdentity) => createHash('sha256').update(JSON.stringify({ soul: identity.soul, config: identity.config, searchKey: identity.searchKey })).digest('hex')
     for (const identity of identities) {
@@ -43,10 +43,14 @@ export class AgentService {
   }
   private identity(id: string) { const identity = this.identities.get(id); if (!identity) throw new Error('联系人不存在。'); return identity }
   async remove(id: string) {
-    this.abort(id)
-    if (this.active?.characterId === id) await this.active.promise
-    for (const runId of this.store.remove(id)) await this.runtime.checkpoints.deleteThread(runId)
-    this.identities.delete(id)
+    this.deleting.add(id)
+    try {
+      this.store.cancel(id, '联系人已删除。')
+      this.abort(id)
+      await this.active.get(id)?.promise
+      for (const runId of this.store.remove(id)) await this.runtime.checkpoints.deleteThread(runId)
+      this.identities.delete(id)
+    } finally { this.deleting.delete(id) }
   }
   async request(method: string, id: string, args: unknown[] = []): Promise<any> {
     // Newly created contacts may be deleted before the next identity sync.
@@ -97,9 +101,10 @@ export class AgentService {
       case 'createTopic': this.store.createTopic(id, args[0]); break
       case 'deleteTopic': {
         const topicId = String(args[0])
-        const active = this.active?.characterId === id && this.store.getRun(this.active.id)?.topic_id === topicId ? this.active : undefined
+        const current = this.active.get(id)
+        const active = current && this.store.getRun(current.id)?.topic_id === topicId ? current : undefined
         const runs = this.store.deleteTopic(id, topicId, args[1] as number)
-        this.deletingTopic = true
+        this.deleting.add(id)
         try {
           active?.controller.abort()
           await active?.promise
@@ -108,7 +113,7 @@ export class AgentService {
             await this.runtime.checkpoints.getTuple({ configurable: { thread_id: runId } })
             await this.runtime.checkpoints.deleteThread(runId)
           }
-        } finally { this.deletingTopic = false }
+        } finally { this.deleting.delete(id) }
         break
       }
       case 'assignTopic': {
@@ -120,7 +125,8 @@ export class AgentService {
       case 'topicStatus': {
         const topicId = String(args[0])
         this.store.changeTopic(id, topicId, args[1] as number, method === 'editTopic' ? { input: args[2], reason: args[3] as string } : { status: args[2] as AgentTopicStatus, reason: args[3] as string })
-        if (this.active?.characterId === id && this.store.getRun(this.active.id)?.topic_id === topicId) this.abort(id)
+        const active = this.active.get(id)
+        if (active && this.store.getRun(active.id)?.topic_id === topicId) this.abort(id)
         break
       }
       case 'focusTopic': this.store.focusTopic(id, String(args[0])); break
@@ -150,8 +156,9 @@ export class AgentService {
         this.store.pause(profile.character_id); this.abort(profile.character_id); this.changed(profile.character_id)
       }
     }
-    if (!this.ready || this.closed || this.active || this.deletingTopic) return
+    if (!this.ready || this.closed) return
     for (const profile of this.store.profiles()) {
+      if (this.active.has(profile.character_id) || this.deleting.has(profile.character_id)) continue
       const settings = JSON.parse(profile.settings) as AgentSettings
       if (settings.searchEnabled && !this.identities.get(profile.character_id)?.searchKey) continue
       if (agentUsesPlanner(settings) && this.store.callCount(profile.character_id) + 2 > settings.dailyCalls) continue
@@ -168,10 +175,14 @@ export class AgentService {
       }
       try { this.store.createRun(profile.character_id, this.identity(profile.character_id).conversation) } catch { /* invalid profiles remain visible, without a hot retry loop */ }
     }
-    const run = this.store.runnable().find(r => this.identities.get(r.character_id)?.config && (!JSON.parse(r.input).settings.searchEnabled || this.identities.get(r.character_id)?.searchKey))
-    if (!run) return
+    for (const run of this.store.runnable()) {
+      if (this.active.has(run.character_id) || this.deleting.has(run.character_id)) continue
+      if (!this.identities.get(run.character_id)?.config || JSON.parse(run.input).settings.searchEnabled && !this.identities.get(run.character_id)?.searchKey) continue
+      this.startRun(run)
+    }
+  }
+  private startRun(run: NonNullable<ReturnType<AgentStore['getRun']>>) {
     const identity = this.identity(run.character_id), controller = new AbortController()
-    const deadline = setTimeout(() => controller.abort(new Error('本轮工作超过两分钟。')), 120000)
     const model: AgentModel = this.modelFactory?.(identity) || (async (prompt, signal) => {
       let output = ''
       const callId = this.store.latestCallId(run.id)
@@ -184,15 +195,22 @@ export class AgentService {
       }
       return output
     })
-    const promise = this.runtime.execute(run.id, identity.soul, model, controller.signal, () => this.changed(run.character_id), identity.searchKey)
+    // Claim this contact before execution can emit events; other contacts start independently.
+    const promise = Promise.resolve().then(() => this.runtime.execute(run.id, identity.soul, model, controller.signal, () => this.changed(run.character_id), identity.searchKey))
       .catch(() => {
         if (this.closed) { if (this.store.getRun(run.id)?.status === 'running') this.store.setStatus(run.id, 'interrupted') }
-        else this.store.fail(run.id, controller.signal.aborted ? '本轮已停止或超时，可检查设置后重新运行。' : '执行进程发生错误，请检查配置后重试。')
+        else this.store.fail(run.id, controller.signal.aborted ? '本轮已停止，可检查设置后重新运行。' : '执行进程发生错误，请检查配置后重试。')
       })
-      .finally(() => { clearTimeout(deadline); this.active = undefined; this.changed(run.character_id); if (!this.closed) setTimeout(() => this.tick(), 0) })
-    this.active = { id: run.id, characterId: run.character_id, controller, promise }
+      .finally(() => { this.active.delete(run.character_id); this.changed(run.character_id); if (!this.closed) setTimeout(() => this.tick(), 0) })
+    this.active.set(run.character_id, { id: run.id, controller, promise })
   }
-  async close() { this.closed = true; clearInterval(this.timer); this.active?.controller.abort(); await this.active?.promise; this.runtime.close(); this.store.close() }
+  async close() {
+    this.closed = true; clearInterval(this.timer)
+    const active = [...this.active.values()]
+    for (const run of active) run.controller.abort()
+    await Promise.all(active.map(run => run.promise))
+    this.runtime.close(); this.store.close()
+  }
   private checkSearch(id: string) {
     if (this.store.overview(id).settings.searchEnabled && !this.identity(id).searchKey) throw new Error('请先配置搜索密钥，或关闭自主补证据。')
   }

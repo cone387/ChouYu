@@ -8,7 +8,7 @@
 
 - 🐟 桌面悬浮角色，有自己的性格和说话风格
 - 💬 AI 对话，支持流式输出和 Markdown 渲染
-- 🧑‍💻 联系人持续工作：设置长期方向、公开网页来源与额度，后台定时研究，保留独立记忆、成果和来源；基于 LangGraph 的本地首版，需保持应用运行，见[说明](docs/contact-agents-design.md)
+- 🧑‍💻 联系人持续工作：在聊天中交付事项，后台按预算持续研究或写作，保留独立记忆、成果版本和来源；基于 LangGraph，需保持应用运行，见[使用说明](docs/contact-topics.md)与[24h 工作架构](docs/contact-agents-architecture.md)
 - 🧠 对话记忆，关闭重开后能接着聊
 - 💾 聊天历史不再按数量静默截断，图片独立保存，损坏文件保留并尝试备份恢复（开发中版本）
 - 🗂️ 多会话工作区，支持搜索、重命名、删除和 Markdown 导出
@@ -128,6 +128,7 @@ src/
 ## 文档
 
 - [系统架构](docs/architecture.md)
+- [联系人持续工作与 24h 实验架构](docs/contact-agents-architecture.md)
 - [V1 功能规格](docs/v1-spec.md)
 - [当前功能状态](docs/current-status.md)
 - [迭代路线与发布验收](docs/roadmap.md)
