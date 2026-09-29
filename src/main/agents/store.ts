@@ -109,11 +109,14 @@ export class AgentStore {
       const profile = this.profile(id)
       const row = this.db.prepare('SELECT * FROM runs WHERE character_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id) as RunRow | undefined
       const event = row && this.db.prepare('SELECT * FROM events WHERE run_id=? ORDER BY id DESC LIMIT 1').get(row.id) as { id: number; run_id: string; kind: string; text: string; at: number } | undefined
+      const work = this.db.prepare(`SELECT MAX(e.at) AS at FROM events e JOIN runs r ON r.id=e.run_id
+        WHERE r.character_id=? AND e.kind NOT IN ('queued','answer','waiting','interrupted','heartbeat')`).get(id) as { at: number | null }
       contacts[id] = {
         summary: this.summary(id), settings: profile ? JSON.parse(profile.settings) : { ...DEFAULT_AGENT_SETTINGS },
         focusTopicId: profile?.focus_topic_id ?? null,
         topics: profile?.focus_topic_id ? [this.topics.get(id, profile.focus_topic_id)] : [],
         nextAt: profile?.next_at ?? 0, callsToday: this.callCount(id), run: row ? mapRun(row) : undefined,
+        lastWorkedAt: work.at ?? undefined,
         latestActivity: event ? { id: event.id, runId: event.run_id, kind: event.kind, text: event.text, at: event.at } : undefined
       }
     }

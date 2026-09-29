@@ -1,6 +1,8 @@
 import { runGlobalSearchSmoke } from './global-search-smoke'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { flushDatabase, getCharacter, getConfig, getSessions, listCharacters, saveConfig } from '../database'
 import { waitForRenderer } from './storage-smoke'
 
@@ -77,6 +79,18 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
 
     // 卡片直接打开详情；菜单只保留编辑和删除，操作期间保持在通讯录。
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-card-detail="${character.id}"]'))`)
+    await window.webContents.executeJavaScript(`document.activeElement?.blur(); document.querySelector('[data-contacts-item="${character.id}"]').scrollIntoView({ block: 'center' })`)
+    await window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    const artifacts = process.env.CHOUYU_SMOKE_ARTIFACTS
+    if (artifacts) {
+      mkdirSync(artifacts, { recursive: true })
+      await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+      writeFileSync(join(artifacts, 'contact-cards-default.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+    }
+    await window.webContents.executeJavaScript(`document.querySelector('[data-contacts-card-detail="${character.id}"]').focus()`)
+    await waitForRenderer(window, `getComputedStyle(document.querySelector('[data-contacts-card-detail="${character.id}"]')).opacity === '1'`)
+    if (!await window.webContents.executeJavaScript(`(() => { const detail=document.querySelector('[data-contacts-card-detail="${character.id}"]'); const card=detail.parentElement.querySelector('.contacts-card'); return detail.getBoundingClientRect().top < card.getBoundingClientRect().top+20 && parseFloat(getComputedStyle(card).paddingBottom) === 14 && card.querySelector('.contacts-card-last-work') })()`)) throw new Error('Contact card actions must sit at the top without an extra footer row')
+    if (artifacts) writeFileSync(join(artifacts, 'contact-cards-focus.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
     await click(window, `[data-contacts-card-detail="${character.id}"]`)
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)

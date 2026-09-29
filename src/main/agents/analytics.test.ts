@@ -5,6 +5,21 @@ import { analyticsRange } from './analytics'
 
 const at = (day: string, time: string) => +new Date(`${day}T${time}`)
 describe('daily contact activity and consumption', () => {
+  it('keeps the last work time separate from heartbeat and newly queued work', () => {
+    const store = new AgentStore(':memory:')
+    try {
+      store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A', enabled: true }, 1000)
+      expect(store.dashboard(['alice']).contacts.alice.lastWorkedAt).toBeUndefined()
+      const run = store.createRun('alice', '', 2000)
+      store.event(run, 'execution-start', 'start', 3000)
+      store.setStatus(run, 'completed', 4000)
+      store.event(run, 'completed', 'done', 4000)
+      store.event(run, 'heartbeat', 'idle', 5000)
+      store.createRun('alice', '', 6000)
+      expect(store.dashboard(['alice']).contacts.alice.lastWorkedAt).toBe(4000)
+      expect(store.dashboard(['bob']).contacts.bob.lastWorkedAt).toBeUndefined()
+    } finally { store.close() }
+  })
   it('splits execution across midnight, excludes waits, attributes returned tokens and isolates contacts', () => {
     const store = new AgentStore(':memory:')
     try {

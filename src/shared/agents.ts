@@ -127,7 +127,7 @@ export interface AgentAPI {
 }
 export interface AgentSummary { tasks: number; activeTasks: number; memories: number; calls: number; reported: number; tokens: number }
 export type AgentActivityContext = Pick<AgentOverview, 'settings' | 'focusTopicId' | 'topics' | 'nextAt' | 'callsToday'>
-export interface AgentDashboardContact extends AgentActivityContext { summary: AgentSummary; run?: AgentRun; latestActivity?: AgentEvent }
+export interface AgentDashboardContact extends AgentActivityContext { summary: AgentSummary; run?: AgentRun; latestActivity?: AgentEvent; lastWorkedAt?: number }
 export interface AgentDashboard { contacts: Record<string, AgentDashboardContact>; events: (AgentEvent & { characterId: string; topicTitle: string })[] }
 export function validateAgentSettings(raw: unknown): AgentSettings {
   if (!raw || typeof raw !== 'object') throw new Error('工作设置无效。')

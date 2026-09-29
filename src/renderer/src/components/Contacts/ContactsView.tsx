@@ -482,7 +482,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
               </span>
             </span>
             <span className="contacts-card-desc">{soulSummary || '未设置人设，使用默认丑鱼人格'}</span>
-            <ContactCardStats data={dashboard?.contacts[character.id]?.summary} error={dashboardError} />
+            <ContactCardStats data={dashboard?.contacts[character.id]?.summary} error={dashboardError} lastWorkedAt={dashboard?.contacts[character.id]?.lastWorkedAt} />
             <span className="contacts-card-tags">
               {character.category && <span className="contacts-card-tag">{INDUSTRY_LABELS[character.category]}</span>}
               <span className="contacts-card-tag">{profileNameOf(character)}</span>
