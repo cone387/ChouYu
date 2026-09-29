@@ -76,6 +76,10 @@ export class AgentTopics {
     const after = { ...before, ...progress, revision: before.revision + 1, updatedAt: Date.now() }
     this.record(before, after, 'research', progress.reason, runId)
   }
+  presentation(characterId: string, id: string, revision: number, runId: string) {
+    const before = this.check(characterId, id, revision)
+    this.record(before, { ...before, revision: before.revision + 1, updatedAt: Date.now() }, 'presentation', '已保存新的阅读样式，正文与工作进度保持不变。', runId)
+  }
   detail(characterId: string, id: string, cursor?: number): AgentTopicDetail {
     const topic = this.get(characterId, id)
     if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 1)) throw new Error('历史分页位置无效。')

@@ -19,6 +19,7 @@ export default function ContactDelivery({ characterId, topic, busy, onAction, on
   const [error, setError] = useState(''), [feedback, setFeedback] = useState(''), [notice, setNotice] = useState('')
   const [sectionId, setSectionId] = useState('')
   const [readingId, setReadingId] = useState('')
+  const [scope, setScope] = useState<'content' | 'presentation'>('content')
   const [plain, setPlain] = useState(false)
   const inputs = artifact?.inputs ?? topic.initialPlan?.inputs
   const epoch = useRef(0)
@@ -76,8 +77,9 @@ export default function ContactDelivery({ characterId, topic, busy, onAction, on
       </details>
     </>}
     <details><summary>提出修改意见</summary>
-    <form onSubmit={event => { event.preventDefault(); void onAction(async () => { await window.electronAPI.agents.reviseTopic(characterId, topic.id, topic.revision, feedback, sectionId || undefined); setFeedback(''); setNotice('修改意见已提交，将按当前成果修订一轮。') }) }}>
-      {artifact && <label>修订位置<select value={sectionId} onChange={e => setSectionId(e.target.value)}><option value="">由联系人根据意见安排</option>{artifact.sections.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>}
+    <form onSubmit={event => { event.preventDefault(); void onAction(async () => { await window.electronAPI.agents.reviseTopic(characterId, topic.id, topic.revision, feedback, scope === 'presentation' ? undefined : sectionId || undefined, scope, scope === 'presentation' ? artifact?.version : undefined); setFeedback(''); setNotice('修改意见已提交，将按当前成果修订一轮。') }) }}>
+      {artifact && <label>修改范围<select value={scope} onChange={e => setScope(e.target.value as 'content' | 'presentation')}><option value="content">内容或任务需求</option><option value="presentation">仅阅读样式（保留正文与进度）</option></select></label>}
+      {artifact && scope === 'content' && <label>修订位置<select value={sectionId} onChange={e => setSectionId(e.target.value)}><option value="">由联系人根据意见安排</option>{artifact.sections.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>}
       <label>修改意见<textarea data-delivery-feedback value={feedback} onChange={e => setFeedback(e.target.value)} maxLength={2000} rows={2} required placeholder="例如：第二章改用主角视角；或只调整排版，正文使用宋体并加大行距" /></label>
       <p className="agent-caption">按最新成果立即修订一轮，保留旧版本并使用现有额度。多节修改会分轮推进。</p>
       <button data-delivery-submit type="submit" disabled={busy || !feedback.trim()}>提交并修订</button>

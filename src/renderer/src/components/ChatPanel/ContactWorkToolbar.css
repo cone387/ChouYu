@@ -56,8 +56,8 @@
 .contact-work-sheet[data-resized=true] .topic-list { max-height: 100%; box-sizing: border-box; }
 
 @media (max-width: 520px) {
-  .contact-work-sheet-heading { gap: 4px; padding: 5px 8px; }
-  .contact-work-dialog-tabs { gap: 0; }
+  .contact-work-sheet-heading { gap: 4px; padding: 5px 8px; flex-wrap: wrap; }
+  .contact-work-dialog-tabs { gap: 0; order: 3; width: 100%; min-width: 0; margin: 0; flex-wrap: wrap; }
   .contact-work-dialog-tabs button { padding: 4px 6px; }
   .contact-work-dialog-tabs svg { display: none; }
 }

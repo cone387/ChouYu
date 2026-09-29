@@ -53,8 +53,8 @@ export function createContactTools(access: Access): RegisteredTool[] {
       consumed = true
       if (owner(context) !== id) throw new Error('聊天归属已变化，请重新确认。')
       // The worker checks the captured revision atomically with the mutation.
-      await access.request('feedback', id, [overview.revision, method, values])
-      return { content: `操作已完成。\n${preview}`, summary: answer ? '已回复，继续本轮工作' : '已调整联系人事项' }
+      const result = await access.request('feedback', id, [overview.revision, method, values]) as AgentOverview
+      return { content: JSON.stringify({ message: `请求已受理。${preview}`, workCompleted: false, run: result.runs?.find(r => r.topicId === topicId), instruction: '继续或修订仅代表已排入执行，成果是否完成须重新读取实际保存版本。' }), summary: answer ? '已回复，继续本轮工作' : '已提交事项调整' }
     } }
   }
   const topicProperties = {
@@ -102,6 +102,42 @@ export function createContactTools(access: Access): RegisteredTool[] {
           return { content: JSON.stringify({ message: '任务已接下，正在整理方向。不要再次创建，也不要声称研究已经完成。', topicId: result.focusTopicId, run: result.runs[0] }), summary: '已接下任务，正在整理方向' }
         } }
       }, execute: () => { throw new Error('请先准备任务。') }
-    }
+    },
+    { ...common, name: 'get_contact_delivery', displayName: '读取自己的正式成果', risk: 'read', requiresConfirmation: false, alwaysConfirm: false,
+      description: '读取当前聊天联系人的已保存成果目录、真实版本、需求与展示代码。核实完成进度或改排版前使用；需要实际正文时指定目录中的 sectionId。聊天草稿不计为已保存成果。',
+      inputSchema: { type: 'object', properties: {
+        topicId: topicProperties.topicId,
+        version: { type: 'number', description: '可选历史成果版本，省略读取最新版本' },
+        sectionId: { type: 'string', description: '可选，读取目录中一个分节的完整正文', maxLength: 64 }
+      }, required: ['topicId'], additionalProperties: false },
+      async execute(args, context) {
+        const id = owner(context)
+        const value = await access.request('inspectDelivery', id, [args.topicId, args.version, args.sectionId])
+        return { content: JSON.stringify(value), summary: '已读取正式成果与展示样式' }
+      } },
+    { ...common, name: 'revise_contact_presentation', displayName: '修改成果展示样式',
+      description: '你能修改自己的成果排版。用户要求改阅读样式、字体、目录布局或跟随系统亮色时使用。先读取 get_contact_topics 和 get_contact_delivery；仅修改展示代码，程序保证正文、需求与任务进度不变。返回只代表开始修订，不能说已经改好。',
+      inputSchema: { type: 'object', properties: { ...topicProperties,
+        deliveryVersion: { type: 'number', description: '刚读取的最新成果版本，不可猜测' },
+        reason: { type: 'string', description: '完整的展示修改要求，保留用户偏好', maxLength: 2000 }
+      }, required: ['topicId', 'revision', 'deliveryVersion', 'reason'], additionalProperties: false },
+      async prepareAsync(args, context) {
+        const id = owner(context), data = await access.request('get', id) as AgentOverview
+        const topic = data.topics.find(t => t.id === args.topicId)
+        if (!topic || topic.revision !== args.revision) throw new Error('事项已变化，请重新读取。')
+        if (data.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status))) throw new Error('当前还有工作未完成，请等待本轮结束；待回复的问题需要先处理。')
+        const artifact = await access.request('delivery', id, [topic.id])
+        if (!artifact || !Number.isSafeInteger(args.deliveryVersion) || artifact.version !== args.deliveryVersion) throw new Error('成果版本已变化或尚未交付，请重新读取。')
+        if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('请填写有效的样式修改要求。')
+        const reason = args.reason.trim(), version = artifact.version, revision = topic.revision
+        let consumed = false
+        return { preview: `成果：${topic.title} · 版本 ${version}\n展示修改：${reason}\n只更新阅读样式，正文、需求、阶段与任务状态保持不变，保留旧版本。`, execute: async () => {
+          if (consumed) throw new Error('此修改已提交，请勿重复执行。')
+          consumed = true
+          if (owner(context) !== id) throw new Error('聊天归属已变化，请重新发起。')
+          const result = await access.request('feedback', id, [data.revision, 'reviseTopic', [topic.id, revision, reason, undefined, 'presentation', version]]) as AgentOverview
+          return { content: JSON.stringify({ requestAccepted: true, workCompleted: false, baseVersion: version, run: result.runs?.find(r => r.topicId === topic.id), message: '样式修订已提交。尚未保存新版本，不能声称已改好；后续读取实际成果核实。' }), summary: '已提交样式修订，正文保持不变' }
+        } }
+      }, execute: () => { throw new Error('请先预览样式修改。') } }
   ]
 }

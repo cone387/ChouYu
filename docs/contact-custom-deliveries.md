@@ -19,6 +19,24 @@
 
 成果页可切换自定义展示和正文，比较版本，提交修改意见，以及导出 Markdown 或带样式和交互的 HTML 阅读页面。修改意见例如：「只调整排版，保留正文，使用宋体并加大行距」。跨任务的模板管理与用户代码编辑器尚未提供；默认视觉方向来自联系人人设和任务偏好。
 
+## 聊天与任务保持一致
+
+聊天与后台执行属于同一个联系人。聊天可以通过 `get_contact_delivery` 读取正式版本、真实目录、指定分节正文和展示代码。进度必须以保存的成果为准，聊天草稿和口头承诺不计入交付；分节数也不能直接当成章节数。
+
+用户提出展示修改时，联系人先读取任务与成果，再调用 `revise_contact_presentation`。成果页也可以选择「仅阅读样式」。此路径独立于写作和研究，只允许模型返回展示代码；程序保留正文、需求、摘要、阶段和任务状态，创建新版本并保留旧版。最多尝试两次，调用仍计入现有额度。过期版本、跨联系人访问和并发修改会被拒绝。重试失败的样式请求仍走样式路径，不会转为续写。
+
+工具受理只代表进入队列。保存成功后，实际新版本通过原有主动消息机制送达聊天；失败也会通知并保留旧成果，不要求用户反复催问。
+
+样式修订的成功/失败回执不受普通进展消息的冷却或关闭选项限制，并保留未读提醒。回执带实际轮次和版本，重启后仍可送达，已确认送达后不重复发送。
+
+## 阅读配色
+
+阅读区默认「跟随系统」，同步应用的亮暗模式与实际颜色变量。作者可以使用 `--delivery-bg`、`--delivery-surface`、`--delivery-text`、`--delivery-muted`、`--delivery-accent`、`--delivery-border`。旧代码中的固定深色背景和文字会在系统模式下适配，用户仍可选择「作品原配色」。系统模式保留布局和本地交互，但会覆盖普通 HTML 元素的作者背景、文字和阴影；SVG 图形保留自身颜色。
+
+兼容脚本重新生成的 `.body` 正文换行，并消除片段中重复的 `#root`。展示失败可切回正文。
+
+兼容阅读脚本的 `localStorage`/`sessionStorage` 调用，提供每个 iframe 独立、有限容量的内存存储；刷新即清空，不连接宿主或浏览器持久存储。
+
 ## 运行边界与验证
 
 展示使用独立 `chouyu-artifact:` 协议和不带 `allow-same-origin` 的 sandbox iframe，按 [Electron 协议文档](https://www.electronjs.org/docs/latest/api/protocol)注册。CSP 禁止网络、外部依赖、子页面、表单提交；页面无 Electron/Node 接口，应用拦截展示页发起的跳转。宿主只接收该 iframe 的就绪或失败信号，并向其同步深浅色主题。展示脚本报错或超时可切回正文，不影响已保存的内容。
@@ -29,9 +47,14 @@
 
 ```sh
 npm run typecheck
-npm test -- src/main/agents src/shared/delivery-presentation.test.ts
+npm test
 npm run build
 node scripts/smoke-electron.js --presentation
+node scripts/smoke-electron.js --agents
 ```
 
-专用烟测使用隔离数据，不调用真实模型；覆盖脚本执行、交互、正文注入隔离、宿主/网络隔离、跳转拦截、375/1024 宽度、深浅色、错误信号与 HTML 导出。真实模型的生成效果需结合实际任务体验评估。
+专用烟测使用隔离数据，不调用真实模型；覆盖脚本执行、交互、正文注入隔离、宿主/网络隔离、跳转拦截、375/1024 宽度、深浅色、旧版深色兼容、原配色恢复、错误信号与 HTML 导出。
+
+Windows 手动真实模型验收：`node scripts/test-contact-model.cjs`。此命令使用阿笔配置的供应商并消耗少量额度；只发送合成任务和误导性历史样例，不发送实际聊天或稿件，不修改真实联系人数据。模型须正确读取成果、纠正虚假完成记录、提交样式修改，并在隔离任务中生成可保存的展示代码。普通 `npm test` 跳过这两项真实模型检查。凭据只在内存中解密和传递，不写入报告。
+
+验收输出位于 `artifacts/contact-model-acceptance.json` 和 `artifacts/contact-model-delivery.json`。将后者路径放入 `CHOUYU_SMOKE_MODEL_DELIVERY` 再运行 `--presentation`，可在 Electron 中检查真实生成代码的正文可见性、亮暗模式与窄屏布局；设置 `CHOUYU_SMOKE_ARTIFACTS` 可保存截图供人工复核。模型输出存在随机性，验收结果不代表每次生成都符合预期。

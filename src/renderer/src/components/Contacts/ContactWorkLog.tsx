@@ -113,7 +113,7 @@ export default function ContactWorkLog({ characterId, run, data, busy, canRetry,
         {seconds >= 60 && '，暂未收到新步骤记录'}
       </span> : <span>{last ? `最后更新 ${clock(last.at)}` : '等待执行记录'}</span>}
       {detail?.report && <button type="button" disabled={busy} onClick={onReport}>查看成果</button>}
-      {current.status === 'failed' && <button type="button" disabled={busy || !canRetry} onClick={onRetry}>重试本任务</button>}
+      {current.status === 'failed' && <button type="button" disabled={busy || !canRetry} onClick={onRetry}>{current.revisionScope === 'presentation' ? '重试样式修改' : '重试本任务'}</button>}
       {current.status === 'waiting' && <button type="button" disabled={busy} onClick={onReply}>去回复</button>}
     </footer>
   </section>

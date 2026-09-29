@@ -1,4 +1,5 @@
 import { taskInputInstruction, presentationInstruction } from '../../shared/agent-delivery-instructions'
+import { revisePresentation } from './presentation-revision'
 import Database from 'better-sqlite3'
 import { validateTaskResourceBudget, type TaskResourceBudget } from '../../shared/agent-resources'
 import { Annotation, StateGraph, START, END, interrupt, Command } from '@langchain/langgraph'
@@ -61,6 +62,7 @@ export class AgentRuntime {
   close() { this.db.close() }
   async execute(runId: string, soul: string, model: AgentModel, signal: AbortSignal, changed: () => void = () => {}, searchKey = '') {
     const run = this.store.assertLive(runId)
+    if (JSON.parse(run.input).revisionScope === 'presentation') return revisePresentation(this.store, runId, soul, model, signal, changed)
     let input = JSON.parse(run.input) as { revisionSectionId?: string; deliveryVersion?: number; delivery?: Pick<AgentDelivery, 'version' | 'summary' | 'stages' | 'completionCriteria' | 'sections' | 'inputs' | 'presentation'> & { directory: { id: string; title: string }[] }; feedback?: string; assignment?: boolean; brief?: Brief; briefAnswer?: string; researchVersion?: number; baseline?: { evidence: { url: string; hash: string }[]; topicRevision: number }; settings: AgentSettings; topic?: AgentTopic; memories: unknown[]; previous: unknown[]; conversation: string }
     const live = () => {
       signal.throwIfAborted(); this.store.assertLive(runId)

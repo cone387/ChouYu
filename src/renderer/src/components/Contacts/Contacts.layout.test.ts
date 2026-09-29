@@ -95,8 +95,8 @@ describe('contacts layout', () => {
     expect(cssSource).toMatch(/\.contacts-avatar-option\[aria-pressed="true"\]/)
   })
 
-  it('keeps the detail panel compact so it fits without an outer scrollbar', () => {
-    expect(cssSource).toMatch(/\.contacts-detail-soul \{[^}]*max-height: 120px/)
+  it('keeps compact controls and lets the profile share the panel scroller', () => {
+    expect(cssSource).not.toMatch(/\.contacts-detail-soul \{[^}]*(?:max-height|overflow-y)/)
     expect(cssSource).toMatch(/\.contacts-field \{[^}]*min-height: 36px/)
     expect(cssSource).toMatch(/\.contacts-detail-actions button \{[^}]*min-height: 32px/)
   })

@@ -1,5 +1,5 @@
 import { app, protocol, type BrowserWindow } from 'electron'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerPresentationProtocol } from '../agents/presentation-protocol'
 import type { AgentDelivery } from '../../shared/agent-delivery'
@@ -24,6 +24,19 @@ export async function runDeliveryPresentationSmoke(window: BrowserWindow) {
   if (!frame) throw new Error('Presentation frame missing')
   const isolation = await frame.executeJavaScript(`(async()=>{let parentBlocked=false,networkBlocked=false;try{parent.document.body}catch{parentBlocked=true}try{await fetch('https://example.com/')}catch{networkBlocked=true}document.querySelector('button').click();return {parentBlocked,networkBlocked,bridge:typeof window.electronAPI,node:typeof require,custom:document.body.dataset.custom,font:document.body.style.fontSize,text:document.getElementById('content').textContent}})()`) as Record<string, unknown>
   if (!isolation.parentBlocked || !isolation.networkBlocked || isolation.bridge !== 'undefined' || isolation.node !== 'undefined' || isolation.custom !== 'rendered' || isolation.font !== '20px' || !String(isolation.text).includes('</script><script>')) throw new Error(`Presentation isolation failed: ${JSON.stringify(isolation)}`)
+  if (!await frame.executeJavaScript("localStorage.setItem('reading-size',20); sessionStorage.setItem('reading-size',18); localStorage.getItem('reading-size')==='20' && sessionStorage.getItem('reading-size')==='18' && localStorage.length===1")) throw new Error('Temporary reading preferences failed')
+  // Reproduce legacy author layouts: hardcoded dark colors and script-built .body divs.
+  await frame.executeJavaScript(`const legacy=document.createElement('style');legacy.textContent=':root{--bg:#0d1117;--bg-card:#161b22}body{background:var(--bg);color:#ddd}#content{background:var(--bg-card);color:#aaa}';document.head.append(legacy);const content=document.getElementById('content');content.replaceChildren();for(const section of window.delivery.sections){const body=document.createElement('div');body.className='body';body.textContent=section.body;content.append(body)}`)
+  const theme = async (mode: string, value: string, bg: string, fg: string) => {
+    await run(`document.getElementById('preview').contentWindow.postMessage({type:'delivery-theme',theme:${JSON.stringify(value)},mode:${JSON.stringify(mode)},tokens:{'--delivery-bg':${JSON.stringify(bg)},'--delivery-text':${JSON.stringify(fg)}}},'*')`)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    return frame.executeJavaScript(`({bg:getComputedStyle(document.body).backgroundColor,fg:getComputedStyle(document.querySelector('.body')).color,whiteSpace:getComputedStyle(document.querySelector('.body')).whiteSpace,roots:document.querySelectorAll('#root').length})`) as Promise<{ bg: string; fg: string; whiteSpace: string; roots: number }>
+  }
+  for (const [value, bg, fg] of [['light', 'rgb(250, 251, 252)', 'rgb(30, 31, 32)'], ['dark', 'rgb(25, 26, 27)', 'rgb(230, 231, 232)']]) {
+    const result = await theme('system', value, bg, fg)
+    if (result.bg !== bg || result.fg !== fg || result.whiteSpace !== 'pre-wrap' || result.roots !== 1) throw new Error('Legacy reading theme/paragraphs failed: ' + JSON.stringify(result))
+  }
+  if ((await theme('original', 'light', '#fff', '#111')).bg !== 'rgb(13, 17, 23)') throw new Error('Original author colors were not restored')
   await frame.executeJavaScript("location.href='chouyu-artifact://view/writer/story/2'")
   await new Promise(resolve => setTimeout(resolve, 100))
   if (frame.url !== url) throw new Error('Presentation escaped by navigating')
@@ -32,6 +45,7 @@ export async function runDeliveryPresentationSmoke(window: BrowserWindow) {
     for (const width of [375, 1024]) for (const theme of ['light', 'dark']) {
       window.setContentSize(width, 900)
       await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }, { name: 'prefers-reduced-motion', value: 'reduce' }] })
+      await run(`document.getElementById('preview').contentWindow.postMessage({type:'delivery-theme',theme:'${theme}',mode:'system',tokens:{'--delivery-bg':'${theme === 'light' ? '#fff' : '#1c1d22'}','--delivery-text':'${theme === 'light' ? '#1a1a1a' : '#f0f0f0'}'}},'*')`)
       await new Promise(resolve => setTimeout(resolve, 120))
       if (!await frame.executeJavaScript('document.documentElement.scrollWidth <= innerWidth')) throw new Error('Presentation overflows at ' + width)
       const directory = process.env.CHOUYU_SMOKE_ARTIFACTS
@@ -46,5 +60,24 @@ export async function runDeliveryPresentationSmoke(window: BrowserWindow) {
   await window.loadFile(exported)
   const exportFrame = window.webContents.mainFrame.frames.find(f => f.url === 'about:srcdoc')
   if (!exportFrame || !await exportFrame.executeJavaScript("document.body.dataset.custom==='exported' && document.getElementById('content').textContent.includes('林音')")) throw new Error('Exported reading page did not render')
+  if (!await exportFrame.executeJavaScript("localStorage.getItem('reading-size')===null")) throw new Error('Reading preferences leaked between frames')
+  const generatedFile = process.env.CHOUYU_SMOKE_MODEL_DELIVERY
+  if (generatedFile) {
+    await window.loadURL('about:blank')
+    Object.assign(artifact, JSON.parse(readFileSync(generatedFile, 'utf8')), { version: 1 })
+    await run(`document.body.innerHTML='';document.body.style.cssText='margin:0;overflow:hidden';new Promise((resolve,reject)=>{const frame=document.createElement('iframe');frame.id='generated';frame.sandbox='allow-scripts';frame.style.cssText='border:0;width:100vw;height:100vh';frame.src=${JSON.stringify(url)};const timer=setTimeout(()=>reject(new Error('Generated presentation timed out')),10000);window.addEventListener('message',e=>{if(e.source===frame.contentWindow&&e.data?.type==='delivery-preview'){clearTimeout(timer);e.data.state==='ready'?resolve(true):reject(new Error('Generated script failed'))}});document.body.append(frame)})`)
+    const generated = window.webContents.mainFrame.frames.find(f => f.url === url)!
+    if (!generated || !await generated.executeJavaScript("document.getElementById('root').innerText.includes('雨从傍晚开始下')")) throw new Error('Generated presentation lost visible prose')
+    if (!await generated.executeJavaScript("(() => {const body=document.querySelector('.body'),before=parseFloat(getComputedStyle(body).fontSize);const button=[...document.querySelectorAll('button')].find(b=>/放大|增大|A\\+/.test(b.getAttribute('aria-label')||b.textContent));if(!button)return false;button.click();return parseFloat(getComputedStyle(body).fontSize)>before})()")) throw new Error('Generated font-size interaction did not work')
+    for (const width of [375, 1024]) for (const theme of ['light', 'dark']) {
+      window.setContentSize(width, 900)
+      await run(`document.getElementById('generated').contentWindow.postMessage({type:'delivery-theme',theme:'${theme}',mode:'system',tokens:{'--delivery-bg':'${theme === 'light' ? '#fff' : '#1c1d22'}','--delivery-text':'${theme === 'light' ? '#1a1a1a' : '#f0f0f0'}'}},'*')`)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      if (!await generated.executeJavaScript('document.documentElement.scrollWidth <= innerWidth')) throw new Error('Generated layout overflows')
+      const directory = process.env.CHOUYU_SMOKE_ARTIFACTS
+      if (directory) writeFileSync(join(directory, `generated-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+    }
+    console.log('CHOUYU_SMOKE_GENERATED_PRESENTATION model-code-visible-responsive-ok')
+  }
   console.log('CHOUYU_SMOKE_PRESENTATION isolated-render-responsive-fallback-ok')
 }

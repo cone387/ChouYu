@@ -29,18 +29,19 @@ export class AgentNotices {
       const run = this.db.prepare('SELECT status FROM runs WHERE id=? AND character_id=?').get(notice.runId, id) as { status: string } | undefined
       const topic = this.db.prepare('SELECT value FROM topics WHERE id=? AND character_id=?').get(notice.topicId, id) as { value: string } | undefined
       const direction = notice.purpose === 'direction'
-      const key = `${notice.topicId}:${direction ? 'direction' : notice.kind}`
-      if (!run || !topic || (direction ? ['cancelled', 'failed'].includes(run.status) : JSON.parse(topic.value).revision !== notice.topicRevision) || (notice.kind === 'question' && run.status !== 'waiting') || seen.has(key)) {
+      const presentation = notice.purpose === 'presentation'
+      const key = `${notice.topicId}:${presentation ? `presentation:${notice.runId}` : direction ? 'direction' : notice.kind}`
+      if (!run || !topic || (presentation ? !['completed', 'failed'].includes(run.status) : direction ? ['cancelled', 'failed'].includes(run.status) : JSON.parse(topic.value).revision !== notice.topicRevision) || (notice.kind === 'question' && run.status !== 'waiting') || seen.has(key)) {
         this.db.prepare("UPDATE notices SET state='suppressed' WHERE id=?").run(row.id)
       } else { seen.add(key); valid.push(notice) }
     }
     const profile = this.db.prepare('SELECT settings FROM profiles WHERE character_id=?').get(id) as { settings: string } | undefined
     if (!profile) return []
     const notifyProgress = JSON.parse(profile.settings).notifyProgress !== false
-    const recent = this.db.prepare("SELECT count(*) AS n,max(sent_at) AS last FROM notices WHERE character_id=? AND state='sent' AND sent_at>? AND json_extract(value,'$.purpose') IS NOT 'direction'").get(id, now - 86400000) as { n: number; last: number | null }
+    const recent = this.db.prepare("SELECT count(*) AS n,max(sent_at) AS last FROM notices WHERE character_id=? AND state='sent' AND sent_at>? AND json_extract(value,'$.purpose') IS NOT 'direction' AND json_extract(value,'$.purpose') IS NOT 'presentation'").get(id, now - 86400000) as { n: number; last: number | null }
     // One per drain makes the persisted cooldown effective even after a long offline period.
     return valid.sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question') || Number(b.purpose === 'resources') - Number(a.purpose === 'resources') || a.createdAt - b.createdAt)
-      .filter(n => n.kind === 'question' || n.purpose === 'resources' || notifyProgress && (n.purpose === 'direction' || recent.n < 8 && (!recent.last || now - recent.last >= 1800000))).slice(0, 1)
+      .filter(n => n.kind === 'question' || n.purpose === 'resources' || n.purpose === 'presentation' || notifyProgress && (n.purpose === 'direction' || recent.n < 8 && (!recent.last || now - recent.last >= 1800000))).slice(0, 1)
   }
   ack(id: string, noticeId: string, now = Date.now()) {
     this.db.prepare("UPDATE notices SET state='sent',sent_at=? WHERE id=? AND character_id=? AND state='pending'").run(now, noticeId, id)

@@ -18,6 +18,25 @@ export class AgentDeliveries {
     if (version !== undefined && !row) throw new Error('找不到该成果版本。')
     return row ? JSON.parse(row.value) : null
   }
+  summary(topicId: string) {
+    const artifact = this.get(topicId)
+    return artifact ? { version: artifact.version, createdAt: artifact.createdAt, savedSectionCount: artifact.sections.length,
+      savedTextLength: artifact.sections.reduce((n, s) => n + s.body.length, 0),
+      directory: artifact.sections.map(s => ({ id: s.id, title: s.title, characters: s.body.length })),
+      presentation: artifact.presentation ? { title: artifact.presentation.title, editable: true } : null } : null
+  }
+  inspect(topicId: string, version?: number, sectionId?: string) {
+    const artifact = this.get(topicId, version)
+    if (!artifact) return { version: null, savedSectionCount: 0, directory: [], message: '尚无正式成果，聊天草稿不代表已保存。' }
+    const section = sectionId === undefined ? undefined : artifact.sections.find(s => s.id === sectionId)
+    if (sectionId !== undefined && !section) throw new Error('找不到该版本的成果分节，请先读取目录。')
+    return { version: artifact.version, latestVersion: this.get(topicId)!.version, createdAt: artifact.createdAt,
+      savedSectionCount: artifact.sections.length, savedTextLength: artifact.sections.reduce((n, s) => n + s.body.length, 0),
+      completionCriteria: artifact.completionCriteria, stages: artifact.stages, inputs: artifact.inputs,
+      directory: artifact.sections.map(s => ({ id: s.id, title: s.title, characters: s.body.length })),
+      presentation: artifact.presentation ?? null, section,
+      message: '仅此目录代表正式保存的成果；未选择分节时没有读取正文。展示代码默认跟随系统主题，可以独立修订。' }
+  }
   commit(topicId: string, report: AgentReport, progress: AgentTopicProgress, update?: DeliveryUpdate) {
     const previous = this.get(topicId)
     const initial = this.context(topicId)

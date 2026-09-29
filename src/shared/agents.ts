@@ -19,7 +19,7 @@ export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { contactQuery?: string; plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
 export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress' }
-export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' }
+export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' | 'presentation' }
 export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
 export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undefined {
   if (!value || typeof value !== 'object') return undefined
@@ -34,6 +34,7 @@ export function agentUsesPlanner(settings: AgentSettings): boolean {
 export type AgentRunStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
 export interface AgentEvidence { url: string; title: string; text: string; capturedAt: number; hash: string }
 export interface AgentRun {
+  revisionScope?: 'presentation'
   inputFields?: import('./agent-delivery').TaskInputField[]
   id: string; characterId: string; revision: number; status: AgentRunStatus; createdAt: number; updatedAt: number
   topicId: string | null
@@ -104,7 +105,7 @@ export interface AgentAPI {
   setTaskBudget(characterId: string, topicId: string, revision: number, budget: Pick<import('./agent-resources').TaskResourceBudget, 'modelCalls'>): Promise<AgentOverview>
   delivery(characterId: string, topicId: string, version?: number): Promise<import('./agent-delivery').AgentDelivery | null>
   exportDelivery(characterId: string, topicId: string, version: number, format?: 'markdown' | 'html'): Promise<boolean>
-  reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string): Promise<AgentOverview>
+  reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string, scope?: 'content' | 'presentation', deliveryVersion?: number): Promise<AgentOverview>
   savePreferences(characterId: string, settings: AgentSettings): Promise<AgentOverview>
   searchCredential(characterId: string, key?: string): Promise<{ configured: boolean }>
   get(characterId: string): Promise<AgentOverview>

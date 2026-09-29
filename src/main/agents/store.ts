@@ -16,7 +16,7 @@ import type { AnalyticsQuery } from '../../shared/agent-analytics'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
 type RunRow = { id: string; character_id: string; revision: number; status: AgentRunStatus; created_at: number; updated_at: number; question: string; answer: string; summary: string; error: string; input: string; topic_id: string | null; topic_revision: number | null }
-const mapRun = (row: RunRow): AgentRun => ({ id: row.id, characterId: row.character_id, revision: row.revision, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, question: row.question, answer: row.answer, summary: row.summary, error: row.error, topicId: row.topic_id, ...(row.status === 'waiting' && JSON.parse(row.input).questionInputs ? { inputFields: JSON.parse(row.input).questionInputs } : {}) })
+const mapRun = (row: RunRow): AgentRun => ({ id: row.id, characterId: row.character_id, revision: row.revision, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, question: row.question, answer: row.answer, summary: row.summary, error: row.error, topicId: row.topic_id, ...(JSON.parse(row.input).revisionScope === 'presentation' ? { revisionScope: 'presentation' as const } : {}), ...(row.status === 'waiting' && JSON.parse(row.input).questionInputs ? { inputFields: JSON.parse(row.input).questionInputs } : {}) })
 const dayStart = (now: number) => { const date = new Date(now); date.setHours(0, 0, 0, 0); return date.getTime() }
 
 export class AgentStore {
@@ -297,7 +297,7 @@ export class AgentStore {
       return next
     })()
   }
-  createRun(id: string, context: string, now = Date.now(), topicId?: string) {
+  createRun(id: string, context: string, now = Date.now(), topicId?: string, revisionScope?: 'presentation') {
     return this.db.transaction(() => {
       const profile = this.profile(id)
       if (!profile) throw new Error('请先在聊天中交付任务。')
@@ -309,11 +309,11 @@ export class AgentStore {
       const selected = topicId ?? profile.focus_topic_id
       if (!selected) throw new Error('请先选择一个要持续推进的事项。')
       const topic = this.topics.get(id, selected)
-      if (!canResearch(topic.status)) throw new Error('当前事项已暂停或结束，请继续此事项或选择其他事项。')
+      if (!canResearch(topic.status) && revisionScope !== 'presentation') throw new Error('当前事项已暂停或结束，请继续此事项或选择其他事项。')
       // Task goals replace the removed work-direction field, including legacy profiles.
       const settings = validateAgentSettings({ ...JSON.parse(profile.settings), goal: topic.goal })
       if (this.callCount(id, now) >= settings.dailyCalls) throw new Error('今日模型调用已达上限，明天再试或调整上限。')
-      const needed = agentUsesPlanner(settings) ? 2 : 1
+      const needed = revisionScope === 'presentation' ? 1 : agentUsesPlanner(settings) ? 2 : 1
       if (this.callCount(id, now) + needed > settings.dailyCalls) throw new Error(`联系人今日资源不足：已用 ${this.callCount(id, now)}/${settings.dailyCalls} 次，本轮需预留 ${needed} 次（规划与执行）。可等明日恢复或调整联系人资源上限。`)
       this.assertTaskBudget(id, topic.id, needed)
       if (!topic.resourceBudget && this.resourceContext(id, topic.id, now).allocatableCalls < needed) throw new Error('联系人资源已分配给其他任务，请释放其他任务预算或提高联系人资源上限。')
@@ -322,8 +322,8 @@ export class AgentStore {
       const previous = (this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 3').all(topic.id, id) as { value: string }[]).map(row => JSON.parse(row.value) as AgentReport)
       const baselineRun = this.db.prepare('SELECT topic_revision FROM runs WHERE id=?').get(previous[0]?.runId ?? '') as { topic_revision: number } | undefined
       const last = this.db.prepare('SELECT * FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id, topic.id) as RunRow | undefined
-      const feedback = last?.status === 'failed' ? [JSON.parse(last.input).feedback, last.answer ? `对问题「${last.question}」的回复：${last.answer}` : ''].filter(Boolean).join('\n').slice(0, 4000) : undefined
-      const input = JSON.stringify({ revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: overview.memories.filter(m => !m.runId || this.getRun(m.runId)?.topic_id === topic.id).slice(0, 12).map(m => ({ ...m, content: m.content.slice(0, 600) })), previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(0, 4000) })
+      const feedback = last?.status === 'failed' && JSON.parse(last.input).revisionScope !== 'presentation' ? [JSON.parse(last.input).feedback, last.answer ? `对问题「${last.question}」的回复：${last.answer}` : ''].filter(Boolean).join('\n').slice(0, 4000) : undefined
+      const input = JSON.stringify({ revisionScope, revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: overview.memories.filter(m => !m.runId || this.getRun(m.runId)?.topic_id === topic.id).slice(0, 12).map(m => ({ ...m, content: m.content.slice(0, 600) })), previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(0, 4000) })
       this.db.prepare('INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input,topic_id,topic_revision) VALUES(?,?,?,\'queued\',?,?,?,?,?)').run(runId, id, profile.revision, now, now, input, topic.id, topic.revision)
       this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(now + settings.intervalMinutes * 60000, id)
       this.event(runId, 'queued', `已安排事项「${topic.title}」的本轮工作。`, now)
@@ -379,7 +379,7 @@ export class AgentStore {
     if (!run || !profile || run.revision !== profile.revision || !['running', 'queued', 'interrupted', 'waiting'].includes(run.status)) throw new Error('本轮工作已取消或角色已删除。')
     if (run.topic_id) {
       const topic = this.topics.check(run.character_id, run.topic_id, run.topic_revision!)
-      if (!canResearch(topic.status)) throw new Error('此事项已暂停或结束。')
+      if (!canResearch(topic.status) && JSON.parse(run.input).revisionScope !== 'presentation') throw new Error('此事项已暂停或结束。')
     }
     return run
   }
@@ -476,6 +476,13 @@ export class AgentStore {
     if (!run || ['cancelled', 'completed'].includes(run.status)) return
     this.db.prepare("UPDATE runs SET status='failed',error=?,updated_at=? WHERE id=?").run(error.slice(0, 600), Date.now(), id)
     this.event(id, 'failed', error)
+    if (JSON.parse(run.input).revisionScope === 'presentation') {
+      if (run.topic_id) {
+        const topic = this.topics.get(run.character_id, run.topic_id)
+        this.notices.enqueue({ id: `${id}:presentation-failed`, purpose: 'presentation', characterId: run.character_id, topicId: topic.id, runId: id, topicRevision: topic.revision, kind: 'progress', createdAt: Date.now(), content: `「${topic.title}」的阅读样式修改未完成，原成果与正文已保留。原因：${error.slice(0, 300)}\n可在工作记录中重试本次样式修改。` })
+      }
+      return
+    }
     if (this.pauseForTaskBudget(id)) return
     const profile = this.profile(run.character_id)!
     const settings = JSON.parse(profile.settings) as AgentSettings
@@ -488,13 +495,15 @@ export class AgentStore {
       const run = this.assertLive(runId)
       const deliveryInput = JSON.parse(run.input)
       const previousDelivery = run.topic_id ? this.deliveries.get(run.topic_id) : null
+      const presentationOnly = deliveryInput.revisionScope === 'presentation'
+      if (presentationOnly && (!previousDelivery || previousDelivery.version !== deliveryInput.revisionBaseVersion || !delivery || delivery.presentation === undefined || delivery.section || delivery.inputs || memories.length || delivery.summary !== previousDelivery.summary || delivery.completionCriteria !== previousDelivery.completionCriteria || JSON.stringify(delivery.stages) !== JSON.stringify(previousDelivery.stages))) throw new Error('样式修订版本已变化或试图修改正文与进度，本轮未保存。')
       if (deliveryInput.answeredInputs?.length) {
         const supplied = deliveryInput.answeredInputs as import('../../shared/agent-delivery').TaskInputField[]
         const existing = delivery?.inputs ?? previousDelivery?.inputs ?? supplied
         const inputs = [...existing.filter(field => !supplied.some(answer => answer.id === field.id)), ...supplied]
         if (delivery) delivery = { ...delivery, inputs }
       }
-      if (run.topic_id && progress?.status === 'completed' && this.topics.get(run.character_id, run.topic_id).initialPlan) {
+      if (!presentationOnly && run.topic_id && progress?.status === 'completed' && this.topics.get(run.character_id, run.topic_id).initialPlan) {
         if (!delivery) throw new Error('尚未提交实际成果和阶段验收，不能完成任务。')
         const requiredStages = [...this.topics.get(run.character_id, run.topic_id).initialPlan!.stages, ...(previousDelivery?.stages ?? [])]
         if (requiredStages.some(stage => !delivery!.stages.some(next => next.id === stage.id && next.status === 'done'))) throw new Error('仍有计划阶段未交付或被遗漏，不能完成任务。')
@@ -504,8 +513,13 @@ export class AgentStore {
         if (!progress) throw new Error('缺少事项进展，本轮不能提交。')
         const before = this.topics.get(run.character_id, run.topic_id)
         const previous = this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 1').get(run.topic_id, run.character_id) as { value: string } | undefined
-        this.topics.advance(run.character_id, run.topic_id, run.topic_revision!, progress, runId)
-        this.notices.progress(before, this.topics.get(run.character_id, run.topic_id), report, previous ? JSON.parse(previous.value) : undefined, this.research(runId)?.plan.action === 'write')
+        if (presentationOnly) {
+          this.topics.presentation(run.character_id, run.topic_id, run.topic_revision!, runId)
+          this.notices.enqueue({ id: `${runId}:presentation`, purpose: 'presentation', characterId: run.character_id, topicId: run.topic_id, runId, topicRevision: before.revision + 1, kind: 'progress', createdAt: Date.now(), content: `「${before.title}」的阅读样式已保存为版本 ${previousDelivery!.version + 1}，正文与任务进度保持不变。可在任务成果中查看。` })
+        } else {
+          this.topics.advance(run.character_id, run.topic_id, run.topic_revision!, progress, runId)
+          this.notices.progress(before, this.topics.get(run.character_id, run.topic_id), report, previous ? JSON.parse(previous.value) : undefined, this.research(runId)?.plan.action === 'write')
+        }
       }
       this.db.prepare('INSERT OR IGNORE INTO reports(run_id,character_id,value) VALUES(?,?,?)').run(runId, run.character_id, JSON.stringify(report))
       if (run.topic_id && progress && JSON.parse(run.input).deliveryVersion === 1) this.deliveries.commit(run.topic_id, report, progress, delivery)
@@ -528,7 +542,7 @@ export class AgentStore {
         else if (research.plan.action === 'write' && !changedSection) this.event(runId, 'deferred', '本轮没有新增或修改正文，按工作间隔再检查，避免重复消耗额度。')
       }
       this.event(runId, 'completed', report.nextStep || '本轮工作完成。')
-      this.pauseForTaskBudget(runId)
+      if (!presentationOnly) this.pauseForTaskBudget(runId)
     })()
   }
   createTopic(id: string, input: unknown) {
@@ -563,6 +577,20 @@ export class AgentStore {
       this.db.prepare('DELETE FROM topics WHERE character_id=? AND id=?').run(id, topicId)
       this.db.prepare('UPDATE profiles SET focus_topic_id=NULL WHERE character_id=? AND focus_topic_id=?').run(id, topicId)
       return runs.map(run => run.id)
+    })()
+  }
+  revisePresentation(id: string, topicId: string, revision: number, feedback: unknown, conversation: string, baseVersion: number) {
+    if (typeof feedback !== 'string' || !feedback.trim() || feedback.length > 2000 || containsSecret(feedback)) throw new Error('请填写有效的样式修改意见。')
+    return this.db.transaction(() => {
+      this.topics.check(id, topicId, revision)
+      const artifact = this.deliveries.get(topicId)
+      if (!artifact || !Number.isSafeInteger(baseVersion) || artifact.version !== baseVersion) throw new Error('成果版本已变化或尚无正文，请重新读取。')
+      if (this.overview(id).runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status))) throw new Error('请先完成、回复或暂停当前工作，再修改样式。')
+      const runId = this.createRun(id, conversation, Date.now(), topicId, 'presentation')
+      const input = JSON.parse(this.getRun(runId)!.input)
+      this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify({ ...input, revisionSectionId: undefined, revisionBaseVersion: baseVersion, feedback: feedback.trim() }), runId)
+      this.event(runId, 'feedback', `仅修改阅读样式：${feedback.trim()}`)
+      return runId
     })()
   }
   reviseTopic(id: string, topicId: string, revision: number, feedback: unknown, conversation: string, sectionId?: string) {

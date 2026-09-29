@@ -7,6 +7,7 @@ import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID } from '../../shared/chara
 import { restartAgentsForSmoke, agentContext } from '../agents'
 import { waitForRenderer as rendererWait } from './storage-smoke'
 import type { AgentOverview } from '../../shared/agents'
+import { AGENT_OUTPUT_TOKENS } from '../agents/model-output'
 function waitForRenderer(window: BrowserWindow, condition: string, timeout = 5000): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Agent UI wait stalled: ${condition}`)), timeout + 1000)
@@ -182,7 +183,8 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       for (const width of [375, 1024]) {
         window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 900 }, scale: 1 })
         await run("window.dispatchEvent(new Event('resize')); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-        if (!await run("(() => { const el=document.querySelector('.contact-work-sheet'); return el.scrollWidth <= el.clientWidth+1 && el.getBoundingClientRect().right <= innerWidth+1 })()")) throw new Error('Daily overview overflows the task window')
+        const bounds = await run("(() => { const el=document.querySelector('.contact-work-sheet'); return { scroll:el.scrollWidth,client:el.clientWidth,right:el.getBoundingClientRect().right,viewport:innerWidth,children:[...el.querySelectorAll('*')].filter(e=>e.scrollWidth>e.clientWidth+1).slice(0,8).map(e=>({class:e.className,scroll:e.scrollWidth,client:e.clientWidth}))} })()")
+        if (bounds.scroll > bounds.client+1 || bounds.right > bounds.viewport+1) throw new Error('Daily overview overflows the task window: ' + JSON.stringify(bounds))
         writeFileSync(join(logDirectory, `contact-daily-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
       }
       window.webContents.disableDeviceEmulation()
@@ -289,7 +291,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     }
     const noticesBefore = getSession(fixtureSession)!.messages.filter(m => m.agentNotice).length
     console.log('CHOUYU_SMOKE_AGENTS_STAGE waiting')
-    if (calls !== 1 || modelRequest.max_tokens !== 2200 || JSON.stringify(modelRequest).includes('BOB_PRIVATE_SMOKE')) throw new Error('Agent model budget or isolation failed')
+    if (calls !== 1 || modelRequest.max_tokens !== AGENT_OUTPUT_TOKENS || JSON.stringify(modelRequest).includes('BOB_PRIVATE_SMOKE')) throw new Error('Agent model budget or isolation failed')
     // Kill the utility process at a durable interrupt; replying must not call the model again.
     await restartAgentsForSmoke()
     console.log('CHOUYU_SMOKE_AGENTS_STAGE restarted')
