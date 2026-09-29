@@ -1,16 +1,16 @@
 /* 通讯录：搜索 + 排序段控 + 新建按钮同一行；分类做成元宝式标签页（下划线高亮、无文字 label），模型条件以筛选片并列；浅灰内容底上的白卡片网格（头像+名字头部、两行人设摘要、底部标签），点击卡片直接进入对话，右上角菜单提供详情与编辑操作。颜色全走主题变量。 */
-.contacts-view { position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; background: var(--bg-primary); }
+.contacts-view { container-type: inline-size; position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; background: var(--bg-primary); }
 .contacts-view-overlay { position: absolute; inset: 0; z-index: 10; background: transparent; }
 
 /* 顶部：搜索胶囊、排序段控、新建按钮统一 30px 高 */
-.contacts-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; background: var(--bg-primary); }
-.contacts-search-box { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 7px; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); transition: box-shadow .18s ease; }
+.contacts-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px 6px; background: var(--bg-primary); }
+.contacts-search-box { flex: 1; min-width: 100px; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 7px; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); transition: box-shadow .18s ease; }
 .contacts-search-box:focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
 .contacts-search { flex: 1; min-width: 0; border: none; background: transparent; color: var(--text-primary); font-size: 13px; outline: none; }
 .contacts-search::placeholder { color: var(--text-muted); }
 
 /* 排序段控：灰底胶囊容器 + 白底高亮项 */
-.contacts-sort { flex: none; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: color-mix(in srgb, var(--text-muted) 10%, transparent); }
+.contacts-sort { flex: none; display: flex; flex-wrap: wrap; max-width: 100%; gap: 2px; padding: 2px; border-radius: 8px; background: color-mix(in srgb, var(--text-muted) 10%, transparent); }
 .contacts-sort-option { min-height: 26px; padding: 0 12px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 12px; line-height: 1; cursor: pointer; transition: color .16s ease; }
 .contacts-sort-option:hover { color: var(--text-primary); }
 .contacts-sort-option[aria-pressed="true"] { background: var(--bg-primary); color: var(--text-primary); font-weight: 500; box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
@@ -35,8 +35,8 @@
 .contacts-error { margin: 0 12px 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--error-border); color: var(--error); font-size: 12px; background: var(--bg-primary); }
 
 /* 卡片网格：浅灰内容底 + 白卡片 */
-.contacts-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 12px 16px; background: var(--bg-secondary); }
-.contacts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; align-content: start; }
+.contacts-scroll { flex: 1; min-height: 0; min-width: 0; padding: 4px 12px 16px; background: var(--bg-secondary); }
+.contacts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); gap: 12px; align-content: start; }
 
 /* 联系人卡片：头部（圆头像 + 名字/模型）→ 两行人设摘要 → 底部标签 */
 .contacts-card-container { position: relative; min-width: 0; }
@@ -61,27 +61,27 @@
 /* 居中模态：详情面板 / 确认删除 / 角色表单 */
 .contacts-scrim { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--bg-secondary) 55%, transparent); backdrop-filter: blur(2px); }
 
-/* 联系人详情面板：拖上/下/左/右边框拉伸；默认内容自适应高度，无滚动条 */
-.contacts-detail { position: absolute; min-width: 300px; min-height: 200px; overflow: auto; padding: 14px 16px 12px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
-.contacts-detail-head { display: flex; align-items: center; gap: 12px; }
+/* 联系人详情面板：保持窗口高度，内容统一滚动；支持拖动四边拉伸。 */
+.contacts-detail { position: absolute; min-width: 300px; min-height: 200px; overflow: auto; scrollbar-gutter: stable; padding: 14px 16px 12px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
+.contacts-detail-head { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.contacts-detail-head > div { min-width: 0; }
+.contacts-detail-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: -14px; z-index: 3; padding: 14px 0 12px; margin-top: -14px; background: var(--bg-panel); border-bottom: 1px solid var(--border); }
 .contacts-detail-avatar { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 20px; line-height: 1; }
-.contacts-detail-title { margin: 0; font-size: 15px; font-weight: 600; }
+.contacts-detail-title { margin: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contacts-detail-subtitle { margin: 2px 0 0; font-size: 12px; color: var(--text-muted); }
-.contacts-detail-fields { margin-top: 8px; }
-.contacts-detail-fields .contacts-field { border-top: 1px solid var(--border); }
-.contacts-detail-fields .contacts-field:first-of-type { border-top: none; }
+.contacts-detail-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 10px 20px; margin: 12px 0; }
+.contacts-detail-fields > div { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.contacts-detail-fields dt { flex: none; min-width: 48px; color: var(--text-muted); font-size: 12px; }
+.contacts-detail-fields dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
 .contacts-field { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 0; font-size: 13px; }
 .contacts-field-name { flex: none; width: 44px; color: var(--text-secondary); }
-.contacts-detail-value { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contacts-detail-soul-title { margin: 8px 0 5px; font-size: 12px; color: var(--text-muted); }
 .contacts-detail-soul { max-height: 120px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
-.contacts-detail-actions { display: flex; gap: 8px; margin-top: 12px; }
-.contacts-detail-actions button { flex: 1; min-height: 30px; padding: 0 12px; border: none; border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; cursor: pointer; transition: background-color .16s ease; }
+.contacts-detail-actions { display: flex; flex: none; gap: 6px; margin: 0 0 0 auto; }
+.contacts-detail-actions button { display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; width: 64px; height: 32px; min-height: 32px; padding: 0; white-space: nowrap; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 12px; font-weight: 500; line-height: 1; box-shadow: none; cursor: pointer; transition: background-color .16s ease; }
 .contacts-detail-actions button:hover:not(:disabled) { background: color-mix(in srgb, var(--text-muted) 18%, transparent); }
-.contacts-detail-actions button.primary { background: var(--accent); color: var(--on-accent); }
-.contacts-detail-actions button.primary:hover:not(:disabled) { background: var(--accent-hover); }
-.contacts-detail-actions button.danger { background: var(--error); color: var(--on-error); }
-.contacts-detail-actions button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 85%, #000); }
+.contacts-detail-actions button.danger { color: var(--error); }
+.contacts-detail-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .contacts-detail-actions button:disabled { opacity: .5; cursor: default; }
 
 .contacts-confirm { width: min(320px, 100%); padding: 18px 18px 12px; border-radius: 14px; background: var(--bg-panel); color: var(--text-primary); font-size: 13px; line-height: 1.6; box-shadow: 0 12px 36px rgba(0, 0, 0, .18); }
@@ -144,29 +144,27 @@
 .contacts-menu-popover button { display: block; width: 100%; min-height: 32px; padding: 0 10px; border: none; border-radius: 5px; background: transparent; color: var(--text-primary); text-align: left; font-size: 13px; cursor: pointer; }
 .contacts-menu-popover button:hover, .contacts-menu-popover button:focus-visible { background: var(--bg-secondary); outline: none; }
 .contacts-menu-popover button.danger { color: var(--error); }
-.contacts-profile-details { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 10px; }
-.contacts-profile-details > summary { color: var(--text-secondary); font-size: 12px; cursor: pointer; }
-.contacts-profile-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.contacts-profile-details { margin-top: 14px; }
+.contacts-profile-details > h3 { margin: 0; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+
+/* The contact modal owns task scrolling, just like its other tabs. Keep the
+   bounded multi-pane workspace only in the standalone task sheet. */
+.contacts-detail .topic-workspace { height: auto; overflow: visible; }
+.contacts-detail :is(.topic-list, .topic-detail-pane, .topic-stage-nav, .topic-content-scroll) { overflow: visible; overscroll-behavior: auto; scrollbar-gutter: auto; }
 
 .contacts-card-detail { position: absolute; bottom: 12px; right: 14px; min-height: 28px; padding: 0 14px; border: 1px solid var(--border); border-radius: 7px; color: var(--accent); background: var(--bg-primary); font-size: 12px; cursor: pointer; }
 .contacts-card-detail:hover { background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary)); }
-.contacts-card-detail:focus-visible, .contacts-metric-filters :is(button, select):focus-visible, .contacts-activity :is(button, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.contacts-metric-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
-.contacts-metric-filters label { display: flex; align-items: center; gap: 6px; }
-.contacts-metric-filters select { min-height: 30px; max-width: 160px; border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; color: var(--text-primary); background: var(--bg-primary); font-size: 12px; }
-.contacts-metric-filters button, .contacts-activity header button { min-height: 28px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-secondary); cursor: pointer; font-size: 12px; }
-.contacts-metric-filters > span { margin-left: auto; font-size: 11px; }
-.contacts-activity { margin: 8px 0 14px; padding: 12px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; font-size: 12px; }
+.contacts-activity { display: flex; flex-direction: column; height: 100%; min-height: 0; margin: 0; padding: 12px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; font-size: 12px; }
 .contacts-activity header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding-bottom: 8px; }
 .contacts-activity header strong { display: flex; align-items: center; gap: 7px; margin-right: auto; font-size: 13px; }
 .contacts-activity header i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
 .contacts-activity header i[data-live=true] { background: var(--accent); animation: contacts-live-pulse 1s ease-in-out infinite; }
 .contacts-activity header > span, .contacts-activity time, .contacts-activity footer { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.contacts-activity-viewport { height: 96px; overflow: auto; overscroll-behavior: contain; overflow-anchor: none; border-radius: 6px; background: var(--bg-secondary); }
+.contacts-activity-viewport { flex: 1; min-height: 0; overflow: hidden; overscroll-behavior: contain; overflow-anchor: none; border-radius: 6px; background: var(--bg-secondary); }
 .contacts-activity-viewport ol { margin: 0; padding: 4px 8px; list-style: none; }
 .contacts-activity-viewport p { color: var(--text-secondary); padding: 12px; }
-.contacts-activity-viewport li { display: grid; grid-template-columns: 60px minmax(65px, 110px) minmax(0, 1fr); align-items: center; gap: 8px; min-height: 32px; }
-.contacts-activity-viewport li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.contacts-activity-viewport li { display: grid; grid-template-columns: 60px minmax(0, 1fr); align-items: center; gap: 2px 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.contacts-activity-viewport li > span { grid-column: 1 / -1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; line-height: 1.6; color: var(--text-primary); }
 .contacts-activity-viewport li > button { min-width: 0; min-height: 28px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; padding: 0; background: transparent; color: var(--accent); cursor: pointer; text-align: left; font-size: 12px; }
 .contacts-activity-viewport li > button:hover { text-decoration: underline; }
 .contacts-activity-viewport li[data-kind=heartbeat] { animation: contacts-log-enter 240ms ease-out; }
@@ -180,7 +178,17 @@
   .contacts-toolbar { flex-wrap: wrap; }
   .contacts-search-box { min-width: 110px; }
   .contacts-tab-list { flex-wrap: wrap; }
-  .contacts-metric-filters > span { width: 100%; margin: 0; }
-  .contacts-activity-viewport li { grid-template-columns: 54px 76px minmax(0, 1fr); gap: 6px; }
 }
 @media (prefers-reduced-motion: reduce) { .contacts-activity *, .contacts-activity header i[data-live=true] { animation: none; } }
+
+.contacts-body { flex: 1; min-height: 0; overflow-y: auto; container-type: size; background: var(--bg-secondary); }
+.contacts-columns { display: grid; grid-template-columns: minmax(0, 1fr) clamp(220px, 32%, 310px); align-items: start; min-height: 100%; }
+.contacts-activity-sidebar { position: sticky; top: 8px; height: calc(100cqh - 16px); min-width: 0; min-height: 0; padding: 0 12px 0 0; margin-top: 8px; }
+.contacts-sort-direction { border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; color: var(--accent); }
+.contacts-card-detail:focus-visible, .contacts-sort-option:focus-visible, .contacts-activity button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@container (max-width: 560px) {
+  .contacts-columns { grid-template-columns: minmax(0, 1fr); }
+  .contacts-activity-sidebar { grid-row: 1; top: 0; height: 190px; padding: 0 12px 8px; z-index: 1; background: var(--bg-secondary); }
+  .contacts-activity footer { display: none; }
+  .contacts-sort-option { padding: 0 8px; }
+}

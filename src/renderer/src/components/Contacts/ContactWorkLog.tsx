@@ -24,7 +24,6 @@ export default function ContactWorkLog({ characterId, run, data, busy, canRetry,
   const [error, setError] = useState(''), [now, setNow] = useState(Date.now())
   const [unread, setUnread] = useState(0)
   const [isFollowing, setIsFollowing] = useState(true)
-  const [heartbeats, setHeartbeats] = useState<{ at: number; text: string }[]>([])
   const autoScrolling = useRef(false)
   const viewport = useRef<HTMLDivElement>(null), following = useRef(true), seen = useRef(0)
   useEffect(() => {
@@ -60,7 +59,7 @@ export default function ContactWorkLog({ characterId, run, data, busy, canRetry,
   useLayoutEffect(() => {
     if (following.current) follow()
     else setUnread(events.filter(event => event.id > seen.current).length)
-  }, [lastId, heartbeats])
+  }, [lastId, now])
   useLayoutEffect(() => {
     const node = viewport.current
     if (!node) return
@@ -80,15 +79,10 @@ export default function ContactWorkLog({ characterId, run, data, busy, canRetry,
   }, [current.status])
   const last = events.at(-1)
   const activity = workLogActivity(current, data, last, now, error)
-  useEffect(() => {
-    if (!activity.moving || !isFollowing || !viewport.current?.clientHeight || document.hidden) return
-    // Display-only heartbeats: never persist these as completed work or spend model calls.
-    setHeartbeats(previous => [...previous.filter(beat => beat.at !== now), { at: now, text: activity.text }].slice(-60))
-  }, [now, activity.moving, isFollowing])
   const rows = [
     ...events.map(event => ({ key: `event-${event.id}`, at: event.at, event, text: '' })),
-    ...heartbeats.map(beat => ({ key: `beat-${beat.at}`, at: beat.at, event: null, text: beat.text }))
-  ].sort((a, b) => a.at - b.at)
+    ...(activity.moving ? [{ key: 'heartbeat', at: now, event: null, text: activity.text }] : [])
+  ]
   const seconds = Math.max(0, Math.floor((now - (last?.at ?? current.updatedAt)) / 1000))
   return <section className="agent-work-log" aria-label="实时工作日志" data-agent-work-log>
     <header><strong>活动日志</strong><span>{error ? '连接中断' : AGENT_STATUS[current.status]}</span><button type="button" className="agent-log-follow" aria-pressed={isFollowing} onClick={() => isFollowing ? pauseFollowing() : follow()}>{isFollowing ? '暂停滚动' : '继续滚动 ↓'}</button></header>

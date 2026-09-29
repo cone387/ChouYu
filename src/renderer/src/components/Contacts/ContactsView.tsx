@@ -3,11 +3,12 @@ import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABE
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
-import { ContactAgentPanel } from './ContactAgentPanel'
+import { ContactAgentPanel, type ContactAgentTab } from './ContactAgentPanel'
+import ContactWorkToolbar from '../ChatPanel/ContactWorkToolbar'
 import ContactCardStats from './ContactCardStats'
 import ContactsActivityLog from './ContactsActivityLog'
 import { useContactsDashboard } from './useContactsDashboard'
-import { compareMetrics, matchesMetrics, type MetricSort, type TaskFilter, type TokenFilter } from './contactMetrics'
+import { compareMetrics } from './contactMetrics'
 import './Contacts.css'
 
 interface ContactsViewProps {
@@ -32,7 +33,7 @@ interface FormState {
 }
 
 type CategoryFilter = 'all' | 'other' | string
-type SortKey = 'pinyin' | 'popular' | 'recent' | MetricSort
+type SortKey = 'pinyin' | 'popular' | 'recent' | 'tokens' | 'tasks'
 
 const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '' }
 
@@ -55,7 +56,9 @@ function summarizeSoulMd(soulMd: string): string {
 const SORT_OPTIONS: readonly { value: SortKey; label: string }[] = [
   { value: 'pinyin', label: '拼音' },
   { value: 'popular', label: '最热' },
-  { value: 'recent', label: '最新' }
+  { value: 'recent', label: '最新' },
+  { value: 'tokens', label: 'Token 消耗' },
+  { value: 'tasks', label: '任务数量' }
 ]
 
 const AVATAR_CHOICES: readonly string[] = ['🐟', '🦊', '🐱', '🐶', '🐼', '🦉', '🐧', '🍀', '🌙', '⚡', '💡', '🎯', '🩺', '⚖️', '🎨', '🧭']
@@ -65,6 +68,7 @@ type ResizeEdge = 'n' | 's' | 'e' | 'w'
 
 interface ResizableModalProps {
   initialWidth: number
+  initialHeight?: number
   minWidth: number
   minHeight: number
   className: string
@@ -75,7 +79,7 @@ interface ResizableModalProps {
 }
 
 /** 居中模态：默认内容自适应高度；拖上/下/左/右边框自然拉伸，不用右下角把手。 */
-function ResizableModal({ initialWidth, minWidth, minHeight, className, role, label, dataAttributes, children }: ResizableModalProps) {
+function ResizableModal({ initialWidth, initialHeight, minWidth, minHeight, className, role, label, dataAttributes, children }: ResizableModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ edge: ResizeEdge; x: number; y: number; base: { left: number; top: number; width: number; height: number } } | null>(null)
   const [rect, setRect] = useState<PanelRect | null>(null)
@@ -86,15 +90,15 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
     if (!panel || !parent) return
     const width = Math.min(initialWidth, parent.clientWidth - 16)
     panel.style.width = `${width}px`
-    const naturalHeight = panel.offsetHeight
+    const naturalHeight = initialHeight ?? panel.offsetHeight
     const capped = naturalHeight > parent.clientHeight - 16
     setRect({
       left: Math.round((parent.clientWidth - width) / 2),
       top: Math.round((parent.clientHeight - Math.min(naturalHeight, parent.clientHeight - 16)) / 2),
       width,
-      height: capped ? parent.clientHeight - 16 : null
+      height: capped ? parent.clientHeight - 16 : initialHeight ?? null
     })
-  }, [initialWidth])
+  }, [initialWidth, initialHeight])
 
   // Async Agent content and workspace resizing must remain inside the viewport.
   useEffect(() => {
@@ -250,10 +254,11 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [modelFilter, setModelFilter] = useState('all')
   const [sort, setSort] = useState<SortKey>('pinyin')
-  const [tokenFilter, setTokenFilter] = useState<TokenFilter>('all')
-  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const { data: dashboard, error: dashboardError } = useContactsDashboard(active && !detailOnly)
   const [detail, setDetail] = useState<CharacterStats | null>(null)
+  const [expandedTab, setExpandedTab] = useState<ContactAgentTab | null>(null)
+  useEffect(() => { setExpandedTab(null) }, [detail?.id])
   const [form, setForm] = useState<FormState | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -309,11 +314,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       .filter((character) => !normalized
         || character.name.toLowerCase().includes(normalized)
         || character.model.toLowerCase().includes(normalized))
-      .filter(character => matchesMetrics(dashboard?.contacts[character.id]?.summary, tokenFilter, taskFilter))
-      .sort((a, b) => sort.startsWith('tokens-') || sort.startsWith('tasks-')
-        ? compareMetrics(dashboard?.contacts[a.id]?.summary, dashboard?.contacts[b.id]?.summary, sort as MetricSort) || sortByName(a, b)
-        : compareBySort(a, b, sort))
-  }, [characters, query, category, modelFilter, sort, dashboard, tokenFilter, taskFilter])
+      .sort((a, b) => sort === 'tokens' || sort === 'tasks'
+        ? compareMetrics(dashboard?.contacts[a.id]?.summary, dashboard?.contacts[b.id]?.summary, `${sort}-${sortDirection}`) || sortByName(a, b)
+        : compareBySort(a, b, sort) * (sort === 'pinyin' ? sortDirection === 'asc' ? 1 : -1 : sortDirection === 'desc' ? 1 : -1))
+  }, [characters, query, category, modelFilter, sort, dashboard, sortDirection])
 
   const profileNameOf = useCallback((character: CharacterStats): string => {
     const id = character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId
@@ -393,13 +397,14 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       if (event.key !== 'Escape') return
       event.preventDefault()
       event.stopPropagation()
-      if (form) setForm(null)
+      if (expandedTab) setExpandedTab(null)
+      else if (form) setForm(null)
       else if (confirmDelete) setConfirmDelete(null)
       else setDetail(null)
     }
     window.addEventListener('keydown', closeOnEscape, true)
     return () => window.removeEventListener('keydown', closeOnEscape, true)
-  }, [active, detail, form, confirmDelete])
+  }, [active, detail, form, confirmDelete, expandedTab])
 
   return <div className={detailOnly ? 'contacts-view contacts-view-overlay' : 'contacts-view'} data-contacts-root>
     {!detailOnly && <>
@@ -412,7 +417,15 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       <div className="contacts-sort" data-contacts-sort role="group" aria-label="排序方式">
         {SORT_OPTIONS.map((option) => <button key={option.value} type="button"
           className="contacts-sort-option" aria-pressed={sort === option.value}
-          onClick={() => setSort(option.value)}>{option.label}</button>)}
+          data-contacts-sort-key={option.value}
+          title={sort === option.value ? '再次点击切换升序／降序' : `按${option.label}排序`}
+          onClick={() => {
+            if (sort === option.value) setSortDirection(direction => direction === 'asc' ? 'desc' : 'asc')
+            else { setSort(option.value); setSortDirection(option.value === 'pinyin' ? 'asc' : 'desc') }
+          }}>{option.label}</button>)}
+        <button type="button" className="contacts-sort-option contacts-sort-direction" data-contacts-sort-direction={sortDirection}
+          aria-label={`当前${sortDirection === 'asc' ? '升序' : '降序'}，点击切换为${sortDirection === 'asc' ? '降序' : '升序'}`}
+          onClick={() => setSortDirection(direction => direction === 'asc' ? 'desc' : 'asc')}>{sortDirection === 'asc' ? '升序 ↑' : '降序 ↓'}</button>
       </div>
       <button type="button" data-contacts-new className="contacts-new" onClick={() => openForm()}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
@@ -436,24 +449,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           aria-pressed={modelFilter === model} onClick={() => setModelFilter(model)}>{model}</button>)}
       </div>}
     </div>
-    <div className="contacts-metric-filters" data-contacts-metric-filters aria-label="按任务消耗与数量筛选">
-      <label>Token 消耗<select data-contacts-token-filter value={tokenFilter} onChange={event => setTokenFilter(event.target.value as TokenFilter)}>
-        <option value="all">全部消耗</option><option value="zero">无消耗</option><option value="under10k">0–1 万（不含）</option>
-        <option value="10kTo100k">1 万–10 万（不含）</option><option value="over100k">10 万及以上</option><option value="unreported">用量有缺失</option>
-      </select></label>
-      <label>任务数量<select data-contacts-task-filter value={taskFilter} onChange={event => setTaskFilter(event.target.value as TaskFilter)}>
-        <option value="all">全部任务数</option><option value="zero">无任务</option><option value="1to5">1–5 个</option><option value="over5">6 个及以上</option>
-      </select></label>
-      <label>指标排序<select data-contacts-metric-sort value={sort.includes('-') ? sort : ''} onChange={event => setSort(event.target.value ? event.target.value as MetricSort : 'pinyin')}>
-        <option value="">默认排序</option><option value="tokens-desc">Token 从多到少</option><option value="tokens-asc">Token 从少到多</option>
-        <option value="tasks-desc">任务从多到少</option><option value="tasks-asc">任务从少到多</option>
-      </select></label>
-      <button type="button" onClick={() => { setTokenFilter('all'); setTaskFilter('all'); setSort('pinyin') }}>重置指标</button>
-      <span title="按任务累计 Token 筛选，不含普通聊天；部分用量缺失时按已记录值筛选，完全未记录时不按零消耗计算。">{filtered.length} 位联系人 · 任务累计用量{dashboardError ? ' · 数据待刷新' : !dashboard ? ' · 读取中' : ''}</span>
-    </div>
     {error && !form && !confirmDelete && <div className="contacts-error" role="alert">{error}</div>}
+    <div className="contacts-body">
+    <div className="contacts-columns">
     <div className="contacts-scroll">
-      <ContactsActivityLog data={dashboard} error={dashboardError} characters={characters} active={active} onDetail={setDetail} />
       <div className="contacts-grid">
         <div className="contacts-card-container">
         <button type="button" className="contacts-card" data-contacts-item={ASSISTANT_CHARACTER_ID}
@@ -499,10 +498,16 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       </div>
       {filtered.length === 0 && <p className="contacts-empty">没有匹配的角色</p>}
     </div>
+    <aside className="contacts-activity-sidebar" aria-label="联系人活动侧栏">
+      <ContactsActivityLog data={dashboard} error={dashboardError} characters={characters} active={active} onDetail={setDetail} />
+    </aside>
+    </div>
+    </div>
     </>}
     {detail && <ResizableModal className="contacts-detail" role="dialog" label={`角色详情 ${detail.name}`}
-      initialWidth={560} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
+      initialWidth={560} initialHeight={680} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
       <div>
+        <div className="contacts-detail-topbar">
         <div className="contacts-detail-head">
           <span className="contacts-detail-avatar" aria-hidden="true"><CharacterAvatar character={detail} /></span>
           <div>
@@ -510,34 +515,31 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <p className="contacts-detail-subtitle">{detail.builtIn ? '内置角色' : '自定义角色'}</p>
           </div>
         </div>
-        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
-        <details className="contacts-profile-details" open={detail.id === ASSISTANT_CHARACTER_ID}>
-        <summary>角色资料</summary>
-        <div className="contacts-detail-fields">
-          <label className="contacts-field"><span className="contacts-field-name">模型</span>
-            <span className="contacts-detail-value">{detail.builtIn ? config.model : detail.model}</span></label>
-          <label className="contacts-field"><span className="contacts-field-name">行业</span>
-            <span className="contacts-detail-value">{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</span></label>
-          <label className="contacts-field"><span className="contacts-field-name">档案</span>
-            <span className="contacts-detail-value">{profileNameOf(detail)}</span></label>
-          <label className="contacts-field"><span className="contacts-field-name">会话</span>
-            <span className="contacts-detail-value">{detail.sessionCount} 个</span></label>
-          <label className="contacts-field"><span className="contacts-field-name">最近活跃</span>
-            <span className="contacts-detail-value">{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</span></label>
-        </div>
-        <p className="contacts-detail-soul-title">人设</p>
-        <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
-        </details>
         <div className="contacts-detail-actions">
           <button type="button" data-contacts-close onClick={() => setDetail(null)}>关闭</button>
-          <button type="button" className="primary" data-contacts-start-chat={detail.id}
+          <button type="button" data-contacts-start-chat={detail.id}
             onClick={() => { onOpenChat(detail.id); setDetail(null) }}>开始对话</button>
           {detail.id !== ASSISTANT_CHARACTER_ID && <button type="button" data-contacts-edit={detail.id} onClick={() => { setDetail(null); openForm(detail) }}>编辑</button>}
           {!detail.builtIn && <button type="button" className="danger" data-contacts-delete={detail.id}
             onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
         </div>
+        </div>
+        <section className="contacts-profile-details" aria-label="角色资料">
+        <h3>角色资料</h3>
+        <dl className="contacts-detail-fields">
+          <div><dt>模型</dt><dd>{detail.builtIn ? config.model : detail.model}</dd></div>
+          <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
+          <div><dt>档案</dt><dd>{profileNameOf(detail)}</dd></div>
+          <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
+          <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
+        </dl>
+        <p className="contacts-detail-soul-title">人设</p>
+        <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
+        </section>
+        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} onExpand={setExpandedTab} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
       </div>
     </ResizableModal>}
+    {detail && expandedTab && <ContactWorkToolbar key={detail.id} characterId={detail.id} name={detail.name} standalone initialTab={expandedTab} onClose={() => setExpandedTab(null)} />}
     {confirmDelete && <div className="contacts-scrim" role="presentation">
       <div className="contacts-confirm" role="alertdialog" aria-modal="true" aria-label="删除角色确认">
         <p className="contacts-confirm-title">删除角色</p>

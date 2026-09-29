@@ -78,6 +78,29 @@ export class AgentStore {
       if (!(this.db.pragma('table_info(calls)') as { name: string }[]).some(column => column.name === 'metadata')) this.db.exec('ALTER TABLE calls ADD COLUMN metadata TEXT;')
       this.db.pragma('user_version = 7')
     })()
+    this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)
+  }
+  private heartbeatRows = new Map<string, { id: number; topicId: string; at: number }>()
+  recordHeartbeats(now = Date.now()) {
+    const seen = new Set<string>()
+    for (const profile of this.profiles()) {
+      const settings = JSON.parse(profile.settings) as AgentSettings
+      if (!settings.enabled || !profile.focus_topic_id || settings.workUntil && now >= settings.workUntil) continue
+      const topic = this.topics.get(profile.character_id, profile.focus_topic_id)
+      if (!canResearch(topic.status)) continue
+      if (this.db.prepare("SELECT 1 FROM runs WHERE character_id=? AND status IN ('running','waiting','queued','interrupted')").get(profile.character_id)) continue
+      seen.add(profile.character_id)
+      const previous = this.heartbeatRows.get(profile.character_id)
+      const interveningRun = previous && this.db.prepare('SELECT 1 FROM runs WHERE character_id=? AND created_at>=? AND created_at<=?').get(profile.character_id, previous.at, now)
+      if (previous && !interveningRun && previous.topicId === topic.id && now >= previous.at && now - previous.at <= 45000) {
+        const updated = this.db.prepare('UPDATE activity_heartbeats SET ended_at=? WHERE id=?').run(now, previous.id)
+        if (updated.changes) { previous.at = now; continue }
+      }
+      const row = this.db.prepare('INSERT INTO activity_heartbeats(topic_id,started_at,ended_at) VALUES(?,?,?)').run(topic.id, now, now)
+      this.heartbeatRows.set(profile.character_id, { id: Number(row.lastInsertRowid), topicId: topic.id, at: now })
+    }
+    for (const id of this.heartbeatRows.keys()) if (!seen.has(id)) this.heartbeatRows.delete(id)
   }
   close() { this.db.close() }
   dashboard(characterIds: string[]): import('../../shared/agents').AgentDashboard {
@@ -117,6 +140,7 @@ export class AgentStore {
   ensure(id: string) { this.db.prepare('INSERT OR IGNORE INTO profiles(character_id,settings,revision,next_at) VALUES(?,?,1,0)').run(id, JSON.stringify(DEFAULT_AGENT_SETTINGS)) }
   save(id: string, raw: unknown, now = Date.now(), createDefaultTopic = true) {
     const settings = validateAgentSettings(raw)
+    this.heartbeatRows.delete(id)
     this.ensure(id)
     this.db.transaction(() => {
       this.cancel(id, '工作方向或设置已更改。', now)
@@ -129,6 +153,7 @@ export class AgentStore {
     return this.overview(id, now)
   }
   pause(id: string) {
+    this.heartbeatRows.delete(id)
     this.ensure(id)
     const settings = { ...JSON.parse(this.profile(id)!.settings), enabled: false }
     this.db.transaction(() => {

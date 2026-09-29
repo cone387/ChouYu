@@ -86,5 +86,18 @@ export function readAnalytics(db: Database.Database, characterId: string, query:
   const reports = db.prepare(`SELECT p.run_id,r.topic_id,json_extract(p.value,'$.createdAt') AS at FROM reports p JOIN runs r ON r.id=p.run_id WHERE p.character_id=? ${query.topicId ? 'AND r.topic_id=?' : ''} AND json_extract(p.value,'$.createdAt')>=? AND json_extract(p.value,'$.createdAt')<?`)
     .all(characterId, ...(query.topicId ? [query.topicId] : []), start, Math.min(end, now + 1)) as { run_id: string; topic_id: string | null; at: number }[]
   for (const report of reports) { add(report.at, report.topic_id, { reports: 1 }); result.activity.push({ runId: report.run_id, topicId: report.topic_id, at: report.at, kind: 'report' }) }
+  if (query.timeline) {
+    result.heartbeats = (db.prepare(`SELECT h.id,h.topic_id AS topicId,h.started_at AS start,h.ended_at AS end FROM activity_heartbeats h
+      JOIN topics t ON t.id=h.topic_id WHERE t.character_id=? AND h.started_at<? AND h.ended_at>?
+      ${query.topicId ? 'AND h.topic_id=?' : ''} ORDER BY h.started_at`)
+      .all(characterId, Math.min(end, now), start, ...(query.topicId ? [query.topicId] : [])) as NonNullable<AgentAnalytics['heartbeats']>)
+      .map(heartbeat => ({ ...heartbeat, start: Math.max(start, heartbeat.start), end: Math.min(end, now, heartbeat.end) }))
+    const logs = db.prepare(`SELECT e.id,e.run_id AS runId,r.topic_id AS topicId,e.at,e.kind,substr(e.text,1,600) AS text
+      FROM events e JOIN runs r ON r.id=e.run_id WHERE r.character_id=? AND e.at>=? AND e.at<?
+      ${query.topicId ? 'AND r.topic_id=?' : ''} ORDER BY e.at DESC,e.id DESC LIMIT 1001`)
+      .all(characterId, start, Math.min(end, now + 1), ...(query.topicId ? [query.topicId] : [])) as NonNullable<AgentAnalytics['logs']>
+    result.logs = logs.slice(0, 1000)
+    result.logsTruncated = logs.length > 1000
+  }
   return result
 }
