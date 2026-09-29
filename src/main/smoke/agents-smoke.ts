@@ -162,6 +162,25 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('.topic-content-tabs [id$=overview]').click()")
     if (!await run("document.querySelector('[data-agent-work-log]')?.closest('[role=tabpanel]')?.id.endsWith('overview-panel') && !document.querySelector('.topic-fixed-header .topic-status')")) throw new Error('Overview log placement or duplicate title status regressed')
     const logDirectory = process.env.CHOUYU_SMOKE_ARTIFACTS
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-topic-overview] [data-contact-daily] .daily-segment'))")
+    await run("document.querySelector('[data-agent-tab=overview]').click()")
+    await waitForRenderer(window, "document.querySelector('[data-agent-tab=overview]')?.getAttribute('aria-pressed') === 'true'")
+    await run("document.querySelector('[data-agent-expand]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open][data-view=overview] .daily-segment'))")
+    if (!await run("document.querySelector('.contact-work-dialog-tabs button').dataset.contactDialogTab === 'overview' && document.querySelector('.contact-work-sheet .daily-selection').textContent.includes('心跳') && document.querySelector('.contact-work-sheet .daily-logs li')")) throw new Error('Daily overview navigation, heartbeat timeline or task logs are missing')
+    if (logDirectory) {
+      mkdirSync(logDirectory, { recursive: true })
+      writeFileSync(join(logDirectory, 'contact-daily-overview.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+      for (const width of [375, 1024]) {
+        window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 900 }, scale: 1 })
+        await run("window.dispatchEvent(new Event('resize')); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        if (!await run("(() => { const el=document.querySelector('.contact-work-sheet'); return el.scrollWidth <= el.clientWidth+1 && el.getBoundingClientRect().right <= innerWidth+1 })()")) throw new Error('Daily overview overflows the task window')
+        writeFileSync(join(logDirectory, `contact-daily-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+      }
+      window.webContents.disableDeviceEmulation()
+      await run("window.dispatchEvent(new Event('resize'))")
+    }
+    await run("document.querySelector('.contact-work-sheet-heading > button').click(); document.querySelector('[data-agent-tab=work]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-work-log] li[data-kind=waiting]'))")
     await waitForRenderer(window, "(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.clientHeight === 216 && el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")
     await waitForRenderer(window, "document.querySelectorAll('[data-agent-work-log] li[data-kind=heartbeat]').length === 1")
@@ -362,7 +381,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           if (geometry.scroll > geometry.client + 1 || geometry.x < 0 || geometry.right > width + 1) throw new Error(`Agent panel overflows: ${JSON.stringify(geometry)}`)
           await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
           writeFileSync(join(directory, `contact-agent-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
-          await run("document.querySelector('.agent-tabs button').click()")
+          await run("document.querySelector('[data-agent-tab=work]').click()")
           await run("document.querySelector('[data-topic-id][aria-current=true]')?.click()")
           await run("document.querySelector('.topic-content-tabs [id$=delivery]').click()")
           await waitForRenderer(window, "document.querySelector('.contact-delivery')?.getBoundingClientRect().width > 0")
@@ -371,7 +390,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           const deliveryFits = await run("(() => { const el=document.querySelector('.contact-delivery'); return Boolean(el && el.clientWidth > 0 && el.scrollWidth <= el.clientWidth + 1) })()")
           if (!deliveryFits) throw new Error('Deliverable content overflows')
           writeFileSync(join(directory, `delivery-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
-          await run("document.querySelectorAll('.agent-tabs button')[1].click()")
+          await run("document.querySelector('[data-agent-tab=history]').click()")
         }
       }
       window.webContents.disableDeviceEmulation()

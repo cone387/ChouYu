@@ -9,6 +9,7 @@ import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 import { ACTIVE_TASKS_HINT, summaryTokenHint, summaryTokens, useAgentSummary } from '../Contacts/useAgentSummary'
 
 const entries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
+  { id: 'overview', label: '概览', icon: 'today' },
   { id: 'work', label: '任务', icon: 'task' },
   { id: 'history', label: '工作记录', icon: 'clock' },
   { id: 'memory', label: '记忆', icon: 'archive' },
@@ -24,7 +25,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
   const [tab, setTab] = useState<ContactAgentTab>(initialTab)
   const { data: summary, error: summaryError } = useAgentSummary(characterId)
   const badge = (entry: ContactAgentTab) => entry === 'work' ? summary?.activeTasks ?? '—' : entry === 'memory' ? summary?.memories ?? '—' : undefined
-  const hint = (entry: ContactAgentTab) => summaryError || (entry === 'work' ? ACTIVE_TASKS_HINT : entry === 'analytics' ? summaryTokenHint(summary) : entry === 'memory' ? '当前保留的独立记忆条数' : '查看工作记录')
+  const hint = (entry: ContactAgentTab) => summaryError || (entry === 'overview' ? '查看今日趋势、24 小时工作记录与任务日志' : entry === 'work' ? ACTIVE_TASKS_HINT : entry === 'analytics' ? summaryTokenHint(summary) : entry === 'memory' ? '当前保留的独立记忆条数' : '查看工作记录')
   const [analyticsReset, setAnalyticsReset] = useState(0)
   const [open, setOpen] = useState(standalone)
   const [visited, setVisited] = useState(standalone)
@@ -118,7 +119,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onCancel={event => { event.preventDefault(); close() }}>
       <header className="contact-work-sheet-heading" onPointerDown={event => beginGesture(event, 'move')} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
-        <strong>{name}的{tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : '记忆'}</strong>
+        <strong>{name}的{tab === 'overview' ? '今日概览' : tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : '记忆'}</strong>
       <div className="contact-work-buttons contact-work-dialog-tabs" role="group" aria-label="联系人工作内容">
         {entries.map(entry => <button key={entry.id} type="button" data-contact-dialog-tab={entry.id}
           aria-label={`${entry.label}${badge(entry.id) !== undefined ? ` ${badge(entry.id)}` : ''}`} title={hint(entry.id)} aria-pressed={tab === entry.id} onClick={() => { if (entry.id === 'analytics') setAnalyticsReset(n => n + 1); select(entry.id) }}>

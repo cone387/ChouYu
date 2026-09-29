@@ -68,4 +68,25 @@ describe('daily contact activity and consumption', () => {
     expect(() => analyticsRange({ date: '2026-09-28', days: 365 as 1 })).toThrow()
     expect(analyticsRange({ date: '2026-09-28', days: 30 }).boundaries).toHaveLength(31)
   })
+  it('records contiguous idle heartbeats without log spam, excludes gaps and scopes timeline data', () => {
+    const store = new AgentStore(':memory:')
+    try {
+      const start = at('2026-09-28', '10:00:00')
+      store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A', enabled: true }, start)
+      store.save('bob', { ...DEFAULT_AGENT_SETTINGS, goal: 'B', enabled: true }, start)
+      store.recordHeartbeats(start); store.recordHeartbeats(start + 15000)
+      store.recordHeartbeats(start + 120000); store.recordHeartbeats(start + 135000)
+      const run = store.createRun('alice', '', start + 140000)
+      store.event(run, 'planning', 'Alice private log', start + 141000)
+      store.recordHeartbeats(start + 150000)
+      const topicId = store.overview('alice').topics[0].id
+      const data = store.analytics('alice', { date: '2026-09-28', days: 1, topicId, timeline: true }, start + 160000)
+      expect(data.heartbeats?.map(h => [h.start, h.end])).toEqual([[start, start + 15000], [start + 120000, start + 135000]])
+      expect(data.logs?.some(log => log.text === 'Alice private log')).toBe(true)
+      expect(data.logs?.some(log => log.kind === 'heartbeat')).toBe(false)
+      expect(store.analytics('bob', { date: '2026-09-28', days: 1, timeline: true }, start + 160000).logs).toEqual([])
+      store.deleteTopic('alice', topicId, store.topics.get('alice', topicId).revision)
+      expect(store.analytics('alice', { date: '2026-09-28', days: 1, timeline: true }, start + 160000).heartbeats).toEqual([])
+    } finally { store.close() }
+  })
 })

@@ -85,7 +85,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     if (!await window.webContents.executeJavaScript("(() => { const profile=document.querySelector('.contacts-profile-details'); const sizes=Array.from(document.querySelectorAll('.contacts-detail-actions button')).map(el => el.getBoundingClientRect()); return profile.tagName === 'SECTION' && !profile.querySelector('summary') && sizes.every(rect => rect.height === sizes[0].height && rect.width === sizes[0].width) })()")) throw new Error('Profile must stay expanded and header buttons must have matching sizes')
     const detailHeight = await window.webContents.executeJavaScript("document.querySelector('.contacts-detail').getBoundingClientRect().height")
     if (await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail .agent-heading, .contacts-detail .contact-agent > .agent-description, .contacts-activity footer'))")) throw new Error('Removed contact description blocks returned')
-    for (const tab of ['history', 'memory', 'settings', 'analytics', 'work']) {
+    for (const tab of ['overview', 'history', 'memory', 'settings', 'analytics', 'work']) {
       await click(window, `[data-agent-tab=${tab}]`)
       await window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
       if (await window.webContents.executeJavaScript("document.querySelector('.contacts-detail').getBoundingClientRect().height") !== detailHeight) throw new Error(`Contact detail height changed on ${tab} tab`)
