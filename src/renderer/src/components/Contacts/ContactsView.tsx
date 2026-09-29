@@ -3,7 +3,8 @@ import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABE
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
-import { ContactAgentPanel } from './ContactAgentPanel'
+import { ContactAgentPanel, type ContactAgentTab } from './ContactAgentPanel'
+import ContactWorkToolbar from '../ChatPanel/ContactWorkToolbar'
 import ContactCardStats from './ContactCardStats'
 import ContactsActivityLog from './ContactsActivityLog'
 import { useContactsDashboard } from './useContactsDashboard'
@@ -256,6 +257,8 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const { data: dashboard, error: dashboardError } = useContactsDashboard(active && !detailOnly)
   const [detail, setDetail] = useState<CharacterStats | null>(null)
+  const [expandedTab, setExpandedTab] = useState<ContactAgentTab | null>(null)
+  useEffect(() => { setExpandedTab(null) }, [detail?.id])
   const [form, setForm] = useState<FormState | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -394,13 +397,14 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       if (event.key !== 'Escape') return
       event.preventDefault()
       event.stopPropagation()
-      if (form) setForm(null)
+      if (expandedTab) setExpandedTab(null)
+      else if (form) setForm(null)
       else if (confirmDelete) setConfirmDelete(null)
       else setDetail(null)
     }
     window.addEventListener('keydown', closeOnEscape, true)
     return () => window.removeEventListener('keydown', closeOnEscape, true)
-  }, [active, detail, form, confirmDelete])
+  }, [active, detail, form, confirmDelete, expandedTab])
 
   return <div className={detailOnly ? 'contacts-view contacts-view-overlay' : 'contacts-view'} data-contacts-root>
     {!detailOnly && <>
@@ -532,9 +536,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <p className="contacts-detail-soul-title">人设</p>
         <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
         </section>
-        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
+        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} onExpand={setExpandedTab} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
       </div>
     </ResizableModal>}
+    {detail && expandedTab && <ContactWorkToolbar key={detail.id} characterId={detail.id} name={detail.name} standalone initialTab={expandedTab} onClose={() => setExpandedTab(null)} />}
     {confirmDelete && <div className="contacts-scrim" role="presentation">
       <div className="contacts-confirm" role="alertdialog" aria-modal="true" aria-label="删除角色确认">
         <p className="contacts-confirm-title">删除角色</p>

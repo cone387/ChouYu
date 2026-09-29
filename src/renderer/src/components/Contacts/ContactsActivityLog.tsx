@@ -96,6 +96,6 @@ export default function ContactsActivityLog({ data, error, characters, active, o
         </li>
       })}</ol>
     </div>
-    <footer>{error || '最近 120 条工作日志 · 当前状态每秒更新，同一联系人不重复刷屏'}</footer>
+    {error && <p role="status">{error}</p>}
   </section>
 }

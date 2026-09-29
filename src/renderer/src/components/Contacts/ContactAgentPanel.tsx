@@ -1,7 +1,7 @@
 import ContactAnalytics from './ContactAnalytics'
 import ContactMarkdown from './ContactMarkdown'
 import { useEffect, useRef, useState } from 'react'
-import { agentUsesPlanner, AGENT_STATUS, DEFAULT_AGENT_SETTINGS, TOPIC_STATUS, type AgentOverview, type AgentRunDetail, type AgentSettings } from '../../../../shared/agents'
+import { agentUsesPlanner, AGENT_STATUS, DEFAULT_AGENT_SETTINGS, type AgentOverview, type AgentRunDetail, type AgentSettings } from '../../../../shared/agents'
 import './ContactAgentPanel.css'
 import ContactTopics from './ContactTopics'
 import type { AgentFocusRequest } from '../../../../shared/agents'
@@ -11,13 +11,14 @@ import type { AgentDiscussion } from './agentDiscussion'
 
 const time = (value: number) => new Date(value).toLocaleString()
 export type ContactAgentTab = 'work' | 'history' | 'memory' | 'settings' | 'analytics'
-export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset }: {
+export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset, onExpand }: {
   characterId: string; name: string; selectedTab?: ContactAgentTab
   onTabChange?: (tab: ContactAgentTab) => void; compact?: boolean
   focusRequest?: AgentFocusRequest
   onDiscuss?: (reference: AgentDiscussion) => void
   onChat?: () => void
   analyticsReset?: number
+  onExpand?: (tab: ContactAgentTab) => void
 }) {
   const [data, setData] = useState<AgentOverview | null>(null)
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
@@ -123,12 +124,9 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const discuss = (runId: string, topicId: string, text: string) => onDiscuss?.({ runId, topicId, text,
     title: data?.topics.find(topic => topic.id === topicId)?.title || '工作记录' })
   return <section className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId}>
-    {!compact && <>
-      <div className="agent-heading"><h3>任务进展</h3><span role="status">{readError ? '状态读取失败' : !data ? '正在读取状态' : active ? AGENT_STATUS[active.status] : stoppedTopic ? `当前事项${TOPIC_STATUS[focusedTopic.status]}` : lastRun?.status === 'failed' ? '最近一轮失败 · 当前未执行' : !data.topics.length ? '还没有任务' : data.settings.enabled ? '等待下次执行' : '仅手动运行'}</span></div>
-      <p className="agent-description">开启持续工作后，关闭聊天仍会继续。应用需保持运行；退出或关机期间暂停，重启后恢复。</p>
-    </>}
     {!compact && <div className="agent-tabs" aria-label="工作内容">
       {([['work', '任务'], ['history', '工作记录'], ['memory', '独立记忆'], ['settings', '工作设置'], ['analytics', '活动与消耗']] as const).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
+      {onExpand && <button type="button" className="agent-expand" data-agent-expand aria-label="在大窗口中打开" title="在大窗口中打开" onClick={() => onExpand(tab)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg></button>}
     </div>}
     {(error || readError) && <div className="agent-error" role="alert">{error || readError}<button type="button" disabled={busy} onClick={() => { setError(''); setReadError(''); void refresh() }}>重新读取</button></div>}
     {!data && !error && !readError && <p role="status">正在读取工作状态…</p>}
