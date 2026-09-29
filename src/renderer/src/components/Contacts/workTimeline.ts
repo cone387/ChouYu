@@ -5,39 +5,54 @@ export type WorkSegment = Omit<ActivitySpan, 'state'> & { state: ActivitySpan['s
 
 export type WorkBlock = { key: string; start: number; end: number; running: boolean; topicIds: (string | null)[]; text: string; executionMs: number; restMs: number; runId: string }
 
-/** Within each half-hour, preserve every state's duration, including rest.
- * Work and rest are summarized side by side, never laid over one another. */
+/** Keep real boundaries. Readability is handled by the shared axis, not by
+ * borrowing duration from rest or moving events into half-hour buckets. */
 export function workTimelineBlocks(data: AgentAnalytics): WorkBlock[] {
-  const periods = workSegments(data)
-  const blocks: WorkBlock[] = []
-  const step = 30 * 60000
-  for (let start = data.start; start < Math.min(data.end, data.measuredAt); start += step) {
-    const end = Math.min(start + step, data.end, data.measuredAt)
-    const records = periods.filter(period => period.start < end && period.end > start)
-    if (!records.length) continue
-    const states = new Map<string, { running: boolean; topicIds: (string | null)[]; ms: number; runId: string }>()
-    for (const record of records) {
-      const running = record.state === 'running'
-      const key = running ? `task:${record.topicId}` : 'rest'
-      const state = states.get(key) ?? { running, topicIds: running ? [record.topicId] : [], ms: 0, runId: running ? record.runId : '' }
-      state.ms += Math.min(end, record.end) - Math.max(start, record.start)
-      states.set(key, state)
-    }
-    let cursor = Math.max(start, records[0].start)
-    for (const [signature, state] of states) {
-      const blockEnd = cursor + state.ms
-      const previous = blocks.at(-1)
-      if (previous && previous.end === cursor && previous.running === state.running && JSON.stringify(previous.topicIds) === JSON.stringify(state.topicIds)) {
-        previous.end = blockEnd
-        previous.executionMs += state.running ? state.ms : 0
-        previous.restMs += state.running ? 0 : state.ms
-      } else blocks.push({ key: `${signature}@${cursor}`, start: cursor, end: blockEnd, running: state.running, topicIds: state.topicIds,
-        executionMs: state.running ? state.ms : 0, restMs: state.running ? 0 : state.ms, runId: state.runId,
-        text: state.running ? data.tasks.find(task => task.id === state.topicIds[0])?.title || '处理任务' : '心跳 / 休息' })
-      cursor = blockEnd
+  return workSegments(data).map(period => ({
+    key: period.key, start: period.start, end: period.end, running: period.state === 'running',
+    topicIds: period.state === 'running' ? [period.topicId] : [], text: period.text,
+    executionMs: period.state === 'running' ? period.end - period.start : 0,
+    restMs: period.state === 'running' ? 0 : period.end - period.start,
+    runId: period.state === 'running' ? period.runId : ''
+  }))
+}
+
+/** A monotonic, piecewise-linear axis gives short recorded intervals room.
+ * All rows, grid lines and tick labels use this same mapping, so widening a
+ * short task cannot cover a neighbouring rest interval. Times never change. */
+export function workTimelineScale(data: Pick<AgentAnalytics, 'start' | 'end'>, blocks: WorkBlock[], width: number) {
+  const duration = data.end - data.start
+  if (duration <= 0) return { percent: (_at: number) => 0, expanded: false }
+  const boundaries = [...new Set([data.start, data.end, ...blocks.flatMap(b => [b.start, b.end])])].sort((a, b) => a - b)
+  const parts = boundaries.slice(0, -1).map((start, index) => {
+    const end = boundaries[index + 1]
+    const block = blocks.find(b => b.start <= start && b.end >= end)
+    return { start, end, floor: block && (block.running || end - start >= 1000) ? 1 : 0 }
+  })
+  const visible = parts.reduce((sum, part) => sum + part.floor, 0)
+  const minimum = Math.min(16 / Math.max(1, width), .7 / Math.max(1, visible))
+  let low = 0, high = 1
+  for (let i = 0; i < 50; i++) {
+    const factor = (low + high) / 2
+    const total = parts.reduce((sum, p) => sum + Math.max(p.floor * minimum, (p.end - p.start) / duration * factor), 0)
+    if (total > 1) high = factor
+    else low = factor
+  }
+  let cursor = 0
+  const ranges = parts.map(p => {
+    const left = cursor
+    cursor += Math.max(p.floor * minimum, (p.end - p.start) / duration * low) * 100
+    return { ...p, left, right: cursor }
+  })
+  return {
+    expanded: low < .999,
+    percent: (at: number) => {
+      if (at <= data.start) return 0
+      if (at >= data.end) return 100
+      const p = ranges.find(p => at >= p.start && at < p.end)!
+      return p.left + (p.right - p.left) * (at - p.start) / (p.end - p.start)
     }
   }
-  return blocks
 }
 
 export function workTimelineRows(data: AgentAnalytics) {

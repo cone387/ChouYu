@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { emptyUsage, type AgentAnalytics } from '../../../../shared/agent-analytics'
-import { workSegments, workTimelineRows, workTimelineBlocks } from './workTimeline'
+import { workSegments, workTimelineRows, workTimelineBlocks, workTimelineScale } from './workTimeline'
 
 it('summarizes steps into work periods, clips boundaries and leaves unrecorded gaps blank', () => {
   const data: AgentAnalytics = { start: 100, end: 1000, measuredAt: 800, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
@@ -14,7 +14,7 @@ it('summarizes steps into work periods, clips boundaries and leaves unrecorded g
   expect(segments[1].text).toContain('休息')
   expect(segments[1].approximate).toBe(true)
 })
-it('preserves all rest in mixed half-hour blocks instead of letting a brief task occupy the whole block', () => {
+it('preserves real boundaries and all rest around brief tasks', () => {
   const hour = 3600000
   const data: AgentAnalytics = { start: 0, end: 24 * hour, measuredAt: 4 * hour, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
     spans: [{ runId: 'one', topicId: 'a', start: hour + 1000, end: hour + 3000, state: 'running', approximate: false },
@@ -25,8 +25,27 @@ it('preserves all rest in mixed half-hour blocks instead of letting a brief task
   expect(blocks.filter(b => !b.running)).toHaveLength(3)
   expect(blocks.reduce((sum, b) => sum + b.executionMs, 0)).toBe(5000)
   expect(blocks.reduce((sum, b) => sum + b.restMs, 0)).toBe(2 * hour - 5000)
+  expect(blocks.filter(b => b.running).map(b => [b.start, b.end])).toEqual([[hour + 1000, hour + 3000], [hour * 1.5 + 1000, hour * 1.5 + 4000]])
   for (const block of blocks) expect(block.end - block.start).toBe(block.executionMs + block.restMs)
   expect(blocks.every((block, index) => !index || block.start >= blocks[index - 1].end)).toBe(true)
+})
+it('expands short work on a shared monotonic axis without covering rest or changing timestamps', () => {
+  const data: AgentAnalytics = { start: 0, end: 86400000, measuredAt: 54000000, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
+    spans: Array.from({ length: 20 }, (_, i) => ({ runId: `run-${i}`, topicId: 'a', start: 36000000 + i * 900000, end: 36005000 + i * 900000, state: 'running', approximate: false })),
+    heartbeats: [{ id: 1, topicId: 'a', start: 36000000, end: 54000000 }] }
+  const blocks = workTimelineBlocks(data)
+  for (const width of [300, 720, 1100]) {
+    const scale = workTimelineScale(data, blocks, width)
+    expect(scale.expanded).toBe(true)
+    expect(scale.percent(0)).toBe(0)
+    expect(scale.percent(data.end)).toBe(100)
+    for (const block of blocks) {
+      const pixels = (scale.percent(block.end) - scale.percent(block.start)) * width / 100
+      expect(pixels).toBeGreaterThanOrEqual(Math.min(16, .7 * width / blocks.length) - .001)
+    }
+    const times = [...blocks.flatMap(b => [b.start, b.end]), ...Array.from({ length: 25 }, (_, i) => i * 3600000)].sort((a, b) => a - b)
+    for (let i = 1; i < times.length; i++) expect(scale.percent(times[i])).toBeGreaterThanOrEqual(scale.percent(times[i - 1]))
+  }
 })
 it('does not turn missing records or future time into rest', () => {
   const data: AgentAnalytics = { start: 0, end: 86400000, measuredAt: 120000, totals: emptyUsage(), buckets: [], tasks: [], activity: [], legacyCalls: 0,
