@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { AgentDashboard } from '../../../../shared/agents'
 import type { CharacterStats } from '../../../../shared/characters'
 import { workLogActivity } from './workLogActivity'
+import { advanceLogScroll } from './logScroll'
 
 type Row = { key: string; at: number; characterId: string; text: string; kind: string; topicTitle?: string }
 const clock = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false })
@@ -11,6 +12,8 @@ export default function ContactsActivityLog({ data, error, characters, active, o
 }) {
   const [now, setNow] = useState(Date.now())
   const viewport = useRef<HTMLDivElement>(null)
+  const initialized = useRef(false)
+  const wakeScroll = useRef<() => void>(() => {})
   useEffect(() => {
     if (!active) return
     setNow(Date.now())
@@ -29,36 +32,49 @@ export default function ContactsActivityLog({ data, error, characters, active, o
     ...(data?.events.map(event => ({ key: `event-${event.id}`, ...event })) ?? []),
     ...monitors.map(monitor => ({ key: `heartbeat-${monitor.characterId}`, at: now, characterId: monitor.characterId, text: monitor.text, kind: 'heartbeat' }))
   ]
-  // A clock update must not restart the roll. Real events or contact status
-  // changes restart from the newest entries, then cycle through the history.
   const revision = rows.map(row => row.key).join('|')
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!active) { initialized.current = false; return }
+    const node = viewport.current
+    if (!node?.clientHeight) return
+    if (!initialized.current && rows.length) {
+      node.scrollTop = node.scrollHeight
+      initialized.current = true
+    }
+    wakeScroll.current()
+  }, [active, revision])
+  useLayoutEffect(() => {
     const node = viewport.current
     if (!active || !node) return
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    let frame = 0, previous = 0, holdUntil = 0, position = 0
-    node.scrollTo({ top: node.scrollHeight, behavior: 'instant' })
-    const roll = (at: number) => {
-      const elapsed = previous ? Math.min(at - previous, 100) : 0
-      if (!previous) holdUntil = at + 1500
+    let frame = 0, previous = 0, position = node.scrollTop, previousHeight = node.clientHeight
+    const follow = (at: number) => {
+      frame = 0
+      if (!node.clientHeight) return
+      const elapsed = previous ? Math.min(at - previous, 100) : 16
       previous = at
-      const max = Math.max(0, node.scrollHeight - node.clientHeight)
-      if (!node.clientHeight) { holdUntil = at + 1500 }
-      else if (reducedMotion.matches || max === 0) { node.scrollTop = max; position = max }
-      else if (at >= holdUntil) {
-        if (node.scrollTop >= max - 1) {
-          position = 0; node.scrollTop = 0; holdUntil = at + 1000
-        } else {
-          position = Math.max(position, node.scrollTop) + elapsed * 0.025
-          node.scrollTop = Math.min(position, max)
-          if (position >= max) holdUntil = at + 1500
-        }
-      }
-      frame = requestAnimationFrame(roll)
+      const target = Math.max(0, node.scrollHeight - node.clientHeight)
+      position = reducedMotion.matches ? target : advanceLogScroll(position, target, elapsed)
+      node.scrollTop = position
+      if (Math.abs(target - position) > 0.5) frame = requestAnimationFrame(follow)
     }
-    frame = requestAnimationFrame(roll)
-    return () => cancelAnimationFrame(frame)
-  }, [active, revision])
+    const wake = () => {
+      cancelAnimationFrame(frame)
+      position = node.scrollTop; previous = 0
+      frame = requestAnimationFrame(follow)
+    }
+    wakeScroll.current = wake
+    const observer = new ResizeObserver(() => {
+      if (!previousHeight && node.clientHeight) node.scrollTop = node.scrollHeight
+      previousHeight = node.clientHeight
+      wake()
+    })
+    observer.observe(node)
+    const content = node.querySelector('ol')
+    if (content) observer.observe(content)
+    wake()
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); wakeScroll.current = () => {} }
+  }, [active])
   const running = monitors.filter(monitor => monitor.label === 'RUNNING').length
   return <section className="contacts-activity" data-contacts-activity aria-label="所有联系人活动日志">
     <header><strong><i aria-hidden="true" data-live={Boolean(monitors.length && !error)} />全员活动</strong>

@@ -178,9 +178,16 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (!await run("document.querySelectorAll('[data-contacts-activity] li[data-kind=heartbeat]').length === 1 && document.querySelector('[data-contacts-activity] li[data-kind=heartbeat]') === window.__heartbeatRow")) throw new Error('Heartbeat updates appended duplicate rows')
     if (!await run("getComputedStyle(document.querySelector('.contacts-body')).overflowY === 'auto' && getComputedStyle(document.querySelector('.contacts-scroll')).overflowY === 'visible'")) throw new Error('Contact scrollbar is not on the outer right edge')
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
-    const rollBefore = await run("document.querySelector('.contacts-activity-viewport').scrollTop")
-    await waitForRenderer(window, `Math.abs(document.querySelector('.contacts-activity-viewport').scrollTop - ${rollBefore}) > 5`)
-    await waitForRenderer(window, "(() => { const el=document.querySelector('.contacts-activity-viewport'); return el.scrollTop > 8 && el.scrollTop < el.scrollHeight-el.clientHeight-8 })()")
+    const atLatest = "(() => { const el=document.querySelector('.contacts-activity-viewport'); return el.scrollHeight-el.clientHeight-el.scrollTop < 2 })()"
+    if (!await run(atLatest)) throw new Error('Activity log did not open at the newest records')
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    if (!await run(atLatest)) throw new Error('Activity log looped back into old records')
+    // A burst of content must smoothly catch up without replaying the history.
+    await run("window.__logBurst=document.createElement('li'); window.__logBurst.style.height='400px'; document.querySelector('.contacts-activity-viewport ol').append(window.__logBurst)")
+    await waitForRenderer(window, "(() => { const el=document.querySelector('.contacts-activity-viewport'); const gap=el.scrollHeight-el.clientHeight-el.scrollTop; return gap > 2 && gap < 390 })()")
+    await waitForRenderer(window, atLatest)
+    await run("window.__logBurst.remove()")
+    await waitForRenderer(window, atLatest)
     const cardCount = await run("document.querySelectorAll('[data-contacts-item]').length")
     for (const metric of ['tokens', 'tasks']) {
       await run(`document.querySelector('[data-contacts-sort-key=${metric}]').click()`)
@@ -214,6 +221,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     }
     await run("document.querySelector('[data-topic-id][aria-current=true]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-work-log] li[data-kind=waiting]'))")
+    if (!await run("Array.from(document.querySelectorAll('.contacts-detail .topic-list, .contacts-detail .topic-content-scroll, .contacts-detail .topic-stage-nav')).every(el => getComputedStyle(el).overflowY === 'visible')")) throw new Error('Contact tasks still trap scrolling in independent panes')
     await run("Array.from(document.querySelectorAll('[data-agent-work-log] button')).find(b => b.textContent === '去回复').click()")
     if (!await run("document.activeElement === document.querySelector('.agent-question textarea')")) throw new Error('Work log reply did not focus the answer')
     if (logDirectory) {
