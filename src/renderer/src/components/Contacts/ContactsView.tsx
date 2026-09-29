@@ -407,18 +407,9 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   }, [active, detail, form, confirmDelete, expandedTab])
 
   const detailProfile = detail && (
-        <section className="contacts-profile-details" aria-label="角色资料">
-        <h3>角色资料</h3>
-        <dl className="contacts-detail-fields">
-          <div><dt>模型</dt><dd>{detail.builtIn ? config.model : detail.model}</dd></div>
-          <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
-          <div><dt>档案</dt><dd>{profileNameOf(detail)}</dd></div>
-          <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
-          <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
-        </dl>
-        <p className="contacts-detail-soul-title">人设</p>
-        <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
-        </section>
+    <section className="contacts-profile-details" aria-label="人设">
+      <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
+    </section>
   )
 
   return <div className={detailOnly ? 'contacts-view contacts-view-overlay' : 'contacts-view'} data-contacts-root>
