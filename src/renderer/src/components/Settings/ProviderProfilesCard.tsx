@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ResolvedProviderProfile } from '../../../../shared/config'
 import { MAX_PROVIDER_PROFILES } from '../../../../shared/config'
 import { useConfirm } from '../common/ConfirmProvider'
@@ -17,6 +18,23 @@ export default function ProviderProfilesCard() {
   const [loadFailed, setLoadFailed] = useState(false)
   const inFlight = useRef(false)
   const loadSequence = useRef(0)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+  const editorOpen = draft !== null
+  useEffect(() => {
+    if (!editorOpen) return
+    const previous = document.activeElement as HTMLElement | null
+    const dialog = dialogRef.current
+    dialog?.showModal()
+    return () => {
+      dialog?.close()
+      if (previous?.isConnected) previous.focus({ preventScroll: true })
+    }
+  }, [editorOpen])
+  const closeEditor = () => {
+    if (inFlight.current) return
+    setDraft(null); setError('')
+  }
 
   const refresh = useCallback(async () => {
     const sequence = ++loadSequence.current
@@ -57,7 +75,7 @@ export default function ProviderProfilesCard() {
     {loading && <p role="status">正在加载档案…</p>}
     {busy && <p role="status">正在保存修改…</p>}
     {notice && <p role="status">{notice}</p>}
-    {error && <p role="alert" className="settings-error">{error}{loadFailed && <button type="button" className="app-button" disabled={loading} onClick={() => void refresh()}>重试加载</button>}</p>}
+    {error && !draft && <p role="alert" className="settings-error">{error}{loadFailed && <button type="button" className="app-button" disabled={loading} onClick={() => void refresh()}>重试加载</button>}</p>}
     <ul>{profiles.map(profile => <li key={profile.id}>
       <strong>{profile.name}</strong><span>{profile.provider === 'claude' ? 'Claude' : 'OpenAI 兼容'} · {profile.baseUrl}</span>
       {!profile.builtIn && <div className="provider-profile-actions">
@@ -65,12 +83,17 @@ export default function ProviderProfilesCard() {
         <button type="button" className="app-button app-button-danger" disabled={unavailable || draft !== null} onClick={() => void remove(profile)}>删除</button>
       </div>}
     </li>)}</ul>
-    {draft ? <form className="provider-profile-form" onSubmit={event => { event.preventDefault(); void save() }}>
-      <label>档案名称<input aria-label="档案名称" disabled={busy} required value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} placeholder="档案名称" maxLength={64} /></label>
+    {atCapacity && <p className="settings-hint">最多支持 {MAX_PROVIDER_PROFILES} 个自定义档案。</p>}
+    <button type="button" className="app-button app-button-primary" onClick={() => { setError(''); setNotice(''); setDraft({ ...EMPTY, id: `p-${crypto.randomUUID()}` }) }} disabled={unavailable || atCapacity}>新增供应商</button>
+    {draft && createPortal(<dialog ref={dialogRef} className="provider-profile-dialog" data-interactive aria-modal="true" aria-labelledby={titleId} onCancel={event => { event.preventDefault(); event.stopPropagation(); closeEditor() }}>
+      <form className="provider-profile-form" aria-busy={busy} onSubmit={event => { event.preventDefault(); void save() }}>
+      <header><h3 id={titleId}>{profiles.some(profile => profile.id === draft.id) ? '编辑供应商' : '新增供应商'}</h3><p>保存后，可在联系人配置中选用此供应商档案。</p></header>
+      <label>档案名称<input autoFocus aria-label="档案名称" disabled={busy} required value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} placeholder="档案名称" maxLength={64} /></label>
       <label>服务类型<select aria-label="档案服务类型" disabled={busy} value={draft.provider} onChange={event => setDraft({ ...draft, provider: event.target.value as 'openai' | 'claude' })}><option value="openai">OpenAI 兼容</option><option value="claude">Claude</option></select></label>
       <label>Base URL<input aria-label="档案 Base URL" disabled={busy} required value={draft.baseUrl} onChange={event => setDraft({ ...draft, baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" /></label>
       <label>API Key<input aria-label="档案 API Key" type="password" disabled={busy} value={draft.apiKey} onChange={event => setDraft({ ...draft, apiKey: event.target.value })} autoComplete="off" placeholder="API Key" /></label>
-      <div><button type="button" className="app-button" disabled={busy} onClick={() => { setDraft(null); setError('') }}>取消</button><button type="submit" className="app-button app-button-primary" disabled={busy || !draft.name.trim() || !draft.baseUrl.trim()}>{busy ? '保存中…' : '保存'}</button></div>
-    </form> : <>{atCapacity && <p className="settings-hint">最多支持 {MAX_PROVIDER_PROFILES} 个自定义档案。</p>}<button type="button" className="app-button app-button-primary" onClick={() => { setError(''); setNotice(''); setDraft({ ...EMPTY, id: `p-${crypto.randomUUID()}` }) }} disabled={unavailable || atCapacity}>新建档案</button></>}
+      {error && <p role="alert" className="provider-profile-error">{error}</p>}
+      <footer><button type="button" className="app-button" disabled={busy} onClick={closeEditor}>取消</button><button type="submit" className="app-button app-button-primary" disabled={busy || !draft.name.trim() || !draft.baseUrl.trim()}>{busy ? '保存中…' : '保存'}</button></footer>
+    </form></dialog>, document.body)}
   </section>
 }
