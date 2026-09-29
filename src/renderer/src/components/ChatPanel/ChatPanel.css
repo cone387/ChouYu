@@ -854,6 +854,10 @@
 
 /* Copy Button */
 .copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -861,8 +865,13 @@
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  opacity: 0;
+  opacity: 1;
   transition: opacity 150ms, background 150ms;
+}
+
+.copy-btn svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .code-block-header .copy-btn {
@@ -881,10 +890,6 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-
-.message:hover .message-meta .copy-btn {
-  opacity: 1;
 }
 
 .message-meta .copy-btn:hover {

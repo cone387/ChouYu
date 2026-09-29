@@ -63,11 +63,13 @@ function CopyButton({ text }: { text: string }) {
   }
   return (
     <button className="copy-btn" onClick={handleCopy} title="复制" aria-label={copied ? '已复制' : '复制内容'}>
-      {copied ? '✓' : (
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-          <rect x="5" y="5" width="8" height="8" rx="1"/><path d="M3 11H2.5A1.5 1.5 0 011 9.5v-7A1.5 1.5 0 012.5 1h7A1.5 1.5 0 0111 2.5V3"/>
-        </svg>
-      )}
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+        {copied ? (
+          <path d="m3 8 3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
+        ) : (
+          <><rect x="6" y="6" width="8" height="8" rx="1"/><path d="M4 12H3.5A1.5 1.5 0 012 10.5v-7A1.5 1.5 0 013.5 2h7A1.5 1.5 0 0112 3.5V4"/></>
+        )}
+      </svg>
     </button>
   )
 }
