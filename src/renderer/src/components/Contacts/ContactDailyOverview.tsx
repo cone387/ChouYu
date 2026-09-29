@@ -6,6 +6,7 @@ import './ContactDailyOverview.css'
 
 const day = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const clock = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false })
+const minute = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
 const duration = (ms: number) => ms < 60000 ? `${Math.floor(ms / 1000)} 秒` : `${Math.floor(ms / 3600000)} 小时 ${Math.floor(ms / 60000) % 60} 分`
 
 export default function ContactDailyOverview({ characterId, topicId, active = true, timelineOnly = false }: {
@@ -51,15 +52,14 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
     {error && <p className="agent-error" role="status">{error}</p>}
     <section className="daily-timeline" aria-label="24 小时工作记录">
       <header><h4>{timelineOnly ? '任务工作时间 · 今天' : '24h 工作记录'}</h4><span>执行 <i className="daily-key-running" />　心跳 <i className="daily-key-heartbeat" /></span></header>
-      <div className="daily-gantt-scroll" tabIndex={0} aria-label="按事件排列的全天时间图">
+      <div className="daily-gantt-scroll" tabIndex={0} aria-label="按工作时段汇总的全天时间图">
         <div className="daily-gantt">
-          <div className="daily-gantt-heading"><span>事件 / 时间段</span><div className="daily-axis">{[0, 4, 8, 12, 16, 20, 24].map(hour => <span key={hour}>{String(hour).padStart(2, '0')}:00</span>)}</div></div>
           {segments.map((segment, index) => {
               const label = `${clock(segment.start)}–${clock(segment.end)} · ${timelineStates[segment.state]} · ${segment.text}${segment.approximate ? '（历史推算）' : ''}`
               return <div className="daily-lane" key={segment.key} data-selected={pick?.key === segment.key}>
                 <div className="daily-lane-name" title={`${title(segment.topicId)} · ${label}`}>
                   <strong>{segment.state === 'running' ? segment.text : timelineStates[segment.state]}</strong>
-                  <time>{clock(segment.start)}–{clock(segment.end)}</time>
+                  <time>{minute(segment.start)}–{minute(segment.end)}</time>
                 </div>
                 <div className="daily-track">
                   <div className="daily-future" style={{ left: `${Math.min(100, percent(data.measuredAt))}%` }} />
@@ -70,11 +70,12 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
                 </div>
               </div>
           })}
+          <div className="daily-gantt-heading"><span>时间</span><div className="daily-axis">{[0, 4, 8, 12, 16, 20, 24].map(hour => <span key={hour}>{String(hour).padStart(2, '0')}:00</span>)}</div></div>
         </div>
       </div>
       {!segments.length && <p className="agent-empty">今天还没有工作时段记录。</p>}
       {pick && <div className="daily-selection" aria-live="polite"><time>{clock(pick.start)}–{clock(pick.end)}</time><strong>{timelineStates[pick.state]} · {title(pick.topicId)}</strong><p>{pick.text}{pick.approximate ? '（历史记录推算时段）' : ''}</p></div>}
-      <p className="daily-note">每行一个事件，横条对应起止时间；极短事件以短横线显示，精确时间见左侧。</p>
+      <p className="daily-note">连续工作汇总为一个时段，心跳单独画线；悬停查看起止时间。</p>
     </section>
     {!timelineOnly && <>
       <div className="daily-trends"><Trend data={data} time cumulative={false} days={1} onDay={() => {}} /><Trend data={data} cumulative={false} days={1} onDay={() => {}} /></div>

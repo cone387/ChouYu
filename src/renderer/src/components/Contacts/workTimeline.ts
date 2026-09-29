@@ -5,25 +5,36 @@ export type WorkSegment = Omit<ActivitySpan, 'state'> & { state: ActivitySpan['s
 
 /** Only recorded run intervals become bars; gaps and future time remain blank. */
 export function workSegments(data: AgentAnalytics): WorkSegment[] {
-  const byRun = new Map<string, NonNullable<AgentAnalytics['logs']>>()
-  for (const event of [...(data.logs ?? [])].sort((a, b) => a.at - b.at || a.id - b.id)) {
-    const events = byRun.get(event.runId) ?? []
-    events.push(event); byRun.set(event.runId, events)
-  }
   const segments: WorkSegment[] = data.spans.flatMap(span => {
     const start = Math.max(span.start, data.start), end = Math.min(span.end, data.end, data.measuredAt)
     if (end <= start) return []
-    const events = byRun.get(span.runId) ?? []
-    const cuts = [start, ...new Set(events.filter(event => event.at > start && event.at < end).map(event => event.at)), end]
-    return cuts.slice(0, -1).map((from, index) => {
-      const event = events.findLast(event => event.at <= from)
-      return { ...span, start: from, end: cuts[index + 1], key: `${span.runId}:${from}:${span.state}`,
-        text: span.state === 'running' ? event?.text.split('\n')[0] || '执行本轮任务' : timelineStates[span.state] }
-    })
+    return [{ ...span, start, end, key: `${span.runId}:${start}:${span.state}`, text: '' }]
   })
   for (const heartbeat of data.heartbeats ?? []) {
     const start = Math.max(data.start, heartbeat.start), end = Math.min(data.end, data.measuredAt, heartbeat.end)
     if (end > start) segments.push({ ...heartbeat, start, end, runId: '', state: 'heartbeat', approximate: false, key: `heartbeat:${heartbeat.id}`, text: '心跳 · 持续工作待命' })
   }
-  return segments.sort((a, b) => a.start - b.start)
+  segments.sort((a, b) => a.start - b.start)
+  // Brief dispatch immediately adjoining work belongs to the same work period.
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index]
+    if (segment.state !== 'queued' || segment.end - segment.start > 60000) continue
+    if ([segments[index - 1], segments[index + 1]].some(other => other?.state === 'running' && other.runId === segment.runId && (other.end === segment.start || other.start === segment.end))) segment.state = 'running'
+  }
+  const periods: WorkSegment[] = []
+  for (const segment of segments) {
+    const previous = periods.at(-1)
+    if (previous && previous.topicId === segment.topicId && previous.end === segment.start && (previous.state === 'running') === (segment.state === 'running')) {
+      previous.end = segment.end
+      previous.approximate ||= segment.approximate
+      if (previous.state !== segment.state) previous.state = 'heartbeat'
+    } else periods.push({ ...segment })
+  }
+  const phases: Record<string, string> = { briefing: '梳理任务', planning: '制定计划', plan: '制定计划', search: '搜索资料', reading: '阅读资料', read: '阅读资料', analysis: '分析资料', drafting: '撰写内容', revising: '修改内容', checking: '检查成果', completed: '完成本轮' }
+  return periods.map(period => {
+    const steps = [...new Set((data.logs ?? []).filter(event => event.topicId === period.topicId && event.at >= period.start && event.at <= period.end)
+      .sort((a, b) => a.at - b.at).map(event => phases[event.kind]).filter(Boolean))]
+    const title = data.tasks.find(task => task.id === period.topicId)?.title || '处理任务'
+    return { ...period, text: period.state === 'running' ? `${title}${steps.length ? ` · ${steps.join('、')}` : ''}` : timelineStates[period.state] }
+  })
 }

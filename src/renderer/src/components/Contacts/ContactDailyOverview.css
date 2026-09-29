@@ -14,7 +14,7 @@
 .daily-gantt-scroll { margin-top: 14px; max-height: 440px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
 .daily-gantt { min-width: 580px; }
 .daily-gantt-heading, .daily-lane { display: grid; grid-template-columns: 180px minmax(0, 1fr); }
-.daily-gantt-heading { position: sticky; top: 0; z-index: 3; background: var(--bg-primary); color: var(--text-secondary); font-size: 11px; border-bottom: 1px solid var(--border); }
+.daily-gantt-heading { position: sticky; bottom: 0; z-index: 3; background: var(--bg-primary); color: var(--text-secondary); font-size: 11px; border-top: 1px solid var(--border); }
 .daily-gantt-heading > span { padding: 10px; }
 .daily-axis { display: flex; justify-content: space-between; align-items: center; padding: 0 6px; font: 10px monospace; }
 .daily-lane { min-height: 54px; border-bottom: 1px solid var(--border); }
