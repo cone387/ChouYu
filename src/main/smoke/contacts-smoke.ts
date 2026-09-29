@@ -82,6 +82,13 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
     if (!await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-close]')) && Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-start-chat]')) && document.querySelector('.contacts-detail-actions').getBoundingClientRect().top < document.querySelector('.contact-agent').getBoundingClientRect().top")) throw new Error('Contact detail actions are not at the top')
     if (!await window.webContents.executeJavaScript("(() => { const head=document.querySelector('.contacts-detail-head').getBoundingClientRect(); const actions=document.querySelector('.contacts-detail-actions').getBoundingClientRect(); const profile=document.querySelector('.contacts-profile-details'); const agent=document.querySelector('.contact-agent'); return actions.left >= head.right && actions.top < head.bottom && profile.getBoundingClientRect().top < agent.getBoundingClientRect().top && !agent.nextElementSibling })()")) throw new Error('Details must place actions beside the name and profile before the final task panel')
+    if (!await window.webContents.executeJavaScript("(() => { const profile=document.querySelector('.contacts-profile-details'); const sizes=Array.from(document.querySelectorAll('.contacts-detail-actions button')).map(el => el.getBoundingClientRect()); return profile.tagName === 'SECTION' && !profile.querySelector('summary') && sizes.every(rect => rect.height === sizes[0].height && rect.width === sizes[0].width) })()")) throw new Error('Profile must stay expanded and header buttons must have matching sizes')
+    const detailHeight = await window.webContents.executeJavaScript("document.querySelector('.contacts-detail').getBoundingClientRect().height")
+    for (const tab of ['history', 'memory', 'settings', 'analytics', 'work']) {
+      await click(window, `[data-agent-tab=${tab}]`)
+      await window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+      if (await window.webContents.executeJavaScript("document.querySelector('.contacts-detail').getBoundingClientRect().height") !== detailHeight) throw new Error(`Contact detail height changed on ${tab} tab`)
+    }
     await click(window, '[data-contacts-close]')
     // The menu trigger keeps focus while details are open: no focusin is fired
     // on dismissal. Use real Escape input to reproduce its keyboard highlight.

@@ -67,6 +67,7 @@ type ResizeEdge = 'n' | 's' | 'e' | 'w'
 
 interface ResizableModalProps {
   initialWidth: number
+  initialHeight?: number
   minWidth: number
   minHeight: number
   className: string
@@ -77,7 +78,7 @@ interface ResizableModalProps {
 }
 
 /** 居中模态：默认内容自适应高度；拖上/下/左/右边框自然拉伸，不用右下角把手。 */
-function ResizableModal({ initialWidth, minWidth, minHeight, className, role, label, dataAttributes, children }: ResizableModalProps) {
+function ResizableModal({ initialWidth, initialHeight, minWidth, minHeight, className, role, label, dataAttributes, children }: ResizableModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ edge: ResizeEdge; x: number; y: number; base: { left: number; top: number; width: number; height: number } } | null>(null)
   const [rect, setRect] = useState<PanelRect | null>(null)
@@ -88,15 +89,15 @@ function ResizableModal({ initialWidth, minWidth, minHeight, className, role, la
     if (!panel || !parent) return
     const width = Math.min(initialWidth, parent.clientWidth - 16)
     panel.style.width = `${width}px`
-    const naturalHeight = panel.offsetHeight
+    const naturalHeight = initialHeight ?? panel.offsetHeight
     const capped = naturalHeight > parent.clientHeight - 16
     setRect({
       left: Math.round((parent.clientWidth - width) / 2),
       top: Math.round((parent.clientHeight - Math.min(naturalHeight, parent.clientHeight - 16)) / 2),
       width,
-      height: capped ? parent.clientHeight - 16 : null
+      height: capped ? parent.clientHeight - 16 : initialHeight ?? null
     })
-  }, [initialWidth])
+  }, [initialWidth, initialHeight])
 
   // Async Agent content and workspace resizing must remain inside the viewport.
   useEffect(() => {
@@ -500,7 +501,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     </div>
     </>}
     {detail && <ResizableModal className="contacts-detail" role="dialog" label={`角色详情 ${detail.name}`}
-      initialWidth={560} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
+      initialWidth={560} initialHeight={680} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
       <div>
         <div className="contacts-detail-topbar">
         <div className="contacts-detail-head">
@@ -512,30 +513,25 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         </div>
         <div className="contacts-detail-actions">
           <button type="button" data-contacts-close onClick={() => setDetail(null)}>关闭</button>
-          <button type="button" className="primary" data-contacts-start-chat={detail.id}
+          <button type="button" data-contacts-start-chat={detail.id}
             onClick={() => { onOpenChat(detail.id); setDetail(null) }}>开始对话</button>
           {detail.id !== ASSISTANT_CHARACTER_ID && <button type="button" data-contacts-edit={detail.id} onClick={() => { setDetail(null); openForm(detail) }}>编辑</button>}
           {!detail.builtIn && <button type="button" className="danger" data-contacts-delete={detail.id}
             onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
         </div>
         </div>
-        <details className="contacts-profile-details" open={detail.id === ASSISTANT_CHARACTER_ID}>
-        <summary>角色资料</summary>
-        <div className="contacts-detail-fields">
-          <label className="contacts-field"><span className="contacts-field-name">模型</span>
-            <span className="contacts-detail-value">{detail.builtIn ? config.model : detail.model}</span></label>
-          <label className="contacts-field"><span className="contacts-field-name">行业</span>
-            <span className="contacts-detail-value">{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</span></label>
-          <label className="contacts-field"><span className="contacts-field-name">档案</span>
-            <span className="contacts-detail-value">{profileNameOf(detail)}</span></label>
-          <label className="contacts-field"><span className="contacts-field-name">会话</span>
-            <span className="contacts-detail-value">{detail.sessionCount} 个</span></label>
-          <label className="contacts-field"><span className="contacts-field-name">最近活跃</span>
-            <span className="contacts-detail-value">{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</span></label>
-        </div>
+        <section className="contacts-profile-details" aria-label="角色资料">
+        <h3>角色资料</h3>
+        <dl className="contacts-detail-fields">
+          <div><dt>模型</dt><dd>{detail.builtIn ? config.model : detail.model}</dd></div>
+          <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
+          <div><dt>档案</dt><dd>{profileNameOf(detail)}</dd></div>
+          <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
+          <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
+        </dl>
         <p className="contacts-detail-soul-title">人设</p>
         <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
-        </details>
+        </section>
         {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
       </div>
     </ResizableModal>}
