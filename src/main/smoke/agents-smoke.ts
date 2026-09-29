@@ -167,6 +167,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('[data-agent-tab=overview]')?.getAttribute('aria-pressed') === 'true'")
     await run("document.querySelector('[data-agent-expand]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open][data-view=overview] .daily-segment'))")
+    if (!await run("Array.from(document.querySelectorAll('.contact-work-sheet .daily-lane')).every(row => { const bars=row.querySelectorAll('.daily-segment'); const line=bars[0]?.querySelector('span').getBoundingClientRect(); return bars.length === 1 && line.width > line.height && row.querySelector('time') })")) throw new Error('Work timeline must show one horizontal interval per event row')
     if (!await run("document.querySelector('.contact-work-dialog-tabs button').dataset.contactDialogTab === 'overview' && document.querySelector('.contact-work-sheet .daily-selection').textContent.includes('心跳') && document.querySelector('.contact-work-sheet .daily-logs li')")) throw new Error('Daily overview navigation, heartbeat timeline or task logs are missing')
     if (logDirectory) {
       mkdirSync(logDirectory, { recursive: true })

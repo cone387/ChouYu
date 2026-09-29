@@ -34,7 +34,6 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
   if (!active) return null
   if (!data) return <p className="agent-caption" role="status">{error || '正在读取今日工作记录…'}</p>
   const title = (id: string | null) => data.tasks.find(task => task.id === id)?.title || '未归属任务'
-  const lanes = [...new Set(segments.map(segment => segment.topicId))]
   const pick = segments.find(segment => segment.key === selected) ?? segments.at(-1)
   const percent = (at: number) => (at - data.start) / (data.end - data.start) * 100
   const logs = data.logs ?? []
@@ -52,28 +51,30 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
     {error && <p className="agent-error" role="status">{error}</p>}
     <section className="daily-timeline" aria-label="24 小时工作记录">
       <header><h4>{timelineOnly ? '任务工作时间 · 今天' : '24h 工作记录'}</h4><span>执行 <i className="daily-key-running" />　心跳 <i className="daily-key-heartbeat" /></span></header>
-      <div className="daily-axis">{[0, 4, 8, 12, 16, 20, 24].map(hour => <span key={hour}>{String(hour).padStart(2, '0')}:00</span>)}</div>
-      <div className="daily-lanes">
-        {lanes.map(id => <div className="daily-lane" key={id ?? 'legacy'}>
-          <div className="daily-lane-name">{title(id)}</div>
-          <div className="daily-track">
-            <div className="daily-future" style={{ left: `${Math.min(100, percent(data.measuredAt))}%` }} />
-            {segments.filter(segment => segment.topicId === id).map(segment => {
+      <div className="daily-gantt-scroll" tabIndex={0} aria-label="按事件排列的全天时间图">
+        <div className="daily-gantt">
+          <div className="daily-gantt-heading"><span>事件 / 时间段</span><div className="daily-axis">{[0, 4, 8, 12, 16, 20, 24].map(hour => <span key={hour}>{String(hour).padStart(2, '0')}:00</span>)}</div></div>
+          {segments.map((segment, index) => {
               const label = `${clock(segment.start)}–${clock(segment.end)} · ${timelineStates[segment.state]} · ${segment.text}${segment.approximate ? '（历史推算）' : ''}`
-              return <button type="button" key={segment.key} className="daily-segment" data-state={segment.state} aria-label={label} title={label} aria-pressed={pick?.key === segment.key}
-                style={{ left: `${percent(segment.start)}%`, width: `${percent(segment.end) - percent(segment.start)}%` }} onClick={() => setSelected(segment.key)}>
-                <span>{segment.state === 'running' ? segment.text : '心跳'}</span>
-              </button>
-            })}
-          </div>
-        </div>)}
-        {!lanes.length && <p className="agent-empty">今天还没有工作时段记录。</p>}
+              return <div className="daily-lane" key={segment.key} data-selected={pick?.key === segment.key}>
+                <div className="daily-lane-name" title={`${title(segment.topicId)} · ${label}`}>
+                  <strong>{segment.state === 'running' ? segment.text : timelineStates[segment.state]}</strong>
+                  <time>{clock(segment.start)}–{clock(segment.end)}</time>
+                </div>
+                <div className="daily-track">
+                  <div className="daily-future" style={{ left: `${Math.min(100, percent(data.measuredAt))}%` }} />
+                  <button type="button" className="daily-segment" data-state={segment.state} data-color={index % 3} aria-label={`${title(segment.topicId)} · ${label}`} title={label} aria-pressed={pick?.key === segment.key}
+                style={{ left: `min(${percent(segment.start)}%, calc(100% - 16px))`, width: `${percent(segment.end) - percent(segment.start)}%` }} onClick={() => setSelected(segment.key)}>
+                    <span aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+          })}
+        </div>
       </div>
+      {!segments.length && <p className="agent-empty">今天还没有工作时段记录。</p>}
       {pick && <div className="daily-selection" aria-live="polite"><time>{clock(pick.start)}–{clock(pick.end)}</time><strong>{timelineStates[pick.state]} · {title(pick.topicId)}</strong><p>{pick.text}{pick.approximate ? '（历史记录推算时段）' : ''}</p></div>}
-      <p className="daily-note">空白为无记录或尚未到达的时段；心跳表示待命或等待状态，历史缺失不补算。</p>
-      <details className="daily-periods"><summary>时间段明细 · {segments.length} 段</summary>
-        <ol>{[...segments].reverse().map(segment => <li key={segment.key}><time>{clock(segment.start)}–{clock(segment.end)}</time><span>{title(segment.topicId)} · {timelineStates[segment.state]}{segment.approximate ? '（推算）' : ''}<br />{segment.text}</span></li>)}</ol>
-      </details>
+      <p className="daily-note">每行一个事件，横条对应起止时间；极短事件以短横线显示，精确时间见左侧。</p>
     </section>
     {!timelineOnly && <>
       <div className="daily-trends"><Trend data={data} time cumulative={false} days={1} onDay={() => {}} /><Trend data={data} cumulative={false} days={1} onDay={() => {}} /></div>
