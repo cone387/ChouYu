@@ -530,7 +530,16 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
         </div>
         </div>
-
+        <section className="contacts-profile-details" aria-label="角色资料">
+          <h3>角色资料</h3>
+          <dl className="contacts-detail-fields">
+            <div><dt>模型</dt><dd>{detail.builtIn ? config.model : detail.model}</dd></div>
+            <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
+            <div><dt>档案</dt><dd>{profileNameOf(detail)}</dd></div>
+            <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
+            <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
+          </dl>
+        </section>
         {detail.id === ASSISTANT_CHARACTER_ID && <section className="contact-agent">
           <div className="agent-tabs"><button type="button" data-agent-tab="profile" aria-pressed="true">人设</button></div>
           {detailProfile}
