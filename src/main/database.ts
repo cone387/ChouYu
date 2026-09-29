@@ -136,7 +136,7 @@ function sanitizeToolData(value: unknown): ToolActivityData | undefined {
   const input = value as Partial<ToolActivityData>
   if (typeof input.callId !== 'string' || typeof input.name !== 'string' || typeof input.displayName !== 'string') return undefined
   if (!['safe', 'read', 'write'].includes(String(input.risk))) return undefined
-  if (!['requested', 'running', 'completed', 'denied', 'error'].includes(String(input.status))) return undefined
+  if (!['requested', 'running', 'completed', 'denied', 'expired', 'cancelled', 'error'].includes(String(input.status))) return undefined
   const status = input.status as ToolActivityData['status']
   const interrupted = status === 'requested' || status === 'running'
   return {
@@ -583,6 +583,20 @@ export function markSessionRead(id: string, messageId?: string): SessionWorkspac
 export function getAssistantUnreadCount(): number {
   return store.sessions
     .reduce((total, session) => total + toSummary(session).unreadCount, 0)
+}
+
+export function getAssistantUnreadPreview(): string {
+  let latest: { session: ChatSession; message: Message } | undefined
+  for (const session of store.sessions) {
+    for (const message of session.messages) {
+      if (!(isAssistantCharacter(session.characterId) || message.agentNotice)
+        || message.timestamp <= (session.lastReadAt ?? 0)) continue
+      if (!latest || message.timestamp > latest.message.timestamp) latest = { session, message }
+    }
+  }
+  if (!latest) return ''
+  const name = getCharacter(latest.session.characterId)?.name || '助手'
+  return `${name.slice(0, 24)}：${buildSessionPreview([latest.message])}`
 }
 
 export function renameChatSession(id: string, title: string): ChatSessionSummary[] {

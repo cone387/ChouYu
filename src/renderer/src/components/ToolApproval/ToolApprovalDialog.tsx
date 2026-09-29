@@ -61,7 +61,7 @@ export default function ToolApprovalDialog({ request, onResolve }: ToolApprovalD
           {getToolRiskLabel(request.risk)}
         </div>
         <pre className={`tool-approval-arguments${request.preview ? ' tool-approval-preview' : ''}`}>{request.preview || formatArguments(request.arguments)}</pre>
-        <p className="tool-approval-help">仅本次调用有效。拒绝后 AI 会收到“用户拒绝”结果并继续回答。</p>
+        <p className="tool-approval-help">仅本次调用有效，60 秒未确认将超时，操作不会执行。点击拒绝或按 Esc 才会告知 AI 你拒绝了操作。</p>
         <div className="tool-approval-actions">
           <button type="button" className="secondary" onClick={() => onResolve(false)}>拒绝</button>
           <button type="button" className="primary" onClick={() => onResolve(true)}>允许本次操作</button>

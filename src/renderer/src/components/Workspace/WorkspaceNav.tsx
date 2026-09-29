@@ -14,7 +14,7 @@ const pages: { id: WorkspacePage; label: string; path: string }[] = [
   { id: 'settings', label: '设置', path: 'M10 2h4l.6 2.2 1.4.6 2-1.1 2.3 2.3-1.1 2 .6 1.4L22 10v4l-2.2.6-.6 1.4 1.1 2-2.3 2.3-2-1.1-1.4.6L14 22h-4l-.6-2.2-1.4-.6-2 1.1L3.7 18l1.1-2-.6-1.4L2 14v-4l2.2-.6.6-1.4-1.1-2L6 3.7l2 1.1 1.4-.6L10 2zM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z' }
 ]
 
-export default function WorkspaceNav({ activePage, onNavigate, status }: { activePage: WorkspacePage; onNavigate: (page: WorkspacePage) => void; status: string }) {
+export default function WorkspaceNav({ activePage, onNavigate, status, unreadCount = 0 }: { activePage: WorkspacePage; onNavigate: (page: WorkspacePage) => void; status: string; unreadCount?: number }) {
   const [todayTaskCount, setTodayTaskCount] = useState(0)
   useEffect(() => {
     let disposed = false
@@ -69,9 +69,10 @@ export default function WorkspaceNav({ activePage, onNavigate, status }: { activ
       </svg>
     </div>
     {pages.map(page => <button key={page.id} type="button" className={`workspace-nav-item${page.id === 'settings' ? ' workspace-nav-bottom' : ''}`}
-      data-workspace-nav={page.id} aria-label={page.label} title={page.label}
+      data-workspace-nav={page.id} aria-label={page.id === 'chat' && unreadCount > 0 ? `${page.label}，${unreadCount} 条未读消息` : page.label} title={page.id === 'chat' && unreadCount > 0 ? `${page.label} · ${unreadCount} 条未读消息` : page.label}
       aria-current={activePage === page.id ? 'page' : undefined} onClick={() => onNavigate(page.id)}>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={page.path}/></svg>
+      {page.id === 'chat' && unreadCount > 0 && <span className="workspace-nav-badge" aria-hidden="true">{unreadCount > 99 ? '99+' : unreadCount}</span>}
       {page.id === 'tasks' && todayTaskCount > 0 && <span className="workspace-nav-badge" aria-label={`${todayTaskCount} 个今天待办任务`}>{todayTaskCount > 99 ? '99+' : todayTaskCount}</span>}
     </button>)}
   </nav>

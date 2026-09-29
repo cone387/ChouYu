@@ -278,7 +278,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       const sessionId = requestSessionRef.current.get(event.requestId) || activeSessionIdRef.current
       if (!sessionId) return
       const generation = sessionGenerationsRef.current.get(sessionId)
-      if (['completed', 'denied', 'error'].includes(event.status)) {
+      if (['completed', 'denied', 'expired', 'cancelled', 'error'].includes(event.status)) {
         if (generation) generation.toolBoundary = true
         setToolApprovalRequests((current) => current.filter((request) => request.callId !== event.callId))
       }
@@ -752,7 +752,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       data-window-mode={displayMode} data-maximized={maximized}
       data-workspace-page={activePage}
       style={{ left: maximized ? 0 : position.x, top: maximized ? 0 : position.y, width: shellWidth, height: geometry.height, display: visible && panelReady ? undefined : 'none' }}>
-      {displayMode === 'workspace' && <WorkspaceNav activePage={activePage} onNavigate={navigate} status={getStatusText()} />}
+      {displayMode === 'workspace' && <WorkspaceNav activePage={activePage} onNavigate={navigate} status={getStatusText()} unreadCount={sessions.reduce((total, session) => total + (session.unreadCount ?? 0), 0)} />}
       <WorkspaceHeader onHide={onHide} onClose={onClose} dragHandleProps={dragHandleProps}
         searchHotkey={config.searchHotkey}
         onSearch={() => setShowGlobalSearch(true)}

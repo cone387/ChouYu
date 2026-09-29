@@ -3,7 +3,7 @@ import { getToolRiskLabel } from '../../../../shared/tools'
 import { openTaskWorkspace } from '../Tasks/taskNavigation'
 
 export default function ToolActivityCard({ data }: { data: ToolActivityData }) {
-  const terminal = ['completed', 'denied', 'error'].includes(data.status)
+  const terminal = ['completed', 'denied', 'expired', 'cancelled', 'error'].includes(data.status)
   const statusLabel = data.status === 'requested'
     ? '等待确认'
     : data.status === 'running'
@@ -12,7 +12,11 @@ export default function ToolActivityCard({ data }: { data: ToolActivityData }) {
         ? '已完成'
         : data.status === 'denied'
           ? '已拒绝'
-          : '执行失败'
+          : data.status === 'expired'
+            ? '确认超时'
+            : data.status === 'cancelled'
+              ? '已取消'
+              : '执行失败'
   if (data.status === 'completed' && ['assign_contact_task', 'get_contact_topics', 'update_contact_topic', 'answer_contact_question'].includes(data.name)) {
     return <details className="contact-tool-result"><summary>{data.displayName} · 已完成</summary><p>{data.summary || getToolRiskLabel(data.risk)}</p></details>
   }

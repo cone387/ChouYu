@@ -18,7 +18,7 @@ vi.mock('electron', () => ({
 
 import {
   appendAgentNotice, appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase,
-  getActiveSession, getAssistantUnreadCount, getConfig, getSession, getSessionWorkspace, getSessions,
+  getActiveSession, getAssistantUnreadCount, getAssistantUnreadPreview, getConfig, getSession, getSessionWorkspace, getSessions,
   getStorageStatus, initDatabase, listCharacters, markSessionRead, onStorageStatus, saveConfig, saveSessionMessages,
   selectChatSession, setState, searchSessions, updateCharacter
 } from './database'
@@ -466,6 +466,18 @@ describe('assistant messages', () => {
     markSessionRead(id)
     expect(getAssistantUnreadCount()).toBe(0)
     expect(getSessions().find((session) => session.id === id)?.unreadCount).toBe(0)
+  })
+
+  it('previews only the newest unread message and clears the preview after reading', () => {
+    expect(getAssistantUnreadPreview()).toBe('')
+    const workspace = appendAssistantMessage('旧提醒', Date.now())
+    const id = workspace.sessions.find(session => session.characterId === ASSISTANT_CHARACTER_ID)!.id
+    appendAssistantMessage('新提醒\n记得休息', Date.now() + 10)
+    expect(getAssistantUnreadPreview()).toBe('助手：新提醒 记得休息')
+    selectChatSession(id)
+    expect(getAssistantUnreadPreview()).toContain('新提醒')
+    markSessionRead(id)
+    expect(getAssistantUnreadPreview()).toBe('')
   })
 
   it('keeps unread badges exclusive to assistant sessions', () => {

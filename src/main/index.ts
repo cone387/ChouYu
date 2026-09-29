@@ -18,7 +18,7 @@ import { runTaskEditUISmoke } from './smoke/task-edit-ui-smoke'
 import { runTaskSchedulingUISmoke } from './smoke/task-scheduling-ui-smoke'
 import { setTrayUnread, setupTray } from './tray'
 import { registerHotkey } from './hotkey'
-import { initDatabase, getConfig, flushDatabase, getAssistantUnreadCount } from './database'
+import { initDatabase, getConfig, flushDatabase, getAssistantUnreadCount, getAssistantUnreadPreview } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
@@ -362,7 +362,7 @@ app.whenReady().then(async () => {
   await pluginRegistry.initializePlugins()
   if (!isSmokeTest) {
     setupTray(mainWindow!)
-    setTrayUnread(getAssistantUnreadCount())
+    setTrayUnread(getAssistantUnreadCount(), getAssistantUnreadPreview())
     registerHotkey(mainWindow!)
     setClipboardWatcherEnabled(mainWindow!, getConfig().clipboardWatch)
   }

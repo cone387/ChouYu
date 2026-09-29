@@ -38,6 +38,7 @@ import { setTrayUnread } from './tray'
 import { initAutoUpdater } from './updater'
 import { diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
 import { prepareRegisteredToolAsync, getRegisteredTool, getToolDefinitions } from './tools/registry'
+import { waitForToolApproval, toolApprovalFailure, type ToolApprovalOutcome } from './tool-approval'
 import {
   getMemoryProvider,
   createMemory,
@@ -96,6 +97,7 @@ import {
   saveSessionMessages,
   appendAssistantMessage,
   getAssistantUnreadCount,
+  getAssistantUnreadPreview,
   markSessionRead,
   getState,
   setState
@@ -105,7 +107,6 @@ const activeAIRequests = new Map<string, AbortController>()
 const pendingToolApprovals = new Map<string, {
   senderId: number
   resolve: (approved: boolean) => void
-  timeout: ReturnType<typeof setTimeout>
 }>()
 
 function getAIRequestKey(senderId: number, requestId: string): string {
@@ -161,9 +162,10 @@ function requestToolApproval(
   call: AIToolCall,
   signal: AbortSignal,
   preview?: string
-): Promise<boolean> {
+): Promise<ToolApprovalOutcome> {
   const definition = getRegisteredTool(call.name)
-  if (!definition || sender.isDestroyed()) return Promise.resolve(false)
+  if (!definition) throw new Error('工具已不可用。')
+  if (sender.isDestroyed()) return Promise.resolve('cancelled')
   const approvalId = randomUUID()
   const approvalRequest: ToolApprovalRequest = {
     preview,
@@ -176,23 +178,15 @@ function requestToolApproval(
     risk: definition.risk,
     arguments: parseToolArguments(call.arguments)
   }
-  return new Promise((resolve) => {
-    let settled = false
-    const finish = (approved: boolean) => {
-      if (settled) return
-      settled = true
-      const pending = pendingToolApprovals.get(approvalId)
-      if (pending) clearTimeout(pending.timeout)
+  return waitForToolApproval(signal, (resolve) => {
+    pendingToolApprovals.set(approvalId, { senderId: sender.id, resolve })
+    try {
+      sender.send('ai:tool-approval-request', approvalRequest)
+    } catch (error) {
       pendingToolApprovals.delete(approvalId)
-      signal.removeEventListener('abort', abort)
-      resolve(approved)
+      throw error
     }
-    const abort = () => finish(false)
-    const timeout = setTimeout(() => finish(false), 60_000)
-    pendingToolApprovals.set(approvalId, { senderId: sender.id, resolve: finish, timeout })
-    signal.addEventListener('abort', abort, { once: true })
-    if (signal.aborted) abort()
-    else sender.send('ai:tool-approval-request', approvalRequest)
+    return () => { pendingToolApprovals.delete(approvalId) }
   })
 }
 
@@ -676,18 +670,19 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                 summary: needsApproval ? '等待用户确认' : '正在执行'
               })
               if (needsApproval) {
-                const approved = await requestToolApproval(event.sender, request.requestId, call, controller.signal, prepared.preview)
-                if (!approved) {
+                const outcome = await requestToolApproval(event.sender, request.requestId, call, controller.signal, prepared.preview)
+                if (outcome !== 'approved') {
+                  const failure = toolApprovalFailure(outcome)
                   sendToolEvent(event.sender, {
                     requestId: request.requestId,
                     callId: call.id,
                     name: definition.name,
                     displayName: definition.displayName,
                     risk: definition.risk,
-                    status: 'denied',
-                    summary: '用户拒绝了此操作'
+                    status: failure.status,
+                    summary: failure.summary
                   })
-                  return '用户拒绝了此工具调用。'
+                  return failure.content
                 }
                 sendToolEvent(event.sender, {
                   requestId: request.requestId,
@@ -817,7 +812,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   const notifyAssistantUnread = () => {
     const count = getAssistantUnreadCount()
-    setTrayUnread(count)
+    setTrayUnread(count, getAssistantUnreadPreview())
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('assistant-unread-changed', count)
   }
 
