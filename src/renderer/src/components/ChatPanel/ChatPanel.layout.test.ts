@@ -211,7 +211,7 @@ describe('contacts presence in the chat surface', () => {
 describe('assistant contact wiring', () => {
   it('focuses the assistant session on demand and follows main-side session updates', () => {
     expect(panelSource).toContain('assistantFocusRequest?: number')
-    expect(panelSource).toContain('openCharacterChat(ASSISTANT_CHARACTER_ID)')
+    expect(panelSource).toContain('openCharacterChat(DEFAULT_CHARACTER_ID)')
     expect(panelSource).toContain('onSessionsChanged')
     expect(panelSource).toContain('db.markSessionRead(activeSessionId, messages[messages.length - 1]?.id)')
     expect(workspaceHookSource).toContain('mergeForeignMessages')
@@ -226,7 +226,7 @@ describe('assistant contact wiring', () => {
   it('offers snooze only on assistant replies', () => {
     expect(messageSource).toContain('canSnooze?: boolean')
     expect(messageSource).toContain('<ReminderActions sessionId={sessionId}')
-    expect(panelSource).toContain('canSnooze={activeCharacterId === ASSISTANT_CHARACTER_ID}')
+    expect(panelSource).toContain('canSnooze={activeCharacterId === DEFAULT_CHARACTER_ID}')
     expect(panelSource).toContain('sessionId={activeSessionId}')
     expect(stylesheet).toContain('.message-snooze-btn')
   })

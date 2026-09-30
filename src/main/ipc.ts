@@ -1,3 +1,4 @@
+import { assistantWorkInstructions } from '../shared/assistant-work-instructions'
 import { contactWorkInstructions } from '../shared/contact-work-instructions'
 import { normalizeAssistantMessageKind } from '../shared/assistant-message'
 import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app, shell, powerMonitor } from 'electron'
@@ -639,7 +640,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       }
       await streamAIChat(
         request.messages,
-        request.systemPrompt + privateContext + (owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : ''),
+        request.systemPrompt + privateContext + (owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : ''),
         effectiveConfig,
         (chunk, done) => {
           if (event.sender.isDestroyed()) return
@@ -648,7 +649,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         },
         controller.signal,
         config.aiToolsEnabled ? {
-          definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)),
+          definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)
+            && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
           execute: async (call) => {
             const definition = getRegisteredTool(call.name)
             if (!definition) return `工具不存在：${call.name}`
@@ -656,7 +658,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             const arguments_ = parseToolArguments(call.arguments)
             try {
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              const taskMutation = ['create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation'].includes(call.name)
+              const taskMutation = ['create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
               if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
               const prepared = await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
               if (taskMutation) taskMutationRequested = true

@@ -1,5 +1,6 @@
 import { runDeliveryPresentationSmoke } from './smoke/delivery-presentation-smoke'
 import { runRemindersSmoke } from './smoke/reminders-smoke'
+import { runAssistantRoutinesSmoke } from './smoke/assistant-routines-smoke'
 import { initializeReminders, closeReminders } from './reminders'
 import { runJournalMigrationSmoke } from './smoke/journal-migration-smoke'
 import { runMemoryFullDataSmoke } from './smoke/memory-full-data-smoke'
@@ -9,6 +10,7 @@ import { app, BrowserWindow, screen, shell, globalShortcut, dialog } from 'elect
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
+import { initializeAssistantRoutines, closeAssistantRoutines } from './assistant-routines'
 import { initializeAgents, closeAgents, startIdeaLab } from './agents'
 import { initializeTasks, closeTasks } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
@@ -125,6 +127,8 @@ function createWindow(): void {
       try {
         if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
           await runNativeCaptureSmoke()
+        } else if (process.env.CHOUYU_SMOKE_ASSISTANT_ROUTINES_ONLY === '1') {
+          await stage('assistant-routines', () => runAssistantRoutinesSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_REMINDERS_ONLY === '1') {
           await stage('reminders', () => runRemindersSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_PRESENTATION_ONLY === '1') {
@@ -352,6 +356,7 @@ app.whenReady().then(async () => {
   })
   initializeReminders()
   initializeAgents()
+  initializeAssistantRoutines()
   if (!app.isPackaged && process.argv.includes('--idea-lab')) {
     try { console.log('CHOUYU_IDEA_LAB_READY', JSON.stringify(await startIdeaLab())) }
     catch (error) { console.error('CHOUYU_IDEA_LAB_FAILED', error instanceof Error ? error.message : error) }
@@ -411,6 +416,7 @@ app.on('before-quit', (event) => {
     event.preventDefault()
     if (!journalClosing) {
       journalClosing = true
+      closeAssistantRoutines()
       void Promise.allSettled([closeJournal(), closeAgents()]).finally(() => { journalClosed = true; app.quit() })
     }
     return

@@ -313,7 +313,7 @@ describe('characters', () => {
     expect(workspace.sessions.find((session) => session.id === 'legacy-1')?.characterId).toBe(DEFAULT_CHARACTER_ID)
     expect(workspace.activeSession.characterId).toBe(DEFAULT_CHARACTER_ID)
     const characters = listCharacters()
-    expect(characters).toHaveLength(PRESET_CHARACTERS.length + 2)
+    expect(characters).toHaveLength(PRESET_CHARACTERS.length + 1)
     expect(characters[0].id).toBe(DEFAULT_CHARACTER_ID)
   })
 
@@ -342,7 +342,7 @@ describe('characters', () => {
     for (let index = 1; index <= MAX_CHARACTER_COUNT - 1 - PRESET_CHARACTERS.length; index++) {
       createCharacter({ ...draft, name: `角色${index}` })
     }
-    expect(listCharacters()).toHaveLength(MAX_CHARACTER_COUNT + 1)
+    expect(listCharacters()).toHaveLength(MAX_CHARACTER_COUNT)
     expect(() => createCharacter({ ...draft, name: '超限角色' })).toThrow(/最多支持/)
   })
 
@@ -426,9 +426,26 @@ describe('characters', () => {
 })
 
 describe('assistant messages', () => {
+  it('moves former assistant histories to ChouYu without losing IDs, unread receipts or snooze sources', () => {
+    flushDatabase()
+    const data = JSON.parse(fs.readFileSync(storePath(), 'utf8'))
+    data.sessions.push({ id: 'legacy-assistant', title: '助手消息', characterId: ASSISTANT_CHARACTER_ID,
+      messages: [{ id: 'old-read', role: 'assistant', content: '早上的问候', timestamp: 1000 }, { id: 'old-unread', role: 'assistant', content: '记得休息', timestamp: 3000 }],
+      createdAt: 1000, updatedAt: 3000, lastReadAt: 2000 })
+    data.state['assistant-snoozes'] = JSON.stringify([{ sessionId: 'legacy-assistant', messageId: 'old-unread' }])
+    fs.writeFileSync(storePath(), JSON.stringify(data))
+    initDatabase()
+    expect(getSession('legacy-assistant')).toMatchObject({ characterId: DEFAULT_CHARACTER_ID, lastReadAt: 2000 })
+    expect(getSessions().find(s => s.id === 'legacy-assistant')!.unreadCount).toBe(1)
+    expect(getSession('legacy-assistant')!.messages.map(m => m.id)).toEqual(['old-read', 'old-unread'])
+    expect(listCharacters().some(c => c.id === ASSISTANT_CHARACTER_ID)).toBe(false)
+    initDatabase()
+    expect(getSession('legacy-assistant')!.messages).toHaveLength(2)
+    expect(getSessions().find(s => s.id === 'legacy-assistant')!.unreadCount).toBe(1)
+  })
   it('preserves reminder types through save and restart', () => {
     const workspace = appendAssistantMessage('喝杯水', 1000, 'rest')
-    const id = workspace.sessions.find(session => session.characterId === ASSISTANT_CHARACTER_ID)!.id
+    const id = workspace.sessions.find(session => session.characterId === DEFAULT_CHARACTER_ID)!.id
     appendAssistantMessage('该交周报了', 2000, 'task')
     saveSessionMessages(id, getSession(id)!.messages)
     flushDatabase()
@@ -438,11 +455,11 @@ describe('assistant messages', () => {
   it('creates the assistant session on first append and appends in order', () => {
     const preAppendActiveId = getSessionWorkspace().activeSession.id
     const first = appendAssistantMessage('问候一', 1000)
-    const summary = first.sessions.find((session) => session.characterId === 'assistant')
+    const summary = first.sessions.find((session) => session.characterId === DEFAULT_CHARACTER_ID)
     const assistantSessionId = summary!.id
-    expect(first.activeSession.id).not.toBe(assistantSessionId)
+    expect(first.activeSession.id).toBe(assistantSessionId)
     expect(first.activeSession.id).toBe(preAppendActiveId)
-    expect(summary?.title).toBe('助手消息')
+    expect(summary?.characterId).toBe(DEFAULT_CHARACTER_ID)
     expect(summary?.messageCount).toBe(1)
     expect(summary?.unreadCount).toBe(1)
     appendAssistantMessage('问候二', 2000)
@@ -455,7 +472,7 @@ describe('assistant messages', () => {
 
   it('only clears unread with an explicit read receipt, not session selection', () => {
     const workspace = appendAssistantMessage('新消息', Date.now())
-    const id = workspace.sessions.find((session) => session.characterId === 'assistant')!.id
+    const id = workspace.sessions.find((session) => session.characterId === DEFAULT_CHARACTER_ID)!.id
     expect(getAssistantUnreadCount()).toBe(1)
     expect(markSessionRead(id).sessions.find((session) => session.id === id)?.unreadCount).toBe(0)
     expect(getAssistantUnreadCount()).toBe(0)
@@ -471,9 +488,9 @@ describe('assistant messages', () => {
   it('previews only the newest unread message and clears the preview after reading', () => {
     expect(getAssistantUnreadPreview()).toBe('')
     const workspace = appendAssistantMessage('旧提醒', Date.now())
-    const id = workspace.sessions.find(session => session.characterId === ASSISTANT_CHARACTER_ID)!.id
+    const id = workspace.sessions.find(session => session.characterId === DEFAULT_CHARACTER_ID)!.id
     appendAssistantMessage('新提醒\n记得休息', Date.now() + 10)
-    expect(getAssistantUnreadPreview()).toBe('助手：新提醒 记得休息')
+    expect(getAssistantUnreadPreview()).toBe('丑鱼：新提醒 记得休息')
     selectChatSession(id)
     expect(getAssistantUnreadPreview()).toContain('新提醒')
     markSessionRead(id)
@@ -565,7 +582,7 @@ describe('assistant messages', () => {
   })
 
   it('chooses the preview by reply completion time and preserves other sessions when reading one', () => {
-    const id = getActiveSession().id
+    const id = createChatSession('另一位联系人', PRESET_CHARACTERS[0].id).activeSession.id
     const at = Date.now()
     appendAssistantMessage('休息提醒', at + 500)
     saveSessionMessages(id, [{ id: 'reply', role: 'assistant', content: '联系人刚刚写完', timestamp: at, replyCompletedAt: at + 1000 }])
@@ -573,12 +590,12 @@ describe('assistant messages', () => {
     expect(getAssistantUnreadPreview()).toContain('联系人刚刚写完')
     markSessionRead(id, 'reply')
     expect(getAssistantUnreadCount()).toBe(1)
-    expect(getAssistantUnreadPreview()).toBe('助手：休息提醒')
+    expect(getAssistantUnreadPreview()).toBe('丑鱼：休息提醒')
   })
 
   it('keeps lastReadAt across restart', () => {
     const workspace = appendAssistantMessage('重启前', Date.now())
-    const id = workspace.sessions.find((session) => session.characterId === 'assistant')!.id
+    const id = workspace.sessions.find((session) => session.characterId === DEFAULT_CHARACTER_ID)!.id
     markSessionRead(id)
     appendAssistantMessage('重启后', Date.now() + 100)
     flushDatabase()
@@ -604,7 +621,7 @@ describe('assistant messages', () => {
       state: { 'proactive-messages': legacy }
     }))
     initDatabase()
-    const assistant = getSessions().find((session) => session.characterId === 'assistant')
+    const assistant = getSessions().find((session) => session.characterId === DEFAULT_CHARACTER_ID)
     expect(assistant?.messageCount).toBe(2)
     const id = assistant!.id
     expect(getSession(id)?.messages.map((item) => item.content)).toEqual(['旧提醒', '旧问候'])
@@ -614,21 +631,21 @@ describe('assistant messages', () => {
     expect(getSession(id)?.messages).toHaveLength(2)
   })
 
-  it('rejects editing the assistant but allows deleting its sessions', () => {
+  it('keeps ChouYu editable, non-deletable, and allows deleting its sessions', () => {
     const workspace = appendAssistantMessage('守卫', Date.now())
-    const id = workspace.sessions.find((session) => session.characterId === 'assistant')!.id
-    expect(() => updateCharacter(ASSISTANT_CHARACTER_ID, { name: '改名', avatar: 'x', soulMd: '', providerProfileId: 'default', model: 'm' })).toThrow('不可编辑')
-    expect(() => deleteCharacter(ASSISTANT_CHARACTER_ID)).toThrow('不可删除')
+    const id = workspace.sessions.find((session) => session.characterId === DEFAULT_CHARACTER_ID)!.id
+    expect(updateCharacter(DEFAULT_CHARACTER_ID, { name: '改名', avatar: 'x', soulMd: '', providerProfileId: 'default', model: 'm' }).name).toBe('改名')
+    expect(() => deleteCharacter(DEFAULT_CHARACTER_ID)).toThrow('不可删除')
     expect(deleteChatSession(id).sessions.some((session) => session.id === id)).toBe(false)
   })
 
   it('rejects creating a custom character named after the assistant', () => {
-    expect(() => createCharacter({ name: '助手', avatar: '🔔', soulMd: '', providerProfileId: 'default', model: 'm' })).toThrow(/同名/)
+    expect(() => createCharacter({ name: '丑鱼', avatar: '🐟', soulMd: '', providerProfileId: 'default', model: 'm' })).toThrow(/同名/)
   })
 
   it('keeps proactive appends newer than the renderer list when saving', () => {
     const w1 = appendAssistantMessage('旧问候', 1000)
-    const assistantId = w1.sessions.find((s) => s.characterId === 'assistant')!.id
+    const assistantId = w1.sessions.find((s) => s.characterId === DEFAULT_CHARACTER_ID)!.id
     // 渲染层缓存带着已加载的历史（旧问候）流式回复；主进程稍后的追加不在缓存里。
     saveSessionMessages(assistantId, [
       { id: 'p1', role: 'assistant', content: '旧问候', timestamp: 1000 },
@@ -648,22 +665,22 @@ describe('assistant messages', () => {
 
   it('still clears the assistant session when the renderer saves an empty list', () => {
     const w1 = appendAssistantMessage('会被清掉', 1000)
-    const assistantId = w1.sessions.find((s) => s.characterId === 'assistant')!.id
+    const assistantId = w1.sessions.find((s) => s.characterId === DEFAULT_CHARACTER_ID)!.id
     const w2 = saveSessionMessages(assistantId, [])
     expect(getSession(assistantId)!.messages).toHaveLength(0)
-    expect(w2.sessions.find((s) => s.characterId === 'assistant')!.messageCount).toBe(0)
+    expect(w2.sessions.find((s) => s.characterId === DEFAULT_CHARACTER_ID)!.messageCount).toBe(0)
   })
 
-  it('does not resurrect older db messages the renderer dropped on retry', () => {
+  it('preserves durable reminders omitted by a stale renderer retry', () => {
     const w1 = appendAssistantMessage('问候', 1000)
-    const assistantId = w1.sessions.find((s) => s.characterId === 'assistant')!.id
+    const assistantId = w1.sessions.find((s) => s.characterId === DEFAULT_CHARACTER_ID)!.id
     appendAssistantMessage('被重试覆盖的提醒', 1600)
     saveSessionMessages(assistantId, [
       { id: 'u1', role: 'user', content: '重来', timestamp: 1500 },
       { id: 'a2', role: 'assistant', content: '新回复', timestamp: 3000 }
     ])
     const contents = getSession(assistantId)!.messages.map((m) => m.content)
-    expect(contents).not.toContain('被重试覆盖的提醒')
+    expect(contents).toContain('被重试覆盖的提醒')
   })
 
   it('does not preserve trailing db messages for non-assistant sessions', () => {
@@ -676,7 +693,7 @@ describe('assistant messages', () => {
 
   it('appends to the most recently updated assistant session', () => {
     const w1 = appendAssistantMessage('第一条', 1000)
-    const firstId = w1.sessions.find((s) => s.characterId === 'assistant')!.id
+    const firstId = w1.sessions.find((s) => s.characterId === DEFAULT_CHARACTER_ID)!.id
     const created = createChatSession('第二个助手会话', 'assistant')
     const secondId = created.activeSession.id
     appendAssistantMessage('第二条', 3000)
@@ -692,7 +709,7 @@ describe('contact progress delivery', () => {
   const notice = { id: 'run:progress', characterId: DEFAULT_CHARACTER_ID, topicId: 'topic', runId: 'run', topicRevision: 2, kind: 'progress' as const, content: '新证据改变了判断', createdAt: 1 }
   it('delivers to the owner without switching chats, survives reload and never resurrects a cleared message', () => {
     const ownerSession = createChatSession('联系人进展', DEFAULT_CHARACTER_ID).activeSession.id
-    const other = createChatSession('正在看的聊天', ASSISTANT_CHARACTER_ID).activeSession.id
+    const other = createChatSession('正在看的聊天', PRESET_CHARACTERS[0].id).activeSession.id
     appendAgentNotice(notice)
     expect(getActiveSession().id).toBe(other)
     expect(getSession(ownerSession)!.messages).toHaveLength(1)
@@ -734,7 +751,7 @@ describe('reminder delivery receipts', () => {
     const ref = { taskId: 'task-1', reminderAt: 1200 }
     appendAssistantMessage('task', 2000, 'task', { receiptIds: ['task-event'], taskReminder: ref })
     appendAssistantMessage('duplicate', 2000, 'task', { receiptIds: ['task-event'], taskReminder: ref })
-    const id = getSessions().find(s => s.characterId === ASSISTANT_CHARACTER_ID)!.id
+    const id = getSessions().find(s => s.characterId === DEFAULT_CHARACTER_ID)!.id
     const messages = getSession(id)!.messages.map(m => ({ ...m, taskReminder: undefined }))
     saveSessionMessages(id, messages); flushDatabase(); initDatabase()
     expect(getSession(id)!.messages).toHaveLength(1)
@@ -746,7 +763,7 @@ describe('reminder delivery receipts', () => {
   })
   it('read receipt stops at rendered message and never clears a later delivery', () => {
     appendAssistantMessage('first', 1000, 'rest')
-    const id = getSessions().find(s => s.characterId === ASSISTANT_CHARACTER_ID)!.id
+    const id = getSessions().find(s => s.characterId === DEFAULT_CHARACTER_ID)!.id
     const first = getSession(id)!.messages[0].id
     appendAssistantMessage('later', 2000, 'rest')
     markSessionRead(id, first)
@@ -761,14 +778,14 @@ it('retries failed assistant persistence without duplicating its event', () => {
   expect(() => appendAssistantMessage('event', undefined, 'rest', { receiptIds: ['rest:retry'] })).toThrow('保存失败')
   fail.mockRestore()
   appendAssistantMessage('event', undefined, 'rest', { receiptIds: ['rest:retry'] }); initDatabase()
-  const id = getSessions().find(s => s.characterId === ASSISTANT_CHARACTER_ID)!.id
+  const id = getSessions().find(s => s.characterId === DEFAULT_CHARACTER_ID)!.id
   expect(getSession(id)!.messages).toHaveLength(1)
 })
 
 
 it('a new reminder in the same millisecond as reading is still unread', () => {
   appendAssistantMessage('one', undefined, 'rest')
-  const id = getSessions().find(s => s.characterId === ASSISTANT_CHARACTER_ID)!.id
+  const id = getSessions().find(s => s.characterId === DEFAULT_CHARACTER_ID)!.id
   markSessionRead(id); appendAssistantMessage('two', undefined, 'rest')
   expect(getAssistantUnreadCount()).toBe(1)
 })

@@ -224,6 +224,10 @@ function normalizeSessions(value: unknown): ChatSession[] {
       const id = typeof input.id === 'string' && input.id && !ids.has(input.id) ? input.id.slice(0, 128) : randomUUID()
       ids.add(id)
       const messages = sanitizeMessages(input.messages)
+      // Preserve unread history when the former notification-only contact joins ChouYu.
+      if (input.characterId === ASSISTANT_CHARACTER_ID) {
+        for (const message of messages) if (message.role === 'assistant' && !message.assistantKind) message.assistantKind = 'notification'
+      }
       const createdAt = Number.isFinite(input.createdAt) ? Number(input.createdAt) : Date.now()
       const updatedAt = Number.isFinite(input.updatedAt) ? Number(input.updatedAt) : createdAt
       const lastReadAt = Number.isFinite(input.lastReadAt) ? Number(input.lastReadAt) : undefined
@@ -231,7 +235,7 @@ function normalizeSessions(value: unknown): ChatSession[] {
         id,
         title: normalizeSessionTitle(typeof input.title === 'string' ? input.title : deriveSessionTitle(messages)),
         messages,
-        characterId: typeof input.characterId === 'string' && input.characterId.trim() ? input.characterId.trim().slice(0, 128) : DEFAULT_CHARACTER_ID,
+        characterId: input.characterId === ASSISTANT_CHARACTER_ID ? DEFAULT_CHARACTER_ID : typeof input.characterId === 'string' && input.characterId.trim() ? input.characterId.trim().slice(0, 128) : DEFAULT_CHARACTER_ID,
         createdAt,
         updatedAt,
         ...(lastReadAt !== undefined ? { lastReadAt } : {})
@@ -256,7 +260,7 @@ function messageReadTimestamp(message: Message): number {
 }
 
 function isUnreadMessage(session: ChatSession, message: Message): boolean {
-  return (isAssistantCharacter(session.characterId) || Boolean(message.agentNotice)
+  return message.role === 'assistant' && (Boolean(message.assistantKind) || Boolean(message.agentNotice)
     || Boolean(message.replyCompletedAt && message.replyCompletedAt > (message.replyReadAt ?? 0)))
     && messageReadTimestamp(message) > (session.lastReadAt ?? 0)
 }
@@ -554,11 +558,11 @@ export function appendAssistantMessage(content: string, timestamp?: number, kind
     .filter((candidate) => isAssistantCharacter(candidate.characterId))
     .reduce<ChatSession | null>((latest, candidate) => (!latest || candidate.updatedAt > latest.updatedAt ? candidate : latest), null)
   if (!session) {
-    session = createSession([], '助手消息', at, ASSISTANT_CHARACTER_ID)
+    session = createSession([], 'ChouYu 的消息', at, DEFAULT_CHARACTER_ID)
     store.sessions.unshift(session)
   }
   if (!Number.isFinite(timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
-  session.messages.push({ id: randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at, assistantKind: normalizeAssistantMessageKind(kind), taskReminder: delivery?.taskReminder, snoozeKey: delivery?.snoozeKey })
+  session.messages.push({ id: randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at, assistantKind: normalizeAssistantMessageKind(kind) ?? 'notification', taskReminder: delivery?.taskReminder, snoozeKey: delivery?.snoozeKey })
   session.updatedAt = at
   for (const id of delivery?.receiptIds ?? []) store.state[`reminder-receipt:${id}`] = 'delivered'
   persist()
@@ -567,7 +571,7 @@ export function appendAssistantMessage(content: string, timestamp?: number, kind
 
 /** Durable receipt prevents a retried outbox entry from resurrecting a cleared conversation. */
 export function appendAgentNotice(notice: AgentNotice): SessionWorkspace {
-  if (!getCharacter(notice.characterId) || isAssistantCharacter(notice.characterId)) throw new Error('联系人不存在。')
+  if (!getCharacter(notice.characterId) || notice.characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
   const key = `agent-notice:${notice.characterId}:${notice.id}`
   if (!store.state[key]) {
     let at = Date.now()
@@ -681,7 +685,7 @@ export function createCharacter(draft: unknown): CharacterStats {
 
 export function updateCharacter(id: string, draft: unknown): CharacterStats {
   const character = findCharacterByIdOrThrow(id)
-  if (isAssistantCharacter(id)) throw new Error('内置助手不可编辑。')
+  if (id === ASSISTANT_CHARACTER_ID) throw new Error('旧版助手已合并到 ChouYu。')
   const input = sanitizeCharacterDraft(draft)
   if (!input) throw new Error('角色名称和模型为必填项。')
   if (character.builtIn && input.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置角色固定使用默认档案。')
@@ -726,6 +730,7 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
   const previousSnoozeKeys = new Map(session.messages.filter(m => m.snoozeKey).map(m => [m.id, m.snoozeKey]))
   const previousReminders = new Map(session.messages.filter(m => m.taskReminder).map(m => [m.id, m.taskReminder]))
   const previousNotices = new Map(session.messages.filter(message => message.agentNotice).map(message => [message.id, message.agentNotice]))
+  const previousKinds = new Map(session.messages.filter(message => message.assistantKind).map(message => [message.id, message.assistantKind]))
   const previousReplies = new Map(session.messages.filter(message => message.replyReadAt).map(message => [message.id, message]))
   let nextMessages: Message[] = sanitizeMessages(messages).map((message) => ({
     ...message,
@@ -733,22 +738,17 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
     replyReadAt: previousReplies.get(message.id)?.replyCompletedAt === message.replyCompletedAt
       ? previousReplies.get(message.id)?.replyReadAt : undefined,
     agentNotice: message.role === 'assistant' ? previousNotices.get(message.id) : undefined,
+    assistantKind: message.role === 'assistant' ? previousKinds.get(message.id) ?? message.assistantKind : undefined,
     taskReminder: message.role === 'assistant' ? previousReminders.get(message.id) : undefined,
     snoozeKey: message.role === 'assistant' ? previousSnoozeKeys.get(message.id) : undefined,
     // A missing file must not erase its durable reference when the renderer saves text updates.
     imageUrl: message.imageUrl ?? previousImages.get(message.id)
   }))
-  // 生成期间的主动追加可能尚未进入渲染层缓存（后台会话在流式中无法收到 sessions:changed 的消息合并）：
-  // 只保留比 incoming 全部消息都新的缺失消息，避免旧回复在重试/编辑后被“复活”；空列表是显式清空，不合并。
-  if (isAssistantCharacter(session.characterId) && nextMessages.length > 0) {
-    const known = new Set(nextMessages.map((message) => message.id))
-    const maxIncoming = nextMessages.reduce((latest, message) => Math.max(latest, message.timestamp), 0)
-    const trailing = session.messages.filter((message) => !known.has(message.id) && message.timestamp > maxIncoming)
-    if (trailing.length > 0) nextMessages = [...nextMessages, ...trailing]
-  }
-  if (!isAssistantCharacter(session.characterId) && nextMessages.length > 0) {
+  // Durable proactive messages may arrive during a streamed reply; stale autosaves
+  // must preserve them without resurrecting ordinary replies dropped on retry.
+  if (nextMessages.length > 0) {
     const known = new Set(nextMessages.map(message => message.id))
-    nextMessages = [...nextMessages, ...session.messages.filter(message => message.agentNotice && !known.has(message.id))].sort((a, b) => a.timestamp - b.timestamp)
+    nextMessages = [...nextMessages, ...session.messages.filter(message => (message.agentNotice || message.assistantKind) && !known.has(message.id))].sort((a, b) => a.timestamp - b.timestamp)
   }
   session.messages = nextMessages
   // A receipt for this reply must not acknowledge unrelated proactive deliveries.

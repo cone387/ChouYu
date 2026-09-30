@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron'
-import { appendAssistantMessage, appendAgentNotice, getConfig, getSessions, markSessionRead, saveConfig, getActiveSession, selectChatSession, createCharacter, getCharacter, deleteCharacter, deleteChatSession, flushDatabase } from '../database'
+import { appendAssistantMessage, appendAgentNotice, getConfig, getSessions, markSessionRead, saveConfig, getActiveSession, selectChatSession, createChatSession, createCharacter, getCharacter, deleteCharacter, deleteChatSession, flushDatabase } from '../database'
 import { notifyReminderChanges } from '../reminder-events'
 import { waitForRenderer } from './storage-smoke'
 import { snapshots } from './chat-smoke'
@@ -7,6 +7,8 @@ import { snapshots } from './chat-smoke'
 export async function runRemindersSmoke(window: BrowserWindow): Promise<void> {
   const original = getConfig(), originalSession = getActiveSession().id
   const existing = new Set(getSessions().map(s => s.id))
+  // Proactive deliveries now share ChouYu's chat; isolate them from migration fixtures.
+  createChatSession('提醒验收会话')
   const contact = createCharacter({ name: '提醒验收联系人', avatar: '', soulMd: '', category: '', model: 'test-model' })
   saveConfig({ proactiveGreeting: false, proactiveRestReminder: false, proactiveReturn: false })
   window.webContents.send('config:changed', getConfig())

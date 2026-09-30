@@ -669,7 +669,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     void window.electronAPI.db.getSessionWorkspace().then(async workspace => {
       const unread = workspace.sessions.filter(s => (s.unreadCount ?? 0) > 0).sort((a, b) => a.updatedAt - b.updatedAt)[0]
       if (unread) { await selectSession(unread.id); navigate('chat') }
-      else await openCharacterChat(ASSISTANT_CHARACTER_ID)
+      else await openCharacterChat(DEFAULT_CHARACTER_ID)
     }).catch(() => {})
   }, [workspaceLoaded, assistantFocusRequest, openCharacterChat, selectSession, navigate])
 
@@ -814,7 +814,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
                 contextLimit={MAX_HISTORY_MESSAGES}
                 onMemoryFeedback={submitMemoryFeedback}
                 onCorrectMemory={correctMemory}
-                canSnooze={activeCharacterId === ASSISTANT_CHARACTER_ID}
+                canSnooze={activeCharacterId === DEFAULT_CHARACTER_ID}
                 sessionId={activeSessionId}
                 replyViewportRef={replyViewportRef}
                 onRead={activeAssistantUnread ? markVisibleMessagesRead : undefined}

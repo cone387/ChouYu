@@ -147,6 +147,7 @@ export interface ElectronAPI {
   onTogglePanel: (callback: () => void) => () => void
   onSetPetVisible: (callback: (visible: boolean) => void) => () => void
   notifyPetVisible: (visible: boolean) => void
+  assistantRoutines: import('../../../shared/assistant-routines').AssistantRoutinesAPI
   reminders: import('../../../shared/reminders').ReminderAPI
   proactiveAppend: (content: string, timestamp?: number, kind?: AssistantMessageKind, deliveryId?: string) => Promise<void>
   getAssistantUnread: () => Promise<number>

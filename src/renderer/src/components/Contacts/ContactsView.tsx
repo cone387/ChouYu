@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABELS, type CharacterStats } from '../../../../shared/characters'
+import AssistantRoutines from './AssistantRoutines'
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
@@ -296,7 +297,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     if (detailOnly && !focusCharacterId && !detail && !form && !confirmDelete) onDismiss?.()
   }, [detailOnly, focusCharacterId, detail, form, confirmDelete, onDismiss])
 
-  const assistant = characters.find((character) => character.id === ASSISTANT_CHARACTER_ID)
+  const assistant = characters.find((character) => character.id === DEFAULT_CHARACTER_ID)
 
   const distinctModels = useMemo(
     () => [...new Set(characters.map((character) => character.builtIn || !character.model ? config.model : character.model).filter(Boolean))]
@@ -311,7 +312,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return characters
-      .filter((character) => character.id !== ASSISTANT_CHARACTER_ID)
+      .filter((character) => character.id !== ASSISTANT_CHARACTER_ID && character.id !== DEFAULT_CHARACTER_ID)
       .filter((character) => category === 'all'
         || (category === 'other' ? !character.category : character.category === category))
       .filter((character) => modelFilter === 'all' || (character.builtIn || !character.model ? config.model : character.model) === modelFilter)
@@ -465,16 +466,16 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     <div className="contacts-scroll">
       <div className="contacts-grid">
         <div className="contacts-card-container">
-        <button type="button" className="contacts-card" data-contacts-item={ASSISTANT_CHARACTER_ID}
-          onClick={() => onOpenChat(ASSISTANT_CHARACTER_ID)}>
+        <button type="button" className="contacts-card" data-contacts-item={DEFAULT_CHARACTER_ID}
+          onClick={() => onOpenChat(DEFAULT_CHARACTER_ID)}>
           <span className="contacts-card-head">
-            <span className="contacts-card-avatar" aria-hidden="true"><CharacterAvatar character={{ id: ASSISTANT_CHARACTER_ID, name: '助手', avatar: '' }} /></span>
+            <span className="contacts-card-avatar" aria-hidden="true"><CharacterAvatar character={assistant || { id: DEFAULT_CHARACTER_ID, name: 'ChouYu', avatar: '' }} /></span>
             <span className="contacts-card-title">
-              <span className="contacts-card-name">助手<em className="contacts-builtin">内置</em></span>
-              <span className="contacts-card-subtitle">主动提醒都发到这里</span>
+              <span className="contacts-card-name">{assistant?.name || 'ChouYu'}<em className="contacts-builtin">专属助手</em></span>
+              <span className="contacts-card-subtitle">陪伴、提醒与每日总结</span>
             </span>
           </span>
-          <span className="contacts-card-desc">问候、休息与任务提醒会以聊天消息出现，可以随时回复。</span>
+          <span className="contacts-card-desc">我会记住你的安排，到点提醒你，也能检查各联系人的进展后向你汇报。</span>
         </button>
         {assistant && <button type="button" className="contacts-card-detail" data-contacts-card-detail={assistant.id} onClick={() => setDetail(assistant)}>详情</button>}
         </div>
@@ -522,7 +523,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           <span className="contacts-detail-avatar" aria-hidden="true"><CharacterAvatar character={detail} /></span>
           <div>
             <p className="contacts-detail-title">{detail.name}{detail.builtIn && <em className="contacts-builtin">内置</em>}</p>
-            <p className="contacts-detail-subtitle">{detail.builtIn ? '内置角色' : '自定义角色'}</p>
+            <p className="contacts-detail-subtitle">{detail.id === DEFAULT_CHARACTER_ID ? '你的专属助手' : detail.builtIn ? '内置角色' : '自定义角色'}</p>
           </div>
         </div>
         <div className="contacts-detail-actions">
@@ -544,6 +545,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
           </dl>
         </section>
+        {detail.id === DEFAULT_CHARACTER_ID && <AssistantRoutines />}
         {detail.id === ASSISTANT_CHARACTER_ID && <section className="contact-agent">
           <div className="agent-tabs"><button type="button" data-agent-tab="profile" aria-pressed="true">人设</button></div>
           {detailProfile}

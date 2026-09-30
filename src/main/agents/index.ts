@@ -106,6 +106,18 @@ async function ensure() {
   return starting
 }
 export async function agentContext(characterId: string) { await ensure(); return await rpc('context', characterId) as string }
+/** Read-only access for ChouYu's assistant; no contact mutations are exposed. */
+export async function inspectContactWork(characterId: string) {
+  if (!getCharacter(characterId) || characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
+  await ensure()
+  await rpc('sync', '', [identities()])
+  return await rpc('get', characterId) as import('../../shared/agents').AgentOverview
+}
+export async function inspectContactDelivery(characterId: string, topicId: string) {
+  if (!getCharacter(characterId) || characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
+  await ensure()
+  return rpc('inspectDelivery', characterId, [topicId])
+}
 export async function startIdeaLab() {
   await ensure()
   return setupIdeaLab((method, id, args) => rpc(method, id, args), async () => { await rpc('sync', '', [identities()]) })

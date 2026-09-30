@@ -1,0 +1,42 @@
+import type { BrowserWindow } from 'electron'
+import { getConfig, saveConfig } from '../database'
+import { waitForRenderer } from './storage-smoke'
+import { snapshots } from './chat-smoke'
+
+export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
+  const config = getConfig()
+  saveConfig({ proactiveGreeting: false, proactiveRestReminder: false, proactiveReturn: false })
+  window.webContents.send('config:changed', getConfig())
+  const run = (script: string) => window.webContents.executeJavaScript(script)
+  try {
+    window.webContents.send('open-assistant-chat')
+    await waitForRenderer(window, "Boolean(document.querySelector('.chat-panel'))")
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-workspace-nav=contacts]'))")
+    await run("document.querySelector('[data-workspace-nav=contacts]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-contacts-card-detail=chouyu]'))")
+    await run("document.querySelector('[data-contacts-card-detail=chouyu]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routines button:not(:disabled)'))")
+    await run("[...document.querySelectorAll('.assistant-routines button')].find(b => b.textContent === '添加安排').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routines form'))")
+    await snapshots(window, 'assistant-routine-form', '.assistant-routines')
+    await snapshots(window, 'assistant-routine-schedule', '.assistant-routines-schedule')
+    await run("document.querySelector('.assistant-routines form').requestSubmit()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routines article')) && !document.querySelector('.assistant-routines form')")
+    const items = await run('window.electronAPI.assistantRoutines.list()')
+    if (items.length !== 1 || items[0].kind !== 'contact-summary' || items[0].time !== '09:00') throw new Error('Routine form did not persist')
+    await snapshots(window, 'assistant-routine-saved', '.assistant-routines')
+    await run("[...document.querySelectorAll('.assistant-routines button')].find(b => b.textContent === '暂停').click()")
+    await waitForRenderer(window, "document.querySelector('.assistant-routines article')?.textContent.includes('已暂停')")
+    await run("[...document.querySelectorAll('.assistant-routines button')].find(b => b.textContent === '修改').click()")
+    await run("(() => { const input = document.querySelector('.assistant-routines input[type=time]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '08:30'); input.dispatchEvent(new Event('input', { bubbles: true })) })()")
+    await run("document.querySelector('.assistant-routines form').requestSubmit()")
+    await waitForRenderer(window, "!document.querySelector('.assistant-routines form') && document.querySelector('.assistant-routines article')?.textContent.includes('08:30')")
+    await run('window.electronAPI.assistantRoutines.list().then(items => { if (items.length !== 1 || items[0].enabled) throw new Error("Editing changed pause state"); return true })')
+    await window.webContents.reload()
+    await waitForRenderer(window, "Boolean(document.querySelector('.pet-container'))")
+    const restored = await run('window.electronAPI.assistantRoutines.list()')
+    if (restored[0].time !== '08:30' || restored[0].enabled) throw new Error('Reload lost routine settings')
+    await run(`window.electronAPI.assistantRoutines.remove(${JSON.stringify(restored[0].id)}, ${restored[0].revision})`)
+    console.log('CHOUYU_ASSISTANT_ROUTINES_SMOKE_PASSED form/save/pause/edit/reload/remove')
+  } finally { saveConfig(config); window.webContents.send('config:changed', getConfig()) }
+}

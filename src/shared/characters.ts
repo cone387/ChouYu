@@ -116,6 +116,7 @@ export function createDefaultCharacter(now = Date.now()): Character {
   }
 }
 
+/** Legacy notification contact ID, retained only for migration and compatibility. */
 export const ASSISTANT_CHARACTER_ID = 'assistant'
 export const ASSISTANT_CHARACTER_NAME = '助手'
 export const ASSISTANT_SOUL_MD = '你是丑鱼桌面助手，负责把问候、休息与任务提醒送到用户眼前。语气简短温暖，每条消息一到两句话，不啰嗦、不追问；用户回复时给务实的小建议。'
@@ -136,7 +137,7 @@ export function createAssistantCharacter(now = Date.now()): Character {
 }
 
 export function isAssistantCharacter(id: string): boolean {
-  return id === ASSISTANT_CHARACTER_ID
+  return id === DEFAULT_CHARACTER_ID || id === ASSISTANT_CHARACTER_ID
 }
 
 /** 内置角色是人设/模型的实时视图：仅保留 name/avatar 编辑，其余字段运行期解析。 */
@@ -157,7 +158,7 @@ export function normalizeCharacters(value: unknown): Character[] {
     const avatar = typeof input.avatar === 'string' && input.avatar.trim() ? clampCodePoints(input.avatar.trim(), 8) : defaultCharacter.avatar
     defaultCharacter = { ...defaultCharacter, name, avatar }
   }
-  const names = new Set<string>([defaultCharacter.name, ASSISTANT_CHARACTER_NAME])
+  const names = new Set<string>([defaultCharacter.name])
   const ids = new Set<string>([DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID])
   const custom: Character[] = []
   const now = Date.now()
@@ -177,7 +178,7 @@ export function normalizeCharacters(value: unknown): Character[] {
     custom.push({ id, ...draft, name: characterName, builtIn: false, createdAt, updatedAt })
     if (custom.length >= MAX_CHARACTER_COUNT - 1) break
   }
-  return [defaultCharacter, createAssistantCharacter(), ...custom]
+  return [defaultCharacter, ...custom]
 }
 
 export interface EffectiveChatConfig {

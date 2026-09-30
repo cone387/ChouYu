@@ -300,6 +300,11 @@ const api = {
   notifyPetVisible: (visible: boolean) => {
     ipcRenderer.send('pet-visibility-changed', visible)
   },
+  assistantRoutines: {
+    list: () => ipcRenderer.invoke('assistant-routines:list'),
+    save: (input: import('../shared/assistant-routines').AssistantRoutineInput, id?: string, revision?: number) => ipcRenderer.invoke('assistant-routines:save', input, id, revision),
+    remove: (id: string, revision: number) => ipcRenderer.invoke('assistant-routines:remove', id, revision)
+  },
   reminders: {
     list: () => ipcRenderer.invoke('reminders:list'),
     schedule: (sessionId: string, messageId: string, minutes: number) => ipcRenderer.invoke('reminders:schedule', sessionId, messageId, minutes),

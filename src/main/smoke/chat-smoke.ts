@@ -606,9 +606,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     stream?.end()
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
-    for (const summary of getSessions().filter((session) => session.characterId === 'assistant')) {
-      deleteChatSession(summary.id)
-    }
+    // Proactive messages now live in the ChouYu fixture itself, removed below.
     selectChatSession(originalSession)
     deleteChatSession(fixture)
     saveConfig(originalConfig)

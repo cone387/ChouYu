@@ -1,0 +1,18 @@
+.assistant-routines { padding: 16px; border: 1px solid var(--border); border-radius: 12px; margin: 16px 0; color: var(--text-primary); font-size: 13px; }
+.assistant-routines h3 { font-size: 15px; }
+.assistant-routines h4 { font-size: 14px; }
+.assistant-routines h3, .assistant-routines h4 { margin: 0; }
+.assistant-routines p { margin: 8px 0; line-height: 1.6; overflow-wrap: anywhere; }
+.assistant-routines-help { color: var(--text-secondary); font-size: 13px; }
+.assistant-routines-heading, .assistant-routines-actions, .assistant-routines-schedule { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.assistant-routines-heading { justify-content: space-between; }
+.assistant-routines article, .assistant-routines form { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px; }
+.assistant-routines button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+.assistant-routines button:disabled { opacity: .5; cursor: default; }
+.assistant-routines button:hover:not(:disabled) { background: var(--bg-tertiary); }
+.assistant-routines :is(button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.assistant-routines label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; min-width: 0; }
+.assistant-routines input, .assistant-routines select, .assistant-routines textarea { box-sizing: border-box; width: 100%; min-height: 36px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.assistant-routines textarea { resize: vertical; }
+.assistant-routine-result { white-space: pre-wrap; max-height: 240px; overflow: auto; }
+.assistant-routines summary { cursor: pointer; padding: 8px 0; }

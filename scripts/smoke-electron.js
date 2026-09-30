@@ -17,7 +17,9 @@ const legacyStorePath = path.join(smokeUserData, 'chouyu-data.json')
 const memoryDatabasePath = path.join(smokeUserData, 'chouyu-memory.db')
 fs.writeFileSync(legacyStorePath, JSON.stringify({
   version: 2,
-  config: { model: 'smoke-model' },
+  // Proactive messages share ChouYu's conversation now. Individual reminder tests
+  // inject their own events; unrelated wall-clock greetings must not alter migration fixtures.
+  config: { model: 'smoke-model', proactiveGreeting: false, proactiveRestReminder: false, proactiveReturn: false },
   messages: [
     { id: 'legacy-user', role: 'user', content: '迁移测试对话', timestamp: 1 },
     { id: 'legacy-assistant', role: 'assistant', content: '迁移成功', timestamp: 2 }
@@ -35,6 +37,7 @@ const env = {
   CHOUYU_SMOKE_TASK_EDIT_ONLY: process.argv.includes('--task-edit') ? '1' : '0',
   CHOUYU_SMOKE_TASK_ASSISTANT_ONLY: process.argv.includes('--task-assistant') ? '1' : '0',
   CHOUYU_SMOKE_REMINDERS_ONLY: process.argv.includes('--reminders') ? '1' : '0',
+  CHOUYU_SMOKE_ASSISTANT_ROUTINES_ONLY: process.argv.includes('--assistant-routines') ? '1' : '0',
   CHOUYU_SMOKE_PRESENTATION_ONLY: process.argv.includes('--presentation') ? '1' : '0',
   CHOUYU_SMOKE_AGENTS_ONLY: process.argv.includes('--agents') ? '1' : '0',
   CHOUYU_SMOKE_CONTACTS_ONLY: process.argv.includes('--contacts') ? '1' : '0',
