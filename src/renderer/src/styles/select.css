@@ -28,16 +28,16 @@
 
 #root select:not([multiple]):not([size]):enabled:hover,
 #root .tasks-select > summary:not([aria-disabled='true']):hover {
-  border-color: var(--text-muted);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--input-border));
   background-color: var(--hover-bg);
 }
 
 #root select:not([multiple]):not([size]):focus-visible,
 #root .tasks-select > summary:focus-visible,
 #root .model-picker-trigger:focus-visible {
-  outline: 2px solid var(--text-secondary);
-  border-color: var(--input-border);
-  box-shadow: none;
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 #root select:disabled,

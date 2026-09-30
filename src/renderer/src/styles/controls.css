@@ -23,10 +23,10 @@
 }
 :where(#root) :where(input[type='checkbox'], input[type='radio']) { accent-color: var(--accent); }
 :where(#root) :where(button, input, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* Text entry stays neutral across forms and dialogs, including autofocus. */
+/* Text entry stays neutral across forms and dialogs, including autofocus.
+ * Keep the regular border and caret; no accent outline or focus glow. */
 #root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']), textarea):is(:focus, :focus-visible) {
-  outline: 2px solid var(--text-secondary) !important;
-  outline-offset: 2px;
+  outline: none !important;
   box-shadow: none !important;
   border-color: var(--input-border) !important;
 }

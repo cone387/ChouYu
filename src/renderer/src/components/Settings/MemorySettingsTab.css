@@ -135,7 +135,7 @@
 .memory-conflict-badge { background:color-mix(in srgb,var(--warning) 14%,transparent); color:var(--warning); }
 .memory-card-header time { color:var(--text-muted); font-size: var(--font-sm); }
 .memory-card p { margin: var(--space-3) 0; color:var(--text-secondary); font-size: var(--font-sm); line-height:1.5; }
-.memory-card > textarea { width:100%; min-height:58px; margin: var(--space-3) 0; border:1px solid var(--input-border); border-radius: var(--radius-md); padding: var(--space-3); background:var(--input-bg); color:var(--text-primary); font-size: var(--font-sm); resize:vertical; }
+.memory-card > textarea { width:100%; min-height:58px; margin: var(--space-3) 0; border:1px solid var(--accent); border-radius: var(--radius-md); padding: var(--space-3); background:var(--input-bg); color:var(--text-primary); font-size: var(--font-sm); resize:vertical; }
 .memory-card-meta { display:flex; flex-wrap:wrap; gap: var(--space-3) var(--space-4); color:var(--text-muted); font-size: var(--font-sm); }
 .memory-source-details { margin-top: var(--space-4); border-top:1px solid var(--divider); }
 .memory-source-details summary { display:inline-flex; min-height:30px; align-items:center; color:var(--text-muted); cursor:pointer; font-size: var(--font-sm); }
