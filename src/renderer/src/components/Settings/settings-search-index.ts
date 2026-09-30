@@ -42,7 +42,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { nav: 'general', navLabel: '通用', label: '全局搜索快捷键', keywords: ['搜索', '快捷键', 'hotkey', '通讯录', '任务'], fieldId: 'settings-search-hotkey' },
   { nav: 'general', navLabel: '通用', label: '唤出面板', keywords: ['快捷键', 'hotkey', '呼出'], fieldId: 'settings-hotkey' },
   { nav: 'general', navLabel: '通用', label: '开机问好', keywords: ['问候', '主动打招呼'] },
-  { nav: 'general', navLabel: '通用', label: 'ChouYu 的定时任务与晨间总结', keywords: ['chouyu', '丑鱼', '助手', '联系人', '晨报', '早上', '每天', '定时提醒', '长期安排'], fieldId: 'settings-assistant-routines' },
+  { nav: 'general', navLabel: '通用', label: 'ChouYu 的助手任务与晨间总结', keywords: ['chouyu', '丑鱼', '助手', '联系人', '晨报', '早上', '每天', '问好', '回来', '休息', '定时提醒', '长期安排'], fieldId: 'settings-assistant-routines' },
   { nav: 'general', navLabel: '通用', label: '休息提醒', keywords: ['久坐提醒', '健康'] },
   { nav: 'general', navLabel: '通用', label: '回来时打招呼', keywords: ['欢迎回来', '主动提醒'] },
   { nav: 'general', navLabel: '通用', label: '剪贴板感知', keywords: ['复制', 'clipboard'] },

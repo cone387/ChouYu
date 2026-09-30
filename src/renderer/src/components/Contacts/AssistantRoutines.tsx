@@ -1,23 +1,27 @@
 import { useEffect, useState } from 'react'
 import type { AssistantRoutine, AssistantRoutineInput } from '../../../../shared/assistant-routines'
+import { ASSISTANT_DUTIES, type AssistantDutyKey } from '../../../../shared/assistant-duties'
+import type { AppConfig } from '../../../../shared/config'
 import './AssistantRoutines.css'
 
-const fresh = (): AssistantRoutineInput => ({ title: '联系人晨间总结', instruction: '检查各联系人的工作进展，汇总最近变化、遇到的问题和等待我答复的事项。', time: '09:00', cadence: 'daily', kind: 'contact-summary', enabled: true })
+const fresh = (): AssistantRoutineInput => ({ title: '联系人晨间总结', instruction: '检查各联系人的工作进展，汇总最近变化、遇到的问题和等待我答复的事项。', time: '', cadence: 'daily', kind: 'contact-summary', enabled: true })
 export default function AssistantRoutines({ active = true }: { active?: boolean }) {
   const [items, setItems] = useState<AssistantRoutine[]>([])
+  const [config, setConfig] = useState<AppConfig | null>(null)
   const [draft, setDraft] = useState<AssistantRoutineInput | null>(null)
   const [editing, setEditing] = useState<AssistantRoutine>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [removing, setRemoving] = useState<string>()
-  const refresh = () => window.electronAPI.assistantRoutines.list().then(value => { setItems(value); setLoaded(true); setError('') }).catch(e => setError(String(e)))
+  const refresh = () => Promise.all([window.electronAPI.assistantRoutines.list(), window.electronAPI.db.getConfig()]).then(([value, settings]) => { setItems(value); setConfig(settings); setLoaded(true) }).catch(e => setError(String(e)))
   useEffect(() => {
     if (!active) return
     void refresh()
     const dispose = window.electronAPI.assistantRoutines.onChanged(() => { void refresh() })
+    const disposeConfig = window.electronAPI.onConfigChanged(setConfig)
     const timer = setInterval(() => { void refresh() }, 15000)
-    return () => { dispose(); clearInterval(timer) }
+    return () => { dispose(); disposeConfig(); clearInterval(timer) }
   }, [active])
   const act = async (action: () => Promise<AssistantRoutine[]>) => {
     setBusy(true); setError('')
@@ -25,13 +29,31 @@ export default function AssistantRoutines({ active = true }: { active?: boolean 
     catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setBusy(false) }
   }
-  return <section className="assistant-routines" aria-label="ChouYu 的定时任务">
-    <div className="assistant-routines-heading"><h3>ChouYu 的定时任务</h3><button type="button" disabled={busy || !!draft || !loaded} onClick={() => { setEditing(undefined); setDraft(fresh()) }}>添加安排</button></div>
-    <p>到点提醒你，或先检查各联系人的进展再向你汇报。也可以直接在聊天里交代我。</p>
-    <p className="assistant-routines-help">按电脑本地时间执行。应用退出期间不执行，重新打开后合并补执行一次。联系人总结使用你的 AI 模型。</p>
+  const toggleDuty = async (key: AssistantDutyKey) => {
+    if (!config) return
+    setBusy(true); setError('')
+    try { setConfig(await window.electronAPI.db.saveConfig({ [key]: !config[key] })) }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(false) }
+  }
+  return <section className="assistant-routines" aria-label="ChouYu 的助手任务">
+    <div className="assistant-routines-heading"><h3>ChouYu 的助手任务</h3><button type="button" disabled={busy || !!draft || !loaded} onClick={() => { setEditing(undefined); setDraft(fresh()) }}>添加安排</button></div>
+    <p>我的日常陪伴和定时安排都在这里。问候、提醒和总结会由我发到聊天。</p>
+    <p className="assistant-routines-help">定时安排按电脑本地时间执行，应用退出期间错过的定时安排会在重新打开后合并补执行一次。日常陪伴按各自条件触发。联系人总结使用你的 AI 模型。</p>
     {error && <div role="alert">{error} <button type="button" disabled={busy} onClick={() => void refresh()}>刷新</button></div>}
     {!loaded && !error && <p role="status">正在读取安排…</p>}
-    {loaded && !items.length && !draft && <p>还没有定时任务。添加“联系人晨间总结”后，选择时间并保存，我就会按时检查大家的进展并向你汇报。</p>}
+    {config && ASSISTANT_DUTIES.map(duty => <div className="assistant-duty" data-assistant-duty={duty.key} key={duty.key}>
+      <div className="assistant-routines-heading"><strong>{duty.title}</strong><span>{config[duty.key] ? '已启用' : '已暂停'}</span></div>
+      <p>{duty.rule}</p>
+      <p className="assistant-routines-help">{config[duty.key] ? `触发方式：${duty.waiting}，无固定执行时间。` : '已暂停，不会主动发送。'}</p>
+      <button type="button" disabled={busy} aria-label={`${config[duty.key] ? '暂停' : '启用'}${duty.title}`} onClick={() => void toggleDuty(duty.key)}>{config[duty.key] ? '暂停' : '启用'}</button>
+    </div>)}
+    {loaded && !items.some(item => item.kind === 'contact-summary') && <div className="assistant-duty" data-morning-summary="pending">
+      <div className="assistant-routines-heading"><strong>联系人晨间总结</strong><span>待设置时间</span></div>
+      <p>每天检查各联系人的真实进展、遇到的问题和等待你答复的事项，再向你汇报。</p>
+      <p className="assistant-routines-help">尚未启用；设置时间并保存后执行。</p>
+      <button type="button" disabled={busy || !!draft} onClick={() => { setEditing(undefined); setDraft(fresh()) }}>设置时间并启用</button>
+    </div>}
     {items.map(item => <article key={item.id}>
       <div className="assistant-routines-heading"><strong>{item.title}</strong><span>{item.enabled ? '已启用' : '已暂停'}</span></div>
       <p>{item.cadence === 'daily' ? '每天' : item.cadence === 'weekdays' ? '工作日' : `每周${'日一二三四五六'[item.weekday ?? 0]}`} {item.time} · {item.kind === 'contact-summary' ? '检查联系人并总结' : '定时提醒'}</p>
