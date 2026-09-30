@@ -56,12 +56,13 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const [detail, setDetail] = useState<AgentTopicDetail | null>(null)
   const [loading, setLoading] = useState(false), [error, setError] = useState('')
   const [editor, setEditor] = useState<Editor | null>(null)
-  // Explicitly changing the working topic selects it; ordinary refreshes preserve browsing.
-  useEffect(() => { if (!editor && data.focusTopicId) setSelected(data.focusTopicId) }, [data.focusTopicId])
+  // Background scheduling must not switch away from the task being read or answered.
   const epoch = useRef(0)
   const topic = data.topics.find(item => item.id === selected)
-  const currentRun = data.runs.find(run => ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
-  const canPause = Boolean(topic && (currentRun?.topicId === topic.id || (data.settings.enabled && data.focusTopicId === topic.id && researchable(topic))))
+  const currentRun = data.runs.find(run => run.topicId === topic?.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
+  const otherRunning = data.runs.some(run => run.topicId !== topic?.id && ['queued', 'running', 'interrupted'].includes(run.status))
+  const queued = Boolean(topic && data.queuedTopicIds?.includes(topic.id))
+  const canPause = Boolean(topic && (queued || currentRun?.topicId === topic.id || (data.settings.enabled && data.focusTopicId === topic.id && researchable(topic))))
   const waiting = currentRun?.topicId === topic?.id && currentRun?.status === 'waiting'
   useEffect(() => { setTab('overview'); setShowSettings(false); setEditor(null); setSettingsError('') }, [selected, focusRequest])
   useEffect(() => {
@@ -81,6 +82,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     : activeRun?.status === 'waiting' ? '待回复 · 暂停'
     : activeRun?.status === 'queued' ? '排队中 · 暂停'
     : activeRun?.status === 'interrupted' ? '恢复中 · 暂停'
+    : queued ? '排队中 · 暂停'
     : canPause ? '等待续跑 · 暂停'
     : topicRun?.status === 'failed' ? '执行失败 · 重试' : '启动'
   useEffect(() => {
@@ -123,7 +125,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const closeSettings = () => { setShowSettings(false); setEditor(null); setSettingsError('') }
   return <section className="contact-topics" aria-label="持续推进的事项">
     {taskDialog && <ContactTaskDialog characterId={characterId} task={taskDialog === 'create' ? undefined : taskDialog} onClose={() => setTaskDialog(null)} onAction={onAction} onDone={next => {
-      if (taskDialog === 'create') { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(true) }
+      if (taskDialog === 'create') { setSelected(next.topics.find(item => !data.topics.some(previous => previous.id === item.id))?.id ?? next.topics[0]?.id ?? ''); setMobileDetail(true) }
       else if (selected === taskDialog.id) { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(false) }
     }} />}
     <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}${listCollapsed ? ' topic-list-collapsed' : ''}${stagesCollapsed ? ' topic-stages-collapsed' : ''}`}>
@@ -133,14 +135,14 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         <button type="button" className="topic-create" data-topic-create disabled={busy || Boolean(editor)} onClick={() => setTaskDialog('create')}><TaskIcon name="plus" />新建任务</button>
         {!data.topics.length && <p className="agent-empty">还没有任务，描述你想完成的事情即可。</p>}
         {data.topics.map(item => {
-          const run = currentRun?.topicId === item.id ? currentRun : undefined
+          const run = data.runs.find(run => run.topicId === item.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
           return <div key={item.id} className="topic-list-item"><button type="button" className="topic-list-card" data-topic-id={item.id}
             aria-current={selected === item.id ? 'true' : undefined} disabled={busy || Boolean(editor)}
             onClick={() => { setSelected(item.id); setMobileDetail(true) }}>
             <span className="topic-card-title">{item.title}</span>
             <span className="topic-badges">
               {item.id === data.focusTopicId && <span className="topic-badge topic-badge-focus">当前关注</span>}
-              <span className={`topic-badge${run ? ' topic-badge-active' : ''}`}>{run ? AGENT_STATUS[run.status] : TOPIC_STATUS[item.status]}</span>
+              <span className={`topic-badge${run ? ' topic-badge-active' : ''}`}>{data.queuedTopicIds?.includes(item.id) ? '排队中' : run ? AGENT_STATUS[run.status] : TOPIC_STATUS[item.status]}</span>
             </span>
             <span className="topic-card-times">
               <span title="任务建立时间">开始 <time dateTime={new Date(item.createdAt).toISOString()}>{new Date(item.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</time></span>
@@ -173,7 +175,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       <div className="topic-floating-action" data-running={activeRun?.status === 'running' || undefined}>
           <button type="button" className="primary" data-topic-run={!canPause || undefined} data-topic-pause={canPause || undefined}
             title={activeRun?.status === 'running' ? '本轮从开始到现在的耗时（含排队和等待回复），点击暂停；累计耗时见概览统计。' : canPause ? '点击暂停当前任务' : '启动本任务一轮工作'}
-            disabled={busy || Boolean(editor) || Boolean(runAction) || (!canPause && (settingsDirty || Boolean(currentRun)))}
+            disabled={busy || Boolean(editor) || Boolean(runAction) || (!canPause && (settingsDirty || otherRunning))}
             onClick={() => {
               setRunAction(canPause ? 'pause' : 'start')
               void onAction(() => canPause
@@ -226,7 +228,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         <p className="agent-caption">{topic.status === 'paused' ? '任务已暂停，已有成果保留。' : data.settings.enabled && data.focusTopicId === topic.id && researchable(topic) ? '持续工作已开启，本轮结束后会按工作设置继续。' : '启动后执行一轮；可在工作设置中开启持续工作。'}</p>
         {topic.nextStep && <p className="topic-next-step"><strong>下一步：</strong>{topic.nextStep}</p>}
         {settingsDirty && <p className="agent-caption">工作设置尚未保存，保存后再推进事项。</p>}
-        {currentRun && currentRun.topicId !== topic.id && <p className="agent-caption">联系人正在处理另一事项，完成后可推进这一项。</p>}
+        {otherRunning && <p className="agent-caption">联系人正在执行另一事项；本任务的回复会保存，待本轮结束后接续。</p>}
       </article>
       <details className="topic-goal"><summary>进展说明</summary><dl><dt>当前判断</dt><dd data-topic-judgement>{topic.judgement || '尚未形成判断。'}</dd>{topic.openQuestions && <><dt>待验证问题</dt><dd>{topic.openQuestions}</dd></>}{['completed', 'abandoned', 'paused'].includes(topic.status) && <><dt>停止原因</dt><dd>{topic.reason}</dd></>}</dl></details>
       <details className="topic-goal"><summary>目标与约束</summary><dl><dt>目标</dt><dd>{topic.goal}</dd>{topic.constraints && <><dt>约束</dt><dd>{topic.constraints}</dd></>}</dl></details>

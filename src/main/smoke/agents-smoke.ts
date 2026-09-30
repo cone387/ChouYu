@@ -607,6 +607,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (!toolResponses.some(value => value.includes('任务已接下'))) throw new Error('Chat did not dispatch a real contact task')
     await fill('.input-textarea', '保留在聊天输入框中的草稿')
     await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
+    const assignedTopicId = (await get()).focusTopicId
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-topic-id="${assignedTopicId}"]'))`)
+    // Background focus changes preserve the task the user was reading.
+    if (await run(`document.querySelector('[data-topic-current]')?.dataset.topicCurrent !== ${JSON.stringify(topicId)}`)) throw new Error('Background assignment interrupted the task being read')
+    await run(`document.querySelector('[data-topic-id="${assignedTopicId}"]').click()`)
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet [data-topic-current]')?.textContent.includes('研究另一个独立方向') && !document.querySelector('.contact-work-sheet [data-topic-editor]')")
     await run("document.querySelector('.contact-work-sheet [data-topic-pause]').click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet .topic-overview-status')?.textContent.includes('已暂停') && document.querySelector('.contact-work-sheet [data-topic-run]')?.textContent.includes('启动') && !document.querySelector('.contact-work-sheet [data-topic-editor]')")
@@ -783,6 +788,34 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('[data-task-dialog-submit]').click()")
     await waitForRenderer(window, `!document.querySelector('[data-topic-id="${newTaskId}"]') && !document.querySelector('.contact-task-dialog')`)
     if ((await get()).topics.length !== beforeCreate) throw new Error('Single-task deletion affected other tasks')
+    // Receiving another task must work even when today's capacity is exhausted.
+    const beforeQueue = await get()
+    await run(`window.electronAPI.agents.savePreferences(${id}, ${JSON.stringify({ ...beforeQueue.settings, enabled: false, dailyCalls: 2 })})`)
+    await run("document.querySelector('[data-topic-create]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-task-description]'))")
+    await fill('[data-task-description]', '排队验收：明日继续核对资料')
+    await run("document.querySelector('[data-task-dialog-submit]').click()")
+    await waitForRenderer(window, "!document.querySelector('.contact-task-dialog') && document.querySelector('[data-topic-overview]')?.textContent.includes('已接单，尚未开始执行')")
+    const queuedData = await get(), queuedId = queuedData.queuedTopicIds?.[0]
+    if (!queuedId || queuedData.callsToday !== beforeQueue.callsToday || queuedData.runs.some(r => r.topicId === queuedId)) throw new Error('Queued task consumed calls or lost its pending state')
+    if (directory) {
+      for (const theme of ['light', 'dark']) {
+        saveConfig({ theme: theme as 'light' | 'dark' }); window.webContents.send('config:changed', getConfig())
+        await run(`document.documentElement.dataset.theme='${theme}'`)
+        for (const width of [375, 1024]) {
+          window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, viewSize: { width, height: 900 }, deviceScaleFactor: 1, scale: 1 })
+          await run("window.dispatchEvent(new Event('resize')); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+          await run('new Promise(resolve => setTimeout(resolve, 200))')
+          if (!await run("(() => { const action=document.querySelector('.topic-floating-action').getBoundingClientRect(), heading=document.querySelector('.topic-content-header').getBoundingClientRect(); return action.bottom<=heading.bottom && Array.from(document.querySelectorAll('.topic-floating-action button')).every(button => button.getBoundingClientRect().height<90) })()")) throw new Error('Queue actions overlap the task or wrap vertically')
+          writeFileSync(join(directory, `contact-queue-${theme}-${width}.png`), (await window.webContents.capturePage({ x: 0, y: 0, width, height: 900 }, { stayHidden: true, stayAwake: true })).toPNG())
+        }
+      }
+      window.webContents.disableDeviceEmulation()
+    }
+    await run("document.querySelector('[data-topic-pause]').click()")
+    await waitForRenderer(window, "document.querySelector('[data-topic-overview]')?.textContent.includes('已暂停')")
+    if ((await get()).queuedTopicIds?.includes(queuedId)) throw new Error('Paused task remained in the queue')
+    console.log('CHOUYU_SMOKE_CONTACT_QUEUE_PASSED acceptedWithoutCapacity=true noCalls=true pause=true stableSelection=true')
     console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 feedbackRevisionCalls=1 researchCalls=5 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true autonomousResearch=true unchangedBackoff=true deliverableVersions=true export=true revisionForm=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)

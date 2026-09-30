@@ -36,17 +36,21 @@ describe('task resource allocation within contact resources', () => {
     for (const value of [0, -1, 1.5, 10001, Infinity]) expect(() => validateTaskResourceBudget({ modelCalls: value, reason: 'test' })).toThrow()
     expect(() => validateTaskResourceBudget({ modelCalls: 4, reason: '' })).toThrow()
   })
-  it('reserves resources for other tasks and prevents manual over-allocation', () => {
+  it('keeps lifetime task budgets independent from daily capacity, including paused tasks', () => {
     const { store, topic } = fixture()
     store.setTaskBudget('alice', topic.id, topic.revision, { modelCalls: 8 })
     expect(store.topics.get('alice', topic.id).resourceBudget).toEqual({ modelCalls: 8, reason: '用户手动调整任务预算。' })
     const second = store.createTopic('alice', { title: '核对资料', goal: '核对', constraints: '' }).topics.find(t => t.id !== topic.id)!
-    expect(store.resourceContext('alice', second.id).allocatableCalls).toBe(4)
-    expect(() => store.setTaskBudget('alice', second.id, second.revision, { modelCalls: 5, reason: '超出总资源' })).toThrow('可分配 4')
-    store.setTaskBudget('alice', second.id, second.revision, { modelCalls: 4, reason: '两轮核对' })
+    expect(store.resourceContext('alice', second.id).allocatableCalls).toBe(12)
+    store.setTaskBudget('alice', second.id, second.revision, { modelCalls: 50 })
+    expect(store.topics.get('alice', second.id).resourceBudget?.modelCalls).toBe(50)
     const current = store.topics.get('alice', topic.id)
     store.setTaskBudget('alice', topic.id, current.revision, { modelCalls: 6, reason: '释放两次给其他任务' })
-    expect(store.resourceContext('alice', second.id).allocatableCalls).toBe(6)
+    store.changeTopic('alice', topic.id, store.topics.get('alice', topic.id).revision, { status: 'paused', reason: '等待后续安排' })
+    expect(store.resourceContext('alice', second.id).allocatableCalls).toBe(12)
+    const run = store.createRun('alice', '', Date.now(), second.id)
+    for (let i = 0; i < 12; i++) store.charge(run)
+    expect(() => store.charge(run)).toThrow('今日模型调用已达上限')
     expect(() => store.setTaskBudget('bob', topic.id, current.revision, { modelCalls: 3, reason: '越权' })).toThrow()
   })
   it('counts failed calls across days and persists the cap across restart', () => {

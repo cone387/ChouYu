@@ -56,7 +56,7 @@ describe('confirmed contact feedback', () => {
     expect(request).toHaveBeenLastCalledWith('feedback', 'alice', [1, 'reviseTopic', ['topic', 2, '第二节改为团队场景，保留证据局限']])
   })
   it('assigns one task to the current contact and respects the configured approval mode', async () => {
-    const request = vi.fn(async (method: string) => method === 'get' ? { revision: 4, runs: [] } : { focusTopicId: 'new-topic', runs: [{ id: 'new-run', status: 'queued' }] })
+    const request = vi.fn(async (method: string) => method === 'get' ? { revision: 4, topics: [], runs: [] } : { topics: [{ id: 'new-topic' }], focusTopicId: 'new-topic', runs: [{ id: 'new-run', topicId: 'new-topic', status: 'queued' }] })
     const tool = createContactTools({ owner: () => 'alice', request }).find(tool => tool.name === 'assign_contact_task')!
     expect(shouldConfirmTool(tool, 'confirm')).toBe(false)
     expect(shouldConfirmTool(tool, 'full')).toBe(false)
@@ -74,7 +74,7 @@ describe('confirmed contact feedback', () => {
     owner('bob')
     await expect(prepared.execute()).rejects.toThrow('归属')
     owner('alice'); data.runs.push({ status: 'waiting' })
-    await expect(tool.prepareAsync!({ description: '研究需求' }, context)).rejects.toThrow('未完成')
+    expect((await tool.prepareAsync!({ description: '研究需求' }, context)).preview).toContain('先排队')
     await expect(tool.prepareAsync!({ description: '' }, context)).rejects.toThrow('描述')
   })
   it('previews exact constraints and cannot execute twice or bypass confirmation in full mode', async () => {
@@ -115,7 +115,7 @@ describe('confirmed contact feedback', () => {
     const args = { topicId: 'topic', revision: 2, action: 'continue', reason: '继续验证' }
     const prepared = await tools[1].prepareAsync!(args, context)
     expect(prepared.preview).toContain('保持关闭')
-    data.runs.push({ status: 'waiting' })
+    data.runs.push({ status: 'waiting', topicId: 'topic' })
     await expect(tools[1].prepareAsync!(args, context)).rejects.toThrow('回答问题')
   })
 })

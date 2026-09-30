@@ -7,8 +7,6 @@ import { streamAIChat } from '../ai'
 import { AgentStore } from './store'
 import { AgentRuntime, type AgentModel } from './runtime'
 import type { AgentSettings, AgentTopicStatus } from '../../shared/agents'
-import { agentUsesPlanner } from '../../shared/agents'
-import { canResearch } from './topics'
 import type { AgentSearcher } from './research'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from './model-output'
@@ -90,7 +88,7 @@ export class AgentService {
         if (!profile) throw new Error('请先保存工作设置。')
         const settings = JSON.parse(profile.settings) as AgentSettings
         if (settings.workUntil && settings.workUntil <= Date.now()) throw new Error('持续工作已到截止时间。')
-        this.store.db.prepare('UPDATE profiles SET settings=? WHERE character_id=?').run(JSON.stringify({ ...settings, enabled: true }), id)
+        this.store.db.prepare('UPDATE profiles SET settings=?,failures=0 WHERE character_id=?').run(JSON.stringify({ ...settings, enabled: true }), id)
         break
       }
       case 'setTaskBudget': this.store.setTaskBudget(id, String(args[0]), args[1] as number, args[2]); break
@@ -187,27 +185,31 @@ export class AgentService {
       if (this.active.has(profile.character_id) || this.deleting.has(profile.character_id)) continue
       const settings = JSON.parse(profile.settings) as AgentSettings
       if (settings.searchEnabled && !this.identities.get(profile.character_id)?.searchKey) continue
-      if (agentUsesPlanner(settings) && this.store.callCount(profile.character_id) + 2 > settings.dailyCalls) continue
-      if (!settings.enabled || profile.next_at > Date.now() || !this.identities.get(profile.character_id)?.config || this.store.callCount(profile.character_id) >= settings.dailyCalls) continue
-      if (!profile.focus_topic_id || !canResearch(this.store.topics.get(profile.character_id, profile.focus_topic_id).status)) continue
-      const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === profile.focus_topic_id)
+      if (!this.identities.get(profile.character_id)?.config) continue
+      const topicId = this.store.nextScheduledTopic(profile.character_id)
+      if (!topicId) continue
+      const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === topicId)
       const research = last && this.store.research(last.id)
       if (last?.status === 'completed' && research?.contactQuery !== undefined && settings.readContactDeliveries) {
-        const catalog = this.runtime.contactSources.discover(profile.character_id, profile.focus_topic_id, research.contactQuery)
+        const catalog = this.runtime.contactSources.discover(profile.character_id, topicId, research.contactQuery)
         if (!catalog.items.some(item => !item.processed)) {
           this.store.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(Date.now() + settings.intervalMinutes * 60000, profile.character_id)
+          this.store.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(Date.now() + settings.intervalMinutes * 60000, topicId)
           continue
         }
       }
-      try { this.store.createRun(profile.character_id, this.identity(profile.character_id).conversation) } catch { /* invalid profiles remain visible, without a hot retry loop */ }
+      try { this.store.startScheduledTopic(profile.character_id, topicId, this.identity(profile.character_id).conversation); this.changed(profile.character_id) } catch { /* invalid profiles remain visible, without a hot retry loop */ }
     }
     for (const run of this.store.runnable()) {
       if (this.active.has(run.character_id) || this.deleting.has(run.character_id)) continue
       if (!this.identities.get(run.character_id)?.config || JSON.parse(run.input).revisionScope !== 'presentation' && JSON.parse(run.input).settings.searchEnabled && !this.identities.get(run.character_id)?.searchKey) continue
+      const settings = JSON.parse(this.store.profile(run.character_id)!.settings) as AgentSettings
+      if (this.store.callCount(run.character_id) + this.store.callsNeededToResume(run.id) > settings.dailyCalls) continue
       this.startRun(run)
     }
   }
   private startRun(run: NonNullable<ReturnType<AgentStore['getRun']>>) {
+    if (run.topic_id && JSON.parse(run.input).revisionScope !== 'presentation') this.store.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(run.topic_id, run.character_id)
     const identity = this.identity(run.character_id), controller = new AbortController()
     const model: AgentModel = this.modelFactory?.(identity) || (async (prompt, signal, options) => {
       let output = ''

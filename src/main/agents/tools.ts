@@ -35,7 +35,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
         method = 'topicStatus'; values = [topicId, revision, 'paused', reason]
         preview = `事项：${topic.title}\n状态：${TOPIC_STATUS[topic.status]} → 已暂停\n停止此事项未完成的工作。\n原因：${reason}`
       } else if (args.action === 'continue') {
-        if (overview.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status))) throw new Error('联系人仍有未完成工作；若正在等你回复，请使用回答问题工具。')
+        if (overview.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status) && (r.topicId === topicId || r.status !== 'waiting'))) throw new Error('联系人仍有未完成工作；若本任务正在等你回复，请使用回答问题工具。')
         method = 'continueTopic'; values = [topicId, revision, reason]
         preview = `事项：${topic.title}\n设为当前事项，并立即运行一轮。\n持续工作：${overview.settings.enabled ? '保持开启' : '保持关闭'}\n按现有来源与调用预算执行。\n原因：${reason}`
       } else if (args.action === 'revise') {
@@ -92,14 +92,15 @@ export function createContactTools(access: Access): RegisteredTool[] {
         const id = owner(context), description = typeof args.description === 'string' ? args.description.trim() : ''
         if (!description || description.length > 2000 || containsSecret(description)) throw new Error('请提供有效的任务描述，不要包含密钥。')
         const overview = await access.request('get', id) as AgentOverview
-        if (overview.runs.some(run => ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))) throw new Error('联系人还有工作未完成，请先处理当前任务或回复待确认问题。')
         let consumed = false
-        return { preview: `交给当前联系人：${description}\n按联系人的权限与额度整理方向并开始，问题会在聊天中询问。`, execute: async () => {
+        return { preview: `交给当前联系人：${description}\n按联系人的权限与额度执行；忙碌或今日额度不足时先排队，当前任务完成或等待回复时接续。`, execute: async () => {
           if (consumed) throw new Error('此任务已经提交，请勿重复创建。')
           consumed = true
           if (owner(context) !== id) throw new Error('聊天归属已变化，请重新发起。')
           const result = await access.request('feedback', id, [overview.revision, 'assignTopic', [description]]) as AgentOverview
-          return { content: JSON.stringify({ message: '任务已接下，正在整理方向。不要再次创建，也不要声称研究已经完成。', topicId: result.focusTopicId, run: result.runs[0] }), summary: '已接下任务，正在整理方向' }
+          const topic = result.topics.find(topic => !overview.topics.some(previous => previous.id === topic.id))
+          const queued = Boolean(topic && result.queuedTopicIds?.includes(topic.id))
+          return { content: JSON.stringify({ message: queued ? '任务已接下并排队，尚未开始执行。不要再次创建。' : '任务已接下，已安排整理方向。不要再次创建，也不要声称研究已经完成。', topicId: topic?.id, queued, run: result.runs.find(run => run.topicId === topic?.id) }), summary: queued ? '已接下任务，排队等待执行' : '已接下任务，已安排执行' }
         } }
       }, execute: () => { throw new Error('请先准备任务。') }
     },
@@ -125,7 +126,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
         const id = owner(context), data = await access.request('get', id) as AgentOverview
         const topic = data.topics.find(t => t.id === args.topicId)
         if (!topic || topic.revision !== args.revision) throw new Error('事项已变化，请重新读取。')
-        if (data.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status))) throw new Error('当前还有工作未完成，请等待本轮结束；待回复的问题需要先处理。')
+        if (data.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status) && (r.topicId === topic.id || r.status !== 'waiting'))) throw new Error('当前还有工作未完成，请等待本轮结束；本任务待回复的问题需要先处理。')
         const artifact = await access.request('delivery', id, [topic.id])
         if (!artifact || !Number.isSafeInteger(args.deliveryVersion) || artifact.version !== args.deliveryVersion) throw new Error('成果版本已变化或尚未交付，请重新读取。')
         if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('请填写有效的样式修改要求。')

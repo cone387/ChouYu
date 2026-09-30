@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import TaskIcon from '../Tasks/TaskIcon'
 import ContactDailyOverview from './ContactDailyOverview'
-import { AGENT_STATUS, TOPIC_STATUS, type AgentOverview, type AgentTopic } from '../../../../shared/agents'
+import { AGENT_STATUS, TOPIC_STATUS, agentUsesPlanner, type AgentOverview, type AgentTopic } from '../../../../shared/agents'
 
 const time = (value: number) => new Date(value).toLocaleString('zh-CN', { hour12: false })
 function duration(ms: number) {
@@ -23,10 +23,14 @@ export default function ContactTaskOverview({ topic, data, visible, children }: 
   }, [visible, metric?.activeRuns])
   const latest = metric?.latestRun ?? data.runs.find(run => run.topicId === topic.id)
   const active = latest && ['queued', 'running', 'waiting', 'interrupted'].includes(latest.status)
+  const queued = data.queuedTopicIds?.includes(topic.id)
+  const firstRoundCalls = agentUsesPlanner(data.settings) ? 3 : 2
   const token = (value: number | undefined, reported: number | undefined) => !metric ? '—' : metric.calls === 0 ? '0' : !reported ? '未记录' : `${value!.toLocaleString()}${reported < metric.calls ? '（部分）' : ''}`
   const elapsed = metric ? duration(metric.elapsedMs + Math.max(0, now - metric.measuredAt) * metric.activeRuns) : '—'
   return <div className="topic-overview" data-topic-overview>
-    <div className="topic-overview-status"><span className="topic-badge">{active ? AGENT_STATUS[latest.status] : TOPIC_STATUS[topic.status]}</span><span>{active ? '当前轮次进行中' : '当前未执行'}</span></div>
+    <div className="topic-overview-status"><span className="topic-badge">{queued ? '排队中' : active ? AGENT_STATUS[latest.status] : TOPIC_STATUS[topic.status]}</span><span>{queued ? '已接单，尚未开始执行' : active ? latest.status === 'waiting' ? '等待你的回复，其他任务可继续' : '当前轮次进行中' : '当前未执行'}</span></div>
+    {queued && <p className="agent-caption" role="status">按接单顺序等待，当前任务完成、暂停或等待回复时接续。今日额度不足时保留安排，额度恢复后执行；排队不消耗调用。</p>}
+    {queued && data.settings.dailyCalls < firstRoundCalls && <p role="status">首轮需要预留 {firstRoundCalls} 次调用，当前每日上限为 {data.settings.dailyCalls} 次。请在工作设置中提高上限，等待次日不会解决此限制。</p>}
     <dl className="topic-metrics">
       <div className="metric-time"><dt><TaskIcon name="clock" />累计耗时</dt><dd data-topic-elapsed>{elapsed}</dd></div>
       <div className="metric-tokens"><dt><TaskIcon name="all" />消耗 Token</dt><dd data-topic-tokens>{token(metric?.totalTokens, metric?.totalReported)}</dd></div>

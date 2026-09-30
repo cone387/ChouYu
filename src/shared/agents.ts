@@ -46,6 +46,7 @@ export interface AgentInteractionPage { items: AgentInteraction[]; nextCursor?: 
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { evaluations?: import('./agent-evaluation').AgentEvaluation[]; runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
+  queuedTopicIds?: string[]
   topicMetrics?: Record<string, AgentTopicMetrics>
   latestActivity?: AgentEvent
   searchesToday?: number

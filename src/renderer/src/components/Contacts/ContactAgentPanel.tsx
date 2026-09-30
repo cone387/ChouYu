@@ -72,7 +72,8 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   }, [detail, tab])
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [readError, setReadError] = useState('')
-  const [note, setNote] = useState(''), [answer, setAnswer] = useState('')
+  const [note, setNote] = useState('')
+  const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({})
   const epoch = useRef(0), mounted = useRef(true), initialized = useRef(false)
   const draftSnapshot = useRef<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS }), savedSnapshot = useRef<string | null>(null)
   useEffect(() => {
@@ -112,14 +113,14 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const settings = { ...draft, sources: sources.split('\n').map(s => s.trim()).filter(Boolean) }
   draftSnapshot.current = settings
   const dirty = data && JSON.stringify(settings) !== JSON.stringify(data.settings)
-  const active = data?.runs.find(r => ['running', 'waiting', 'queued', 'interrupted'].includes(r.status))
+  const active = data?.runs.find(r => ['running', 'queued', 'interrupted'].includes(r.status)) ?? data?.runs.find(r => r.status === 'waiting')
   const focusedTopic = data?.topics.find(topic => topic.id === data.focusTopicId)
   const stoppedTopic = focusedTopic && ['paused', 'completed', 'abandoned'].includes(focusedTopic.status)
   const lastRun = data?.runs[0]
   const latestReport = data?.reports[0]
   const blocked = !data?.topics.length ? '直接在聊天里告诉我需要处理什么，无需填写表单或先做设置。'
     : dirty ? '设置有未保存的修改，保存后才能推进。'
-    : active ? active.status === 'waiting' ? '正在等你回复下方问题。' : '这一轮正在进行，完成后可以查看记录。'
+    : active ? active.status === 'waiting' ? '有任务等你回复，请打开对应任务的概览；其他已安排任务可继续。' : '这一轮正在进行，完成后可以查看记录。'
     : stoppedTopic ? '当前事项已停止，可在事项中继续或选择其他事项。'
     : !focusedTopic ? '可以选中已有事项继续，也可以回到聊天交代新任务。'
     : data.settings.searchEnabled && !keyConfigured ? '缺少搜索密钥，请打开工作设置补充。'
@@ -140,18 +141,21 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       <ContactTopics active={tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
         renderActivity={topicId => {
           const logRun = data.runs.find(run => run.topicId === topicId)
+          const draftKey = `${characterId}:${logRun?.id}:${logRun?.question}`
+          const answer = answerDrafts[draftKey] ?? ''
+          const setAnswer = (value: string) => setAnswerDrafts(previous => ({ ...previous, [draftKey]: value }))
           return <>
         {tab === 'work' && logRun && logRun.topicId === topicId && <ContactWorkLog key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} data={data} busy={busy} canRetry={logRun.revisionScope === 'presentation' ? !dirty && !active && data.callsToday < data.settings.dailyCalls : !blocked}
           onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
           onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!))}
           onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} />}
-      {active?.status === 'waiting' && active.topicId === topicId && <section className="agent-question"><form onSubmit={event => { event.preventDefault(); void perform(async () => { await window.electronAPI.agents.answer(characterId, active.id, answer); setAnswer('') }) }}>
-        <strong>这一步需要你的想法</strong><p>{active.question}</p>
-        {onDiscuss && active.topicId && <button type="button" onClick={() => discuss(active.id, active.topicId!, `待确认问题：${active.question}`)}>带着问题去聊天</button>}
+      {logRun?.status === 'waiting' && logRun.topicId === topicId && <section className="agent-question"><form onSubmit={event => { event.preventDefault(); void perform(async () => { await window.electronAPI.agents.answer(characterId, logRun.id, answer); setAnswer('') }) }}>
+        <strong>这一步需要你的想法</strong><p>{logRun.question}</p>
+        {onDiscuss && logRun.topicId && <button type="button" onClick={() => discuss(logRun.id, logRun.topicId!, `待确认问题：${logRun.question}`)}>带着问题去聊天</button>}
         <label>回复<textarea value={answer} maxLength={2000} onChange={e => setAnswer(e.target.value)} rows={3} required /></label>
         <button type="submit" disabled={busy || !answer.trim()}>回复并继续</button>
       </form>
-      {active.inputFields?.length ? <details open><summary>按任务需求填写</summary><ContactTaskInputForm key={`${active.id}:${active.question}`} fields={active.inputFields} busy={busy} onSubmit={async (reply, values) => { await perform(async () => { await window.electronAPI.agents.answer(characterId, active.id, reply, values); setAnswer('') }) }} /></details> : null}
+      {logRun.inputFields?.length ? <details open><summary>按任务需求填写</summary><ContactTaskInputForm key={`${logRun.id}:${logRun.question}`} fields={logRun.inputFields} busy={busy} onSubmit={async (reply, values) => { await perform(async () => { await window.electronAPI.agents.answer(characterId, logRun.id, reply, values); setAnswer('') }) }} /></details> : null}
       </section>}
         </>}}
         onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />
@@ -161,7 +165,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     {tab === 'history' && analyticsRecord && <button type="button" onClick={() => { setAnalyticsRecord(false); setTab('analytics') }}>← 返回活动与消耗</button>}
     {data && <div className="agent-settings-view" hidden={tab !== 'settings'}>
       <h3>工作设置</h3>
-      <p className="agent-description">这里管理联系人的每日资源总上限。联系人会参考剩余额度和其他任务的分配，在任务规划时安排累计调用预算；每个任务的用量与预算可在任务概览、阶段计划和本任务设置中查看。</p>
+      <p className="agent-description">这里管理联系人的每日调用上限。任务累计预算独立计算，不占用其他任务的今日额度；每个任务的用量与预算可在任务概览、阶段计划和本任务设置中查看。</p>
       <p className="agent-description">开启持续工作后，应用保持运行时会继续推进任务；退出或关机期间暂停。</p>
       <details className="agent-overview"><summary>运行状态与最近发现</summary>
       <div className="agent-now">
