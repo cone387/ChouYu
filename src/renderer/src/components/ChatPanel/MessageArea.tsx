@@ -7,6 +7,7 @@ import { legacyAssistantMessageKind, normalizeAssistantMessageKind } from '../..
 import AssistantMessageLabel from './AssistantMessageLabel'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { ContactLink } from '../Contacts/contactNavigation'
 import remarkGfm from 'remark-gfm'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../../../../shared/conversation-search'
 import { useChatScroll } from './useChatScroll'
@@ -22,6 +23,8 @@ import CharacterAvatar, { type AvatarIdentity } from '../CharacterAvatar/Charact
 interface MessageAreaProps {
   replyViewportRef?: MutableRefObject<ReplyViewport | null>
   sessionId?: string
+  focusMessageId?: string
+  onClearMessageFocus?: () => void
   onRead?: () => void
   onAgentNotice?: (ref: AgentMessageRef, tab: 'work' | 'history') => void
   active?: boolean
@@ -133,15 +136,15 @@ function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-export default function MessageArea({ sessionId = '', replyViewportRef, onRead, onAgentNotice, active = true, character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze }: MessageAreaProps) {
+export default function MessageArea({ sessionId = '', focusMessageId, onClearMessageFocus, replyViewportRef, onRead, onAgentNotice, active = true, character, searchOpen = false, initialSearch = '', onCloseSearch, messages, isStreaming, onRetry, onEditMessage, onContinueMessage, contextLimit, onMemoryFeedback, onCorrectMemory, canSnooze }: MessageAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState(initialSearch)
   const [searchPage, setSearchPage] = useState(0)
   const searchInput = useRef<HTMLInputElement>(null)
   const normalizedQuery = searchOpen ? query.trim() : ''
-  const searching = Boolean(normalizedQuery)
-  const matches = useMemo(() => messages.map((message, index) => ({ message, index })).filter(({ message }) => findTextMatch(searchableMessageText(message), normalizedQuery)), [messages, normalizedQuery])
+  const searching = Boolean(normalizedQuery || focusMessageId)
+  const matches = useMemo(() => messages.map((message, index) => ({ message, index })).filter(({ message }) => focusMessageId ? message.id === focusMessageId : findTextMatch(searchableMessageText(message), normalizedQuery)), [messages, normalizedQuery, focusMessageId])
   useEffect(() => { setQuery(initialSearch) }, [initialSearch])
   useEffect(() => { if (searchOpen) searchInput.current?.focus() }, [searchOpen])
   useEffect(() => { setSearchPage(0); if (normalizedQuery && scrollRef.current) scrollRef.current.scrollTop = 0 }, [normalizedQuery])
@@ -207,7 +210,8 @@ export default function MessageArea({ sessionId = '', replyViewportRef, onRead, 
 
   return (
     <>
-      {searchOpen && <div className="message-search" role="search" aria-label="搜索当前对话">
+      {focusMessageId && <div className="message-search-summary message-focus-banner" role="status">正在查看这次任务发来的消息<button type="button" onClick={onClearMessageFocus}>返回完整会话</button></div>}
+      {searchOpen && !focusMessageId && <div className="message-search" role="search" aria-label="搜索当前对话">
         <div className="message-search-controls search-field" data-filled={Boolean(query)}>
           <svg className="search-field-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
           <input ref={searchInput} value={query} maxLength={500} aria-label="搜索当前对话全文" placeholder="搜索当前对话全文…" onChange={(event) => setQuery(event.target.value)}
@@ -223,7 +227,7 @@ export default function MessageArea({ sessionId = '', replyViewportRef, onRead, 
       </div>}
     <div className="message-area" ref={scrollRef} aria-live={searching ? 'off' : 'polite'} aria-busy={isStreaming}>
       <div className="message-list" ref={listRef}>
-      {searching && matches.length === 0 && <p className="message-search-empty" role="status">没有匹配的消息，试试其他关键词。</p>}
+      {searching && matches.length === 0 && <p className="message-search-empty" role="status">{focusMessageId ? '对应消息已删除，执行结果仍可在任务历史中查看。' : '没有匹配的消息，试试其他关键词。'}</p>}
       {!searching && contextLimit && messages.length > contextLimit && (
         <div className="context-limit-notice" role="status">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
@@ -257,7 +261,7 @@ export default function MessageArea({ sessionId = '', replyViewportRef, onRead, 
           )}
           <div className="message-body">
             {msg.role === 'assistant' && <span className="message-sender">{character?.name || '联系人'}</span>}
-            {searching && (msg.role !== 'user' || msg.toolData) && <SearchMatch text={searchableMessageText(msg)} query={normalizedQuery} />}
+            {searching && !focusMessageId && (msg.role !== 'user' || msg.toolData) && <SearchMatch text={searchableMessageText(msg)} query={normalizedQuery} />}
             <div className={`message-bubble${msg.agentNotice?.kind === 'question' ? ' agent-confirmation-card' : ''}`}>
               {msg.agentNotice?.kind === 'question' && <><strong className="agent-confirmation-heading">任务确认</strong>{character?.id && <AgentQuestionState characterId={character.id} runId={msg.agentNotice.runId} content={msg.content} />}</>}
               {assistantKind && <AssistantMessageLabel kind={assistantKind} />}
@@ -272,6 +276,7 @@ export default function MessageArea({ sessionId = '', replyViewportRef, onRead, 
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
+                    a: ({ href, children }) => <ContactLink href={href}>{children}</ContactLink>,
                     code({ className, children }) {
                       const isBlock = className || String(children).includes('\n')
                       if (isBlock) {

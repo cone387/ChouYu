@@ -6,10 +6,12 @@ import { getStorageStatus, setState } from '../database'
 export async function waitForRenderer(window: BrowserWindow, condition: string, timeoutMs = 5000): Promise<void> {
   await window.webContents.executeJavaScript(`new Promise((resolve, reject) => {
     const deadline = Date.now() + ${timeoutMs};
-    const check = () => {
-      if (${condition}) return resolve(true);
+    const check = async () => {
+      try {
+      if (await (${condition})) return resolve(true);
       if (Date.now() > deadline) return reject(new Error('Storage UI timed out: ' + ${JSON.stringify(condition)}));
       setTimeout(check, 25);
+      } catch (error) { reject(error); }
     };
     check();
   })`)

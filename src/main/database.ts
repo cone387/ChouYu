@@ -548,7 +548,7 @@ function markSessionReadUpToNow(session: ChatSession): void {
 }
 
 /** 主动提醒的唯一入口：写入助手会话并即时落盘，托盘角标据此更新。 */
-export function appendAssistantMessage(content: string, timestamp?: number, kind?: AssistantMessageKind, delivery?: { receiptIds: string[]; taskReminder?: TaskReminderRef; snoozeKey?: string }): SessionWorkspace {
+export function appendAssistantMessage(content: string, timestamp?: number, kind?: AssistantMessageKind, delivery?: { receiptIds: string[]; taskReminder?: TaskReminderRef; snoozeKey?: string; messageId?: string }): SessionWorkspace {
   if (delivery?.receiptIds.length && delivery.receiptIds.every(id => store.state[`reminder-receipt:${id}`])) {
     persist() // retry an earlier failed disk write without appending twice
     return getSessionWorkspace()
@@ -562,7 +562,7 @@ export function appendAssistantMessage(content: string, timestamp?: number, kind
     store.sessions.unshift(session)
   }
   if (!Number.isFinite(timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
-  session.messages.push({ id: randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at, assistantKind: normalizeAssistantMessageKind(kind) ?? 'notification', taskReminder: delivery?.taskReminder, snoozeKey: delivery?.snoozeKey })
+  session.messages.push({ id: delivery?.messageId ?? randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at, assistantKind: normalizeAssistantMessageKind(kind) ?? 'notification', taskReminder: delivery?.taskReminder, snoozeKey: delivery?.snoozeKey })
   session.updatedAt = at
   for (const id of delivery?.receiptIds ?? []) store.state[`reminder-receipt:${id}`] = 'delivered'
   persist()

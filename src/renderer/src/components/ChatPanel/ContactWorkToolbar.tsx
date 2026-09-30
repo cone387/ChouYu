@@ -18,16 +18,17 @@ const baseEntries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
 ]
 
 /** Mount per conversation: drafts survive closing, never cross contact/session boundaries. */
-export default function ContactWorkToolbar({ characterId, name, onClose, focusRequest, onDiscuss, initialTab = 'overview', standalone = false, profile }: {
+export default function ContactWorkToolbar({ characterId, name, onClose, onChat, focusRequest, onDiscuss, initialTab = 'overview', standalone = false, profile }: {
   characterId: string; name: string; onClose: () => void; focusRequest?: AgentFocusRequest
   onDiscuss?: (reference: AgentDiscussion) => void
   initialTab?: ContactAgentTab; standalone?: boolean
   profile?: ReactNode
+  onChat?: () => void
 }) {
   const entries = profile ? [...baseEntries, { id: 'profile' as const, label: '人设', icon: 'edit' as const }] : baseEntries
   const [tab, setTab] = useState<ContactAgentTab>(initialTab)
   const { data: summary, error: summaryError } = useAgentSummary(characterId)
-  const badge = (entry: ContactAgentTab) => entry === 'work' ? summary?.activeTasks ?? '—' : entry === 'memory' ? summary?.memories ?? '—' : undefined
+  const badge = (entry: ContactAgentTab) => entry === 'work' ? summary ? `共 ${summary.tasks} 项` : '—' : entry === 'memory' ? summary?.memories ?? '—' : undefined
   const hint = (entry: ContactAgentTab) => summaryError || (entry === 'overview' ? '查看今日趋势、24 小时工作记录与任务日志' : entry === 'work' ? `${ACTIVE_TASKS_HINT}${characterId === DEFAULT_CHARACTER_ID ? ' 同时包含已启用的日常陪伴、定时提醒和联系人总结；待设置时间不计入。' : ''}` : entry === 'analytics' ? summaryTokenHint(summary) : entry === 'memory' ? '当前保留的独立记忆条数' : '查看工作记录')
   const [analyticsReset, setAnalyticsReset] = useState(0)
   const [open, setOpen] = useState(standalone)
@@ -91,6 +92,11 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
   }
   const close = () => { sheet.current?.close(); setOpen(false); onClose() }
   useEffect(() => {
+    const hide = () => { sheet.current?.close(); setOpen(false); if (standalone) onClose() }
+    window.addEventListener('chouyu:contact-navigation-opened', hide)
+    return () => window.removeEventListener('chouyu:contact-navigation-opened', hide)
+  }, [standalone, onClose])
+  useEffect(() => {
     if (focusRequest) { setTab(focusRequest.tab); setVisited(true); setOpen(true) }
   }, [focusRequest])
   useEffect(() => {
@@ -130,7 +136,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
         <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
       </header>
       <div className="contact-work-sheet-content" ref={content}>
-        <ContactAgentPanel characterId={characterId} name={name} profile={profile} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={close} />
+        <ContactAgentPanel characterId={characterId} name={name} profile={profile} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={() => { close(); onChat?.() }} />
       </div>
       {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const).map(edge => <div key={edge} className={`contact-work-resize contact-work-resize-${edge}`} data-resize-edge={edge} aria-label={`调整窗口大小 ${edge}`} role="separator" tabIndex={0}
         onPointerDown={event => beginGesture(event, edge)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}

@@ -10,11 +10,12 @@ vi.mock('../agents', () => ({ inspectContactWork: state.inspect, inspectContactD
 vi.mock('../ai', () => ({ streamAIChat: state.model }))
 vi.mock('../reminder-events', () => ({ notifyReminderChanges: vi.fn() }))
 vi.mock('../tools/registry', () => ({ getRegisteredTool: () => null, registerTool: vi.fn() }))
-import { initializeAssistantRoutines, closeAssistantRoutines, readContactsForAssistant } from './index'
+import { initializeAssistantRoutines, closeAssistantRoutines, readContactsForAssistant, summaryTaskLinks } from './index'
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 8, 30, 8))
   state.values.clear(); state.handlers.clear(); vi.clearAllMocks()
+  state.sent.mockReturnValue({ sessions: [] })
   state.inspect.mockImplementation(async (id: string) => {
     if (id === 'bob') throw new Error('worker unavailable')
     return { topics: [{ id: 'article', title: '文章', status: 'researching', judgement: '初稿准备中', nextStep: '核查', updatedAt: 1 }], runs: [{ topicId: 'article', status: 'waiting', question: '使用哪个标题？', summary: '', error: '' }], reports: [], queuedTopicIds: [] }
@@ -34,11 +35,13 @@ describe('assistant routine integration', () => {
     state.handlers.get('assistant-routines:save')!({}, { title: '晨间总结', instruction: '关注待答复事项', time: '09:00', cadence: 'daily', kind: 'contact-summary', enabled: true })
     vi.setSystemTime(new Date(2026, 8, 30, 9)); await vi.advanceTimersByTimeAsync(15000)
     expect(state.model).toHaveBeenCalledTimes(1)
-    expect(state.sent).toHaveBeenCalledWith(expect.stringContaining('老周的状态暂时无法读取'), undefined, 'notification', { receiptIds: [expect.stringContaining('routine:')] })
+    expect(state.sent).toHaveBeenCalledWith(expect.stringContaining('老周的状态暂时无法读取'), undefined, 'notification', { receiptIds: [expect.stringContaining('routine:')], messageId: expect.stringMatching(/^routine-/) })
     const evidence = JSON.parse(state.model.mock.calls[0][0][0].content).evidence
     expect(evidence.contacts.map((c: { id: string }) => c.id)).toEqual(['alice', 'bob'])
     expect(evidence.contacts[1].unavailable).toBe(true)
     expect(state.delivery).toHaveBeenCalledTimes(1)
+    expect(state.sent.mock.calls[0][0]).toContain('[阿笔 · 文章](#contact-task?characterId=alice&topicId=article)')
+    expect(state.handlers.get('assistant-routines:history')!({}, state.handlers.get('assistant-routines:list')!()[0].id).items[0].status).toBe('completed')
     await vi.advanceTimersByTimeAsync(15000); expect(state.sent).toHaveBeenCalledTimes(1)
   })
   it('honors a disabled inspection tool without calling a model or reporting false success', async () => {

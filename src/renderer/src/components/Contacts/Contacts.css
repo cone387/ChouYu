@@ -153,6 +153,12 @@
 .contacts-menu-popover button:hover, .contacts-menu-popover button:focus-visible { background: var(--bg-secondary); outline: none; }
 .contacts-menu-popover button.danger { color: var(--error); }
 .contacts-profile-details { margin-top: 14px; }
+.contacts-task-focused .contacts-detail-avatar, .contacts-task-focused .contacts-detail-subtitle { display: none; }
+.contacts-task-focused .contacts-detail-actions > button:not([data-contacts-close]) { display: none; }
+.contacts-task-focused .contacts-detail-head { flex-basis: auto; }
+.contacts-task-focused .contacts-detail-topbar { flex-wrap: nowrap; padding-block: 8px; }
+.contacts-task-focused .contact-agent { margin-top: 8px; }
+.contacts-task-focused .agent-tabs { margin-bottom: 4px; }
 .contacts-profile-details > h3 { margin: 0; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
 
 /* The contact modal owns task scrolling, just like its other tabs. Keep the

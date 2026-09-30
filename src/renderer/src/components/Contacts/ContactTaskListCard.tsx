@@ -21,7 +21,8 @@ export default function ContactTaskListCard({ item, selected, disabled, onSelect
     aria-current={selected ? 'true' : undefined} disabled={disabled} onClick={onSelect}>
     <span className="topic-card-title">{item.title}</span>
     <span className="topic-badges">{item.focused && <span className="topic-badge topic-badge-focus">当前关注</span>}<span className={`topic-badge${item.running ? ' topic-badge-active' : ''}`}>{item.status}</span></span>
-    <span className="topic-card-times"><span title="任务建立时间">开始 {stamp(item.createdAt)}</span><span>更新 {stamp(item.updatedAt)}</span></span>
+    {item.summary && <span className="topic-card-summary">{item.summary}</span>}
+    {(item.createdAt || item.updatedAt) && <span className="topic-card-times">{item.createdAt && <span title="任务建立时间">创建 {stamp(item.createdAt)}</span>}{item.updatedAt && <span>更新 {stamp(item.updatedAt)}</span>}</span>}
   </button>
   {item.canDelete && <div className={`topic-card-menu${menu ? ' is-open' : ''}`} ref={menuRef}>
     <button ref={trigger} type="button" data-task-menu={item.id} aria-label={`「${item.title}」的操作`} aria-expanded={menu} disabled={disabled} onClick={() => setMenu(!menu)}><TaskIcon name="more" /></button>

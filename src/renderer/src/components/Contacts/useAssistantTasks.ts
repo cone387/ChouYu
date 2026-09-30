@@ -26,7 +26,7 @@ export function useAssistantTasks(active: boolean) {
   const entries: AssistantTaskEntry[] = !active ? [] : [
     ...(config ? ASSISTANT_DUTIES.map(duty => ({ id: `duty:${duty.key}`, title: duty.title, status: config[duty.key] ? '已启用' : '已暂停', description: duty.rule, duty: duty.key })) : []),
     ...routines.map(routine => ({ id: `routine:${routine.id}`, title: routine.title, status: routine.enabled ? '已启用' : '已暂停', description: routine.instruction, routine })),
-    ...(loaded && !routines.some(item => item.kind === 'contact-summary') ? [{ id: 'morning-summary', title: '联系人晨间总结', status: '待安排', description: '告诉我希望几点检查各联系人的进展，我会按时汇总需要你关注的事情。' }] : [])
+    ...(loaded && !routines.some(item => item.kind === 'contact-summary') ? [{ id: 'morning-summary', title: '联系人晨间总结', status: '未配置', description: '告诉我希望几点检查各联系人的进展，我会按时汇总需要你关注的事情。' }] : [])
   ]
   return { entries, config, error, refresh }
 }

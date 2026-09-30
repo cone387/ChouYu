@@ -219,7 +219,7 @@ describe('agent-planned contact deliverable tools', () => {
     const model = vi.fn(async () => '{}'), service = new AgentService(dir, () => {}, () => model)
     cleanup.push(() => service.close())
     const settings: AgentSettings = { ...DEFAULT_AGENT_SETTINGS, goal: '24h 实验', enabled: true, workUntil: Date.now() - 1 }
-    service.store.save('writer', settings)
+    service.store.save('writer', settings, settings.workUntil! - 1000)
     await service.sync([{ id: 'writer', soul: '', conversation: '', config: null }])
     expect(service.store.overview('writer').settings.enabled).toBe(false)
     expect(model).not.toHaveBeenCalled()

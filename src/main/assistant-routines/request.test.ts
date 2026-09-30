@@ -4,7 +4,7 @@ import { requestAssistantTask } from './request'
 
 function fixture() {
   let value = ''
-  const service = new AssistantRoutineService({ read: () => value, write: text => { value = text }, generate: async () => '', deliver: () => {} })
+  const service = new AssistantRoutineService({ readHistory: () => undefined, writeHistory: () => {}, read: () => value, write: text => { value = text }, generate: async () => '', deliver: () => {} })
   const input = { title: '晨报', instruction: '汇总联系人进展', cadence: 'weekdays', time: '08:30', kind: 'contact-summary', enabled: true }
   return { service, input }
 }

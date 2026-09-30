@@ -64,6 +64,43 @@ it('runs different contacts concurrently, deduplicates ticks, and lets a fast co
   await vi.waitFor(() => expect(f.service.store.getRun(alice)?.status).toBe('completed'))
 })
 
+it('updates shared limits and notifications without aborting an active round or resetting its usage', async () => {
+  const f = await fixture()
+  const run = await f.start('alice')
+  const before = f.service.store.overview('alice')
+  const next = await f.service.request('savePreferences', 'alice', [{ ...before.settings, dailyCalls: 40, notifyProgress: false, intervalMinutes: 30 }])
+  expect(f.pending('alice').signal.aborted).toBe(false)
+  expect(f.service.store.getRun(run)?.status).toBe('running')
+  expect(next.revision).toBe(before.revision + 1)
+  expect(f.service.store.getRun(run)?.revision).toBe(next.revision)
+  expect(next.callsToday).toBe(before.callsToday)
+  expect(next.topics).toEqual(before.topics)
+  f.pending('alice').resolve(draft)
+  await vi.waitFor(() => expect(f.service.store.getRun(run)?.status).toBe('completed'))
+})
+
+it('preserves a waiting question when the daily allowance changes, and still stops on access changes', async () => {
+  const f = await fixture()
+  const run = await f.start('alice')
+  f.pending('alice').resolve(JSON.stringify({ ...JSON.parse(draft), question: '需要哪个方向？' }))
+  await vi.waitFor(() => expect(f.service.store.getRun(run)?.status).toBe('waiting'))
+  const before = f.service.store.overview('alice')
+  await f.service.request('savePreferences', 'alice', [{ ...before.settings, dailyCalls: 30 }])
+  expect(f.service.store.getRun(run)?.status).toBe('waiting')
+  await f.service.request('savePreferences', 'alice', [{ ...before.settings, permissionLevel: 'sources', dailyCalls: 30 }])
+  expect(f.service.store.getRun(run)?.status).toBe('cancelled')
+})
+
+it('rejects enabling an expired arrangement without changing settings or cancelling work', async () => {
+  const f = await fixture()
+  const run = await f.start('alice')
+  const before = f.service.store.overview('alice')
+  await expect(f.service.request('savePreferences', 'alice', [{ ...before.settings, enabled: true, workUntil: Date.now() - 1 }])).rejects.toThrow('截止时间已过')
+  expect(f.service.store.overview('alice').settings).toEqual(before.settings)
+  expect(f.pending('alice').signal.aborted).toBe(false)
+  expect(f.service.store.getRun(run)?.status).toBe('running')
+})
+
 it('automatically starts all due contacts and isolates a failed model request', async () => {
   const f = await fixture()
   for (const id of ['alice', 'bob']) f.service.store.save(id, { ...settings, enabled: true })

@@ -14,6 +14,7 @@ import MessageArea from './MessageArea'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import InputArea, { PendingAttachment } from './InputArea'
 import ContactWorkToolbar from './ContactWorkToolbar'
+import { CONTACT_NAVIGATION, type ContactNavigationRequest } from '../Contacts/contactNavigation'
 import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
@@ -73,6 +74,9 @@ interface ChatPanelProps {
 
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed, assistantFocusRequest }: ChatPanelProps) {
   const [agentFocus, setAgentFocus] = useState<(AgentFocusRequest & { sessionId: string }) | null>(null)
+  const [linkedTask, setLinkedTask] = useState<{ characterId: string; name: string; focus: AgentFocusRequest } | null>(null)
+  const [messageFocus, setMessageFocus] = useState<{ sessionId: string; messageId: string } | null>(null)
+  const [navigationError, setNavigationError] = useState('')
   const [agentDiscussion, setAgentDiscussion] = useState<(AgentDiscussion & { sessionId: string }) | null>(null)
   const [activePage, setActivePage] = useState<WorkspacePage>(initialShowSettings ? 'settings' : 'chat')
   const [visitedPages, setVisitedPages] = useState<Partial<Record<WorkspacePage, boolean>>>({ settings: initialShowSettings })
@@ -676,6 +680,35 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   // 仅在获得焦点且读到最新内容时，按渲染层已展示的消息边界标读。
   const activeAssistantUnread = sessions.find((session) => session.id === activeSessionId)?.unreadCount ?? 0
   useEffect(() => { setAgentFocus(null) }, [activeSessionId, isChat])
+  useEffect(() => {
+    const handle = (event: Event) => {
+      const request = (event as CustomEvent<ContactNavigationRequest>).detail
+      request.handled = true
+      setNavigationError('')
+      void (async () => {
+        const target = request.target
+        if (target.kind === 'task') {
+          const contacts = await window.electronAPI.characters.list()
+          const contact = contacts.find(c => c.id === target.characterId)
+          if (!contact) throw new Error('这项任务或联系人已删除，原始总结仍保留。')
+          const work = await window.electronAPI.agents.get(target.characterId)
+          if (!work.topics.some(t => t.id === target.topicId)) throw new Error('这项任务或联系人已删除，原始总结仍保留。')
+          const run = work.runs.find(r => r.topicId === target.topicId)
+          window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
+          setLinkedTask({ characterId: contact.id, name: contact.name, focus: { topicId: target.topicId, runId: run?.id ?? '', kind: run?.status === 'waiting' ? 'question' : 'progress', tab: 'work', nonce: Date.now() } })
+        } else {
+          await selectSession(target.sessionId)
+          const workspace = await window.electronAPI.db.getSessionWorkspace()
+          if (!workspace.activeSession.messages.some(m => m.id === target.messageId)) throw new Error('对应聊天消息已删除，执行结果仍可在任务历史中查看。')
+          window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
+          setMessageFocus(target); setShowMessageSearch(false); setLinkedTask(null); navigate('chat')
+        }
+        request.resolve()
+      })().catch(error => { setNavigationError(error.message); request.reject(error) })
+    }
+    window.addEventListener(CONTACT_NAVIGATION, handle)
+    return () => window.removeEventListener(CONTACT_NAVIGATION, handle)
+  }, [selectSession, navigate])
   useEffect(() => { setAgentDiscussion(null) }, [activeSessionId])
   const markVisibleMessagesRead = useCallback(() => {
     if (!visible || !isChat || !workspaceLoaded || !activeAssistantUnread) return
@@ -799,6 +832,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
             {workspaceError && <div className="memory-candidate-error" role="alert">{workspaceError}<button onClick={retryWorkspace}>重新加载</button></div>}
             {workspaceLoaded && (
               <MessageArea
+                focusMessageId={messageFocus?.sessionId === activeSessionId ? messageFocus.messageId : undefined}
+                onClearMessageFocus={() => setMessageFocus(null)}
                 onAgentNotice={(ref, tab) => setAgentFocus({ ...ref, tab, nonce: Date.now(), sessionId: activeSessionId })}
                 active={visible && isChat && !toolApprovalRequest && !confirmClear}
                 character={activeCharacter}
@@ -924,6 +959,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         onPointerDown={event => handlePanelResizeStart(edge, event)} onPointerMove={handlePanelResizeMove}
         onPointerUp={handlePanelResizeEnd} onPointerCancel={handlePanelResizeEnd} />)}
       {toolApprovalRequest && <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />}
+      {navigationError && <div className="memory-candidate-error" role="alert">{navigationError}<button type="button" onClick={() => setNavigationError('')}>关闭</button></div>}
+      {linkedTask && <ContactWorkToolbar key={`${linkedTask.characterId}:${linkedTask.focus.nonce}`} standalone characterId={linkedTask.characterId} name={linkedTask.name} initialTab="work" focusRequest={linkedTask.focus} onClose={() => setLinkedTask(null)} onChat={() => { void openCharacterChat(linkedTask.characterId).catch(error => setNavigationError(error.message)) }} />}
       {showGlobalSearch && visible && <GlobalSearch searchHotkey={config.searchHotkey} onContact={id => { setContactsFocusId(id); navigate('contacts') }} onTask={(id, done, query) => { setTaskFocusId(id); setTaskSearchRequest({ id, done, query, nonce: Date.now() }); navigate('tasks') }} snapshot={searchSnapshot} onClose={() => setShowGlobalSearch(false)}
         onSession={async (id, query) => { await selectSession(id); navigate('chat'); setNarrowSessionsOpen(false); setMessageSearchQuery(query); setShowMessageSearch(true) }}
         onMemory={openMemoryWorkspace}

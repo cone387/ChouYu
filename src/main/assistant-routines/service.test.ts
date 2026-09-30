@@ -6,10 +6,53 @@ const at = (day: number, hour: number) => new Date(2026, 8, day, hour).getTime()
 function fixture() {
   let raw = ''
   const receipts = new Set<string>(), messages: string[] = []
-  const deps = { read: () => raw, write: (value: string) => { raw = value }, generate: vi.fn(async () => '阿笔正在处理文章，老周等待答复。'), deliver: vi.fn((id: string, text: string) => { if (!receipts.has(id)) messages.push(text); receipts.add(id) }) }
+  const history = new Map<string, string>()
+  const deps = { readHistory: (id: string) => history.get(id), writeHistory: (id: string, value: string) => { history.set(id, value) }, read: () => raw, write: (value: string) => { raw = value }, generate: vi.fn(async () => '阿笔正在处理文章，老周等待答复。'), deliver: vi.fn((id: string, text: string) => { if (!receipts.has(id)) messages.push(text); receipts.add(id) }) }
   return { deps, messages, service: new AssistantRoutineService(deps) }
 }
 describe('assistant routine execution', () => {
+  it('keeps each failed attempt and its later result across edits and restart', async () => {
+    const f = fixture(), [item] = f.service.save(input, undefined, undefined, at(25, 8))
+    f.deps.generate.mockRejectedValueOnce(new Error('model unavailable'))
+    await f.service.tick(at(25, 9))
+    const restarted = new AssistantRoutineService(f.deps)
+    await restarted.tick(at(25, 10))
+    const history = restarted.history(item.id).items
+    expect(history.map(entry => entry.status)).toEqual(['completed', 'failed'])
+    expect(history[1].error).toBe('model unavailable')
+    expect(history[0].content).toContain('老周')
+    expect(history[0].receipt).toBe(history[1].receipt)
+    restarted.save({ ...item, enabled: false }, item.id, item.revision, at(25, 11))
+    expect(restarted.history(item.id).items).toEqual(history)
+    expect(restarted.list()[0]).toMatchObject({ createdAt: at(25, 8), updatedAt: at(25, 11) })
+  })
+  it('paginates without dropping or duplicating older history when a new execution arrives', async () => {
+    const f = fixture(), [item] = f.service.save(input, undefined, undefined, at(1, 8))
+    for (let day = 1; day <= 25; day++) await f.service.tick(at(day, 9))
+    const first = f.service.history(item.id)
+    expect(first.items).toHaveLength(20)
+    await f.service.tick(at(26, 9))
+    const older = f.service.history(item.id, first.nextCursor)
+    expect(older.items).toHaveLength(5)
+    expect(new Set([...first.items, ...older.items].map(entry => entry.id)).size).toBe(25)
+    expect(older.nextCursor).toBeUndefined()
+  })
+  it('does not invent execution history for pre-upgrade schedules', () => {
+    const f = fixture(), [item] = f.service.save(input, undefined, undefined, at(25, 8))
+    f.deps.write(JSON.stringify([{ ...item, createdAt: undefined, updatedAt: undefined, lastAt: at(24, 9), lastResult: 'old summary' }]))
+    expect(f.service.history(item.id).items).toEqual([])
+    expect(f.service.list()[0].lastResult).toBe('old summary')
+  })
+  it('distinguishes a live attempt from an interrupted attempt after restart', async () => {
+    const f = fixture(), [item] = f.service.save(input, undefined, undefined, at(25, 8))
+    let finish!: (value: string) => void
+    f.deps.generate.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = f.service.tick(at(25, 9))
+    expect(f.service.history(item.id).items[0].status).toBe('running')
+    f.service.close(); finish('unused'); await pending
+    expect(new AssistantRoutineService(f.deps).history(item.id).items[0]).toMatchObject({ status: 'failed', error: expect.stringContaining('中断') })
+    expect(f.messages).toHaveLength(0)
+  })
   it('uses local calendar times, skips weekends and supports weekly dates', () => {
     expect(nextRoutineAt({ ...input, cadence: 'weekdays' }, at(25, 10))).toBe(at(28, 9))
     expect(nextRoutineAt({ ...input, cadence: 'weekly', weekday: 1 }, at(28, 10))).toBe(at(35, 9))

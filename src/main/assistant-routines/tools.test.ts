@@ -7,7 +7,7 @@ describe('assistant conversation tools', () => {
   const context = { sessionId: 'chat' } as ToolExecutionContext
   function fixture(owner = 'chouyu') {
     let raw = ''
-    const service = new AssistantRoutineService({ read: () => raw, write: value => { raw = value }, generate: async () => 'summary', deliver: () => {} })
+    const service = new AssistantRoutineService({ readHistory: () => undefined, writeHistory: () => {}, read: () => raw, write: value => { raw = value }, generate: async () => 'summary', deliver: () => {} })
     const tools = createAssistantTools(service, () => owner, async () => ({ contacts: [{ name: '阿笔', unavailable: true }] }))
     return { service, get: (name: string) => tools.find(t => t.name === name)! }
   }

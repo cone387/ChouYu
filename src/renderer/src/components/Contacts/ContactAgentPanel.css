@@ -9,7 +9,8 @@
 .contact-agent button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .contact-agent button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .contact-agent button:disabled { opacity: .5; cursor: default; }
-.contact-agent :is(button,input,textarea,a,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.contact-agent :is(button,a,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.contact-agent :is(input,textarea,select):is(:focus,:focus-visible) { outline: none; box-shadow: none; border-color: var(--border); }
 .agent-tabs { display: flex; gap: 14px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
 .agent-tabs button { background: none; border: 0; border-radius: 0; border-bottom: 2px solid transparent; padding: 7px 0; color: var(--text-secondary); }
 .agent-tabs button[aria-pressed=true] { border-bottom-color: var(--accent); color: var(--text-primary); }
@@ -84,3 +85,29 @@
 .agent-research-record ul { padding-left: 20px; }
 .agent-search-credentials { margin-top: 12px; }
 .agent-search-credentials input { width: 100%; box-sizing: border-box; }
+
+/* Working rules follow the same form controls and theme as the task details. */
+.agent-settings-view { color: var(--text-primary); }
+.work-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.work-settings-heading h3 { margin: 0; font-size: 16px; }
+.work-settings-heading button { flex-shrink: 0; }
+.work-settings-status { padding: 14px 16px; background: var(--bg-secondary); border-radius: 8px; margin: 4px 0 22px; }
+.work-settings-status p { margin: 6px 0; }
+.work-settings-form { max-width: 780px; }
+.work-settings-section { margin: 0 0 18px; padding: 0 0 18px; border: 0; border-bottom: 1px solid var(--border); min-width: 0; }
+.work-settings-section legend { padding: 0; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.work-settings-section fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.work-settings-section label, .agent-search-credentials > label { display: flex; flex-direction: column; gap: 6px; margin: 14px 0; font-weight: 500; }
+.work-settings-section .agent-toggle { flex-direction: row; align-items: center; font-weight: 400; }
+.work-settings-disclosure > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; font-weight: 600; cursor: pointer; }
+.work-settings-disclosure > summary::before { content: '›'; width: 10px; }
+.work-settings-disclosure[open] > summary::before { content: '⌄'; }
+.work-settings-disclosure > summary > span { font-weight: 400; font-size: 12px; color: var(--text-secondary); }
+.work-settings-deadline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.contact-agent .work-settings-deadline input, .contact-agent .agent-search-credentials input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; box-sizing: border-box; min-width: 0; max-width: 100%; }
+.work-settings-collaboration { margin-top: 18px; padding-top: 8px; border-top: 1px solid var(--border); }
+.work-settings-footer { padding-bottom: 12px; }
+.work-settings-footer > p { margin: 8px 0 14px; }
+.task-inherited-settings { padding-bottom: 16px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+.task-inherited-settings h4 { margin: 0 0 8px; }
+@media (max-width: 540px) { .work-settings-form .agent-settings-row { grid-template-columns: 1fr; gap: 0; } .work-settings-heading { flex-wrap: wrap; gap: 0; } }

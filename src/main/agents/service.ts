@@ -10,6 +10,7 @@ import type { AgentSettings, AgentTopicStatus } from '../../shared/agents'
 import type { AgentSearcher } from './research'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from './model-output'
+import { workSettingsRequireRestart } from '../../shared/work-settings'
 
 export interface AgentIdentity { id: string; name?: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
@@ -148,7 +149,8 @@ export class AgentService {
       case 'save': {
         if ((args[0] as AgentSettings)?.enabled && !this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         if ((args[0] as AgentSettings)?.searchEnabled && !this.identity(id).searchKey) throw new Error('请先保存此联系人的搜索密钥。')
-        this.store.save(id, args[0], Date.now(), method === 'save'); this.abort(id); break
+        const restart = method === 'save' || workSettingsRequireRestart(this.store.overview(id).settings, args[0] as AgentSettings)
+        this.store.save(id, args[0], Date.now(), method === 'save'); if (restart) this.abort(id); break
       }
       case 'pause': this.store.pause(id); this.abort(id); break
       case 'run': {
@@ -176,7 +178,7 @@ export class AgentService {
     if (this.ready && !this.closed) for (const profile of this.store.profiles()) {
       const settings = JSON.parse(profile.settings) as AgentSettings
       if (settings.enabled && settings.workUntil && Date.now() >= settings.workUntil) {
-        this.store.pause(profile.character_id); this.abort(profile.character_id); this.changed(profile.character_id)
+        this.store.pause(profile.character_id, '持续工作已到截止时间，自动停止。请调整工作设置，并在任务中继续。'); this.abort(profile.character_id); this.changed(profile.character_id)
       }
     }
     if (!this.ready || this.closed) return

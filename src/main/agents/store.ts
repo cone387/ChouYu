@@ -12,6 +12,7 @@ import { validateDeliveryPlan, type DeliveryPlan, type DeliveryUpdate } from '..
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import type { AgentTopicMetrics } from '../../shared/agents'
 import { readAnalytics } from './analytics'
+import { workSettingsRequireRestart } from '../../shared/work-settings'
 import type { AnalyticsQuery } from '../../shared/agent-analytics'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
@@ -147,11 +148,18 @@ export class AgentStore {
   ensure(id: string) { this.db.prepare('INSERT OR IGNORE INTO profiles(character_id,settings,revision,next_at) VALUES(?,?,1,0)').run(id, JSON.stringify(DEFAULT_AGENT_SETTINGS)) }
   save(id: string, raw: unknown, now = Date.now(), createDefaultTopic = true) {
     const settings = validateAgentSettings(raw)
+    if (settings.enabled && settings.workUntil && settings.workUntil <= now) throw new Error('持续工作截止时间已过，请取消或延长截止时间后再开启。')
     this.heartbeatRows.delete(id)
     this.ensure(id)
     this.db.transaction(() => {
-      this.cancel(id, '工作方向或设置已更改。', now)
-      this.db.prepare('UPDATE profiles SET settings=?,revision=revision+1,next_at=?,failures=0 WHERE character_id=?').run(JSON.stringify(settings), now, id)
+      const profile = this.profile(id)!, previous = JSON.parse(profile.settings) as AgentSettings
+      const restart = createDefaultTopic || workSettingsRequireRestart(previous, settings)
+      if (restart) this.cancel(id, '工作权限或运行方式已更改，本轮停止，已有成果保留。', now)
+      const nextAt = !previous.enabled && settings.enabled ? now : restart ? now : profile.next_at
+      this.db.prepare('UPDATE profiles SET settings=?,revision=revision+1,next_at=?,failures=0 WHERE character_id=?').run(JSON.stringify(settings), nextAt, id)
+      // Keep checkpointed rounds live while invalidating stale settings confirmations.
+      if (!restart) this.db.prepare("UPDATE runs SET revision=? WHERE character_id=? AND revision=? AND status IN ('queued','running','waiting','interrupted')").run(profile.revision + 1, id, profile.revision)
+      if (!previous.enabled && settings.enabled) this.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id IN (SELECT id FROM topics WHERE character_id=?)').run(now, id)
       if (createDefaultTopic && !this.topics.list(id).length) {
         const topic = this.topics.create(id, { title: settings.goal.slice(0, 160), goal: settings.goal, constraints: '' }, '由首次保存的工作方向建立。', now)
         this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
@@ -159,16 +167,16 @@ export class AgentStore {
     })()
     return this.overview(id, now)
   }
-  pause(id: string) {
+  pause(id: string, reason = '用户暂停了持续工作。') {
     this.heartbeatRows.delete(id)
     this.ensure(id)
     const settings = { ...JSON.parse(this.profile(id)!.settings), enabled: false }
     this.db.transaction(() => {
       for (const task of this.scheduled(id)) {
         const topic = this.topics.get(id, task.topic_id)
-        if (canResearch(topic.status)) this.topics.status(id, topic.id, topic.revision, 'paused', '用户暂停了联系人的工作安排。')
+        if (canResearch(topic.status)) this.topics.status(id, topic.id, topic.revision, 'paused', reason)
       }
-      this.cancel(id, '用户暂停了持续工作。')
+      this.cancel(id, reason)
       this.db.prepare('UPDATE profiles SET settings=?,revision=revision+1 WHERE character_id=?').run(JSON.stringify(settings), id)
     })()
     return this.overview(id)

@@ -127,6 +127,8 @@ src/
 
 ## 文档
 
+- [联系人任务产品与交互规范（现行 spec）](docs/contact-task-spec.md)
+
 - [系统架构](docs/architecture.md)
 - [联系人持续工作与 24h 实验架构](docs/contact-agents-architecture.md)
 - [V1 功能规格](docs/v1-spec.md)

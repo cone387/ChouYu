@@ -262,6 +262,8 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const { data: dashboard, error: dashboardError } = useContactsDashboard(active && !detailOnly)
   const [detail, setDetail] = useState<CharacterStats | null>(null)
   const [expandedTab, setExpandedTab] = useState<ContactAgentTab | null>(null)
+  const [detailTab, setDetailTab] = useState<ContactAgentTab>('overview')
+  useEffect(() => { setDetailTab('overview') }, [detail?.id])
   useEffect(() => { setExpandedTab(null) }, [detail?.id])
   const [form, setForm] = useState<FormState | null>(null)
   const [error, setError] = useState('')
@@ -514,7 +516,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     </div>
     </div>
     </>}
-    {detail && <ResizableModal className="contacts-detail" role="dialog" label={`角色详情 ${detail.name}`}
+    {detail && <ResizableModal className={`contacts-detail${detailTab === 'work' ? ' contacts-task-focused' : ''}`} role="dialog" label={`角色详情 ${detail.name}`}
       initialWidth={860} initialHeight={680} minWidth={300} minHeight={200} dataAttributes={{ 'data-contacts-detail': detail.id }}>
       <div>
         <div className="contacts-detail-topbar">
@@ -534,7 +536,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             onClick={() => { setDetail(null); setError(''); setConfirmDelete(detail) }}>删除</button>}
         </div>
         </div>
-        <section className="contacts-profile-details" aria-label="角色资料">
+        <section className="contacts-profile-details" aria-label="角色资料" hidden={detailTab === 'work'}>
           <h3>角色资料</h3>
           <dl className="contacts-detail-fields">
             <div><dt>模型</dt><dd>{detail.builtIn || !detail.model ? `跟随默认 · ${config.model}` : detail.model}</dd></div>
@@ -548,7 +550,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           <div className="agent-tabs"><button type="button" data-agent-tab="profile" aria-pressed="true">人设</button></div>
           {detailProfile}
         </section>}
-        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} profile={detailProfile} onExpand={setExpandedTab} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
+        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} profile={detailProfile} selectedTab={detailTab} onTabChange={setDetailTab} onExpand={setExpandedTab} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
       </div>
     </ResizableModal>}
     {detail && expandedTab && <ContactWorkToolbar key={detail.id} characterId={detail.id} name={detail.name} standalone profile={detailProfile} initialTab={expandedTab} onClose={() => setExpandedTab(null)} />}

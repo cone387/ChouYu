@@ -301,6 +301,7 @@ const api = {
     ipcRenderer.send('pet-visibility-changed', visible)
   },
   assistantRoutines: {
+    history: (id: string, before?: number) => ipcRenderer.invoke('assistant-routines:history', id, before),
     request: (description: string, id?: string, revision?: number) => ipcRenderer.invoke('assistant-routines:request', description, id, revision),
     onChanged: (callback: () => void) => {
       const handler = () => callback()

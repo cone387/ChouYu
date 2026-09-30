@@ -10,6 +10,8 @@ export interface AssistantRoutineInput {
 export interface AssistantRoutine extends AssistantRoutineInput {
   id: string
   revision: number
+  createdAt?: number
+  updatedAt?: number
   nextAt: number
   lastAt?: number
   lastError?: string
@@ -19,12 +21,27 @@ export interface AssistantRoutine extends AssistantRoutineInput {
   pending?: { dueAt: number; content: string }
 }
 export interface AssistantRoutinesAPI {
+  history(id: string, before?: number): Promise<AssistantRoutineHistoryPage>
   request(description: string, id?: string, revision?: number): Promise<AssistantTaskRequestResult>
   onChanged(callback: () => void): () => void
   list(): Promise<AssistantRoutine[]>
   save(input: AssistantRoutineInput, id?: string, revision?: number): Promise<AssistantRoutine[]>
   remove(id: string, revision: number): Promise<AssistantRoutine[]>
 }
+export interface AssistantRoutineExecution {
+  id: string
+  receipt: string
+  title: string
+  scheduledAt: number
+  startedAt: number
+  finishedAt?: number
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  content?: string
+  error?: string
+  sessionId?: string
+  messageId?: string
+}
+export interface AssistantRoutineHistoryPage { items: AssistantRoutineExecution[]; nextCursor?: number }
 export type AssistantTaskRequestResult = { kind: 'routine'; routine: AssistantRoutine } | { kind: 'question'; question: string } | { kind: 'work'; description: string }
 export function validateRoutine(raw: unknown): AssistantRoutineInput {
   if (!raw || typeof raw !== 'object') throw new Error('助手安排无效。')

@@ -1,3 +1,4 @@
+import ContactWorkSettings from './ContactWorkSettings'
 import ContactTaskInputForm from './ContactTaskInputForm'
 import ContactAnalytics from './ContactAnalytics'
 import ContactDailyOverview from './ContactDailyOverview'
@@ -26,7 +27,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const [data, setData] = useState<AgentOverview | null>(null)
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
   const [sources, setSources] = useState('')
-  const [searchKey, setSearchKey] = useState(''), [keyConfigured, setKeyConfigured] = useState(false)
+  const [keyConfigured, setKeyConfigured] = useState(false)
   const [localTab, setLocalTab] = useState<ContactAgentTab>('overview')
   const tab = selectedTab ?? localTab
   const setTab = (next: ContactAgentTab) => { setLocalTab(next); onTabChange?.(next) }
@@ -116,8 +117,6 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const active = data?.runs.find(r => ['running', 'queued', 'interrupted'].includes(r.status)) ?? data?.runs.find(r => r.status === 'waiting')
   const focusedTopic = data?.topics.find(topic => topic.id === data.focusTopicId)
   const stoppedTopic = focusedTopic && ['paused', 'completed', 'abandoned'].includes(focusedTopic.status)
-  const lastRun = data?.runs[0]
-  const latestReport = data?.reports[0]
   const blocked = !data?.topics.length ? '直接在聊天里告诉我需要处理什么，无需填写表单或先做设置。'
     : dirty ? '设置有未保存的修改，保存后才能推进。'
     : active ? active.status === 'waiting' ? '有任务等你回复，请打开对应任务的概览；其他已安排任务可继续。' : '这一轮正在进行，完成后可以查看记录。'
@@ -138,17 +137,13 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     {tab === 'profile' && profile}
     {tab === 'overview' && <ContactDailyOverview characterId={characterId} />}
     {data && <div className="agent-task-view" hidden={tab !== 'work'}>
-      <ContactTopics active={tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
+      <ContactTopics onWorkSettings={() => setTab('settings')} active={tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
         renderActivity={topicId => {
           const logRun = data.runs.find(run => run.topicId === topicId)
           const draftKey = `${characterId}:${logRun?.id}:${logRun?.question}`
           const answer = answerDrafts[draftKey] ?? ''
           const setAnswer = (value: string) => setAnswerDrafts(previous => ({ ...previous, [draftKey]: value }))
           return <>
-        {tab === 'work' && logRun && logRun.topicId === topicId && <ContactWorkLog key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} data={data} busy={busy} canRetry={logRun.revisionScope === 'presentation' ? !dirty && !active && data.callsToday < data.settings.dailyCalls : !blocked}
-          onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
-          onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!))}
-          onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} />}
       {logRun?.status === 'waiting' && logRun.topicId === topicId && <section className="agent-question"><form onSubmit={event => { event.preventDefault(); void perform(async () => { await window.electronAPI.agents.answer(characterId, logRun.id, answer); setAnswer('') }) }}>
         <strong>这一步需要你的想法</strong><p>{logRun.question}</p>
         {onDiscuss && logRun.topicId && <button type="button" onClick={() => discuss(logRun.id, logRun.topicId!, `待确认问题：${logRun.question}`)}>带着问题去聊天</button>}
@@ -157,66 +152,19 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       </form>
       {logRun.inputFields?.length ? <details open><summary>按任务需求填写</summary><ContactTaskInputForm key={`${logRun.id}:${logRun.question}`} fields={logRun.inputFields} busy={busy} onSubmit={async (reply, values) => { await perform(async () => { await window.electronAPI.agents.answer(characterId, logRun.id, reply, values); setAnswer('') }) }} /></details> : null}
       </section>}
+        {tab === 'work' && logRun && logRun.topicId === topicId && <details className="topic-secondary"><summary>本轮工作日志</summary><ContactWorkLog key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} data={data} busy={busy} canRetry={logRun.revisionScope === 'presentation' ? !dirty && !active && data.callsToday < data.settings.dailyCalls : !blocked}
+          onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
+          onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!))}
+          onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} /></details>}
         </>}}
         onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />
     </div>}
     {data && (analyticsVisited || tab === 'analytics') && <div hidden={tab !== 'analytics'}><ContactAnalytics resetKey={analyticsFilterReset} active={tab === 'analytics'} characterId={characterId} name={name} topics={data.topics} initialTopic={analyticsTopic} onBack={() => setTab('work')}
       onReport={runId => { setAnalyticsRecord(true); setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} /></div>}
     {tab === 'history' && analyticsRecord && <button type="button" onClick={() => { setAnalyticsRecord(false); setTab('analytics') }}>← 返回活动与消耗</button>}
-    {data && <div className="agent-settings-view" hidden={tab !== 'settings'}>
-      <h3>工作设置</h3>
-      <p className="agent-description">这里管理联系人的每日调用上限。任务累计预算独立计算，不占用其他任务的今日额度；每个任务的用量与预算可在任务概览、阶段计划和本任务设置中查看。</p>
-      <p className="agent-description">开启持续工作后，应用保持运行时会继续推进任务；退出或关机期间暂停。</p>
-      <details className="agent-overview"><summary>运行状态与最近发现</summary>
-      <div className="agent-now">
-        <span className="agent-caption">当前关注</span><strong>{focusedTopic?.title || '任务从聊天开始'}</strong>
-
-        <p role="status">{blocked || (data.settings.enabled ? `下次检查：${data.nextAt > Date.now() ? time(data.nextAt) : '等待调度'}` : '当前为手动工作，可以推进一轮或在设置中开启持续工作。')}</p>
-        <div className="agent-actions">{focusedTopic && <button data-agent-run type="button" disabled={busy || Boolean(blocked)} onClick={() => void perform(() => window.electronAPI.agents.run(characterId))}>推进当前事项一轮</button>}
-          {onChat && <button type="button" className="primary" data-agent-chat onClick={onChat}>回到聊天</button>}
-          {(data.settings.enabled || active) && <button type="button" disabled={busy} onClick={() => void perform(async () => { await window.electronAPI.agents.pause(characterId); setDraft(previous => ({ ...previous, enabled: false })) })}>暂停工作</button>}
-        </div>
-      </div>
-      {latestReport && <div className="agent-latest"><span className="agent-caption">最新发现 · {time(latestReport.createdAt)}</span><h4>{latestReport.title}</h4><p className="agent-latest-excerpt">{latestReport.body}</p><p>{latestReport.nextStep || '打开记录查看结论与证据'}</p><button type="button" disabled={busy} onClick={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, latestReport.runId))) }}>查看结论与证据 →</button></div>}
-      {lastRun?.status === 'failed' && <p className="agent-error" role="alert">{lastRun.error}</p>}
-
-      </details>
-      <details className="agent-work-settings" open>
-      <summary>权限与额度（可选）</summary>
-      <p className="agent-caption">默认配置即可在聊天中派发任务。这里只调整访问范围、运行频率和额度，保存不会创建任务。</p>
-      <form onSubmit={e => { e.preventDefault(); void perform(async () => { const result = await window.electronAPI.agents.savePreferences(characterId, { ...settings, goal: settings.goal || '根据用户交付的任务整理方向、研究验证并反馈进展。' }); setDraft(result.settings); setSources(result.settings.sources.join('\n')) }) }}>
-        <label>工作权限<select data-agent-permission value={draft.permissionLevel ?? 'public'} onChange={e => setDraft({ ...draft, permissionLevel: e.target.value as 'public' | 'sources', ...(e.target.value === 'sources' ? { searchEnabled: false } : {}) })}><option value="public">公开网页通行（默认）</option><option value="sources">仅指定资料</option></select><span className="agent-caption">{draft.permissionLevel === 'sources' ? '只读取下方指定网页，不自主搜索。' : '自行选择并读取公开网页，不需要逐个授权。'}</span></label>
-        <details><summary>参考资料{draft.permissionLevel === 'sources' ? '（限制访问时必填）' : '（可选）'}</summary><label><span className="agent-caption">可提供希望优先关注的网页，每行一个，最多 5 个。</span><textarea data-agent-sources rows={3} value={sources} onChange={e => setSources(e.target.value)} placeholder="https://…" aria-label="参考资料" /></label></details>
-        <div className="agent-settings-row"><label>间隔（分钟）<input data-agent-interval type="number" min={15} max={10080} step={1} required value={draft.intervalMinutes} onChange={e => setDraft({ ...draft, intervalMinutes: Number(e.target.value) })} /></label><label>联系人每日资源上限（模型调用次数）<input type="number" min={2} step={1} required value={draft.dailyCalls} onChange={e => setDraft({ ...draft, dailyCalls: Number(e.target.value) })} /></label></div>
-        <label className="agent-toggle"><input data-agent-search-enabled type="checkbox" disabled={draft.permissionLevel === 'sources'} checked={draft.searchEnabled === true} onChange={e => setDraft({ ...draft, searchEnabled: e.target.checked })} />启用搜索服务：围绕疑问发现网页</label>
-        {!draft.searchEnabled && draft.permissionLevel !== 'sources' && <p className="agent-caption">未启用搜索时，会直接尝试读取已知公开网址。启用搜索服务后，可以发现更多来源。</p>}
-        {draft.searchEnabled && <>
-          <p className="agent-caption">每轮先制定验证计划，再读取网页；有新证据或事项调整才分析。搜索时最多 1 次搜索、3 个结果和 2 个原来源；重查时最多 5 个已知网页。研究问题会发送到 Brave Search，网页正文仍按原模型配置分析。正常一轮最多 2 次模型调用，恢复重试也计入额度。</p>
-          <label>每日搜索上限<input data-agent-search-limit type="number" min={1} max={24} required value={draft.dailySearches ?? 8} onChange={e => setDraft({ ...draft, dailySearches: Number(e.target.value) })} /></label>
-          {!keyConfigured && <p className="agent-error">请先在下方保存搜索密钥，再保存开启设置。</p>}
-        </>}
-        <label className="agent-toggle"><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />开启持续工作（会消耗模型额度）</label>
-        <label className="agent-toggle"><input type="checkbox" checked={draft.paceWriting === true} onChange={e => setDraft({ ...draft, paceWriting: e.target.checked })} />创作也按工作间隔执行</label>
-        {draft.workUntil && <p className="agent-caption">本次持续工作截止：{new Date(draft.workUntil).toLocaleString()}。到时自动关闭持续工作。<button type="button" onClick={() => setDraft({ ...draft, workUntil: undefined })}>取消截止时间</button></p>}
-        <label className="agent-toggle"><input type="checkbox" checked={draft.shareDeliveries === true} onChange={e => setDraft({ ...draft, shareDeliveries: e.target.checked })} />共享任务成果，供其他联系人检索与读取</label>
-        <label className="agent-toggle"><input type="checkbox" checked={draft.readContactDeliveries === true} onChange={e => setDraft({ ...draft, readContactDeliveries: e.target.checked })} />允许自主检索和读取其他联系人已共享的成果</label>
-        <p className="agent-caption">具体从哪里取资料、如何分析由任务计划决定。共享范围仅包含任务成果，不包含私聊、独立记忆或模型配置；读取的成果会交给当前联系人的模型分析。</p>
-        <p className="agent-caption">创作有新正文时会在额度内连续推进；资料监测、等待外部变化或正文未变化时，按工作间隔检查。需要回复时暂停等待，单次修改意见只立即修订一轮。</p>
-        <label className="agent-toggle"><input type="checkbox" checked={draft.notifyProgress !== false} onChange={e => setDraft({ ...draft, notifyProgress: e.target.checked })} />有重要进展时，主动发到聊天</label>
-        <p className="agent-caption">普通进展每 24 小时最多 8 条，至少间隔 30 分钟。需要你确认的问题始终发送，回复后继续；重复轮次只记历史。</p>
-        <div className="agent-actions"><button data-agent-save type="submit" className="primary" disabled={busy}>保存偏好</button></div>
-        {dirty && <p className="agent-caption">设置尚未保存。保存会停止当前未完成的工作。</p>}
-      </form>
-      <details className="agent-search-credentials"><summary>搜索服务 · {keyConfigured ? '已配置 Brave Search' : '尚未配置'}</summary>
-        <p className="agent-caption">密钥仅用于此联系人，不进入工作记录或模型提示。修改密钥会停止未完成的工作。</p>
-        <label>Brave Search API Key<input data-agent-search-key type="password" autoComplete="new-password" value={searchKey} onChange={e => setSearchKey(e.target.value)} placeholder={keyConfigured ? '已保存，输入新密钥以替换' : '输入搜索服务密钥'} /></label>
-        <div className="agent-actions"><button data-agent-search-key-save type="button" disabled={busy || !searchKey.trim()} onClick={() => void perform(async () => { await window.electronAPI.agents.searchCredential(characterId, searchKey); setSearchKey('') })}>保存搜索密钥</button>{keyConfigured && <button type="button" disabled={busy} onClick={() => void perform(async () => { await window.electronAPI.agents.searchCredential(characterId, ''); setSearchKey('') })}>移除搜索密钥</button>}</div>
-        <a href="https://api-dashboard.search.brave.com/" target="_blank" rel="noopener noreferrer">打开搜索服务控制台</a>
-      </details>
-      </details>
-      {data.settings.searchEnabled && <p className="agent-caption">今日已搜索 {data.searchesToday ?? 0}/{data.settings.dailySearches ?? 8} 次。相同资料会延后检查，不生成重复报告。{!keyConfigured ? '搜索密钥缺失，自动研究已停止调度。' : ''}</p>}
-      <p className="agent-caption">今日已调用 {data.callsToday}/{data.settings.dailyCalls} 次{data.settings.enabled && !active ? stoppedTopic ? ' · 当前事项已停止，等待你继续或选择其他事项' : ` · 下轮 ${data.callsToday + (agentUsesPlanner(data.settings) ? 2 : 1) > data.settings.dailyCalls ? '明日额度恢复后' : data.nextAt > Date.now() ? time(data.nextAt) : '等待调度'}` : ''}。连续失败 3 轮会自动暂停。</p>
-    </div>}
+    {data && <div hidden={tab !== 'settings'}><ContactWorkSettings key={characterId} characterId={characterId} name={name} data={data} draft={draft} sources={sources} keyConfigured={keyConfigured} dirty={Boolean(dirty)} busy={busy}
+      setDraft={setDraft} setSources={setSources} onTasks={() => setTab('work')} onChat={onChat} onCredentialChanged={refresh}
+      onSaved={result => { setData(result); setDraft(result.settings); setSources(result.settings.sources.join('\n')); savedSnapshot.current = JSON.stringify(result.settings) }} /></div>}
     {data && tab === 'history' && <>
       {!detail && <p className="agent-caption">最近 30 轮。选择一轮，查看结论与证据。</p>}
       {!data.runs.length && <p className="agent-empty">还没有工作经历。第一轮完成后，便能回看想法从哪里来。</p>}

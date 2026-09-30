@@ -1,6 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
-import { getConfig, saveConfig } from '../database'
+import { getConfig, saveConfig, getState, setState } from '../database'
 import { waitForRenderer } from './storage-smoke'
 import { snapshots } from './chat-smoke'
 
@@ -8,8 +8,10 @@ import { snapshots } from './chat-smoke'
 export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
   const config = getConfig()
   const run = (script: string) => window.webContents.executeJavaScript(script)
+  const initialSession = await run('window.electronAPI.db.getSessionWorkspace().then(workspace => workspace.activeSession)')
   let fail = false
   let comparisonContact = ''
+  let summarySession = ''
   const server = createServer((request, response) => {
     if (request.method === 'GET') { response.end(JSON.stringify({ data: [{ id: 'smoke-natural' }] })); return }
     let body = ''
@@ -17,7 +19,7 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     request.on('end', () => {
       const payload = JSON.parse(body)
       const context = JSON.parse(payload.messages.at(-1).content)
-      const result = fail ? 'invalid-json' : JSON.stringify(context.description.includes('补充') || context.existing
+      const result = context.evidence ? '对照联系人的任务已建立，目前尚未执行。' : fail ? 'invalid-json' : JSON.stringify(context.description.includes('补充') || context.existing
         ? { kind: 'routine', input: { title: '联系人晨间总结', instruction: '汇总联系人进展和待答复事项', time: context.existing ? '09:00' : '08:30', cadence: 'weekdays', kind: 'contact-summary', enabled: context.existing?.enabled ?? true } }
         : { kind: 'question', question: '每个工作日早上几点汇报？' })
       response.setHeader('Content-Type', 'text/event-stream')
@@ -26,7 +28,7 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
-  saveConfig({ provider: 'openai', baseUrl: `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/v1`, apiKey: 'smoke-key', model: 'smoke-natural', proactiveGreeting: false, proactiveRestReminder: false, proactiveReturn: false })
+  saveConfig({ aiToolsEnabled: true, provider: 'openai', baseUrl: `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/v1`, apiKey: 'smoke-key', model: 'smoke-natural', proactiveGreeting: false, proactiveRestReminder: false, proactiveReturn: false })
   window.webContents.send('config:changed', getConfig())
   const fill = (value: string) => run(`(() => { const input = document.querySelector('[data-task-description]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`)
   const submit = () => run("document.querySelector('[data-task-dialog-submit]').click()")
@@ -36,15 +38,13 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     return JSON.stringify({
       tabs: [...root.querySelectorAll('.topic-content-tabs [role=tab]')].map(el => el.textContent),
       actions: [...root.querySelectorAll('.topic-floating-action button')].map(el => ({ icon: !!el.querySelector('svg'), primary: el.classList.contains('primary') })),
-      metrics: [...root.querySelectorAll('.topic-metrics dt')].map(el => el.textContent),
-      card: [...card.children].map(el => el.className),
+      overview: root.querySelector('[data-topic-overview]')?.firstElementChild?.className,
+      card: ['.topic-card-title', '.topic-badges', '.topic-card-summary'].map(selector => !!card.querySelector(selector)),
       settings: !!root.querySelector('[data-topic-settings]')
     });
   })()`)
   const openEditor = async (root: string) => {
     await run(`document.querySelector('${root} [data-topic-settings]').click()`)
-    await waitForRenderer(window, "Boolean(document.querySelector('.topic-settings-dialog:modal'))")
-    await run("[...document.querySelectorAll('.topic-settings-dialog button')].find(b => b.textContent === '编辑任务').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-task-dialog:modal'))")
   }
 
@@ -71,11 +71,14 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     await submit()
     await waitForRenderer(window, "document.querySelector('.contact-task-dialog [role=status]')?.textContent.includes('几点')")
     if ((await run('window.electronAPI.assistantRoutines.list()')).length) throw new Error('Question created schedule')
+    if (!await run("document.querySelector('.task-request-context')?.textContent.includes('每个工作日早上汇总联系人进展')")) throw new Error('Clarification lost original request')
+    await snapshots(window, 'task-clarification', '.contact-task-dialog')
     await fill('八点半')
     await submit()
     await waitForRenderer(window, "!document.querySelector('.contact-task-dialog') && document.querySelector('.contact-work-sheet .topic-detail-pane')?.textContent.includes('08:30')", 20000)
     const [item] = await run('window.electronAPI.assistantRoutines.list()')
     if (item.time !== '08:30' || item.cadence !== 'weekdays') throw new Error('Natural schedule not persisted')
+    if (await run("Boolean(document.querySelector('.contact-work-sheet .topic-metrics'))")) throw new Error('Schedule displays empty metric cards')
     const assistantSignature = await uiSignature()
     if (JSON.parse(assistantSignature).tabs.length !== 5) throw new Error('Scheduled task does not use the shared five-tab navigation')
     for (const suffix of ['stages', 'delivery', 'interactions', 'history', 'overview']) {
@@ -85,6 +88,7 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     await snapshots(window, 'assistant-natural-saved', '.contact-work-sheet .topic-detail-pane')
     await run("[...document.querySelectorAll('.contact-work-sheet .topic-detail-pane button')].find(b => b.textContent === '暂停').click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet .topic-detail-pane')?.textContent.includes('已暂停')")
+    if (!await run("document.querySelector('.contact-work-sheet [data-topic-run]').textContent.includes('启用定时')")) throw new Error('Paused schedule implies immediate execution')
     await openEditor('.contact-work-sheet')
     await fill('改成九点')
     await submit()
@@ -122,9 +126,53 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     if (await uiSignature() !== assistantSignature) throw new Error('ChouYu schedule and other contact task use different UI structures')
     await snapshots(window, 'contact-shared-task', '.contact-work-sheet[open] .topic-detail-pane')
 
-    console.log('CHOUYU_ASSISTANT_ROUTINES_SMOKE_PASSED shared UI parity across contacts/shared tabs-toolbar-overview-card-settings-delete/single input/model clarification/failure preserves draft/save/pause/natural edit/settings sync/cancel/no focus decoration')
+    // Execute a real scheduled summary, then follow its durable history/chat/task links.
+    summarySession = (await run("window.electronAPI.db.createSession('Routine smoke delivery', 'chouyu')")).activeSession.id
+    await run("document.querySelector('.contact-work-sheet[open] [aria-label=\"关闭联系人工作弹窗\"]').click()")
+    const [executed] = await run("window.electronAPI.assistantRoutines.save({title:'晨报跳转验收',instruction:'汇总联系人进展',time:'08:30',cadence:'daily',kind:'contact-summary',enabled:true})")
+    const schedules = JSON.parse(getState('assistant-routines-v1')!)
+    schedules.find((entry: {id: string}) => entry.id === executed.id).nextAt = Date.now() - 1000
+    setState('assistant-routines-v1', JSON.stringify(schedules))
+    await waitForRenderer(window, `window.electronAPI.assistantRoutines.history(${JSON.stringify(executed.id)}).then(page => page.items.some(entry => entry.status === 'completed' && entry.messageId && entry.sessionId))`, 35000)
+    window.webContents.send('open-assistant-chat')
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-character-bar=chouyu]'))")
+    await run("document.querySelector('[data-contact-work-tab=work]').click()")
+    await waitForRenderer(window, `Boolean(document.querySelector('.contact-work-sheet[open] [data-assistant-task="routine:${executed.id}"]'))`)
+    await run(`document.querySelector('.contact-work-sheet[open] [data-assistant-task="routine:${executed.id}"]').click()`)
+    await waitForRenderer(window, `document.querySelector('.contact-work-sheet[open] [data-topic-current]')?.dataset.topicCurrent === 'routine:${executed.id}'`)
+    await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    await run("document.querySelector('.contact-work-sheet[open] .topic-content-tabs [id$=history]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-routine-message]'))")
+    await snapshots(window, 'routine-execution-history', '.contact-work-sheet[open] .topic-detail-pane')
+    await run("document.querySelector('.contact-work-sheet[open] [data-routine-message]').click()")
+    await waitForRenderer(window, "document.querySelector('.message-search-summary')?.textContent.includes('这次任务') && document.querySelectorAll('.message-area a[href^=\"#contact-task?\"]').length > 0")
+    await snapshots(window, 'morning-summary-message', '.message-area')
+    await run("document.querySelector('.message-area a[href^=\"#contact-task?\"]').click()")
+    await waitForRenderer(window, `Boolean(document.querySelector('.contact-work-sheet[open] [data-topic-current="${topicId}"]'))`)
+    if (!await run("document.querySelector('.contact-work-sheet[open]')?.textContent.includes('UI 对照联系人')")) throw new Error('Morning summary opened the wrong contact')
+    await snapshots(window, 'morning-summary-task-link', '.contact-work-sheet[open]')
+    await run("document.querySelector('.contact-work-sheet[open] [data-contact-dialog-tab=settings]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] [data-agent-chat]')?.getClientRects().length > 0")
+    await run("document.querySelector('.contact-work-sheet[open] [data-agent-chat]').click()")
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-character-bar="${contact.id}"]')) && !document.querySelector('.contact-work-sheet[open]')`)
+    window.webContents.send('open-assistant-chat')
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-character-bar=chouyu]')) && Boolean(document.querySelector('.message-area a[href^=\"#contact-task?\"]'))")
+
+    await run(`window.electronAPI.characters.remove(${JSON.stringify(comparisonContact)})`)
+    comparisonContact = ''
+    await run("document.querySelector('.message-area a[href^=\"#contact-task?\"]').click()")
+    await waitForRenderer(window, "[...document.querySelectorAll('[role=alert]')].some(el => el.textContent.includes('已删除'))")
+    if (await run("Boolean(document.querySelector('.contact-work-sheet[open]'))")) throw new Error('Deleted task link opened a different task')
+
+    console.log('CHOUYU_ASSISTANT_ROUTINES_SMOKE_PASSED shared UI/single input/clarification context/save/pause/edit/settings/delete/no focus decoration/real scheduled delivery/durable history/message navigation/cross-contact task and chat/deleted link feedback')
+  } catch (error) {
+    console.log('ROUTINE_UI_FAILURE', await run("[...document.querySelectorAll('.contact-work-sheet[open]')].map(el=>el.innerText).join('\\n')"))
+    throw error
   } finally {
     if (comparisonContact) await run(`window.electronAPI.characters.remove(${JSON.stringify(comparisonContact)})`)
+    // Keep generated notifications isolated from the outer migration fixture.
+    if (summarySession) await run(`window.electronAPI.db.deleteSession(${JSON.stringify(summarySession)})`)
+    await run(`window.electronAPI.db.selectSession(${JSON.stringify(initialSession.id)})`)
     saveConfig(config); window.webContents.send('config:changed', getConfig())
     await new Promise<void>(resolve => server.close(() => resolve()))
   }
