@@ -16,6 +16,10 @@
 .assistant-routines textarea { resize: vertical; }
 .assistant-routine-result { white-space: pre-wrap; max-height: 240px; overflow: auto; }
 .assistant-routines summary { cursor: pointer; padding: 8px 0; }
+.assistant-routine-dialog { position: fixed; inset: 0; margin: auto; width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-primary); color: var(--text-primary); box-shadow: var(--shadow-lg); }
+.assistant-routine-dialog::backdrop { background: #0006; }
+.assistant-routines .assistant-routine-dialog form { margin: 0; padding: 0; border: 0; }
+.assistant-routine-dialog .assistant-routines-actions { justify-content: flex-end; margin-top: 16px; }
 /* The work dialog can be portaled outside #root. Cover both mount locations,
  * overriding global focus decoration without changing the resting field style. */
 :is(#root, body) .assistant-routines form :is(input, textarea):is(:focus, :focus-visible) {

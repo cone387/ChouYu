@@ -36,8 +36,20 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     if (process.env.CHOUYU_SMOKE_FIELD_FOCUS_ONLY === '1') {
       await run("document.querySelector('[data-morning-summary=pending] button').click()")
       await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routines form'))")
+      await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routine-dialog:modal'))")
       await checkFieldFocus()
-      console.log('CHOUYU_ASSISTANT_FIELD_FOCUS_SMOKE_PASSED unchanged borders/no outline/no glow')
+      await run("document.querySelector('.assistant-routine-dialog').requestClose()")
+      await waitForRenderer(window, "!document.querySelector('.assistant-routines form') && !document.querySelector('.assistant-routine-dialog[open]')")
+      if ((await run('window.electronAPI.assistantRoutines.list()')).length) throw new Error('Cancel persisted draft')
+      await run("document.querySelector('[data-morning-summary=pending] button').click()")
+      await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routine-dialog:modal'))")
+      await run("(() => { const input = document.querySelector('.assistant-routines input[type=time]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '23:59'); input.dispatchEvent(new Event('input', { bubbles: true })) })()")
+      await run("document.querySelector('.assistant-routines form').requestSubmit()")
+      await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routines article')) && !document.querySelector('.assistant-routine-dialog[open]')")
+      const saved = await run('window.electronAPI.assistantRoutines.list()')
+      if (saved.length !== 1 || saved[0].time !== '23:59') throw new Error('Modal save did not persist')
+      await run(`window.electronAPI.assistantRoutines.remove(${JSON.stringify(saved[0].id)}, ${saved[0].revision})`)
+      console.log('CHOUYU_ASSISTANT_FIELD_FOCUS_SMOKE_PASSED modal/cancel/reopen/save/unchanged borders/no outline/no glow')
       return
     }
     await run("document.querySelector('[data-assistant-duty=proactiveRestReminder] button').click()")

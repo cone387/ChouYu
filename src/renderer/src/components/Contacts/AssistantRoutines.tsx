@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { AssistantRoutine, AssistantRoutineInput } from '../../../../shared/assistant-routines'
 import { ASSISTANT_DUTIES, type AssistantDutyKey } from '../../../../shared/assistant-duties'
 import type { AppConfig } from '../../../../shared/config'
@@ -14,6 +14,16 @@ export default function AssistantRoutines({ active = true }: { active?: boolean 
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [removing, setRemoving] = useState<string>()
+  const dialog = useRef<HTMLDialogElement>(null)
+  const headingId = useId()
+  const hasDraft = !!draft
+  useEffect(() => {
+    const node = dialog.current
+    if (!node || !hasDraft || !active) return
+    node.showModal()
+    return () => node.close()
+  }, [hasDraft, active])
+  const cancelDraft = () => { if (!busy) { setDraft(null); setEditing(undefined); setError('') } }
   const refresh = () => Promise.all([window.electronAPI.assistantRoutines.list(), window.electronAPI.db.getConfig()]).then(([value, settings]) => { setItems(value); setConfig(settings); setLoaded(true) }).catch(e => setError(String(e)))
   useEffect(() => {
     if (!active) return
@@ -40,7 +50,7 @@ export default function AssistantRoutines({ active = true }: { active?: boolean 
     <div className="assistant-routines-heading"><h3>ChouYu 的助手任务</h3><button type="button" disabled={busy || !!draft || !loaded} onClick={() => { setEditing(undefined); setDraft(fresh()) }}>添加安排</button></div>
     <p>我的日常陪伴和定时安排都在这里。问候、提醒和总结会由我发到聊天。</p>
     <p className="assistant-routines-help">定时安排按电脑本地时间执行，应用退出期间错过的定时安排会在重新打开后合并补执行一次。日常陪伴按各自条件触发。联系人总结使用你的 AI 模型。</p>
-    {error && <div role="alert">{error} <button type="button" disabled={busy} onClick={() => void refresh()}>刷新</button></div>}
+    {error && !draft && <div role="alert">{error} <button type="button" disabled={busy} onClick={() => void refresh()}>刷新</button></div>}
     {!loaded && !error && <p role="status">正在读取安排…</p>}
     {config && ASSISTANT_DUTIES.map(duty => <div className="assistant-duty" data-assistant-duty={duty.key} key={duty.key}>
       <div className="assistant-routines-heading"><strong>{duty.title}</strong><span>{config[duty.key] ? '已启用' : '已暂停'}</span></div>
@@ -67,8 +77,10 @@ export default function AssistantRoutines({ active = true }: { active?: boolean 
         {removing === item.id ? <><span>删除这项安排？</span><button type="button" disabled={busy} onClick={() => void act(() => window.electronAPI.assistantRoutines.remove(item.id, item.revision))}>确认删除</button><button type="button" disabled={busy} onClick={() => setRemoving(undefined)}>取消</button></> : <button type="button" disabled={busy || !!draft} onClick={() => setRemoving(item.id)}>删除</button>}
       </div>
     </article>)}
+    <dialog className="assistant-routine-dialog" ref={dialog} aria-labelledby={headingId} onCancel={event => { event.preventDefault(); event.stopPropagation(); cancelDraft() }}>
     {draft && <form onSubmit={event => { event.preventDefault(); void act(() => window.electronAPI.assistantRoutines.save(draft, editing?.id, editing?.revision)) }}>
-      <h4>{editing ? '修改安排' : '添加安排'}</h4>
+      <h4 id={headingId}>{editing ? '修改安排' : '添加安排'}</h4>
+      {error && <div role="alert">{error}</div>}
       <label>名称<input autoFocus required maxLength={100} value={draft.title} disabled={busy} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label>
       <label>要做的事<select value={draft.kind} disabled={busy} onChange={e => setDraft({ ...draft, kind: e.target.value as AssistantRoutineInput['kind'] })}><option value="contact-summary">检查联系人并总结</option><option value="reminder">定时提醒</option></select></label>
       <label>{draft.kind === 'contact-summary' ? '总结时关注什么' : '提醒内容'}<textarea required maxLength={2000} rows={3} disabled={busy} value={draft.instruction} onChange={e => setDraft({ ...draft, instruction: e.target.value })} /></label>
@@ -77,7 +89,8 @@ export default function AssistantRoutines({ active = true }: { active?: boolean 
         {draft.cadence === 'weekly' && <label>星期<select disabled={busy} value={draft.weekday ?? 1} onChange={e => setDraft({ ...draft, weekday: Number(e.target.value) })}>{Array.from('日一二三四五六').map((day, i) => <option key={i} value={i}>周{day}</option>)}</select></label>}
         <label>本地时间<input type="time" required value={draft.time} disabled={busy} onChange={e => setDraft({ ...draft, time: e.target.value })} /></label>
       </div>
-      <div className="assistant-routines-actions"><button type="submit" disabled={busy}>{busy ? '正在保存…' : '保存安排'}</button><button type="button" disabled={busy} onClick={() => { setDraft(null); setEditing(undefined) }}>取消</button></div>
+      <div className="assistant-routines-actions"><button type="submit" disabled={busy}>{busy ? '正在保存…' : '保存安排'}</button><button type="button" disabled={busy} onClick={cancelDraft}>取消</button></div>
     </form>}
+    </dialog>
   </section>
 }
