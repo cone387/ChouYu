@@ -19,11 +19,13 @@ export interface AssistantRoutine extends AssistantRoutineInput {
   pending?: { dueAt: number; content: string }
 }
 export interface AssistantRoutinesAPI {
+  request(description: string, id?: string, revision?: number): Promise<AssistantTaskRequestResult>
   onChanged(callback: () => void): () => void
   list(): Promise<AssistantRoutine[]>
   save(input: AssistantRoutineInput, id?: string, revision?: number): Promise<AssistantRoutine[]>
   remove(id: string, revision: number): Promise<AssistantRoutine[]>
 }
+export type AssistantTaskRequestResult = { kind: 'routine'; routine: AssistantRoutine } | { kind: 'question'; question: string } | { kind: 'work'; description: string }
 export function validateRoutine(raw: unknown): AssistantRoutineInput {
   if (!raw || typeof raw !== 'object') throw new Error('助手安排无效。')
   const v = raw as AssistantRoutineInput

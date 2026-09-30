@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { appendAssistantMessage, getConfig, getSession, getState, listCharacters, setState } from '../database'
-import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID } from '../../shared/characters'
+import { appendAssistantMessage, getCharacter, getConfig, getSession, getState, listCharacters, setState } from '../database'
+import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID, resolveCharacterConfig } from '../../shared/characters'
 import { inspectContactWork, inspectContactDelivery } from '../agents'
 import { parseToolArguments } from '../../shared/tools'
 import { notifyReminderChanges } from '../reminder-events'
@@ -8,6 +8,7 @@ import { streamAIChat } from '../ai'
 import { getRegisteredTool, registerTool } from '../tools/registry'
 import { AssistantRoutineService } from './service'
 import { createAssistantTools } from './tools'
+import { requestAssistantTask } from './request'
 
 let service: AssistantRoutineService | undefined
 let timer: ReturnType<typeof setInterval> | undefined
@@ -72,6 +73,19 @@ export function initializeAssistantRoutines() {
     deliver(receipt, content) { appendAssistantMessage(content, undefined, 'notification', { receiptIds: [receipt] }); notifyReminderChanges() }
   })
   ipcMain.handle('assistant-routines:list', () => service!.list())
+  ipcMain.handle('assistant-routines:request', (_event, description, id, revision) => requestAssistantTask(description, service!, async (instruction, content) => {
+    const character = getCharacter(DEFAULT_CHARACTER_ID)
+    if (!character) throw new Error('ChouYu 联系人不存在。')
+    const config = getConfig()
+    const resolved = resolveCharacterConfig(character, config)
+    if (!resolved.ok) throw new Error('请先配置 ChouYu 使用的模型。')
+    let output = ''
+    await streamAIChat([{ role: 'user', content }], instruction, { ...config, ...resolved.config }, chunk => {
+      output += chunk
+      if (output.length > 16000) throw new Error('任务解析结果过长。')
+    }, AbortSignal.timeout(120000), undefined, { timeoutMs: 120000, maxOutputTokens: 1800 })
+    return output
+  }, id, revision))
   ipcMain.handle('assistant-routines:save', (_event, input, id, revision) => service!.save(input, id, revision))
   ipcMain.handle('assistant-routines:remove', (_event, id, revision) => service!.remove(id, revision))
   for (const tool of createAssistantTools(service, id => id ? getSession(id)?.characterId : undefined, readContactsForAssistant)) if (!getRegisteredTool(tool.name)) registerTool(tool)

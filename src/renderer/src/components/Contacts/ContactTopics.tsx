@@ -11,6 +11,7 @@ import ContactTaskSettingsDialog from './ContactTaskSettingsDialog'
 import ContactTaskResources from './ContactTaskResources'
 import TaskIcon from '../Tasks/TaskIcon'
 import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
+import { AssistantTaskDetail, useAssistantTasks } from './AssistantTaskEntries'
 
 type Editor = { kind: 'edit' | 'status'; topicId: string; revision: number; input: AgentTopicInput; status: AgentTopicStatus; reason: string }
 const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_evidence'].includes(topic.status)
@@ -31,6 +32,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   active?: boolean
 }) {
   const tabId = useId()
+  const assistant = useAssistantTasks(characterId === DEFAULT_CHARACTER_ID && active)
   const [listCollapsed, setListCollapsed] = useState(false)
   const [stagesCollapsed, setStagesCollapsed] = useState(false)
   const [taskDialog, setTaskDialog] = useState<'create' | AgentTopic | null>(null)
@@ -60,6 +62,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   // Background scheduling must not switch away from the task being read or answered.
   const epoch = useRef(0)
   const topic = data.topics.find(item => item.id === selected)
+  const assistantTask = assistant.entries.find(item => item.id === selected)
   const currentRun = data.runs.find(run => run.topicId === topic?.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
   const otherRunning = data.runs.some(run => run.topicId !== topic?.id && ['queued', 'running', 'interrupted'].includes(run.status))
   const queued = Boolean(topic && data.queuedTopicIds?.includes(topic.id))
@@ -103,7 +106,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   }
   useEffect(() => {
     setDetail(null)
-    if (selected) void load()
+    if (topic) void load()
     return () => { epoch.current++ }
   }, [characterId, selected, topic?.revision])
   const edit = (kind: 'edit' | 'status', status: AgentTopicStatus = 'planned') => {
@@ -125,16 +128,22 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const stageToggle = <button type="button" className="topic-stage-toggle" aria-label={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} title={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} aria-expanded={!stagesCollapsed} aria-controls={`${tabId}-stages-nav`} onClick={() => setStagesCollapsed(value => !value)}><TaskIcon name="sidebar" /></button>
   const closeSettings = () => { setShowSettings(false); setEditor(null); setSettingsError('') }
   return <section className="contact-topics" aria-label="持续推进的事项">
-    {taskDialog && <ContactTaskDialog characterId={characterId} task={taskDialog === 'create' ? undefined : taskDialog} onClose={() => setTaskDialog(null)} onAction={onAction} onDone={next => {
+    {taskDialog && <ContactTaskDialog characterId={characterId} task={taskDialog === 'create' ? undefined : taskDialog} onClose={() => setTaskDialog(null)} onAction={onAction}
+      onRoutineDone={item => { void assistant.refresh(); setSelected(`routine:${item.id}`); setMobileDetail(true) }} onDone={next => {
       if (taskDialog === 'create') { setSelected(next.topics.find(item => !data.topics.some(previous => previous.id === item.id))?.id ?? next.topics[0]?.id ?? ''); setMobileDetail(true) }
       else if (selected === taskDialog.id) { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(false) }
     }} />}
     <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}${listCollapsed ? ' topic-list-collapsed' : ''}${stagesCollapsed ? ' topic-stages-collapsed' : ''}`}>
       <aside className="topic-list-rail">
-        <div className="topic-list-toolbar"><span>{characterId === DEFAULT_CHARACTER_ID ? '执行任务' : '任务列表'} · {data.topics.length}</span></div>
+        <div className="topic-list-toolbar"><span>任务列表 · {data.topics.length + assistant.entries.length}</span></div>
       <nav id={`${tabId}-list`} className="topic-list" aria-label="任务列表">
         <button type="button" className="topic-create" data-topic-create disabled={busy || Boolean(editor)} onClick={() => setTaskDialog('create')}><TaskIcon name="plus" />新建任务</button>
-        {!data.topics.length && <p className="agent-empty">{characterId === DEFAULT_CHARACTER_ID ? '还没有执行任务。定时提醒和晨间总结在上方管理；需要研究、创作或持续推进的事情可以在这里新建。' : '还没有任务，描述你想完成的事情即可。'}</p>}
+        {assistant.error && <p role="alert" className="agent-error">{assistant.error}<button onClick={() => void assistant.refresh()}>重试</button></p>}
+        {!data.topics.length && !assistant.entries.length && <p className="agent-empty">还没有任务，描述你想完成的事情即可。</p>}
+        {assistant.entries.map(item => <div key={item.id} className="topic-list-item"><button type="button" className="topic-list-card" data-assistant-task={item.id} aria-current={selected === item.id ? 'true' : undefined}
+          disabled={busy || Boolean(editor)} onClick={() => { setSelected(item.id); setMobileDetail(true) }}>
+          <span className="topic-card-title">{item.title}</span><span className="topic-badges"><span className="topic-badge">{item.status}</span></span>
+        </button></div>)}
         {data.topics.map(item => {
           const run = data.runs.find(run => run.topicId === item.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
           return <div key={item.id} className="topic-list-item"><button type="button" className="topic-list-card" data-topic-id={item.id}
@@ -168,10 +177,15 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
             event.preventDefault(); setShowSettings(false); setTab(tabs[next][0]); document.getElementById(`${tabId}-${tabs[next][0]}`)?.focus()
           }}>{label}{id === 'overview' && waiting && <span className="topic-waiting">待回复</span>}</button>)}
       </div>
-        </> : <p className="agent-caption">选择任务后查看</p>}
+        </> : assistantTask ? <div className="topic-content-tabs"><button type="button" aria-current="page">概览</button></div> : <p className="agent-caption">选择任务后查看</p>}
       </aside>
       <div className="topic-detail-pane" key={selected}>
-        {!topic && <div className="topic-content-scroll"><header className="topic-content-header"><div className="topic-title-group">{stageToggle}<h4>任务详情</h4></div></header><p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '新建任务后，AI 会在这里展示进度与成果。'}</p></div>}
+        {!topic && <div className="topic-content-scroll"><header className="topic-content-header">
+          {stagesCollapsed && <button type="button" className="topic-back topic-detail-back" onClick={() => setMobileDetail(false)}>← 任务列表</button>}
+          <div className="topic-title-group">{stageToggle}<h4>{assistantTask?.title ?? '任务详情'}</h4></div></header>
+          {assistantTask ? <AssistantTaskDetail key={assistantTask.id} entry={assistantTask} config={assistant.config} onChanged={assistant.refresh} onSelect={setSelected} />
+            : <p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '选择或新建任务，在这里查看进度与成果。'}</p>}
+        </div>}
     {topic && <>
       <div className="topic-floating-action" data-running={activeRun?.status === 'running' || undefined}>
           <button type="button" className="primary" data-topic-run={!canPause || undefined} data-topic-pause={canPause || undefined}
