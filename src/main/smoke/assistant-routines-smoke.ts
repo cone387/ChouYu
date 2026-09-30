@@ -8,6 +8,23 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
   saveConfig({ proactiveGreeting: false, proactiveRestReminder: false, proactiveReturn: false })
   window.webContents.send('config:changed', getConfig())
   const run = (script: string) => window.webContents.executeJavaScript(script)
+  const checkFieldFocus = async () => {
+    await run(`(async () => {
+      for (const field of document.querySelectorAll('.assistant-routines form input, .assistant-routines form textarea, .assistant-routines form select')) {
+        field.blur();
+        await new Promise(resolve => setTimeout(resolve, 160));
+        const border = getComputedStyle(field).borderColor;
+        field.focus();
+        await new Promise(resolve => setTimeout(resolve, 160));
+        const focused = getComputedStyle(field);
+        if (focused.outlineStyle !== 'none' || focused.boxShadow !== 'none' || focused.borderColor !== border) {
+          throw new Error('Assistant field focus changed border or added decoration: ' + field.tagName);
+        }
+      }
+      document.querySelector('.assistant-routines textarea').focus();
+    })()`)
+    await snapshots(window, 'assistant-routine-focused', '.assistant-routines form')
+  }
   try {
     window.webContents.send('open-assistant-chat')
     await waitForRenderer(window, "Boolean(document.querySelector('.chat-panel'))")
@@ -16,6 +33,13 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routines button:not(:disabled)'))")
     await waitForRenderer(window, "document.querySelectorAll('[data-assistant-duty]').length === 3 && Boolean(document.querySelector('[data-morning-summary=pending]'))")
     if ((await run('window.electronAPI.assistantRoutines.list()')).length) throw new Error('Built-in duties unexpectedly created schedules')
+    if (process.env.CHOUYU_SMOKE_FIELD_FOCUS_ONLY === '1') {
+      await run("document.querySelector('[data-morning-summary=pending] button').click()")
+      await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routines form'))")
+      await checkFieldFocus()
+      console.log('CHOUYU_ASSISTANT_FIELD_FOCUS_SMOKE_PASSED unchanged borders/no outline/no glow')
+      return
+    }
     await run("document.querySelector('[data-assistant-duty=proactiveRestReminder] button').click()")
     await waitForRenderer(window, "document.querySelector('[data-contact-work-tab=work] .contact-work-count')?.textContent === '1'")
     if (!(await run('window.electronAPI.db.getConfig()')).proactiveRestReminder) throw new Error('Duty toggle did not update config')
@@ -24,6 +48,7 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('[data-assistant-duty=proactiveRestReminder]')?.textContent.includes('已暂停')")
     await run("document.querySelector('[data-morning-summary=pending] button').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.assistant-routines form'))")
+    await checkFieldFocus()
     if (await run("document.querySelector('.assistant-routines input[type=time]').value")) throw new Error('Morning summary must require an explicit time')
     await run("document.querySelector('.assistant-routines form').requestSubmit()")
     if ((await run('window.electronAPI.assistantRoutines.list()')).length) throw new Error('Blank time created a schedule')

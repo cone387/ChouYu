@@ -16,3 +16,18 @@
 .assistant-routines textarea { resize: vertical; }
 .assistant-routine-result { white-space: pre-wrap; max-height: 240px; overflow: auto; }
 .assistant-routines summary { cursor: pointer; padding: 8px 0; }
+/* The work dialog can be portaled outside #root. Cover both mount locations,
+ * overriding global focus decoration without changing the resting field style. */
+:is(#root, body) .assistant-routines form :is(input, textarea):is(:focus, :focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: var(--border) !important;
+}
+:is(#root, body) .assistant-routines form select:is(:hover, :focus, :focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: var(--border) !important;
+}
+#root .assistant-routines form select:is(:hover, :focus, :focus-visible) {
+  border-color: var(--input-border) !important;
+}
