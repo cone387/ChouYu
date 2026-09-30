@@ -36,6 +36,12 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     let body = ''; request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       const payload = JSON.parse(body)
+      if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('接收用户自然语言任务并解析安排'))) {
+        const context = JSON.parse(payload.messages.at(-1).content)
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify({ kind: 'work', description: context.description }) } }] })}\n\ndata: [DONE]\n\n`)
+        return
+      }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.startsWith('根据用户对待确认问题'))) {
         revisionCalls++
         const result = { title: '开发者机会研究 · 根据回复修订', body: '按回复聚焦开发者工具。需求存在，个人付费意愿未知。', nextStep: '核对反对证据', question: '', memories: ['需求存在的证据不等于付费意愿，下一轮应继续验证。'],
@@ -515,7 +521,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('[data-contact-work-tab=work]').click()")
     if (!await run("(() => { const el=document.querySelector('.contact-work-sheet'), r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+20)?.closest('[data-panel-window]') === el })()")) throw new Error('Floating window did not regain pointer hits after activation')
     if (!await run("document.querySelector('.contact-work-sheet').open && Number(getComputedStyle(document.querySelector('.contact-work-sheet')).zIndex) > Number(getComputedStyle(document.querySelector('.chat-panel')).zIndex)")) throw new Error('Task entry closed the covered panel instead of bringing it forward')
-    if (!await run("Array.from(document.querySelectorAll('.contact-work-sheet .topic-card-times')).every(el => el.querySelectorAll('time[datetime]').length === 2)")) throw new Error('Task timestamps are missing')
+    if (!await run("Array.from(document.querySelectorAll('.contact-work-sheet .topic-list-card:not([data-assistant-task]) .topic-card-times')).every(el => el.querySelectorAll('time[datetime]').length === 2)")) throw new Error('Task timestamps are missing')
     await run(`document.querySelector('.contact-work-sheet').setAttribute('style', ${JSON.stringify(floatingStyle)}); document.querySelector('.contact-work-sheet').dataset.resized='true'`)
     // Screenshot passes above visit narrow layouts. Rail assertions need an explicit desktop width.
     await run("Object.assign(document.querySelector('.contact-work-sheet').style, {width:'min(960px, calc(100vw - 32px))',left:'16px',transform:'none'})")
