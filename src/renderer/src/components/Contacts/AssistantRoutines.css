@@ -1,4 +1,4 @@
-.assistant-routines { padding: 16px; border: 1px solid var(--border); border-radius: 12px; margin: 16px 0; color: var(--text-primary); font-size: 13px; }
+.assistant-routines { padding: 16px; margin: 0; color: var(--text-primary); font-size: 13px; }
 .assistant-routines h3 { font-size: 15px; }
 .assistant-routines h4 { font-size: 14px; }
 .assistant-routines h3, .assistant-routines h4 { margin: 0; }
@@ -16,3 +16,10 @@
 .assistant-routines textarea { resize: vertical; }
 .assistant-routine-result { white-space: pre-wrap; max-height: 240px; overflow: auto; }
 .assistant-routines summary { cursor: pointer; padding: 8px 0; }
+.assistant-duty[data-assistant-duty] { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; row-gap: 2px; margin-top: 12px; padding-top: 12px; }
+.assistant-duty[data-assistant-duty] > .assistant-routines-heading { justify-content: flex-start; gap: 12px; }
+.assistant-duty[data-assistant-duty] > .assistant-routines-heading span { color: var(--text-secondary); font-size: 12px; }
+.assistant-duty-rule { grid-column: 1; color: var(--text-secondary); min-width: 0; }
+.assistant-duty[data-assistant-duty] > button { grid-column: 2; grid-row: 1 / 3; align-self: start; }
+.assistant-routines form { max-width: 640px; }
+.assistant-routines-schedule > label { flex: 1; min-width: 120px; }

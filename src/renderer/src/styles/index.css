@@ -241,9 +241,15 @@ select:focus-visible,
 textarea:focus-visible,
 [role="button"]:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--accent) !important;
+  outline: 2px solid var(--text-secondary) !important;
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px var(--focus-ring);
+  box-shadow: none;
+}
+
+/* A focused dialog is a container, not a field: keep its normal surface. */
+dialog:focus-visible,
+[role="dialog"]:focus-visible {
+  outline: none !important;
 }
 
 button:disabled {

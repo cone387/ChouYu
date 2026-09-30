@@ -39,13 +39,12 @@ export default function AssistantRoutines({ active = true }: { active?: boolean 
   return <section className="assistant-routines" aria-label="ChouYu 的助手任务">
     <div className="assistant-routines-heading"><h3>ChouYu 的助手任务</h3><button type="button" disabled={busy || !!draft || !loaded} onClick={() => { setEditing(undefined); setDraft(fresh()) }}>添加安排</button></div>
     <p>我的日常陪伴和定时安排都在这里。问候、提醒和总结会由我发到聊天。</p>
-    <p className="assistant-routines-help">定时安排按电脑本地时间执行，应用退出期间错过的定时安排会在重新打开后合并补执行一次。日常陪伴按各自条件触发。联系人总结使用你的 AI 模型。</p>
+    <details className="assistant-routines-help"><summary>执行规则</summary><p>定时安排按电脑本地时间执行，应用退出期间错过的定时安排会在重新打开后合并补执行一次。日常陪伴按各自条件触发。联系人总结使用你的 AI 模型。</p></details>
     {error && <div role="alert">{error} <button type="button" disabled={busy} onClick={() => void refresh()}>刷新</button></div>}
     {!loaded && !error && <p role="status">正在读取安排…</p>}
     {config && ASSISTANT_DUTIES.map(duty => <div className="assistant-duty" data-assistant-duty={duty.key} key={duty.key}>
       <div className="assistant-routines-heading"><strong>{duty.title}</strong><span>{config[duty.key] ? '已启用' : '已暂停'}</span></div>
-      <p>{duty.rule}</p>
-      <p className="assistant-routines-help">{config[duty.key] ? `触发方式：${duty.waiting}，无固定执行时间。` : '已暂停，不会主动发送。'}</p>
+      <details className="assistant-duty-rule"><summary>{config[duty.key] ? duty.waiting : '查看触发规则'}</summary><p>{duty.rule}</p></details>
       <button type="button" disabled={busy} aria-label={`${config[duty.key] ? '暂停' : '启用'}${duty.title}`} onClick={() => void toggleDuty(duty.key)}>{config[duty.key] ? '暂停' : '启用'}</button>
     </div>)}
     {loaded && !items.some(item => item.kind === 'contact-summary') && <div className="assistant-duty" data-morning-summary="pending">
