@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import { appendAssistantMessage, getConfig, getSession, getState, listCharacters, setState } from '../database'
 import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID } from '../../shared/characters'
 import { inspectContactWork, inspectContactDelivery } from '../agents'
@@ -27,7 +27,12 @@ export async function readContactsForAssistant() {
 }
 export function initializeAssistantRoutines() {
   service = new AssistantRoutineService({
-    read: () => getState('assistant-routines-v1'), write: value => setState('assistant-routines-v1', value),
+    read: () => getState('assistant-routines-v1'), write: value => {
+      setState('assistant-routines-v1', value)
+      for (const window of BrowserWindow.getAllWindows()) {
+        try { if (!window.isDestroyed()) window.webContents.send('assistant-routines:changed') } catch { /* A closing window must not fail a saved routine. */ }
+      }
+    },
     async generate(item, signal) {
       const config = getConfig()
       if (!config.aiToolsEnabled) throw new Error('AI 工具已关闭；开启后可继续联系人总结。')

@@ -19,6 +19,7 @@ export interface AssistantRoutine extends AssistantRoutineInput {
   pending?: { dueAt: number; content: string }
 }
 export interface AssistantRoutinesAPI {
+  onChanged(callback: () => void): () => void
   list(): Promise<AssistantRoutine[]>
   save(input: AssistantRoutineInput, id?: string, revision?: number): Promise<AssistantRoutine[]>
   remove(id: string, revision: number): Promise<AssistantRoutine[]>

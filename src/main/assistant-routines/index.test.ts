@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({ values: new Map<string, string>(), handlers: new Map<string, (...args: any[]) => any>(), sent: vi.fn(), inspect: vi.fn(), delivery: vi.fn(), model: vi.fn() }))
-vi.mock('electron', () => ({ ipcMain: { handle: (name: string, handler: (...args: any[]) => any) => state.handlers.set(name, handler) } }))
+vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] }, ipcMain: { handle: (name: string, handler: (...args: any[]) => any) => state.handlers.set(name, handler) } }))
 vi.mock('../database', () => ({
   getState: (key: string) => state.values.get(key), setState: (key: string, value: string) => state.values.set(key, value),
   appendAssistantMessage: state.sent, getConfig: () => ({ aiToolsEnabled: true, soulMd: 'ChouYu' }),

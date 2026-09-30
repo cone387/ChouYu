@@ -6,6 +6,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { agentUsesPlanner, AGENT_STATUS, DEFAULT_AGENT_SETTINGS, type AgentOverview, type AgentRunDetail, type AgentSettings } from '../../../../shared/agents'
 import './ContactAgentPanel.css'
 import ContactTopics from './ContactTopics'
+import AssistantRoutines from './AssistantRoutines'
+import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 import type { AgentFocusRequest } from '../../../../shared/agents'
 import ContactResearchRecord from './ContactResearchRecord'
 import ContactWorkLog from './ContactWorkLog'
@@ -137,6 +139,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     {!data && !error && !readError && tab !== 'profile' && <p role="status">正在读取工作状态…</p>}
     {tab === 'profile' && profile}
     {tab === 'overview' && <ContactDailyOverview characterId={characterId} />}
+    {characterId === DEFAULT_CHARACTER_ID && <div hidden={tab !== 'work'}><AssistantRoutines active={tab === 'work'} /></div>}
     {data && <div className="agent-task-view" hidden={tab !== 'work'}>
       <ContactTopics active={tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
         renderActivity={topicId => {

@@ -301,6 +301,11 @@ const api = {
     ipcRenderer.send('pet-visibility-changed', visible)
   },
   assistantRoutines: {
+    onChanged: (callback: () => void) => {
+      const handler = () => callback()
+      ipcRenderer.on('assistant-routines:changed', handler)
+      return () => ipcRenderer.removeListener('assistant-routines:changed', handler)
+    },
     list: () => ipcRenderer.invoke('assistant-routines:list'),
     save: (input: import('../shared/assistant-routines').AssistantRoutineInput, id?: string, revision?: number) => ipcRenderer.invoke('assistant-routines:save', input, id, revision),
     remove: (id: string, revision: number) => ipcRenderer.invoke('assistant-routines:remove', id, revision)

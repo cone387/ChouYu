@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABELS, type CharacterStats } from '../../../../shared/characters'
-import AssistantRoutines from './AssistantRoutines'
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
@@ -545,7 +544,6 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
           </dl>
         </section>
-        {detail.id === DEFAULT_CHARACTER_ID && <AssistantRoutines />}
         {detail.id === ASSISTANT_CHARACTER_ID && <section className="contact-agent">
           <div className="agent-tabs"><button type="button" data-agent-tab="profile" aria-pressed="true">人设</button></div>
           {detailProfile}

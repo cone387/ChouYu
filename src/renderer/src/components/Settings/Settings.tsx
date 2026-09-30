@@ -9,6 +9,7 @@ import ToolsSettingsTab from './ToolsSettingsTab'
 import MemorySettingsTab from './MemorySettingsTab'
 import CapabilitySettingsTab from './CapabilitySettingsTab'
 import ProviderProfilesCard from './ProviderProfilesCard'
+import AssistantRoutines from '../Contacts/AssistantRoutines'
 import { searchSettings, type SettingsSearchEntry } from './settings-search-index'
 import './Settings.css'
 
@@ -698,7 +699,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               </div>
 
               <div className="settings-section-title">ChouYu 的陪伴与提醒</div>
-              <div className="settings-help">问候、回来提示和休息提醒由 ChouYu 发到聊天。每日问候在当天首次活跃时发送；定时提醒和联系人晨间总结可在 ChouYu 的联系人详情中安排。</div>
+              <div className="settings-help">问候、回来提示和休息提醒由 ChouYu 发到聊天。每日问候在当天首次活跃时发送。下方可配置定时提醒和联系人晨间总结，与 ChouYu 聊天中的“任务”同步。</div>
               <div className="settings-card settings-toggle-card">
               <div className="settings-field settings-field-row">
                 <label>开机问好</label>
@@ -767,6 +768,8 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               </div>
             </div>
           )}
+
+          {activeNav === 'general' && <div id="settings-assistant-routines"><AssistantRoutines active={active} /></div>}
 
           {activeNav === 'about' && (
             <div className="settings-pane settings-about-pane">

@@ -10,6 +10,7 @@ import ContactTaskDialog from './ContactTaskDialog'
 import ContactTaskSettingsDialog from './ContactTaskSettingsDialog'
 import ContactTaskResources from './ContactTaskResources'
 import TaskIcon from '../Tasks/TaskIcon'
+import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 
 type Editor = { kind: 'edit' | 'status'; topicId: string; revision: number; input: AgentTopicInput; status: AgentTopicStatus; reason: string }
 const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_evidence'].includes(topic.status)
@@ -130,10 +131,10 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     }} />}
     <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}${listCollapsed ? ' topic-list-collapsed' : ''}${stagesCollapsed ? ' topic-stages-collapsed' : ''}`}>
       <aside className="topic-list-rail">
-        <div className="topic-list-toolbar"><span>任务列表 · {data.topics.length}</span></div>
+        <div className="topic-list-toolbar"><span>{characterId === DEFAULT_CHARACTER_ID ? '执行任务' : '任务列表'} · {data.topics.length}</span></div>
       <nav id={`${tabId}-list`} className="topic-list" aria-label="任务列表">
         <button type="button" className="topic-create" data-topic-create disabled={busy || Boolean(editor)} onClick={() => setTaskDialog('create')}><TaskIcon name="plus" />新建任务</button>
-        {!data.topics.length && <p className="agent-empty">还没有任务，描述你想完成的事情即可。</p>}
+        {!data.topics.length && <p className="agent-empty">{characterId === DEFAULT_CHARACTER_ID ? '还没有执行任务。定时提醒和晨间总结在上方管理；需要研究、创作或持续推进的事情可以在这里新建。' : '还没有任务，描述你想完成的事情即可。'}</p>}
         {data.topics.map(item => {
           const run = data.runs.find(run => run.topicId === item.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
           return <div key={item.id} className="topic-list-item"><button type="button" className="topic-list-card" data-topic-id={item.id}

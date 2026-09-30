@@ -7,6 +7,7 @@ import './ContactWorkToolbar.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
 import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 import { ACTIVE_TASKS_HINT, summaryTokenHint, summaryTokens, useAgentSummary } from '../Contacts/useAgentSummary'
+import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 
 const baseEntries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
   { id: 'overview', label: '概览', icon: 'today' },
@@ -27,7 +28,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, focusRe
   const [tab, setTab] = useState<ContactAgentTab>(initialTab)
   const { data: summary, error: summaryError } = useAgentSummary(characterId)
   const badge = (entry: ContactAgentTab) => entry === 'work' ? summary?.activeTasks ?? '—' : entry === 'memory' ? summary?.memories ?? '—' : undefined
-  const hint = (entry: ContactAgentTab) => summaryError || (entry === 'overview' ? '查看今日趋势、24 小时工作记录与任务日志' : entry === 'work' ? ACTIVE_TASKS_HINT : entry === 'analytics' ? summaryTokenHint(summary) : entry === 'memory' ? '当前保留的独立记忆条数' : '查看工作记录')
+  const hint = (entry: ContactAgentTab) => summaryError || (entry === 'overview' ? '查看今日趋势、24 小时工作记录与任务日志' : entry === 'work' ? `${ACTIVE_TASKS_HINT}${characterId === DEFAULT_CHARACTER_ID ? ' 同时包含已启用的定时提醒和联系人总结。' : ''}` : entry === 'analytics' ? summaryTokenHint(summary) : entry === 'memory' ? '当前保留的独立记忆条数' : '查看工作记录')
   const [analyticsReset, setAnalyticsReset] = useState(0)
   const [open, setOpen] = useState(standalone)
   const [visited, setVisited] = useState(standalone)

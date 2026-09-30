@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentSummary } from '../../../../shared/agents'
+import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 
 export function useAgentSummary(characterId: string, active = true) {
   const [state, setState] = useState<{ id: string; data?: AgentSummary; error?: string }>({ id: characterId })
@@ -10,7 +11,11 @@ export function useAgentSummary(characterId: string, active = true) {
     const refresh = async () => {
       const current = ++sequence
       try {
-        const data = await window.electronAPI.agents.summary(characterId)
+        const [work, routines] = await Promise.all([
+          window.electronAPI.agents.summary(characterId),
+          characterId === DEFAULT_CHARACTER_ID ? window.electronAPI.assistantRoutines.list() : Promise.resolve([])
+        ])
+        const data = { ...work, tasks: work.tasks + routines.length, activeTasks: work.activeTasks + routines.filter(item => item.enabled).length }
         if (alive && current === sequence) setState({ id: characterId, data })
       } catch {
         if (alive && current === sequence) setState({ id: characterId, error: '统计暂时不可用' })
@@ -22,7 +27,8 @@ export function useAgentSummary(characterId: string, active = true) {
       clearTimeout(pending); pending = setTimeout(() => { void refresh() }, 150)
     })
     const timer = setInterval(() => { void refresh() }, 30000)
-    return () => { alive = false; clearTimeout(pending); clearInterval(timer); dispose() }
+    const disposeRoutines = characterId === DEFAULT_CHARACTER_ID ? window.electronAPI.assistantRoutines.onChanged(() => { void refresh() }) : () => {}
+    return () => { alive = false; clearTimeout(pending); clearInterval(timer); dispose(); disposeRoutines() }
   }, [characterId, active])
   return state.id === characterId ? state : { id: characterId }
 }
