@@ -11,7 +11,7 @@ import ContactTaskResources from './ContactTaskResources'
 import TaskIcon from '../Tasks/TaskIcon'
 import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 import { useAssistantTasks, type AssistantTaskEntry } from './useAssistantTasks'
-import { contactTaskItems } from './contactTaskPresentation'
+import { contactTaskItems, routineTimesLabel } from './contactTaskPresentation'
 import ContactTaskListCard from './ContactTaskListCard'
 import ContactMarkdown from './ContactMarkdown'
 import type { AssistantRoutineHistoryPage } from '../../../../shared/assistant-routines'
@@ -88,8 +88,8 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   }, [routine?.id, routine?.lastAt, routine?.lastError, active, tab])
   const scheduleEnabled = routine?.enabled ?? (assistantTask?.duty && assistant.config ? assistant.config[assistantTask.duty] : false)
   const scheduleFields: [string, ReactNode][] = routine ? [
-    ['执行时间', `${routine.cadence === 'daily' ? '每天' : routine.cadence === 'weekdays' ? '工作日' : `每周${'日一二三四五六'[routine.weekday ?? 0]}`} ${routine.times.join('、')}（电脑本地时间）`],
-    ...(routine.enabled ? [[routine.retryAt ? '下次重试' : '下次执行', time(routine.retryAt ?? routine.nextAt)] as [string, ReactNode]] : []),
+    ['执行时间', routine.finishedAt ? '已完成，不再执行' : `${routineTimesLabel(routine)}${routine.cadence === 'once' ? '，电脑本地时间' : '（电脑本地时间）'}`],
+    ...(routine.enabled && !routine.finishedAt ? [[routine.retryAt ? '下次重试' : '下次执行', time(routine.retryAt ?? routine.nextAt)] as [string, ReactNode]] : []),
     ['最近完成', routine.lastAt ? `${time(routine.lastAt)} · 已发到聊天` : '尚未执行']
   ] : [['触发规则', assistantTask?.description ?? '']]
 
