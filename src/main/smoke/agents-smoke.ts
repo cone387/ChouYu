@@ -36,10 +36,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     let body = ''; request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       const payload = JSON.parse(body)
-      if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('接收用户自然语言任务并解析安排'))) {
+      if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('统一解析用户对联系人任务的自然语言请求'))) {
         const context = JSON.parse(payload.messages.at(-1).content)
+        const result = context.target?.kind === 'edit-work' ? { kind: 'work-edit', input: { goal: context.description, constraints: '' } } : { kind: 'work', description: context.description }
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify({ kind: 'work', description: context.description }) } }] })}\n\ndata: [DONE]\n\n`)
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
         return
       }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.startsWith('根据用户对待确认问题'))) {
