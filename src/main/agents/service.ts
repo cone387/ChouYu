@@ -48,9 +48,16 @@ export class AgentService {
       this.store.cancel(id, '联系人已删除。')
       this.abort(id)
       await this.active.get(id)?.promise
-      for (const runId of this.store.remove(id)) await this.runtime.checkpoints.deleteThread(runId)
+      for (const runId of this.store.remove(id)) await this.cleanupThread(runId)
       this.identities.delete(id)
     } finally { this.deleting.delete(id) }
+  }
+  // Briefing can fail before the graph ever creates the checkpoint tables; thread cleanup stays best-effort.
+  private async cleanupThread(runId: string) {
+    try {
+      await this.runtime.checkpoints.getTuple({ configurable: { thread_id: runId } })
+      await this.runtime.checkpoints.deleteThread(runId)
+    } catch { /* nothing to clean up */ }
   }
   async request(method: string, id: string, args: unknown[] = []): Promise<any> {
     // Newly created contacts may be deleted before the next identity sync.
@@ -124,9 +131,7 @@ export class AgentService {
           active?.controller.abort()
           await active?.promise
           for (const runId of runs) {
-            // Briefing can be cancelled before the graph creates its first checkpoint.
-            await this.runtime.checkpoints.getTuple({ configurable: { thread_id: runId } })
-            await this.runtime.checkpoints.deleteThread(runId)
+            await this.cleanupThread(runId)
           }
         } finally { this.deleting.delete(id) }
         break
