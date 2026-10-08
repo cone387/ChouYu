@@ -9,7 +9,6 @@ import { streamAIChat } from '../ai'
 import { getRegisteredTool, registerTool } from '../tools/registry'
 import { AssistantRoutineService } from './service'
 import { createAssistantTools } from './tools'
-import { requestAssistantTask } from './request'
 import { requestContactTask } from './gateway'
 import { ContactTaskDraftStore } from './drafts'
 import { contactTaskHref } from '../../shared/contact-links'
@@ -111,19 +110,6 @@ export function initializeAssistantRoutines() {
   })
   ipcMain.handle('assistant-routines:list', () => service!.list())
   ipcMain.handle('assistant-routines:history', (_event, id, before) => service!.history(id, before))
-  ipcMain.handle('assistant-routines:request', (_event, description, id, revision) => requestAssistantTask(description, service!, async (instruction, content) => {
-    const character = getCharacter(DEFAULT_CHARACTER_ID)
-    if (!character) throw new Error('ChouYu 联系人不存在。')
-    const config = getConfig()
-    const resolved = resolveCharacterConfig(character, config)
-    if (!resolved.ok) throw new Error('请先配置 ChouYu 使用的模型。')
-    let output = ''
-    await streamAIChat([{ role: 'user', content }], instruction, { ...config, ...resolved.config }, chunk => {
-      output += chunk
-      if (output.length > 16000) throw new Error('任务解析结果过长。')
-    }, AbortSignal.timeout(120000), undefined, { timeoutMs: 120000, maxOutputTokens: 1800 })
-    return output
-  }, id, revision))
   ipcMain.handle('assistant-routines:save', (_event, input, id, revision) => service!.save(input, id, revision))
   ipcMain.handle('assistant-routines:remove', (_event, id, revision) => service!.remove(id, revision))
   const drafts = new ContactTaskDraftStore({
