@@ -118,6 +118,11 @@ export async function inspectContactDelivery(characterId: string, topicId: strin
   await ensure()
   return rpc('inspectDelivery', characterId, [topicId])
 }
+/** Main-process entry for the contact-task gateway; mirrors the agents:* IPC guards. */
+export async function contactAgentsCall<T = unknown>(id: string, method: string, args: unknown[] = []): Promise<T> {
+  if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
+  await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args) as Promise<T>
+}
 export async function startIdeaLab() {
   await ensure()
   return setupIdeaLab((method, id, args) => rpc(method, id, args), async () => { await rpc('sync', '', [identities()]) })
