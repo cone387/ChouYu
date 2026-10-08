@@ -104,6 +104,9 @@ export interface AppConfig {
   proactiveReturn: boolean
   proactiveGreeting: boolean
   proactiveRestReminder: boolean
+  proactiveReturnAwayMinutes: number
+  proactiveRestMinutes: number
+  proactiveCooldownMinutes: number
   taskNotifications: boolean
   clipboardWatch: boolean
   aiToolsEnabled: boolean
@@ -142,6 +145,9 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   proactiveReturn: true,
   proactiveGreeting: true,
   proactiveRestReminder: true,
+  proactiveReturnAwayMinutes: 10,
+  proactiveRestMinutes: 60,
+  proactiveCooldownMinutes: 60,
   taskNotifications: true,
   clipboardWatch: false,
   aiToolsEnabled: true,
@@ -217,6 +223,9 @@ function normalizeThinkingDisabledModels(value: unknown): string[] {
     : []
 }
 
+const clampDuty = (value: unknown, min: number, max: number, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback
+
 export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
   const source = value ?? {}
   const provider = source.provider === 'claude' ? 'claude' : 'openai'
@@ -245,6 +254,9 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     proactiveReturn: source.proactiveReturn !== false,
     proactiveGreeting: source.proactiveGreeting !== false,
     proactiveRestReminder: source.proactiveRestReminder !== false,
+    proactiveReturnAwayMinutes: clampDuty(source.proactiveReturnAwayMinutes, 1, 120, 10),
+    proactiveRestMinutes: clampDuty(source.proactiveRestMinutes, 10, 480, 60),
+    proactiveCooldownMinutes: clampDuty(source.proactiveCooldownMinutes, 5, 240, 60),
     taskNotifications: source.taskNotifications !== false,
     clipboardWatch: source.clipboardWatch === true,
     aiToolsEnabled: source.aiToolsEnabled !== false,
@@ -296,6 +308,9 @@ export function sanitizeConfigPatch(value: unknown): Partial<AppConfig> {
   if (typeof input.proactiveReturn === 'boolean') patch.proactiveReturn = input.proactiveReturn
   if (typeof input.proactiveGreeting === 'boolean') patch.proactiveGreeting = input.proactiveGreeting
   if (typeof input.proactiveRestReminder === 'boolean') patch.proactiveRestReminder = input.proactiveRestReminder
+  if (typeof input.proactiveReturnAwayMinutes === 'number' && Number.isFinite(input.proactiveReturnAwayMinutes)) patch.proactiveReturnAwayMinutes = Math.min(120, Math.max(1, Math.round(input.proactiveReturnAwayMinutes)))
+  if (typeof input.proactiveRestMinutes === 'number' && Number.isFinite(input.proactiveRestMinutes)) patch.proactiveRestMinutes = Math.min(480, Math.max(10, Math.round(input.proactiveRestMinutes)))
+  if (typeof input.proactiveCooldownMinutes === 'number' && Number.isFinite(input.proactiveCooldownMinutes)) patch.proactiveCooldownMinutes = Math.min(240, Math.max(5, Math.round(input.proactiveCooldownMinutes)))
   if (typeof input.taskNotifications === 'boolean') patch.taskNotifications = input.taskNotifications
   if (typeof input.clipboardWatch === 'boolean') patch.clipboardWatch = input.clipboardWatch
   if (typeof input.aiToolsEnabled === 'boolean') patch.aiToolsEnabled = input.aiToolsEnabled
