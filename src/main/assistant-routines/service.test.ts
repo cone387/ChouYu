@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AssistantRoutineService } from './service'
 import { nextRoutineAt, type AssistantRoutineInput } from '../../shared/assistant-routines'
-const input: AssistantRoutineInput = { title: '晨间总结', instruction: '检查各联系人', time: '09:00', cadence: 'daily', kind: 'contact-summary', enabled: true }
+const input: AssistantRoutineInput = { title: '晨间总结', instruction: '检查各联系人', times: ['09:00'], cadence: 'daily', kind: 'contact-summary', enabled: true }
 const at = (day: number, hour: number) => new Date(2026, 8, day, hour).getTime()
 function fixture() {
   let raw = ''
@@ -56,7 +56,7 @@ describe('assistant routine execution', () => {
   it('uses local calendar times, skips weekends and supports weekly dates', () => {
     expect(nextRoutineAt({ ...input, cadence: 'weekdays' }, at(25, 10))).toBe(at(28, 9))
     expect(nextRoutineAt({ ...input, cadence: 'weekly', weekday: 1 }, at(28, 10))).toBe(at(35, 9))
-    expect(() => fixture().service.save({ ...input, time: '25:00' })).toThrow()
+    expect(() => fixture().service.save({ ...input, times: ['25:00'] })).toThrow()
   })
   it('persists schedules and catches up once after several days offline', async () => {
     const f = fixture(); f.service.save(input, undefined, undefined, at(25, 8))
@@ -110,5 +110,67 @@ describe('assistant routine execution', () => {
       await f.service.tick(started)
       expect(f.service.list()[0].nextAt).toBe(at(26, 9))
     } finally { vi.useRealTimers() }
+  })
+})
+
+describe('extended schedule persistence', () => {
+  const once = { title: '一次性', instruction: '交报告', times: ['09:00'], cadence: 'once' as const, date: '2026-09-26', kind: 'contact-summary' as const, enabled: true }
+  it('normalizes a legacy stored time on read and persists the new shape on the next write', () => {
+    const f = fixture(), [saved] = f.service.save(input, undefined, undefined, at(24, 8))
+    f.deps.write(JSON.stringify([{ ...saved, time: '10:00', times: undefined }]))
+    expect(f.service.list()[0]).toMatchObject({ times: ['10:00'] })
+    f.service.save({ ...input, title: '第二项' }, undefined, undefined, at(24, 9))
+    const stored = JSON.parse(f.deps.read() as string)
+    expect(stored[0].times).toEqual(['10:00'])
+    expect(stored[0].time).toBeUndefined()
+  })
+  it('archives the request log on save and keeps the previous one when a later edit omits it', () => {
+    const f = fixture(), [item] = f.service.save(input, undefined, undefined, at(24, 8), '用户：每天九点检查')
+    expect(f.service.list()[0].requestLog).toBe('用户：每天九点检查')
+    f.service.save({ ...input, instruction: '检查所有联系人的进展' }, item.id, item.revision, at(24, 10))
+    expect(f.service.list()[0].requestLog).toBe('用户：每天九点检查')
+    expect(() => f.service.save(input, undefined, undefined, at(23, 8), 'x'.repeat(8001))).toThrow('8000')
+  })
+  it('rejects saving a once schedule whose datetime has passed', () => {
+    const f = fixture()
+    expect(() => f.service.save({ ...once, date: '2026-09-25' }, undefined, undefined, at(26, 8))).toThrow('已过')
+  })
+  it('delivers both time slots of one day exactly once each', async () => {
+    const f = fixture()
+    f.service.save({ ...input, times: ['09:00', '21:00'] }, undefined, undefined, at(25, 8))
+    await f.service.tick(at(25, 10))
+    expect(f.messages).toHaveLength(1)
+    expect(f.service.list()[0].nextAt).toBe(at(25, 21))
+    await f.service.tick(at(25, 22))
+    expect(f.messages).toHaveLength(2)
+    await f.service.tick(at(26, 12))
+    expect(f.messages).toHaveLength(3)
+  })
+  it('marks a finished once schedule and never runs or recomputes it again', async () => {
+    const f = fixture(), [item] = f.service.save(once, undefined, undefined, at(25, 8))
+    await f.service.tick(at(26, 9))
+    expect(f.messages).toHaveLength(1)
+    expect(f.service.list()[0]).toMatchObject({ finishedAt: expect.any(Number), nextAt: item.nextAt })
+    await f.service.tick(at(27, 9))
+    expect(f.messages).toHaveLength(1)
+  })
+  it('fires a missed once schedule exactly once when reopened late', async () => {
+    const f = fixture()
+    f.service.save(once, undefined, undefined, at(25, 8))
+    const reopened = new AssistantRoutineService(f.deps)
+    await reopened.tick(at(27, 10))
+    expect(f.messages).toHaveLength(1)
+    expect(reopened.list()[0].finishedAt).toBeTruthy()
+  })
+  it('marks a once schedule finished only after a retry succeeds', async () => {
+    const f = fixture()
+    f.service.save(once, undefined, undefined, at(25, 8))
+    f.deps.generate.mockRejectedValueOnce(new Error('model unavailable'))
+    await f.service.tick(at(26, 9))
+    expect(f.service.list()[0].finishedAt).toBeUndefined()
+    expect(f.service.list()[0].retryAt).toBeGreaterThan(at(26, 9))
+    await f.service.tick(at(26, 10))
+    expect(f.service.list()[0].finishedAt).toBeTruthy()
+    expect(f.messages).toHaveLength(1)
   })
 })
