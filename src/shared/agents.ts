@@ -68,6 +68,7 @@ export interface AgentTopicInput { title: string; goal: string; constraints: str
 export interface AgentTopic extends AgentTopicInput {
   resourceBudget?: import('./agent-resources').TaskResourceBudget
   initialPlan?: import('./agent-delivery').DeliveryPlan
+  requestLog?: string
   id: string; characterId: string; revision: number; status: AgentTopicStatus
   judgement: string; openQuestions: string; nextStep: string; reason: string; createdAt: number; updatedAt: number
 }

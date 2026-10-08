@@ -134,12 +134,12 @@ export class AgentService {
       case 'assignTopic': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         this.checkSearch(id)
-        this.store.assignTopic(id, args[0], this.identity(id).conversation); break
+        this.store.assignTopic(id, args[0], this.identity(id).conversation, args[1] as string | undefined); break
       }
       case 'editTopic':
       case 'topicStatus': {
         const topicId = String(args[0])
-        this.store.changeTopic(id, topicId, args[1] as number, method === 'editTopic' ? { input: args[2], reason: args[3] as string } : { status: args[2] as AgentTopicStatus, reason: args[3] as string })
+        this.store.changeTopic(id, topicId, args[1] as number, method === 'editTopic' ? { input: args[2], reason: args[3] as string, requestLog: args[4] as string | undefined } : { status: args[2] as AgentTopicStatus, reason: args[3] as string })
         const active = this.active.get(id)
         if (active && this.store.getRun(active.id)?.topic_id === topicId) this.abort(id)
         break

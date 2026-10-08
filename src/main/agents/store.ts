@@ -352,7 +352,7 @@ export class AgentStore {
       return runId
     })()
   }
-  assignTopic(id: string, description: unknown, conversation: string) {
+  assignTopic(id: string, description: unknown, conversation: string, requestLog?: string) {
     if (typeof description !== 'string' || !description.trim() || description.length > 2000 || containsSecret(description)) throw new Error('请描述需要联系人完成的任务（1–2000 字），不要包含密钥。')
     return this.db.transaction(() => {
       this.ensure(id)
@@ -367,7 +367,7 @@ export class AgentStore {
       if (settings.enabled && hasCurrentWork && profile.focus_topic_id && canResearch(this.topics.get(id, profile.focus_topic_id).status)) {
         this.db.prepare('INSERT OR IGNORE INTO task_schedule(topic_id,next_at) VALUES(?,?)').run(profile.focus_topic_id, profile.next_at)
       }
-      const topic = this.topics.create(id, { title: description.trim().slice(0, 80), goal: description.trim(), constraints: '' }, '用户交付任务，等待联系人整理方向。')
+      const topic = this.topics.create(id, { title: description.trim().slice(0, 80), goal: description.trim(), constraints: '' }, '用户交付任务，等待联系人整理方向。', Date.now(), requestLog)
       this.db.prepare('INSERT INTO task_schedule(topic_id,conversation,pending) VALUES(?,?,1)').run(topic.id, conversation.slice(0, 4000))
       if (!profile.focus_topic_id || !hasCurrentWork && !this.scheduled(id).some(task => task.topic_id === profile.focus_topic_id)) this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
       // Accepting work is independent from being able to execute it today.
@@ -675,9 +675,9 @@ export class AgentStore {
       return runId
     })()
   }
-  changeTopic(id: string, topicId: string, revision: number, change: { input: unknown; reason: string } | { status: AgentTopicStatus; reason: string }) {
+  changeTopic(id: string, topicId: string, revision: number, change: { input: unknown; reason: string; requestLog?: string } | { status: AgentTopicStatus; reason: string }) {
     return this.db.transaction(() => {
-      const topic = 'input' in change ? this.topics.edit(id, topicId, revision, change.input, change.reason) : this.topics.status(id, topicId, revision, change.status, change.reason)
+      const topic = 'input' in change ? this.topics.edit(id, topicId, revision, change.input, change.reason, change.requestLog) : this.topics.status(id, topicId, revision, change.status, change.reason)
       const rows = this.db.prepare("SELECT id FROM runs WHERE character_id=? AND topic_id=? AND status IN ('queued','running','waiting','interrupted')").all(id, topicId) as { id: string }[]
       for (const row of rows) { this.setStatus(row.id, 'cancelled'); this.event(row.id, 'cancelled', `事项已调整：${topic.reason}`) }
       return this.overview(id)
