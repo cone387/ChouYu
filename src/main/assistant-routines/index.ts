@@ -1,8 +1,8 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { createHash } from 'node:crypto'
-import { appendAssistantMessage, getCharacter, getConfig, getSession, getState, listCharacters, setState } from '../database'
+import { appendAssistantMessage, getCharacter, getConfig, saveConfig, getSession, getState, listCharacters, setState } from '../database'
 import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID, resolveCharacterConfig } from '../../shared/characters'
-import { inspectContactWork, inspectContactDelivery } from '../agents'
+import { inspectContactWork, inspectContactDelivery, contactAgentsCall } from '../agents'
 import { parseToolArguments } from '../../shared/tools'
 import { notifyReminderChanges } from '../reminder-events'
 import { streamAIChat } from '../ai'
@@ -10,6 +10,8 @@ import { getRegisteredTool, registerTool } from '../tools/registry'
 import { AssistantRoutineService } from './service'
 import { createAssistantTools } from './tools'
 import { requestAssistantTask } from './request'
+import { requestContactTask } from './gateway'
+import { ContactTaskDraftStore } from './drafts'
 import { contactTaskHref } from '../../shared/contact-links'
 
 let service: AssistantRoutineService | undefined
@@ -124,6 +126,28 @@ export function initializeAssistantRoutines() {
   }, id, revision))
   ipcMain.handle('assistant-routines:save', (_event, input, id, revision) => service!.save(input, id, revision))
   ipcMain.handle('assistant-routines:remove', (_event, id, revision) => service!.remove(id, revision))
+  const drafts = new ContactTaskDraftStore({
+    read: () => getState('contact-task-drafts-v1'),
+    write: value => setState('contact-task-drafts-v1', value),
+    quarantine: value => setState(`contact-task-drafts-v1.quarantined:${Date.now()}`, value)
+  })
+  const modelForRequest = async (instruction: string, content: string) => {
+    const character = getCharacter(DEFAULT_CHARACTER_ID)
+    if (!character) throw new Error('ChouYu 联系人不存在。')
+    const config = getConfig()
+    const resolved = resolveCharacterConfig(character, config)
+    if (!resolved.ok) throw new Error('请先配置 ChouYu 使用的模型。')
+    let output = ''
+    await streamAIChat([{ role: 'user', content }], instruction, { ...config, ...resolved.config }, chunk => {
+      output += chunk
+      if (output.length > 16000) throw new Error('任务解析结果过长。')
+    }, AbortSignal.timeout(120000), undefined, { timeoutMs: 120000, maxOutputTokens: 1800 })
+    return output
+  }
+  ipcMain.handle('contact-task:request', (_event, target, message) => requestContactTask(target, message, {
+    routineService: service!, drafts, agents: contactAgentsCall, config: getConfig, saveConfig: patch => { saveConfig(patch) }, defaultCharacterId: DEFAULT_CHARACTER_ID
+  }, modelForRequest))
+  ipcMain.handle('contact-task:drafts', () => drafts.list())
   for (const tool of createAssistantTools(service, id => id ? getSession(id)?.characterId : undefined, readContactsForAssistant)) if (!getRegisteredTool(tool.name)) registerTool(tool)
   const tick = () => { void service?.tick().catch(() => { /* Unreadable state is never replaced. */ }) }
   timer = setInterval(tick, 15000); tick()
