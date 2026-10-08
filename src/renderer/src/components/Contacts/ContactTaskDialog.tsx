@@ -4,7 +4,7 @@ import type { AgentTopic, AgentOverview } from '../../../../shared/agents'
 import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 import type { AssistantRoutine } from '../../../../shared/assistant-routines'
 import type { AssistantDutyKey } from '../../../../shared/assistant-duties'
-import type { ContactTaskTarget } from '../../../../shared/contact-task-gateway'
+import { contactTaskTargetKey, type ContactTaskTarget } from '../../../../shared/contact-task-gateway'
 
 export default function ContactTaskDialog({ characterId, editTask, deletion, routine, duty, initialDescription = '', onRoutineDone, onDutyDone, onClose, onAction, onDone }: {
   characterId: string; editTask?: AgentTopic; onClose: () => void
@@ -28,7 +28,7 @@ export default function ContactTaskDialog({ characterId, editTask, deletion, rou
     : routine ? { kind: 'edit-routine', characterId, routineId: routine.id, routineRevision: routine.revision }
     : duty ? { kind: 'edit-duty', characterId, dutyKey: duty.key }
     : { kind: 'create', characterId }
-  const targetKey = editTask ? `edit-work:${characterId}:${editTask.id}` : routine ? `edit-routine:${routine.id}` : duty ? `edit-duty:${duty.key}` : `create:${characterId}`
+  const targetKey = contactTaskTargetKey(target)
   useEffect(() => {
     let active = true
     void window.electronAPI.contactTask.drafts().then(drafts => {

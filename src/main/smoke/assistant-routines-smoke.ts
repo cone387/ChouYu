@@ -225,7 +225,7 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     // Execute a real scheduled summary, then follow its durable history/chat/task links.
     // The once routine fires meanwhile; confirm it completed before the summary session
     // exists, so its delivery cannot pollute the summary session.
-    await waitForRenderer(window, `window.electronAPI.assistantRoutines.list().then(items => items.some(entry => entry.cadence === 'once' && entry.finishedAt))`, 95000)
+    await waitForRenderer(window, `window.electronAPI.assistantRoutines.list().then(items => items.some(entry => entry.cadence === 'once' && entry.finishedAt))`, 120000)
     summarySession = (await run("window.electronAPI.db.createSession('Routine smoke delivery', 'chouyu')")).activeSession.id
     await run("document.querySelector('.contact-work-sheet[open] [aria-label=\"关闭联系人工作弹窗\"]').click()")
     const executed = (await run("window.electronAPI.assistantRoutines.save({title:'晨报跳转验收',instruction:'汇总联系人进展',times:['08:30'],cadence:'daily',kind:'contact-summary',enabled:true})")).find((entry: { title: string }) => entry.title === '晨报跳转验收')

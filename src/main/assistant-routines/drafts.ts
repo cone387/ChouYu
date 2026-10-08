@@ -15,7 +15,7 @@ export class ContactTaskDraftStore {
     if (!raw) return []
     try {
       const value = JSON.parse(raw)
-      if (!Array.isArray(value) || !value.every(d => d && typeof d.targetKey === 'string' && Array.isArray(d.turns) && d.turns.every((t: ContactTaskDraftTurn) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.text === 'string' && Number.isFinite(d.updatedAt)))) throw new Error('invalid')
+      if (!Array.isArray(value) || !value.every(d => d && typeof d.targetKey === 'string' && d.targetKey && Number.isFinite(d.updatedAt) && Array.isArray(d.turns) && d.turns.every((t: ContactTaskDraftTurn) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.text === 'string'))) throw new Error('invalid')
       return value
     } catch (error) {
       this.deps.quarantine?.(raw)
@@ -28,7 +28,7 @@ export class ContactTaskDraftStore {
   list(): ContactTaskDraft[] { return this.parse() }
   get(targetKey: string): ContactTaskDraft | undefined { return this.parse().find(d => d.targetKey === targetKey) }
   append(targetKey: string, turn: ContactTaskDraftTurn) {
-    if (typeof targetKey !== 'string' || !targetKey || typeof turn.text !== 'string' || !turn.text.trim() || turn.text.length > 4000) throw new Error('草稿内容无效。')
+    if (typeof targetKey !== 'string' || !targetKey || typeof turn.text !== 'string' || !turn.text.trim() || turn.text.length > 8000) throw new Error('草稿内容无效。')
     const drafts = this.parse().filter(d => d.targetKey !== targetKey)
     const previous = this.get(targetKey)
     const turns = [...(previous?.turns ?? []), { role: turn.role, text: turn.text.trim() }]

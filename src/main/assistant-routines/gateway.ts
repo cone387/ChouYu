@@ -4,6 +4,7 @@ import { validateTopicInput } from '../../shared/agents'
 import { validateRoutine, type AssistantRoutine } from '../../shared/assistant-routines'
 import { ASSISTANT_DUTIES } from '../../shared/assistant-duties'
 import type { ContactTaskRequestResult, ContactTaskTarget } from '../../shared/contact-task-gateway'
+import { contactTaskTargetKey } from '../../shared/contact-task-gateway'
 import type { AssistantRoutineService } from './service'
 import { ContactTaskDraftStore } from './drafts'
 
@@ -21,13 +22,6 @@ const DUTY_RANGES = { proactiveReturnAwayMinutes: [1, 120], proactiveRestMinutes
 type DutyParamKey = keyof typeof DUTY_RANGES
 const DUTY_LABELS: Record<DutyParamKey, string> = { proactiveReturnAwayMinutes: '离开判定（分钟）', proactiveRestMinutes: '连续使用提醒（分钟）', proactiveCooldownMinutes: '共享冷却（分钟）' }
 const WORK_EDIT_STATUSES = ['paused', 'planned'] as const
-
-function targetKey(target: ContactTaskTarget): string {
-  return target.kind === 'create' ? `create:${target.characterId}`
-    : target.kind === 'edit-work' ? `edit-work:${target.characterId}:${target.topicId}`
-    : target.kind === 'edit-routine' ? `edit-routine:${target.routineId}`
-    : `edit-duty:${target.dutyKey}`
-}
 
 const PROMPT = `你是 ChouYu，统一解析用户对联系人任务的自然语言请求。只返回 JSON，不声称已保存或执行。
 按 context.target.kind 返回以下之一：
@@ -47,7 +41,7 @@ const PROMPT = `你是 ChouYu，统一解析用户对联系人任务的自然语
 
 export async function requestContactTask(target: ContactTaskTarget, message: string, deps: GatewayDeps, model: Model): Promise<ContactTaskRequestResult> {
   if (typeof message !== 'string' || !message.trim() || message.length > 8000) throw new Error('请用自然语言描述任务（最多 8000 字）。')
-  const key = targetKey(target)
+  const key = contactTaskTargetKey(target)
   const scheduled = target.characterId === deps.defaultCharacterId
   // Resolve existing state and revisions before spending a model call.
   let existingRoutine: AssistantRoutine | undefined
@@ -80,10 +74,19 @@ export async function requestContactTask(target: ContactTaskTarget, message: str
     deps.drafts.append(key, { role: 'assistant', text: parsed.question.trim() })
     return { kind: 'question', question: parsed.question.trim() }
   }
-  const requestLog = ContactTaskDraftStore.render(deps.drafts.get(key), message.trim())
+  // The archived chain must survive later edits without a new clarification round;
+  // when merging with the previous archive would exceed the cap, keep the current chain.
+  const freshLog = ContactTaskDraftStore.render(deps.drafts.get(key), message.trim())
+  const previousLog = existingRoutine?.requestLog ?? existingTopic?.requestLog
+  const requestLog = previousLog && `${previousLog}\n${freshLog}`.length <= 8000 ? `${previousLog}\n${freshLog}` : freshLog
   if (target.kind === 'edit-duty') return applyDutyEdit(target, parsed.params, deps)
   if ((target.kind === 'create' || target.kind === 'edit-routine') && parsed?.kind === 'routine') {
-    if (!scheduled) return { kind: 'question', question: '此联系人只有持续工作引擎，不支持定点安排。可以把它交给 ChouYu 定时执行，或在该联系人的工作设置里调整运行节奏。要继续描述非定时的任务吗？' }
+    if (!scheduled) {
+      const question = '此联系人只有持续工作引擎，不支持定点安排。可以把它交给 ChouYu 定时执行，或在该联系人的工作设置里调整运行节奏。要继续描述非定时的任务吗？'
+      deps.drafts.append(key, { role: 'user', text: message.trim() })
+      deps.drafts.append(key, { role: 'assistant', text: question })
+      return { kind: 'question', question }
+    }
     const input = validateRoutine(parsed.input)
     const before = new Set(deps.routineService.list().map(item => item.id))
     const items = deps.routineService.save(input, target.kind === 'edit-routine' ? target.routineId : undefined, target.kind === 'edit-routine' ? target.routineRevision : undefined, undefined, requestLog)
@@ -102,24 +105,25 @@ export async function requestContactTask(target: ContactTaskTarget, message: str
 
 async function applyWorkEdit(target: Extract<ContactTaskTarget, { kind: 'edit-work' }>, parsed: { input?: unknown; status?: unknown; budget?: { modelCalls?: unknown } | null }, existing: AgentTopic, requestLog: string, deps: GatewayDeps): Promise<ContactTaskRequestResult> {
   if (!parsed || typeof parsed !== 'object' || parsed.input === undefined) throw new Error('任务解析结果无效，尚未保存。')
+  // Reject invalid budget/status before saving the goal, so the failure message "本次未保存" stays true.
+  if (typeof parsed.status === 'string' && !WORK_EDIT_STATUSES.includes(parsed.status as typeof WORK_EDIT_STATUSES[number])) throw new Error('结束或放弃任务请在任务页操作，本次未保存。')
+  const budgetCalls = parsed.budget && typeof (parsed.budget as { modelCalls?: unknown }).modelCalls === 'number' ? (parsed.budget as { modelCalls: number }).modelCalls : undefined
+  if (budgetCalls !== undefined && (!Number.isSafeInteger(budgetCalls) || budgetCalls < 1 || budgetCalls > 10000)) throw new Error(`任务预算应为 1–10000 次，本次未保存。`)
   const input = validateTopicInput({ ...(parsed.input as object), title: (parsed.input as { title?: string }).title?.trim() || existing.title })
   let overview = await deps.agents(target.characterId, 'editTopic', [target.topicId, target.topicRevision, input, '用户通过自然语言更新任务。', requestLog]) as AgentOverview
   const edited = overview.topics.find(t => t.id === target.topicId)!
   let budgetApplied = false, budgetError: string | undefined
-  if (parsed.budget && typeof (parsed.budget as { modelCalls?: unknown }).modelCalls === 'number') {
-    const modelCalls = (parsed.budget as { modelCalls: number }).modelCalls
-    if (!Number.isSafeInteger(modelCalls) || modelCalls < 1 || modelCalls > 10000) throw new Error(`任务预算应为 1–10000 次，本次未调整。`)
-    try { overview = await deps.agents(target.characterId, 'setTaskBudget', [target.topicId, edited.revision, { modelCalls }]) as AgentOverview; budgetApplied = true }
+  if (budgetCalls !== undefined) {
+    try { overview = await deps.agents(target.characterId, 'setTaskBudget', [target.topicId, edited.revision, { modelCalls: budgetCalls }]) as AgentOverview; budgetApplied = true }
     catch (error) { budgetError = error instanceof Error ? error.message : '预算未调整。' }
   }
   let statusApplied = false, statusError: string | undefined
   if (typeof parsed.status === 'string') {
-    if (!WORK_EDIT_STATUSES.includes(parsed.status as typeof WORK_EDIT_STATUSES[number])) throw new Error('结束或放弃任务请在任务页操作，本次未保存。')
     const current = (budgetApplied ? overview : await deps.agents(target.characterId, 'get', []) as AgentOverview).topics.find(t => t.id === target.topicId)!
     try { overview = await deps.agents(target.characterId, 'topicStatus', [target.topicId, current.revision, parsed.status, '用户通过自然语言调整任务状态。']) as AgentOverview; statusApplied = true }
     catch (error) { statusError = error instanceof Error ? error.message : '状态未调整。' }
   }
-  deps.drafts.clear(targetKey(target))
+  deps.drafts.clear(contactTaskTargetKey(target))
   return { kind: 'work-edited', overview, budgetApplied, budgetError, statusApplied, statusError }
 }
 
@@ -136,6 +140,6 @@ function applyDutyEdit(target: Extract<ContactTaskTarget, { kind: 'edit-duty' }>
     patch[key as DutyParamKey] = value
   }
   deps.saveConfig(patch)
-  deps.drafts.clear(targetKey(target))
+  deps.drafts.clear(contactTaskTargetKey(target))
   return { kind: 'duty' }
 }

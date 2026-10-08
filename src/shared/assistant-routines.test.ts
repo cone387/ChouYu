@@ -17,6 +17,7 @@ describe('validateRoutine extended schedules', () => {
     expect(() => validateRoutine({ ...base, cadence: 'once', times: ['08:30'] })).toThrow('日期')
     expect(() => validateRoutine({ ...base, cadence: 'once', date: '2026-11-01', times: ['08:30', '20:00'] })).toThrow('一个时刻')
     expect(() => validateRoutine({ ...base, cadence: 'once', date: '2026-13-01', times: ['08:30'] })).toThrow('日期')
+    expect(() => validateRoutine({ ...base, cadence: 'once', date: '2026-02-30', times: ['08:30'] })).toThrow('日期')
   })
   it('keeps weekday only for weekly and rejects other cadences', () => {
     expect(validateRoutine({ ...base, cadence: 'weekly', weekday: 3, times: ['08:30'] })).toMatchObject({ weekday: 3 })

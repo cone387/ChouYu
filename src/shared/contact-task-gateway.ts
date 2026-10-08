@@ -7,6 +7,13 @@ export type ContactTaskTarget =
   | { kind: 'edit-work'; characterId: string; topicId: string; topicRevision: number }
   | { kind: 'edit-routine'; characterId: string; routineId: string; routineRevision: number }
   | { kind: 'edit-duty'; characterId: string; dutyKey: AssistantDutyKey }
+/** Draft-store key for a target; main and renderer must derive it identically. */
+export function contactTaskTargetKey(target: ContactTaskTarget): string {
+  return target.kind === 'create' ? `create:${target.characterId}`
+    : target.kind === 'edit-work' ? `edit-work:${target.characterId}:${target.topicId}`
+    : target.kind === 'edit-routine' ? `edit-routine:${target.routineId}`
+    : `edit-duty:${target.dutyKey}`
+}
 export interface ContactTaskGatewayResultQuestion { kind: 'question'; question: string }
 export interface ContactTaskGatewayResultWorkCreated { kind: 'work-created'; overview: AgentOverview }
 export interface ContactTaskGatewayResultWorkEdited { kind: 'work-edited'; overview: AgentOverview; budgetApplied: boolean; budgetError?: string; statusApplied: boolean; statusError?: string }

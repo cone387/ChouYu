@@ -55,7 +55,11 @@ export function validateRoutine(raw: unknown): AssistantRoutineInput {
   if (!['daily', 'weekdays', 'weekly', 'once'].includes(v.cadence) || !['reminder', 'contact-summary'].includes(v.kind) || typeof v.enabled !== 'boolean') throw new Error('安排类型或重复规则无效。')
   let date: string | undefined
   if (v.cadence === 'once') {
-    if (typeof v.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.date) || Number.isNaN(new Date(`${v.date}T00:00:00`).getTime())) throw new Error('一次性安排请填写合法日期（YYYY-MM-DD）。')
+    // Compare parsed components: new Date rolls 2026-02-30 over into March instead of rejecting.
+    const parts = typeof v.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.date) ? v.date.split('-').map(Number) : undefined
+    const [year, month, day] = parts ?? []
+    const parsed = new Date(year!, month! - 1, day!)
+    if (!parts || Number.isNaN(parsed.getTime()) || parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) throw new Error('一次性安排请填写合法日期（YYYY-MM-DD）。')
     if (times.length !== 1) throw new Error('一次性安排只能有一个时刻。')
     date = v.date
   }

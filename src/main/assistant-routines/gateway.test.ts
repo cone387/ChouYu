@@ -39,11 +39,24 @@ describe('contact task gateway', () => {
     await requestContactTask(createTarget, '八点半', deps, async () => JSON.stringify({ kind: 'routine', input: routineInput }))
     expect(routineService.list()[0].requestLog).toContain('几点？')
   })
-  it('honestly refuses scheduled requests for non-scheduled contacts', async () => {
-    const { deps } = fixture()
+  it('appends later edits to the archived chain instead of overwriting it', async () => {
+    const { deps, routineService } = fixture()
+    await requestContactTask(createTarget, '每个工作日早上汇总', deps, async () => JSON.stringify({ kind: 'question', question: '几点？' }))
+    const created = (await requestContactTask(createTarget, '八点半', deps, async () => JSON.stringify({ kind: 'routine', input: routineInput }))) as { routine: { id: string; revision: number } }
+    await requestContactTask({ kind: 'edit-routine', characterId: 'chouyu', routineId: created.routine.id, routineRevision: created.routine.revision }, '改成九点', deps, async (_instruction, content) => {
+      expect(JSON.parse(content).existing.title).toBe('晨报')
+      return JSON.stringify({ kind: 'routine', input: { ...routineInput, times: ['09:00'] } })
+    })
+    const log = routineService.list().find(item => item.id === created.routine.id)!.requestLog!
+    expect(log).toContain('几点？')
+    expect(log).toContain('改成九点')
+  })
+  it('honestly refuses scheduled requests for non-scheduled contacts and keeps the refusal in the draft chain', async () => {
+    const { deps, drafts } = fixture()
     const result = await requestContactTask({ kind: 'create', characterId: 'other' }, '每天八点提醒我喝水', deps, async () => JSON.stringify({ kind: 'routine', input: { ...routineInput, kind: 'reminder' } }))
     expect(result).toMatchObject({ kind: 'question' })
     expect((result as { question: string }).question).toContain('定点')
+    expect(drafts.get('create:other')?.turns.map(turn => turn.role)).toEqual(['user', 'assistant'])
   })
   it('edits work topics through the model parse: goal, budget, status with honest partial failure', async () => {
     const topic = { id: 't1', revision: 4, title: '对照任务', goal: '旧目标', constraints: '', status: 'planned' }
@@ -59,6 +72,14 @@ describe('contact task gateway', () => {
     expect(result).toMatchObject({ kind: 'work-edited', budgetApplied: false })
     expect((result as { budgetError?: string }).budgetError).toContain('预算不能低于')
     expect(agents.mock.calls.some(([, method]) => method === 'editTopic')).toBe(true)
+  })
+  it('rejects invalid budget or status before saving the goal edit', async () => {
+    const topic = { id: 't1', revision: 4, title: '对照任务', goal: '旧目标', constraints: '', status: 'planned' }
+    const { deps, agents } = fixture(async (_id, method) => { if (method === 'get') return { topics: [{ ...topic }] }; throw new Error(`unexpected ${method}`) })
+    const target = { kind: 'edit-work' as const, characterId: 'other', topicId: 't1', topicRevision: 4 }
+    await expect(requestContactTask(target, '预算调到 0 次', deps, async () => JSON.stringify({ kind: 'work-edit', input: { goal: '新目标', constraints: '' }, budget: { modelCalls: 0 } }))).rejects.toThrow('1–10000')
+    await expect(requestContactTask(target, '结束这个任务', deps, async () => JSON.stringify({ kind: 'work-edit', input: { goal: '新目标', constraints: '' }, status: 'completed' }))).rejects.toThrow('任务页操作')
+    expect(agents.mock.calls.some(([, method]) => method === 'editTopic')).toBe(false)
   })
   it('applies duty parameter edits with range validation and unknown-key rejection', async () => {
     const { deps, saveConfig } = fixture()
