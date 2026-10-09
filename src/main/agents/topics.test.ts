@@ -214,3 +214,17 @@ describe('persistent contact topics', () => {
     expect(() => new AgentStore(path)).toThrow('版本较新')
   })
 })
+
+describe('requestLog archiving', () => {
+  it('stores the clarification chain on create and edit, preserving it when later edits omit it', () => {
+    const { store } = fixture()
+    const log = '用户：每个工作日汇总\nChouYu：几点？\n用户：八点半'
+    const created = store.topics.create('alice', { title: '晨报', goal: '汇总', constraints: '' }, '用户建立了持续研究事项。', Date.now(), log)
+    expect(created.requestLog).toBe(log)
+    const edited = store.topics.edit('alice', created.id, created.revision, { title: created.title, goal: '汇总并提醒', constraints: '' }, '用户更新任务描述。')
+    expect(edited.requestLog).toBe(log)
+    const replaced = store.topics.edit('alice', edited.id, edited.revision, { title: edited.title, goal: '汇总', constraints: '' }, '再次更新。', '新链')
+    expect(replaced.requestLog).toBe('新链')
+    expect(() => store.topics.create('alice', { title: 'x', goal: 'y', constraints: '' }, 'r', Date.now(), 'a'.repeat(8001))).toThrow('8000')
+  })
+})

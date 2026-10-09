@@ -140,10 +140,11 @@ function App() {
       if (!active || kind === 'return' && Date.now() - requestedAt > 30_000) return
       await window.electronAPI.proactiveAppend(message, undefined, kind, deliveryId)
     }, {
-      greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder, returnReminder: config.proactiveReturn
+      greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder, returnReminder: config.proactiveReturn,
+      awayMinutes: config.proactiveReturnAwayMinutes, restMinutes: config.proactiveRestMinutes, cooldownMinutes: config.proactiveCooldownMinutes
     })
     return () => { active = false; proactiveEngine.stop() }
-  }, [config.proactiveGreeting, config.proactiveRestReminder, config.proactiveReturn])
+  }, [config.proactiveGreeting, config.proactiveRestReminder, config.proactiveReturn, config.proactiveReturnAwayMinutes, config.proactiveRestMinutes, config.proactiveCooldownMinutes])
 
   // 助手未读驱动宠物红点；托盘由主进程驱动。
   useEffect(() => {

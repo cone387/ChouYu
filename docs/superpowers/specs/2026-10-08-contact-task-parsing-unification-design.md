@@ -84,7 +84,7 @@ requestLog?: string        // 补问链归档,≤8000 字
 
 ### work 任务归档
 
-`AgentTopic` 在 agents.db 增加 `requestLog TEXT` 列,走既有独立迁移号 +1。
+`AgentTopic` 增加 `requestLog?: string` 可选字段。topics 表以 JSON `value` 列存储整条记录,新增字段随 JSON 落库,**无需 SQLite 迁移**;旧记录缺省为无归档。
 
 ### duty 参数进 AppConfig
 
@@ -149,6 +149,6 @@ NL-03、NL-05 由「不得标通过」变为可验;UI-01/02 不回归;SCOPE-01 �
 ## 风险与边界
 
 - 单一提示词变大:靠返回 union 硬校验兜底,解析器测试覆盖每个分支。
-- agents.db 加列需迁移:沿用独立迁移机制,损坏隔离已有测试模式。
+- `requestLog` 随 topics 的 JSON value 落库,无迁移;旧记录无归档字段属正常,不补造。
 - 旧 routine 数据形状:读取归一 + 冒烟覆盖升级路径。
 - duty 参数改 config 即时生效,但localStorage 里的引擎状态(greetingDate 等)不受影响,不重置当天问好。

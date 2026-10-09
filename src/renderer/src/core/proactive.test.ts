@@ -52,6 +52,15 @@ describe('companion activity reminders', () => {
     window.electronAPI.getSystemIdleSeconds = () => new Promise(resolve => { finish = resolve })
     start(false, true); await advance(3000); engine.stop(); finish(0); await advance(100_000); expect(seen).toHaveLength(1)
   })
+
+  test('uses configurable away, rest and cooldown values', async () => {
+    engine.start((_message, kind) => { seen.push(kind!) }, { greeting: false, restReminder: true, returnReminder: true, awayMinutes: 2, restMinutes: 10, cooldownMinutes: 1 })
+    idle = 130; await advance(3000)
+    idle = 0; await advance(15_000)
+    expect(seen).toEqual(['return'])
+    await advance(10 * 60_000)
+    expect(seen).toEqual(['return', 'rest'])
+  })
 })
 
 

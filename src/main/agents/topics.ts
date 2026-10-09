@@ -27,11 +27,12 @@ export class AgentTopics {
       .run(after.id, kind, before ? JSON.stringify(before) : null, JSON.stringify(after), reason, runId, after.updatedAt)
     this.db.prepare('INSERT INTO topics(id,character_id,value) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(after.id, after.characterId, JSON.stringify(after))
   }
-  create(characterId: string, raw: unknown, reason = '用户建立了持续研究事项。', now = Date.now()) {
+  create(characterId: string, raw: unknown, reason = '用户建立了持续研究事项。', now = Date.now(), requestLog?: string) {
     const input = validateTopicInput(raw)
     if (containsSecret(JSON.stringify(input))) throw new Error('请勿在事项中保存密码或密钥。')
     if (this.list(characterId).length >= 100) throw new Error('每位联系人最多保留 100 个事项。')
-    const topic: AgentTopic = { ...input, id: randomUUID(), characterId, revision: 1, status: 'planned', judgement: '', openQuestions: '', nextStep: '', reason, createdAt: now, updatedAt: now }
+    if (requestLog !== undefined && (typeof requestLog !== 'string' || requestLog.length > 8000)) throw new Error('任务沟通记录最多 8000 字。')
+    const topic: AgentTopic = { ...input, ...(requestLog !== undefined ? { requestLog } : {}), id: randomUUID(), characterId, revision: 1, status: 'planned', judgement: '', openQuestions: '', nextStep: '', reason, createdAt: now, updatedAt: now }
     this.db.transaction(() => {
       // Insert the parent before its first history entry.
       this.db.prepare('INSERT INTO topics(id,character_id,value) VALUES(?,?,?)').run(topic.id, characterId, JSON.stringify(topic))
@@ -39,11 +40,12 @@ export class AgentTopics {
     })()
     return topic
   }
-  edit(characterId: string, id: string, revision: number, raw: unknown, reason: string) {
+  edit(characterId: string, id: string, revision: number, raw: unknown, reason: string, requestLog?: string) {
     const before = this.check(characterId, id, revision), input = validateTopicInput(raw)
     this.reason(reason)
     if (containsSecret(JSON.stringify(input))) throw new Error('请勿在事项中保存密码或密钥。')
-    const after = { ...before, ...input, revision: before.revision + 1, updatedAt: Date.now(), reason: reason.trim() }
+    if (requestLog !== undefined && (typeof requestLog !== 'string' || requestLog.length > 8000)) throw new Error('任务沟通记录最多 8000 字。')
+    const after = { ...before, ...input, ...(requestLog !== undefined ? { requestLog } : {}), revision: before.revision + 1, updatedAt: Date.now(), reason: reason.trim() }
     this.record(before, after, 'edited', after.reason)
     return after
   }

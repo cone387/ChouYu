@@ -11,7 +11,7 @@ import ContactTaskResources from './ContactTaskResources'
 import TaskIcon from '../Tasks/TaskIcon'
 import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 import { useAssistantTasks, type AssistantTaskEntry } from './useAssistantTasks'
-import { contactTaskItems } from './contactTaskPresentation'
+import { contactTaskItems, routineTimesLabel } from './contactTaskPresentation'
 import ContactTaskListCard from './ContactTaskListCard'
 import ContactMarkdown from './ContactMarkdown'
 import type { AssistantRoutineHistoryPage } from '../../../../shared/assistant-routines'
@@ -88,8 +88,8 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   }, [routine?.id, routine?.lastAt, routine?.lastError, active, tab])
   const scheduleEnabled = routine?.enabled ?? (assistantTask?.duty && assistant.config ? assistant.config[assistantTask.duty] : false)
   const scheduleFields: [string, ReactNode][] = routine ? [
-    ['执行时间', `${routine.cadence === 'daily' ? '每天' : routine.cadence === 'weekdays' ? '工作日' : `每周${'日一二三四五六'[routine.weekday ?? 0]}`} ${routine.time}（电脑本地时间）`],
-    ...(routine.enabled ? [[routine.retryAt ? '下次重试' : '下次执行', time(routine.retryAt ?? routine.nextAt)] as [string, ReactNode]] : []),
+    ['执行时间', routine.finishedAt ? '已完成，不再执行' : `${routineTimesLabel(routine)}${routine.cadence === 'once' ? '，电脑本地时间' : '（电脑本地时间）'}`],
+    ...(routine.enabled && !routine.finishedAt ? [[routine.retryAt ? '下次重试' : '下次执行', time(routine.retryAt ?? routine.nextAt)] as [string, ReactNode]] : []),
     ['最近完成', routine.lastAt ? `${time(routine.lastAt)} · 已发到聊天` : '尚未执行']
   ] : [['触发规则', assistantTask?.description ?? '']]
 
@@ -143,13 +143,13 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const stageToggle = <button type="button" className="topic-stage-toggle" aria-label={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} title={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} aria-expanded={!stagesCollapsed} aria-controls={`${tabId}-stages-nav`} onClick={() => setStagesCollapsed(value => !value)}><TaskIcon name="sidebar" /></button>
   const closeSettings = () => { setShowSettings(false) }
   return <section ref={container} className="contact-topics" aria-label="持续推进的事项">
-    {(taskDialog || scheduledEditor || scheduledDelete) && <ContactTaskDialog characterId={characterId} task={taskDialog && taskDialog !== 'create' ? taskDialog : undefined} routine={scheduledEditor?.routine} initialDescription={scheduledEditor && !scheduledEditor.routine ? '每天早上检查各联系人的进展，汇总需要我关注和回复的事情。' : ''}
-      deletion={scheduledDelete?.routine ? { title: scheduledDelete.title, description: '停止后续执行并删除此安排，聊天消息保留。', execute: async () => { await window.electronAPI.assistantRoutines.remove(scheduledDelete.routine!.id, scheduledDelete.routine!.revision); await assistant.refresh(); if (selected === scheduledDelete.id) { setSelected(''); setMobileDetail(false) } } } : undefined}
+    {(taskDialog || scheduledEditor || scheduledDelete) && <ContactTaskDialog characterId={characterId} routine={scheduledEditor?.routine} initialDescription={scheduledEditor && !scheduledEditor.routine ? '每天早上检查各联系人的进展，汇总需要我关注和回复的事情。' : ''}
+      deletion={scheduledDelete?.routine ? { title: scheduledDelete.title, description: '停止后续执行并删除此安排，聊天消息保留。', execute: async () => { await window.electronAPI.assistantRoutines.remove(scheduledDelete.routine!.id, scheduledDelete.routine!.revision); await assistant.refresh(); if (selected === scheduledDelete.id) { setSelected(''); setMobileDetail(false) } } }
+        : taskDialog && taskDialog !== 'create' ? { title: taskDialog.title, description: '任务会停止执行，成果、运行和互动记录将一并删除，聊天消息保留。此操作无法撤销。', execute: async () => { const next = await window.electronAPI.agents.deleteTopic(characterId, taskDialog.id, taskDialog.revision); if (selected === taskDialog.id) { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(false) } } } : undefined}
       onClose={() => { setTaskDialog(null); setScheduledEditor(null); setScheduledDelete(null) }} onAction={onAction}
       onRoutineDone={item => { void assistant.refresh(); setSelected(`routine:${item.id}`); setMobileDetail(true) }} onDone={next => {
-      if (!taskDialog || taskDialog === 'create') { setSelected(next.topics.find(item => !data.topics.some(previous => previous.id === item.id))?.id ?? next.topics[0]?.id ?? ''); setMobileDetail(true) }
-      else if (selected === taskDialog.id) { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(false) }
-    }} />}
+        setSelected(next.topics.find(item => !data.topics.some(previous => previous.id === item.id))?.id ?? next.topics[0]?.id ?? ''); setMobileDetail(true)
+      }} />}
     <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}${listCollapsed ? ' topic-list-collapsed' : ''}${stagesCollapsed ? ' topic-stages-collapsed' : ''}`}>
       <aside className="topic-list-rail">
         <div className="topic-list-toolbar"><span>任务列表 · 共 {items.filter(item => !item.template).length} 项</span><small>启用/进行中 {items.filter(item => item.status === '已启用' || item.running || item.status === '排队中' || item.work && ['researching', 'needs_evidence'].includes(item.work.status)).length} 项</small></div>
@@ -208,8 +208,11 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       {!activeRun && topicRun?.status === 'failed' && <p className="agent-error" role="alert">本轮执行失败：{topicRun.error || '请查看工作日志了解原因。'}</p>}
       {topic && !activeRun && topicRun?.status === 'completed' && !data.settings.enabled && researchable(topic) && <p className="agent-caption">本轮已完成，任务尚未结束。当前未开启持续工作，可再次启动一轮，或在工作设置中开启持续工作。</p>}
       {showSettings && <ContactTaskDialog characterId={characterId} editTask={topic} routine={routine}
-        readOnly={Boolean(assistantTask?.duty)} initialDescription={topic ? [topic.goal, topic.constraints].filter(Boolean).join('\n\n') : routine ? `${scheduleFields[0][1]}\n${routine.instruction}` : assistantTask?.description ?? ''}
-        onClose={closeSettings} onAction={onAction} onDone={() => { void load() }} onRoutineDone={() => { void assistant.refresh() }} />}
+        duty={assistantTask?.duty ? { key: assistantTask.duty, title: assistantTask.title, values: assistant.config ? [
+          ['离开判定', assistant.config.proactiveReturnAwayMinutes], ['连续使用提醒', assistant.config.proactiveRestMinutes], ['共享冷却', assistant.config.proactiveCooldownMinutes]
+        ] : [] } : undefined}
+        initialDescription={topic ? [topic.goal, topic.constraints].filter(Boolean).join('\n\n') : routine ? `${scheduleFields[0][1]}\n${routine.instruction}` : assistantTask?.description ?? ''}
+        onClose={closeSettings} onAction={onAction} onDone={() => { void load() }} onRoutineDone={() => { void assistant.refresh() }} onDutyDone={() => { void assistant.refresh() }} />}
       <div>
       <section role="tabpanel" id={`${tabId}-overview-panel`} aria-labelledby={`${tabId}-overview`} hidden={tab !== 'overview'} tabIndex={0}>
         {topic ? <ContactTaskOverview topic={topic} data={data} visible={active && tab === 'overview' && !showSettings} onWorkSettings={onWorkSettings} attention={topicRun ? renderActivity?.(topic.id) : undefined}>

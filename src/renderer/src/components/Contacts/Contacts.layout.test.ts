@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
+import { contactTaskItems } from './contactTaskPresentation'
 
 const viewSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Contacts/ContactsView.tsx'), 'utf8')
 const cssSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/Contacts/Contacts.css'), 'utf8')
@@ -153,5 +154,18 @@ describe('contacts layout', () => {
     expect(viewSource).toMatch(/if \(!active \|\| !focusCharacterId\) return/)
     expect(viewSource).toContain('onFocusConsumed?.()')
     expect(viewSource).toContain('setDetail(character)')
+  })
+})
+
+describe('contact task presentation', () => {
+  const routineFixture = { id: 'routine:a', revision: 1, createdAt: 1, updatedAt: 1, nextAt: new Date(2026, 10, 2, 8, 30).getTime(), title: '晨报', instruction: '汇总联系人进展', times: ['08:30'], cadence: 'weekdays' as const, kind: 'contact-summary' as const, enabled: true }
+  it('presents multi-time, once and finished schedules honestly', () => {
+    const items = contactTaskItems({ topics: [], runs: [] } as never, [
+      { id: 'routine:a', title: '晨报', status: '已启用', description: '', routine: { ...routineFixture, times: ['08:30', '20:00'] } },
+      { id: 'routine:b', title: '一次性', status: '已启用', description: '', routine: { ...routineFixture, id: 'routine:b', cadence: 'once', date: '2026-11-01', times: ['18:00'], finishedAt: 1 } }
+    ] as never)
+    expect(items[0].summary).toContain('08:30')
+    expect(items[0].summary).toContain('20:00')
+    expect(items[1].summary).toBe('已完成')
   })
 })

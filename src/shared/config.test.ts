@@ -120,6 +120,13 @@ describe('config', () => {
     expect(sanitizeConfigPatch({ palette: 'blue' })).toEqual({ palette: 'blue' })
     expect(sanitizeConfigPatch({ palette: 'neon' })).toEqual({})
   })
+
+  it('clamps duty parameters into their ranges', () => {
+    expect(normalizeConfig({ ...DEFAULT_APP_CONFIG, proactiveReturnAwayMinutes: 0 }).proactiveReturnAwayMinutes).toBe(1)
+    expect(normalizeConfig({ ...DEFAULT_APP_CONFIG, proactiveRestMinutes: 999 }).proactiveRestMinutes).toBe(480)
+    expect(normalizeConfig({ ...DEFAULT_APP_CONFIG, proactiveCooldownMinutes: 'x' as unknown as number }).proactiveCooldownMinutes).toBe(60)
+    expect(sanitizeConfigPatch({ proactiveReturnAwayMinutes: 15 })).toEqual({ proactiveReturnAwayMinutes: 15 })
+  })
 })
 
 describe('provider profiles', () => {

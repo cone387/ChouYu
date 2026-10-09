@@ -302,7 +302,6 @@ const api = {
   },
   assistantRoutines: {
     history: (id: string, before?: number) => ipcRenderer.invoke('assistant-routines:history', id, before),
-    request: (description: string, id?: string, revision?: number) => ipcRenderer.invoke('assistant-routines:request', description, id, revision),
     onChanged: (callback: () => void) => {
       const handler = () => callback()
       ipcRenderer.on('assistant-routines:changed', handler)
@@ -311,6 +310,10 @@ const api = {
     list: () => ipcRenderer.invoke('assistant-routines:list'),
     save: (input: import('../shared/assistant-routines').AssistantRoutineInput, id?: string, revision?: number) => ipcRenderer.invoke('assistant-routines:save', input, id, revision),
     remove: (id: string, revision: number) => ipcRenderer.invoke('assistant-routines:remove', id, revision)
+  },
+  contactTask: {
+    request: (target: import('../shared/contact-task-gateway').ContactTaskTarget, message: string) => ipcRenderer.invoke('contact-task:request', target, message),
+    drafts: () => ipcRenderer.invoke('contact-task:drafts')
   },
   reminders: {
     list: () => ipcRenderer.invoke('reminders:list'),

@@ -148,6 +148,7 @@ export interface ElectronAPI {
   onSetPetVisible: (callback: (visible: boolean) => void) => () => void
   notifyPetVisible: (visible: boolean) => void
   assistantRoutines: import('../../../shared/assistant-routines').AssistantRoutinesAPI
+  contactTask: import('../../../shared/contact-task-gateway').ContactTaskGatewayAPI
   reminders: import('../../../shared/reminders').ReminderAPI
   proactiveAppend: (content: string, timestamp?: number, kind?: AssistantMessageKind, deliveryId?: string) => Promise<void>
   getAssistantUnread: () => Promise<number>
