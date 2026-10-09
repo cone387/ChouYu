@@ -686,7 +686,8 @@ export class AgentStore {
       const research = this.research(runId)
       if (research) {
         const settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
-        const changedSection = delivery?.section && !previousDelivery?.sections.some(section => section.body.trim() === delivery!.section!.body.trim())
+        const savedSection = committed?.runId === runId ? committed.sections.find(section => section.runId === runId) : delivery?.section
+        const changedSection = savedSection && !previousDelivery?.sections.some(section => section.body.trim() === savedSection.body.trim())
         const previousReport = this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.id<>? ORDER BY reports.rowid DESC LIMIT 1').get(run.topic_id, runId) as { value: string } | undefined
         const previousEvidence = new Set<string>(previousReport ? (JSON.parse(previousReport.value) as AgentReport).evidence.map(e => `${e.url}:${e.hash}`) : [])
         const newEvidence = report.evidence.some(e => !previousEvidence.has(`${e.url}:${e.hash}`))

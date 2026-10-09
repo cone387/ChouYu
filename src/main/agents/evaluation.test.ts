@@ -20,7 +20,7 @@ it('requires structured scores when the plan requests evaluation', () => {
   expect(parsed.delivery?.section?.body).toContain('综合评分：80/100')
   expect(parsed.evaluations?.[0].claimedTotal).toBe(60)
 })
-it('persists computed totals in reports, versioned deliverables and Markdown export', async () => {
+it.each(['present', 'omitted', 'null', 'conflicting'] as const)('persists computed totals and canonical task continuation with %s report nextStep', async representation => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-evaluation-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
   const store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
@@ -30,8 +30,10 @@ it('persists computed totals in reports, versioned deliverables and Markdown exp
   await runtime.execute(run, '', async prompt => prompt.startsWith('核对本轮交付类型')
     ? JSON.stringify({ evaluation: true, reason: '用户要求评价 idea' }) : prompt.startsWith('为联系人')
     ? JSON.stringify({ action: 'write', reason: '评价假设', query: '', urls: [], checkAfterMinutes: 180, evaluation: true })
-    : JSON.stringify(draft), new AbortController().signal)
+    : JSON.stringify({ ...draft, nextStep: representation === 'omitted' ? undefined : representation === 'null' ? null : representation === 'conflicting' ? '发起额外访谈' : draft.nextStep }), new AbortController().signal)
   expect(store.detail('reviewer', run).run.status).toBe('completed')
+  expect(store.detail('reviewer', run).report?.nextStep).toBe(progress.nextStep)
+  expect(store.detail('reviewer', run).events.some(e => e.kind === 'format-repair')).toBe(false)
   expect(store.detail('reviewer', run).report?.evaluations?.[0].total).toBe(80)
   const delivery = store.deliveries.get(store.overview('reviewer').focusTopicId!)!
   expect(deliveryMarkdown('评价', delivery)).toContain('综合评分：80/100')
@@ -82,4 +84,43 @@ it('corrects an erroneous scoring flag for novel writing and preserves the prose
   expect(store.research(run)?.plan.evaluation).toBe(false)
   expect(store.detail('writer', run).events.some(e => e.kind === 'format-repair')).toBe(false)
   expect(store.deliveries.get(store.overview('writer').focusTopicId!)?.sections[0].body).toBe(prose)
+})
+
+it('does not substitute evaluation advice or an old report step for missing task progress', () => {
+  for (const nextStep of [undefined, null, '', ' '.repeat(3), 42]) {
+    expect(() => parseDraft(JSON.stringify({ ...draft, progress: { ...progress, nextStep } }), 0, true)).toThrow()
+  }
+  expect(() => parseDraft(JSON.stringify({ ...draft, progress: { ...progress, reason: '' } }), 0, true)).toThrow('变化原因')
+  const finished = parseDraft(JSON.stringify({ ...draft, nextStep: undefined, progress: { ...progress, status: 'completed', nextStep: '' } }), 0, true)
+  expect(finished.nextStep).toBe('')
+  expect(() => parseDraft(JSON.stringify({ ...draft, nextStep: undefined, progress: undefined }), 0, true)).toThrow('nextStep')
+})
+
+it('repairs an incomplete evaluation envelope once with the complete delivery contract', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chouyu-evaluation-repair-'))
+  cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
+  const store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+  cleanup.push(() => { runtime.close(); store.close() })
+  store.save('reviewer', { ...DEFAULT_AGENT_SETTINGS, goal: '持续评价 idea', dailyCalls: 20 })
+  const run = store.createRun('reviewer', '')
+  let repairs = 0
+  await runtime.execute(run, '', async prompt => {
+    if (prompt.startsWith('为联系人')) return JSON.stringify({ action: 'write', reason: '评价已有想法', query: '', urls: [], checkAfterMinutes: 180, evaluation: true })
+    if (prompt.startsWith('核对本轮交付类型')) return JSON.stringify({ evaluation: true, reason: '原任务要求评价' })
+    if (prompt.startsWith('仅修复')) {
+      repairs++
+      expect(prompt).toContain('completionCriteria')
+      expect(prompt).toContain('stages')
+      expect(prompt).toContain('progress.nextStep 是任务下一步的唯一来源')
+      expect(prompt).toContain('不添加事实')
+      return JSON.stringify({ ...draft, nextStep: undefined })
+    }
+    return JSON.stringify({ ...draft, nextStep: undefined, delivery: { ...draft.delivery, completionCriteria: undefined } })
+  }, new AbortController().signal)
+  expect(repairs).toBe(1)
+  expect(store.detail('reviewer', run).run.status).toBe('completed')
+  expect(store.detail('reviewer', run).report?.nextStep).toBe(progress.nextStep)
+  expect(store.detail('reviewer', run).report?.evaluations?.[0].total).toBe(80)
+  expect(store.deliveries.get(store.overview('reviewer').focusTopicId!)?.sections).toHaveLength(1)
+  expect(store.notices.pending('reviewer')).toHaveLength(1)
 })

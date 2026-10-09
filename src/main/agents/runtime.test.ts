@@ -234,3 +234,12 @@ it('preserves stage 31 through 300 for a long-running deliverable while retainin
   expect(parseDraft(JSON.stringify(full)).delivery?.stages).toHaveLength(300)
   expect(() => parseDraft(JSON.stringify({ ...full, delivery: { ...full.delivery, stages: [...full.delivery.stages, { id: 'overflow', title: '阶段', status: 'active' }] } }))).toThrow('300')
 })
+
+it('uses validated section prose when the redundant report body is absent', () => {
+  const base = { title: '新章节', nextStep: '继续', question: '', memories: [],
+    delivery: { completionCriteria: '完成全书', summary: '已写第一节', stages: [{ id: 'volume1', title: '第一卷', status: 'active' }], section: { id: 'ch1', title: '第一节', body: '真正的小说正文。' } } }
+  expect(parseDraft(JSON.stringify(base)).body).toBe(base.delivery.section.body)
+  expect(parseDraft(JSON.stringify({ ...base, body: null })).body).toBe(base.delivery.section.body)
+  expect(() => parseDraft(JSON.stringify({ ...base, delivery: { ...base.delivery, section: { ...base.delivery.section, body: '' } } }))).toThrow('分节')
+  expect(() => parseDraft(JSON.stringify({ ...base, delivery: undefined }))).toThrow('body')
+})

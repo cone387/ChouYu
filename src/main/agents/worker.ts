@@ -31,6 +31,9 @@ port.on('message', event => {
       else if (method === 'close') { await service.close(); service = undefined }
       else result = await service.request(method, id, args)
       port.postMessage({ requestId, result })
-    } catch (error) { port.postMessage({ requestId, error: error instanceof Error ? error.message : 'Agent 操作失败。' }) }
+    } catch (error) {
+      if (process.env.CHOUYU_SMOKE_TEST === '1') console.error('Agent RPC failed', method, error)
+      port.postMessage({ requestId, error: error instanceof Error ? error.message : 'Agent 操作失败。' })
+    }
   })
 })

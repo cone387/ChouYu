@@ -138,3 +138,25 @@ describe('persistent contact task scheduling', () => {
     expect(service.store.overview('alice').queuedTopicIds).toEqual([])
   })
 })
+
+it.each([false, true])('schedules the actually committed compatibility body with interval mode=%s', paceWriting => {
+  const { store, path } = fixture()
+  store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '持续写小说', enabled: true, paceWriting, dailyCalls: 100 })
+  const finish = (body: string) => {
+    const run = store.createRun('alice', '')
+    store.saveResearch(run, { plan: { action: 'write', reason: '创作正文', query: '', urls: [], checkAfterMinutes: 180 }, searches: [], reads: [] })
+    store.finish(run, { runId: run, title: '章节', body, nextStep: '继续下一节', evidence: [], createdAt: Date.now() }, [],
+      { judgement: '已交付本节', reason: '保存正文', nextStep: '继续下一节', openQuestions: '', status: 'researching' })
+    return run
+  }
+  const first = finish('陆沉拨动琴弦，灯火随之摇曳。')
+  const topicId = store.getRun(first)!.topic_id!
+  expect(store.deliveries.get(topicId)?.sections[0].body).toContain('灯火')
+  const reopened = new AgentStore(path); cleanup.push(() => reopened.close())
+  expect(reopened.nextScheduledTopic('alice', Date.now() + 100)).toBe(paceWriting ? undefined : topicId)
+  const second = finish('陆沉拨动琴弦，灯火随之摇曳。')
+  expect(store.detail('alice', second).events.some(e => e.kind === 'continuing')).toBe(false)
+  expect(store.nextScheduledTopic('alice', Date.now() + 100)).toBeUndefined()
+  const third = finish('沈砚推门进来，递上新的案卷。')
+  expect(store.detail('alice', third).events.some(e => e.kind === 'continuing')).toBe(!paceWriting)
+})
