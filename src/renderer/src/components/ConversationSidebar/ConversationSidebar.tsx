@@ -186,19 +186,20 @@ export default function ConversationSidebar({
                   aria-selected={active}
                   aria-disabled={busyId !== null}
                   aria-busy={busyId === session.id}
+                  title={session.title}
                 >
-                  <span className="conversation-item-avatar" aria-hidden="true"><CharacterAvatar character={character} /></span>
+                  <span className="conversation-item-avatar">
+                    <CharacterAvatar character={character} />
+                    {session.unreadCount ? <span className="conversation-item-unread" aria-label={`${session.unreadCount} 条未读`}>{session.unreadCount > 99 ? '99+' : session.unreadCount}</span> : null}
+                  </span>
                   <span className="conversation-item-body">
                     <span className="conversation-item-title-row">
-                      <span className="conversation-item-title">{session.title}</span>
-                      {streamingSessionIds.has(session.id) && <span className="conversation-item-streaming" role="status">回复中</span>}
-                      {session.unreadCount ? <span className="conversation-item-unread" aria-label={`${session.unreadCount} 条未读`}>{session.unreadCount > 99 ? '99+' : session.unreadCount}</span> : null}
-                    </span>
-                    <span className="conversation-item-preview">{session.preview}</span>
-                    <span className="conversation-item-meta">
                       <span className="conversation-item-character">{character?.name ?? DEFAULT_CHARACTER_NAME}</span>
-                      <span>{session.messageCount} 条</span>
-                      <time dateTime={new Date(session.updatedAt).toISOString()}>{formatSessionTime(session.updatedAt)}</time>
+                      <time className="conversation-item-time" dateTime={new Date(session.updatedAt).toISOString()}>{formatSessionTime(session.updatedAt)}</time>
+                    </span>
+                    <span className="conversation-item-preview-row">
+                      {streamingSessionIds.has(session.id) && <span className="conversation-item-streaming" role="status">回复中</span>}
+                      <span className="conversation-item-preview">{session.preview || '暂无消息'}</span>
                     </span>
                   </span>
                 </button>

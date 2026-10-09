@@ -79,15 +79,12 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding: 0 var(--space-3) var(--space-4);
+  padding: 0 0 var(--space-4);
 }
 
 .conversation-item {
   position: relative;
-  margin-bottom: var(--space-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-lg);
-  transition: border-color 150ms, background 150ms;
+  transition: background 150ms;
 }
 
 .conversation-item:hover,
@@ -96,36 +93,36 @@
 }
 
 .conversation-item.active {
-  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 9%, var(--bg-secondary));
 }
 
 .conversation-item-main {
   display: flex;
   width: 100%;
-  min-height: 66px;
+  min-height: 72px;
   flex-direction: row;
-  align-items: flex-start;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-5);
   border: 0;
-  border-radius: var(--radius-lg);
-  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-radius: var(--radius-none);
+  padding: var(--space-5) var(--space-6);
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
 }
 
-/* 会话卡片左侧的联系人圆头像，与通讯录卡片的头像语言一致。 */
+/* 微信式双行会话：圆角方头像跨两行，未读数叠放在头像右上角。 */
 .conversation-item-avatar {
+  position: relative;
   flex: none;
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   place-items: center;
-  border-radius: 50%;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  font-size: 16px;
+  font-size: 22px;
   line-height: 1;
 }
 
@@ -138,71 +135,59 @@
 }
 
 .conversation-item-title-row,
-.conversation-item-preview {
-  width: 100%;
-  padding-right: 34px;
-}
-
-.conversation-item-title-row {
+.conversation-item-preview-row {
   display: flex;
+  width: 100%;
   min-width: 0;
   align-items: center;
   gap: var(--space-3);
 }
 
-.conversation-item-title,
+.conversation-item-character,
 .conversation-item-preview {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.conversation-item-title {
+.conversation-item-character {
   min-width: 0;
   flex: 1;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.conversation-item-time {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .conversation-item-streaming {
   flex: 0 0 auto;
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--accent) 11%, transparent);
   color: var(--accent);
-  font-size: var(--font-sm);
-  font-weight: 600;
+  font-size: 12px;
+}
+
+.conversation-item-preview-row {
+  margin-top: var(--space-1);
+  padding-right: 28px;
+  line-height: 20px;
 }
 
 .conversation-item-preview {
-  margin-top: var(--space-2);
-  color: var(--text-muted);
-  font-size: var(--font-sm);
-}
-
-.conversation-item-meta {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  color: var(--text-muted);
-  font-size: var(--font-sm);
-}
-
-/* 联系人名占据剩余宽度并截断，条数与时间固定在右侧。 */
-.conversation-item-character {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .conversation-item-menu {
   position: absolute;
-  right: 9px;
-  top: 6px;
+  right: 12px;
+  top: 34px;
   z-index: 5;
 }
 
@@ -382,12 +367,14 @@
   color: var(--on-error);
 }
 
-/* 未读徽标：助手等入口在后台追加的消息数，红点样式与标题行内展示。 */
+/* 未读提示独立于文字区域，长用户名或消息不会挤掉徽标。 */
 .conversation-item-unread {
-  flex-shrink: 0;
+  position: absolute;
+  top: -6px;
+  right: -6px;
   min-width: 18px;
   height: 18px;
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--error);
   color: var(--on-error);

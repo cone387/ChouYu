@@ -81,13 +81,12 @@ describe('chat layout guardrails', () => {
     expect(panelSource).toContain('persistSessionsVisible(next)')
   })
 
-  it('places session actions behind a single top-right menu button', () => {
-    expect(sidebarStylesheet).toMatch(/\.conversation-item-menu\s*\{[\s\S]*right:\s*9px[\s\S]*top:\s*6px/)
+  it('places session actions beside the preview without covering the time', () => {
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-menu\s*\{[\s\S]*right:\s*12px[\s\S]*top:\s*34px/)
     expect(sidebarStylesheet).toMatch(/\.conversation-menu-trigger\s*\{[\s\S]*width:\s*28px[\s\S]*height:\s*28px/)
     expect(sidebarSource).toContain('aria-haspopup="menu"')
     expect(sidebarSource).toContain('role="menuitem"')
-    expect(sidebarStylesheet).toMatch(/\.conversation-item-main\s*\{[\s\S]*padding:\s*var\(--space-4\) var\(--space-4\) var\(--space-3\)/)
-    expect(sidebarStylesheet).toMatch(/\.conversation-item-title-row,[\s\S]*padding-right:\s*34px/)
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-preview-row\s*\{[^}]*padding-right:\s*28px/)
   })
 
   it('preserves visible session order while switching the active card', () => {
@@ -202,9 +201,9 @@ describe('contacts presence in the chat surface', () => {
     expect(sidebarSource).toContain('DEFAULT_CHARACTER_NAME')
     expect(sidebarSource).toContain('<CharacterAvatar character={character} />')
     expect(sidebarStylesheet).toMatch(/\.conversation-item-main\s*\{[\s\S]*?flex-direction:\s*row/)
-    expect(sidebarStylesheet).toMatch(/\.conversation-item-avatar\s*\{[\s\S]*?border-radius:\s*50%/)
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-avatar\s*\{[^}]*border-radius:\s*var\(--radius-md\)/)
     expect(sidebarStylesheet).toMatch(/\.conversation-item-body\s*\{[\s\S]*?min-width:\s*0/)
-    expect(sidebarStylesheet).toMatch(/\.conversation-item-character\s*\{[\s\S]*?text-overflow:\s*ellipsis/)
+    expect(sidebarStylesheet).toMatch(/\.conversation-item-character,[^}]*text-overflow:\s*ellipsis/)
   })
 })
 
