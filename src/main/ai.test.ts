@@ -168,6 +168,16 @@ describe('main-process AI provider routing', () => {
 })
 
 describe('provider model diagnostics', () => {
+  it('does not call a listed model usable when its actual conversation fails', async () => {
+    const request = vi.fn(async (input: Parameters<typeof fetch>[0]) => String(input).endsWith('/models')
+      ? Response.json({ data: [{ id: 'chat-model' }] })
+      : new Response('{"error":{"code":"1113","message":"余额不足"}}', { status: 429 })) as typeof fetch
+    const result = await diagnoseProvider({ ...DEFAULT_APP_CONFIG, baseUrl: 'https://example.test/v1', apiKey: 'key', model: 'chat-model' }, request)
+    expect(result.modelList.configuredModelValid).toBe(true)
+    expect(result.state).toBe('error')
+    expect(result.conversation.httpStatus).toBe(429)
+    expect(result.message).toContain('1113')
+  })
   it('reports missing provider fields without attempting a network request', async () => {
     const request = vi.fn() as typeof fetch
     const result = await diagnoseProvider({ ...DEFAULT_APP_CONFIG }, request)
@@ -180,6 +190,7 @@ describe('provider model diagnostics', () => {
   it('probes embedding support separately from model listing', async () => {
     const request = vi.fn(async (input: Parameters<typeof fetch>[0]) => String(input).endsWith('/models')
       ? Response.json({ data: [{ id: 'chat-model' }] })
+      : String(input).endsWith('/chat/completions') ? new Response('data: {"model":"actual-model","choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
       : Response.json({ data: [{ index: 0, embedding: [0.1, 0.2, 0.3] }] })) as typeof fetch
     const result = await diagnoseProvider({
       ...DEFAULT_APP_CONFIG,
@@ -192,7 +203,7 @@ describe('provider model diagnostics', () => {
     }, request)
     expect(result.state).toBe('ready')
     expect(result.embedding).toMatchObject({ state: 'ready', dimensions: 3 })
-    expect(request).toHaveBeenCalledTimes(2)
+    expect(request).toHaveBeenCalledTimes(3)
   })
   it('falls back to /v1/models and reports the corrected base URL', async () => {
     const request = vi.fn(async (input: Parameters<typeof fetch>[0]) => {

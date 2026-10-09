@@ -203,3 +203,6 @@
 .contact-input-form textarea { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; }
 .contact-input-form > button { justify-self: start; }
 .delivery-inputs > summary { padding: 12px 0; font-weight: 600; cursor: pointer; }
+.topic-request-log { margin-bottom: var(--space-6); }
+.topic-request-log summary { cursor: pointer; margin-top: var(--space-4); }
+.topic-request-log-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: var(--space-4); max-height: 360px; overflow-y: auto; }

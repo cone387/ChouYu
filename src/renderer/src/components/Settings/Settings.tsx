@@ -1,3 +1,4 @@
+import ProviderDiagnosticResults from './ProviderDiagnosticResults'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { AppConfig, PaletteId, PluginInfo } from '../../shared/types'
 import { DEFAULT_CONFIG } from '../../shared/constants'
@@ -102,12 +103,15 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   const [providerCheck, setProviderCheck] = useState<AIModelListResult | null>(null)
   const [manualModelEntry, setManualModelEntry] = useState(false)
   const [diagnostics, setDiagnostics] = useState<ProviderDiagnostics | null>(null)
+  const diagnosticEpoch = useRef(0)
   const [navQuery, setNavQuery] = useState('')
   const [soulHistory, setSoulHistory] = useState<SoulVersion[]>([])
   const [selectedSoulVersionId, setSelectedSoulVersionId] = useState('')
   const settingsNavRef = useRef<HTMLElement>(null)
 
   const fetchAvailableModels = useCallback(async () => {
+    const epoch = ++diagnosticEpoch.current
+    setDiagnostics(null)
     setModelFetchStatus('loading')
     setSaveError('')
     setSaveStatus('正在保存 AI 配置…')
@@ -118,9 +122,11 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
         apiKey: config.apiKey,
         model: config.model
       })
+      if (epoch !== diagnosticEpoch.current) return
       setConfig(saved)
       setSaveStatus('配置已保存，将用于下一次对话。')
       const result = await window.electronAPI.diagnoseProvider()
+      if (epoch !== diagnosticEpoch.current) return
       setDiagnostics(result)
       setProviderCheck(result.modelList)
       if (result.modelList.baseUrlAdjusted) {
@@ -131,6 +137,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
       setModelFetchStatus(result.modelList.ok ? 'ready' : 'unavailable')
       if (result.modelList.ok) setManualModelEntry(false)
     } catch (error) {
+      if (epoch !== diagnosticEpoch.current) return
       setModelOptions([])
       setModelFetchStatus('unavailable')
       setSaveStatus('')
@@ -253,6 +260,11 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
     setConfig(updated)
     setSaveError('')
     setSaveStatus('正在保存…')
+    if (patch.provider !== undefined || patch.baseUrl !== undefined || patch.apiKey !== undefined || patch.model !== undefined || patch.thinkingDisabledModels !== undefined) {
+      diagnosticEpoch.current++
+      setDiagnostics(null)
+      setModelFetchStatus('idle')
+    }
     if (patch.provider || patch.baseUrl !== undefined || patch.apiKey !== undefined) {
       setModelOptions([])
       setModelFetchStatus('idle')
@@ -467,12 +479,12 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                     onClick={() => { void fetchAvailableModels() }}
                     disabled={modelFetchStatus === 'loading'}
                   >
-                    {modelFetchStatus === 'loading' ? '检测中…' : '测试连接'}
+                    {modelFetchStatus === 'loading' ? '对话检测中…' : '测试连接与对话'}
                   </button>
                 </div>
                 <div id="settings-model-help" className="settings-model-status" role="status">
-                  {modelFetchStatus === 'idle' && '选择服务类型，填写接口地址和密钥，再点击测试连接。'}
-                  {modelFetchStatus === 'ready' && `已获取 ${modelOptions.length} 个可用模型。`}
+                  {modelFetchStatus === 'idle' && '测试会发送一条简短对话验证当前模型，可能产生少量用量，不包含聊天历史。'}
+                  {modelFetchStatus === 'ready' && `列表返回 ${modelOptions.length} 个模型；对话可用性以实际测试为准。`}
                   {modelFetchStatus === 'unavailable' && (providerCheck?.message || '未获取到模型，请检查配置。')}
                 </div>
                 {providerCheck && (
@@ -488,17 +500,12 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
                       <strong>{providerCheck.ok ? `服务连接正常 · ${providerCheck.models.length} 个模型` : '连接检测失败'}</strong>
                       <span>{providerCheck.message}</span>
                       {providerCheck.ok && configuredModelValid === false && (
-                        <span>当前模型“{config.model}”不可用，请从模型列表中选择一个有效模型。</span>
+                        <span>模型列表未包含“{config.model}”；实际可用性以对话诊断为准。</span>
                       )}
                     </span>
                   </div>
                 )}
-                {diagnostics && (
-                  <div className="settings-diagnostics" aria-label="Provider 能力诊断">
-                    <div className={`settings-diagnostic-item ${diagnostics.state}`}><span>对话 Provider</span><strong>{diagnostics.state === 'ready' ? '可用' : diagnostics.state === 'unconfigured' ? '待配置' : '需检查'}</strong><small>{diagnostics.message}</small></div>
-                    <div className={`settings-diagnostic-item ${diagnostics.embedding.state}`}><span>Embedding 能力</span><strong>{diagnostics.embedding.state === 'ready' ? '可用' : diagnostics.embedding.state === 'disabled' ? '未启用' : diagnostics.embedding.state === 'unconfigured' ? '待配置' : '不可用'}</strong><small>{diagnostics.embedding.message}</small></div>
-                  </div>
-                )}
+                {diagnostics && <ProviderDiagnosticResults diagnostics={diagnostics} />}
                 <div className="settings-save-status" role="status" aria-live="polite">
                   {saveStatus || '设置会自动保存，并在下一次对话时生效。'}
                 </div>

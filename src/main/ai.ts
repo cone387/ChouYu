@@ -16,6 +16,7 @@ import {
 import type { AIToolCall, AIToolDefinition } from '../shared/tools'
 import { OpenAIEmbeddingClient } from './memory/embedding-client'
 import type { ProviderDiagnostics } from '../shared/ai'
+import { probeConversation } from './provider-probe'
 
 export type AIStreamCallback = (chunk: string, done: boolean) => void
 
@@ -236,6 +237,7 @@ export async function diagnoseProvider(
 ): Promise<ProviderDiagnostics> {
   const modelList = await fetchProviderModels(config, request)
   const configured = isAIConfigured(config)
+  const conversation = await probeConversation(config, request)
   let embedding: ProviderDiagnostics['embedding']
   if (!config.embeddingEnabled || config.embeddingProvider === 'none') {
     embedding = { state: 'disabled', provider: 'none', model: config.embeddingModel, message: '未启用 Embedding；记忆检索使用关键词模式。' }
@@ -257,13 +259,13 @@ export async function diagnoseProvider(
       }
     }
   }
-  const state: ProviderDiagnostics['state'] = !configured ? 'unconfigured' : modelList.ok && modelList.configuredModelValid ? 'ready' : modelList.ok ? 'error' : 'error'
+  const state: ProviderDiagnostics['state'] = !configured ? 'unconfigured' : conversation.state
   const message = state === 'unconfigured'
     ? 'AI Provider 尚未完成配置。'
     : state === 'ready'
-      ? 'AI Provider 和当前模型可用。'
-      : modelList.message
-  return { state, message, modelList, embedding }
+      ? '当前模型已通过真实对话测试。'
+      : conversation.message
+  return { state, message, modelList, embedding, conversation }
 }
 
 export async function streamAIChat(

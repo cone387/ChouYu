@@ -1,3 +1,4 @@
+import { appendTaskRequestLog } from '../../shared/task-request-log'
 import type { AppConfig } from '../../shared/config'
 import type { AgentOverview, AgentTopic } from '../../shared/agents'
 import { validateTopicInput } from '../../shared/agents'
@@ -78,7 +79,7 @@ export async function requestContactTask(target: ContactTaskTarget, message: str
   // when merging with the previous archive would exceed the cap, keep the current chain.
   const freshLog = ContactTaskDraftStore.render(deps.drafts.get(key), message.trim())
   const previousLog = existingRoutine?.requestLog ?? existingTopic?.requestLog
-  const requestLog = previousLog && `${previousLog}\n${freshLog}`.length <= 8000 ? `${previousLog}\n${freshLog}` : freshLog
+  const requestLog = appendTaskRequestLog(previousLog, freshLog)
   if (target.kind === 'edit-duty') return applyDutyEdit(target, parsed.params, deps)
   if ((target.kind === 'create' || target.kind === 'edit-routine') && parsed?.kind === 'routine') {
     if (!scheduled) {

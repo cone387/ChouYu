@@ -1,5 +1,6 @@
+import { appendTaskRequestLog } from '../../shared/task-request-log'
 export interface ContactTaskDraftTurn { role: 'user' | 'assistant'; text: string }
-export interface ContactTaskDraft { targetKey: string; turns: ContactTaskDraftTurn[]; updatedAt: number }
+export interface ContactTaskDraft { targetKey: string; turns: ContactTaskDraftTurn[]; updatedAt: number; truncated?: boolean }
 interface DraftDeps {
   read(): string | undefined | null
   write(value: string): void
@@ -32,8 +33,9 @@ export class ContactTaskDraftStore {
     const drafts = this.parse().filter(d => d.targetKey !== targetKey)
     const previous = this.get(targetKey)
     const turns = [...(previous?.turns ?? []), { role: turn.role, text: turn.text.trim() }]
-    while (JSON.stringify(turns).length > MAX_TURN_CHARS && turns.length > 1) turns.shift()
-    const next = [...drafts, { targetKey, turns, updatedAt: Date.now() }]
+    let truncated = previous?.truncated ?? false
+    while (JSON.stringify(turns).length > MAX_TURN_CHARS && turns.length > 1) { turns.shift(); truncated = true }
+    const next = [...drafts, { targetKey, turns, updatedAt: Date.now(), ...(truncated ? { truncated: true } : {}) }]
     this.save(next)
   }
   clear(targetKey: string) { this.save(this.parse().filter(d => d.targetKey !== targetKey)) }
@@ -41,8 +43,7 @@ export class ContactTaskDraftStore {
   static render(draft: ContactTaskDraft | undefined, finalMessage: string): string {
     const lines = [...(draft?.turns ?? []).map(t => `${t.role === 'user' ? '用户' : 'ChouYu'}：${t.text}`)]
     lines.push(`用户：${finalMessage}`)
-    let text = lines.join('\n')
-    if (text.length > 8000) text = '……（更早的沟通已截断）\n' + text.slice(-7900)
-    return text
+    const text = (draft?.truncated ? '……（更早的补问因草稿长度限制未保留）……\n' : '') + lines.join('\n')
+    return appendTaskRequestLog(undefined, text)
   }
 }

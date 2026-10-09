@@ -58,6 +58,18 @@ export interface ProviderDiagnostics {
   message: string
   modelList: AIModelListResult
   embedding: EmbeddingDiagnostics
+  conversation: ConversationDiagnostics
+}
+
+export interface ConversationDiagnostics {
+  state: ProviderDiagnosticState
+  requestedModel: string
+  returnedModel?: string
+  httpStatus?: number
+  reply?: string
+  completed: boolean
+  elapsedMs: number
+  message: string
 }
 
 export interface ParsedStreamEvent {

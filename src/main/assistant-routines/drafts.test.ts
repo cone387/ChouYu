@@ -33,6 +33,8 @@ describe('contact task drafts', () => {
     const key = 'create:c3'
     for (let i = 0; i < 500; i++) drafts.append(key, { role: 'user', text: '……很长……'.repeat(20) })
     expect(JSON.stringify(drafts.get(key)!.turns).length).toBeLessThanOrEqual(8000)
+    expect(drafts.get(key)?.truncated).toBe(true)
+    expect(ContactTaskDraftStore.render(drafts.get(key), '最终要求')).toContain('更早的补问因草稿长度限制未保留')
   })
   it('quarantines a corrupt store and starts empty instead of replacing unreadable state silently', () => {
     let value = '{bad json', quarantined = ''

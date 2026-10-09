@@ -14,6 +14,7 @@ import { useAssistantTasks, type AssistantTaskEntry } from './useAssistantTasks'
 import { contactTaskItems, routineTimesLabel } from './contactTaskPresentation'
 import ContactTaskListCard from './ContactTaskListCard'
 import ContactMarkdown from './ContactMarkdown'
+import ContactTaskRequestLog from './ContactTaskRequestLog'
 import type { AssistantRoutineHistoryPage } from '../../../../shared/assistant-routines'
 import { navigateContact } from './contactNavigation'
 
@@ -245,6 +246,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       </> : tab === 'stages' ? <><ContactTaskFacts fields={scheduleFields} /><p className="agent-caption">此任务按触发条件执行，无需分阶段推进。</p></> : <div className="contact-delivery"><h4>任务成果</h4>{routine?.lastResult ? <ContactMarkdown>{routine.lastResult}</ContactMarkdown> : <p className="agent-empty">尚无已保存成果。</p>}</div>}
       </section>
       <section role="tabpanel" id={`${tabId}-interactions-panel`} aria-labelledby={`${tabId}-interactions`} hidden={tab !== 'interactions'} tabIndex={0}>
+        <ContactTaskRequestLog value={topic?.requestLog ?? routine?.requestLog} />
         {topic ? <ContactTaskInteractions key={topic.id} characterId={characterId} topicId={topic.id} visible={tab === 'interactions' && !showSettings}
           onReply={() => { setTab('overview'); requestAnimationFrame(() => scrollPane.current?.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus()) }} onReport={runId => onReport(runId, topic.id)} /> : <p className="agent-empty">此任务暂无互动记录；已发送的提醒可在聊天中查看。</p>}
       </section>
