@@ -160,12 +160,14 @@ describe('contact agent durability and isolation', () => {
     expect(overview.reports.map(r => r.evidence[0].hash)).toEqual(['hash-2', 'hash-1', 'hash-0'])
     expect(overview.memories).toHaveLength(3)
   })
-  it('deduplicates active work and automatically pauses after three failures', () => {
+  it('deduplicates active work and blocks automatic dispatch after three failures', () => {
     const { store } = fixture(); store.save('alice', { ...settings, enabled: true })
     const first = store.createRun('alice', '')
     expect(store.createRun('alice', '')).toBe(first)
     for (let i = 0; i < 3; i++) { const id = store.createRun('alice', ''); store.fail(id, 'source unavailable') }
-    expect(store.overview('alice').settings.enabled).toBe(false)
+    expect(store.overview('alice').settings.enabled).toBe(true)
+    expect(store.overview('alice').failures).toBe(3)
+    expect(store.nextScheduledTopic('alice', Date.now() + 86400000)).toBeUndefined()
   })
   it('removes a role while a model call is in flight and cannot resurrect its records', async () => {
     const dir = directory(); let started!: () => void

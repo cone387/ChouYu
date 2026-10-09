@@ -32,13 +32,22 @@ export class AgentTopics {
     if (containsSecret(JSON.stringify(input))) throw new Error('请勿在事项中保存密码或密钥。')
     if (this.list(characterId).length >= 100) throw new Error('每位联系人最多保留 100 个事项。')
     if (requestLog !== undefined && (typeof requestLog !== 'string' || requestLog.length > 8000)) throw new Error('任务沟通记录最多 8000 字。')
-    const topic: AgentTopic = { ...input, ...(requestLog !== undefined ? { requestLog } : {}), id: randomUUID(), characterId, revision: 1, status: 'planned', judgement: '', openQuestions: '', nextStep: '', reason, createdAt: now, updatedAt: now }
+    const profile = this.db.prepare('SELECT settings FROM profiles WHERE character_id=?').get(characterId) as { settings: string } | undefined
+    const tokenLimit = profile ? JSON.parse(profile.settings).defaultTaskTokenLimit as number | undefined : undefined
+    const topic: AgentTopic = { ...input, ...(tokenLimit !== undefined ? { tokenLimit } : {}), ...(requestLog !== undefined ? { requestLog } : {}), id: randomUUID(), characterId, revision: 1, status: 'planned', judgement: '', openQuestions: '', nextStep: '', reason, createdAt: now, updatedAt: now }
     this.db.transaction(() => {
       // Insert the parent before its first history entry.
       this.db.prepare('INSERT INTO topics(id,character_id,value) VALUES(?,?,?)').run(topic.id, characterId, JSON.stringify(topic))
       this.record(null, topic, 'created', reason)
     })()
     return topic
+  }
+  tokenBudget(characterId: string, id: string, revision: number, tokenLimit: number) {
+    if (!Number.isSafeInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 1000000000) throw new Error('任务 Token 上限应为 1–10 亿的整数。')
+    const before = this.check(characterId, id, revision)
+    const after = { ...before, tokenLimit, revision: before.revision + 1, updatedAt: Date.now(), reason: '用户调整任务累计 Token 上限。' }
+    this.record(before, after, 'budget', after.reason)
+    return after
   }
   edit(characterId: string, id: string, revision: number, raw: unknown, reason: string, requestLog?: string) {
     const before = this.check(characterId, id, revision), input = validateTopicInput(raw)

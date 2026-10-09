@@ -21,7 +21,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
   const original = getConfig(), session = getActiveSession().id
   const run = (code: string): Promise<any> => new Promise((resolve, reject) => {
     const deadline = setTimeout(() => reject(new Error(`Agent smoke renderer request stalled: ${code.slice(0, 180)}`)), 15000)
-    window.webContents.executeJavaScript(code).then(resolve, reject).finally(() => clearTimeout(deadline))
+    window.webContents.executeJavaScript(code).then(resolve, error => reject(new Error(`${String(error)}; renderer: ${code.slice(0, 400)}`))).finally(() => clearTimeout(deadline))
   })
   let calls = 0, modelRequest: any
   let releaseFirstRun: (() => void) | undefined
@@ -137,29 +137,36 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('[data-workspace-nav=\"contacts\"]').click()")
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-card-detail="${DEFAULT_CHARACTER_ID}"]'))`)
     await run(`document.querySelector('[data-contacts-card-detail="${DEFAULT_CHARACTER_ID}"]').click()`)
-    await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-interval]'))", 20000)
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-sources]'))", 20000)
     console.log('CHOUYU_SMOKE_AGENTS_STAGE editor-ready')
     const fill = async (selector: string, value: string) => {
       await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(selector)}))`)
       return run(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', {bubbles:true})); })()`)
     }
-    if (!await run("document.querySelector('[data-agent-permission]').value === 'public' && !document.querySelector('[data-agent-sources]').required && !document.querySelector('[data-agent-goal]')")) throw new Error('Task settings still require task input')
+    const settingsIdle = () => waitForRenderer(window, "document.querySelector('.work-settings-flat')?.getAttribute('aria-busy') === 'false'")
+    const applyField = async (selector: string) => {
+      await run(`document.querySelector(${JSON.stringify(selector)}).closest('form').requestSubmit()`)
+      await settingsIdle()
+    }
+    if (!await run("document.querySelector('[data-work-permission=public]').getAttribute('aria-pressed') === 'true' && !document.querySelector('[data-agent-goal]')")) throw new Error('Task settings still require task input')
     await run("document.querySelector('[data-agent-tab=settings]').click()")
-    await fill('[data-agent-interval]', '60')
-    await run("document.querySelector('[data-agent-save]').click()")
-    await waitForRenderer(window, "document.querySelector('[data-agent-save]')?.disabled === true && document.querySelector('[data-agent-save]').textContent === '保存工作设置'")
+    await run("document.querySelector('[data-work-mode=auto]').click()")
+    await waitForRenderer(window, "document.querySelector('[data-work-mode=auto]').checked === true")
+    await run("document.querySelector('[data-work-cadence=interval]').click()")
+    await waitForRenderer(window, "!document.querySelector('[data-agent-interval]').disabled")
+    await fill('[data-agent-interval]', '60'); await applyField('[data-agent-interval]')
+    await run("document.querySelector('[data-work-mode=manual]').click()"); await settingsIdle()
     if ((await get()).topics.length) throw new Error('Saving preferences created a task')
-    await run("document.querySelector('[data-agent-sources]').closest('details').open=true")
-    await fill('[data-agent-sources]', 'https://chouyu-agent-smoke.invalid/research')
-    await run("document.querySelector('[data-agent-save]').click()")
-    await waitForRenderer(window, "document.querySelector('[data-agent-save]')?.disabled === true && document.querySelector('[data-agent-save]').textContent === '保存工作设置'")
+    await fill('[data-agent-sources]', 'https://chouyu-agent-smoke.invalid/research'); await applyField('[data-agent-sources]')
     const fixtureSettings = (await get()).settings
-    await fill('[aria-label="自动工作截止时间"]', '2020-01-01T09:00')
-    await run("document.querySelector('[data-agent-enabled]').click(); document.querySelector('[data-agent-save]').click()")
-    await waitForRenderer(window, "document.querySelector('.work-settings-footer .agent-error')?.textContent.includes('截止时间已过')")
-    if ((await get()).settings.enabled || !await run("document.querySelector('[aria-label=\"自动工作截止时间\"]').value === '2020-01-01T09:00'")) throw new Error('Expired settings were saved or failed input was lost')
-    await run("document.querySelector('[data-work-settings-cancel]').click(); document.querySelector('[data-agent-interval]').focus()")
-    if (!await run("(() => { const s=getComputedStyle(document.querySelector('[data-agent-interval]')); return s.outlineStyle==='none' && s.boxShadow==='none' })()")) throw new Error('Working settings inputs have a colored focus decoration')
+    await waitForRenderer(window, "document.querySelector('[data-work-mode=manual]').checked && !document.querySelector('[data-work-mode=auto]').disabled")
+    await run("document.querySelector('[data-work-mode=auto]').click()")
+    await settingsIdle()
+    await waitForRenderer(window, "document.querySelector('[data-work-mode=auto]').checked")
+    if (!(await get()).settings.enabled || await run("Boolean(document.querySelector('[aria-label=\"自动推进截止日期\"]'))")) throw new Error('Obsolete deadline still affects mode settings')
+    await run("document.querySelector('[data-work-mode=manual]').click()"); await settingsIdle()
+    await run("document.querySelector('[data-agent-sources]').focus()")
+    if (!await run("(() => { const s=getComputedStyle(document.querySelector('[data-agent-sources]')); return s.outlineStyle==='none' && s.boxShadow==='none' })()")) throw new Error('Working settings inputs have a colored focus decoration')
     await run(`window.electronAPI.agents.save(${id}, ${JSON.stringify({ ...fixtureSettings, goal: 'Legacy research fixture' })})`)
     await run("document.querySelector('[data-agent-tab=work]').click()")
     await waitForRenderer(window, "document.querySelector('[data-topic-run]')?.disabled === false")
@@ -486,7 +493,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await fill('.input-textarea', '保留在聊天输入框中的草稿')
     const chatHeight = await run("document.querySelector('.message-area').getBoundingClientRect().height")
     await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
-    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-agent-interval]'))")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-agent-sources]'))")
     if (Math.abs(await run("document.querySelector('.message-area').getBoundingClientRect().height") - chatHeight) > 1) throw new Error('Contact dialog changed the chat layout')
     if (!await run("!document.querySelector('.contact-work-sheet').matches(':modal') && document.querySelector('.contact-work-sheet').open")) throw new Error('Contact popup must be non-modal')
     if (!await run("(() => { const main=document.querySelector('.chat-panel').getBoundingClientRect(), sheet=document.querySelector('.contact-work-sheet').getBoundingClientRect(); return Math.abs(sheet.width-Math.min(main.width,innerWidth-16))<2 && Math.abs(sheet.height-Math.min(main.height,innerHeight-16))<2 })()")) throw new Error('Contact popup does not default to the main window size')
@@ -618,7 +625,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('[data-task-description]').value === '点击输入验收' && !document.querySelector('[data-task-dialog-submit]').disabled")
     await run('window.__stopTaskMouseState(); delete window.__stopTaskMouseState; delete window.__taskMouseIgnored')
     await run("document.querySelector('.contact-task-dialog button[type=button]').click()")
-    await run("document.querySelector('[data-agent-chat]').click()")
+    await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
     await waitForRenderer(window, "!document.querySelector('.contact-work-sheet[open]')")
     scenario = 'assign'; toolStep = 0
     await fill('.input-textarea', '帮我持续核对团队知识库的检索需求，只读验证，预算 500 元')
@@ -642,7 +649,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if ((await get()).focusTopicId === topicId) throw new Error('Browsing a task changed the scheduling focus')
     await waitForRenderer(window, "document.querySelectorAll('.contact-work-sheet [data-topic-change]').length === 4")
 
-    await run("document.querySelector('[data-contact-dialog-tab=settings]').click(); document.querySelector('.contact-work-sheet .agent-work-settings').open=true")
+    await run("document.querySelector('[data-contact-dialog-tab=settings]').click()")
     if (directory) {
       const settingsSheetStyle = await run("document.querySelector('.contact-work-sheet').getAttribute('style')")
       for (const theme of ['light', 'dark']) {
@@ -651,11 +658,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 900 }, scale: 1 })
           await run(`Object.assign(document.querySelector('.contact-work-sheet').style,{left:'8px',top:'8px',width:'${width - 16}px',height:'880px',transform:'none'}); window.dispatchEvent(new Event('resize')); document.querySelector('.contact-work-sheet-content').scrollTop=0`)
           await waitForRenderer(window, `innerWidth === ${width} && document.querySelector('.contact-work-sheet').getBoundingClientRect().right <= ${width + 1}`)
-          await waitForRenderer(window, `getComputedStyle(document.querySelector('.work-settings-heading h3')).color === '${theme === 'light' ? 'rgb(26, 26, 26)' : 'rgb(240, 240, 240)'}'`)
+          await waitForRenderer(window, `getComputedStyle(document.querySelector('.work-setting-section h3')).color === '${theme === 'light' ? 'rgb(26, 26, 26)' : 'rgb(240, 240, 240)'}'`)
           await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
-          if (!await run("(() => { const form=document.querySelector('.contact-work-sheet .work-settings-form'); return form.scrollWidth <= form.clientWidth + 1 })()")) throw new Error('Work settings overflow at narrow width')
+          if (!await run("(() => { const form=document.querySelector('.contact-work-sheet .work-settings-flat'); return form.scrollWidth <= form.clientWidth + 1 })()")) throw new Error('Work settings overflow at narrow width')
           writeFileSync(join(directory, `work-settings-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
-          await run("document.querySelector('.work-settings-footer').scrollIntoView({block:'end'})")
+          await run("document.querySelector('.work-setting-section:last-child').scrollIntoView({block:'end'})")
           await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
           writeFileSync(join(directory, `work-settings-footer-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
         }
@@ -663,14 +670,14 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       window.webContents.disableDeviceEmulation()
       await run(`document.documentElement.dataset.theme='light'; document.querySelector('.contact-work-sheet').setAttribute('style',${JSON.stringify(settingsSheetStyle || '')}); document.querySelector('.contact-work-sheet-content').scrollTop=0`)
     }
-    await fill('.contact-work-sheet [data-agent-interval]', '181')
+    await fill('.contact-work-sheet [data-work-call-limit]', '181')
     await run("document.querySelector('[data-contact-dialog-tab=\"memory\"]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-memories li'))")
     if ((await run("document.querySelector('.contact-work-sheet').textContent")).includes('BOB_PRIVATE_SMOKE')) throw new Error('Chat toolbar exposed another contact memory')
     await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
     await waitForRenderer(window, "!document.querySelector('.contact-work-sheet')?.open")
     await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
-    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] [data-agent-interval]')?.value === '181'")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] [data-work-call-limit]')?.value === '181'")
     if (await run("document.querySelector('.input-textarea').value") !== '保留在聊天输入框中的草稿') throw new Error('Toolbar replaced the chat draft')
     await run("document.querySelector('[data-contact-dialog-tab=\"history\"]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-record'))")
@@ -679,7 +686,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "Boolean(document.querySelectorAll('.contact-work-sheet .agent-history button')[1])")
     await run("document.querySelectorAll('.contact-work-sheet .agent-history button')[1].click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet .agent-report'))")
-    await run("document.querySelector('[data-contact-dialog-tab=\"work\"]').click(); document.querySelector('.contact-work-sheet .agent-work-settings').open=false")
+    await run("document.querySelector('[data-contact-dialog-tab=\"work\"]').click()")
     if (directory) {
       await run("document.querySelector('[aria-label=\"最大化窗口\"]')?.click()")
       for (const theme of ['light', 'dark']) {
@@ -744,13 +751,12 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run(`window.electronAPI.agents.savePreferences(${id}, ${JSON.stringify({ ...budgetSettings, dailyCalls: 16 })})`)
     await run("document.querySelector('[data-contact-work-tab=\"work\"]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet [data-agent-search-key]'))")
-    await run("document.querySelector('[data-contact-dialog-tab=settings]').click(); document.querySelector('.contact-work-sheet .agent-work-settings').open=true; document.querySelector('.agent-search-credentials').open=true")
+    await run("document.querySelector('[data-contact-dialog-tab=settings]').click()")
     await fill('[data-agent-search-key]', 'search-smoke-secret')
     await run("document.querySelector('[data-agent-search-key-save]').click()")
-    await waitForRenderer(window, "document.querySelector('.agent-search-credentials summary')?.textContent.includes('已配置')")
+    await waitForRenderer(window, "document.querySelector('[data-agent-search-key]')?.placeholder.includes('已配置')")
     await run("document.querySelector('[data-agent-search-enabled]').click()")
-    await run("document.querySelector('[data-agent-save]').click()")
-    await waitForRenderer(window, "document.querySelector('[data-agent-save]')?.disabled === true && document.querySelector('[data-agent-save]').textContent === '保存工作设置'")
+    await settingsIdle()
     const researchBefore = await get(), researchTopic = researchBefore.topics.find(t => t.id === target.id)!
     if (!researchBefore.settings.searchEnabled) throw new Error('Autonomous search setting was not saved')
     await run(`window.electronAPI.agents.topicStatus(${id}, ${JSON.stringify(target.id)}, ${researchTopic.revision}, 'planned', '补查团队定价')`)
@@ -837,7 +843,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('[data-task-dialog-submit]').click()")
     await waitForRenderer(window, "!document.querySelector('.contact-task-dialog') && document.querySelector('[data-topic-overview]')?.textContent.includes('已接单，尚未开始执行')")
     await run("[...document.querySelectorAll('.contact-work-sheet[open] [data-topic-overview] button')].find(button => button.textContent === '调整工作额度').click()")
-    await waitForRenderer(window, "document.querySelector('[data-contact-dialog-tab=settings]')?.getAttribute('aria-selected') === 'true' || document.querySelector('.contact-work-sheet .work-settings-heading')?.getClientRects().length > 0")
+    await waitForRenderer(window, "document.querySelector('[data-contact-dialog-tab=settings]')?.getAttribute('aria-selected') === 'true' || document.querySelector('.contact-work-sheet .work-settings-flat')?.getClientRects().length > 0")
     await run("document.querySelector('[data-contact-dialog-tab=work]').click()")
     const queuedData = await get(), queuedId = queuedData.queuedTopicIds?.[0]
     if (!queuedId || queuedData.callsToday !== beforeQueue.callsToday || queuedData.runs.some(r => r.topicId === queuedId)) throw new Error('Queued task consumed calls or lost its pending state')
@@ -862,7 +868,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 feedbackRevisionCalls=1 researchCalls=5 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true autonomousResearch=true unchangedBackoff=true deliverableVersions=true export=true revisionForm=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)
-    console.error('CHOUYU_AGENT_UI', await run("document.querySelector('.contact-work-sheet')?.textContent.slice(0, 5000)"))
+    console.error('CHOUYU_AGENT_UI', await run("(document.querySelector('.contact-work-sheet') || document.querySelector('.contacts-detail'))?.textContent.slice(0, 5000)"))
     throw error
   } finally {
     if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach()

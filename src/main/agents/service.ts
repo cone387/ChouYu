@@ -1,3 +1,4 @@
+import { TokenBudgetError } from './token-budget'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -95,9 +96,15 @@ export class AgentService {
         const profile = this.store.profile(id)
         if (!profile) throw new Error('请先保存工作设置。')
         const settings = JSON.parse(profile.settings) as AgentSettings
-        if (settings.workUntil && settings.workUntil <= Date.now()) throw new Error('持续工作已到截止时间。')
         this.store.db.prepare('UPDATE profiles SET settings=?,failures=0 WHERE character_id=?').run(JSON.stringify({ ...settings, enabled: true }), id)
         break
+      }
+      case 'setTaskTokenLimit': {
+        this.store.topics.check(id, String(args[0]), args[1] as number)
+        const limit = args[2] as number
+        if (limit < (this.store.tokens.usage(id).tasks[String(args[0])] ?? 0)) throw new Error('上限不能低于本任务已占用的 Token 额度。')
+        if (this.store.overview(id).runs.some(r => r.topicId === args[0] && ['queued', 'running', 'waiting', 'interrupted'].includes(r.status))) throw new Error('请先暂停本任务，再调整上限。')
+        this.store.topics.tokenBudget(id, String(args[0]), args[1] as number, limit); break
       }
       case 'setTaskBudget': this.store.setTaskBudget(id, String(args[0]), args[1] as number, args[2]); break
       case 'inspectDelivery': {
@@ -139,7 +146,7 @@ export class AgentService {
       case 'assignTopic': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         this.checkSearch(id)
-        this.store.assignTopic(id, args[0], this.identity(id).conversation, args[1] as string | undefined); break
+        this.store.assignTopic(id, args[0], this.identity(id).conversation, args[1] as string | undefined, args[2] as number | undefined); break
       }
       case 'editTopic':
       case 'topicStatus': {
@@ -155,7 +162,7 @@ export class AgentService {
         if ((args[0] as AgentSettings)?.enabled && !this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         if ((args[0] as AgentSettings)?.searchEnabled && !this.identity(id).searchKey) throw new Error('请先保存此联系人的搜索密钥。')
         const restart = method === 'save' || workSettingsRequireRestart(this.store.overview(id).settings, args[0] as AgentSettings)
-        this.store.save(id, args[0], Date.now(), method === 'save'); if (restart) this.abort(id); break
+        this.store.save(id, args[0], Date.now(), method === 'save', args[1] as number | undefined); if (restart) this.abort(id); break
       }
       case 'pause': this.store.pause(id); this.abort(id); break
       case 'run': {
@@ -180,12 +187,6 @@ export class AgentService {
     this.changed(id); this.tick(); return this.store.overview(id)
   }
   tick() {
-    if (this.ready && !this.closed) for (const profile of this.store.profiles()) {
-      const settings = JSON.parse(profile.settings) as AgentSettings
-      if (settings.enabled && settings.workUntil && Date.now() >= settings.workUntil) {
-        this.store.pause(profile.character_id, '持续工作已到截止时间，自动停止。请调整工作设置，并在任务中继续。'); this.abort(profile.character_id); this.changed(profile.character_id)
-      }
-    }
     if (!this.ready || this.closed) return
     this.store.recordHeartbeats()
     for (const profile of this.store.profiles()) {
@@ -212,25 +213,35 @@ export class AgentService {
       if (!this.identities.get(run.character_id)?.config || JSON.parse(run.input).revisionScope !== 'presentation' && JSON.parse(run.input).settings.searchEnabled && !this.identities.get(run.character_id)?.searchKey) continue
       const settings = JSON.parse(this.store.profile(run.character_id)!.settings) as AgentSettings
       if (this.store.callCount(run.character_id) + this.store.callsNeededToResume(run.id) > settings.dailyCalls) continue
+      if (!this.store.tokens.canResume(run.id, run.character_id, run.topic_id)) continue
       this.startRun(run)
     }
   }
   private startRun(run: NonNullable<ReturnType<AgentStore['getRun']>>) {
     if (run.topic_id && JSON.parse(run.input).revisionScope !== 'presentation') this.store.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(run.topic_id, run.character_id)
     const identity = this.identity(run.character_id), controller = new AbortController()
-    const model: AgentModel = this.modelFactory?.(identity) || (async (prompt, signal, options) => {
+    const testModel = this.modelFactory?.(identity)
+    const model: AgentModel = async (prompt, signal, options) => {
       let output = ''
       const callId = this.store.latestCallId(run.id)
       let metadata: AIResponseMetadata = { model: identity.config!.model }
+      if (callId === undefined) throw new Error('缺少模型调用记录。')
+      const reservation = this.store.tokens.reserve(run.id, callId, run.character_id, run.topic_id, prompt, AGENT_OUTPUT_TOKENS)
+      if ('error' in reservation) {
+        this.store.db.prepare('DELETE FROM calls WHERE id=?').run(callId)
+        throw new TokenBudgetError(reservation.error)
+      }
       try {
-        await streamAIChat([{ role: 'user', content: prompt }], options?.plainText ? '按工作指令输出纯文本正文，不输出 JSON。' : '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) }, signal, undefined, { timeoutMs: 180000, maxOutputTokens: AGENT_OUTPUT_TOKENS, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
+        if (testModel) return await testModel(prompt, signal, options)
+        await streamAIChat([{ role: 'user', content: prompt }], options?.plainText ? '按工作指令输出纯文本正文，不输出 JSON。' : '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) }, signal, undefined, { timeoutMs: 180000, maxOutputTokens: reservation.maxOutputTokens, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
         if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError(output)
       } finally {
         if (callId !== undefined) this.store.recordCallMetadata(callId, metadata)
+        this.store.tokens.settle(reservation.key!, metadata)
         this.changed(run.character_id)
       }
       return output
-    })
+    }
     // Claim this contact before execution can emit events; other contacts start independently.
     const promise = Promise.resolve().then(() => this.runtime.execute(run.id, identity.soul, model, controller.signal, () => this.changed(run.character_id), identity.searchKey))
       .catch(() => {

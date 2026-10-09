@@ -1,8 +1,10 @@
 export interface AgentSettings {
+  workHours?: { start: string; end: string }
+  dailyTokenLimit?: number
+  defaultTaskTokenLimit?: number
   readContactDeliveries?: boolean
   shareDeliveries?: boolean
   paceWriting?: boolean
-  workUntil?: number
   permissionLevel?: 'public' | 'sources'
   goal: string
   sources: string[]
@@ -46,6 +48,8 @@ export interface AgentInteractionPage { items: AgentInteraction[]; nextCursor?: 
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { evaluations?: import('./agent-evaluation').AgentEvaluation[]; runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
+  tokenUsage?: { today: number; estimated: number; tasks: Record<string, number> }
+  failures?: number
   queuedTopicIds?: string[]
   topicMetrics?: Record<string, AgentTopicMetrics>
   latestActivity?: AgentEvent
@@ -66,6 +70,7 @@ export const TOPIC_STATUS = { planned: '待开始', researching: '尚未完成',
 export type AgentTopicStatus = keyof typeof TOPIC_STATUS
 export interface AgentTopicInput { title: string; goal: string; constraints: string }
 export interface AgentTopic extends AgentTopicInput {
+  tokenLimit?: number
   resourceBudget?: import('./agent-resources').TaskResourceBudget
   initialPlan?: import('./agent-delivery').DeliveryPlan
   requestLog?: string
@@ -108,7 +113,7 @@ export interface AgentAPI {
   delivery(characterId: string, topicId: string, version?: number): Promise<import('./agent-delivery').AgentDelivery | null>
   exportDelivery(characterId: string, topicId: string, version: number, format?: 'markdown' | 'html'): Promise<boolean>
   reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string, scope?: 'content' | 'presentation', deliveryVersion?: number): Promise<AgentOverview>
-  savePreferences(characterId: string, settings: AgentSettings): Promise<AgentOverview>
+  savePreferences(characterId: string, settings: AgentSettings, expectedRevision?: number): Promise<AgentOverview>
   searchCredential(characterId: string, key?: string): Promise<{ configured: boolean }>
   get(characterId: string): Promise<AgentOverview>
   save(characterId: string, settings: AgentSettings): Promise<AgentOverview>
@@ -153,12 +158,15 @@ export function validateAgentSettings(raw: unknown): AgentSettings {
   if (!Number.isInteger(value.intervalMinutes) || value.intervalMinutes < 15 || value.intervalMinutes > 10080) throw new Error('工作间隔应为 15–10080 分钟。')
   if (!Number.isSafeInteger(value.dailyCalls) || value.dailyCalls < 2) throw new Error('每日模型调用上限应为不小于 2 的有效整数。')
   for (const key of ['readContactDeliveries', 'shareDeliveries', 'paceWriting'] as const) if (value[key] !== undefined && typeof value[key] !== 'boolean') throw new Error('联系人成果权限或运行节奏无效。')
-  if (value.workUntil !== undefined && (!Number.isSafeInteger(value.workUntil) || value.workUntil <= 0)) throw new Error('持续工作截止时间无效。')
+  if (value.workHours !== undefined && (!value.workHours || ![value.workHours.start, value.workHours.end].every(time => typeof time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(time)))) throw new Error('工作时段须为有效的开始与结束时间。')
+  for (const key of ['dailyTokenLimit', 'defaultTaskTokenLimit'] as const) {
+    if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || value[key]! < 1 || value[key]! > 1000000000)) throw new Error('Token 上限应为 1–10 亿的整数。')
+  }
   if (typeof value.enabled !== 'boolean') throw new Error('启用状态无效。')
   if (value.notifyProgress !== undefined && typeof value.notifyProgress !== 'boolean') throw new Error('通知设置无效。')
   if (value.searchEnabled !== undefined && typeof value.searchEnabled !== 'boolean') throw new Error('搜索开关无效。')
   if (value.dailySearches !== undefined && (!Number.isInteger(value.dailySearches) || value.dailySearches < 1 || value.dailySearches > 24)) throw new Error('每日搜索上限应为 1–24 次。')
-  return { ...(value.workUntil !== undefined ? { workUntil: value.workUntil } : {}), ...(value.paceWriting !== undefined ? { paceWriting: value.paceWriting } : {}), ...(value.readContactDeliveries !== undefined ? { readContactDeliveries: value.readContactDeliveries } : {}), ...(value.shareDeliveries !== undefined ? { shareDeliveries: value.shareDeliveries } : {}), ...(value.permissionLevel !== undefined ? { permissionLevel: value.permissionLevel } : {}), goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled, ...(value.notifyProgress !== undefined ? { notifyProgress: value.notifyProgress } : {}), ...(value.searchEnabled !== undefined ? { searchEnabled: value.searchEnabled } : {}), ...(value.dailySearches !== undefined ? { dailySearches: value.dailySearches } : {}) }
+  return { ...(value.workHours !== undefined ? { workHours: { start: value.workHours.start, end: value.workHours.end } } : {}), ...(value.dailyTokenLimit !== undefined ? { dailyTokenLimit: value.dailyTokenLimit } : {}), ...(value.defaultTaskTokenLimit !== undefined ? { defaultTaskTokenLimit: value.defaultTaskTokenLimit } : {}), ...(value.paceWriting !== undefined ? { paceWriting: value.paceWriting } : {}), ...(value.readContactDeliveries !== undefined ? { readContactDeliveries: value.readContactDeliveries } : {}), ...(value.shareDeliveries !== undefined ? { shareDeliveries: value.shareDeliveries } : {}), ...(value.permissionLevel !== undefined ? { permissionLevel: value.permissionLevel } : {}), goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled, ...(value.notifyProgress !== undefined ? { notifyProgress: value.notifyProgress } : {}), ...(value.searchEnabled !== undefined ? { searchEnabled: value.searchEnabled } : {}), ...(value.dailySearches !== undefined ? { dailySearches: value.dailySearches } : {}) }
 }
 export const AGENT_STATUS: Record<AgentRunStatus, string> = {
   queued: '等待执行', running: '正在工作', waiting: '等你回复', completed: '已完成', failed: '执行失败', cancelled: '已取消', interrupted: '等待恢复'

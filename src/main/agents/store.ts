@@ -1,3 +1,4 @@
+import { AgentTokenBudget } from './token-budget'
 import Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
 import type { AgentSettings, AgentRun, AgentOverview, AgentMemory, AgentReport, AgentRunDetail, AgentRunStatus, AgentTopicProgress, AgentTopicStatus } from '../../shared/agents'
@@ -12,7 +13,7 @@ import { validateDeliveryPlan, type DeliveryPlan, type DeliveryUpdate } from '..
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import type { AgentTopicMetrics } from '../../shared/agents'
 import { readAnalytics } from './analytics'
-import { workSettingsRequireRestart } from '../../shared/work-settings'
+import { workSettingsRequireRestart, withinWorkHours } from '../../shared/work-settings'
 import type { AnalyticsQuery } from '../../shared/agent-analytics'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
@@ -24,6 +25,7 @@ export class AgentStore {
   readonly db: Database.Database
   readonly topics: AgentTopics
   readonly notices: AgentNotices
+  readonly tokens: AgentTokenBudget
   readonly deliveries: AgentDeliveries
   constructor(filename: string) {
     this.db = new Database(filename)
@@ -31,7 +33,7 @@ export class AgentStore {
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 7) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 8) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -79,6 +81,10 @@ export class AgentStore {
       if (!(this.db.pragma('table_info(calls)') as { name: string }[]).some(column => column.name === 'metadata')) this.db.exec('ALTER TABLE calls ADD COLUMN metadata TEXT;')
       this.db.pragma('user_version = 7')
     })()
+    // Retire legacy contact deadlines without changing modes, revisions or live checkpoints.
+    this.db.prepare("UPDATE profiles SET settings=json_remove(settings, '$.workUntil') WHERE json_type(settings, '$.workUntil') IS NOT NULL").run()
+    this.tokens = new AgentTokenBudget(this.db)
+    if (version < 8) this.db.transaction(() => { this.tokens.importHistory(); this.db.pragma('user_version = 8') })()
     this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)
     this.db.exec(`CREATE TABLE IF NOT EXISTS task_schedule (
@@ -90,7 +96,7 @@ export class AgentStore {
     const seen = new Set<string>()
     for (const profile of this.profiles()) {
       const settings = JSON.parse(profile.settings) as AgentSettings
-      if (!settings.enabled || !profile.focus_topic_id || settings.workUntil && now >= settings.workUntil) continue
+      if (!settings.enabled || !profile.focus_topic_id) continue
       const topic = this.topics.get(profile.character_id, profile.focus_topic_id)
       if (!canResearch(topic.status)) continue
       if (this.db.prepare("SELECT 1 FROM runs WHERE character_id=? AND status IN ('running','waiting','queued','interrupted')").get(profile.character_id)) continue
@@ -146,20 +152,35 @@ export class AgentStore {
   profile(id: string) { return this.db.prepare('SELECT * FROM profiles WHERE character_id=?').get(id) as Profile | undefined }
   profiles() { return this.db.prepare('SELECT * FROM profiles ORDER BY next_at').all() as Profile[] }
   ensure(id: string) { this.db.prepare('INSERT OR IGNORE INTO profiles(character_id,settings,revision,next_at) VALUES(?,?,1,0)').run(id, JSON.stringify(DEFAULT_AGENT_SETTINGS)) }
-  save(id: string, raw: unknown, now = Date.now(), createDefaultTopic = true) {
+  save(id: string, raw: unknown, now = Date.now(), createDefaultTopic = true, expectedRevision?: number) {
     const settings = validateAgentSettings(raw)
-    if (settings.enabled && settings.workUntil && settings.workUntil <= now) throw new Error('持续工作截止时间已过，请取消或延长截止时间后再开启。')
     this.heartbeatRows.delete(id)
+    const wasMissing = !this.profile(id)
     this.ensure(id)
     this.db.transaction(() => {
-      const profile = this.profile(id)!, previous = JSON.parse(profile.settings) as AgentSettings
+      const profile = this.profile(id)!
+      if (expectedRevision !== undefined && profile.revision !== expectedRevision && !(wasMissing && expectedRevision === 0)) throw new Error('工作设置已变化，请重试以应用到最新设置。')
+      const previous = JSON.parse(profile.settings) as AgentSettings
+      if (settings.dailyTokenLimit !== previous.dailyTokenLimit && settings.dailyTokenLimit !== undefined && settings.dailyTokenLimit < this.tokens.usage(id, now).today) throw new Error('每日上限不能低于今日已消耗或预留的 Token 额度。')
       const restart = createDefaultTopic || workSettingsRequireRestart(previous, settings)
       if (restart) this.cancel(id, '工作权限或运行方式已更改，本轮停止，已有成果保留。', now)
       const nextAt = !previous.enabled && settings.enabled ? now : restart ? now : profile.next_at
-      this.db.prepare('UPDATE profiles SET settings=?,revision=revision+1,next_at=?,failures=0 WHERE character_id=?').run(JSON.stringify(settings), nextAt, id)
+      this.db.prepare('UPDATE profiles SET settings=?,revision=revision+1,next_at=? WHERE character_id=?').run(JSON.stringify(settings), nextAt, id)
       // Keep checkpointed rounds live while invalidating stale settings confirmations.
       if (!restart) this.db.prepare("UPDATE runs SET revision=? WHERE character_id=? AND revision=? AND status IN ('queued','running','waiting','interrupted')").run(profile.revision + 1, id, profile.revision)
-      if (!previous.enabled && settings.enabled) this.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id IN (SELECT id FROM topics WHERE character_id=?)').run(now, id)
+      if (settings.enabled && (settings.enabled !== previous.enabled || settings.paceWriting !== previous.paceWriting || settings.intervalMinutes !== previous.intervalMinutes)) {
+        for (const task of this.scheduled(id)) {
+          const last = this.db.prepare('SELECT * FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(task.topic_id) as RunRow | undefined
+          if (!last || last.status !== 'completed' || !canResearch(this.topics.get(id, task.topic_id).status)) continue
+          const research = this.research(last.id)
+          // Explicit waits/backoff remain intact; only cadence-derived waits are recalculated.
+          if (research?.nextCheckAt) continue
+          const delay = !settings.paceWriting && research?.plan.action === 'write' ? 0 : settings.intervalMinutes * 60000
+          const nextAt = Math.max(now, last.updated_at + delay)
+          this.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(nextAt, task.topic_id)
+          if (profile.focus_topic_id === task.topic_id) this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(nextAt, id)
+        }
+      }
       if (createDefaultTopic && !this.topics.list(id).length) {
         const topic = this.topics.create(id, { title: settings.goal.slice(0, 160), goal: settings.goal, constraints: '' }, '由首次保存的工作方向建立。', now)
         this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
@@ -185,12 +206,13 @@ export class AgentStore {
     const rows = this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(id) as RunRow[]
     for (const row of rows) { this.setStatus(row.id, 'cancelled', now); this.event(row.id, 'cancelled', reason, now) }
   }
-  remove(id: string) { const runs = (this.db.prepare('SELECT id FROM runs WHERE character_id=?').all(id) as { id: string }[]).map(r => r.id); this.db.prepare('DELETE FROM profiles WHERE character_id=?').run(id); return runs }
+  remove(id: string) { const runs = (this.db.prepare('SELECT id FROM runs WHERE character_id=?').all(id) as { id: string }[]).map(r => r.id); this.db.prepare('DELETE FROM profiles WHERE character_id=?').run(id); this.db.prepare('DELETE FROM token_ledger WHERE character_id=?').run(id); for (const runId of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(runId); return runs }
   overview(id: string, now = Date.now()): AgentOverview {
     const profile = this.profile(id)
     const activity = this.db.prepare('SELECT e.* FROM events e JOIN runs r ON r.id=e.run_id WHERE r.character_id=? ORDER BY e.id DESC LIMIT 1').get(id) as { id: number; run_id: string; kind: string; text: string; at: number } | undefined
     return {
       topicMetrics: this.topicMetrics(id, now),
+      tokenUsage: this.tokens.usage(id, now), failures: profile?.failures ?? 0,
       latestActivity: activity ? { id: activity.id, runId: activity.run_id, kind: activity.kind, text: activity.text, at: activity.at } : undefined,
       settings: profile ? JSON.parse(profile.settings) : { ...DEFAULT_AGENT_SETTINGS }, revision: profile?.revision ?? 0, nextAt: profile?.next_at ?? 0,
       callsToday: this.callCount(id, now),
@@ -352,7 +374,7 @@ export class AgentStore {
       return runId
     })()
   }
-  assignTopic(id: string, description: unknown, conversation: string, requestLog?: string) {
+  assignTopic(id: string, description: unknown, conversation: string, requestLog?: string, tokenLimit?: number) {
     if (typeof description !== 'string' || !description.trim() || description.length > 2000 || containsSecret(description)) throw new Error('请描述需要联系人完成的任务（1–2000 字），不要包含密钥。')
     return this.db.transaction(() => {
       this.ensure(id)
@@ -367,7 +389,8 @@ export class AgentStore {
       if (settings.enabled && hasCurrentWork && profile.focus_topic_id && canResearch(this.topics.get(id, profile.focus_topic_id).status)) {
         this.db.prepare('INSERT OR IGNORE INTO task_schedule(topic_id,next_at) VALUES(?,?)').run(profile.focus_topic_id, profile.next_at)
       }
-      const topic = this.topics.create(id, { title: description.trim().slice(0, 80), goal: description.trim(), constraints: '' }, '用户交付任务，等待联系人整理方向。', Date.now(), requestLog)
+      let topic = this.topics.create(id, { title: description.trim().slice(0, 80), goal: description.trim(), constraints: '' }, '用户交付任务，等待联系人整理方向。', Date.now(), requestLog)
+      if (tokenLimit !== undefined) topic = this.topics.tokenBudget(id, topic.id, topic.revision, tokenLimit)
       this.db.prepare('INSERT INTO task_schedule(topic_id,conversation,pending) VALUES(?,?,1)').run(topic.id, conversation.slice(0, 4000))
       if (!profile.focus_topic_id || !hasCurrentWork && !this.scheduled(id).some(task => task.topic_id === profile.focus_topic_id)) this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
       // Accepting work is independent from being able to execute it today.
@@ -382,7 +405,7 @@ export class AgentStore {
     const profile = this.profile(id)
     if (!profile) return
     const settings = JSON.parse(profile.settings) as AgentSettings
-    if (settings.workUntil && now >= settings.workUntil || profile.failures >= 3) return
+    if (settings.enabled && !withinWorkHours(settings, now) || profile.failures >= 3) return
     const unfinished = this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(id) as RunRow[]
     if (unfinished.some(run => run.status !== 'waiting')) return
     const waiting = new Set(unfinished.map(run => run.topic_id))
@@ -536,6 +559,21 @@ export class AgentStore {
   fail(id: string, error: string) {
     const run = this.getRun(id)
     if (!run || ['cancelled', 'completed'].includes(run.status)) return
+    const tokenBlock = this.db.prepare('SELECT message FROM token_blocks WHERE run_id=?').get(id) as { message: string } | undefined
+    if (tokenBlock) {
+      const message = tokenBlock.message || '工作 Token 额度不足，调整对应上限后继续。'
+      const taskLimited = message.startsWith('本任务累计')
+      let topicRevision = run.topic_revision!
+      if (taskLimited && run.topic_id) {
+        const topic = this.topics.get(run.character_id, run.topic_id)
+        topicRevision = this.topics.status(run.character_id, topic.id, topic.revision, 'paused', message).revision
+      }
+      this.db.prepare('UPDATE runs SET status=?,error=?,updated_at=? WHERE id=?').run(taskLimited ? 'cancelled' : 'interrupted', message, Date.now(), id)
+      this.event(id, 'token-limit', message)
+      if (run.topic_id) this.notices.enqueue({ id: `${id}:token-limit`, characterId: run.character_id, topicId: run.topic_id, runId: id,
+        topicRevision, kind: 'progress', purpose: 'resources', createdAt: Date.now(), content: message })
+      return
+    }
     this.db.prepare("UPDATE runs SET status='failed',error=?,updated_at=? WHERE id=?").run(error.slice(0, 600), Date.now(), id)
     this.event(id, 'failed', error)
     if (JSON.parse(run.input).revisionScope === 'presentation') {
@@ -548,7 +586,7 @@ export class AgentStore {
     if (this.pauseForTaskBudget(id)) return
     const profile = this.profile(run.character_id)!
     const settings = JSON.parse(profile.settings) as AgentSettings
-    if (profile.failures >= 2) settings.enabled = false
+    // Failure is a runtime block; preserve the selected work mode.
     this.db.prepare('UPDATE profiles SET failures=failures+1,settings=?,next_at=? WHERE character_id=?').run(JSON.stringify(settings), Date.now() + Math.max(settings.intervalMinutes * 60000, 15 * 60000), run.character_id)
     this.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(this.profile(run.character_id)!.next_at, run.topic_id)
   }
@@ -635,6 +673,7 @@ export class AgentStore {
     return this.db.transaction(() => {
       this.topics.check(id, topicId, revision)
       const runs = this.db.prepare('SELECT id FROM runs WHERE character_id=? AND topic_id=?').all(id, topicId) as { id: string }[]
+      for (const run of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(run.id)
       this.db.prepare("DELETE FROM notices WHERE character_id=? AND json_extract(value,'$.topicId')=?").run(id, topicId)
       this.db.prepare('DELETE FROM memories WHERE character_id=? AND run_id IN (SELECT id FROM runs WHERE character_id=? AND topic_id=?)').run(id, id, topicId)
       this.db.prepare('DELETE FROM runs WHERE character_id=? AND topic_id=?').run(id, topicId)
@@ -692,6 +731,7 @@ export class AgentStore {
   continueTopic(id: string, topicId: string, revision: number, reason: string, conversation: string) {
     return this.db.transaction(() => {
       this.topics.check(id, topicId, revision)
+      this.db.prepare('UPDATE profiles SET failures=0 WHERE character_id=?').run(id)
       const active = this.db.prepare("SELECT status FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted') AND (topic_id=? OR status!='waiting')").get(id, topicId) as { status: string } | undefined
       if (active) throw new Error(active.status === 'waiting' ? '请先回答当前待确认的问题。' : '联系人已有一轮工作未完成。')
       this.topics.status(id, topicId, revision, 'planned', reason)

@@ -162,8 +162,8 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     {data && (analyticsVisited || tab === 'analytics') && <div hidden={tab !== 'analytics'}><ContactAnalytics resetKey={analyticsFilterReset} active={tab === 'analytics'} characterId={characterId} name={name} topics={data.topics} initialTopic={analyticsTopic} onBack={() => setTab('work')}
       onReport={runId => { setAnalyticsRecord(true); setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} /></div>}
     {tab === 'history' && analyticsRecord && <button type="button" onClick={() => { setAnalyticsRecord(false); setTab('analytics') }}>← 返回活动与消耗</button>}
-    {data && <div hidden={tab !== 'settings'}><ContactWorkSettings key={characterId} characterId={characterId} name={name} data={data} draft={draft} sources={sources} keyConfigured={keyConfigured} dirty={Boolean(dirty)} busy={busy}
-      setDraft={setDraft} setSources={setSources} onTasks={() => setTab('work')} onChat={onChat} onCredentialChanged={refresh}
+    {data && <div hidden={tab !== 'settings'}><ContactWorkSettings key={characterId} characterId={characterId} name={name} data={data} keyConfigured={keyConfigured} busy={busy}
+ onCredentialChanged={refresh}
       onSaved={result => { setData(result); setDraft(result.settings); setSources(result.settings.sources.join('\n')); savedSnapshot.current = JSON.stringify(result.settings) }} /></div>}
     {data && tab === 'history' && <>
       {!detail && <p className="agent-caption">最近 30 轮。选择一轮，查看结论与证据。</p>}

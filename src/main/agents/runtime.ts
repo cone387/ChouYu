@@ -1,3 +1,4 @@
+import { TokenBudgetError } from './token-budget'
 import { taskInputInstruction, presentationInstruction } from '../../shared/agent-delivery-instructions'
 import { revisePresentation } from './presentation-revision'
 import Database from 'better-sqlite3'
@@ -310,7 +311,8 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
               if (!recovery) throw error
               recovery.retain(error.partial)
               output = await recover()
-            } else throw new Error('模型调用失败，请检查供应商配置或稍后重试。')
+            } else if (error instanceof TokenBudgetError) throw error
+            else throw new Error('模型调用失败，请检查供应商配置或稍后重试。')
           }
         }
         let draft: Draft
@@ -374,6 +376,11 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
       }
     } catch (error) {
       if (signal.aborted) throw error
+      if (error instanceof TokenBudgetError || this.store.db.prepare('SELECT 1 FROM token_blocks WHERE run_id=?').get(runId)) {
+        this.store.fail(runId, error instanceof Error ? error.message : 'Token 额度不足。')
+        changed()
+        return
+      }
       this.store.fail(runId, error instanceof Error && !/https?:|key|token|authorization/i.test(error.message) ? error.message : '执行失败，请检查模型配置和资料来源后重试。')
       changed()
     }

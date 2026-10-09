@@ -213,15 +213,16 @@ describe('agent-planned contact deliverable tools', () => {
     expect(f.store.detail('writer', run).run.status).toBe('completed')
     expect(f.store.overview('writer').nextAt).toBeGreaterThan(Date.now() + 14 * 60000)
   })
-  it('stops a timed continuous worker before spending another model call', async () => {
+  it('ignores obsolete deadlines while retaining the model-configuration requirement', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'chouyu-timed-agent-'))
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
     const model = vi.fn(async () => '{}'), service = new AgentService(dir, () => {}, () => model)
     cleanup.push(() => service.close())
-    const settings: AgentSettings = { ...DEFAULT_AGENT_SETTINGS, goal: '24h 实验', enabled: true, workUntil: Date.now() - 1 }
+    const settings = { ...DEFAULT_AGENT_SETTINGS, goal: '24h 实验', enabled: true, workUntil: Date.now() - 1 }
     service.store.save('writer', settings, settings.workUntil! - 1000)
     await service.sync([{ id: 'writer', soul: '', conversation: '', config: null }])
-    expect(service.store.overview('writer').settings.enabled).toBe(false)
+    expect(service.store.overview('writer').settings.enabled).toBe(true)
+    expect(service.store.nextScheduledTopic('writer')).toBe(service.store.overview('writer').focusTopicId)
     expect(model).not.toHaveBeenCalled()
   })
 })

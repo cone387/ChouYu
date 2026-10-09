@@ -28,6 +28,7 @@ export async function revisePresentation(store: AgentStore, runId: string, soul:
         changed(); return
       } catch (error) {
         signal.throwIfAborted(); store.assertLive(runId)
+        if (store.db.prepare('SELECT 1 FROM token_blocks WHERE run_id=?').get(runId)) throw error
         issue = error instanceof SyntaxError ? 'JSON 或 JavaScript 语法无效，请返回完整代码。' : error instanceof Error ? error.message.slice(0, 300) : '样式结构无效。'
         if (attempt === 1) throw new Error(issue)
         store.event(runId, 'presentation-repair', '样式校验未通过，正在修复一次；原成果保持不变。'); changed()

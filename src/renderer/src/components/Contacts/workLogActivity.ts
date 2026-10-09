@@ -9,7 +9,6 @@ export function workLogActivity(run: AgentRun, data: AgentActivityContext, last:
   const topic = data.topics.find(item => item.id === run.topicId)
   const continuous = data.settings.enabled && data.focusTopicId === run.topicId && topic && ['planned', 'researching', 'needs_evidence'].includes(topic.status)
   if (!continuous) return { label: 'STOPPED', text: '当前未执行', moving: false }
-  if (data.settings.workUntil && now >= data.settings.workUntil) return { label: 'STOPPED', text: '持续工作已到截止时间', moving: false }
   if (data.callsToday + (agentUsesPlanner(data.settings) ? 2 : 1) > data.settings.dailyCalls) return { label: 'WAITING', text: '今日模型额度不足，等待明日恢复', moving: true }
   const remaining = Math.max(0, Math.ceil((data.nextAt - now) / 1000))
   return { label: 'WAITING', text: remaining ? `持续工作待命 · 距下轮检查 ${Math.floor(remaining / 60)} 分 ${remaining % 60} 秒` : '持续工作待命 · 等待调度检查', moving: true }

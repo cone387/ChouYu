@@ -476,6 +476,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
               <span className="contacts-card-subtitle">陪伴、提醒与每日总结</span>
             </span>
           </span>
+          <span className="contacts-card-tags"><span className="contacts-card-tag" data-contact-work-mode={DEFAULT_CHARACTER_ID}>{dashboard?.contacts[DEFAULT_CHARACTER_ID] ? dashboard.contacts[DEFAULT_CHARACTER_ID].settings.enabled ? '自动推进' : '按需推进' : '工作方式加载中'}</span></span>
           <span className="contacts-card-desc">我会记住你的安排，到点提醒你，也能检查各联系人的进展后向你汇报。</span>
         </button>
         {assistant && <button type="button" className="contacts-card-detail" data-contacts-card-detail={assistant.id} onClick={() => setDetail(assistant)}>详情</button>}
@@ -496,6 +497,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <span className="contacts-card-desc">{soulSummary || '未设置人设，使用默认丑鱼人格'}</span>
             <ContactCardStats data={dashboard?.contacts[character.id]?.summary} error={dashboardError} lastWorkedAt={dashboard?.contacts[character.id]?.lastWorkedAt} />
             <span className="contacts-card-tags">
+              <span className="contacts-card-tag" data-contact-work-mode={character.id}>{dashboard?.contacts[character.id] ? dashboard.contacts[character.id].settings.enabled ? '自动推进' : '按需推进' : '工作方式加载中'}</span>
               {character.category && <span className="contacts-card-tag">{INDUSTRY_LABELS[character.category]}</span>}
               <span className="contacts-card-tag" title={`AI 服务：${profileNameOf(character)}`}>{profileNameOf(character)}</span>
               <span className="contacts-card-tag">{character.sessionCount} 个会话</span>

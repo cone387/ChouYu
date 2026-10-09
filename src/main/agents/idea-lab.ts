@@ -42,7 +42,7 @@ export async function setupIdeaLab(request: (method: string, id: string, args?: 
     // Recover interrupted setup without duplicating or resetting existing work.
     if (overview.topics.length) continue
     await request('savePreferences', id, [{ ...DEFAULT_AGENT_SETTINGS, goal: '24 小时 AI 产品 idea 生产与独立评审实验', intervalMinutes: 15,
-      dailyCalls: review ? 400 : 240, enabled: false, paceWriting: review, workUntil: state.until, shareDeliveries: !review, readContactDeliveries: review, notifyProgress: false }])
+      dailyCalls: review ? 400 : 240, enabled: false, paceWriting: review, shareDeliveries: !review, readContactDeliveries: review, notifyProgress: false }])
     const description = review
       ? '在本次24小时实验期间，持续寻找「阿想 · Idea 实验员」产出的 AI 产品 idea，并对尚未评价或正文已变化的内容进行独立评价。自己规划从哪里检索数据、读取哪些成果及版本，不根据标题或猜测评分。自行制定并说明稳定的评分维度、权重和总分算法，每个 idea 给出分项评分、总分、理由、主要风险及最小验证建议，引用实际读到的成果。没有新内容就等待，不重复评分。可以一次评价1–3个 idea。将每轮实质评价保存在成果正文中，不修改原作者成果。按15分钟间隔检查，任务预算由你按约96轮、每轮检索规划和分析所需调用估算，包含初始规划与重试，最多400次；不只为首个idea分配预算。普通判断可标为假设，不必反复询问用户。评价一个idea不等于整个持续任务完成。'
       : '在本次24小时实验期间，持续生产小团队可以实现的 AI 工具或产品 idea。每轮新增1个，包含目标用户、具体痛点、解决方案、与此前idea的差别、最小验证方法；未经验证的市场和需求判断标为假设，不编造调研。自己规划具体方向、阶段和资源，每轮正文只交付一个完整idea，使用独立分节ID和能体现差异的标题。结合已有成果去重，每8轮在当前idea正文末简短复盘最值得验证的3个方向。每轮完成后立即继续下一条，有新正文时不等待固定间隔；只有缺少必要信息或没有可推进内容时才等待。任务预算覆盖整个实验，每轮规划与写作约两次调用，包含接单和重试，最多240次；额度用尽时等待恢复，不只为第一批分配预算。缺少非关键偏好时做合理假设继续。产出第一批不等于整个持续任务完成。'

@@ -21,6 +21,21 @@ function fixture(agentsImpl?: (id: string, method: string, args: unknown[]) => P
 const createTarget = { kind: 'create' as const, characterId: 'chouyu' }
 
 describe('contact task gateway', () => {
+  it('passes an explicit creation Token cap separately from the archived description', async () => {
+    const { deps, agents } = fixture(async (_id, method) => method === 'get' ? { topics: [] } : {})
+    await requestContactTask({ kind: 'create', characterId: 'alice' }, '写文章，最多 30 万 Token', deps,
+      async () => JSON.stringify({ kind: 'work', description: '写文章，最多 30 万 Token', budget: { tokens: 300000 } }))
+    expect(agents).toHaveBeenCalledWith('alice', 'assignTopic', ['写文章，最多 30 万 Token', expect.stringContaining('30 万'), 300000])
+  })
+  it('updates a task Token limit through natural language without changing its call budget', async () => {
+    const topic = { id: 'task', characterId: 'alice', revision: 1, title: '文章', goal: '写文章', constraints: '' }
+    const { deps, agents } = fixture(async (_id, method) => ({ topics: [{ ...topic, revision: method === 'editTopic' ? 2 : 1 }] }))
+    const result = await requestContactTask({ kind: 'edit-work', characterId: 'alice', topicId: 'task', topicRevision: 1 }, '累计上限改为 50 万 Token', deps,
+      async () => JSON.stringify({ kind: 'work-edit', input: { goal: '写文章', constraints: '' }, budget: { tokens: 500000 } }))
+    expect(result).toMatchObject({ kind: 'work-edited', budgetApplied: true })
+    expect(agents.mock.calls.some(([, method]) => method === 'setTaskBudget')).toBe(false)
+    expect(agents).toHaveBeenCalledWith('alice', 'setTaskTokenLimit', ['task', expect.any(Number), 500000])
+  })
   it('asks follow-up questions and keeps the draft chain', async () => {
     const { deps, drafts } = fixture()
     const model = vi.fn(async () => JSON.stringify({ kind: 'question', question: '每个工作日早上几点汇报？' }))

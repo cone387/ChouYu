@@ -15,7 +15,8 @@ export default function ContactTaskResources({ topic, data, editable = false, bu
   const needed = agentUsesPlanner(data.settings) ? 2 : 1
   return <section className="topic-resources" aria-label="任务资源预算">
     <div className="topic-heading"><h4>任务资源预算</h4><span className="agent-caption">跨天累计，不自动重置</span></div>
-    <p>{budget ? <>已用 <strong>{used} / {budget.modelCalls}</strong> 次模型调用 · 剩余 {Math.max(0, budget.modelCalls - used)} 次</> : '尚未设置累计上限，目前仅受联系人每日额度限制；联系人可在任务规划中分配预算。'}</p>
+    {data.tokenUsage && <p>累计工作 Token：{(data.tokenUsage.tasks[topic.id] ?? 0).toLocaleString()} / {topic.tokenLimit?.toLocaleString() ?? '未设置上限'}（含未知用量的保守预留）</p>}
+    <p>{budget ? <>已用 <strong>{used} / {budget.modelCalls}</strong> 次模型调用 · 剩余 {Math.max(0, budget.modelCalls - used)} 次</> : '尚未设置累计调用次数上限；联系人可在任务规划中分配调用预算。'}</p>
     {budget && <p className="agent-caption">分配理由：{budget.reason}</p>}
     <p className="agent-caption">联系人今日已用 {data.callsToday} / {data.settings.dailyCalls} 次，今日剩余 {dailyRemaining} 次。所有任务共用每日额度；本任务的调用同时计入累计预算。两项都有剩余才能推进，规划、执行、失败重试及修订均计入。</p>
     {budget && budget.modelCalls - used < needed && <p role="status">本任务剩余额度不足下一轮，已有成果保留。请在任务描述中说明需要调整的预算与范围。</p>}

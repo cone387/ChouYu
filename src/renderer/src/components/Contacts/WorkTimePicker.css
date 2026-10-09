@@ -1,0 +1,14 @@
+.work-time-picker { position: relative; flex: 1 1 0; min-width: 0; }
+.work-settings-flat .work-time-picker input { padding-right: 32px; font-variant-numeric: tabular-nums; }
+.work-settings-flat .work-time-trigger { position: absolute; right: 2px; top: 2px; bottom: 2px; display: grid; place-items: center; padding: 0; width: 28px; min-height: 0; border: 0; background: transparent; color: var(--text-secondary); }
+.work-time-popover { position: fixed; inset: auto; margin: 0; padding: 12px; box-sizing: border-box; height: 274px; max-height: calc(100vh - 16px); border: 1px solid var(--border); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 8px 28px #00000020; font: inherit; }
+.work-time-popover header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
+.work-time-popover header span, .work-time-column-head { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.work-time-column-head, .work-time-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: center; }
+.work-time-column-head { margin-bottom: 6px; }
+.work-time-columns { height: 190px; }
+.work-time-column { position: relative; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.work-settings-flat .work-time-column button { display: block; width: 100%; height: 32px; min-height: 32px; padding: 4px; margin: 0 0 2px; border: 0; border-radius: 5px; background: transparent; color: var(--text-primary); font-size: 13px; font-variant-numeric: tabular-nums; }
+.work-settings-flat .work-time-column button[aria-pressed=true] { background: var(--bg-secondary); font-weight: 600; }
+.work-settings-flat .work-time-column button:hover { background: var(--bg-hover, var(--bg-secondary)); }
+.work-settings-flat .work-time-column button:focus-visible { outline: 1px solid var(--text-secondary); outline-offset: -2px; }

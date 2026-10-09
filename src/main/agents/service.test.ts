@@ -91,12 +91,12 @@ it('preserves a waiting question when the daily allowance changes, and still sto
   expect(f.service.store.getRun(run)?.status).toBe('cancelled')
 })
 
-it('rejects enabling an expired arrangement without changing settings or cancelling work', async () => {
+it('ignores obsolete deadlines when enabling automatic work without cancelling the active round', async () => {
   const f = await fixture()
   const run = await f.start('alice')
   const before = f.service.store.overview('alice')
-  await expect(f.service.request('savePreferences', 'alice', [{ ...before.settings, enabled: true, workUntil: Date.now() - 1 }])).rejects.toThrow('截止时间已过')
-  expect(f.service.store.overview('alice').settings).toEqual(before.settings)
+  await f.service.request('savePreferences', 'alice', [{ ...before.settings, enabled: true, workUntil: Date.now() - 1 }])
+  expect(f.service.store.overview('alice').settings).toEqual({ ...before.settings, enabled: true })
   expect(f.pending('alice').signal.aborted).toBe(false)
   expect(f.service.store.getRun(run)?.status).toBe('running')
 })
@@ -167,14 +167,16 @@ it('does not impose a two-minute whole-run deadline and can still pause a long-r
   expect(f.service.store.getRun(run)?.status).toBe('cancelled')
 })
 
-it('stops an expired contact while another contact remains active', async () => {
+it('does not cancel active work because an obsolete deadline exists', async () => {
   const f = await fixture()
   const alice = await f.start('alice'), bob = await f.start('bob')
   f.service.store.db.prepare('UPDATE profiles SET settings=? WHERE character_id=?')
     .run(JSON.stringify({ ...settings, enabled: true, workUntil: Date.now() - 1 }), 'alice')
   f.service.tick()
-  expect(f.pending('alice').signal.aborted).toBe(true)
-  expect(f.service.store.getRun(alice)?.status).toBe('cancelled')
+  expect(f.pending('alice').signal.aborted).toBe(false)
+  expect(f.service.store.getRun(alice)?.status).toBe('running')
+  expect(f.service.store.nextScheduledTopic('alice')).toBeUndefined()
+  f.pending('alice').resolve(draft)
   expect(f.pending('bob').signal.aborted).toBe(false)
   f.pending('bob').resolve(draft)
   await vi.waitFor(() => expect(f.service.store.getRun(bob)?.status).toBe('completed'))

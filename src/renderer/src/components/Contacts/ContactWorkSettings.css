@@ -1,0 +1,33 @@
+.work-settings-flat { max-width: 760px; margin: 0 auto; color: var(--text-primary); container-type: inline-size; }
+.work-setting-section { padding: 16px 0; border-bottom: 1px solid var(--border); }
+.work-setting-section:first-child { padding-top: 0; }
+.work-setting-section:last-child { border-bottom: 0; }
+.work-setting-section h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.work-setting-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 10px 0; min-width: 0; }
+.work-setting-row > label, .work-setting-row > span:first-child { flex: 1 1 200px; font-size: 14px; }
+.work-setting-editor { display: flex; align-items: center; gap: 8px; flex: 0 1 340px; min-width: 0; max-width: 100%; }
+.work-settings-flat input:not([type=checkbox]):not([type=radio]), .work-settings-flat textarea { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; }
+.work-settings-flat input:not([type=checkbox]):not([type=radio]):focus, .work-settings-flat textarea:focus { border-color: var(--border); outline: none; box-shadow: none; }
+.work-settings-flat textarea { resize: vertical; }
+.work-settings-flat input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: 0 0 auto; cursor: pointer; }
+.work-setting-switch-row > label { display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; min-height: 34px; }
+.work-settings-flat button { padding: 7px 12px; min-height: 34px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.work-settings-flat button:disabled { opacity: .55; cursor: default; }
+.work-settings-flat button:hover:not(:disabled) { background: var(--bg-hover, var(--bg-primary)); }
+.work-setting-options { display: flex; gap: 6px; flex-wrap: wrap; }
+.work-settings-flat .work-setting-options button[aria-pressed=true] { background: var(--text-primary); color: var(--bg-primary); border-color: var(--text-primary); }
+.work-setting-unit { white-space: nowrap; font-size: 13px; color: var(--text-secondary); }
+.work-setting-hint, .work-setting-feedback, .work-setting-error { flex: 1 0 100%; margin: 2px 0 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.work-setting-hint, .work-setting-feedback { color: var(--text-secondary); }
+.work-setting-error { color: var(--danger, #c94040); }
+.work-settings-flat a { margin-left: 8px; color: var(--accent); }
+@container (max-width: 500px) { .work-setting-row { gap: 8px; } .work-setting-row > label, .work-setting-row > span:first-child, .work-setting-editor { flex-basis: 100%; } }
+
+.contact-agent .work-setting-row > label { margin: 0; font-weight: 400; }
+
+.work-setting-choices { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; min-height: 34px; }
+.work-settings-flat .work-setting-choices label { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 400; cursor: pointer; }
+.work-settings-flat .work-setting-choices input[type=radio] { width: 16px; height: 16px; margin: 0; accent-color: var(--text-primary); flex: 0 0 auto; box-shadow: none; }
+.work-setting-choices label:has(input:disabled) { color: var(--text-secondary); cursor: default; }
+.work-mode-status { min-height: 3.2em; font-size: 12px; line-height: 1.6; }
+.work-settings-flat input:disabled { cursor: default; color: var(--text-secondary); }

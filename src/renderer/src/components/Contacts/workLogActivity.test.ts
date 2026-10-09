@@ -17,10 +17,9 @@ describe('work log activity', () => {
   it('keeps response waits moving without pretending to execute work', () => {
     expect(workLogActivity({ ...run, status: 'waiting' }, overview, undefined, 5000, '')).toEqual({ label: 'WAITING', moving: true, text: '等待你的回复 · 已等待 3 秒' })
   })
-  it('stops for paused topics, disabled work, and expired deadlines', () => {
+  it('stops for paused topics and disabled work', () => {
     for (const data of [
       { ...overview, settings: { ...overview.settings, enabled: false } },
-      { ...overview, settings: { ...overview.settings, workUntil: 4000 } },
       { ...overview, topics: [{ ...overview.topics[0], status: 'paused' as const }] },
       { ...overview, focusTopicId: 'another-topic' }
     ]) expect(workLogActivity(run, data, undefined, 5000, '').moving).toBe(false)
