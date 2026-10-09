@@ -20,6 +20,57 @@ afterEach(() => {
 })
 
 describe('TasksStore', () => {
+  test('喜欢清单在重开、备份恢复及回收站恢复后保留，旧数据库默认不喜欢', async () => {
+    const file = tempFile('favorites.db')
+    let store = openTasksStore(file)
+    const p = store.createProject('喜欢的清单')
+    expect(p.isFavorite).toBe(false)
+    store.favoriteProject(p.id, true)
+    store.close(); store = openTasksStore(file)
+    try {
+      expect(store.listProjects().find(item => item.id === p.id)?.isFavorite).toBe(true)
+      const backup = store.exportBackup({ preferences: '{}', layoutOrder: '{}', selection: 'all' })
+      store.favoriteProject(p.id, false)
+      store.restoreBackup(backup)
+      expect(store.listProjects().find(item => item.id === p.id)?.isFavorite).toBe(true)
+      store.deleteProject(p.id)
+      store.restoreTrash(store.listTrash()[0].id)
+      expect(store.listProjects().find(item => item.id === p.id)?.isFavorite).toBe(true)
+      expect(() => store.favoriteProject(p.id, 'yes' as never)).toThrow('喜欢状态')
+      backup.schemaVersion = 11
+      for (const row of backup.tables.task_projects) delete row.is_favorite
+      store.restoreBackup(backup)
+      expect(store.listProjects().find(item => item.id === p.id)?.isFavorite).toBe(false)
+    } finally { store.close() }
+    const Database = (await import('better-sqlite3')).default
+    const db = new Database(file)
+    db.exec('ALTER TABLE task_projects DROP COLUMN is_favorite; PRAGMA user_version=11')
+    db.close()
+    store = openTasksStore(file)
+    try { expect(store.listProjects().find(item => item.id === p.id)?.isFavorite).toBe(false) }
+    finally { store.close() }
+  })
+
+  test('版本号已是 v12 但缺少喜欢字段时补齐实际结构并保留原任务', async () => {
+    const file = tempFile('favorite-schema-repair.db')
+    let store = openTasksStore(file)
+    const project = store.createProject('原清单')
+    const task = store.createTask({ title: '原任务', projectId: project.id })
+    store.close()
+    const Database = (await import('better-sqlite3')).default
+    const db = new Database(file)
+    db.exec('ALTER TABLE task_projects DROP COLUMN is_favorite; PRAGMA user_version=12')
+    db.close()
+    store = openTasksStore(file)
+    try {
+      expect(store.favoriteProject(project.id, true).isFavorite).toBe(true)
+      expect(store.listTasks().open.some(item => item.id === task.id && item.projectId === project.id)).toBe(true)
+    } finally { store.close() }
+    store = openTasksStore(file)
+    try { expect(store.listProjects().find(item => item.id === project.id)?.isFavorite).toBe(true) }
+    finally { store.close() }
+  })
+
   test('视图分组持久化，已完成列表与计数随清单移动变化，不限保留全部', () => {
     const file = tempFile('view-group.db')
     let store = openTasksStore(file)

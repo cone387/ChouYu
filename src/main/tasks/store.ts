@@ -11,7 +11,7 @@ import { captureDeleted, listTrash, restoreTrash } from './recovery'
 import { createTaskBackup, restoreTaskBackup, validateTaskBackup } from './backup'
 import { type TaskUISettings } from '../../shared/tasks'
 
-const SCHEMA_VERSION = 11
+const SCHEMA_VERSION = 12
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
 const RECURRENCES: TaskRecurrence[] = TASK_RECURRENCES
 const DUE_RANGES = Object.keys(DUE_RANGE_LABELS) as TaskDueRange[]
@@ -33,7 +33,7 @@ interface TaskRow {
   checklist?: string
   source?: string | null
 }
-interface ProjectRow { is_default?: number; group_id: string | null; id: string; name: string; archived_at: number | null; created_at: number }
+interface ProjectRow { is_favorite?: number; is_default?: number; group_id: string | null; id: string; name: string; archived_at: number | null; created_at: number }
 interface ViewRow {
   group_id: string | null
   id: string; name: string; project_ids: string; priorities: string
@@ -151,7 +151,15 @@ function migrate(database: Database.Database): void {
   database.pragma('foreign_keys = ON')
   const current = database.pragma('user_version', { simple: true }) as number
   if (current > SCHEMA_VERSION) throw new TasksSchemaVersionError(`任务数据库版本过新（${current}），请先更新应用。`)
-  if (current === SCHEMA_VERSION) return
+  if (current === SCHEMA_VERSION) {
+    // Earlier development builds used this version without the favorite column.
+    // Check the actual schema before skipping migration.
+    database.transaction(() => {
+      const projects = database.pragma('table_info(task_projects)') as { name: string }[]
+      if (!projects.some(column => column.name === 'is_favorite')) database.exec('ALTER TABLE task_projects ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0')
+    })()
+    return
+  }
   database.exec(`
     CREATE TABLE IF NOT EXISTS task_trash (
       id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL,
@@ -221,6 +229,7 @@ function migrate(database: Database.Database): void {
   }
   database.transaction(() => {
     if (!columns.some(column => column.name === 'start_at')) database.exec('ALTER TABLE tasks ADD COLUMN start_at INTEGER')
+    if (!projectColumns.some(column => column.name === 'is_favorite')) database.exec('ALTER TABLE task_projects ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0')
     if (!projectColumns.some(column => column.name === 'is_default')) database.exec('ALTER TABLE task_projects ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0')
     if (!database.prepare('SELECT id FROM task_projects WHERE is_default = 1').get()) {
       const existing = database.prepare('SELECT id FROM task_projects WHERE name = ?').get('收集箱') as { id: string } | undefined
@@ -277,7 +286,7 @@ const toTask = (row: TaskRow): TaskRecord => ({
   createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at
 })
 const toProject = (row: ProjectRow): TaskProject => ({
-  isDefault: row.is_default === 1, id: row.id, name: row.name, groupId: row.group_id, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
+  isFavorite: row.is_favorite === 1, isDefault: row.is_default === 1, id: row.id, name: row.name, groupId: row.group_id, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
 })
 const toView = (row: ViewRow): TaskView => ({
   id: row.id, name: row.name, groupId: row.group_id,
@@ -455,6 +464,13 @@ export class TasksStore {
     const clean = assertProjectName(name)
     const result = this.database.prepare('UPDATE task_projects SET name = ? WHERE id = ?').run(clean, id)
     if (!result.changes) throw new Error('项目不存在。')
+    return this.requireProject(id)
+  }
+
+  favoriteProject(id: string, favorite: boolean): TaskProject {
+    if (typeof favorite !== 'boolean') throw new Error('喜欢状态无效。')
+    this.requireProject(id)
+    this.database.prepare('UPDATE task_projects SET is_favorite = ? WHERE id = ?').run(Number(favorite), id)
     return this.requireProject(id)
   }
 

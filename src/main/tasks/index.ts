@@ -153,6 +153,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
   ipcMain.handle('tasks:moveProject', (_event, id: string, groupId: string | null) => notifyChange(() => store!.moveProject(id, groupId)))
   ipcMain.handle('tasks:createProject', (_event, name: string, groupId?: string | null) => notifyChange(() => store!.createProject(name, groupId)))
   ipcMain.handle('tasks:renameProject', (_event, id: string, name: string) => notifyChange(() => store!.renameProject(id, name)))
+  ipcMain.handle('tasks:favoriteProject', (_event, id: string, favorite: boolean) => notifyChange(() => store!.favoriteProject(id, favorite)))
   ipcMain.handle('tasks:archiveProject', (_event, id: string, archived: boolean) => notifyChange(() => store!.archiveProject(id, archived)))
   ipcMain.handle('tasks:deleteProject', (_event, id: string) => notifyChange(() => store!.deleteProject(id)))
   ipcMain.handle('tasks:views', () => store!.listViews())
@@ -177,7 +178,7 @@ export function closeTasks(): void {
   ipcMain.removeHandler('tasks:setChecklistItemDone')
   pendingBackups.clear()
   for (const channel of ['tasks:get', 'tasks:trash', 'tasks:restoreTrash', 'tasks:purgeTrash', 'tasks:exportBackup', 'tasks:selectBackup', 'tasks:restoreBackup']) ipcMain.removeHandler(channel)
-  for (const channel of ['tasks:groups', 'tasks:createGroup', 'tasks:renameGroup', 'tasks:deleteGroup', 'tasks:moveProject', 'tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:deleteProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView', 'tasks:fields', 'tasks:createField', 'tasks:updateField', 'tasks:deleteField']) ipcMain.removeHandler(channel)
+  for (const channel of ['tasks:groups', 'tasks:createGroup', 'tasks:renameGroup', 'tasks:deleteGroup', 'tasks:moveProject', 'tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:favoriteProject', 'tasks:deleteProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView', 'tasks:fields', 'tasks:createField', 'tasks:updateField', 'tasks:deleteField']) ipcMain.removeHandler(channel)
   ipcMain.removeAllListeners('tasks:ready')
   storeRebuilt = false
   pendingBacklog = 0

@@ -53,6 +53,8 @@ function insertRows(database: Database.Database, backup: TaskBackup) {
         if (typeof row.start_at === 'number' && typeof row.due_at === 'number' && row.start_at > row.due_at) throw new Error('备份中的开始时间晚于截止时间。')
         const values = JSON.parse(String(row.custom_fields))
         if (!values || typeof values !== 'object' || Array.isArray(values) || Object.values(values).some(value => typeof value !== 'string')) throw new Error('备份中的任务字段无效。')
+      } else if (table === 'task_projects') {
+        if (row.is_favorite !== 0 && row.is_favorite !== 1) throw new Error('备份中的喜欢状态无效。')
       } else if (table === 'task_fields') {
         const options = JSON.parse(String(row.options))
         if (!Array.isArray(options) || options.some(option => !option || typeof option.id !== 'string' || typeof option.name !== 'string')) throw new Error('备份中的字段选项无效。')
@@ -74,7 +76,7 @@ function insertRows(database: Database.Database, backup: TaskBackup) {
             const schema = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) as { sql: string }
             trashDatabase.exec(schema.sql)
           }
-          insertRows(trashDatabase, { ...backup, tables: { task_groups: payload.groups, task_projects: payload.projects, task_fields: payload.fields, task_views: [], task_trash: [], tasks: payload.tasks.map((task: Row) => ({ checklist: '[]', source: null, repeat_rule: null, recurrence_index: 1, reminders: legacyReminders(task), ...task })) } })
+          insertRows(trashDatabase, { ...backup, tables: { task_groups: payload.groups, task_projects: payload.projects.map((project: Row) => ({ is_favorite: 0, ...project })), task_fields: payload.fields, task_views: [], task_trash: [], tasks: payload.tasks.map((task: Row) => ({ checklist: '[]', source: null, repeat_rule: null, recurrence_index: 1, reminders: legacyReminders(task), ...task })) } })
         } finally { trashDatabase.close() }
       }
       insert.run(...columns.map(column => row[column]))
@@ -102,6 +104,11 @@ export function validateTaskBackup(database: Database.Database, input: unknown):
     backup = structuredClone(backup)
     backup.schemaVersion = 11
     backup.tables.task_views = backup.tables.task_views.map(view => ({ ...view, group_id: null }))
+  }
+  if (backup?.format === 'chouyu-tasks' && backup.version === 1 && backup.schemaVersion === 11 && Number(database.pragma('user_version', { simple: true })) >= 12 && Array.isArray(backup.tables?.task_projects)) {
+    backup = structuredClone(backup)
+    backup.schemaVersion = 12
+    backup.tables.task_projects = backup.tables.task_projects.map(project => ({ ...project, is_favorite: 0 }))
   }
   if (!backup || backup.format !== 'chouyu-tasks' || backup.version !== 1 || backup.schemaVersion !== database.pragma('user_version', { simple: true })) throw new Error('备份格式或数据库版本不兼容。请使用相同版本的应用恢复。')
   if (typeof backup.createdAt !== 'number' || !Number.isFinite(backup.createdAt) || !backup.tables || tables.some(table => !Array.isArray(backup.tables[table]))) throw new Error('备份数据不完整。')

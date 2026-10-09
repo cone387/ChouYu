@@ -134,6 +134,7 @@ const api = {
     moveProject: (id, groupId) => ipcRenderer.invoke('tasks:moveProject', id, groupId),
     createProject: (name, groupId) => ipcRenderer.invoke('tasks:createProject', name, groupId),
     renameProject: (id, name) => ipcRenderer.invoke('tasks:renameProject', id, name),
+    favoriteProject: (id, favorite) => ipcRenderer.invoke('tasks:favoriteProject', id, favorite),
     archiveProject: (id, archived) => ipcRenderer.invoke('tasks:archiveProject', id, archived),
     deleteProject: id => ipcRenderer.invoke('tasks:deleteProject', id),
     views: () => ipcRenderer.invoke('tasks:views'),

@@ -38,6 +38,7 @@ export interface TaskGroup {
 }
 
 export interface TaskProject {
+  isFavorite?: boolean
   isDefault?: boolean
   groupId?: string | null
   id: string
@@ -393,6 +394,7 @@ export interface TasksAPI {
   moveProject(id: string, groupId: string | null): Promise<TaskProject>
   createProject(name: string, groupId?: string | null): Promise<TaskProject>
   renameProject(id: string, name: string): Promise<TaskProject>
+  favoriteProject(id: string, favorite: boolean): Promise<TaskProject>
   archiveProject(id: string, archived: boolean): Promise<TaskProject>
   deleteProject(id: string): Promise<void>
   views(): Promise<TaskView[]>

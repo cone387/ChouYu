@@ -835,3 +835,6 @@
 .task-card-checklist-row[data-done] span { text-decoration: line-through; color: var(--text-muted); }
 .task-card-checklist-row input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .task-card-checklist-status { min-height: 16px; font-size: 11px; color: var(--text-muted); }
+
+.tasks-favorites { margin-bottom: 10px; }
+.tasks-favorites-label { padding: 7px 8px; color: var(--text-muted); font-size: 12px; }

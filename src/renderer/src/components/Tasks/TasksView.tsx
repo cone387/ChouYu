@@ -225,7 +225,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const [projectGroupId, setProjectGroupId] = useState('')
   const [projectBusy, setProjectBusy] = useState(false)
   const [newProject, setNewProject] = useState<string | null>(null)
-  const [renaming, setRenaming] = useState<{ id: string; name: string; original: string } | null>(null)
+  const [renaming, setRenaming] = useState<{ id: string; name: string; original: string; favorite: boolean } | null>(null)
   const [fieldsOpen, setFieldsOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
@@ -659,13 +659,26 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     .map(column => boardGroupMode === 'status' && column.key === 'done' && sortMode !== 'manual' ? { ...column, tasks: sortTasks(column.tasks, 'completed', now) } : column)
   const columnIds = listColumns.map(column => column.key)
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+  const [favoriteSaving, setFavoriteSaving] = useState<string[]>([])
+  const favoritePending = useRef(new Set<string>())
+  const favoriteProjects = orderedProjects.filter(project => project.isFavorite && !project.archivedAt)
+  const toggleFavorite = async (project: TaskProject) => {
+    if (favoritePending.current.has(project.id)) return
+    favoritePending.current.add(project.id)
+    setFavoriteSaving([...favoritePending.current])
+    try {
+      const saved = await window.electronAPI.tasks.favoriteProject(project.id, !project.isFavorite)
+      setProjects(current => current.map(item => item.id === saved.id ? saved : item))
+    } catch (reason) { setError(`喜欢状态保存失败：${String(reason)}`) }
+    finally { favoritePending.current.delete(project.id); setFavoriteSaving([...favoritePending.current]) }
+  }
 
-  const renderProject = (project: TaskProject) => {
+  const renderProject = (project: TaskProject, favorite = false) => {
     const id = `project:${project.id}` as Selection
     const projectScope = `sidebar:projects:${project.groupId ?? ""}`
     const projectIds = layoutOrder.sort(projectScope, projects.filter(item => !item.archivedAt && item.groupId === project.groupId).sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault))), item => item.id).map(item => item.id)
-    return <li key={project.id} {...layoutOrder.drop(projectScope, project.id, projectIds)} data-project-id={project.id} className={`tasks-nav-row${project.isDefault ? ' tasks-inbox-row' : ''}`} data-selected={selection === id || undefined}>
-      {renaming?.id === project.id
+    return <li key={project.id} {...(favorite ? {} : layoutOrder.drop(projectScope, project.id, projectIds))} data-project-id={favorite ? undefined : project.id} data-favorite-project-id={favorite ? project.id : undefined} className={`tasks-nav-row${project.isDefault ? ' tasks-inbox-row' : ''}`} data-selected={selection === id || undefined}>
+      {renaming?.id === project.id && renaming.favorite === favorite
         ? <form className="tasks-new-project-form" onSubmit={submitRename}>
             <input value={renaming.name} autoFocus aria-label={`重命名 ${project.name}`} placeholder="清单名称"
               onChange={e => setRenaming({ ...renaming, name: e.target.value })}
@@ -674,11 +687,12 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
           </form>
         : <>
 
-            <button type="button" className="tasks-project-select" {...layoutOrder.handle(projectScope, project.id, projectIds)} aria-current={selection === id || undefined} onClick={() => setSelection(id)}><TaskIcon name="task" /><span className="tasks-nav-label">{project.name}</span></button>
+            <button type="button" className="tasks-project-select" {...(favorite ? {} : layoutOrder.handle(projectScope, project.id, projectIds))} aria-current={selection === id || undefined} onClick={() => setSelection(id)}><TaskIcon name="task" /><span className="tasks-nav-label">{project.name}</span></button>
             <details className="tasks-project-menu">
               <summary aria-label={`管理清单 ${project.name}`} title="管理清单"><TaskIcon name="more" /></summary>
               <div className="tasks-item-menu-popover">
-                <button type="button" aria-label={`重命名 ${project.name}`} onClick={() => setRenaming({ id: project.id, name: project.name, original: project.name })}><TaskIcon name="edit" />重命名</button>
+                <button type="button" disabled={favoriteSaving.includes(project.id)} aria-label={`${project.isFavorite ? '取消喜欢' : '标记为喜欢'} ${project.name}`} onClick={() => void toggleFavorite(project)}><TaskIcon name="heart" />{project.isFavorite ? '取消喜欢' : '标记为喜欢'}</button>
+                <button type="button" aria-label={`重命名 ${project.name}`} onClick={() => setRenaming({ id: project.id, name: project.name, original: project.name, favorite })}><TaskIcon name="edit" />重命名</button>
                 {!project.isDefault && <><label>移至分组<select className="tasks-move-project-select" aria-label={`移动清单 ${project.name} 到分组`} value={project.groupId ?? ''} onChange={e => void window.electronAPI.tasks.moveProject(project.id, e.target.value || null).then(() => reloadRef.current()).catch(reason => setError(String(reason)))}>
                   {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
                 </select></label>
@@ -857,10 +871,14 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       </div>
       <div className="tasks-sidebar-divider" {...sidebarSplit.dividerProps} />
       <div className="tasks-sidebar-projects" role="region" aria-label="分组和清单列表">
+        {favoriteProjects.length > 0 && <section className="tasks-favorites" aria-label="我喜欢">
+          <div className="tasks-favorites-label">我喜欢</div>
+          <ul role="list" aria-label="我喜欢的清单">{favoriteProjects.map(project => renderProject(project, true))}</ul>
+        </section>}
         {orderedGroups.map(group => <div {...layoutOrder.drop('sidebar:groups', group.id, sidebarGroupIds)} className="tasks-group-shell" key={group.id} data-group-id={group.id} ref={element => { groupRefs.current[group.id] = element }}>
           <details className="tasks-project-group" open>
             <summary {...layoutOrder.handle('sidebar:groups', group.id, sidebarGroupIds)} aria-label={`折叠或展开分组 ${group.name}`}><span className="tasks-disclosure-icon"><TaskIcon name="disclosure" /></span><span>{group.name}</span></summary>
-            <ul role="list">{layoutOrder.sort(`sidebar:projects:${group.id}`, projects.filter(project => !project.archivedAt && project.groupId === group.id).sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault))), project => project.id).map(renderProject)}</ul>
+            <ul role="list">{layoutOrder.sort(`sidebar:projects:${group.id}`, projects.filter(project => !project.archivedAt && project.groupId === group.id).sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault))), project => project.id).map(project => renderProject(project))}</ul>
             {!projects.some(project => !project.archivedAt && project.groupId === group.id) && <button type="button" className="tasks-empty-group-add" onClick={() => startGroupProject(group)}><TaskIcon name="plus" />添加第一个清单</button>}
           </details>
           <div className="tasks-group-actions">

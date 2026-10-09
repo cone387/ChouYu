@@ -28,6 +28,19 @@ export async function runTaskViewsUISmoke(window: BrowserWindow): Promise<void> 
     const u = await api.create({title:'个人分组中的任务',projectId:q.id});
     return {a:a.id,b:b.id,p:p.id,q:q.id,t:t.id,u:u.id};
   })()`)
+  await wait(`!!document.querySelector('[data-project-id="${fixture.p}"]')`)
+  await assert("!document.querySelector('.tasks-favorites')")
+  await click(`[data-project-id="${fixture.p}"] .tasks-project-menu > summary`)
+  await click(`[data-project-id="${fixture.p}"] [aria-label="标记为喜欢 工作清单"]`)
+  await wait(`!!document.querySelector('[data-favorite-project-id="${fixture.p}"]')`)
+  await assert("document.querySelector('.tasks-favorites-label')?.textContent==='我喜欢' && !document.querySelector('.tasks-favorites > summary')")
+  await click(`[data-favorite-project-id="${fixture.p}"] .tasks-project-select`)
+  await wait("document.querySelector('.tasks-page-heading h1')?.textContent==='工作清单'")
+  await assert(`!!document.querySelector('[data-project-id="${fixture.p}"]')`)
+  await run(`window.electronAPI.tasks.archiveProject(${JSON.stringify(fixture.p)},true)`)
+  await wait(`!document.querySelector('[data-favorite-project-id="${fixture.p}"]')`)
+  await run(`window.electronAPI.tasks.archiveProject(${JSON.stringify(fixture.p)},false)`)
+  await wait(`!!document.querySelector('[data-favorite-project-id="${fixture.p}"]')`)
   await click('.tasks-more-views > summary')
   await wait("document.querySelector('.tasks-more-views-popover')?.matches(':popover-open')")
   await run("Array.from(document.querySelectorAll('.tasks-more-view-create')).find(button=>button.textContent.includes('新建自定义视图')).click()")
@@ -120,5 +133,18 @@ export async function runTaskViewsUISmoke(window: BrowserWindow): Promise<void> 
   await assert("document.querySelector('[aria-label=排序方式]').textContent.includes('按标题')")
   await click('[aria-label="筛选任务"]')
   await assert("document.querySelector('[aria-label=筛选优先级] input[type=checkbox]').checked")
+  await assert(`!!document.querySelector('[data-favorite-project-id="${fixture.p}"]')`)
+  await click('[aria-label="筛选任务"]')
+  if (artifacts) {
+    await run('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+    writeFileSync(join(artifacts, 'favorite-lists.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+  }
+  await assert(`document.querySelector('[data-favorite-project-id="${fixture.p}"] .tasks-project-select path').getAttribute('d')===document.querySelector('[data-project-id="${fixture.p}"] .tasks-project-select path').getAttribute('d')`)
+  await click(`[data-favorite-project-id="${fixture.p}"] .tasks-project-menu > summary`)
+  await click(`[data-favorite-project-id="${fixture.p}"] [aria-label="取消喜欢 工作清单"]`)
+  await wait(`!document.querySelector('[data-favorite-project-id="${fixture.p}"]')`)
+  await assert(`!!document.querySelector('[data-project-id="${fixture.p}"]')`)
+  await assert("!document.querySelector('.tasks-favorites')")
+  await assert(`window.electronAPI.tasks.projects().then(items=>items.find(p=>p.id===${JSON.stringify(fixture.p)}).isFavorite===false)`)
   console.log('CHOUYU_TASK_VIEWS_UI_SMOKE_PASSED simple creation, toolbar filter persistence, per-view sorting, copy and renderer reload')
 }
