@@ -1,3 +1,4 @@
+import DateTimePicker from '../common/DateTimePicker'
 import { useState } from 'react'
 import { RECURRENCE_LABELS, type TaskRecurrence, type TaskRepeatRule } from '../../../../shared/tasks'
 import { lunarDateAt, nextTaskOccurrence, repeatDescription, repeatRuleFor } from '../../../../shared/taskScheduling'
@@ -44,11 +45,11 @@ export default function TaskScheduleSettings({ section, draft, busy, onChange }:
     <div className="tasks-schedule-heading"><span>提醒 <small>{reminders.length}/5</small></span>{reminders.length > 0 && <button type="button" data-menu-keep-open onClick={() => setReminders([])}>不提醒</button>}</div>
     {reminders.length > 0 && <ul className="tasks-reminder-list">{reminders.map(at => <li key={at}><span>{new Date(at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span><button type="button" data-menu-keep-open aria-label={`移除提醒 ${new Date(at).toLocaleString('zh-CN')}`} onClick={() => setReminders(reminders.filter(t => t !== at))}>×</button></li>)}</ul>}
     <select aria-label="添加提醒" value="" disabled={due === null || reminders.length >= 5} onChange={e => { if (e.target.value !== '' && due !== null) addReminder(due - Number(e.target.value)) }}><option value="">添加相对截止时间的提醒</option>{presets.map(p => <option key={p.offset} value={p.offset} disabled={due !== null && reminders.includes(due - p.offset)}>{p.label}</option>)}</select>
-    <div className="tasks-custom-reminder"><input type="datetime-local" aria-label="自定义提醒时间" value={customReminder} onChange={e => setCustomReminder(e.target.value)} /><button type="button" data-menu-keep-open disabled={!customReminder || reminders.length >= 5} onClick={() => addReminder(new Date(customReminder).getTime())}>添加</button></div>
+    <div className="tasks-custom-reminder"><DateTimePicker label="自定义提醒时间" value={customReminder} disabled={busy} onChange={setCustomReminder} /><button type="button" data-menu-keep-open disabled={!customReminder || reminders.length >= 5} onClick={() => addReminder(new Date(customReminder).getTime())}>添加</button></div>
     {reminderError && <p className="tasks-schedule-error" role="alert">{reminderError}</p>}
     <p className="tasks-schedule-hint">{due === null ? '也可单独设置提醒，无需截止日期。' : '修改截止时间时，提醒会同步平移。'}应用关闭或休眠时错过的提醒会在恢复后合并提示。</p>
     </> : <>
-    {due === null && <p className="tasks-schedule-hint">请先在日期页设置截止日期，再选择重复规则。</p>}
+    {due === null && <p className="tasks-schedule-hint">请先设置截止时间，再选择重复规则。</p>}
     <label className="tasks-schedule-choice"><span>重复</span><select aria-label="任务重复规则" value={draft.recurrence} disabled={due === null} onChange={e => {
       const recurrence = e.target.value as TaskRecurrence
       onChange({ ...draft, recurrence, recurrenceIndex: 1, recurrenceAnchorAt: due, repeatRule: recurrence === 'custom' ? (draft.repeatRule ?? repeatRuleFor(draft.recurrence === 'none' ? 'daily' : draft.recurrence)) : null })
@@ -63,7 +64,7 @@ export default function TaskScheduleSettings({ section, draft, busy, onChange }:
       {rule.frequency === 'monthly' && rule.basis === 'scheduled' && <MonthDaysInput days={rule.monthDays ?? [new Date(due!).getDate()]} onChange={monthDays => changeRule({ monthDays })} />}
       {rule.frequency === 'lunarYearly' && <div className="tasks-repeat-interval"><label>农历月<input type="number" aria-label="重复农历月" min={-12} max={12} value={rule.lunarMonth ?? lunar.month} onChange={e => changeRule({ lunarMonth: Number(e.target.value), lunarDay: rule.lunarDay ?? lunar.day })} /></label><label>农历日<input type="number" aria-label="重复农历日" min={1} max={30} value={rule.lunarDay ?? lunar.day} onChange={e => changeRule({ lunarMonth: rule.lunarMonth ?? lunar.month, lunarDay: Number(e.target.value) })} /></label><small>负数月份表示闰月</small></div>}
       <label className="tasks-schedule-choice"><span>结束重复</span><select aria-label="重复结束方式" value={rule.count !== undefined ? 'count' : rule.until !== undefined ? 'until' : 'never'} onChange={e => changeRule({ count: e.target.value === 'count' ? 10 : undefined, until: e.target.value === 'until' ? new Date(`${draft.dueDate}T23:59:59.999`).getTime() : undefined })}><option value="never">永不结束</option><option value="until">按日期</option><option value="count">按次数</option></select></label>
-      {rule.until !== undefined && <input type="date" aria-label="重复结束日期" min={draft.dueDate} value={Number.isFinite(rule.until) ? localDate(rule.until) : ''} onChange={e => changeRule({ until: new Date(`${e.target.value}T23:59:59.999`).getTime() })} />}
+      {rule.until !== undefined && <DateTimePicker label="重复结束日期" mode="date" min={draft.dueDate} allowClear={false} disabled={busy} value={Number.isFinite(rule.until) ? localDate(rule.until) : ''} onChange={value => changeRule({ until: new Date(`${value}T23:59:59.999`).getTime() })} />}
       {rule.count !== undefined && <label>总次数（含当前次）<input type="number" aria-label="重复总次数" min={1} max={10000} value={rule.count} onChange={e => changeRule({ count: Number(e.target.value) })} /></label>}
       {rule.basis === 'completed' && <p className="tasks-schedule-hint">从实际完成时间起算；下次时间会随完成时间变化。</p>}
     </div>}

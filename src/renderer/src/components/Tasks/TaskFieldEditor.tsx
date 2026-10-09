@@ -1,3 +1,4 @@
+import DateTimePicker from '../common/DateTimePicker'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { PRIORITY_LABELS, type TaskPriority, type TaskRecord, type TaskUpdateInput } from '../../../../shared/tasks'
 
@@ -51,7 +52,7 @@ export default function TaskFieldEditor({ task, field, onClose, onSaved }: {
       {field === 'priority' ? <label>优先级<select autoFocus aria-label="卡片优先级" disabled={busy} value={priority} onChange={event => { setPriority(event.target.value as TaskPriority); setDiscard(false) }}>
         {(['high', 'medium', 'low'] as const).map(value => <option key={value} value={value}>{PRIORITY_LABELS[value]}</option>)}
       </select></label> : <>
-        <label>截止时间<input autoFocus aria-label="卡片截止时间" type="datetime-local" disabled={busy} value={date} onChange={event => { setDate(event.target.value); setDiscard(false) }} /></label>
+        <div><DateTimePicker label="卡片截止时间" disabled={busy} value={date} onChange={value => { setDate(value); setDiscard(false) }} /></div>
         <button type="button" disabled={busy || !date} onClick={() => { setDate(''); setDiscard(false) }}>清除截止时间</button>
         {changed && task.dueAt !== null && <p className="tasks-composer-hint">{date ? '已有提醒将随截止时间整体平移，重复任务将以新日期重新计算。' : '清除截止时间会同时取消任务提醒和重复规则。'}</p>}
       </>}

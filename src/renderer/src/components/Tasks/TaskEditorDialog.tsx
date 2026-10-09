@@ -1,3 +1,7 @@
+import TaskScheduleSettings from './TaskScheduleSettings'
+import { draftReminderTimes } from './taskDraftScheduling'
+import { repeatDescription } from '../../../../shared/taskScheduling'
+import TaskDateTimePicker from '../common/DateTimePicker'
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react'
 import { useConfirm } from '../common/ConfirmProvider'
 import type { RemindChoiceId, TaskChecklistItem, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField } from '../../../../shared/tasks'
@@ -47,10 +51,20 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
   onSubmit: (event: FormEvent) => void
 }) {
   const defaultGroupId = groups.find(group => group.isDefault)?.id ?? ''
+  let repeatLabel = '自定义重复（待完善）'
+  try { repeatLabel = repeatDescription(draft.recurrence, draft.repeatRule) } catch { /* Keep incomplete rules editable; validation stays in the settings panel. */ }
   const [groupId, setGroupId] = useState(() => projects.find(project => project.id === draft.projectId)?.groupId ?? defaultGroupId)
   const [projectName, setProjectName] = useState('')
   const [newItem, setNewItem] = useState('')
-  const [insertedId, setInsertedId] = useState('')
+  const [itemsExpanded, setItemsExpanded] = useState(true)
+  const [itemDialogOpen, setItemDialogOpen] = useState(false)
+  const [newItemDue, setNewItemDue] = useState('')
+  const [newItemRemind, setNewItemRemind] = useState<RemindChoiceId>('none')
+  const itemDialogRef = useRef<HTMLDialogElement>(null)
+  const [draggedItem, setDraggedItem] = useState<string | null>(null)
+  const [dropItem, setDropItem] = useState<{ id: string; after: boolean } | null>(null)
+  useEffect(() => { if (itemDialogOpen) itemDialogRef.current?.showModal() }, [itemDialogOpen])
+  const closeItemDialog = () => { setItemDialogOpen(false); setNewItem(''); setNewItemDue(''); setNewItemRemind('none') }
   const original = useRef(JSON.stringify(draft))
   const confirm = useConfirm()
   const closing = useRef(false)
@@ -84,18 +98,22 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
     return 'none'
   }
   const patchItem = (id: string, patch: Partial<TaskChecklistItem>) => onChange({ ...draft, checklist: draft.checklist!.map(value => value.id === id ? { ...value, ...patch } : value) })
-  const insertAfter = (id: string) => {
-    if ((draft.checklist?.length ?? 0) >= 100) return
-    const item: TaskChecklistItem = { id: crypto.randomUUID(), title: '', done: false }
-    const index = draft.checklist!.findIndex(value => value.id === id)
-    const next = [...draft.checklist!]
-    next.splice(index + 1, 0, item)
-    setInsertedId(item.id)
+  const moveItem = (id: string, target: string, after: boolean) => {
+    if (busy || id === target) return
+    const items = draft.checklist ?? []
+    const item = items.find(value => value.id === id)
+    if (!item || !items.some(value => value.id === target)) return
+    const next = items.filter(value => value.id !== id)
+    next.splice(next.findIndex(value => value.id === target) + Number(after), 0, item)
     onChange({ ...draft, checklist: next })
   }
-  const addItem = () => {
+  const addItem = (event: FormEvent) => {
+    event.preventDefault(); event.stopPropagation()
     if (!newItem.trim() || busy || (draft.checklist?.length ?? 0) >= 100) return
-    onChange({ ...draft, checklist: [...draft.checklist ?? [], { id: crypto.randomUUID(), title: newItem.trim(), done: false }] }); setNewItem('')
+    const dueAt = itemDueAt(newItemDue)
+    const at = remindAtFromChoice(newItemRemind, dueAt)
+    onChange({ ...draft, checklist: [...draft.checklist ?? [], { id: crypto.randomUUID(), title: newItem.trim(), done: false, dueAt, reminders: at === null ? [] : [{ at, firedAt: null }] }] })
+    closeItemDialog()
   }
   const groupProjects = projects.filter(project => (project.groupId ?? defaultGroupId) === groupId && (!project.archivedAt || project.id === draft.projectId))
   const hasSelectedProject = groupProjects.some(project => project.id === draft.projectId)
@@ -152,29 +170,44 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
 
         </div>
         <div className="tasks-composer-properties"><div className="tasks-select-field"><span>时间安排</span><TaskDatePicker draft={draft} busy={busy} onChange={onChange} /></div></div>
+        {(['reminder', 'repeat'] as const).map(section => <div className="tasks-composer-properties" key={section}><div className="tasks-select-field">
+          <span>{section === 'reminder' ? '提醒' : '重复'}</span>
+          <details className="tasks-tool-menu tasks-schedule-property">
+            <summary aria-label={section === 'reminder' ? '设置任务提醒' : '设置任务重复'} aria-disabled={busy} onClick={event => { if (busy) event.preventDefault() }}><span>{section === 'reminder' ? (draftReminderTimes(draft).length ? `${draftReminderTimes(draft).length} 个提醒` : '不提醒') : repeatLabel}</span><TaskIcon name="chevron" /></summary>
+            <div className="tasks-item-menu-popover tasks-schedule-property-popover" role="group" aria-label={section === 'reminder' ? '任务提醒设置' : '任务重复设置'}>
+              <div className="tasks-date-page"><TaskScheduleSettings section={section} draft={draft} busy={busy} onChange={onChange} /></div>
+              <footer className="tasks-calendar-footer"><button type="button">完成</button></footer>
+            </div>
+          </details>
+        </div></div>)}
         <label className="tasks-composer-description">
           <span><TaskIcon name="edit" />任务描述</span>
           <textarea value={draft.note} disabled={busy} onChange={e => onChange({ ...draft, note: e.target.value })} aria-label="任务备注" placeholder="补充背景、目标或需要注意的事情…" rows={4} />
         </label>
-        <fieldset className="tasks-checklist-editor" disabled={busy}>
-          <legend>子项 {draft.checklist?.filter(item => item.done).length ?? 0}/{draft.checklist?.length ?? 0}</legend>
-          <small>子项可设截止时间与提醒，到点以「任务 · 子项」提醒；勾选子项不改变父任务状态。重复任务下一期会重置子项勾选与提醒。子项不进入任务视图。</small>
-          {(draft.checklist ?? []).map(item => <div key={item.id} className="tasks-checklist-row">
-            <input type="checkbox" aria-label={`完成子项 ${item.title}`} checked={item.done} onChange={event => patchItem(item.id, { done: event.target.checked })} />
-            <input className="tasks-checklist-title" aria-label="子项名称" maxLength={200} value={item.title} autoFocus={insertedId === item.id}
+        <section className="tasks-checklist-editor" aria-label="子项" aria-disabled={busy}>
+          <div className="tasks-checklist-heading"><button type="button" className="tasks-checklist-collapse" aria-expanded={itemsExpanded} aria-controls="tasks-editor-checklist" onClick={() => setItemsExpanded(value => !value)}><span className="tasks-disclosure-icon" data-expanded={itemsExpanded}><TaskIcon name="disclosure" /></span>子项 {draft.checklist?.filter(item => item.done).length ?? 0}/{draft.checklist?.length ?? 0}</button><button type="button" aria-label="新增子项" title="新增子项" disabled={busy || (draft.checklist?.length ?? 0) >= 100} onClick={() => { setItemsExpanded(true); setItemDialogOpen(true) }}><TaskIcon name="plus" /></button></div>
+          <div id="tasks-editor-checklist" className="tasks-checklist-items" hidden={!itemsExpanded}>
+          {(draft.checklist ?? []).map((item, index, items) => <div key={item.id} className="tasks-checklist-row" data-checklist-id={item.id} data-card-insert={dropItem?.id === item.id ? (dropItem.after ? 'after' : 'before') : undefined}
+            onDragOver={event => { if (!draggedItem || busy) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setDropItem({ id: item.id, after: event.clientY > rect.top + rect.height / 2 }) }}
+            onDrop={event => { event.preventDefault(); if (draggedItem) { const rect = event.currentTarget.getBoundingClientRect(); moveItem(draggedItem, item.id, event.clientY > rect.top + rect.height / 2) } setDraggedItem(null); setDropItem(null) }}>
+            <button type="button" className="tasks-checklist-drag" disabled={busy} draggable={!busy} aria-label={`拖动排序子项 ${item.title}`} title="拖动排序，或按 Alt + 上下方向键移动"
+              onDragStart={event => { event.dataTransfer.setData('application/x-chouyu-checklist', item.id); event.dataTransfer.effectAllowed = 'move'; setDraggedItem(item.id) }}
+              onDragEnd={() => { setDraggedItem(null); setDropItem(null) }}
+              onKeyDown={event => { if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return; event.preventDefault(); const after = event.key === 'ArrowDown'; const target = items[index + (after ? 1 : -1)]; if (target) moveItem(item.id, target.id, after) }}><TaskIcon name="grip" /></button>
+            <input type="checkbox" disabled={busy} aria-label={`完成子项 ${item.title}`} checked={item.done} onChange={event => patchItem(item.id, { done: event.target.checked })} />
+            <input className="tasks-checklist-title" disabled={busy} aria-label="子项名称" maxLength={200} value={item.title}
               onChange={event => patchItem(item.id, { title: event.target.value })}
-              onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); insertAfter(item.id) } }} />
-            <input type="datetime-local" className="tasks-checklist-due" aria-label={`子项截止时间 ${item.title}`} value={toDateTimeLocal(item.dueAt)}
-              onChange={event => patchItem(item.id, itemDueAt(event.target.value) === null ? { dueAt: null, reminders: [] } : { dueAt: itemDueAt(event.target.value)!, reminders: [] })} />
+              onKeyDown={event => { if (event.key === 'Enter') event.preventDefault() }} />
+            <TaskDateTimePicker label={`子项截止时间 ${item.title}`} value={toDateTimeLocal(item.dueAt)} disabled={busy}
+              onChange={value => patchItem(item.id, { dueAt: itemDueAt(value), reminders: [] })} />
             <select className="tasks-checklist-remind" aria-label={`子项提醒 ${item.title}`} disabled={busy || item.dueAt == null} value={itemRemindChoice(item)}
               onChange={event => { const at = remindAtFromChoice(event.target.value as RemindChoiceId, item.dueAt ?? null); patchItem(item.id, at === null ? { reminders: [] } : { reminders: [{ at, firedAt: null }] }) }}>
               {REMIND_CHOICES.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
             </select>
-            <button type="button" className="tasks-checklist-insert" aria-label={`在 ${item.title || '子项'} 下方添加子项`} title="在下方添加子项" onClick={() => insertAfter(item.id)}>+</button>
-            <button type="button" aria-label={`删除子项 ${item.title}`} onClick={() => onChange({ ...draft, checklist: draft.checklist!.filter(value => value.id !== item.id) })}>×</button>
+            <button type="button" className="tasks-checklist-delete" disabled={busy} aria-label={`删除子项 ${item.title}`} onClick={() => onChange({ ...draft, checklist: draft.checklist!.filter(value => value.id !== item.id) })}>×</button>
           </div>)}
-          <div><input aria-label="新子项名称" placeholder="添加一个步骤" maxLength={200} value={newItem} onChange={event => setNewItem(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addItem() } }} /><button type="button" disabled={!newItem.trim() || (draft.checklist?.length ?? 0) >= 100} onClick={addItem}>添加子项</button></div>
-        </fieldset>
+          </div>
+        </section>
         {fields.length > 0 && <div className="tasks-composer-properties" role="group" aria-label="自定义字段">
           {fields.map(field => <div className="tasks-select-field" key={field.id}>
             <span>{field.name}</span>
@@ -186,6 +219,15 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
           <button type="submit" disabled={busy || !draft.title.trim() || !hasSelectedProject}>{busy ? '保存中…' : draft.id ? '保存' : '创建'}</button>
         </div>
           </form>
+          {itemDialogOpen && <dialog ref={itemDialogRef} className="tasks-dialog tasks-subitem-dialog" aria-labelledby="tasks-subitem-title" onCancel={event => { event.preventDefault(); closeItemDialog() }} onKeyDown={event => event.stopPropagation()}>
+            <header className="tasks-dialog-header"><h2 id="tasks-subitem-title">新增子项</h2></header>
+            <form className="tasks-form" onSubmit={addItem}>
+              <label>子项名称<input aria-label="新子项名称" autoFocus required maxLength={200} value={newItem} onChange={event => setNewItem(event.target.value)} /></label>
+              <div className="tasks-select-field"><span>截止时间</span><TaskDateTimePicker label="新子项截止时间" value={newItemDue} onChange={value => { setNewItemDue(value); setNewItemRemind('none') }} /></div>
+              <label>提醒<select aria-label="新子项提醒" disabled={!newItemDue} value={newItemRemind} onChange={event => setNewItemRemind(event.target.value as RemindChoiceId)}>{REMIND_CHOICES.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}</select></label>
+              <div className="tasks-form-actions"><button type="button" onClick={closeItemDialog}>取消</button><button type="submit" disabled={busy || !newItem.trim()}>保存</button></div>
+            </form>
+          </dialog>}
         </div>
       </div>
 }

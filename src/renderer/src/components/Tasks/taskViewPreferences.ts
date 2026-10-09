@@ -7,6 +7,7 @@ export interface TaskDisplayGroup {
 }
 
 export interface TaskViewPreferences {
+  expandChecklist: boolean
   mode: 'list' | 'board'
   listGrouped: boolean
   groupMode: 'priority' | 'due' | 'project' | 'field' | 'custom' | 'status' | 'week' | 'overdue' | 'completed'
@@ -18,7 +19,7 @@ export interface TaskViewPreferences {
   customGroups: TaskDisplayGroup[]
 }
 export const defaultTaskPreferences: TaskViewPreferences = {
-  mode: 'list', listGrouped: false, groupMode: 'priority', groupFieldId: null, statusFilter: 'open',
+  expandChecklist: false, mode: 'list', listGrouped: false, groupMode: 'priority', groupFieldId: null, statusFilter: 'open',
   sortMode: 'smart', hiddenFields: [], taskOrder: [], customGroups: []
 }
 export const TASK_PREFERENCES_KEY = 'chouyu:task-view-preferences:v1'
@@ -63,6 +64,7 @@ export function parseTaskPreferences(raw: string | null): Record<string, TaskVie
       if (!value || typeof value !== 'object' || Array.isArray(value)) return []
       const item = value as Record<string, unknown>
       return [[scope, {
+        expandChecklist: item.expandChecklist === true,
         mode: item.mode === 'board' ? 'board' : 'list', listGrouped: item.listGrouped === true,
         groupMode: typeof item.groupMode === 'string' && ['project', 'field', 'due', 'custom', 'status', 'week', 'overdue', 'completed'].includes(item.groupMode) ? item.groupMode as TaskViewPreferences['groupMode'] : 'priority',
         statusFilter: item.statusFilter === 'done' || item.statusFilter === 'all' ? item.statusFilter : 'open',

@@ -1,0 +1,51 @@
+.app-datetime-trigger { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%; padding: 7px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.app-datetime-trigger svg { flex: none; }
+.app-datetime-trigger-label { flex: none; color: var(--text-muted); }
+.app-datetime-trigger:hover { background: var(--hover-bg); }
+.app-datetime-trigger:disabled { opacity: .5; cursor: default; }
+.app-datetime-dialog { margin: auto; padding: 0; width: min(336px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 16px 48px #0003; font: inherit; }
+.app-datetime-dialog::backdrop { background: #0004; }
+.app-datetime-dialog * { box-sizing: border-box; }
+.app-datetime-dialog form { margin: 0; }
+.app-datetime-dialog header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; gap: 12px; }
+.app-datetime-dialog h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.app-datetime-dialog button { font: inherit; font-size: 13px; color: var(--text-primary); border: 0; background: transparent; border-radius: 5px; cursor: pointer; }
+.app-datetime-dialog header > button { width: 28px; height: 28px; color: var(--text-muted); font-size: 20px; }
+.app-datetime-dialog button:hover { background: var(--hover-bg); }
+.app-datetime-dialog button:focus-visible { outline: 1px solid var(--text-muted); outline-offset: -2px; }
+.app-datetime-dialog button:disabled { opacity: .35; cursor: default; }
+.app-datetime-body { padding: 4px 16px 16px; }
+.app-datetime-stage { height: 280px; }
+.app-datetime-dialog .rdp-root { --rdp-accent-color: var(--accent); --rdp-accent-background-color: var(--bg-secondary); --rdp-day-height: 32px; --rdp-day-width: 40px; --rdp-day_button-height: 28px; --rdp-day_button-width: 36px; --rdp-nav-height: 36px; --rdp-nav_button-height: 28px; --rdp-nav_button-width: 28px; --rdp-selected-border: 0; --rdp-today-color: var(--accent); --rdp-day_button-border-radius: 5px; font-size: 13px; }
+.app-datetime-dialog .rdp-months, .app-datetime-dialog .rdp-month, .app-datetime-dialog .rdp-month_grid { width: 100%; max-width: none; }
+.app-datetime-dialog .rdp-month_grid { table-layout: fixed; }
+.app-datetime-dialog .rdp-day_button { margin: auto; max-width: 100%; }
+.app-datetime-dialog .rdp-caption_label { font-size: 13px; font-weight: 500; }
+.app-datetime-dialog .rdp-chevron { fill: var(--text-secondary); width: 16px; height: 16px; }
+.app-datetime-dialog .rdp-weekday { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.app-datetime-dialog .rdp-selected .rdp-day_button { background: var(--accent); color: white; }
+/* Keep the selected date and time in one compact row below the calendar. */
+.app-datetime-inputs { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.app-datetime-inputs label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; color: var(--text-muted); font-size: 12px; }
+.app-datetime-inputs label > span { flex: none; }
+.app-datetime-inputs input, .app-datetime-inputs input:focus { width: 100%; min-width: 0; padding: 6px 0; font: inherit; font-size: 12px; color: var(--text-primary); background: transparent; border: 0; outline: none; box-shadow: none; font-variant-numeric: tabular-nums; }
+.app-datetime-dialog .app-time-toggle { display: flex; align-items: center; gap: 8px; padding: 6px; font-size: 12px; }
+.app-time-toggle > span { color: var(--text-muted); }
+.app-time-toggle strong { font-weight: 500; font-variant-numeric: tabular-nums; }
+.app-datetime-dialog footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.app-datetime-dialog footer button { padding: 7px 12px; }
+.app-datetime-dialog footer .app-datetime-clear { margin-right: auto; color: var(--text-muted); }
+.app-datetime-dialog footer .app-datetime-confirm { background: var(--accent); color: white; }
+.app-datetime-error { margin: 8px 0 0; color: var(--error); font-size: 12px; }
+.app-time-picker { height: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); }
+.app-time-heading { display: flex; align-items: center; justify-content: space-between; height: 28px; margin-bottom: 6px; color: var(--text-muted); font-size: 12px; }
+.app-time-heading button { padding: 4px 8px; }
+.app-time-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.app-time-column-label { padding: 4px; text-align: center; color: var(--text-muted); font-size: 12px; }
+.app-time-column { position: relative; height: 160px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; border-radius: 6px; background: var(--bg-secondary); }
+.app-time-column > button { display: block; width: 100%; height: 32px; padding: 4px; font-variant-numeric: tabular-nums; }
+.app-time-column > button[aria-selected=true] { background: var(--hover-bg); color: var(--accent); font-weight: 600; box-shadow: inset 2px 0 var(--accent); }
+.app-time-presets { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.app-time-presets > span { margin-right: 2px; color: var(--text-muted); font-size: 12px; }
+.app-time-presets > button { flex: 1; height: 30px; font-variant-numeric: tabular-nums; }
+.app-time-presets > button[aria-pressed=true] { color: var(--accent); background: var(--hover-bg); font-weight: 600; }

@@ -1,3 +1,4 @@
+import { ChecklistDisplayContext } from './TaskCardChecklist'
 import TaskFieldEditor, { type EditableTaskField } from './TaskFieldEditor'
 import { draftDueAt, draftReminderTimes, draftScheduleFromTask } from './taskDraftScheduling'
 import { repeatRuleFor, validateReminderTimes } from '../../../../shared/taskScheduling'
@@ -845,7 +846,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
         </li>
   }
 
-  return <div className="tasks-view" ref={menusRef}>
+  return <ChecklistDisplayContext.Provider value={{ scope: selection, expanded: preferences.value.expandChecklist }}><div className="tasks-view" ref={menusRef}>
     <aside id="tasks-sidebar" className="tasks-sidebar" aria-label="任务视图筛选" hidden={sidebarCollapsed} ref={sidebarRef}>
       <header className="tasks-sidebar-title"><span>任务</span><button ref={sidebarCollapsed ? undefined : sidebarToggleRef} type="button" className="tasks-sidebar-toggle" aria-label="收起任务侧栏" title="收起任务侧栏" aria-expanded="true" aria-controls="tasks-sidebar" onClick={toggleSidebar}><TaskIcon name="sidebar" /></button></header>
       <div ref={viewNavRef} className="tasks-sidebar-view-nav" role="region" aria-label="视图选择" style={sidebarSplit.height === null ? undefined : { maxHeight: sidebarSplit.height }}>
@@ -1008,6 +1009,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
             <summary aria-label="字段配置" title="字段配置"><TaskIcon name="fields" /><span>字段配置</span></summary>
             <div className="tasks-item-menu-popover tasks-tool-popover tasks-field-popover">
               <p className="tasks-tool-title">字段配置</p>
+              <label className="tasks-checklist-default"><input type="checkbox" checked={preferences.value.expandChecklist} onChange={event => preferences.set('expandChecklist', event.target.checked)} />子任务默认展开</label>
               <button type="button" className="tasks-fields-toggle" onClick={event => { setFieldsOpen(true); event.currentTarget.closest('details')?.removeAttribute('open') }}><TaskIcon name="plus" />管理自定义字段</button>
               <div className="tasks-field-visibility-list" role="group" aria-label="字段显示与隐藏">
                 <div className="tasks-field-visibility-row"><span>任务名称</span><button type="button" disabled aria-label="任务名称始终显示" title="任务名称始终显示"><TaskIcon name="eye" /></button></div>
@@ -1157,5 +1159,5 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
       </ul>}
       {effectiveStatus !== 'open' && doneTasks.length < matchedDone && <button className="tasks-load-more" type="button" disabled={loading} onClick={() => setDoneLimit(limit => limit + 50)}>加载更多（已加载 {doneTasks.length} / {matchedDone}）</button>}
     </section>
-  </div>
+  </div></ChecklistDisplayContext.Provider>
 }

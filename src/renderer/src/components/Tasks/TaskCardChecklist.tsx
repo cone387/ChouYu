@@ -1,8 +1,12 @@
-import { useId, useRef, useState } from 'react'
+import { createContext, useContext, useId, useRef, useState } from 'react'
 import type { TaskRecord } from '../../../../shared/tasks'
 
+export const ChecklistDisplayContext = createContext({ scope: '', expanded: false })
+
 export default function TaskCardChecklist({ task }: { task: TaskRecord }) {
-  const [expanded, setExpanded] = useState(false)
+  const defaults = useContext(ChecklistDisplayContext)
+  const [override, setOverride] = useState<{ scope: string; defaultValue: boolean; expanded: boolean } | null>(null)
+  const expanded = override?.scope === defaults.scope && override.defaultValue === defaults.expanded ? override.expanded : defaults.expanded
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState('')
   const lock = useRef(false)
@@ -19,7 +23,7 @@ export default function TaskCardChecklist({ task }: { task: TaskRecord }) {
   return <span className="task-card-checklist" onClick={event => event.stopPropagation()}
     onKeyDown={event => event.stopPropagation()} onDragStart={event => { event.preventDefault(); event.stopPropagation() }}>
     <button type="button" className="tasks-card-field-button task-card-checklist-toggle" aria-expanded={expanded} aria-controls={regionId}
-      aria-label={`${expanded ? '收起' : '展开'} ${task.title} 的子项`} onClick={() => setExpanded(value => !value)}>
+      aria-label={`${expanded ? '收起' : '展开'} ${task.title} 的子项`} onClick={() => setOverride({ scope: defaults.scope, defaultValue: defaults.expanded, expanded: !expanded })}>
       <span aria-hidden="true">{expanded ? '▾' : '▸'}</span> 子项 {items.filter(item => item.done).length}/{items.length}
     </button>
     {expanded && <span id={regionId} className="task-card-checklist-items" role="group" aria-label={`${task.title} 的子项`} aria-busy={pending !== null}>

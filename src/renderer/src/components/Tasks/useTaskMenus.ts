@@ -84,6 +84,8 @@ export default function useTaskMenus(active: boolean) {
     }
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      // A shared modal in the top layer owns Escape, even if a task menu is open behind it.
+      if (document.querySelector('.app-datetime-dialog:modal')) return
       const menus = openMenus()
       if (!menus.length) return
       const focusedMenu = [...menus].reverse().find(menu => menu.contains(document.activeElement)) ?? menus[menus.length - 1]
