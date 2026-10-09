@@ -87,6 +87,13 @@ export class AgentTopics {
     const after = { ...before, ...progress, revision: before.revision + 1, updatedAt: Date.now() }
     this.record(before, after, 'research', progress.reason, runId)
   }
+  returnToGoal(characterId: string, id: string, revision: number, runId: string) {
+    const before = this.check(characterId, id, revision)
+    if (!canResearch(before.status)) return before
+    const after = { ...before, nextStep: `继续用户原任务：${before.goal}`.slice(0, 1000), revision: before.revision + 1, updatedAt: Date.now(), reason: '撤回原任务之外的追问及派生下一步；没有用户答复或新增成果。' }
+    this.record(before, after, 'boundary-recovery', after.reason, runId)
+    return after
+  }
   presentation(characterId: string, id: string, revision: number, runId: string) {
     const before = this.check(characterId, id, revision)
     this.record(before, { ...before, revision: before.revision + 1, updatedAt: Date.now() }, 'presentation', '已保存新的阅读样式，正文与工作进度保持不变。', runId)

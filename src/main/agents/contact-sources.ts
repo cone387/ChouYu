@@ -27,7 +27,8 @@ export class ContactSources {
   discover(reader: string, topicId: string, query: string) {
     if (!this.store.overview(reader).settings.readContactDeliveries) throw new Error('未授权读取联系人的共享成果。')
     const consumed = this.consumed(reader, topicId)
-    const terms = query.toLocaleLowerCase().split(/\s+/).filter(Boolean)
+    const normalize = (value: string) => value.normalize('NFKC').toLowerCase().replace(/[\s\p{P}]/gu, '')
+    const terms = query.split(/\s+/).map(normalize).filter(Boolean)
     const results: { ref: ContactDeliveryRef; contact: string; task: string; title: string; processed: boolean }[] = []
     for (const profile of this.store.profiles()) {
       if (profile.character_id === reader || !JSON.parse(profile.settings).shareDeliveries) continue
@@ -36,7 +37,7 @@ export class ContactSources {
         if (!delivery) continue
         for (const section of delivery.sections) {
           const contact = this.names.get(profile.character_id) || profile.character_id
-          if (!terms.every(term => `${contact} ${topic.title} ${section.title}`.toLocaleLowerCase().includes(term))) continue
+          if (!terms.every(term => normalize(`${contact} ${profile.character_id} ${topic.title} ${section.title}`).includes(term))) continue
           const ref = { characterId: profile.character_id, topicId: topic.id, sectionId: section.id, version: delivery.version }
           const evidence = this.evidence(ref)
           results.push({ ref, contact, task: topic.title, title: section.title, processed: consumed.has(`${evidence.url.split('?')[0]}:${evidence.hash}`) })
@@ -44,7 +45,8 @@ export class ContactSources {
       }
     }
     results.sort((a, b) => Number(a.processed) - Number(b.processed))
-    return { total: results.length, items: results.slice(0, 30), truncated: results.length > 30 }
+    const unprocessedTotal = results.filter(item => !item.processed).length
+    return { total: results.length, unprocessedTotal, hasMoreUnprocessed: unprocessedTotal > 30, items: results.slice(0, 30), truncated: results.length > 30 }
   }
   read(reader: string, topicId: string, refs: ContactDeliveryRef[]) {
     const consumed = this.consumed(reader, topicId)

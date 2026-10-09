@@ -22,7 +22,7 @@ export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { contactQuery?: string; plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
 export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress'; update?: import('./agent-progress').AgentProgressUpdate }
-export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' | 'presentation' }
+export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' | 'presentation' | 'failure' }
 export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
 export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undefined {
   if (!value || typeof value !== 'object') return undefined
@@ -100,7 +100,7 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
   const value = raw as AgentTopicProgress
   if (!['researching', 'needs_evidence', 'completed', 'abandoned'].includes(value.status)) throw new Error('事项状态无效，不能将推测标为已验证。')
   for (const [key, max] of [['judgement', 3000], ['openQuestions', 2000], ['nextStep', 1000], ['reason', 2000]] as const) {
-    if (typeof value[key] !== 'string' || value[key].length > max) throw new Error(`事项进展 ${key} 无效。`)
+    if (typeof value[key] !== 'string' || value[key].length > max) throw new Error(`事项进展 ${key} 无效（${value[key] == null ? '缺失或为空值' : typeof value[key] !== 'string' ? '类型应为字符串' : `长度 ${value[key].length} 超过 ${max}`}）。`)
   }
   if (!value.judgement.trim() || !value.reason.trim()) throw new Error('事项必须保留当前判断与变化原因。')
   if (['researching', 'needs_evidence'].includes(value.status) && !value.nextStep.trim()) throw new Error('继续研究的事项必须有下一步。')

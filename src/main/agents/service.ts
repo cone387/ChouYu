@@ -11,7 +11,7 @@ import type { AgentSettings, AgentTopicStatus } from '../../shared/agents'
 import type { AgentSearcher } from './research'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from './model-output'
-import { workSettingsRequireRestart } from '../../shared/work-settings'
+import { workSettingsRequireRestart, withinWorkHours } from '../../shared/work-settings'
 
 export interface AgentIdentity { id: string; name?: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
@@ -194,13 +194,20 @@ export class AgentService {
       const settings = JSON.parse(profile.settings) as AgentSettings
       if (settings.searchEnabled && !this.identities.get(profile.character_id)?.searchKey) continue
       if (!this.identities.get(profile.character_id)?.config) continue
-      const topicId = this.store.nextScheduledTopic(profile.character_id)
+      const topicId = this.store.nextScheduledTopic(profile.character_id, Date.now(), topicId => {
+        if (!settings.readContactDeliveries) return false
+        const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === topicId)
+        const research = last && this.store.research(last.id)
+        if (last?.status !== 'completed' || research?.contactQuery === undefined) return false
+        const catalog = this.runtime.contactSources.discover(profile.character_id, topicId, research.contactQuery)
+        return catalog.items.some(item => !item.processed)
+      })
       if (!topicId) continue
       const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === topicId)
       const research = last && this.store.research(last.id)
       if (last?.status === 'completed' && research?.contactQuery !== undefined && settings.readContactDeliveries) {
         const catalog = this.runtime.contactSources.discover(profile.character_id, topicId, research.contactQuery)
-        if (!catalog.items.some(item => !item.processed)) {
+        if (catalog.total > 0 && catalog.unprocessedTotal === 0) {
           this.store.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(Date.now() + settings.intervalMinutes * 60000, profile.character_id)
           this.store.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(Date.now() + settings.intervalMinutes * 60000, topicId)
           continue
@@ -212,6 +219,7 @@ export class AgentService {
       if (this.active.has(run.character_id) || this.deleting.has(run.character_id)) continue
       if (!this.identities.get(run.character_id)?.config || JSON.parse(run.input).revisionScope !== 'presentation' && JSON.parse(run.input).settings.searchEnabled && !this.identities.get(run.character_id)?.searchKey) continue
       const settings = JSON.parse(this.store.profile(run.character_id)!.settings) as AgentSettings
+      if (run.status === 'waiting' && (!settings.enabled || settings.paceWriting || !withinWorkHours(settings))) continue
       if (this.store.callCount(run.character_id) + this.store.callsNeededToResume(run.id) > settings.dailyCalls) continue
       if (!this.store.tokens.canResume(run.id, run.character_id, run.topic_id)) continue
       this.startRun(run)

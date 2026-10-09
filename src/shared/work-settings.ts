@@ -9,7 +9,7 @@ export function workSettingsRequireRestart(previous: AgentSettings, next: AgentS
 }
 
 export function workCadence(settings: AgentSettings): string {
-  return settings.paceWriting ? `每 ${settings.intervalMinutes} 分钟推进一轮` : `创作连续推进；资料检查至少间隔 ${settings.intervalMinutes} 分钟`
+  return settings.paceWriting ? `每 ${settings.intervalMinutes} 分钟推进一轮` : `有新工作就连续推进；无新资料时等待更新`
 }
 
 export function contactWorkStatus(data: AgentOverview, keyConfigured: boolean, now = Date.now()): string {

@@ -48,7 +48,8 @@ export function validateDeliveryUpdate(raw: unknown): DeliveryUpdate {
   const text = (s: unknown, max: number): s is string => typeof s === 'string' && Boolean(s.trim()) && s.length <= max
   const id = (s: unknown): s is string => typeof s === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(s)
   if (!text(v.completionCriteria, 1000) || !text(v.summary, 2000)) throw new Error('成果必须有完成条件与累积摘要。')
-  if (!Array.isArray(v.stages) || !v.stages.length || v.stages.length > 30 || v.stages.some(s => !s || !id(s.id) || !text(s.title, 160) || !['pending', 'active', 'done'].includes(s.status)) || new Set(v.stages.map(s => s.id)).size !== v.stages.length) throw new Error('阶段计划无效。')
+  if (Array.isArray(v.stages) && v.stages.length > 300) throw new Error(`阶段数量 ${v.stages.length} 超过单任务 300 个上限，请分卷继续。`)
+  if (!Array.isArray(v.stages) || !v.stages.length || v.stages.length > 300 || v.stages.some(s => !s || !id(s.id) || !text(s.title, 160) || !['pending', 'active', 'done'].includes(s.status)) || new Set(v.stages.map(s => s.id)).size !== v.stages.length) throw new Error('阶段计划无效。')
   if (v.section !== undefined && (!v.section || !id(v.section.id) || !text(v.section.title, 160) || !text(v.section.body, 10000))) throw new Error('成果分节无效。')
   if (!v.section && v.presentation === undefined && v.inputs === undefined) throw new Error('缺少成果正文或展示更新。')
   return { completionCriteria: v.completionCriteria.trim(), summary: v.summary.trim(), stages: v.stages.map(s => ({ id: s.id, title: s.title.trim(), status: s.status })), ...(v.section ? { section: { id: v.section.id, title: v.section.title.trim(), body: v.section.body.trim() } } : {}), ...(v.inputs === undefined ? {} : { inputs: validateTaskInputs(v.inputs) }), ...(v.presentation === undefined ? {} : { presentation: v.presentation === null ? null : validatePresentation(v.presentation) }) }

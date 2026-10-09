@@ -260,3 +260,21 @@ describe('search provider boundary', () => {
     expect(researchUrl('https://example.com:444')).toBeNull()
   })
 })
+
+it('keeps the allocated budget through malformed plan repair and draft output', async () => {
+  const { store, runtime } = fixture()
+  const allocation = store.createRun('alice', '')
+  store.allocateTaskBudget(allocation, { modelCalls: 20, reason: '已分配额度' })
+  store.cancel('alice', '开始下一轮')
+  const id = store.createRun('alice', '')
+  const badBudget = { modelCalls: 0, reason: '' }
+  const model = vi.fn().mockResolvedValueOnce('broken JSON')
+    .mockResolvedValueOnce(JSON.stringify({ ...plan, action: 'write', query: '', resourceBudget: badBudget }))
+    .mockResolvedValueOnce(JSON.stringify({ ...draft, body: '实际交付', resourceBudget: badBudget }))
+  await runtime.execute(id, '', model, new AbortController().signal)
+  expect(store.getRun(id)?.status).toBe('completed')
+  expect(store.detail('alice', id).report?.body).toBe('实际交付')
+  expect(store.topics.get('alice', store.getRun(id)!.topic_id!).resourceBudget).toEqual({ modelCalls: 20, reason: '已分配额度' })
+  expect(store.callCount('alice')).toBe(3)
+  expect(() => parseResearchPlan(JSON.stringify({ ...plan, resourceBudget: badBudget }), [], 180, 'public')).toThrow('调用预算')
+})

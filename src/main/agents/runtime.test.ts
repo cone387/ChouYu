@@ -211,3 +211,26 @@ describe('agent source and output boundaries', () => {
     expect(() => parseDraft('{"title":1}')).toThrow()
   })
 })
+
+it('accepts unambiguous JSON wrappers and lossless optional question representations', () => {
+  const base = { title: '报告', body: '正文', nextStep: '继续', memories: [], question: null,
+    progress: { judgement: '已交付', reason: '实际正文', nextStep: '继续', status: 'researching', openQuestions: ['验证需求', '核对成本'] } }
+  const value = parseDraft(`以下是成果：\n${JSON.stringify(base)}\n结束。`)
+  expect(value.question).toBe('')
+  expect(value.progress?.openQuestions).toBe('验证需求\n核对成本')
+  expect(parseDraft(JSON.stringify({ ...base, question: ['选择哪个方向？'], progress: { ...base.progress, openQuestions: null } })).question).toBe('选择哪个方向？')
+  expect(() => parseDraft(JSON.stringify({ ...base, progress: { ...base.progress, openQuestions: { bad: true } } }))).toThrow('类型应为字符串')
+  expect(() => parseDraft(JSON.stringify(base) + JSON.stringify(base))).toThrow('唯一')
+  expect(() => parseDraft(JSON.stringify({ ...base, title: 'x'.repeat(161) }))).toThrow('长度 161 超过 160')
+  expect(() => parseDraft(JSON.stringify({ ...base, progress: { ...base.progress, reason: '' } }))).toThrow('变化原因')
+})
+
+it('preserves stage 31 through 300 for a long-running deliverable while retaining a bounded capacity', () => {
+  const base = { title: '新章节', body: '变化说明', nextStep: '继续', question: '', memories: [],
+    delivery: { completionCriteria: '写完整本书', summary: '累计进度', section: { id: 'chapter31', title: '新章节', body: '实际正文' },
+      stages: Array.from({ length: 31 }, (_, i) => ({ id: `stage${i}`, title: `阶段${i}`, status: i < 30 ? 'done' : 'active' })) } }
+  expect(parseDraft(JSON.stringify(base)).delivery?.stages).toHaveLength(31)
+  const full = { ...base, delivery: { ...base.delivery, stages: Array.from({ length: 300 }, (_, i) => ({ id: `s${i}`, title: '阶段', status: 'active' })) } }
+  expect(parseDraft(JSON.stringify(full)).delivery?.stages).toHaveLength(300)
+  expect(() => parseDraft(JSON.stringify({ ...full, delivery: { ...full.delivery, stages: [...full.delivery.stages, { id: 'overflow', title: '阶段', status: 'active' }] } }))).toThrow('300')
+})
