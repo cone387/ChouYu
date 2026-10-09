@@ -50,6 +50,8 @@ describe('contact notice outbox', () => {
     expect(store.notices.pending('bob')).toEqual([])
     const first = store.notices.pending('alice')[0]
     expect(first.runId).toBe(runId)
+    expect(first.update).toMatchObject({ taskTitle: store.overview('alice').topics[0].title, title: '报告', summary: progress.judgement, nextStep: progress.nextStep, outcome: 'updated' })
+    expect(first.content).not.toContain('变化原因：')
     store.close(); stores.splice(stores.indexOf(store), 1)
     const recovered = new AgentStore(path); stores.push(recovered)
     expect(recovered.notices.pending('alice')).toEqual([first])

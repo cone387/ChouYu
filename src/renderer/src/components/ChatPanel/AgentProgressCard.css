@@ -1,0 +1,8 @@
+.agent-progress-card { min-width: 0; overflow-wrap: anywhere; }
+.agent-progress-status { color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.message-assistant .message-bubble .agent-progress-task { margin: 5px 0 12px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.message-assistant .message-bubble .agent-progress-card h3 { margin: 0 0 8px; font-size: 15px; line-height: 1.5; font-weight: 600; }
+.message-assistant .message-bubble .agent-progress-summary { margin: 0; line-height: 1.7; white-space: pre-wrap; }
+.agent-progress-next { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+.agent-progress-next > span { font-size: 12px; color: var(--text-secondary); }
+.message-assistant .message-bubble .agent-progress-next p { margin: 4px 0 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }

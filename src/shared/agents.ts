@@ -1,3 +1,4 @@
+import { sanitizeProgressUpdate } from './agent-progress'
 export interface AgentSettings {
   workHours?: { start: string; end: string }
   dailyTokenLimit?: number
@@ -20,14 +21,15 @@ export interface AgentResearchPlan { evaluation?: boolean; action: 'search' | 'r
 export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { contactQuery?: string; plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
-export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress' }
+export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress'; update?: import('./agent-progress').AgentProgressUpdate }
 export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' | 'presentation' }
 export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
 export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undefined {
   if (!value || typeof value !== 'object') return undefined
   const ref = value as AgentMessageRef
   if (!['progress', 'question'].includes(ref.kind) || ![ref.topicId, ref.runId].every(id => typeof id === 'string' && id.length > 0 && id.length <= 128)) return undefined
-  return { topicId: ref.topicId, runId: ref.runId, kind: ref.kind }
+  const update = ref.kind === 'progress' ? sanitizeProgressUpdate(ref.update) : undefined
+  return { topicId: ref.topicId, runId: ref.runId, kind: ref.kind, ...(update ? { update } : {}) }
 }
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = { goal: '', sources: [], intervalMinutes: 180, dailyCalls: 8, enabled: false }
 export function agentUsesPlanner(settings: AgentSettings): boolean {

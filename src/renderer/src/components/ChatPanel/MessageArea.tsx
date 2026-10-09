@@ -1,3 +1,5 @@
+import AgentProgressCard from './AgentProgressCard'
+import { legacyProgressUpdate } from '../../../../shared/agent-progress'
 import ReminderActions from './ReminderActions'
 import AgentQuestionState from './AgentQuestionState'
 import { useReminderRead, isLatestMessageVisible, type ReplyViewport } from './useReminderRead'
@@ -242,6 +244,7 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
       {visibleMessages.map(({ message: msg, index }) => {
         const assistantKind = canSnooze && msg.role === 'assistant' && !msg.agentNotice && !msg.toolData && !msg.pluginData
           ? normalizeAssistantMessageKind(msg.assistantKind) ?? legacyAssistantMessageKind(msg.content) : undefined
+        const progressUpdate = msg.agentNotice?.kind === 'progress' ? msg.agentNotice.update ?? legacyProgressUpdate(msg.content) : undefined
         const canRetry = !msg.agentNotice && !isStreaming && getConversationForRetry(messages, msg.id) !== null
         const memorySourceCount = msg.memoryRefs?.reduce((total, memory) => total + (memory.compressedCount || 1), 0) || 0
         return (
@@ -272,6 +275,8 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
                 <ToolActivityCard data={msg.toolData} />
               ) : msg.pluginData ? (
                 <PluginMessageCard data={msg.pluginData} />
+              ) : progressUpdate && !searching ? (
+                <AgentProgressCard update={progressUpdate} />
               ) : msg.role === 'assistant' ? (
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
@@ -328,8 +333,8 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
               </div>}
             </div>
             {msg.agentNotice && msg.agentNotice.kind !== 'question' && onAgentNotice && <div className="agent-message-links" role="group" aria-label="工作进展来源">
-              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>查看事项</button>
-              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>查看本轮记录</button>
+              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>查看任务</button>
+              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>{progressUpdate ? '查看本轮成果' : '查看本轮记录'}</button>
             </div>}
               {sessionId && assistantKind && ['rest', 'task', 'snooze', 'task-backlog'].includes(assistantKind) && <ReminderActions sessionId={sessionId} message={msg} pending={snoozes} canPostpone={assistantKind !== 'task-backlog'} />}
             <div className="message-meta">

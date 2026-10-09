@@ -1,3 +1,4 @@
+import { progressText, type AgentProgressUpdate } from '../../shared/agent-progress'
 import type Database from 'better-sqlite3'
 import type { AgentNotice, AgentReport, AgentTopic } from '../../shared/agents'
 
@@ -16,10 +17,13 @@ export class AgentNotices {
     const evidence = (r: AgentReport) => JSON.stringify(r.evidence.map(e => `${e.url}:${e.hash}`).sort())
     const ended = ['completed', 'abandoned'].includes(after.status) && before.status !== after.status
     if (previous && !ended && !(before.judgement !== after.judgement && (evidence(previous) !== evidence(report) || writing && previous.body !== report.body))) return
-    const label = ended ? (after.status === 'abandoned' ? '已放弃' : '已结束') : previous ? '有新的判断' : '有第一份成果了'
+    const update: AgentProgressUpdate = {
+      taskTitle: after.title, title: report.title, summary: after.judgement,
+      nextStep: ended ? '' : after.nextStep,
+      outcome: ended ? after.status === 'abandoned' ? 'abandoned' : 'completed' : writing ? 'delivered' : 'updated'
+    }
     this.enqueue({ id: `${report.runId}:progress`, characterId: after.characterId, topicId: after.id, runId: report.runId,
-      topicRevision: after.revision, kind: 'progress', createdAt: Date.now(),
-      content: `「${after.title}」${label}。\n\n当前判断：${after.judgement}\n\n变化原因：${after.reason}${after.nextStep ? `\n\n下一步：${after.nextStep}` : ''}` })
+      topicRevision: after.revision, kind: 'progress', createdAt: Date.now(), update, content: progressText(update) })
   }
   pending(id: string, now = Date.now()): AgentNotice[] {
     const rows = this.db.prepare("SELECT id,value FROM notices WHERE character_id=? AND state='pending' ORDER BY rowid DESC").all(id) as { id: string; value: string }[]

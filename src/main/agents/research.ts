@@ -4,6 +4,19 @@ import { containsSecret } from '../../shared/memory'
 
 export class InvalidSectionReferenceError extends Error {}
 export class InvalidContactReferenceError extends Error {}
+export class ResearchPlanFormatError extends Error {}
+
+/** Accept surrounding prose/fences only when there is one unambiguous JSON object. */
+export function researchPlanValue(raw: string): any {
+  const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+  if (!text) throw new ResearchPlanFormatError('工作计划返回为空，未获得可执行动作。')
+  try { return JSON.parse(text) } catch { /* permit explanatory text outside one complete object */ }
+  const start = text.indexOf('{'), end = text.lastIndexOf('}')
+  if (!text.startsWith('[') && start >= 0 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)) } catch { /* never guess missing fields or choose between multiple plans */ }
+  }
+  throw new ResearchPlanFormatError(`工作计划不是完整、唯一的 JSON 对象（返回 ${raw.length} 字符），尚未执行计划。`)
+}
 
 export function validateContactSelection(plan: AgentResearchPlan, items: { ref: NonNullable<AgentResearchPlan['contactRefs']>[number]; processed: boolean }[]): void {
   if (plan.action !== 'read_contacts') return
@@ -28,9 +41,8 @@ export function researchUrl(value: unknown): string | null {
   } catch { return null }
 }
 export function parseResearchPlan(raw: string, allowed: string[], minimum: number, permission: 'public' | 'sources' = 'sources', searchEnabled = true, contactAccess = false): AgentResearchPlan {
-  let value: any
-  try { value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) } catch { throw new Error('研究计划格式无效。') }
-  if (!value || !['search', 'read', 'wait', 'write', 'discover_contacts', 'read_contacts'].includes(value.action) || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 1000) throw new Error('研究计划必须说明动作与原因。')
+  const value = researchPlanValue(raw)
+  if (!value || !['search', 'read', 'wait', 'write', 'discover_contacts', 'read_contacts'].includes(value.action) || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 1000) throw new ResearchPlanFormatError('工作计划缺少有效的 action 或 reason 字段，尚未执行计划。')
   if (value.evaluation !== undefined && typeof value.evaluation !== 'boolean') throw new Error('评分计划标记必须为布尔值。')
   const contactAction = ['discover_contacts', 'read_contacts'].includes(value.action)
   if (contactAction && !contactAccess) throw new Error('未授权读取联系人的共享成果。')

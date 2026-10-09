@@ -579,7 +579,7 @@ export function appendAgentNotice(notice: AgentNotice): SessionWorkspace {
     if (!session) { session = createSession([], '工作进展', at, notice.characterId); store.sessions.unshift(session) }
     at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
     session.messages.push({ id: `agent:${notice.id}`, role: 'assistant', content: notice.content.slice(0, 20000), timestamp: at,
-      agentNotice: { topicId: notice.topicId, runId: notice.runId, kind: notice.kind } })
+      agentNotice: sanitizeAgentMessageRef(notice) })
     session.updatedAt = at
     store.state[key] = 'delivered'
   }

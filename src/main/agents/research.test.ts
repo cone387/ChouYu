@@ -36,6 +36,66 @@ function fixture() {
 afterEach(() => { vi.unstubAllGlobals(); for (const close of closers.splice(0).reverse()) close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 describe('autonomous evidence research', () => {
+  it('accepts a single plan surrounded by explanatory text without relaxing permissions', () => {
+    const wrapped = `以下是本轮计划：\n\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`\n请按计划执行。`
+    expect(parseResearchPlan(wrapped, [], 180, 'public', true).action).toBe('search')
+    expect(() => parseResearchPlan(wrapped, [], 180, 'sources', false)).toThrow('不允许自主搜索')
+    expect(() => parseResearchPlan(`${JSON.stringify(plan)}\n${JSON.stringify({ ...plan, action: 'wait' })}`, [], 180)).toThrow('唯一')
+    expect(() => parseResearchPlan('', [], 180)).toThrow('返回为空')
+    expect(() => parseResearchPlan('{"action":', [], 180)).toThrow('JSON')
+  })
+
+  it('repairs malformed planning once before any tools execute and charges the extra call', async () => {
+    const { store, runtime, reader, searcher } = fixture()
+    const id = store.createRun('alice', '')
+    const model = vi.fn().mockResolvedValueOnce('{"action": "wait", broken').mockResolvedValueOnce(JSON.stringify({ ...plan, action: 'wait', query: '' }))
+    await runtime.execute(id, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(store.callCount('alice')).toBe(2)
+    expect(store.getRun(id)?.status).toBe('completed')
+    expect(store.detail('alice', id).events.some(e => e.kind === 'plan-format-repaired')).toBe(true)
+    expect(reader).not.toHaveBeenCalled(); expect(searcher).not.toHaveBeenCalled()
+    expect(store.detail('alice', id).report).toBeNull()
+  })
+
+  it('stops after one failed repair without saving fictional results', async () => {
+    const { store, runtime, reader, searcher } = fixture(), id = store.createRun('alice', '')
+    const model = vi.fn(async () => 'not a plan')
+    await runtime.execute(id, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(store.getRun(id)?.status).toBe('failed')
+    expect(store.getRun(id)?.error).toContain('自动修复后仍未通过')
+    expect(store.detail('alice', id).report).toBeNull()
+    expect(reader).not.toHaveBeenCalled(); expect(searcher).not.toHaveBeenCalled()
+  })
+
+  it('does not spend a repair request when remaining call allowance cannot cover execution', async () => {
+    const { store, runtime } = fixture()
+    store.save('alice', { ...store.overview('alice').settings, dailyCalls: 2 })
+    const id = store.createRun('alice', ''), model = vi.fn(async () => 'invalid JSON')
+    await runtime.execute(id, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(1)
+    expect(store.getRun(id)?.error).toContain('额度不足')
+  })
+
+  it('revalidates permissions after repair instead of executing an unauthorized search', async () => {
+    const { store, runtime, searcher, reader } = fixture()
+    store.save('alice', { ...store.overview('alice').settings, searchEnabled: false, sources: [] })
+    const id = store.createRun('alice', '')
+    const model = vi.fn().mockResolvedValueOnce('invalid JSON').mockResolvedValueOnce(JSON.stringify(plan))
+    await runtime.execute(id, '', model, new AbortController().signal)
+    expect(store.getRun(id)?.error).toContain('不允许自主搜索')
+    expect(searcher).not.toHaveBeenCalled(); expect(reader).not.toHaveBeenCalled()
+  })
+
+  it('honors the durable repair marker when a run resumes', async () => {
+    const { store, runtime } = fixture(), id = store.createRun('alice', '')
+    store.event(id, 'plan-format-repair', '此前已开始修复')
+    const model = vi.fn(async () => 'invalid JSON')
+    await runtime.execute(id, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(1)
+    expect(store.getRun(id)?.error).toContain('自动修复后仍无效')
+  })
   it.each([undefined, null, '', '   '])('treats optional empty sectionId %j as a new section', sectionId => {
     expect(parseResearchPlan(JSON.stringify({ ...plan, action: 'write', urls: [], query: '', sectionId }), [], 180, 'public').sectionId).toBeUndefined()
   })
