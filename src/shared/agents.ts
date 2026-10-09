@@ -22,7 +22,7 @@ export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { contactQuery?: string; plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
 export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress'; update?: import('./agent-progress').AgentProgressUpdate }
-export interface AgentNotice extends AgentMessageRef { id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' | 'presentation' | 'failure' }
+export interface AgentNotice extends AgentMessageRef { communication?: import('./contact-communication').ContactCommunication; id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' | 'presentation' | 'failure' }
 export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
 export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undefined {
   if (!value || typeof value !== 'object') return undefined

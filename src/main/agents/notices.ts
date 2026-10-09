@@ -1,4 +1,6 @@
-import { progressText, type AgentProgressUpdate } from '../../shared/agent-progress'
+import { contactResultMessage } from './contact-message'
+import type { DeliveryUpdate } from '../../shared/agent-delivery'
+import { validateContactMessage } from '../../shared/contact-communication'
 import type Database from 'better-sqlite3'
 import type { AgentNotice, AgentReport, AgentTopic } from '../../shared/agents'
 
@@ -11,19 +13,33 @@ export class AgentNotices {
       CREATE INDEX IF NOT EXISTS notices_character ON notices(character_id,state,sent_at);`)
   }
   enqueue(notice: AgentNotice) {
+    const run = this.db.prepare('SELECT status FROM runs WHERE id=? AND character_id=? AND topic_id=?').get(notice.runId, notice.characterId, notice.topicId) as { status: string } | undefined
+    if (!run) throw new Error('消息与联系人任务不匹配，未发送。')
+    const communication = validateContactMessage(notice.content, notice.communication ?? {
+      version: 1, characterId: notice.characterId,
+      intent: notice.kind === 'question' ? 'question' : run.status === 'failed' || ['failure', 'resources'].includes(notice.purpose ?? '') ? 'blocker' : 'status',
+      source: { kind: 'task', topicId: notice.topicId, runId: notice.runId }
+    }, notice.characterId)
+    if ((notice.kind === 'question') !== (communication.intent === 'question')) throw new Error('消息用途与待回复状态不匹配，未发送。')
+    const source = communication.source
+    if (source.kind !== 'task' || source.topicId !== notice.topicId || source.runId !== notice.runId) throw new Error('任务消息来源不匹配，未发送。')
+    if (source.artifact) {
+      const row = this.db.prepare('SELECT value FROM delivery_versions WHERE topic_id=? AND version=? AND run_id=?').get(notice.topicId, source.artifact.version, notice.runId) as { value: string } | undefined
+      const saved = row && JSON.parse(row.value).sections.find((s: { id: string; runId: string }) => s.id === source.artifact!.sectionId && s.runId === notice.runId)
+      if (!saved || !notice.content.endsWith(`${saved.title}\n\n${saved.body}`)) throw new Error('消息正文与已保存成果不一致，未发送。')
+    }
+    notice = { ...notice, communication }
     this.db.prepare('INSERT OR IGNORE INTO notices(id,character_id,value) VALUES(?,?,?)').run(notice.id, notice.characterId, JSON.stringify(notice))
   }
-  progress(before: AgentTopic, after: AgentTopic, report: AgentReport, previous?: AgentReport, writing = false, deliveryChanged = false) {
+  progress(before: AgentTopic, after: AgentTopic, report: AgentReport, previous?: AgentReport, writing = false, deliveryChanged = false, section?: DeliveryUpdate['section'], version?: number) {
     const evidence = (r: AgentReport) => JSON.stringify(r.evidence.map(e => `${e.url}:${e.hash}`).sort())
     const ended = ['completed', 'abandoned'].includes(after.status) && before.status !== after.status
+    if (section && !deliveryChanged && !ended && previous && evidence(previous) === evidence(report)) return
     if (previous && !ended && !deliveryChanged && !(before.judgement !== after.judgement && (evidence(previous) !== evidence(report) || writing && previous.body !== report.body))) return
-    const update: AgentProgressUpdate = {
-      taskTitle: after.title, title: report.title, summary: after.judgement,
-      nextStep: ended ? '' : after.nextStep,
-      outcome: ended ? after.status === 'abandoned' ? 'abandoned' : 'completed' : writing ? 'delivered' : 'updated'
-    }
     this.enqueue({ id: `${report.runId}:progress`, characterId: after.characterId, topicId: after.id, runId: report.runId,
-      topicRevision: after.revision, kind: 'progress', createdAt: Date.now(), update, content: progressText(update) })
+      ...(section && version ? { communication: { version: 1 as const, characterId: after.characterId, intent: 'delivery' as const,
+        source: { kind: 'task' as const, topicId: after.id, runId: report.runId, artifact: { version, sectionId: section.id } } } } : {}),
+      topicRevision: after.revision, kind: 'progress', createdAt: Date.now(), content: contactResultMessage(after, report, section, ended) })
   }
   pending(id: string, _now = Date.now()): AgentNotice[] {
     const rows = this.db.prepare("SELECT id,value FROM notices WHERE character_id=? AND state='pending' ORDER BY rowid DESC").all(id) as { id: string; value: string }[]

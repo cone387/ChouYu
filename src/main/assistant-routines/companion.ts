@@ -146,8 +146,8 @@ export class CompanionBriefing {
             }
             content += '\n\n' + selected.map(f => {
               const label = f.runStatus === 'waiting' ? `等你回复：${f.question || '请打开任务查看问题'}`
-                : f.runStatus === 'failed' ? `执行失败：${f.error || '请打开任务查看原因'}`
-                  : `${TOPIC_STATUS[f.status as keyof typeof TOPIC_STATUS] ?? f.status}：${f.status === 'paused' ? f.reason || '请打开任务查看暂停原因' : f.judgement || '尚无已保存的进展'}`
+                : f.runStatus === 'failed' ? '这次未能完成，请打开任务查看原因'
+                  : TOPIC_STATUS[f.status as keyof typeof TOPIC_STATUS] ?? '状态暂时无法确认'
               return `- [${escape(f.name)} · ${escape(f.title)}](${contactTaskHref(f.characterId, f.topicId)})：${escape(label.slice(0, 420))}`
             }).join('\n')
             hashes = Object.fromEntries(selected.map(f => [f.key, f.hash]))

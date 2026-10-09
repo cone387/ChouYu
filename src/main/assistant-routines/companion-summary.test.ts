@@ -2,10 +2,12 @@ import { expect, it, vi } from 'vitest'
 import { streamAIChat } from '../ai'
 import { summarizeCompanionWork } from './companion-summary'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
+import { contactCommunicationRules } from '../../shared/contact-communication'
 vi.mock('../ai', () => ({ streamAIChat: vi.fn() }))
 it('excludes stale next-step plans from factual summaries, keeps questions and supplies no tools', async () => {
   const task = { runStatus: 'failed', nextStep: '等待用户选择范围', error: '503', question: '' }
-  vi.mocked(streamAIChat).mockImplementationOnce(async (messages, _system, _config, callback, _signal, tools) => {
+  vi.mocked(streamAIChat).mockImplementationOnce(async (messages, system, _config, callback, _signal, tools) => {
+    expect(system).toContain(contactCommunicationRules)
     const input = JSON.parse(messages[0].content)
     expect(input.tasks[0]).toMatchObject({ runStatus: 'failed', error: '503' })
     expect(input.tasks[0]).not.toHaveProperty('nextStep')

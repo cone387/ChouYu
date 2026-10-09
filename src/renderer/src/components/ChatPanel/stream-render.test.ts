@@ -68,7 +68,7 @@ describe('per-session character resolution', () => {
 
   it('resolves the character from the session being generated, not the active one', () => {
     expect(workspaceSource).toContain('sessionsRef.current.find((session) => session.id === sessionId)?.characterId')
-    expect(workspaceSource).toContain('character.soulMd || config.soulMd')
+    expect(workspaceSource).toContain('resolveCharacterSoul(character, config)')
     expect(workspaceSource).not.toContain('charactersRef.current.find((character) => character.id === activeCharacterIdRef.current)')
   })
 

@@ -16,8 +16,9 @@ describe('evaluation arithmetic', () => {
     expect(result.claimedTotal).toBe(68)
     expect(result.dimensions).toEqual(raw.dimensions)
     expect(JSON.stringify(raw)).toBe(before)
-    expect(evaluationMarkdown([result])).toContain('系统计算总分：71.75/100')
-    expect(evaluationMarkdown([result])).toContain('模型原报 68/100')
+    expect(evaluationMarkdown([result])).toContain('综合评分：71.75/100')
+    expect(evaluationMarkdown([result])).not.toMatch(/模型原报|系统计算/)
+    expect(evaluationMarkdown([result]).indexOf(result.summary)).toBeLessThan(evaluationMarkdown([result]).indexOf('综合评分'))
   })
   it('normalizes mixed scales, supports zero scores and rounds only the total', () => {
     const raw = sampleEvaluation()

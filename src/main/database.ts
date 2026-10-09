@@ -24,8 +24,10 @@ import type { ToolActivityData } from '../shared/tools'
 import type { MemoryFeedbackValue } from '../shared/memory'
 import type { AgentMessageRef, AgentNotice } from '../shared/agents'
 import { sanitizeAgentMessageRef } from '../shared/agents'
+import { sanitizeContactCommunication, validateContactMessage, type ContactCommunication } from '../shared/contact-communication'
 
 export interface Message {
+  communication?: ContactCommunication
   agentNotice?: AgentMessageRef
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -197,6 +199,7 @@ function sanitizeMessages(value: unknown): Message[] {
       taskReminder: message.role === 'assistant' ? normalizeTaskReminderRef(message.taskReminder) : undefined,
       assistantKind: message.role === 'assistant' ? normalizeAssistantMessageKind(message.assistantKind) : undefined,
       agentNotice: message.role === 'assistant' ? sanitizeAgentMessageRef(message.agentNotice) : undefined,
+      communication: message.role === 'assistant' ? sanitizeContactCommunication(message.communication) : undefined,
       toolData: sanitizeToolData(message.toolData),
       memoryRefs: sanitizeMemoryRefs(message.memoryRefs),
       imageUrl: typeof message.imageUrl === 'string' ? message.imageUrl : undefined
@@ -547,45 +550,56 @@ function markSessionReadUpToNow(session: ChatSession): void {
   session.lastReadAt = Math.max(Date.now(), latest)
 }
 
-/** 主动提醒的唯一入口：写入助手会话并即时落盘，托盘角标据此更新。 */
-export function appendAssistantMessage(content: string, timestamp?: number, kind?: AssistantMessageKind, delivery?: { receiptIds: string[]; taskReminder?: TaskReminderRef; snoozeKey?: string; messageId?: string }): SessionWorkspace {
-  if (delivery?.receiptIds.length && delivery.receiptIds.every(id => store.state[`reminder-receipt:${id}`])) {
-    persist() // retry an earlier failed disk write without appending twice
+/** Shared durable delivery. Existing receipt keys remain compatible across upgrades. */
+function appendContactMessage(input: {
+  content: string; communication: ContactCommunication; receiptKeys: string[]; messageId: string; timestamp?: number
+  title: string; metadata?: Pick<Message, 'assistantKind' | 'agentNotice' | 'taskReminder' | 'snoozeKey'>
+}): SessionWorkspace {
+  const owner = input.communication.characterId
+  if (!getCharacter(owner) || owner === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
+  if (input.receiptKeys.length && input.receiptKeys.every(key => store.state[key])) {
+    persist() // A prior in-memory receipt may still need its failed disk write retried.
     return getSessionWorkspace()
   }
-  let at = Number.isFinite(timestamp) ? Number(timestamp) : Date.now()
-  let session = store.sessions
-    .filter((candidate) => isAssistantCharacter(candidate.characterId))
-    .reduce<ChatSession | null>((latest, candidate) => (!latest || candidate.updatedAt > latest.updatedAt ? candidate : latest), null)
-  if (!session) {
-    session = createSession([], 'ChouYu 的消息', at, DEFAULT_CHARACTER_ID)
-    store.sessions.unshift(session)
-  }
-  if (!Number.isFinite(timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
-  session.messages.push({ id: delivery?.messageId ?? randomUUID(), role: 'assistant', content: content.slice(0, 20_000), timestamp: at, assistantKind: normalizeAssistantMessageKind(kind) ?? 'notification', taskReminder: delivery?.taskReminder, snoozeKey: delivery?.snoozeKey })
+  const communication = validateContactMessage(input.content, input.communication, owner)
+  let at = Number.isFinite(input.timestamp) ? Number(input.timestamp) : Date.now()
+  let session = store.sessions.filter(candidate => owner === DEFAULT_CHARACTER_ID
+    ? isAssistantCharacter(candidate.characterId) : candidate.characterId === owner)
+    .reduce<ChatSession | null>((latest, candidate) => !latest || candidate.updatedAt > latest.updatedAt ? candidate : latest, null)
+  if (!session) { session = createSession([], input.title, at, owner); store.sessions.unshift(session) }
+  if (!Number.isFinite(input.timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
+  session.messages.push({ id: input.messageId, role: 'assistant', content: input.content, timestamp: at, communication, ...input.metadata })
   session.updatedAt = at
-  for (const id of delivery?.receiptIds ?? []) store.state[`reminder-receipt:${id}`] = 'delivered'
+  for (const key of input.receiptKeys) store.state[key] = 'delivered'
   persist()
   return getSessionWorkspace()
 }
 
-/** Durable receipt prevents a retried outbox entry from resurrecting a cleared conversation. */
+/** Assistant reminders adapt to the same contact delivery contract. */
+export function appendAssistantMessage(content: string, timestamp?: number, kind?: AssistantMessageKind, delivery?: { receiptIds: string[]; taskReminder?: TaskReminderRef; snoozeKey?: string; messageId?: string }): SessionWorkspace {
+  const messageId = delivery?.messageId ?? randomUUID()
+  const normalizedKind = normalizeAssistantMessageKind(kind) ?? 'notification'
+  return appendContactMessage({ content, timestamp, messageId, title: 'ChouYu 的消息',
+    receiptKeys: (delivery?.receiptIds ?? []).map(id => `reminder-receipt:${id}`),
+    communication: { version: 1, characterId: DEFAULT_CHARACTER_ID,
+      intent: ['greeting', 'return'].includes(normalizedKind) ? 'check-in' : normalizedKind === 'notification' ? 'status' : 'reminder',
+      source: { kind: 'proactive', eventIds: delivery?.receiptIds.length ? delivery.receiptIds : [messageId] } },
+    metadata: { assistantKind: normalizedKind, taskReminder: delivery?.taskReminder, snoozeKey: delivery?.snoozeKey }
+  })
+}
+
+/** Task outbox ownership is checked again at the process boundary. */
 export function appendAgentNotice(notice: AgentNotice): SessionWorkspace {
-  if (!getCharacter(notice.characterId) || notice.characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
-  const key = `agent-notice:${notice.characterId}:${notice.id}`
-  if (!store.state[key]) {
-    let at = Date.now()
-    let session = store.sessions.filter(s => s.characterId === notice.characterId).sort((a, b) => b.updatedAt - a.updatedAt)[0]
-    if (!session) { session = createSession([], '工作进展', at, notice.characterId); store.sessions.unshift(session) }
-    at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
-    session.messages.push({ id: `agent:${notice.id}`, role: 'assistant', content: notice.content.slice(0, 20000), timestamp: at,
-      agentNotice: sanitizeAgentMessageRef(notice) })
-    session.updatedAt = at
-    store.state[key] = 'delivered'
-  }
-  // Retry the disk write even when an earlier attempt only changed memory.
-  persist()
-  return getSessionWorkspace()
+  const ref = sanitizeAgentMessageRef(notice)
+  if (!ref || typeof notice.id !== 'string' || !notice.id.trim()) throw new Error('任务消息来源无效，未发送。')
+  const communication = validateContactMessage(notice.content, notice.communication ?? {
+    version: 1, characterId: notice.characterId,
+    intent: notice.kind === 'question' ? 'question' : ['failure', 'resources'].includes(notice.purpose ?? '') ? 'blocker' : 'status',
+    source: { kind: 'task', topicId: notice.topicId, runId: notice.runId }
+  }, notice.characterId)
+  if (communication.source.kind !== 'task' || communication.source.topicId !== ref.topicId || communication.source.runId !== ref.runId) throw new Error('任务消息来源不匹配，未发送。')
+  return appendContactMessage({ content: notice.content, communication, title: '工作进展', messageId: `agent:${notice.id}`,
+    receiptKeys: [`agent-notice:${notice.characterId}:${notice.id}`], metadata: { agentNotice: ref } })
 }
 
 function markSessionReadThrough(session: ChatSession, messageId: string): void {
@@ -729,11 +743,15 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
   const previousImages = new Map(session.messages.filter((message) => message.imageUrl && isAttachmentReference(message.imageUrl)).map((message) => [message.id, message.imageUrl]))
   const previousSnoozeKeys = new Map(session.messages.filter(m => m.snoozeKey).map(m => [m.id, m.snoozeKey]))
   const previousReminders = new Map(session.messages.filter(m => m.taskReminder).map(m => [m.id, m.taskReminder]))
+  const previousProactive = new Map(session.messages.filter(m => m.agentNotice || m.assistantKind).map(m => [m.id, m]))
   const previousNotices = new Map(session.messages.filter(message => message.agentNotice).map(message => [message.id, message.agentNotice]))
   const previousKinds = new Map(session.messages.filter(message => message.assistantKind).map(message => [message.id, message.assistantKind]))
   const previousReplies = new Map(session.messages.filter(message => message.replyReadAt).map(message => [message.id, message]))
-  let nextMessages: Message[] = sanitizeMessages(messages).map((message) => ({
+  let nextMessages: Message[] = sanitizeMessages(messages).map((message) => previousProactive.get(message.id) ?? ({
     ...message,
+    communication: message.role === 'assistant' && !message.toolData && !message.pluginData && message.content.trim()
+      ? { version: 1, characterId: session.characterId, intent: 'reply', source: { kind: 'conversation', sessionId: session.id } }
+      : undefined,
     // Preserve the receipt when an autosave still carries the pre-receipt renderer snapshot.
     replyReadAt: previousReplies.get(message.id)?.replyCompletedAt === message.replyCompletedAt
       ? previousReplies.get(message.id)?.replyReadAt : undefined,

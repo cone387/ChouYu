@@ -23,6 +23,17 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers())
 describe('companion work checks', () => {
+  it('does not leak internal progress through the deterministic link list or failure fallback', async () => {
+    const f = fixture()
+    Object.assign(f.evidence.contacts[0].topics[0], { status: 'researching', judgement: 'arc2ch04a转done', reason: 'field active', nextStep: 'nextStep=arc2ch05a' })
+    Object.assign(f.evidence.contacts[0].runs[0], { status: 'completed', question: '', error: '' })
+    f.deps.summarize.mockRejectedValue(new Error('offline'))
+    await f.service.send('greeting', 'no-log')
+    const content = f.deps.deliver.mock.calls[0][0].content
+    expect(content).toContain('#contact-task')
+    expect(content).toContain('整理失败')
+    expect(content).not.toMatch(/arc2ch|active|done|nextStep/)
+  })
   it('checks before greeting, includes verified task links, and shares its baseline with returns', async () => {
     const f = fixture()
     await f.service.send('greeting', 'day1')

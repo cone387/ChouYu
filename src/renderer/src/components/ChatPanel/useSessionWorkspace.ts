@@ -5,7 +5,7 @@ import type { ReplyViewport } from './useReminderRead'
 import type { Dispatch, SetStateAction } from 'react'
 import type { ToolApprovalRequest } from '../../../../shared/tools'
 import { formatMemoryContext } from '../../../../shared/memory'
-import { DEFAULT_CHARACTER_ID, type CharacterStats } from '../../../../shared/characters'
+import { DEFAULT_CHARACTER_ID, resolveCharacterSoul, type CharacterStats } from '../../../../shared/characters'
 import {
   Message,
   PetState,
@@ -330,7 +330,7 @@ export function useSessionWorkspace({
     // may no longer be active; resolve the character from the session itself so
     // switching sessions mid-stream cannot leak another persona's credentials.
     const character = charactersRef.current.find((item) => item.id === sessionCharacterId)
-    const soulMd = !character || character.builtIn ? config.soulMd : (character.soulMd || config.soulMd)
+    const soulMd = resolveCharacterSoul(character, config)
     const systemPrompt = buildSystemPrompt(soulMd, [memoryContext, memoryConversationPolicy, continuationPolicy].filter(Boolean).join('\n\n'))
     const history = buildMessages(conversation)
 

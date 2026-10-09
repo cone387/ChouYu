@@ -11,6 +11,7 @@ vi.mock('../ai', () => ({ streamAIChat: state.model }))
 vi.mock('../reminder-events', () => ({ notifyReminderChanges: vi.fn() }))
 vi.mock('../tools/registry', () => ({ getRegisteredTool: () => null, registerTool: vi.fn() }))
 import { initializeAssistantRoutines, closeAssistantRoutines, readContactsForAssistant, summaryTaskLinks } from './index'
+import { contactCommunicationRules } from '../../shared/contact-communication'
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 8, 30, 8))
@@ -24,8 +25,17 @@ beforeEach(() => {
 })
 afterEach(() => { closeAssistantRoutines(); vi.useRealTimers() })
 describe('assistant routine integration', () => {
+  it('does not let generated task links disguise an empty model response as a delivered summary', async () => {
+    state.model.mockResolvedValue(undefined)
+    initializeAssistantRoutines()
+    state.handlers.get('assistant-routines:save')!({}, { title: '晨间总结', instruction: '关注进度', time: '09:00', cadence: 'daily', kind: 'contact-summary', enabled: true })
+    vi.setSystemTime(new Date(2026, 8, 30, 9)); await vi.advanceTimersByTimeAsync(15000)
+    expect(state.sent).not.toHaveBeenCalled()
+    expect(state.handlers.get('assistant-routines:list')!()[0].lastError).toContain('没有生成总结正文')
+  })
   it('reads real contact state, permits bounded delivery inspection, and sends the generated morning summary', async () => {
     state.model.mockImplementation(async (_messages, _prompt, _config, chunk, _signal, runtime) => {
+      expect(_prompt).toContain(contactCommunicationRules)
       const verified = await runtime.execute({ name: 'read_contact_delivery', arguments: JSON.stringify({ characterId: 'alice', topicId: 'article' }) })
       expect(JSON.parse(verified).version).toBe(2)
       expect(await runtime.execute({ name: 'read_contact_delivery', arguments: JSON.stringify({ characterId: 'chouyu', topicId: 'article' }) })).toContain('不在本次检查范围')

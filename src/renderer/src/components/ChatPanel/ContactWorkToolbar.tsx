@@ -133,6 +133,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
         </button>)}
         <button type="button" className="contact-work-settings-link" data-contact-dialog-tab="settings" aria-pressed={tab === 'settings'} onClick={() => select('settings')}>工作设置</button>
       </div>
+        {onChat && <button type="button" data-agent-chat aria-label={`与${name}聊天`} onClick={() => { close(); onChat() }}>聊天</button>}
         <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
       </header>
       <div className="contact-work-sheet-content" ref={content}>

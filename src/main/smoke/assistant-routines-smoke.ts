@@ -74,7 +74,7 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     // message list the script verifies after exit — is never written to again.
     chatSession = (await run("window.electronAPI.db.createSession('Routine smoke chat', 'chouyu')")).activeSession.id
     window.webContents.send('sessions:changed')
-    await waitForRenderer(window, "document.querySelector('.conversation-item.active .conversation-item-title')?.textContent === 'Routine smoke chat'")
+    await waitForRenderer(window, "document.querySelector('.conversation-item-main[aria-selected=true]')?.getAttribute('title') === 'Routine smoke chat'")
     await run("document.querySelector('[data-contact-work-tab=work]').click()")
     await waitForRenderer(window, "document.querySelectorAll('.contact-work-sheet [data-assistant-task]').length === 4", 20000)
     if (await run("Boolean(document.querySelector('.contact-work-sheet .assistant-routines'))")) throw new Error('Separate assistant task UI is still present')
@@ -233,7 +233,13 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     schedules.find((entry: {id: string}) => entry.id === executed.id).nextAt = Date.now() - 1000
     setState('assistant-routines-v1', JSON.stringify(schedules))
     await waitForRenderer(window, `window.electronAPI.assistantRoutines.history(${JSON.stringify(executed.id)}).then(page => page.items.some(entry => entry.status === 'completed' && entry.messageId && entry.sessionId))`, 35000)
-    window.webContents.send('open-assistant-chat')
+    window.webContents.send('open-chat-panel')
+    await run("document.querySelector('[data-workspace-nav=chat]').click()")
+    // Select the known summary through the sidebar. The global unread command
+    // intentionally chooses the oldest unread contact, not necessarily ChouYu.
+    window.webContents.send('sessions:changed')
+    await waitForRenderer(window, "Boolean(document.querySelector('.conversation-item-main[title=\"Routine smoke delivery\"]'))")
+    await run("document.querySelector('.conversation-item-main[title=\"Routine smoke delivery\"]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-character-bar=chouyu]'))")
     await run("document.querySelector('[data-contact-work-tab=work]').click()")
     await waitForRenderer(window, `Boolean(document.querySelector('.contact-work-sheet[open] [data-assistant-task="routine:${executed.id}"]'))`)
@@ -250,16 +256,22 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     await run(`[...document.querySelectorAll('.message-area a[href^="#contact-task?"]')].find(a => a.getAttribute('href')?.includes('topicId=' + ${JSON.stringify(topicId)}))?.click()`)
     await waitForRenderer(window, `Boolean(document.querySelector('.contact-work-sheet[open] [data-topic-current="${topicId}"]'))`)
     if (!await run("document.querySelector('.contact-work-sheet[open]')?.textContent.includes('UI 对照联系人')")) throw new Error('Morning summary opened the wrong contact')
+    if (await run(`(() => {
+      let failed = false;
+      const capture = () => { failed = true };
+      window.addEventListener('error', capture);
+      window.dispatchEvent(new Event('resize'));
+      window.removeEventListener('error', capture);
+      return failed;
+    })()`)) throw new Error('Contact window resize raised an uncaught error')
     await snapshots(window, 'morning-summary-task-link', '.contact-work-sheet[open]')
-    await run("document.querySelector('.contact-work-sheet[open] [data-contact-dialog-tab=settings]').click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] [data-agent-chat]')?.getClientRects().length > 0")
     await run("document.querySelector('.contact-work-sheet[open] [data-agent-chat]').click()")
     await waitForRenderer(window, `Boolean(document.querySelector('[data-character-bar="${contact.id}"]')) && !document.querySelector('.contact-work-sheet[open]')`)
-    window.webContents.send('open-assistant-chat')
-    // The once-routine delivery left an unread assistant session; open-assistant-chat focuses it.
-    // Switch back through the real sidebar so the summary session and its links are displayed.
-    await waitForRenderer(window, "Boolean(document.querySelector('[data-character-bar=chouyu]'))")
-    await run("[...document.querySelectorAll('.conversation-item-main')].find(b => b.textContent.includes('Routine smoke delivery'))?.click()")
+    window.webContents.send('open-chat-panel')
+    await run("document.querySelector('[data-workspace-nav=chat]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.conversation-item-main[title=\"Routine smoke delivery\"]'))")
+    await run("document.querySelector('.conversation-item-main[title=\"Routine smoke delivery\"]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-character-bar=chouyu]')) && Boolean(document.querySelector('.message-area a[href^=\"#contact-task?\"]'))")
 
     await run(`window.electronAPI.characters.remove(${JSON.stringify(comparisonContact)})`)

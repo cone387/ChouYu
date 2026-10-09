@@ -8,6 +8,7 @@ import { AgentService } from './service'
 import { evidenceFromText } from './sources'
 import { DEFAULT_AGENT_SETTINGS, type AgentTopicProgress } from '../../shared/agents'
 import { deliveryMarkdown, validateDeliveryUpdate, type DeliveryUpdate } from '../../shared/agent-delivery'
+import { contactCommunicationRules } from '../../shared/contact-communication'
 
 const cleanups: (() => void | Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
@@ -38,6 +39,76 @@ async function write(f: ReturnType<typeof fixture>, n: number) {
 }
 
 describe('durable deliverables', () => {
+  it('applies the common policy and verified artifact contract to a new non-preset persona', async () => {
+    const f = fixture(), owner = 'custom-map-author'
+    f.store.save(owner, { ...DEFAULT_AGENT_SETTINGS, goal: '写一份地图导览', dailyCalls: 20 })
+    const run = f.store.createRun(owner, '')
+    await f.runtime.execute(run, '你是绘图师小岚，习惯简洁说明。', async prompt => {
+      if (prompt.startsWith('为联系人')) return JSON.stringify(plan)
+      expect(prompt).toContain(contactCommunicationRules)
+      expect(prompt).toContain('绘图师小岚')
+      return draft(delivery(1, '沿河向北，第二座桥旁就是入口。'))
+    }, new AbortController().signal)
+    expect(f.store.detail(owner, run).run.status).toBe('completed')
+    const notice = f.store.notices.pending(owner)[0]
+    expect(notice.communication).toEqual({ version: 1, characterId: owner, intent: 'delivery', source: {
+      kind: 'task', topicId: f.store.overview(owner).focusTopicId, runId: run, artifact: { version: 1, sectionId: 'chapter1' }
+    } })
+    expect(f.store.notices.pending('alice')).toEqual([])
+    expect(() => f.store.notices.enqueue({ ...notice, id: 'forged-body', content: '没有保存的另一份稿件' })).toThrow('已保存成果不一致')
+    expect(() => f.store.notices.enqueue({ ...notice, id: 'wrong-owner', characterId: 'alice' })).toThrow('不匹配')
+    expect(() => f.store.notices.enqueue({ ...notice, id: 'wrong-version', communication: { ...notice.communication!, source: {
+      kind: 'task', topicId: notice.topicId, runId: run, artifact: { version: 99, sectionId: 'chapter1' }
+    } } })).toThrow('已保存成果不一致')
+    expect(f.store.notices.pending(owner)).toHaveLength(1)
+  })
+  it('delivers saved prose rather than internal status, preserving each unsent revision after restart', async () => {
+    const f = fixture()
+    const firstBody = '陆沉推开律堂的门。\n\n弦音在石阶上回荡。'
+    const internal = { ...progress, judgement: 'arc2ch04a转done，arc2ch04b为active', nextStep: '更新arc2ch05a' }
+    const run = f.store.createRun('alice', '')
+    await f.runtime.execute(run, '', async prompt => prompt.startsWith('为联系人') ? JSON.stringify(plan) : draft(delivery(1, firstBody), '', internal), new AbortController().signal)
+    expect(f.store.detail('alice', run).run.status).toBe('completed')
+    const next = f.store.createRun('alice', '')
+    const revised = delivery(1, '陆沉停在门前。\n\n他先听见了弦音。')
+    f.store.finish(next, { runId: next, title: '修改说明', body: '本轮改写第一章', nextStep: internal.nextStep, evidence: [], createdAt: Date.now() }, [], internal, revised)
+    f.reopen()
+    const notices = f.store.notices.pending('alice')
+    expect(notices.map(n => n.content)).toEqual([`第1章\n\n${firstBody}`, `第1章\n\n${revised.section!.body}`])
+    for (const notice of notices) {
+      expect(notice.update).toBeUndefined()
+      expect(notice.content).not.toMatch(/arc2ch|本轮|active|done|接下来/)
+      const saved = f.store.db.prepare('SELECT value FROM delivery_versions WHERE run_id=?').get(notice.runId) as { value: string }
+      expect(notice.content).toContain(JSON.parse(saved.value).sections[0].body)
+      f.store.notices.ack('alice', notice.id)
+    }
+    f.reopen()
+    expect(f.store.notices.pending('alice')).toEqual([])
+  })
+  it('does not resend identical prose for internal state changes and never announces a rejected delivery', async () => {
+    const f = fixture()
+    await write(f, 1)
+    const notice = f.store.notices.pending('alice')[0]
+    f.store.notices.ack('alice', notice.id)
+    const run = f.store.createRun('alice', '')
+    const report = { runId: run, title: '新判断', body: '只是改了日志', nextStep: progress.nextStep, evidence: [], createdAt: Date.now() }
+    f.store.finish(run, report, [], { ...progress, judgement: '再次确认完成' }, delivery(1))
+    expect(f.store.notices.pending('alice')).toEqual([])
+    const rejected = f.store.createRun('alice', '')
+    expect(() => f.store.finish(rejected, { ...report, runId: rejected }, [], progress, delivery(2, 'x'.repeat(10001)))).toThrow('成果分节无效')
+    expect(f.store.notices.pending('alice')).toEqual([])
+    expect(f.store.detail('alice', rejected).report).toBeFalsy()
+  })
+  it('delivers idea and review bodies intact, including task-relevant code and tables', () => {
+    const f = fixture()
+    for (const body of ['## 想法\n\n帮助开发者理解 active/done 状态。\n\n```ts\nconst active = true\n```', '我的建议是先验证付费意愿。\n\n| 维度 | 分数 |\n| --- | --- |\n| 需求 | 3 |\n\n这是主观判断，尚无访谈证据。']) {
+      const run = f.store.createRun('alice', '')
+      f.store.finish(run, { runId: run, title: '内部摘要', body: '不应发给用户', nextStep: '下轮内部计划', evidence: [], createdAt: Date.now() }, [], progress, delivery(1, body))
+      const notice = f.store.notices.pending('alice')[0]
+      expect(notice.content).toBe(`第1章\n\n${body}`)
+      f.store.notices.ack('alice', notice.id)
+    }
+  })
   it('versions presentation separately, inherits it for new chapters and never rewrites prose for style changes', async () => {
     const f = fixture(), topicId = f.store.overview('alice').focusTopicId!
     const first = { ...delivery(), presentation: { title: '书页', html: '<div id="content"></div>', css: '.body{line-height:2}', script: '' }, inputs: [{ id: 'genre', label: '题材', value: '奇幻', required: true }] }

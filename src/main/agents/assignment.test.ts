@@ -143,7 +143,9 @@ describe('description-only task assignment', () => {
     expect(service.store.overview('alice').runs[0].status).toBe('completed')
     const direction = service.store.notices.pending('alice')[0]
     expect(direction.purpose).toBe('direction')
-    expect(direction.content).toContain(brief.nextStep)
+    expect(direction.content).toContain('我开始处理')
+    expect(direction.content).not.toContain(brief.nextStep)
+    expect(direction.communication).toMatchObject({ intent: 'status', source: { kind: 'task', runId: direction.runId } })
     service.store.notices.ack('alice', direction.id)
     expect(service.store.notices.pending('alice')[0].id).toContain(':progress')
   })

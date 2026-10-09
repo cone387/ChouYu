@@ -224,6 +224,7 @@ declare global {
 export type PetState = 'idle' | 'thinking' | 'talking' | 'sleeping' | 'happy'
 
 export interface Message {
+  communication?: import('../../../shared/contact-communication').ContactCommunication
   agentNotice?: import('../../../shared/agents').AgentMessageRef
   id: string
   role: 'user' | 'assistant' | 'system'

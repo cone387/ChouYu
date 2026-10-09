@@ -23,6 +23,16 @@ function finish(store: AgentStore, hash = 'one', change = progress) {
 afterEach(() => { for (const store of stores.splice(0)) store.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 describe('contact notice outbox', () => {
+  it('explains a blocked delivery naturally while retaining the exact diagnostic in its record', () => {
+    const { store } = fixture(), run = store.createRun('alice', '')
+    const diagnostic = '工作计划不是完整 JSON，字段 nextStep/active/done 校验失败'
+    store.fail(run, diagnostic)
+    const notice = store.notices.pending('alice')[0]
+    expect(notice.content).toContain('没有作为成果交给你')
+    expect(notice.content).not.toMatch(/JSON|nextStep|active|done/)
+    expect(notice.communication?.intent).toBe('blocker')
+    expect(store.detail('alice', run).run.error).toBe(diagnostic)
+  })
   it('keeps every question and reply across pagination and restart, isolated by owner', () => {
     const { store, path, topic } = fixture()
     const run = store.createRun('alice', '')
@@ -50,7 +60,8 @@ describe('contact notice outbox', () => {
     expect(store.notices.pending('bob')).toEqual([])
     const first = store.notices.pending('alice')[0]
     expect(first.runId).toBe(runId)
-    expect(first.update).toMatchObject({ taskTitle: store.overview('alice').topics[0].title, title: '报告', summary: progress.judgement, nextStep: progress.nextStep, outcome: 'updated' })
+    expect(first.update).toBeUndefined()
+    expect(first.content).toBe('报告\n\n真实资料')
     expect(first.content).not.toContain('变化原因：')
     store.close(); stores.splice(stores.indexOf(store), 1)
     const recovered = new AgentStore(path); stores.push(recovered)

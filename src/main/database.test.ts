@@ -707,6 +707,33 @@ describe('assistant messages', () => {
 
 describe('contact progress delivery', () => {
   const notice = { id: 'run:progress', characterId: DEFAULT_CHARACTER_ID, topicId: 'topic', runId: 'run', topicRevision: 2, kind: 'progress' as const, content: '新证据改变了判断', createdAt: 1 }
+  it('gives new custom contacts the same message contract and protects delivered prose from stale autosaves', () => {
+    const character = createCharacter({ name: '新建的地图师', soulMd: '说话简洁，擅长地图。' })
+    const id = createChatSession('地图', character.id).activeSession.id
+    const communication = { version: 1 as const, characterId: character.id, intent: 'delivery' as const,
+      source: { kind: 'task' as const, topicId: 'atlas', runId: 'run', artifact: { version: 1, sectionId: 'map' } } }
+    appendAgentNotice({ ...notice, characterId: character.id, topicId: 'atlas', content: '地图\n\n已保存的完整正文。', communication })
+    const saved = getSession(id)!.messages[0]
+    saveSessionMessages(id, [{ ...saved, role: 'user', content: '旧缓存篡改正文', communication: undefined }, { ...message('reply', '这是我的看法。'), role: 'assistant', communication }])
+    flushDatabase(); initDatabase()
+    expect(getSession(id)!.messages.find(m => m.id === saved.id)).toMatchObject({ content: '地图\n\n已保存的完整正文。', role: 'assistant', communication })
+    expect(getSession(id)!.messages.find(m => m.id === 'reply')!.communication).toEqual({ version: 1, characterId: character.id, intent: 'reply', source: { kind: 'conversation', sessionId: id } })
+    saveSessionMessages(id, []); flushDatabase()
+    appendAgentNotice({ ...notice, characterId: character.id, topicId: 'atlas', communication })
+    expect(getSession(id)!.messages).toEqual([])
+  })
+  it('rejects mismatched provenance and oversized/blank proactive messages without receipts or unread changes', () => {
+    const id = createChatSession('投递校验', DEFAULT_CHARACTER_ID).activeSession.id
+    for (const content of [' ', 'x'.repeat(20001)]) {
+      expect(() => appendAgentNotice({ ...notice, content })).toThrow()
+      expect(() => appendAssistantMessage(content, undefined, 'rest', { receiptIds: ['invalid-retry'] })).toThrow()
+    }
+    expect(() => appendAgentNotice({ ...notice, communication: { version: 1, characterId: 'foreign', intent: 'status', source: { kind: 'task', topicId: 'topic', runId: 'run' } } })).toThrow('不匹配')
+    expect(getSession(id)!.messages).toEqual([])
+    appendAssistantMessage('休息一下吧。', undefined, 'rest', { receiptIds: ['invalid-retry'] })
+    expect(getSession(id)!.messages[0].communication).toMatchObject({ intent: 'reminder', source: { kind: 'proactive', eventIds: ['invalid-retry'] } })
+    expect(getSessions().find(s => s.id === id)!.unreadCount).toBe(1)
+  })
   it('delivers to the owner without switching chats, survives reload and never resurrects a cleared message', () => {
     const ownerSession = createChatSession('联系人进展', DEFAULT_CHARACTER_ID).activeSession.id
     const other = createChatSession('正在看的聊天', PRESET_CHARACTERS[0].id).activeSession.id

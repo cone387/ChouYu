@@ -25,7 +25,7 @@ export default function WorkTimePicker({ label, value, disabled, onChange }: {
   useEffect(() => {
     const el = panel.current
     const sync = () => setOpen(Boolean(el?.matches(':popover-open')))
-    const hide = (event: Event) => { if (!el?.contains(event.target as Node)) { el?.hidePopover(); setOpen(false) } }
+    const hide = (event: Event) => { if (!(event.target instanceof Node) || !el?.contains(event.target)) { el?.hidePopover(); setOpen(false) } }
     el?.addEventListener('toggle', sync)
     window.addEventListener('resize', hide); window.addEventListener('scroll', hide, true)
     return () => { el?.removeEventListener('toggle', sync); window.removeEventListener('resize', hide); window.removeEventListener('scroll', hide, true) }

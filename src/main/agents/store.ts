@@ -7,6 +7,7 @@ import { containsSecret } from '../../shared/memory'
 import { validateTaskResourceBudget, type TaskResourceBudget } from '../../shared/agent-resources'
 import { AgentTopics, canResearch } from './topics'
 import { AgentNotices } from './notices'
+import { contactFailureReason } from './contact-message'
 import type { AgentResearch } from '../../shared/agents'
 import { AgentDeliveries } from './delivery'
 import { validateDeliveryPlan, type DeliveryPlan, type DeliveryUpdate } from '../../shared/agent-delivery'
@@ -459,7 +460,7 @@ export class AgentStore {
       topic = this.allocateTaskBudget(runId, brief.resourceBudget)
       this.event(runId, 'direction', `我准备先这样推进：${brief.nextStep}`)
       if (!brief.question) this.notices.enqueue({ id: `${runId}:direction`, characterId: run.character_id, topicId: topic.id, runId,
-        topicRevision: topic.revision, kind: 'progress', purpose: 'direction', createdAt: Date.now(), content: `收到「${topic.title}」。\n\n我准备先这样推进：${brief.nextStep}\n\n已经开始处理，你可以随时补充或调整方向。` })
+        topicRevision: topic.revision, kind: 'progress', purpose: 'direction', createdAt: Date.now(), content: `收到「${topic.title}」，我开始处理。` })
     })()
   }
   saveBriefAnswer(runId: string, answer: string) {
@@ -565,7 +566,7 @@ export class AgentStore {
       if (run.topic_id) {
         const topic = this.topics.get(run.character_id, run.topic_id)
         this.notices.enqueue({ id: `${id}:question:${createHash('sha256').update(question).digest('hex').slice(0, 16)}`, characterId: run.character_id, topicId: topic.id, runId: id,
-          topicRevision: topic.revision, kind: 'question', createdAt: Date.now(), content: `「${topic.title}」需要你确认：\n\n${question}\n\n你可以在这里回复，确认后我会接着处理。` })
+          topicRevision: topic.revision, kind: 'question', createdAt: Date.now(), content: `关于「${topic.title}」：\n\n${question}` })
       }
     })()
   }
@@ -620,7 +621,7 @@ export class AgentStore {
     if (JSON.parse(run.input).revisionScope === 'presentation') {
       if (run.topic_id) {
         const topic = this.topics.get(run.character_id, run.topic_id)
-        this.notices.enqueue({ id: `${id}:presentation-failed`, purpose: 'presentation', characterId: run.character_id, topicId: topic.id, runId: id, topicRevision: topic.revision, kind: 'progress', createdAt: Date.now(), content: `「${topic.title}」的阅读样式修改未完成，原成果与正文已保留。原因：${error.slice(0, 300)}\n可在工作记录中重试本次样式修改。` })
+        this.notices.enqueue({ id: `${id}:presentation-failed`, purpose: 'presentation', characterId: run.character_id, topicId: topic.id, runId: id, topicRevision: topic.revision, kind: 'progress', createdAt: Date.now(), content: `「${topic.title}」的阅读样式修改未完成，原成果与正文已保留。${contactFailureReason(error)}\n可在工作记录中查看详情并重试本次样式修改。` })
       }
       return
     }
@@ -635,7 +636,7 @@ export class AgentStore {
       const recovery = profile.failures + 1 >= 3 ? '已连续失败 3 次，自动推进已停止，请查看工作记录后重试。'
         : settings.enabled ? `将在 ${failureDelay(settings, profile.failures + 1) / 60000} 分钟后尝试继续；仍受工作时间和额度限制。` : '可在工作记录中重试。'
       this.notices.enqueue({ id: `${id}:failure`, characterId: run.character_id, topicId: topic.id, runId: id, topicRevision: topic.revision,
-        kind: 'progress', purpose: 'failure', createdAt: Date.now(), content: `「${topic.title}」本轮未完成，已有成果保留。\n原因：${error.slice(0, 300)}\n${recovery}` })
+        kind: 'progress', purpose: 'failure', createdAt: Date.now(), content: `关于「${topic.title}」：${contactFailureReason(error)}之前保存的内容还在。\n\n${recovery}\n详细原因留在这次的工作记录里。` })
     }
   }
   finish(runId: string, report: AgentReport, memories: string[], progress?: AgentTopicProgress, delivery?: DeliveryUpdate) {
@@ -658,6 +659,8 @@ export class AgentStore {
         if (requiredStages.some(stage => !delivery!.stages.some(next => next.id === stage.id && next.status === 'done'))) throw new Error('仍有计划阶段未交付或被遗漏，不能完成任务。')
       }
       if (deliveryInput.revisionSectionId && delivery?.section?.id !== deliveryInput.revisionSectionId) throw new Error('成果没有更新指定分节，本轮未提交。')
+      if (run.topic_id && progress && JSON.parse(run.input).deliveryVersion === 1) this.deliveries.commit(run.topic_id, report, progress, delivery)
+      const committed = run.topic_id ? this.deliveries.get(run.topic_id) : null
       if (run.topic_id) {
         if (!progress) throw new Error('缺少事项进展，本轮不能提交。')
         const before = this.topics.get(run.character_id, run.topic_id)
@@ -667,13 +670,12 @@ export class AgentStore {
           this.notices.enqueue({ id: `${runId}:presentation`, purpose: 'presentation', characterId: run.character_id, topicId: run.topic_id, runId, topicRevision: before.revision + 1, kind: 'progress', createdAt: Date.now(), content: `「${before.title}」的阅读样式已保存为版本 ${previousDelivery!.version + 1}，正文与任务进度保持不变。可在任务成果中查看。` })
         } else {
           this.topics.advance(run.character_id, run.topic_id, run.topic_revision!, progress, runId)
-          const section = delivery?.section
-          const deliveryChanged = Boolean(section && !previousDelivery?.sections.some(old => old.id === section.id && old.title === section.title && old.body === section.body))
-          this.notices.progress(before, this.topics.get(run.character_id, run.topic_id), report, previous ? JSON.parse(previous.value) : undefined, this.research(runId)?.plan.action === 'write', deliveryChanged)
+          const section = committed?.runId === runId ? committed.sections.find(s => s.runId === runId) : delivery?.section
+          const deliveryChanged = Boolean(section && !previousDelivery?.sections.some(old => old.title === section.title && old.body === section.body))
+          if (!delivery || section) this.notices.progress(before, this.topics.get(run.character_id, run.topic_id), report, previous ? JSON.parse(previous.value) : undefined, this.research(runId)?.plan.action === 'write', deliveryChanged, section, committed?.runId === runId ? committed.version : undefined)
         }
       }
       this.db.prepare('INSERT OR IGNORE INTO reports(run_id,character_id,value) VALUES(?,?,?)').run(runId, run.character_id, JSON.stringify(report))
-      if (run.topic_id && progress && JSON.parse(run.input).deliveryVersion === 1) this.deliveries.commit(run.topic_id, report, progress, delivery)
       for (const memory of memories.slice(0, 3)) {
         // A full library must not lose the report; record the reason explicitly.
         try { this.remember(run.character_id, memory, runId) } catch { this.event(runId, 'memory-skipped', '一条记忆未保存：内容含敏感信息或记忆库已满；成果仍保留。') }

@@ -1,3 +1,4 @@
+import { contactCommunicationInstructions } from '../shared/contact-communication'
 import { assistantWorkInstructions } from '../shared/assistant-work-instructions'
 import { appendCompanionBriefing } from './assistant-routines'
 import { contactWorkInstructions } from '../shared/contact-work-instructions'
@@ -641,7 +642,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       }
       await streamAIChat(
         request.messages,
-        request.systemPrompt + privateContext + (owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : ''),
+        request.systemPrompt + privateContext + (owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation')),
         effectiveConfig,
         (chunk, done) => {
           if (event.sender.isDestroyed()) return

@@ -1,5 +1,5 @@
 import type { AppConfig } from './config'
-import { DEFAULT_PROFILE_ID, DEFAULT_SOUL_MD, getProviderProfiles, isAIConfigured } from './config'
+import { DEFAULT_PROFILE_ID, getProviderProfiles, isAIConfigured } from './config'
 
 export const DEFAULT_CHARACTER_ID = 'chouyu'
 export const DEFAULT_CHARACTER_NAME = '丑鱼'
@@ -191,6 +191,13 @@ export interface EffectiveChatConfig {
 
 export type CharacterResolution = { ok: true; config: EffectiveChatConfig } | { ok: false; error: string }
 
+/** A blank custom persona must never borrow the dedicated assistant's identity. */
+export function resolveCharacterSoul(character: Pick<Character, 'name' | 'builtIn' | 'soulMd'> | undefined | null, config: Pick<AppConfig, 'soulMd'>): string {
+  if (character?.soulMd.trim()) return character.soulMd
+  if (!character || character.builtIn) return config.soulMd
+  return `你是「${character.name}」，是与用户独立交流的联系人。按用户当前需求提供帮助，诚实说明已知信息与能力边界，不虚构个人经历。`
+}
+
 export function resolveCharacterConfig(character: Character | undefined | null, config: AppConfig): CharacterResolution {
   if (!character || character.builtIn) {
     if (!isAIConfigured(config)) {
@@ -198,7 +205,7 @@ export function resolveCharacterConfig(character: Character | undefined | null, 
     }
     return {
       ok: true,
-      config: { provider: config.provider, baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model, soulMd: character?.soulMd || config.soulMd }
+      config: { provider: config.provider, baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model, soulMd: resolveCharacterSoul(character, config) }
     }
   }
   const profile = getProviderProfiles(config).find((item) => item.id === character.providerProfileId)
@@ -210,6 +217,6 @@ export function resolveCharacterConfig(character: Character | undefined | null, 
   if (!model) return { ok: false, error: `角色「${character.name}」尚未设置模型，请在通讯录或系统设置中补全。` }
   return {
     ok: true,
-    config: { provider: profile.provider, baseUrl: profile.baseUrl, apiKey: profile.apiKey, model, soulMd: character.soulMd || DEFAULT_SOUL_MD }
+    config: { provider: profile.provider, baseUrl: profile.baseUrl, apiKey: profile.apiKey, model, soulMd: resolveCharacterSoul(character, config) }
   }
 }

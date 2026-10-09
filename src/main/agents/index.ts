@@ -10,7 +10,7 @@ import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, li
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { getRegisteredTool, registerTool } from '../tools/registry'
-import { ASSISTANT_CHARACTER_ID, resolveCharacterConfig } from '../../shared/characters'
+import { ASSISTANT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
 import type { AgentIdentity } from './service'
 import { setupIdeaLab } from './idea-lab'
 
@@ -60,7 +60,7 @@ function identities(): AgentIdentity[] {
   return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(character => {
     const resolved = resolveCharacterConfig(character, config)
     const conversation = sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages.slice(-8).map(m => `${m.role}: ${m.content.slice(0, 1500)}`) || []).join('\n').slice(0, 8000)
-    return { id: character.id, name: character.name, soul: character.soulMd || config.soulMd, conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
+    return { id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
   })
 }
 async function ensure() {

@@ -4,7 +4,7 @@ import {
   ASSISTANT_CHARACTER_ID, ASSISTANT_SOUL_MD, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABELS,
   MAX_CHARACTER_COUNT, PRESET_CHARACTERS, Character, CharacterDraft,
   createAssistantCharacter, createDefaultCharacter, isDefaultCharacter, normalizeCharacters,
-  resolveCharacterConfig, sanitizeCharacterDraft
+  resolveCharacterConfig, resolveCharacterSoul, sanitizeCharacterDraft
 } from './characters'
 
 const baseConfig: AppConfig = { ...DEFAULT_APP_CONFIG, baseUrl: 'https://api.example.com/v1', apiKey: 'sk-x', model: 'gpt-test' }
@@ -148,9 +148,12 @@ describe('resolveCharacterConfig', () => {
     const emptyProfile = resolveCharacterConfig({ ...customCharacter, providerProfileId: 'p1' }, { ...baseConfig, providerProfiles: [{ id: 'p1', name: 'x', provider: 'openai', baseUrl: '', apiKey: '' }] })
     expect(emptyProfile.ok).toBe(false)
   })
-  it('falls back to the default soul when a custom character has none', () => {
+  it('keeps a blank new persona independent from the default assistant', () => {
     const result = resolveCharacterConfig({ ...customCharacter, soulMd: '' }, baseConfig)
-    expect(result.ok && result.config.soulMd).toBe(DEFAULT_SOUL_MD)
+    expect(result.ok && result.config.soulMd).toContain(customCharacter.name)
+    expect(result.ok && result.config.soulMd).not.toBe(DEFAULT_SOUL_MD)
+    expect(resolveCharacterSoul({ ...customCharacter, soulMd: '  ' }, { soulMd: '我是专属助手 ChouYu' })).not.toContain('ChouYu')
+    expect(resolveCharacterSoul(customCharacter, baseConfig)).toBe(customCharacter.soulMd)
   })
   it('resolves a blank model live from system defaults, including after persistence', () => {
     const character = normalizeCharacters([{ ...customCharacter, model: '' }]).find(c => c.id === customCharacter.id)!

@@ -17,7 +17,7 @@ it('requires structured scores when the plan requests evaluation', () => {
   expect(() => parseDraft(JSON.stringify({ ...draft, evaluations: undefined }), 0, true)).toThrow('结构化')
   const parsed = parseDraft(JSON.stringify(draft), 0, true)
   expect(parsed.body).toBe('idea：80/100（系统计算）')
-  expect(parsed.delivery?.section?.body).toContain('系统计算总分：80/100')
+  expect(parsed.delivery?.section?.body).toContain('综合评分：80/100')
   expect(parsed.evaluations?.[0].claimedTotal).toBe(60)
 })
 it('persists computed totals in reports, versioned deliverables and Markdown export', async () => {
@@ -34,8 +34,11 @@ it('persists computed totals in reports, versioned deliverables and Markdown exp
   expect(store.detail('reviewer', run).run.status).toBe('completed')
   expect(store.detail('reviewer', run).report?.evaluations?.[0].total).toBe(80)
   const delivery = store.deliveries.get(store.overview('reviewer').focusTopicId!)!
-  expect(deliveryMarkdown('评价', delivery)).toContain('系统计算总分：80/100')
-  expect(deliveryMarkdown('评价', delivery)).toContain('模型原报 60/100')
+  expect(deliveryMarkdown('评价', delivery)).toContain('综合评分：80/100')
+  expect(deliveryMarkdown('评价', delivery)).not.toContain('模型原报')
+  expect(store.detail('reviewer', run).report?.evaluations?.[0].claimedTotal).toBe(60)
+  expect(store.notices.pending('reviewer')[0].content).toContain(delivery.sections[0].body)
+  expect(store.notices.pending('reviewer')[0].content).not.toMatch(/系统计算|模型原报/)
 })
 it('does not publish malformed scores even after one format repair attempt', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-invalid-evaluation-'))
