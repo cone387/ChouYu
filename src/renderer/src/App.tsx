@@ -128,16 +128,8 @@ function App() {
   // Proactive engine - respect config
   useEffect(() => {
     let active = true
-    proactiveEngine.start(async (message, kind, deliveryId, context) => {
-      const requestedAt = Date.now()
-      if (kind === 'return' && context) {
-        try {
-          const recent = await window.electronAPI.journal.list({ from: context.leftAt - 30 * 60_000, to: context.leftAt + 1000, offset: 0 })
-          const latest = [...recent.items].sort((a, b) => b.startedAt - a.startedAt).find(item => item.title.trim())
-          if (latest) message += ` 离开前的记录：${latest.title.trim().slice(0, 160)}。`
-        } catch { /* Companionship still works when activity recording is disabled/unavailable. */ }
-      }
-      if (!active || kind === 'return' && Date.now() - requestedAt > 30_000) return
+    proactiveEngine.start(async (message, kind, deliveryId) => {
+      if (!active) return
       await window.electronAPI.proactiveAppend(message, undefined, kind, deliveryId)
     }, {
       greeting: config.proactiveGreeting, restReminder: config.proactiveRestReminder, returnReminder: config.proactiveReturn,

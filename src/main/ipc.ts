@@ -1,4 +1,5 @@
 import { assistantWorkInstructions } from '../shared/assistant-work-instructions'
+import { appendCompanionBriefing } from './assistant-routines'
 import { contactWorkInstructions } from '../shared/contact-work-instructions'
 import { normalizeAssistantMessageKind } from '../shared/assistant-message'
 import { ipcMain, BrowserWindow, desktopCapturer, screen, dialog, app, shell, powerMonitor } from 'electron'
@@ -819,10 +820,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('assistant-unread-changed', count)
   }
 
-  ipcMain.handle('proactive:append', (_event, content: unknown, timestamp?: unknown, kind?: unknown, deliveryId?: unknown) => {
+  ipcMain.handle('proactive:append', async (_event, content: unknown, timestamp?: unknown, kind?: unknown, deliveryId?: unknown) => {
     if (typeof content !== 'string' || !content.trim() || content.length > 20_000) throw new Error('Invalid proactive content')
     const at = typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : undefined
     if (deliveryId !== undefined && (typeof deliveryId !== 'string' || !deliveryId || deliveryId.length > 200)) throw new Error('Invalid delivery id')
+    if ((kind === 'greeting' || kind === 'return') && typeof deliveryId === 'string') {
+      await appendCompanionBriefing(kind, deliveryId)
+      return
+    }
     appendAssistantMessage(content, at, normalizeAssistantMessageKind(kind) ?? 'notification', typeof deliveryId === 'string' ? { receiptIds: [`companion:${deliveryId}`] } : undefined)
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sessions:changed', true)
     notifyAssistantUnread()

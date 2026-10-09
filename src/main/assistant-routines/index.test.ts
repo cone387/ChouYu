@@ -57,4 +57,14 @@ describe('assistant routine integration', () => {
     expect(result.contacts).toHaveLength(2)
     expect(result.contacts[1]).toMatchObject({ id: 'bob', unavailable: true })
   })
+  it('stops a companion inspection before reading the next contact if permission is revoked', async () => {
+    const inspect = state.inspect.getMockImplementation()!
+    state.inspect.mockImplementationOnce(async (id: string) => {
+      const result = await inspect(id)
+      state.values.set('tool:inspect_contacts:enabled', 'false')
+      return result
+    })
+    await expect(readContactsForAssistant(new AbortController().signal)).rejects.toThrow('权限已关闭')
+    expect(state.inspect).toHaveBeenCalledTimes(1)
+  })
 })

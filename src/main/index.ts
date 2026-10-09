@@ -1,6 +1,7 @@
 import { runDeliveryPresentationSmoke } from './smoke/delivery-presentation-smoke'
 import { runRemindersSmoke } from './smoke/reminders-smoke'
 import { runAssistantRoutinesSmoke } from './smoke/assistant-routines-smoke'
+import { runCompanionSmoke } from './smoke/companion-smoke'
 import { initializeReminders, closeReminders } from './reminders'
 import { runJournalMigrationSmoke } from './smoke/journal-migration-smoke'
 import { runMemoryFullDataSmoke } from './smoke/memory-full-data-smoke'
@@ -127,6 +128,8 @@ function createWindow(): void {
       try {
         if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
           await runNativeCaptureSmoke()
+        } else if (process.env.CHOUYU_SMOKE_COMPANION_ONLY === '1') {
+          await stage('companion', () => runCompanionSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_ASSISTANT_ROUTINES_ONLY === '1') {
           await stage('assistant-routines', () => runAssistantRoutinesSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_REMINDERS_ONLY === '1') {

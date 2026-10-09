@@ -38,6 +38,7 @@ const env = {
   CHOUYU_SMOKE_TASK_ASSISTANT_ONLY: process.argv.includes('--task-assistant') ? '1' : '0',
   CHOUYU_SMOKE_REMINDERS_ONLY: process.argv.includes('--reminders') ? '1' : '0',
   CHOUYU_SMOKE_ASSISTANT_ROUTINES_ONLY: process.argv.includes('--assistant-routines') ? '1' : '0',
+  CHOUYU_SMOKE_COMPANION_ONLY: process.argv.includes('--companion') ? '1' : '0',
   CHOUYU_SMOKE_PRESENTATION_ONLY: process.argv.includes('--presentation') ? '1' : '0',
   CHOUYU_SMOKE_AGENTS_ONLY: process.argv.includes('--agents') ? '1' : '0',
   CHOUYU_SMOKE_CONTACTS_ONLY: process.argv.includes('--contacts') ? '1' : '0',
