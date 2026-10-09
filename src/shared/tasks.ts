@@ -151,9 +151,10 @@ export interface TaskListResult {
   quarantinedAt: number | null
 }
 
-export type TaskDueRange = 'today' | 'week' | 'overdue' | 'none' | 'any'
+export type TaskDueRange = 'today' | 'tomorrow' | 'week' | 'nextWeek' | 'overdue' | 'none' | 'any'
 
 export interface TaskView {
+  groupId?: string | null
   id: string
   name: string
   /** 空数组表示全部项目 */
@@ -166,6 +167,7 @@ export interface TaskView {
 }
 
 export interface TaskViewInput {
+  groupId?: string | null
   name: string
   projectIds?: string[]
   priorities?: TaskPriority[]
@@ -173,7 +175,7 @@ export interface TaskViewInput {
 }
 
 export const DUE_RANGE_LABELS: Record<TaskDueRange, string> = {
-  today: '今天截止', week: '本周截止', overdue: '已过期', none: '无截止时间', any: '不限'
+  any: '不限', today: '今天截止', tomorrow: '明天截止', week: '本周截止', nextWeek: '下周截止', overdue: '已过期', none: '无截止时间'
 }
 
 export interface TaskReminderPayload {
@@ -345,12 +347,18 @@ export function sortTasks(tasks: TaskRecord[], mode: TaskSortMode, now: number):
   return copy
 }
 
-export function matchesTaskView(task: TaskRecord, view: Pick<TaskView, 'projectIds' | 'priorities' | 'dueRange'>, now: number): boolean {
+export function matchesTaskView(task: TaskRecord, view: Pick<TaskView, 'projectIds' | 'priorities' | 'dueRange' | 'groupId'>, now: number, projects: Pick<TaskProject, 'id' | 'groupId'>[] = []): boolean {
+  if (view.groupId && !projects.some(project => project.id === task.projectId && project.groupId === view.groupId)) return false
   if (view.projectIds.length > 0 && !view.projectIds.includes(task.projectId ?? '')) return false
   if (view.priorities.length > 0 && !view.priorities.includes(task.priority)) return false
   switch (view.dueRange) {
     case 'today': return isDueToday(task, now)
     case 'week': return isDueThisWeek(task, now)
+    case 'tomorrow':
+    case 'nextWeek': {
+      const [start, end] = taskScheduleBounds(view.dueRange, now)
+      return task.dueAt !== null && task.dueAt >= start && task.dueAt < end
+    }
     case 'overdue': return isOverdue(task, now)
     case 'none': return task.dueAt === null
     default: return true

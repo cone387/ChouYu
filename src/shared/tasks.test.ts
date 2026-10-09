@@ -135,6 +135,18 @@ describe('matchesTaskView', () => {
     expect(matchesTaskView(task, view(), now)).toBe(true)
   })
 
+  test('分组随清单归属动态匹配，与清单筛选取交集，不限不限制分组', () => {
+    const task = base({ projectId: 'p1' })
+    const projects = [{ id: 'p1', groupId: 'g1' }, { id: 'p2', groupId: 'g2' }]
+    expect(matchesTaskView(task, view({ groupId: 'g1' }), now, projects)).toBe(true)
+    expect(matchesTaskView(task, view({ groupId: 'g2' }), now, projects)).toBe(false)
+    expect(matchesTaskView(task, view({ groupId: 'g1', projectIds: ['p2'] }), now, projects)).toBe(false)
+    expect(matchesTaskView(task, view({ groupId: null }), now, projects)).toBe(true)
+    expect(matchesTaskView(task, view({ groupId: 'deleted' }), now, projects)).toBe(false)
+    projects[0].groupId = 'g2'
+    expect(matchesTaskView(task, view({ groupId: 'g1' }), now, projects)).toBe(false)
+  })
+
   test('项目与优先级为 AND 组合,多值为包含匹配', () => {
     const task = base({ projectId: 'p1', priority: 'high' })
     expect(matchesTaskView(task, view({ projectIds: ['p1'], priorities: ['high', 'low'] }), now)).toBe(true)

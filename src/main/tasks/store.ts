@@ -5,16 +5,22 @@ import { existsSync, renameSync } from 'node:fs'
 import type {
   TaskGroup, TaskCreateInput, TaskListOptions, TaskSelectFieldUpdateInput, TaskDueRange, TaskFieldOption, TaskListResult, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldInput, TaskUpdateInput, TaskRecurrence, TaskView, TaskViewInput
 } from '../../shared/tasks'
-import { taskScheduleBounds, validateTaskChecklist, validateTaskSource } from '../../shared/tasks'
+import { DUE_RANGE_LABELS, taskScheduleBounds, validateTaskChecklist, validateTaskSource } from '../../shared/tasks'
 import { countDoneGroups } from './group-counts'
 import { captureDeleted, listTrash, restoreTrash } from './recovery'
 import { createTaskBackup, restoreTaskBackup, validateTaskBackup } from './backup'
 import { type TaskUISettings } from '../../shared/tasks'
 
-const SCHEMA_VERSION = 10
+const SCHEMA_VERSION = 11
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
 const RECURRENCES: TaskRecurrence[] = TASK_RECURRENCES
-const DUE_RANGES: TaskDueRange[] = ['today', 'week', 'overdue', 'none', 'any']
+const DUE_RANGES = Object.keys(DUE_RANGE_LABELS) as TaskDueRange[]
+
+const assertViewGroupId = (value: unknown): string | null => {
+  if (value == null || value === '') return null
+  if (typeof value !== 'string' || !value.trim() || value.length > 200) throw new Error('视图分组无效。')
+  return value
+}
 
 interface TaskRow {
   id: string; title: string; note: string | null; project_id: string | null; priority: string
@@ -29,6 +35,7 @@ interface TaskRow {
 }
 interface ProjectRow { is_default?: number; group_id: string | null; id: string; name: string; archived_at: number | null; created_at: number }
 interface ViewRow {
+  group_id: string | null
   id: string; name: string; project_ids: string; priorities: string
   due_range: string; created_at: number; updated_at: number
 }
@@ -176,6 +183,8 @@ function migrate(database: Database.Database): void {
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
   `)
+  const viewColumns = database.pragma('table_info(task_views)') as { name: string }[]
+  if (!viewColumns.some(column => column.name === 'group_id')) database.exec('ALTER TABLE task_views ADD COLUMN group_id TEXT')
   const columns = database.pragma('table_info(tasks)') as { name?: unknown }[]
   database.transaction(() => {
     if (!columns.some(column => column.name === 'repeat_rule')) database.exec('ALTER TABLE tasks ADD COLUMN repeat_rule TEXT')
@@ -271,7 +280,7 @@ const toProject = (row: ProjectRow): TaskProject => ({
   isDefault: row.is_default === 1, id: row.id, name: row.name, groupId: row.group_id, ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}), createdAt: row.created_at
 })
 const toView = (row: ViewRow): TaskView => ({
-  id: row.id, name: row.name,
+  id: row.id, name: row.name, groupId: row.group_id,
   projectIds: parseJsonList(row.project_ids),
   priorities: parseJsonList(row.priorities).filter(item => PRIORITIES.includes(item as TaskPriority)) as TaskPriority[],
   dueRange: (DUE_RANGES.includes(row.due_range as TaskDueRange) ? row.due_range : 'any') as TaskDueRange,
@@ -487,16 +496,17 @@ export class TasksStore {
 
   createView(input: TaskViewInput): TaskView {
     const name = assertViewName(input?.name)
+    const groupId = assertViewGroupId(input?.groupId)
     const projectIds = assertIdList(input?.projectIds)
     const priorities = assertPriorityList(input?.priorities)
     const dueRange = assertDueRange(input?.dueRange)
     const now = Date.now()
     const row: ViewRow = {
-      id: randomUUID(), name, project_ids: JSON.stringify(projectIds), priorities: JSON.stringify(priorities),
+      id: randomUUID(), name, group_id: groupId, project_ids: JSON.stringify(projectIds), priorities: JSON.stringify(priorities),
       due_range: dueRange, created_at: now, updated_at: now
     }
-    this.database.prepare(`INSERT INTO task_views (id, name, project_ids, priorities, due_range, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(row.id, row.name, row.project_ids, row.priorities, row.due_range, row.created_at, row.updated_at)
+    this.database.prepare(`INSERT INTO task_views (id, name, project_ids, priorities, due_range, created_at, updated_at, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(row.id, row.name, row.project_ids, row.priorities, row.due_range, row.created_at, row.updated_at, row.group_id)
     return toView(row)
   }
 
@@ -505,11 +515,12 @@ export class TasksStore {
     if (!current) throw new Error('视图不存在。')
     const existing = toView(current)
     const name = patch?.name === undefined ? existing.name : assertViewName(patch.name)
+    const groupId = patch?.groupId === undefined ? existing.groupId ?? null : assertViewGroupId(patch.groupId)
     const projectIds = patch?.projectIds === undefined ? existing.projectIds : assertIdList(patch.projectIds)
     const priorities = patch?.priorities === undefined ? existing.priorities : assertPriorityList(patch.priorities)
     const dueRange = patch?.dueRange === undefined ? existing.dueRange : assertDueRange(patch.dueRange)
-    this.database.prepare('UPDATE task_views SET name = ?, project_ids = ?, priorities = ?, due_range = ?, updated_at = ? WHERE id = ?')
-      .run(name, JSON.stringify(projectIds), JSON.stringify(priorities), dueRange, Date.now(), id)
+    this.database.prepare('UPDATE task_views SET name = ?, project_ids = ?, priorities = ?, due_range = ?, updated_at = ?, group_id = ? WHERE id = ?')
+      .run(name, JSON.stringify(projectIds), JSON.stringify(priorities), dueRange, Date.now(), groupId, id)
     return this.requireView(id)
   }
 
@@ -817,16 +828,13 @@ export class TasksStore {
         params.push(...ids)
       }
       const today = new Date(now); today.setHours(0, 0, 0, 0)
-      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1)
       const addDue = (range: TaskDueRange | 'unplanned') => {
         if (range === 'none') conditions.push('due_at IS NULL')
         else if (range === 'unplanned') conditions.push('due_at IS NULL AND start_at IS NULL')
         else if (range === 'overdue') { conditions.push('due_at < ?'); params.push(today.getTime()) }
-        else if (range === 'today') { conditions.push('due_at >= ? AND due_at < ?'); params.push(today.getTime(), tomorrow.getTime()) }
-        else if (range === 'week') {
-          const monday = new Date(today); monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7)
-          const next = new Date(monday); next.setDate(next.getDate() + 7)
-          conditions.push('due_at >= ? AND due_at < ?'); params.push(monday.getTime(), next.getTime())
+        else if (range === 'today' || range === 'tomorrow' || range === 'week' || range === 'nextWeek') {
+          const [start, end] = taskScheduleBounds(range, now)
+          conditions.push('due_at >= ? AND due_at < ?'); params.push(start, end)
         }
       }
       addProjects(assertIdList(options.doneProjectIds))
@@ -839,6 +847,10 @@ export class TasksStore {
         if (!view) conditions.push('0 = 1')
         else {
           addProjects(view.projectIds); addDue(view.dueRange)
+          if (view.groupId) {
+            conditions.push('project_id IN (SELECT id FROM task_projects WHERE group_id = ?)')
+            params.push(view.groupId)
+          }
           if (view.priorities.length) {
             conditions.push(`priority IN (${view.priorities.map(() => '?').join(',')})`)
             params.push(...view.priorities)

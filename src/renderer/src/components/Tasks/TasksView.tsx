@@ -57,6 +57,9 @@ const SMART_DESCRIPTIONS: Record<SmartView, string> = {
 const emptyDraft: Draft = { id: '', title: '', note: '', projectId: '', priority: 'medium', startDate: '', startTime: '09:00', dueDate: '', dueTime: '09:00', remind: 'due', recurrence: 'none', customFields: {} }
 
 interface ViewDraft {
+  sortMode?: TaskSortMode
+  statusFilter?: 'open' | 'done' | 'all'
+  groupId: string | null
   id: string
   name: string
   projectIds: string[]
@@ -66,7 +69,7 @@ interface ViewDraft {
 
 interface NavEntry { key: Selection; label: string; icon: IconName; custom?: TaskView }
 
-const emptyViewDraft: ViewDraft = { id: '', name: '', projectIds: [], priorities: [], dueRange: 'any' }
+const emptyViewDraft: ViewDraft = { groupId: null, id: '', name: '', projectIds: [], priorities: [], dueRange: 'any' }
 
 const toInputDate = (at: number): string => {
   const date = new Date(at)
@@ -172,9 +175,30 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   }
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [filterPriorities, setFilterPriorities] = useState<TaskPriority[]>([])
-  const [filterProjects, setFilterProjects] = useState<string[]>([])
-  const [filterDue, setFilterDue] = useState<TaskDueRange>('any')
+  const [temporaryPriorities, setTemporaryPriorities] = useState<TaskPriority[]>([])
+  const [temporaryProjects, setTemporaryProjects] = useState<string[]>([])
+  const [temporaryDue, setTemporaryDue] = useState<TaskDueRange>('any')
+  const activeView = selection.startsWith('view:') ? views.find(view => view.id === selection.slice(5)) : undefined
+  const filterPriorities = activeView?.priorities ?? temporaryPriorities
+  const filterProjects = activeView?.projectIds ?? temporaryProjects
+  const filterDue = activeView?.dueRange ?? temporaryDue
+  const [viewFilterSaving, setViewFilterSaving] = useState(false)
+  const viewFilterSavePending = useRef(false)
+  const saveViewFilters = async (patch: Partial<Pick<TaskView, 'priorities' | 'projectIds' | 'dueRange'>>) => {
+    if (!activeView || viewFilterSavePending.current) return
+    const id = activeView.id
+    viewFilterSavePending.current = true
+    setViewFilterSaving(true); setError('')
+    try {
+      const saved = await window.electronAPI.tasks.updateView(id, patch)
+      setViews(current => current.map(view => view.id === id ? saved : view))
+      reloadRef.current()
+    } catch (reason) { setError(String(reason)) }
+    finally { viewFilterSavePending.current = false; setViewFilterSaving(false) }
+  }
+  const setFilterPriorities = (value: TaskPriority[]) => { if (activeView) void saveViewFilters({ priorities: value }); else setTemporaryPriorities(value) }
+  const setFilterProjects = (value: string[]) => { if (activeView) void saveViewFilters({ projectIds: value }); else setTemporaryProjects(value) }
+  const setFilterDue = (value: TaskDueRange) => { if (activeView) void saveViewFilters({ dueRange: value }); else setTemporaryDue(value) }
   const statusFilter = preferences.value.statusFilter
   const setStatusFilter = (value: 'open' | 'done' | 'all') => preferences.set('statusFilter', value)
   const effectiveStatus = selection === 'done' ? 'done' : statusFilter
@@ -189,7 +213,8 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const [doneCountsResult, setDoneCountsResult] = useState<{ key: string; counts: Record<string, number> } | null>(null)
   const doneCounts = effectiveStatus !== 'open' && doneCountsResult?.key === countsKey ? doneCountsResult.counts : undefined
   const filterCount = Number(filterPriorities.length > 0) + Number(filterProjects.length > 0) + Number(filterDue !== 'any')
-  const clearFilters = () => { setFilterPriorities([]); setFilterProjects([]); setFilterDue('any') }
+  const clearFilters = () => { setTemporaryPriorities([]); setTemporaryProjects([]); setTemporaryDue('any') }
+  const clearCurrentFilters = () => { if (activeView) void saveViewFilters({ priorities: [], projectIds: [], dueRange: 'any' }); else clearFilters() }
   const displayFields = fields.filter(field => !hiddenFields.includes(field.id))
   const [quarantineNotice, setQuarantineNotice] = useState('')
   const [groups, setGroups] = useState<TaskGroup[]>([])
@@ -217,8 +242,8 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     const sequence = ++reloadSequence.current
     loadedRequestKey.current = ''
     setLoading(true)
-    void Promise.all([window.electronAPI.tasks.list({ doneLimit, doneQuery: query, donePriorities: filterPriorities,
-      doneProjectIds: filterProjects, doneDueRange: filterDue,
+    void Promise.all([window.electronAPI.tasks.list({ doneLimit, doneQuery: query, donePriorities: activeView ? [] : filterPriorities,
+      doneProjectIds: activeView ? [] : filterProjects, doneDueRange: activeView ? 'any' : filterDue,
       doneSelection: selection, doneGrouping: JSON.parse(groupingQuery) }), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views(), window.electronAPI.tasks.fields(), window.electronAPI.tasks.groups()])
       .then(([list, projectList, viewList, fieldList, groupList]) => {
         if (sequence !== reloadSequence.current) return
@@ -338,7 +363,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     if (target !== 'done' && projects.some(project => project.id === task.projectId && project.archivedAt)) return false
     if (target.startsWith('view:')) {
       const view = views.find(item => item.id === target.slice('view:'.length))
-      return view ? matchesTaskView(task, view, now) : false
+      return view ? matchesTaskView(task, view, now, projects) : false
     }
     if (target === 'today' || target === 'tomorrow' || target === 'week' || target === 'nextWeek') return matchesTaskSchedule(task, target, now)
     // Other scopes keep their existing date filters when browsing completed tasks.
@@ -351,7 +376,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const keyword = query.trim().toLocaleLowerCase()
   const matchesKeywordAndFilter = (task: TaskRecord): boolean =>
     (!keyword || `${task.title} ${task.note}`.toLocaleLowerCase().includes(keyword)) &&
-    matchesTaskView({ ...task, status: 'open' }, { priorities: filterPriorities, projectIds: filterProjects, dueRange: filterDue }, now)
+    (Boolean(activeView) || matchesTaskView({ ...task, status: 'open' }, { priorities: filterPriorities, projectIds: filterProjects, dueRange: filterDue }, now))
   const visible = (effectiveStatus === 'done' ? [] : tasks).filter(task => matchesKeywordAndFilter(task) && matchesSelection(task, selection))
     .sort((a, b) => compareTasks(a, b, now))
   // Recheck the current scope while its paginated history request is still in flight.
@@ -495,13 +520,20 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     if (!viewDraft || busy) return
     const name = viewDraft.name.trim()
     if (!name) { setError('视图名称不能为空。'); return }
-    const input = { name, projectIds: viewDraft.projectIds, priorities: viewDraft.priorities, dueRange: viewDraft.dueRange }
+    const input = { name, groupId: viewDraft.groupId, projectIds: viewDraft.projectIds, priorities: viewDraft.priorities, dueRange: viewDraft.dueRange }
     setBusy(true); setError('')
     const request = viewDraft.id
       ? window.electronAPI.tasks.updateView(viewDraft.id, input)
       : window.electronAPI.tasks.createView(input)
     void request
-      .then(() => { setViewDraft(null); reloadRef.current() })
+      .then(saved => {
+        if (!viewDraft.id) {
+          preferences.update(`view:${saved.id}`, { sortMode: viewDraft.sortMode ?? 'smart', statusFilter: viewDraft.statusFilter ?? 'open' })
+          setViews(current => [...current.filter(view => view.id !== saved.id), saved])
+          setSelection(`view:${saved.id}`)
+        }
+        setViewDraft(null); reloadRef.current()
+      })
       .catch(reason => setError(String(reason)))
       .finally(() => setBusy(false))
   }
@@ -526,7 +558,9 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     const view = selection.startsWith('view:') ? views.find(item => item.id === selection.slice(5)) : undefined
     const candidate = selection.startsWith('project:') ? selection.slice(8) : view?.projectIds.length === 1 ? view.projectIds[0] : ''
     const projectId = projects.some(project => project.id === candidate && !project.archivedAt) ? candidate : projects.find(project => project.isDefault)?.id ?? ''
-    const dueDate = selection === 'tomorrow' || selection === 'nextWeek' ? toInputDate(taskScheduleBounds(selection, Date.now())[0]) : selection === 'today' || selection === 'week' || view?.dueRange === 'today' || view?.dueRange === 'week' ? toInputDate(Date.now()) : ''
+    const viewDueRange = view?.dueRange
+    const futurePeriod = selection === 'tomorrow' || selection === 'nextWeek' ? selection : viewDueRange === 'tomorrow' || viewDueRange === 'nextWeek' ? viewDueRange : null
+    const dueDate = futurePeriod ? toInputDate(taskScheduleBounds(futurePeriod, Date.now())[0]) : selection === 'today' || selection === 'week' || viewDueRange === 'today' || viewDueRange === 'week' ? toInputDate(Date.now()) : ''
     const priority = filterPriorities.length === 1 ? filterPriorities[0] : view?.priorities.length === 1 ? view.priorities[0] : emptyDraft.priority
     return { ...emptyDraft, projectId, dueDate: patch.dueAt != null ? toInputDate(patch.dueAt) : dueDate, priority, title: patch.title ?? '', ...(patch.projectId ? { projectId: patch.projectId } : {}), ...(patch.priority ? { priority: patch.priority } : {}), customFields: Object.fromEntries(Object.entries(patch.customFields ?? {}).filter((entry): entry is [string, string] => entry[1] !== null)) }
   }
@@ -813,7 +847,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
             {[...hiddenNavEntries, ...overflowNavEntries].map(entry => entry.custom
               ? <div className="tasks-more-view-row" key={entry.key}>
                 <button type="button" data-view-selection={entry.key} aria-current={selection === entry.key || undefined} onClick={() => setSelection(entry.key)} title={entry.label}><TaskIcon name={entry.icon} /><span className="tasks-nav-label">{entry.label}</span><span className="tasks-count">{countFor(entry.key)}</span></button>
-                <button type="button" className="tasks-more-view-action" aria-label={`编辑视图 ${entry.label}`} title="编辑视图" onClick={() => setViewDraft({ id: entry.custom!.id, name: entry.custom!.name, projectIds: [...entry.custom!.projectIds], priorities: [...entry.custom!.priorities], dueRange: entry.custom!.dueRange })}><TaskIcon name="edit" /></button>
+                <button type="button" className="tasks-more-view-action" aria-label={`编辑视图 ${entry.label}`} title="编辑视图" onClick={() => setViewDraft({ id: entry.custom!.id, groupId: entry.custom!.groupId ?? null, name: entry.custom!.name, projectIds: [...entry.custom!.projectIds], priorities: [...entry.custom!.priorities], dueRange: entry.custom!.dueRange })}><TaskIcon name="edit" /></button>
                 <button type="button" className="tasks-more-view-action tasks-item-menu-danger" aria-label={`删除视图 ${entry.label}`} title="删除视图" onClick={() => removeView(entry.custom!)}><TaskIcon name="trash" /></button>
               </div>
               : <button key={entry.key} type="button" data-view-selection={entry.key} aria-current={navigationSelection === entry.key || selection === entry.key || undefined} onClick={() => setSelection(entry.key)}><TaskIcon name={entry.icon} /><span className="tasks-nav-label">{entry.label}</span><span className="tasks-count">{countFor(entry.key)}</span></button>)}
@@ -913,16 +947,17 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
               <p className="tasks-tool-title">筛选 · 同时满足以下条件</p><p className="tasks-tool-title">优先级（可多选）</p>
               {(['high', 'medium', 'low'] as TaskPriority[]).map(priority => (
                 <label key={priority} className="tasks-view-check">
-                  <input type="checkbox" checked={filterPriorities.includes(priority)}
+                  <input type="checkbox" disabled={viewFilterSaving} checked={filterPriorities.includes(priority)}
                     onChange={e => setFilterPriorities(e.target.checked ? [...filterPriorities, priority] : filterPriorities.filter(item => item !== priority))} />
                   {PRIORITY_LABELS[priority]}
                 </label>
               ))}
-              <label className="tasks-filter-row">清单<select aria-label="筛选清单" value={filterProjects[0] ?? ''} onChange={e => setFilterProjects(e.target.value ? [e.target.value] : [])}><option value="">全部清单</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}{project.archivedAt ? '（已归档）' : ''}</option>)}</select></label>
-              <label className="tasks-filter-row">截止范围<select aria-label="筛选截止范围" value={filterDue} onChange={e => setFilterDue(e.target.value as TaskDueRange)}>{(Object.keys(DUE_RANGE_LABELS) as TaskDueRange[]).map(id => <option key={id} value={id}>{DUE_RANGE_LABELS[id]}</option>)}</select></label>
+              <label className="tasks-filter-row">清单<select aria-label="筛选清单" disabled={viewFilterSaving} value={filterProjects[0] ?? ''} onChange={e => setFilterProjects(e.target.value ? [e.target.value] : [])}><option value="">不限</option>{projects.filter(project => !activeView?.groupId || project.groupId === activeView.groupId).map(project => <option key={project.id} value={project.id}>{project.name}{project.archivedAt ? '（已归档）' : ''}</option>)}</select></label>
+              <label className="tasks-filter-row">截止范围<select aria-label="筛选截止范围" disabled={viewFilterSaving} value={filterDue} onChange={e => setFilterDue(e.target.value as TaskDueRange)}>{(Object.keys(DUE_RANGE_LABELS) as TaskDueRange[]).map(id => <option key={id} value={id}>{DUE_RANGE_LABELS[id]}</option>)}</select></label>
+              {viewFilterSaving && <p className="tasks-tool-title" role="status">正在保存筛选…</p>}
               <p className="tasks-tool-title">此处只筛选截止日期；「今天／明天／本周／下周」按任务执行区间筛选。</p>
-              {filterCount > 0 && <button type="button" onClick={clearFilters}>清除筛选</button>}
-              {filterCount > 0 && <button type="button" onClick={() => setViewDraft({ ...emptyViewDraft, projectIds: filterProjects, priorities: filterPriorities, dueRange: filterDue })}>保存为新视图</button>}
+              {filterCount > 0 && <button type="button" onClick={clearCurrentFilters} disabled={viewFilterSaving}>清除筛选</button>}
+              {(filterCount > 0 || activeView || sortMode !== 'smart') && <button type="button" disabled={viewFilterSaving} onClick={() => setViewDraft({ ...emptyViewDraft, sortMode, statusFilter: effectiveStatus, groupId: activeView?.groupId ?? null, projectIds: filterProjects, priorities: filterPriorities, dueRange: filterDue })}>保存为新视图</button>}
             </div>
           </details>
           {selection !== 'done' && <details className="tasks-tool-menu">
@@ -1013,38 +1048,31 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
                 autoFocus aria-label="视图名称" placeholder="例如：高优跟进" />
             </label>
             <fieldset className="tasks-view-filters">
-              <legend>筛选条件（不选即不限）</legend>
+              <legend>视图范围</legend>
               <label className="tasks-view-property">
-                <span className="tasks-view-property-name">截止范围：</span>
-                <select value={viewDraft.dueRange} onChange={e => setViewDraft({ ...viewDraft, dueRange: e.target.value as TaskDueRange })} aria-label="视图截止范围">
-                  {(Object.keys(DUE_RANGE_LABELS) as TaskDueRange[]).map(id => <option key={id} value={id}>{DUE_RANGE_LABELS[id]}</option>)}
+                <span className="tasks-view-property-name">分组：</span>
+                <select aria-label="视图分组" value={viewDraft.groupId ?? ''} onChange={e => {
+                  const groupId = e.target.value || null
+                  setViewDraft({ ...viewDraft, groupId, projectIds: viewDraft.projectIds.filter(id => projects.some(project => project.id === id && !project.archivedAt && (!groupId || project.groupId === groupId))) })
+                }}>
+                  <option value="">不限</option>
+                  {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+                  {viewDraft.groupId && !groups.some(group => group.id === viewDraft.groupId) && <option value={viewDraft.groupId}>已删除分组</option>}
                 </select>
               </label>
-              <div className="tasks-view-property">
-                <span className="tasks-view-property-name" id="tasks-view-priority-label">优先级：</span>
-                <div className="tasks-view-checks" role="group" aria-labelledby="tasks-view-priority-label">
-                  {(['high', 'medium', 'low'] as TaskPriority[]).map(priority => (
-                    <label key={priority} className="tasks-view-check">
-                      <input type="checkbox" checked={viewDraft.priorities.includes(priority)}
-                        onChange={e => setViewDraft({ ...viewDraft, priorities: e.target.checked ? [...viewDraft.priorities, priority] : viewDraft.priorities.filter(item => item !== priority) })} />
-                      {PRIORITY_LABELS[priority]}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              {projects.filter(project => !project.archivedAt).length > 0 && <div className="tasks-view-property">
-                <span className="tasks-view-property-name" id="tasks-view-project-label">清单：</span>
-                <div className="tasks-view-checks" role="group" aria-labelledby="tasks-view-project-label">
-                  {projects.filter(project => !project.archivedAt).map(project => (
-                    <label key={project.id} className="tasks-view-check">
-                      <input type="checkbox" checked={viewDraft.projectIds.includes(project.id)}
-                        onChange={e => setViewDraft({ ...viewDraft, projectIds: e.target.checked ? [...viewDraft.projectIds, project.id] : viewDraft.projectIds.filter(item => item !== project.id) })} />
-                      {project.name}
-                    </label>
-                  ))}
-                </div>
-              </div>}
+              <label className="tasks-view-property">
+                <span className="tasks-view-property-name">清单：</span>
+                <select aria-label="视图清单" value={viewDraft.projectIds.length > 1 ? '__existing_multiple__' : viewDraft.projectIds[0] ?? ''} onChange={e => {
+                  if (e.target.value !== '__existing_multiple__') setViewDraft({ ...viewDraft, projectIds: e.target.value ? [e.target.value] : [] })
+                }}>
+                  <option value="">不限</option>
+                  {viewDraft.projectIds.length > 1 && <option value="__existing_multiple__">已选 {viewDraft.projectIds.length} 个清单（保留原筛选）</option>}
+                  {projects.filter(project => !project.archivedAt && (!viewDraft.groupId || project.groupId === viewDraft.groupId)).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  {viewDraft.projectIds.length === 1 && !projects.some(project => project.id === viewDraft.projectIds[0] && !project.archivedAt && (!viewDraft.groupId || project.groupId === viewDraft.groupId)) && <option value={viewDraft.projectIds[0]}>原清单（当前不可用）</option>}
+                </select>
+              </label>
             </fieldset>
+            <p className="tasks-tool-title">筛选和排序在视图工具栏中调整，会自动保存到当前视图。</p>
             <div className="tasks-form-actions">
               <button type="submit" disabled={busy}>{viewDraft.id ? '保存' : '创建'}</button>
               <button type="button" onClick={() => setViewDraft(null)}>取消</button>
@@ -1066,7 +1094,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
           return { ...base, hidden: base.hidden.includes(key) ? base.hidden.filter(item => item !== key) : [...base.hidden, key] }
         })}
         onReorder={next => setNavConfig(current => normalizeTaskNavConfig({ ...current, order: next }, views))}
-        onEditView={view => { setManageViewsOpen(false); setViewDraft({ id: view.id, name: view.name, projectIds: [...view.projectIds], priorities: [...view.priorities], dueRange: view.dueRange }) }}
+        onEditView={view => { setManageViewsOpen(false); setViewDraft({ id: view.id, groupId: view.groupId ?? null, name: view.name, projectIds: [...view.projectIds], priorities: [...view.priorities], dueRange: view.dueRange }) }}
         onDeleteView={view => { void removeView(view) }}
       />}
       {sourcePreview && <TaskSourceDialog source={sourcePreview} onClose={() => setSourcePreview(null)} onChat={onOpenChat} />}

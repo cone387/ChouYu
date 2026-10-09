@@ -20,6 +20,61 @@ afterEach(() => {
 })
 
 describe('TasksStore', () => {
+  test('视图分组持久化，已完成列表与计数随清单移动变化，不限保留全部', () => {
+    const file = tempFile('view-group.db')
+    let store = openTasksStore(file)
+    try {
+      const a = store.createGroup('A'), b = store.createGroup('B')
+      const p = store.createProject('P', a.id), q = store.createProject('Q', b.id)
+      const t = store.createTask({ title: 'A task', projectId: p.id })
+      const u = store.createTask({ title: 'B task', projectId: q.id })
+      store.completeTask(t.id); store.completeTask(u.id)
+      const view = store.createView({ name: 'A view', groupId: a.id })
+      const list = () => store.listTasks({ doneSelection: `view:${view.id}` })
+      expect(list().done.map(task => task.id)).toEqual([t.id])
+      expect(list().doneViewCounts?.[`view:${view.id}`]).toBe(1)
+      const r = store.createProject('New in A', a.id)
+      const added = store.createTask({ title: 'New task', projectId: r.id })
+      store.completeTask(added.id)
+      expect(list().matchedDone).toBe(2)
+      store.moveProject(p.id, b.id)
+      expect(list().done.map(task => task.id)).toEqual([added.id])
+      store.updateView(view.id, { name: 'Renamed' })
+      expect(store.listViews()[0].groupId).toBe(a.id)
+      store.close(); store = openTasksStore(file)
+      expect(store.listViews()[0].groupId).toBe(a.id)
+      const backup = store.exportBackup({ preferences: '{}', layoutOrder: '{}', selection: 'all' })
+      store.updateView(view.id, { groupId: null })
+      expect(list().matchedDone).toBe(3)
+      store.restoreBackup(backup)
+      expect(list().matchedDone).toBe(1)
+      store.updateView(view.id, { projectIds: [q.id] })
+      expect(list().matchedDone).toBe(0)
+      expect(() => store.updateView(view.id, { groupId: 123 as never })).toThrow('分组')
+    } finally { store.close() }
+  })
+
+  test('v10 视图和备份升级保留多清单条件且分组默认不限', async () => {
+    const file = tempFile('legacy-view.db')
+    let store = openTasksStore(file)
+    const p = store.createProject('P'), q = store.createProject('Q')
+    const view = store.createView({ name: 'Legacy', projectIds: [p.id, q.id] })
+    const backup = store.exportBackup({ preferences: '{}', layoutOrder: '{}', selection: 'all' })
+    backup.schemaVersion = 10
+    for (const row of backup.tables.task_views) delete row.group_id
+    store.close()
+    const Database = (await import('better-sqlite3')).default
+    const db = new Database(file)
+    db.exec('ALTER TABLE task_views DROP COLUMN group_id; PRAGMA user_version=10')
+    db.close()
+    store = openTasksStore(file)
+    try {
+      expect(store.listViews()[0]).toMatchObject({ id: view.id, groupId: null, projectIds: [p.id, q.id] })
+      store.restoreBackup(backup)
+      expect(store.listViews()[0]).toMatchObject({ groupId: null, projectIds: [p.id, q.id] })
+    } finally { store.close() }
+  })
+
   test('卡片只更新一个子项状态，保留最新内容、提醒和父任务状态', () => {
     const store = openTasksStore(tempFile('tasks.db'))
     try {

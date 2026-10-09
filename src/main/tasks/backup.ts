@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import type { TaskUISettings } from '../../shared/tasks'
-import { validateTaskChecklist, validateTaskSource } from '../../shared/tasks'
+import { DUE_RANGE_LABELS, validateTaskChecklist, validateTaskSource } from '../../shared/tasks'
 import { TASK_RECURRENCES, parseImportedRepeatRule, repeatRuleFor, validateRepeatRule, validateReminders } from '../../shared/taskScheduling'
 
 const tables = ['task_groups', 'task_projects', 'task_fields', 'task_views', 'tasks', 'task_trash'] as const
@@ -57,7 +57,8 @@ function insertRows(database: Database.Database, backup: TaskBackup) {
         const options = JSON.parse(String(row.options))
         if (!Array.isArray(options) || options.some(option => !option || typeof option.id !== 'string' || typeof option.name !== 'string')) throw new Error('备份中的字段选项无效。')
       } else if (table === 'task_views') {
-        if (!['today', 'week', 'overdue', 'none', 'any'].includes(String(row.due_range))) throw new Error('备份中的视图范围无效。')
+        if (row.group_id !== null && (typeof row.group_id !== 'string' || !row.group_id.trim() || row.group_id.length > 200)) throw new Error('备份中的视图分组无效。')
+        if (!Object.hasOwn(DUE_RANGE_LABELS, String(row.due_range))) throw new Error('备份中的视图范围无效。')
         for (const key of ['project_ids', 'priorities']) {
           const values = JSON.parse(String(row[key]))
           if (!Array.isArray(values) || values.some(value => typeof value !== 'string')) throw new Error('备份中的视图筛选无效。')
@@ -88,7 +89,7 @@ function legacyReminders(task: Row): string {
 
 export function validateTaskBackup(database: Database.Database, input: unknown): TaskBackup {
   let backup = input as TaskBackup
-  if (backup?.format === 'chouyu-tasks' && backup.version === 1 && backup.schemaVersion === 9 && database.pragma('user_version', { simple: true }) === 10 && Array.isArray(backup.tables?.tasks)) {
+  if (backup?.format === 'chouyu-tasks' && backup.version === 1 && backup.schemaVersion === 9 && Number(database.pragma('user_version', { simple: true })) >= 10 && Array.isArray(backup.tables?.tasks)) {
     backup = structuredClone(backup)
     backup.schemaVersion = 10
     backup.tables.tasks = backup.tables.tasks.map(task => {
@@ -96,6 +97,11 @@ export function validateTaskBackup(database: Database.Database, input: unknown):
       const rule = flag ? parseImportedRepeatRule(flag) : null
       return { ...task, repeat_rule: rule ? JSON.stringify(rule) : null, recurrence_index: 1, reminders: legacyReminders(task), ...(rule ? { recurrence: 'custom', note: String(task.note).replace('此重复规则仅保留记录，ChouYu 暂不支持自动重复。', '原重复规则已启用。') } : {}) }
     })
+  }
+  if (backup?.format === 'chouyu-tasks' && backup.version === 1 && backup.schemaVersion === 10 && Number(database.pragma('user_version', { simple: true })) >= 11 && Array.isArray(backup.tables?.task_views)) {
+    backup = structuredClone(backup)
+    backup.schemaVersion = 11
+    backup.tables.task_views = backup.tables.task_views.map(view => ({ ...view, group_id: null }))
   }
   if (!backup || backup.format !== 'chouyu-tasks' || backup.version !== 1 || backup.schemaVersion !== database.pragma('user_version', { simple: true })) throw new Error('备份格式或数据库版本不兼容。请使用相同版本的应用恢复。')
   if (typeof backup.createdAt !== 'number' || !Number.isFinite(backup.createdAt) || !backup.tables || tables.some(table => !Array.isArray(backup.tables[table]))) throw new Error('备份数据不完整。')
