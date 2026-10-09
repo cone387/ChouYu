@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { PreparedTool, RegisteredTool, ToolResult } from '../tools/registry'
 import type { TaskRecord, TaskUpdateInput } from '../../shared/tasks'
-import { repeatDescription } from '../../shared/taskScheduling'
+import { repeatDescription, repeatRuleFor } from '../../shared/taskScheduling'
 import type { TasksStore } from './store'
 
 type TaskAccess = Pick<TasksStore, 'getTask' | 'searchTasks' | 'listProjects' | 'updateTask' | 'completeTask'>
@@ -44,7 +44,7 @@ export function createTaskAssistantTools(access: () => TaskAccess, changed: () =
     if (complete) {
       lines.push('状态：未完成 → 已完成')
       if (task.checklist?.some(item => !item.done)) lines.push(`尚有 ${task.checklist.filter(item => !item.done).length} 个未完成子项；本次不会自动勾选子项。`)
-      if (task.recurrence !== 'none') lines.push(`重复：${repeatDescription(task.recurrence, task.repeatRule)}。完成后按现有规则生成下一期（达到结束条件时不生成）。`)
+      if (task.recurrence !== 'none') lines.push(`重复：${repeatDescription(task.recurrence, task.repeatRule)}。${repeatRuleFor(task.recurrence, task.repeatRule)?.basis === 'completed' ? '完成后按规则生成下一期' : '下一期按日期自动生成，不受本期是否完成影响'}（达到结束条件时不生成）。`)
     } else {
       if (args.title !== undefined) {
         if (typeof args.title !== 'string' || !args.title.trim() || args.title.length > 200) throw new Error('任务名称须为 1–200 字。')

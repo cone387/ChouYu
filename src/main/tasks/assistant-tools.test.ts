@@ -132,6 +132,8 @@ describe('confirmed single task changes', () => {
     const result = await prepared.execute()
     expect(result.taskId).toBe(task.id)
     expect(store.getTask(task.id)?.status).toBe('done')
+    expect(store.searchTasks().total).toBe(0)
+    store.generateScheduledOccurrences(task.dueAt! + 86400000)
     expect(store.searchTasks().total).toBe(1)
     expect(() => prepared.execute()).toThrow()
   })

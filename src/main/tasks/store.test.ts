@@ -39,6 +39,7 @@ describe('TasksStore', () => {
       const restored = store.setChecklistItemDone(task.id, 'a', false)
       expect(restored.checklist![0]).toEqual(latest.checklist![0])
       store.completeTask(task.id)
+      store.generateScheduledOccurrences(dueAt + 86400000)
       expect(store.listTasks().open[0].checklist!.every(item => !item.done)).toBe(true)
     } finally { store.close() }
   })
@@ -88,12 +89,14 @@ describe('TasksStore', () => {
     reopened.close()
   })
 
-  test('重复任务完成后生成下一实例', () => {
+  test('重复任务提前完成后仍等到日程日期才生成下一实例', () => {
     const store = openTasksStore(tempFile('tasks.db'))
     const dueAt = Date.now() + 24 * 60 * 60_000
     const task = store.createTask({ title: '每日站会', dueAt, recurrence: 'daily' })
     const done = store.completeTask(task.id)
     expect(done.status).toBe('done')
+    expect(store.listTasks().open).toHaveLength(0)
+    store.generateScheduledOccurrences(dueAt + 86400000)
     const open = store.listTasks().open
     expect(open).toHaveLength(1)
     expect(open[0].title).toBe('每日站会')
@@ -102,14 +105,15 @@ describe('TasksStore', () => {
     store.close()
   })
 
-  test('迟到完成的重复任务跳过已过期周期', () => {
+  test('迟到完成的重复任务保留原日程的下一周期', () => {
     const store = openTasksStore(tempFile('tasks.db'))
     const stale = new Date(2026, 0, 15, 9, 0).getTime()
     const task = store.createTask({ title: '周报', dueAt: stale, remindAt: stale - 60 * 60_000, recurrence: 'weekly' })
     const done = store.completeTask(task.id)
+    store.generateScheduledOccurrences(stale + 7 * 86400000)
     const next = store.listTasks().open[0]
-    expect(next.dueAt).not.toBeNull()
-    expect(next.dueAt!).toBeGreaterThan(done.completedAt ?? 0)
+    expect(done.status).toBe('done')
+    expect(next.dueAt).toBe(stale + 7 * 86400000)
     expect(next.remindAt).toBe(next.dueAt! - 60 * 60_000)
     store.close()
   })
@@ -201,6 +205,7 @@ describe('TasksStore', () => {
     const store = openTasksStore(file)
     const task = store.createTask({ title: '重复', dueAt: Date.now() + 86_400_000, recurrence: 'daily' })
     store.completeTask(task.id)
+    store.generateScheduledOccurrences(task.dueAt! + 86400000)
     const next = store.listTasks().open[0]
     store.reopenTask(task.id)
     store.completeTask(task.id)
@@ -219,6 +224,7 @@ describe('TasksStore', () => {
     const store = openTasksStore(file)
     const task = store.createTask({ title: '旧重复', dueAt: Date.now() + 86_400_000, recurrence: 'daily' })
     store.completeTask(task.id)
+    store.generateScheduledOccurrences(task.dueAt! + 86400000)
     const next = store.listTasks().open[0]
     store.close()
     const Database = (await import('better-sqlite3')).default
@@ -231,6 +237,7 @@ describe('TasksStore', () => {
     upgraded.completeTask(task.id)
     expect(upgraded.listTasks().open.map(item => item.id)).toEqual([next.id])
     upgraded.completeTask(next.id)
+    upgraded.generateScheduledOccurrences(next.dueAt! + 86400000)
     expect(upgraded.listTasks().open).toHaveLength(1)
     upgraded.close()
   })
@@ -476,6 +483,7 @@ test('开始时间持久化、清空、校验和重复任务顺延', () => {
   expect(() => store.updateTask(task.id, { startAt: dueAt + 1 })).toThrow('开始时间')
   expect(() => store.createTask({ title: '错误', startAt: NaN })).toThrow('开始时间')
   store.completeTask(task.id)
+  store.generateScheduledOccurrences(dueAt + 86400000)
   expect(store.listTasks().open[0].startAt).toBe(startAt + 86_400_000)
   store.close()
   const reopened = openTasksStore(file)
@@ -855,6 +863,7 @@ test('子项、来源持久化并可回收恢复，子项与父状态独立，�
   expect(store.getTask(task.id)?.status).toBe('open')
   expect(() => store.updateTask(task.id, { checklist: [{ id: 'same', title: '', done: false }] })).toThrow()
   store.completeTask(task.id)
+  store.generateScheduledOccurrences(task.dueAt! + 86400000)
   const next = store.listTasks().open[0]
   expect(next.checklist).toEqual([{ id: 'step', title: '已勾选', done: false }])
   expect(next.source).toEqual(source)

@@ -59,22 +59,25 @@ export function initializeTasks(options: TasksModuleOptions): void {
   }
   if (store.quarantinedAt) storeRebuilt = true
   scheduler = startTaskScheduler(
-    (now, backlog) => store!.claimDueReminders(now, entries => {
-      if (!entries.length) return
-      const identified = entries.map(entry => ({ entry, id: JSON.stringify([entry.task.id, entry.itemId ?? '', entry.reminderAt, entry.task.updatedAt]) }))
-      const unsent = identified.filter(item => !getState(`reminder-receipt:${item.id}`))
-      if (backlog && unsent.length) {
-        appendAssistantMessage(`错过了 ${unsent.length} 条任务提醒。打开任务查看当前安排。`, undefined, 'task-backlog', { receiptIds: unsent.map(item => item.id) })
-      } else for (const { entry, id } of unsent) {
-        appendAssistantMessage(`任务提醒：${entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title}`, undefined, 'task', {
-          receiptIds: [id], taskReminder: { taskId: entry.task.id, checklistId: entry.itemId, reminderAt: entry.reminderAt! }
-        })
-      }
-      // A failed JSON write may have left an in-memory receipt. Flush it before SQL commits.
-      const status = flushDatabase()
-      if (status.error) throw new Error(status.error)
-      notifyReminderChanges()
-    }),
+    (now, backlog) => {
+      if (store!.generateScheduledOccurrences(now)) broadcast('tasks:changed')
+      return store!.claimDueReminders(now, entries => {
+        if (!entries.length) return
+        const identified = entries.map(entry => ({ entry, id: JSON.stringify([entry.task.id, entry.itemId ?? '', entry.reminderAt, entry.task.updatedAt]) }))
+        const unsent = identified.filter(item => !getState(`reminder-receipt:${item.id}`))
+        if (backlog && unsent.length) {
+          appendAssistantMessage(`错过了 ${unsent.length} 条任务提醒。打开任务查看当前安排。`, undefined, 'task-backlog', { receiptIds: unsent.map(item => item.id) })
+        } else for (const { entry, id } of unsent) {
+          appendAssistantMessage(`任务提醒：${entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title}`, undefined, 'task', {
+            receiptIds: [id], taskReminder: { taskId: entry.task.id, checklistId: entry.itemId, reminderAt: entry.reminderAt! }
+          })
+        }
+        // A failed JSON write may have left an in-memory receipt. Flush it before SQL commits.
+        const status = flushDatabase()
+        if (status.error) throw new Error(status.error)
+        notifyReminderChanges()
+      })
+    },
     {
       onBacklog: count => {
         if (readyDelivered) broadcast('tasks:reminder', { backlog: count })

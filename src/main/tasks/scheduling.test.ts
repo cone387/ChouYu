@@ -10,6 +10,92 @@ const open = (file = path()) => { const store = openTasksStore(file); stores.pus
 afterEach(() => { vi.restoreAllMocks(); for (const s of stores.splice(0)) s.close(); for (const d of directories.splice(0)) rmSync(d, { recursive: true, force: true }) })
 const settings = { preferences: '{}', layoutOrder: '{}', selection: 'all' }
 
+const day = (date: number, hour = 9) => new Date(2030, 0, date, hour).getTime()
+
+test('daily occurrences appear at local midnight even when all previous tasks remain open', () => {
+  const file = path(), store = open(file)
+  const first = store.createTask({ title: 'Daily', dueAt: day(1), recurrence: 'daily', checklist: [{ id: 'a', title: 'Step', done: true }] })
+  expect(store.generateScheduledOccurrences(day(2, 0) - 1)).toBe(0)
+  expect(store.generateScheduledOccurrences(day(2, 0))).toBe(1)
+  expect(store.generateScheduledOccurrences(day(4, 0))).toBe(2)
+  const tasks = store.listTasks().open.sort((a, b) => a.dueAt! - b.dueAt!)
+  expect(tasks.map(t => t.dueAt)).toEqual([day(1), day(2), day(3), day(4)])
+  expect(new Set(tasks.map(t => t.id)).size).toBe(4)
+  expect(store.getTask(first.id)?.checklist?.[0].done).toBe(true)
+  expect(tasks.slice(1).every(t => !t.checklist![0].done)).toBe(true)
+  store.completeTask(tasks[1].id)
+  expect(store.getTask(first.id)?.status).toBe('open')
+  expect(store.getTask(tasks[2].id)?.status).toBe('open')
+  store.reopenTask(tasks[1].id)
+  expect(open(file).generateScheduledOccurrences(day(4, 23))).toBe(0)
+  expect(store.listTasks().open).toHaveLength(4)
+})
+
+test('calendar count and until bounds include missed occurrences; completed basis waits for completion', () => {
+  const store = open()
+  store.createTask({ title: 'Count', dueAt: day(1), recurrence: 'custom', repeatRule: { frequency: 'daily', interval: 1, basis: 'scheduled', count: 3 } })
+  store.createTask({ title: 'Until', dueAt: day(1), recurrence: 'custom', repeatRule: { frequency: 'daily', interval: 1, basis: 'scheduled', until: day(2) } })
+  store.createTask({ title: 'Completion', dueAt: day(1), recurrence: 'custom', repeatRule: { frequency: 'daily', interval: 1, basis: 'completed' } })
+  expect(store.generateScheduledOccurrences(day(10))).toBe(3)
+  expect(store.listTasks().open.filter(t => t.title === 'Count').map(t => t.recurrenceIndex).sort()).toEqual([1, 2, 3])
+  expect(store.listTasks().open.filter(t => t.title === 'Completion')).toHaveLength(1)
+  expect(store.generateScheduledOccurrences(day(20))).toBe(0)
+})
+
+test('generation is atomic on write failure and retries without duplicates', () => {
+  const file = path(), store = open(file), db = new Database(file)
+  try {
+    store.createTask({ title: 'Retry', dueAt: day(1), recurrence: 'daily' })
+    db.exec("CREATE TRIGGER fail_occurrence BEFORE INSERT ON tasks BEGIN SELECT RAISE(ABORT, 'write failed'); END")
+    expect(() => store.generateScheduledOccurrences(day(3))).toThrow('write failed')
+    expect(store.listTasks().open).toHaveLength(1)
+    db.exec('DROP TRIGGER fail_occurrence')
+    expect(open(file).generateScheduledOccurrences(day(3))).toBe(2)
+    expect(store.generateScheduledOccurrences(day(3))).toBe(0)
+  } finally { db.close() }
+})
+
+test('archiving pauses generation; changing or deleting the latest occurrence controls future repeats', () => {
+  const store = open(), project = store.createProject('Archive')
+  const first = store.createTask({ title: 'Daily', projectId: project.id, dueAt: day(1), recurrence: 'daily' })
+  store.archiveProject(project.id, true)
+  expect(store.generateScheduledOccurrences(day(2))).toBe(0)
+  store.archiveProject(project.id, false)
+  expect(store.generateScheduledOccurrences(day(2))).toBe(1)
+  const next = store.listTasks().open.find(t => t.id !== first.id)!
+  store.updateTask(first.id, { dueAt: day(1), recurrence: 'weekly' })
+  store.updateTask(next.id, { recurrence: 'none' })
+  expect(store.generateScheduledOccurrences(day(20))).toBe(0)
+  store.updateTask(next.id, { recurrence: 'daily' })
+  store.deleteTask(next.id)
+  expect(store.generateScheduledOccurrences(day(20))).toBe(0)
+})
+
+test('early reminders materialize the next occurrence before its due date and fire independently', () => {
+  const store = open()
+  const first = store.createTask({ title: 'Reminder', dueAt: day(1), recurrence: 'daily', reminderTimes: [day(1) - 3600000] })
+  store.claimDueReminders(day(1))
+  expect(store.generateScheduledOccurrences(day(2, 0))).toBe(1)
+  const next = store.listTasks().open.find(t => t.id !== first.id)!
+  expect(next.reminders).toEqual([{ at: day(2) - 3600000, firedAt: null }])
+  expect(store.claimDueReminders(day(2, 8)).map(t => t.task.id)).toEqual([next.id])
+  expect(store.claimDueReminders(day(2, 8))).toEqual([])
+  const early = store.createTask({ title: 'Early', dueAt: day(10), recurrence: 'weekly', reminderTimes: [day(8)] })
+  expect(store.generateScheduledOccurrences(day(15))).toBeGreaterThan(0)
+  expect(store.listTasks().open.some(t => t.title === early.title && t.dueAt === day(17))).toBe(true)
+})
+
+test('long downtime is bounded per tick without losing dates, and backup preserves generation markers', () => {
+  const store = open()
+  store.createTask({ title: 'Catch up', dueAt: day(1), recurrence: 'daily' })
+  expect(store.generateScheduledOccurrences(day(401))).toBe(366)
+  const backup = store.exportBackup(settings)
+  store.restoreBackup(backup)
+  expect(store.generateScheduledOccurrences(day(401))).toBe(34)
+  expect(store.generateScheduledOccurrences(day(401))).toBe(0)
+  expect(store.listTasks().open).toHaveLength(401)
+})
+
 test('multiple reminders claim once each across restart; title edits preserve fired markers', () => {
   const file = path(), store = open(file)
   const task = store.createTask({ title: '提醒', dueAt: 1000, reminderTimes: [100, 200, 300] })
@@ -122,6 +208,7 @@ test('重复任务下一期重置子项勾选并按周期偏移子项时间与�
     { id: 'a', title: '整理', done: true, dueAt: due + 60_000, reminders: [{ at: due + 30_000, firedAt: 123 }] }
   ] })
   store.completeTask(task.id)
+  store.generateScheduledOccurrences(due + 7 * 86_400_000)
   const next = store.listTasks().open[0]
   expect(next.dueAt).toBe(due + 7 * 86_400_000)
   const item = next.checklist![0]

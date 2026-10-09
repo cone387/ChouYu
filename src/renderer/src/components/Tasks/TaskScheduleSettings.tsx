@@ -34,7 +34,7 @@ export default function TaskScheduleSettings({ section, draft, busy, onChange }:
   if (draft.recurrence !== 'none' && due !== null) {
     try {
       preview = repeatDescription(draft.recurrence, draft.repeatRule)
-      const next = nextTaskOccurrence(due, draft.recurrence, draft.repeatRule ?? null, due !== draft.originalDueAt ? due : draft.recurrenceAnchorAt ?? due, Date.now(), draft.recurrenceIndex ?? 1)
+      const next = nextTaskOccurrence(due, draft.recurrence, draft.repeatRule ?? null, due !== draft.originalDueAt ? due : draft.recurrenceAnchorAt ?? due, repeatRuleFor(draft.recurrence, draft.repeatRule)?.basis === 'completed' ? Date.now() : due, draft.recurrenceIndex ?? 1)
       preview += next === null ? ' · 无后续周期' : ` · 下次 ${new Date(next).toLocaleString('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
     } catch (error) { ruleError = (error as Error).message }
   }
@@ -67,7 +67,7 @@ export default function TaskScheduleSettings({ section, draft, busy, onChange }:
       {rule.count !== undefined && <label>总次数（含当前次）<input type="number" aria-label="重复总次数" min={1} max={10000} value={rule.count} onChange={e => changeRule({ count: Number(e.target.value) })} /></label>}
       {rule.basis === 'completed' && <p className="tasks-schedule-hint">从实际完成时间起算；下次时间会随完成时间变化。</p>}
     </div>}
-    {draft.recurrence !== 'none' && <p className="tasks-schedule-hint">完成当前任务后创建下一次并继承规则，保留完成记录。</p>}
+    {draft.recurrence !== 'none' && <p className="tasks-schedule-hint">{draft.recurrence === 'custom' && rule.basis === 'completed' ? '完成当前任务后创建下一次并继承规则，保留完成记录。' : '按日期自动生成每次任务；上一次未完成也照常生成，各次独立。'}</p>}
     {(draft.recurrence === 'lunarYearly' || rule.frequency === 'lunarYearly' && draft.recurrence === 'custom') && <p className="tasks-schedule-hint">按所选日期对应的农历月日重复；无对应闰月时用普通月，小月三十按廿九执行。</p>}
     {preview && <p className="tasks-repeat-preview" aria-live="polite">{preview}</p>}
     {ruleError && <p className="tasks-schedule-error" role="alert">{ruleError}</p>}

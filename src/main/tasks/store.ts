@@ -699,6 +699,60 @@ export class TasksStore {
     return result
   }
 
+  /** The successor marker and new row must always commit in the same transaction. */
+  private createNextOccurrence(current: TaskRow, nextDueAt: number, now: number): TaskRow {
+    const recurrence = assertRecurrence(current.recurrence)
+    this.database.prepare('UPDATE tasks SET recurrence_generated = 1 WHERE id = ?').run(current.id)
+    const nextId = randomUUID()
+    const reminders = buildReminders(rowReminders(current).map(r => r.at + nextDueAt - current.due_at!))
+    this.database.prepare(`INSERT INTO tasks
+      (id, title, note, project_id, priority, status, start_at, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields, checklist, source, repeat_rule, recurrence_index, reminders)
+      VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`)
+      .run(nextId, current.title, current.note, current.project_id, current.priority, current.start_at === null ? null : nextDueAt - (current.due_at! - current.start_at), nextDueAt, reminders[0]?.at ?? null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now, current.custom_fields ?? '{}', JSON.stringify(validateTaskChecklist(JSON.parse(current.checklist ?? '[]')).map(item => {
+        const delta = nextDueAt - current.due_at!
+        return {
+          ...item, done: false,
+          ...(item.dueAt != null ? { dueAt: item.dueAt + delta } : {}),
+          ...(item.reminders?.length ? { reminders: item.reminders.map(r => ({ at: r.at + delta, firedAt: null })) } : {})
+        }
+      })), current.source ?? null, current.repeat_rule ?? null, (current.recurrence_index ?? 1) + 1, JSON.stringify(reminders))
+    return this.database.prepare('SELECT * FROM tasks WHERE id = ?').get(nextId) as TaskRow
+  }
+
+  /** Materialize calendar occurrences independently of completion, including missed days. */
+  generateScheduledOccurrences(now = Date.now()): number {
+    return this.database.transaction(() => {
+      const rows = this.database.prepare(`SELECT * FROM tasks WHERE recurrence <> 'none'
+        AND due_at IS NOT NULL AND recurrence_generated = 0
+        AND (project_id IS NULL OR project_id NOT IN (SELECT id FROM task_projects WHERE archived_at IS NOT NULL))`).all() as TaskRow[]
+      let generated = 0
+      for (let current of rows) {
+        const recurrence = assertRecurrence(current.recurrence)
+        const rule = current.repeat_rule ? JSON.parse(current.repeat_rule) : null
+        if (repeatRuleFor(recurrence, rule)?.basis !== 'scheduled') continue
+        // Bound each series per tick; persisted progress resumes on the next tick.
+        for (let i = 0; i < 366; i++) {
+          const due = current.due_at!
+          const next = nextTaskOccurrence(due, recurrence, rule, current.recurrence_anchor_at ?? due, due, current.recurrence_index ?? 1)
+          if (next === null) break
+          const day = new Date(next)
+          day.setHours(0, 0, 0, 0)
+          const delta = next - due
+          // Create by the occurrence's local date, or sooner if a start/reminder requires it.
+          const checklist = validateTaskChecklist(JSON.parse(current.checklist ?? '[]'))
+          const readyAt = Math.min(day.getTime(),
+            current.start_at === null ? Infinity : current.start_at + delta,
+            ...rowReminders(current).map(r => r.at + delta),
+            ...checklist.flatMap(item => [item.dueAt == null ? Infinity : item.dueAt + delta, ...(item.reminders ?? []).map(r => r.at + delta)]))
+          if (readyAt > now) break
+          current = this.createNextOccurrence(current, next, now)
+          generated++
+        }
+      }
+      return generated
+    })()
+  }
+
   completeTask(id: string): TaskRecord {
     const outcome = this.database.transaction((): TaskRecord | null => {
       const current = this.database.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow | undefined
@@ -706,24 +760,10 @@ export class TasksStore {
       const now = Date.now()
       this.database.prepare(`UPDATE tasks SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'open'`).run(now, now, id)
       const recurrence = assertRecurrence(current.recurrence)
-      if (recurrence !== 'none' && current.due_at !== null && !current.recurrence_generated) {
-        // 迟到完成时跳过已错过的周期,避免下一期一出生就已过期
-        const nextDueAt = nextTaskOccurrence(current.due_at, recurrence, current.repeat_rule ? JSON.parse(current.repeat_rule) : null, current.recurrence_anchor_at ?? current.due_at, now, current.recurrence_index ?? 1)
-        if (nextDueAt !== null) {
-          this.database.prepare('UPDATE tasks SET recurrence_generated = 1 WHERE id = ?').run(id)
-          const reminders = buildReminders(rowReminders(current).map(r => r.at + nextDueAt - current.due_at!))
-          this.database.prepare(`INSERT INTO tasks
-            (id, title, note, project_id, priority, status, start_at, due_at, remind_at, remind_fired_at, recurrence, recurrence_anchor_at, created_at, updated_at, completed_at, custom_fields, checklist, source, repeat_rule, recurrence_index, reminders)
-            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`)
-            .run(randomUUID(), current.title, current.note, current.project_id, current.priority, current.start_at === null ? null : nextDueAt - (current.due_at - current.start_at), nextDueAt, reminders[0]?.at ?? null, recurrence, current.recurrence_anchor_at ?? current.due_at, now, now, current.custom_fields ?? '{}', JSON.stringify(validateTaskChecklist(JSON.parse(current.checklist ?? '[]')).map(item => {
-              const delta = nextDueAt - current.due_at!
-              return {
-                ...item, done: false,
-                ...(item.dueAt != null ? { dueAt: item.dueAt + delta } : {}),
-                ...(item.reminders?.length ? { reminders: item.reminders.map(r => ({ at: r.at + delta, firedAt: null })) } : {})
-              }
-            })), current.source ?? null, current.repeat_rule ?? null, (current.recurrence_index ?? 1) + 1, JSON.stringify(reminders))
-        }
+      const rule = current.repeat_rule ? JSON.parse(current.repeat_rule) : null
+      if (current.due_at !== null && !current.recurrence_generated && repeatRuleFor(recurrence, rule)?.basis === 'completed') {
+        const next = nextTaskOccurrence(current.due_at, recurrence, rule, current.recurrence_anchor_at ?? current.due_at, now, current.recurrence_index ?? 1)
+        if (next !== null) this.createNextOccurrence(current, next, now)
       }
       return this.requireTask(id)
     })()
