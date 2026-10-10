@@ -1,10 +1,11 @@
-import { AGENT_STATUS, TOPIC_STATUS, type AgentOverview, type AgentTopic } from '../../../../shared/agents'
+import { type AgentOverview, type AgentTopic } from '../../../../shared/agents'
+import { taskState } from '../../../../shared/task-state'
 import type { AssistantRoutine } from '../../../../shared/assistant-routines'
 import type { AssistantTaskEntry } from './useAssistantTasks'
 
 /** View data only. Execution/storage adapters do not own task UI. */
 export interface ContactTaskItem {
-  id: string; title: string; status: string; focused?: boolean; running?: boolean
+  id: string; title: string; status: string; focused?: boolean; running?: boolean; enabled?: boolean
   createdAt?: number; updatedAt?: number; canDelete: boolean
   summary?: string; template?: boolean
   work?: AgentTopic; scheduled?: AssistantTaskEntry
@@ -27,9 +28,11 @@ export function contactTaskItems(data: AgentOverview, scheduled: AssistantTaskEn
         : item.duty ? item.description : '尚未配置时间，不计入任务总数' })),
     ...data.topics.map(work => {
       const run = data.runs.find(run => run.topicId === work.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
-      return { id: work.id, title: work.title, status: data.queuedTopicIds?.includes(work.id) ? '排队中' : run ? AGENT_STATUS[run.status] : TOPIC_STATUS[work.status],
-        focused: work.id === data.focusTopicId, running: !!run, createdAt: work.createdAt, updatedAt: work.updatedAt, canDelete: true, work,
-        summary: run?.status === 'waiting' ? `待回复：${run.question}` : work.nextStep || work.judgement || work.goal }
+      const state = taskState(data, work)
+      return { id: work.id, title: work.title, status: state.label,
+        enabled: !['paused', 'completed', 'abandoned'].includes(work.status) && data.settings.enabled && Boolean(data.taskSchedule?.[work.id] || data.focusTopicId === work.id),
+        focused: work.id === data.focusTopicId, running: !!run && !['paused', 'completed', 'abandoned'].includes(work.status), createdAt: work.createdAt, updatedAt: work.updatedAt, canDelete: true, work,
+        summary: state.code === 'waiting' ? `待回复：${run?.question}` : state.code === 'running' ? work.nextStep || work.judgement || work.goal : state.description }
     })
   ]
 }

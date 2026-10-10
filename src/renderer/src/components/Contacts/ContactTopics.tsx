@@ -94,10 +94,10 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     ['最近完成', routine.lastAt ? `${time(routine.lastAt)} · 已发到聊天` : '尚未执行']
   ] : [['触发规则', assistantTask?.description ?? '']]
 
-  const currentRun = data.runs.find(run => run.topicId === topic?.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
+  const currentRun = topic && researchable(topic) ? data.runs.find(run => run.topicId === topic.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status)) : undefined
   const slotsFull = data.runs.filter(run => run.status === 'running').length >= (data.settings.maxConcurrentTasks ?? 1)
   const queued = Boolean(topic && data.queuedTopicIds?.includes(topic.id))
-  const canPause = Boolean(topic && (queued || currentRun?.topicId === topic.id || (data.settings.enabled && data.focusTopicId === topic.id && researchable(topic))))
+  const canPause = Boolean(topic && researchable(topic) && (queued || currentRun?.topicId === topic.id || (data.settings.enabled && (data.focusTopicId === topic.id || data.taskSchedule?.[topic.id]))))
   const pauseAvailable = assistantTask ? Boolean(scheduleEnabled) : canPause
   const waiting = currentRun?.topicId === topic?.id && currentRun?.status === 'waiting'
   useEffect(() => { setTab('overview'); setShowSettings(false) }, [selected, focusRequest])
@@ -153,7 +153,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       }} />}
     <div className={`topic-workspace${mobileDetail ? ' topic-show-detail' : ''}${listCollapsed ? ' topic-list-collapsed' : ''}${stagesCollapsed ? ' topic-stages-collapsed' : ''}`}>
       <aside className="topic-list-rail">
-        <div className="topic-list-toolbar"><span>任务列表 · 共 {items.filter(item => !item.template).length} 项</span><small>启用/进行中 {items.filter(item => item.status === '已启用' || item.running || item.status === '排队中' || item.work && ['researching', 'needs_evidence'].includes(item.work.status)).length} 项</small></div>
+        <div className="topic-list-toolbar"><span>任务列表 · 共 {items.filter(item => !item.template).length} 项</span><small>启用/进行中 {items.filter(item => item.status === '已启用' || item.running || item.status === '排队中' || item.enabled).length} 项</small></div>
       <nav id={`${tabId}-list`} className="topic-list" aria-label="任务列表">
         <button type="button" className="topic-create" data-topic-create disabled={busy} onClick={() => setTaskDialog('create')}><TaskIcon name="plus" />新建任务</button>
         {assistant.error && <p role="alert" className="agent-error">{assistant.error}<button onClick={() => void assistant.refresh()}>重试</button></p>}

@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import TaskIcon from '../Tasks/TaskIcon'
 import ContactDailyOverview from './ContactDailyOverview'
-import { AGENT_STATUS, TOPIC_STATUS, agentUsesPlanner, type AgentOverview, type AgentTopic } from '../../../../shared/agents'
+import { AGENT_STATUS, agentUsesPlanner, type AgentOverview, type AgentTopic } from '../../../../shared/agents'
+import { taskState } from '../../../../shared/task-state'
 
 const time = (value: number) => new Date(value).toLocaleString('zh-CN', { hour12: false })
 function duration(ms: number) {
@@ -22,19 +23,19 @@ export default function ContactTaskOverview({ topic, data, visible, children, at
     return () => window.clearInterval(timer)
   }, [visible, metric?.activeRuns])
   const latest = metric?.latestRun ?? data.runs.find(run => run.topicId === topic.id)
-  const active = latest && ['queued', 'running', 'waiting', 'interrupted'].includes(latest.status)
   const queued = data.queuedTopicIds?.includes(topic.id)
+  const state = taskState(data, topic, now)
   const firstRoundCalls = agentUsesPlanner(data.settings) ? 3 : 2
   const token = (value: number | undefined, reported: number | undefined) => !metric ? '—' : metric.calls === 0 ? '0' : !reported ? '未记录' : `${value!.toLocaleString()}${reported < metric.calls ? '（部分）' : ''}`
   const elapsed = metric ? duration(metric.elapsedMs + Math.max(0, now - metric.measuredAt) * metric.activeRuns) : '—'
   return <ContactTaskOverviewBody
     goal={topic.goal}
     attention={attention}
-    prioritizeAttention={Boolean(active && latest.status === 'waiting')}
+    prioritizeAttention={state.code === 'waiting'}
     nextStep={topic.nextStep || '尚未安排，执行后由联系人更新。'}
     latest={topic.judgement || '尚未形成判断。'}
-    status={queued ? '排队中' : active ? AGENT_STATUS[latest.status] : TOPIC_STATUS[topic.status]}
-    statusDescription={queued ? '已接单，尚未开始执行' : active ? latest.status === 'waiting' ? '等待你的回复，其他任务可继续' : '当前轮次进行中' : '当前未执行'}
+    status={state.label}
+    statusDescription={state.description}
     values={[elapsed, token(metric?.totalTokens, metric?.totalReported), metric ? `${metric.calls.toLocaleString()} 次` : '—', metric ? `${metric.runs.toLocaleString()} 轮` : '—', token(metric?.inputTokens, metric?.inputReported), token(metric?.outputTokens, metric?.outputReported)]}
     notices={<>{queued && <p className="agent-caption" role="status">按接单顺序等待，当前任务完成、暂停或等待回复时接续。今日额度不足时保留安排，额度恢复后执行；排队不消耗调用。</p>}
       {queued && data.settings.dailyCalls < firstRoundCalls && <p role="status">首轮需要预留 {firstRoundCalls} 次调用，当前每日上限为 {data.settings.dailyCalls} 次。提高上限后才能继续，等待次日不会解决此限制。{onWorkSettings && <button type="button" onClick={onWorkSettings}>调整工作额度</button>}</p>}

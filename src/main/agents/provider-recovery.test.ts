@@ -76,7 +76,9 @@ it.each(['成果字段校验失败', 'API error 401: invalid api key', 'unexpect
 it('restarts the real scheduler after an outage and saves recovered output without manual retry', async () => {
   const { store, path } = fixture()
   vi.setSystemTime(store.providerRecovery('alice')!.at)
-  const model = vi.fn(async (prompt: string) => prompt.startsWith('为联系人')
+  const model = vi.fn(async (prompt: string) => prompt.startsWith('任务结束核对')
+    ? JSON.stringify({ mode: 'finite', satisfied: true, endsAt: null, reason: '要求的正文已交付', nextStep: '', completionCriteria: '交付正文' })
+    : prompt.startsWith('为联系人')
     ? JSON.stringify({ action: 'write', reason: '写正文', query: '', urls: [], checkAfterMinutes: 180 })
     : JSON.stringify({ title: '恢复后的成果', body: '已经保存的正文。', nextStep: '', memories: [], question: '', progress: { judgement: '完成', openQuestions: '', nextStep: '', reason: '已保存', status: 'completed' } }))
   const service = new AgentService(dirname(path), () => {}, () => model)

@@ -7,7 +7,7 @@ function fixture() {
   const receipts = new Set<string>()
   const evidence = { checkedAt: '2026-10-09T01:00:00Z', timeZone: 'Asia/Shanghai', contacts: [{
     id: 'writer', name: '阿笔', omittedTopics: 0,
-    topics: [{ id: 'novel', revision: 1, title: '小说', status: 'paused' as const, judgement: '已保存两章', reason: '预算已用 6/6 次', nextStep: '继续第三章', updatedAt: 1 }],
+    topics: [{ id: 'novel', revision: 1, title: '小说', status: 'researching' as const, judgement: '已保存两章', reason: '已交付两章', nextStep: '继续第三章', updatedAt: 1 }],
     runs: [{ topicId: 'novel', status: 'waiting' as const, question: '第三章用哪个视角？', error: '', summary: '' }],
     pendingInteractions: [], queuedTopicIds: [], reports: [], latestActivity: undefined
   }] }
@@ -23,6 +23,24 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers())
 describe('companion work checks', () => {
+  it('uses the shared execution state for an ongoing task between successful rounds', async () => {
+    const f = fixture()
+    Object.assign(f.evidence.contacts[0].topics[0], { workState: { code: 'updates', label: '等待新内容', description: '持续任务保持启用' } })
+    Object.assign(f.evidence.contacts[0].runs[0], { status: 'completed', question: '' })
+    await f.service.send('greeting', 'ongoing')
+    const content = f.deps.deliver.mock.calls[0][0].content
+    expect(content).toContain('等待新内容')
+    expect(content).not.toContain('尚未完成')
+    expect(f.deps.summarize.mock.calls[0][0][0]).toMatchObject({ workState: { code: 'updates' } })
+  })
+  it('does not let a stale waiting round override a real pause', async () => {
+    const f = fixture()
+    Object.assign(f.evidence.contacts[0].topics[0], { status: 'paused' })
+    f.deps.summarize.mockRejectedValue(new Error('offline'))
+    await f.service.send('greeting', 'paused')
+    expect(f.deps.deliver.mock.calls[0][0].content).toContain('已暂停')
+    expect(f.deps.deliver.mock.calls[0][0].content).not.toContain('第三章用哪个视角')
+  })
   it('does not leak internal progress through the deterministic link list or failure fallback', async () => {
     const f = fixture()
     Object.assign(f.evidence.contacts[0].topics[0], { status: 'researching', judgement: 'arc2ch04a转done', reason: 'field active', nextStep: 'nextStep=arc2ch05a' })

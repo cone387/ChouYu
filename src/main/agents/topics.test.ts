@@ -144,7 +144,9 @@ describe('persistent contact topics', () => {
   })
 
   it('stops scheduling an ended topic and resumes only an explicitly selected eligible topic', async () => {
-    const model = vi.fn(async () => output({ ...progress, status: 'abandoned', reason: '资料 [1] 不支持这一方向，停止投入。', nextStep: '' }))
+    const model = vi.fn(async (prompt: string) => prompt.startsWith('任务结束核对')
+      ? JSON.stringify({ mode: 'finite', satisfied: true, endsAt: null, reason: '资料已否定本次待验证的方向', nextStep: '', completionCriteria: '核对方向是否有依据' })
+      : output({ ...progress, status: 'abandoned', reason: '资料 [1] 不支持这一方向，停止投入。', nextStep: '' }))
     const service = new AgentService(directory(), () => {}, () => model, reader); closers.push(() => service.close())
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     await service.request('save', 'alice', [{ ...settings, enabled: true }])
@@ -152,11 +154,11 @@ describe('persistent contact topics', () => {
     const original = service.store.overview('alice').topics[0]
     await service.request('createTopic', 'alice', [{ title: '下一事项', goal: '核对其他需求', constraints: '' }])
     service.store.db.prepare('UPDATE profiles SET next_at=0').run(); service.tick()
-    expect(model).toHaveBeenCalledTimes(1)
+    expect(model).toHaveBeenCalledTimes(2)
     const next = service.store.overview('alice').topics.find(topic => topic.id !== original.id)!
     await service.request('focusTopic', 'alice', [next.id])
     await vi.waitFor(() => expect(service.store.overview('alice').reports).toHaveLength(2))
-    expect(model).toHaveBeenCalledTimes(2)
+    expect(model).toHaveBeenCalledTimes(4)
     expect(service.store.topics.detail('alice', original.id).changes[0].after.status).toBe('abandoned')
   })
 

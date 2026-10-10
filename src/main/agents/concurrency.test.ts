@@ -14,7 +14,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 const settings = { ...DEFAULT_AGENT_SETTINGS, goal: 'First', sources: ['https://example.com/'], permissionLevel: 'sources' as const, dailyCalls: 100 }
 const config = { provider: 'openai' as const, baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] }
 const result = (question = '') => JSON.stringify({ title: 'Saved', body: 'Actual evidence [1].', nextStep: '', memories: [], question,
-  progress: { judgement: 'Saved', openQuestions: question, nextStep: question ? 'Use the answer' : '', reason: 'Saved evidence [1].', status: question ? 'researching' : 'completed' } })
+  progress: { judgement: 'Saved', openQuestions: question, nextStep: question ? 'Use the answer' : 'Continue research', reason: 'Saved evidence [1].', status: 'researching' } })
 
 async function fixture(limit?: number, ignoreAbort = false) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-task-concurrency-'))

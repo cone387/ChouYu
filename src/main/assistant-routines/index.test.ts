@@ -25,6 +25,14 @@ beforeEach(() => {
 })
 afterEach(() => { closeAssistantRoutines(); vi.useRealTimers() })
 describe('assistant routine integration', () => {
+  it('does not revive a paused task question in scheduled briefing links', async () => {
+    const evidence = await readContactsForAssistant()
+    Object.assign(evidence.contacts[0].topics![0], { status: 'paused', workState: { code: 'paused', label: '已暂停', description: '用户暂停' } })
+    const links = summaryTaskLinks(evidence)
+    expect(links).toContain('已暂停')
+    expect(links).not.toContain('使用哪个标题')
+    expect(links).not.toContain('需要你处理')
+  })
   it('does not let generated task links disguise an empty model response as a delivered summary', async () => {
     state.model.mockResolvedValue(undefined)
     initializeAssistantRoutines()

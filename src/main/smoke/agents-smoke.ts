@@ -38,6 +38,12 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     let body = ''; request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       const payload = JSON.parse(body)
+      if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.startsWith('任务结束核对'))) {
+        const result = { mode: 'finite', satisfied: true, endsAt: null, reason: '验收资料已经否定本次待验证方向', nextStep: '', completionCriteria: '核对开发者需求与付费假设' }
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        response.end(`data: ${JSON.stringify({ model: 'agent-smoke', usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }, choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
+        return
+      }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('判断用户最新一句是否在调整'))) {
         const context = JSON.parse(payload.messages.at(-1).content)
         const result = context.latest?.startsWith('验收聊天修改') ? { kind: 'action', topicId: context.topics[0].id, action: 'edit', patch: { constraints: '每条只汇报一个idea', separateEvaluations: true } } : { kind: 'none' }
@@ -383,13 +389,13 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (hashes.size !== 3) throw new Error('Topic rounds lost their changing evidence')
     console.log('CHOUYU_SMOKE_AGENTS_STAGE topic-three-rounds')
     const taskMetrics = (await get()).topicMetrics![topicId]
-    if (taskMetrics.calls !== 4 || taskMetrics.totalTokens !== 480 || taskMetrics.totalReported !== 4 || taskMetrics.runs !== 3 || taskMetrics.models[0] !== 'agent-smoke') throw new Error('Task metrics did not persist real model usage across rounds and restart')
+    if (taskMetrics.calls !== 5 || taskMetrics.totalTokens !== 600 || taskMetrics.totalReported !== 5 || taskMetrics.runs !== 3 || taskMetrics.models[0] !== 'agent-smoke') throw new Error('Task metrics did not persist real model usage across rounds and restart')
     const contactSummary = await run(`window.electronAPI.agents.summary(${id})`)
-    if (contactSummary.tokens !== 480 || contactSummary.activeTasks !== 0 || contactSummary.tasks !== 1 || contactSummary.memories !== (await get()).memories.length) throw new Error('Contact summary does not match current task state and retained usage')
+    if (contactSummary.tokens !== 600 || contactSummary.activeTasks !== 0 || contactSummary.tasks !== 1 || contactSummary.memories !== (await get()).memories.length) throw new Error('Contact summary does not match current task state and retained usage')
     const analytics = await run(`(() => { const d=new Date(); const date=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-'); return window.electronAPI.agents.analytics(${id}, {date,days:1,topicId:${JSON.stringify(topicId)}}) })()`)
-    if (analytics.totals.tokens !== 480 || analytics.totals.calls !== 4 || analytics.totals.reported !== 4 || analytics.totals.executionMs <= 0 || analytics.totals.reports !== 3) throw new Error('Daily analytics disagrees with persisted task usage')
+    if (analytics.totals.tokens !== 600 || analytics.totals.calls !== 5 || analytics.totals.reported !== 5 || analytics.totals.executionMs <= 0 || analytics.totals.reports !== 3) throw new Error('Daily analytics disagrees with persisted task usage')
     await run("document.querySelector('[data-agent-tab=analytics]').click()")
-    await waitForRenderer(window, "document.querySelector('.usage-summary')?.textContent.includes('480') === true")
+    await waitForRenderer(window, "document.querySelector('.usage-summary')?.textContent.includes('600') === true")
     if (process.env.CHOUYU_SMOKE_ARTIFACTS) {
       mkdirSync(process.env.CHOUYU_SMOKE_ARTIFACTS, { recursive: true })
       await run("document.querySelector('.contact-analytics').scrollIntoView({block:'start'})")
@@ -620,7 +626,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "!document.querySelector('.contact-task-dialog') && document.activeElement.matches('[data-topic-settings]')")
     await run("document.querySelector('.contact-work-sheet .topic-content-tabs [id$=overview]').click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet [data-topic-overview]').getBoundingClientRect().height > 0")
-    if (!await run("document.querySelector('.contact-work-sheet [data-topic-tokens]').textContent === '480' && document.querySelector('.contact-work-sheet [data-topic-calls]').textContent.includes('4') && document.querySelector('.contact-work-sheet [data-topic-run] svg') && document.querySelector('.contact-work-sheet [data-topic-settings] svg')")) throw new Error('Overview metrics or task button icons are missing')
+    if (!await run("document.querySelector('.contact-work-sheet [data-topic-tokens]').textContent === '600' && document.querySelector('.contact-work-sheet [data-topic-calls]').textContent.includes('5') && document.querySelector('.contact-work-sheet [data-topic-run] svg') && document.querySelector('.contact-work-sheet [data-topic-settings] svg')")) throw new Error('Overview metrics or task button icons are missing')
     await run("document.querySelector('.contact-work-sheet .topic-content-tabs [id$=interactions]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet [data-interaction-kind=answer]'))")
     if (!await run("document.querySelector('.contact-work-sheet [data-topic-interactions]').textContent.includes('开发者工具')")) throw new Error('Task interaction history did not display the user reply')
@@ -859,7 +865,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "Boolean(document.querySelector('[data-task-description]'))")
     await fill('[data-task-description]', '排队验收：明日继续核对资料')
     await run("document.querySelector('[data-task-dialog-submit]').click()")
-    await waitForRenderer(window, "!document.querySelector('.contact-task-dialog') && document.querySelector('[data-topic-overview]')?.textContent.includes('已接单，尚未开始执行')")
+    await waitForRenderer(window, "!document.querySelector('.contact-task-dialog') && document.querySelector('[data-topic-overview]')?.textContent.includes('等待调整额度')")
     await run("[...document.querySelectorAll('.contact-work-sheet[open] [data-topic-overview] button')].find(button => button.textContent === '调整工作额度').click()")
     await waitForRenderer(window, "document.querySelector('[data-contact-dialog-tab=settings]')?.getAttribute('aria-selected') === 'true' || document.querySelector('.contact-work-sheet .work-settings-flat')?.getClientRects().length > 0")
     await run("document.querySelector('[data-contact-dialog-tab=work]').click()")

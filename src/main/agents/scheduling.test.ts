@@ -102,6 +102,7 @@ describe('persistent contact task scheduling', () => {
     const service = new AgentService(dir, () => {}, () => async prompt => {
       concurrent++; peak = Math.max(peak, concurrent)
       try {
+        if (prompt.startsWith('任务结束核对')) return JSON.stringify({ mode: 'finite', satisfied: true, endsAt: null, reason: '要求的初稿已保存', nextStep: '', completionCriteria: 'A draft' })
         if (prompt.startsWith('你是联系人，刚收到')) {
           const first = prompt.includes('First task')
           if (!first) { secondStarted = true; await gate }
@@ -128,7 +129,7 @@ describe('persistent contact task scheduling', () => {
     // The other task spent today's capacity after the answer was accepted.
     // Keep the answer queued, without starting a doomed planning request.
     expect(service.store.getRun(first.id)!.status).toBe('queued')
-    expect(service.store.callCount('alice')).toBe(4)
+    expect(service.store.callCount('alice')).toBe(5)
     service.store.db.prepare('UPDATE calls SET at=?').run(Date.now() - 86400000)
     service.tick()
     await vi.waitFor(() => expect(service.store.overview('alice').topics.every(topic => topic.status === 'completed')).toBe(true))

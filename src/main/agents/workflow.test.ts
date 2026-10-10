@@ -13,6 +13,7 @@ async function fixture(options: { enabled?: boolean; dailyCalls?: number; repeat
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-workflow-'))
   let drafts = 0
   const model = vi.fn(async (prompt: string) => {
+    if (prompt.startsWith('任务结束核对')) return JSON.stringify({ mode: 'finite', satisfied: true, endsAt: null, reason: '短文已交付并检查', nextStep: '', completionCriteria: brief.plan.completionCriteria })
     if (prompt.startsWith('你是联系人，刚收到')) return JSON.stringify({ ...brief, question: options.question ? '主角是谁？' : '' })
     if (prompt.startsWith('为联系人')) return JSON.stringify({ action: 'write', reason: '继续创作正文', query: '', urls: [], checkAfterMinutes: 180 })
     drafts++
@@ -42,7 +43,7 @@ it('continues writing automatically and stops after all planned stages are compl
   const f = await fixture({ complete: true })
   await vi.waitFor(() => expect(f.data().topics[0].status).toBe('completed'))
   expect(f.data().runs).toHaveLength(2)
-  expect(f.model).toHaveBeenCalledTimes(5)
+  expect(f.model).toHaveBeenCalledTimes(6)
   expect(f.service.store.deliveries.get(f.data().topics[0].id)?.sections).toHaveLength(2)
   f.service.tick()
   expect(f.data().runs).toHaveLength(2)

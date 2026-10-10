@@ -51,6 +51,8 @@ export interface AgentInteractionPage { items: AgentInteraction[]; nextCursor?: 
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { evaluations?: import('./agent-evaluation').AgentEvaluation[]; runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
+  taskSchedule?: Record<string, { nextAt: number; waitingForUpdates?: boolean }>
+  taskResources?: Record<string, { callsNeeded: number; tokensNeeded?: number }>
   taskFailures?: Record<string, { failures: number; retryAt?: number }>
   providerRecovery?: { topicId: string; at: number }
   tokenUsage?: { today: number; estimated: number; tasks: Record<string, number> }
@@ -71,7 +73,7 @@ export interface AgentTopicMetrics {
   models: string[]
   latestRun?: Pick<AgentRun, 'createdAt' | 'status'>
 }
-export const TOPIC_STATUS = { planned: '待开始', researching: '尚未完成', needs_evidence: '待补证据', paused: '已暂停', completed: '已结束', abandoned: '已放弃' } as const
+export const TOPIC_STATUS = { planned: '待开始', researching: '推进中', needs_evidence: '待补证据', paused: '已暂停', completed: '已结束', abandoned: '已放弃' } as const
 export type AgentTopicStatus = keyof typeof TOPIC_STATUS
 export interface AgentTopicInput { title: string; goal: string; constraints: string }
 export interface AgentTopic extends AgentTopicInput {

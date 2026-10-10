@@ -246,8 +246,27 @@ export class AgentStore {
   remove(id: string) { const runs = (this.db.prepare('SELECT id FROM runs WHERE character_id=?').all(id) as { id: string }[]).map(r => r.id); this.db.prepare('DELETE FROM profiles WHERE character_id=?').run(id); this.db.prepare('DELETE FROM token_ledger WHERE character_id=?').run(id); for (const runId of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(runId); return runs }
   overview(id: string, now = Date.now()): AgentOverview {
     const profile = this.profile(id)
+    const scheduled = this.scheduled(id)
+    const taskSchedule: NonNullable<AgentOverview['taskSchedule']> = Object.fromEntries(scheduled.map(task => [task.topic_id, { nextAt: task.next_at }]))
+    const settings: AgentSettings = profile ? JSON.parse(profile.settings) : DEFAULT_AGENT_SETTINGS
+    const taskResources: NonNullable<AgentOverview['taskResources']> = {}
+    if (profile?.focus_topic_id && !taskSchedule[profile.focus_topic_id]) taskSchedule[profile.focus_topic_id] = { nextAt: profile.next_at }
+    for (const topic of this.topics.list(id)) {
+      const topicId = topic.id, schedule = taskSchedule[topicId]
+      const latest = this.db.prepare('SELECT id,status FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(topicId) as { id: string; status: string } | undefined
+      const research = latest && this.research(latest.id)
+      if (schedule) schedule.waitingForUpdates = latest?.status === 'completed' && Boolean(research?.unchanged || research?.plan.action === 'wait')
+      const block = latest && this.db.prepare('SELECT needed FROM token_blocks WHERE run_id=?').get(latest.id) as { needed: number } | undefined
+      taskResources[topicId] = {
+        callsNeeded: latest && ['queued', 'waiting', 'interrupted', 'running'].includes(latest.status) ? this.callsNeededToResume(latest.id)
+          : (agentUsesPlanner(settings) ? 2 : 1) + (scheduled.some(task => task.topic_id === topicId && task.pending) ? 1 : 0),
+        ...(block ? { tokensNeeded: block.needed } : {})
+      }
+    }
     const activity = this.db.prepare('SELECT e.* FROM events e JOIN runs r ON r.id=e.run_id WHERE r.character_id=? ORDER BY e.id DESC LIMIT 1').get(id) as { id: number; run_id: string; kind: string; text: string; at: number } | undefined
     return {
+      taskSchedule,
+      taskResources,
       topicMetrics: this.topicMetrics(id, now),
       taskFailures: Object.fromEntries(this.topics.list(id).flatMap(topic => {
         const failure = this.taskFailures.get(topic.id)
