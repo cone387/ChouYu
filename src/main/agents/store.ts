@@ -1,3 +1,4 @@
+import { providerRecoveryDelay } from '../../shared/contact-failure'
 import { ContactInteractions } from './interactions'
 import { AgentTokenBudget } from './token-budget'
 import Database from 'better-sqlite3'
@@ -235,7 +236,7 @@ export class AgentStore {
     const activity = this.db.prepare('SELECT e.* FROM events e JOIN runs r ON r.id=e.run_id WHERE r.character_id=? ORDER BY e.id DESC LIMIT 1').get(id) as { id: number; run_id: string; kind: string; text: string; at: number } | undefined
     return {
       topicMetrics: this.topicMetrics(id, now),
-      tokenUsage: this.tokens.usage(id, now), failures: profile?.failures ?? 0,
+      providerRecovery: this.providerRecovery(id), tokenUsage: this.tokens.usage(id, now), failures: profile?.failures ?? 0,
       latestActivity: activity ? { id: activity.id, runId: activity.run_id, kind: activity.kind, text: activity.text, at: activity.at } : undefined,
       settings: profile ? JSON.parse(profile.settings) : { ...DEFAULT_AGENT_SETTINGS }, revision: profile?.revision ?? 0, nextAt: profile?.next_at ?? 0,
       callsToday: this.callCount(id, now),
@@ -424,11 +425,28 @@ export class AgentStore {
   scheduled(id: string) {
     return this.db.prepare('SELECT s.* FROM task_schedule s JOIN topics t ON t.id=s.topic_id WHERE t.character_id=? ORDER BY s.rowid').all(id) as { topic_id: string; conversation: string; pending: number; next_at: number }[]
   }
+  providerRecovery(id: string) {
+    const profile = this.profile(id)
+    if (!profile || profile.failures < 3) return
+    const settings = JSON.parse(profile.settings) as AgentSettings
+    if (!settings.enabled) return
+    const run = this.db.prepare('SELECT * FROM runs WHERE character_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id) as RunRow | undefined
+    if (!run?.topic_id || run.status !== 'failed' || JSON.parse(run.input).revisionScope === 'presentation') return
+    const delay = providerRecoveryDelay(run.error, profile.failures, settings.paceWriting ? settings.intervalMinutes : 0)
+    if (delay === undefined) return
+    const row = this.db.prepare('SELECT value FROM topics WHERE id=? AND character_id=?').get(run.topic_id, id) as { value: string } | undefined
+    if (!row) return
+    const topic = JSON.parse(row.value)
+    if (!canResearch(topic.status) || topic.revision !== run.topic_revision) return
+    if (!this.scheduled(id).some(task => task.topic_id === topic.id) && profile.focus_topic_id !== topic.id) return
+    return { runId: run.id, topicId: topic.id, at: Math.max(profile.next_at, run.updated_at + delay) }
+  }
   nextScheduledTopic(id: string, now = Date.now(), newSources?: (topicId: string) => boolean): string | undefined {
     const profile = this.profile(id)
     if (!profile) return
     const settings = JSON.parse(profile.settings) as AgentSettings
-    if (settings.enabled && !withinWorkHours(settings, now) || profile.failures >= 3) return
+    const recovery = profile.failures >= 3 ? this.providerRecovery(id) : undefined
+    if (settings.enabled && !withinWorkHours(settings, now) || profile.failures >= 3 && (!recovery || recovery.at > now)) return
     const unfinished = this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(id) as RunRow[]
     if (unfinished.some(run => run.status !== 'waiting')) return
     const waiting = new Set(unfinished.map(run => run.topic_id))
@@ -438,7 +456,7 @@ export class AgentStore {
     const focused = tasks.find(task => task.topic_id === profile.focus_topic_id)
     const candidate = focused ?? (settings.enabled && focus && canResearch(focus.status) && !waiting.has(focus.id)
       ? { topic_id: focus.id, pending: 0, next_at: profile.next_at } : tasks[0])
-    if (!candidate) return
+    if (!candidate || recovery && candidate.topic_id !== recovery.topicId) return
     if (candidate.next_at > now && !(settings.enabled && !settings.paceWriting && profile.failures === 0 && newSources?.(candidate.topic_id))) return
     const needed = (agentUsesPlanner(settings) ? 2 : 1) + (candidate.pending ? 1 : 0)
     if (this.callCount(id, now) + needed > settings.dailyCalls) return
@@ -632,11 +650,12 @@ export class AgentStore {
     const profile = this.profile(run.character_id)!
     const settings = JSON.parse(profile.settings) as AgentSettings
     // Failure is a runtime block; preserve the selected work mode.
-    this.db.prepare('UPDATE profiles SET failures=failures+1,settings=?,next_at=? WHERE character_id=?').run(JSON.stringify(settings), Date.now() + failureDelay(settings, profile.failures + 1), run.character_id)
+    this.db.prepare('UPDATE profiles SET failures=failures+1,settings=?,next_at=? WHERE character_id=?').run(JSON.stringify(settings), Date.now() + (providerRecoveryDelay(error, profile.failures + 1, settings.paceWriting ? settings.intervalMinutes : 0) ?? failureDelay(settings, profile.failures + 1)), run.character_id)
     this.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(this.profile(run.character_id)!.next_at, run.topic_id)
     if (run.topic_id) {
       const topic = this.topics.get(run.character_id, run.topic_id)
-      const recovery = profile.failures + 1 >= 3 ? '已连续失败 3 次，自动推进已停止，请查看工作记录后重试。'
+      const providerDelay = settings.enabled ? providerRecoveryDelay(error, profile.failures + 1, settings.paceWriting ? settings.intervalMinutes : 0) : undefined
+      const recovery = providerDelay !== undefined ? `服务暂时不可用，将在 ${providerDelay / 60000} 分钟后自动尝试继续；仍受工作时间和额度限制。` : profile.failures + 1 >= 3 ? '已连续失败 3 次，自动推进已停止，请查看工作记录后重试。'
         : settings.enabled ? `将在 ${failureDelay(settings, profile.failures + 1) / 60000} 分钟后尝试继续；仍受工作时间和额度限制。` : '可在工作记录中重试。'
       this.notices.enqueue({ id: `${id}:failure`, characterId: run.character_id, topicId: topic.id, runId: id, topicRevision: topic.revision,
         kind: 'progress', purpose: 'failure', createdAt: Date.now(), content: `关于「${topic.title}」：${contactFailureReason(error)}之前保存的内容还在。\n\n${recovery}\n详细原因留在这次的工作记录里。` })

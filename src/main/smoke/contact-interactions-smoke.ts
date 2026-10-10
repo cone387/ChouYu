@@ -21,7 +21,8 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
     const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
     let cardId: string, topicId: string, runId: string
     try {
-      store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '写一篇介绍', dailyCalls: 100 })
+      store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '写一篇介绍', dailyCalls: 100, enabled: kind === 'billing' })
+      if (kind === 'billing') store.db.prepare('UPDATE profiles SET failures=2 WHERE character_id=?').run(character.id)
       runId = store.createRun(character.id, '')
       topicId = store.getRun(runId)!.topic_id!
       if (kind === 'budget' || kind === 'budget-success') {
@@ -107,7 +108,8 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
       await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(selector)})?.querySelector('.contact-interaction-result'))`)
     } else if (kind === 'billing') {
       const text = await run(`document.querySelector(${JSON.stringify(selector)}).textContent`)
-      if (!text.includes('模型服务商') || text.includes('API error')) throw new Error('Billing card exposes raw error instead of useful guidance')
+      if (!text.includes('模型服务商') || !text.includes('自动尝试继续') || text.includes('API error')) throw new Error('Billing card exposes raw error instead of useful guidance')
+      if (process.env.CHOUYU_SMOKE_ARTIFACTS) writeFileSync(join(process.env.CHOUYU_SMOKE_ARTIFACTS, 'contact-billing-auto.png'), (await window.webContents.capturePage()).toPNG())
       await run(`Array.from(document.querySelector(${JSON.stringify(selector)}).querySelectorAll('button')).find(b=>b.textContent==='模型服务设置').click()`)
       await waitForRenderer(window, `!document.querySelector('.workspace-settings').hidden`)
       const card = await run(`window.electronAPI.agents.getInteraction(${JSON.stringify(character.id)},${JSON.stringify(cardId!)})`)

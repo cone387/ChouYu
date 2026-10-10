@@ -118,6 +118,10 @@ export class ContactInteractions {
       }
       if (v.status !== 'pending') this.save(v)
     }
+    if (v.kind === 'retry' && v.status === 'pending') {
+      const recovery = s.providerRecovery(owner)
+      v.automaticRetryAt = recovery?.runId === v.runId ? recovery.at : undefined
+    }
     const { topicRevision: _revision, settingsGuard: _settings, questionEventId: _event, ...view } = v
     view.version = createHash('sha256').update(JSON.stringify([v.id, v.topicRevision, v.settingsGuard, v.budgets.map(f => [f.key, f.limit])])).digest('hex')
     return view

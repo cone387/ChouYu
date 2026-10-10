@@ -5,6 +5,7 @@ export interface ContactBudgetField {
   key: ContactBudgetKey; label: string; unit: string; used: number; limit: number; needed: number; max: number
 }
 export interface ContactInteraction {
+  automaticRetryAt?: number
   characterName?: string
   id: string; version: string; characterId: string; topicId: string; runId: string; topicTitle: string
   kind: ContactInteractionKind; status: ContactInteractionStatus; question?: string

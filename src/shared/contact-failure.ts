@@ -6,3 +6,9 @@ export function contactFailure(error: string): NonNullable<ContactInteraction['f
   if (/格式|校验|字段|JSON|parse|schema/i.test(error)) return { kind: 'format', message: '这次返回的成果没有通过格式校验，未作为新成果保存。可以重新尝试；反复出现时请查看工作记录。', action: '重新尝试', settings: false }
   return { kind: 'unknown', message: '这次工作没有完成，已有成果保留。可查看任务中的工作记录了解原因，再决定是否重试。', action: '重试本任务', settings: false }
 }
+
+/** Bounded cadence, not a balance API: the next real task attempt probes availability. */
+export function providerRecoveryDelay(error: string, failures: number, intervalMinutes = 0): number | undefined {
+  if (failures < 3 || !['billing', 'network'].includes(contactFailure(error).kind)) return
+  return Math.max(Math.min(60, 15 * 2 ** Math.min(2, failures - 3)), intervalMinutes) * 60000
+}

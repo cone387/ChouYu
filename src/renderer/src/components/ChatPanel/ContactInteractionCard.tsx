@@ -54,6 +54,7 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       <strong className="contact-interaction-title">{title}</strong>
       <div className="contact-interaction-task">{view.topicTitle}</div>
       {view.kind === 'question' ? <p className="contact-interaction-question">{view.question}</p> : <p>{view.kind === 'budget' ? '已有成果保留，当前额度不足以继续。' : view.failure?.message || fallback}</p>}
+      {view.status === 'pending' && view.automaticRetryAt && <p className="contact-interaction-usage">最早 {new Date(view.automaticRetryAt).toLocaleString()} 自动尝试继续，仍受工作时间和额度限制。也可以现在重试。</p>}
       {view.status === 'pending' ? <form onSubmit={submit} noValidate>
         {view.budgets.map(field => <label className="contact-interaction-field" key={field.key}>
           <span>{field.label}</span>

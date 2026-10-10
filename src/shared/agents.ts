@@ -50,6 +50,7 @@ export interface AgentInteractionPage { items: AgentInteraction[]; nextCursor?: 
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { evaluations?: import('./agent-evaluation').AgentEvaluation[]; runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
+  providerRecovery?: { topicId: string; at: number }
   tokenUsage?: { today: number; estimated: number; tasks: Record<string, number> }
   failures?: number
   queuedTopicIds?: string[]
