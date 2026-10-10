@@ -15,6 +15,7 @@ const baseEntries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
   { id: 'work', label: '任务', icon: 'task' },
   { id: 'history', label: '工作记录', icon: 'clock' },
   { id: 'memory', label: '记忆', icon: 'archive' },
+  { id: 'skills', label: '技能', icon: 'archive' },
   { id: 'analytics', label: '消耗', icon: 'chart' }
 ]
 
@@ -126,7 +127,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onCancel={event => { event.preventDefault(); close() }}>
       <header className="contact-work-sheet-heading" onPointerDown={event => beginGesture(event, 'move')} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
-        <strong>{name}的{tab === 'overview' ? '今日概览' : tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : '记忆'}</strong>
+        <strong>{name}的{tab === 'overview' ? '今日概览' : tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : tab === 'skills' ? '技能' : '记忆'}</strong>
       <div className="contact-work-buttons contact-work-dialog-tabs" role="group" aria-label="联系人工作内容">
         {entries.map(entry => <button key={entry.id} type="button" data-contact-dialog-tab={entry.id}
           aria-label={`${entry.label}${badge(entry.id) !== undefined ? ` ${badge(entry.id)}` : ''}`} title={hint(entry.id)} aria-pressed={tab === entry.id} onClick={() => { if (entry.id === 'analytics') setAnalyticsReset(n => n + 1); select(entry.id) }}>

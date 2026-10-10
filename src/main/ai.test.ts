@@ -14,6 +14,16 @@ afterEach(() => {
 })
 
 describe('main-process AI provider routing', () => {
+  it('exposes every tool-loop request to budget hooks and can stop before the next request', async () => {
+    const start = vi.fn((round: number, input: string) => { if (round === 1) { expect(input).toContain('actual tool result'); throw new Error('budget exhausted') }; return 900 })
+    const end = vi.fn()
+    const request = vi.fn(async () => streamResponse('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call1', function: { name: 'read_skill_file', arguments: '{}' } }] }, finish_reason: 'tool_calls' }] }) + '\n\ndata: [DONE]\n\n'))
+    vi.stubGlobal('fetch', request)
+    await expect(streamAIChat([{ role: 'user', content: 'work' }], 'system', { ...DEFAULT_APP_CONFIG, provider: 'openai', baseUrl: 'https://provider.example/v1', apiKey: 'test', model: 'test' }, () => {}, undefined,
+      { definitions: [{ name: 'read_skill_file', displayName: 'read', description: 'read', source: 'builtin', risk: 'read', requiresConfirmation: false, inputSchema: { type: 'object', properties: {} } }], execute: async () => 'actual tool result' },
+      { beforeRound: start, afterRound: end })).rejects.toThrow('budget exhausted')
+    expect(start).toHaveBeenCalledTimes(2); expect(end).toHaveBeenCalledTimes(1); expect(request).toHaveBeenCalledTimes(1)
+  })
   it.each(['openai', 'claude'] as const)('passes an explicit background output cap to %s', async provider => {
     const request = vi.fn(async () => streamResponse(provider === 'openai' ? 'data: [DONE]\n\n' : 'data: {"type":"message_stop"}\n\n'))
     vi.stubGlobal('fetch', request)

@@ -1,4 +1,6 @@
 import { AgentWorkerRPC } from './worker-rpc'
+import { getContactSkills } from '../skills'
+import { SKILL_TOOLS } from '../skills/tools'
 import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { registerPresentationProtocol } from './presentation-protocol'
@@ -65,7 +67,7 @@ function identities(): AgentIdentity[] {
   return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(character => {
     const resolved = resolveCharacterConfig(character, config)
     const conversation = contactConversation(sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages ?? []))
-    return { visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
+    return { skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: SKILL_TOOLS.filter(tool => getState(`tool:${tool.name}:enabled`) === 'false').map(tool => tool.name), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
   })
 }
 async function ensure() {

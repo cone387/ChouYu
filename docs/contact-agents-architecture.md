@@ -65,6 +65,8 @@ flowchart LR
 
 ## 维护入口
 
+联系人技能由 `src/main/skills/library.ts` 保存共享安装库及独立关联，`skillhub.ts` 适配官方固定版本 Python CLI，`index.ts` 提供严格 IPC 和快照入口。数据位于 `userData/contact-skills`，与其他 Agent 技能目录分离。普通聊天按已核对联系人 ID 读取；后台 worker 在实际开轮时读取同一库，将完整技能上下文及摘要保存到 `run.input.skills`，避免身份同步间隔造成新轮配置滞后。恢复原轮沿用保存快照，技能不是 soul 的组成部分，也不触发人设变化取消。主进程 ChouYu 晨报/工作检查复用同一解析服务；详见 [技能验收](contact-skills-20261010.md)。
+
 - [调度与并行执行](../src/main/agents/service.ts)：联系人执行状态、暂停、删除、退出。
 - [每轮工作流程](../src/main/agents/runtime.ts)：规划、资料读取、生成、询问与提交。
 - [工作数据](../src/main/agents/store.ts)、[成果版本](../src/main/agents/delivery.ts)：预算、进度与持久化。

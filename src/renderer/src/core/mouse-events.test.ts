@@ -1,8 +1,22 @@
 import { beforeEach, describe, expect, test } from 'vitest'
-import { getMouseIgnored, setMouseIgnored, syncMouseEvents } from './mouse-events'
+import { getMouseIgnored, setMouseIgnored, syncMouseEvents, isInteractiveHit } from './mouse-events'
 
 const sent: boolean[] = []
 const stateListeners: Array<(ignored: boolean) => void> = []
+
+test('bounded portal hits do not make the native dialog backdrop capture the desktop', () => {
+  const bounded = { getBoundingClientRect: () => ({ left: 100, right: 400, top: 200, bottom: 500 }) }
+  const element = { closest: (selector: string) => selector === '[data-interactive]' ? element : bounded } as unknown as Element
+  expect(isInteractiveHit(element, 150, 250)).toBe(true)
+  expect(isInteractiveHit(element, 10, 10)).toBe(false)
+  expect(isInteractiveHit(element, 400, 250)).toBe(false)
+  expect(isInteractiveHit(element, 150, 500)).toBe(false)
+  expect(isInteractiveHit(element, 100, 200)).toBe(true)
+  expect(isInteractiveHit(null, 150, 250)).toBe(false)
+  expect(isInteractiveHit({ closest: () => null } as unknown as Element, 150, 250)).toBe(false)
+  const ordinary = { closest: (selector: string) => selector === '[data-interactive]' ? ordinary : null } as unknown as Element
+  expect(isInteractiveHit(ordinary, 150, 250)).toBe(true)
+})
 
 beforeEach(() => {
   sent.length = 0

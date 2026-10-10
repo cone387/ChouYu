@@ -1,4 +1,6 @@
 import { runGlobalSearchSmoke } from './global-search-smoke'
+import { runSkillsSmoke } from './skills-smoke'
+import { contactSkillLibrary } from '../skills'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -111,7 +113,8 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
       writeFileSync(join(artifacts, 'contact-profile-tab.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
     }
     if (await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail .agent-heading, .contacts-detail .contact-agent > .agent-description, .contacts-activity footer'))")) throw new Error('Removed contact description blocks returned')
-    for (const tab of ['overview', 'history', 'memory', 'settings', 'analytics', 'profile', 'work']) {
+    await runSkillsSmoke(window, character.id)
+    for (const tab of ['overview', 'history', 'memory', 'settings', 'skills', 'analytics', 'profile', 'work']) {
       await click(window, `[data-agent-tab=${tab}]`)
       await window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
       if (await window.webContents.executeJavaScript("document.querySelector('.contacts-detail').getBoundingClientRect().height") !== detailHeight) throw new Error(`Contact detail height changed on ${tab} tab`)
@@ -187,6 +190,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     if (!parsed.ok) throw new Error(`Character stream failed: ${streamResult}`)
     await new Promise((resolve) => setTimeout(resolve, 300))
     if (!chatBody || chatBody['model'] !== 'cat-model') throw new Error(`Expected character model on loopback, got ${JSON.stringify(chatBody?.['model'])}`)
+    if (!JSON.stringify(chatBody).includes('技能验收标记')) throw new Error('Chat model did not receive the contact skill snapshot')
 
     // 7) 从卡片菜单删除角色并确认（级联删除其会话）
     await click(window, '[data-workspace-nav="contacts"]')
@@ -195,6 +199,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await click(window, '[data-contacts-confirm-delete]')
     await waitForRenderer(window, `!document.querySelector('[data-contacts-confirm-delete]') && !document.querySelector('[data-contacts-item="${character.id}"]')`)
     if (getCharacter(character.id)) throw new Error('Character was not deleted')
+    if (contactSkillLibrary().list(character.id).skills.some(skill => skill.assigned)) throw new Error('Deleted contact retained skill assignments')
 
     // 8) 回到聊天页：chat-smoke 的首个等待依赖 .input-textarea。
     await click(window, '[data-workspace-nav="chat"]')

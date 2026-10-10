@@ -73,6 +73,7 @@ export interface PluginInfo {
 }
 
 export interface ElectronAPI {
+  skills: import('../../../shared/skills').SkillAPI
   agents: import('../../../shared/agents').AgentAPI
   journal: import('../../../shared/journal').JournalAPI
   getAppVersion: () => Promise<string>

@@ -1,4 +1,6 @@
 import { AgentService } from './service'
+import { SkillLibrary } from '../skills/library'
+import { dirname, join } from 'node:path'
 import { evidenceFromText } from './sources'
 const port = process.parentPort!
 let service: AgentService | undefined
@@ -25,7 +27,7 @@ port.on('message', event => {
           signal.throwIfAborted()
           if (query !== '团队 免费 替代品' || key !== 'search-smoke-secret') throw new Error('Smoke search only accepts its isolated fixture')
           return [{ url: 'https://chouyu-agent-smoke.invalid/search-evidence', title: '新发现的定价页面' }]
-        } : undefined)
+        } : undefined, id => new SkillLibrary(join(dirname(args[0]), 'contact-skills')).snapshot(id), join(dirname(args[0]), 'contact-skills'))
       }
       else if (!service) throw new Error('Agent 执行进程尚未初始化。')
       else if (method === 'sync') await service.sync(args[0])

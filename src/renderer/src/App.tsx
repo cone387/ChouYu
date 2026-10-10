@@ -11,7 +11,7 @@ import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
 import { getCenteredPanelPosition } from './core/panel-position'
 import { getDefaultPanelHeight } from './core/panel-state'
-import { setMouseIgnored, syncMouseEvents } from './core/mouse-events'
+import { isInteractiveHit, setMouseIgnored, syncMouseEvents } from './core/mouse-events'
 
 function App() {
   const [petPosition, setPetPosition] = useState({ x: window.innerWidth - 180, y: window.innerHeight - 180 })
@@ -163,7 +163,7 @@ function App() {
     if ((window as any).__petDragging) return
     if (document.querySelector('[data-window-gesture]')) { setMouseIgnored(false); return }
     const el = document.elementFromPoint(x, y)
-    setMouseIgnored(!(el && el.closest('[data-interactive]')))
+    setMouseIgnored(!isInteractiveHit(el, x, y))
   }, [])
 
   // 主进程广播真实穿透状态，回写认知，防止托盘等主进程侧变更造成认知失步

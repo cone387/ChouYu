@@ -1,4 +1,6 @@
 import { contactCommunicationInstructions } from '../shared/contact-communication'
+import { contactSkillRunner, getContactSkills, contactSkillLibrary, registerSkillHandlers, syncSkillToolPolicy } from './skills'
+import { SKILL_TOOLS, skillToolRuntime } from './skills/tools'
 import { assistantWorkInstructions } from '../shared/assistant-work-instructions'
 import { appendCompanionBriefing } from './assistant-routines'
 import { contactWorkInstructions } from '../shared/contact-work-instructions'
@@ -42,7 +44,7 @@ import { setClipboardWatcherEnabled } from './clipboard'
 import { setTrayUnread } from './tray'
 import { initAutoUpdater } from './updater'
 import { diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
-import { prepareRegisteredToolAsync, getRegisteredTool, getToolDefinitions } from './tools/registry'
+import { prepareRegisteredToolAsync, getRegisteredTool, getToolDefinitions, type PreparedTool } from './tools/registry'
 import { waitForToolApproval, toolApprovalFailure, type ToolApprovalOutcome } from './tool-approval'
 import {
   getMemoryProvider,
@@ -196,6 +198,7 @@ function requestToolApproval(
 }
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
+  registerSkillHandlers(mainWindow)
   ipcMain.handle('system-idle-seconds', () => {
     const idle = powerMonitor.getSystemIdleTime()
     return powerMonitor.getSystemIdleState(300) === 'locked' ? Math.max(300, idle) : idle
@@ -309,6 +312,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     if (!getRegisteredTool(name)) throw new Error('工具不存在。')
     setState(`tool:${name}:enabled`, enabled ? 'true' : 'false')
+    if (SKILL_TOOLS.some(tool => tool.name === name)) syncSkillToolPolicy()
     return getToolDefinitions().map((tool) => ({ ...tool, enabled: isToolEnabled(tool.name) }))
   })
 
@@ -637,23 +641,28 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     event.sender.once('destroyed', abortWhenDestroyed)
 
     try {
+      const skillSnapshot = request.characterId ? getContactSkills(request.characterId) : { entries: [], instruction: '' }
+      if (skillSnapshot.error) throw new Error(skillSnapshot.error)
+      const skillContext = skillSnapshot.instruction
+      const skillTools = skillToolRuntime(request.characterId || '', skillSnapshot, contactSkillRunner(), controller.signal)
       let privateContext = ''
       if (owner) {
         try { privateContext = await agentContext(owner) } catch { privateContext = '\n独立工作记录暂时无法读取，请勿声称知道未提供的工作经历。' }
       }
       const chatTools = config.aiToolsEnabled ? {
           definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)
+            && (!SKILL_TOOLS.some(skill => skill.name === tool.name) || skillTools.definitions.some(skill => skill.name === tool.name))
             && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
           execute: async (call: AIToolCall) => {
             const definition = getRegisteredTool(call.name)
             if (!definition) return `工具不存在：${call.name}`
-            if (!isToolEnabled(call.name)) return `工具已被用户禁用：${call.name}`
+            if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) return `工具已被用户禁用：${call.name}`
             const arguments_ = parseToolArguments(call.arguments)
             try {
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
               const taskMutation = ['edit_contact_task', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
               if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
-              const prepared = await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
+              const prepared: PreparedTool = SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
               if (taskMutation) taskMutationRequested = true
               const needsApproval = shouldConfirmTool(definition, config.toolPermissionMode)
               sendToolEvent(event.sender, {
@@ -691,7 +700,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                 })
               }
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              if (!isToolEnabled(call.name)) throw new Error('工具已被用户禁用。')
+              if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) throw new Error('工具已被用户禁用。')
               const result = await prepared.execute()
               sendToolEvent(event.sender, {
                 requestId: request.requestId,
@@ -737,7 +746,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       }
       await streamAIChat(
         request.messages,
-        request.systemPrompt + privateContext + (owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation')),
+        request.systemPrompt + privateContext + skillContext + (owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation')),
         effectiveConfig,
         (chunk, done) => {
           if (event.sender.isDestroyed()) return
@@ -800,6 +809,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     const previousMemoryEngine = getConfig().memoryEngineProvider
     saveConfig(patch)
+    if (patch.aiToolsEnabled !== undefined) syncSkillToolPolicy()
     const updated = getConfig()
     // The selected memory engine is a process-level capability. Reload it as
     // soon as the setting changes so the next chat request uses the engine the
@@ -880,6 +890,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const character = getCharacter(id)
     if (character && !character.builtIn) await removeContactAgent(id)
     const workspace = deleteCharacter(id)
+    contactSkillLibrary().removeContact(id)
     notifyCharactersChanged()
     notifyAssistantUnread()
     return workspace

@@ -1,4 +1,8 @@
 import { TokenBudgetError } from './token-budget'
+import { SkillLibrary } from '../skills/library'
+import { SkillRunner } from '../skills/runner'
+import { skillToolRuntime } from '../skills/tools'
+import type { SkillSnapshot } from '../../shared/skills'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -13,8 +17,9 @@ import type { AIResponseMetadata } from '../../shared/ai-usage'
 import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from './model-output'
 import { workSettingsRequireRestart, withinWorkHours } from '../../shared/work-settings'
 
-export interface AgentIdentity { visibleNoticeIds?: string[]; id: string; name?: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
+export interface AgentIdentity { skillToolsEnabled?: boolean; disabledSkillTools?: string[]; visibleNoticeIds?: string[]; id: string; name?: string; soul: string; conversation: string; searchKey?: string; skills?: SkillSnapshot; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
+  private readonly skillRunner: SkillRunner
   readonly store: AgentStore
   readonly runtime: AgentRuntime
   private identities = new Map<string, AgentIdentity>()
@@ -23,8 +28,9 @@ export class AgentService {
   private deleting = new Set<string>()
   private active = new Map<string, { id: string; characterId: string; topicId: string | null; controller: AbortController; promise: Promise<void> }>()
   private timer: ReturnType<typeof setInterval>
-  constructor(directory: string, private changed: (id: string) => void, private modelFactory?: (identity: AgentIdentity) => AgentModel, reader?: ConstructorParameters<typeof AgentRuntime>[2], searcher?: AgentSearcher) {
+  constructor(directory: string, private changed: (id: string) => void, private modelFactory?: (identity: AgentIdentity) => AgentModel, reader?: ConstructorParameters<typeof AgentRuntime>[2], searcher?: AgentSearcher, private readSkills?: (id: string) => SkillSnapshot, skillDirectory = join(directory, 'skills')) {
     mkdirSync(directory, { recursive: true })
+    this.skillRunner = new SkillRunner(new SkillLibrary(skillDirectory))
     this.store = new AgentStore(join(directory, 'agents.db'))
     this.runtime = new AgentRuntime(this.store, join(directory, 'checkpoints.db'), reader, searcher)
     this.store.recover()
@@ -33,7 +39,7 @@ export class AgentService {
   private activeFor(id: string, topicId?: string) { return [...this.active.values()].filter(run => run.characterId === id && (topicId === undefined || run.topicId === topicId)) }
   private abort(id: string, topicId?: string) { for (const run of this.activeFor(id, topicId)) run.controller.abort() }
   async sync(identities: AgentIdentity[]) {
-    const signature = (identity: AgentIdentity) => createHash('sha256').update(JSON.stringify({ soul: identity.soul, config: identity.config, searchKey: identity.searchKey })).digest('hex')
+    const signature = (identity: AgentIdentity) => createHash('sha256').update(JSON.stringify({ soul: identity.soul, config: identity.config, searchKey: identity.searchKey, skillToolsEnabled: identity.skillToolsEnabled, disabledSkillTools: identity.disabledSkillTools })).digest('hex')
     for (const identity of identities) {
       const previous = this.identities.get(identity.id)
       if (previous && signature(previous) !== signature(identity)) { this.abort(identity.id); this.store.cancel(identity.id, '角色人设或模型配置已变化，请重新发起工作。'); this.changed(identity.id) }
@@ -46,7 +52,7 @@ export class AgentService {
   }
   private identity(id: string) { const identity = this.identities.get(id); if (!identity) throw new Error('联系人不存在。'); return identity }
   async remove(id: string) {
-    this.deleting.add(id)
+    this.deleting.add(id); this.skillRunner.cancel(id)
     try {
       this.store.cancel(id, '联系人已删除。')
       this.abort(id)
@@ -249,26 +255,50 @@ export class AgentService {
   private startRun(run: NonNullable<ReturnType<AgentStore['getRun']>>) {
     if (run.topic_id && JSON.parse(run.input).revisionScope !== 'presentation') this.store.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(run.topic_id, run.character_id)
     const identity = this.identity(run.character_id), controller = new AbortController()
+    const input = JSON.parse(run.input)
+    // Persist once; resumed checkpoints never acquire a different skill configuration.
+    if (!Object.hasOwn(input, 'skills')) {
+      const priorCall = this.store.db.prepare('SELECT 1 FROM calls WHERE run_id=? LIMIT 1').get(run.id)
+      try { input.skills = priorCall ? { entries: [], instruction: '' } : this.readSkills?.(identity.id) ?? identity.skills ?? { entries: [], instruction: '' } }
+      catch (error) { input.skills = { entries: [], instruction: '', error: error instanceof Error ? error.message : '技能读取失败。' } }
+      this.store.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), run.id)
+    }
+    const skills = input.skills as SkillSnapshot
     const testModel = this.modelFactory?.(identity)
     const model: AgentModel = async (prompt, signal, options) => {
+      if (skills.error) throw new Error(`联系人技能不可用：${skills.error}`)
+      prompt = skills.instruction ? `${skills.instruction}\n${prompt}` : prompt
       let output = ''
-      const callId = this.store.latestCallId(run.id)
+      let callId: number | undefined, reservation: { key: string; maxOutputTokens: number } | undefined
       let metadata: AIResponseMetadata = { model: identity.config!.model }
-      if (callId === undefined) throw new Error('缺少模型调用记录。')
-      const reservation = this.store.tokens.reserve(run.id, callId, run.character_id, run.topic_id, prompt, AGENT_OUTPUT_TOKENS)
-      if ('error' in reservation) {
-        this.store.db.prepare('DELETE FROM calls WHERE id=?').run(callId)
-        throw new TokenBudgetError(reservation.error)
+      const beforeRound = (round: number, serializedInput: string) => {
+        signal.throwIfAborted()
+        if (round > 0) this.store.charge(run.id)
+        callId = this.store.latestCallId(run.id)
+        if (callId === undefined) throw new Error('Missing model call record')
+        const next = this.store.tokens.reserve(run.id, callId, run.character_id, run.topic_id, serializedInput, AGENT_OUTPUT_TOKENS)
+        if ('error' in next) { this.store.db.prepare('DELETE FROM calls WHERE id=?').run(callId); callId = undefined; throw new TokenBudgetError(next.error) }
+        reservation = { key: next.key!, maxOutputTokens: next.maxOutputTokens! }
+        metadata = { model: identity.config!.model }; output = ''
+        return reservation.maxOutputTokens
+      }
+      const afterRound = () => {
+        if (!reservation || callId === undefined) return
+        this.store.recordCallMetadata(callId, metadata)
+        this.store.tokens.settle(reservation.key, metadata)
+        reservation = undefined; this.changed(run.character_id)
+      }
+      const tools = identity.skillToolsEnabled ? skillToolRuntime(identity.id, skills, this.skillRunner, signal) : undefined
+      if (tools) {
+        tools.definitions = tools.definitions.filter(tool => !identity.disabledSkillTools?.includes(tool.name))
+        const execute = tools.execute
+        tools.execute = call => tools.definitions.some(tool => tool.name === call.name) ? execute(call) : Promise.resolve('工具已被用户禁用。')
       }
       try {
-        if (testModel) return await testModel(prompt, signal, options)
-        await streamAIChat([{ role: 'user', content: prompt }], options?.plainText ? '按工作指令输出纯文本正文，不输出 JSON。' : '按工作指令输出 JSON，保持事实、假设和来源的区分。', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) }, signal, undefined, { timeoutMs: 180000, maxOutputTokens: reservation.maxOutputTokens, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
+        if (testModel) { beforeRound(0, prompt); return await testModel(prompt, signal, options) }
+        await streamAIChat([{ role: 'user', content: prompt }], options?.plainText ? 'Output the requested plain text, without JSON.' : 'Follow the work instruction and return JSON. Distinguish facts, assumptions, and sources.', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) }, signal, tools, { timeoutMs: 180000, beforeRound, afterRound, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
         if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError(output)
-      } finally {
-        if (callId !== undefined) this.store.recordCallMetadata(callId, metadata)
-        this.store.tokens.settle(reservation.key!, metadata)
-        this.changed(run.character_id)
-      }
+      } finally { afterRound() }
       return output
     }
     // Claim the slot synchronously, including cancelled requests that have not exited yet.
@@ -281,7 +311,7 @@ export class AgentService {
     this.active.set(run.id, { id: run.id, characterId: run.character_id, topicId: run.topic_id, controller, promise })
   }
   async close() {
-    this.closed = true; clearInterval(this.timer)
+    this.closed = true; clearInterval(this.timer); this.skillRunner.cancel()
     const active = [...this.active.values()]
     for (const run of active) run.controller.abort()
     await Promise.all(active.map(run => run.promise))

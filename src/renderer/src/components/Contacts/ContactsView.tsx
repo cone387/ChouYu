@@ -401,6 +401,8 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     if (!active || (!detail && !form && !confirmDelete)) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      // Native task/skill dialogs own Escape; keep the contact detail underneath.
+      if (document.querySelector('dialog[open]:not([aria-modal="false"])')) return
       event.preventDefault()
       event.stopPropagation()
       if (expandedTab) setExpandedTab(null)

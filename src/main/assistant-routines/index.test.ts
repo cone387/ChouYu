@@ -8,6 +8,7 @@ vi.mock('../database', () => ({
 }))
 vi.mock('../agents', () => ({ inspectContactWork: state.inspect, inspectContactDelivery: state.delivery }))
 vi.mock('../ai', () => ({ streamAIChat: state.model }))
+vi.mock('../skills', () => ({ contactSkillInstruction: () => '已配置技能：核对依据后简要总结。' }))
 vi.mock('../reminder-events', () => ({ notifyReminderChanges: vi.fn() }))
 vi.mock('../tools/registry', () => ({ getRegisteredTool: () => null, registerTool: vi.fn() }))
 import { initializeAssistantRoutines, closeAssistantRoutines, readContactsForAssistant, summaryTaskLinks } from './index'
@@ -44,6 +45,7 @@ describe('assistant routine integration', () => {
   it('reads real contact state, permits bounded delivery inspection, and sends the generated morning summary', async () => {
     state.model.mockImplementation(async (_messages, _prompt, _config, chunk, _signal, runtime) => {
       expect(_prompt).toContain(contactCommunicationRules)
+      expect(_prompt).toContain('已配置技能：核对依据后简要总结。')
       const verified = await runtime.execute({ name: 'read_contact_delivery', arguments: JSON.stringify({ characterId: 'alice', topicId: 'article' }) })
       expect(JSON.parse(verified).version).toBe(2)
       expect(await runtime.execute({ name: 'read_contact_delivery', arguments: JSON.stringify({ characterId: 'chouyu', topicId: 'article' }) })).toContain('不在本次检查范围')

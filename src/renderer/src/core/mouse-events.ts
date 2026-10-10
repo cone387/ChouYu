@@ -3,6 +3,15 @@
 // mouse-events-state 时回写认知，保证认知与真实状态不发散。
 let ignored = true
 
+/** Native dialog backdrops hit the dialog itself, even outside its visible bounds. */
+export function isInteractiveHit(element: Element | null, x: number, y: number): boolean {
+  if (!element?.closest('[data-interactive]')) return false
+  const bounded = element.closest('[data-interactive-bounds]')
+  if (!bounded) return true
+  const rect = bounded.getBoundingClientRect()
+  return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
+}
+
 export function getMouseIgnored(): boolean {
   return ignored
 }
