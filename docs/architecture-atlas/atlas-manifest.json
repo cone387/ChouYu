@@ -1,0 +1,493 @@
+[
+  {
+    "slug": "system",
+    "number": "01",
+    "group": "系统全景",
+    "title": "ChouYu 系统架构总览",
+    "subtitle": "从界面、业务服务到本地数据与外部能力，先建立完整地图。",
+    "reading": [
+      "当前应用是 Electron + React 的本地桌面应用，preload 暴露类型化 API，主进程注册 IPC 与服务。",
+      "图中的五个业务块是为阅读而归组；例如日志和记忆并不是同一个服务。",
+      "外部能力由对应模块按配置调用，图中仅保留代表性依赖，不表示只有扩展模块能联网。"
+    ],
+    "boundary": "以页脚记录的 Git 版本为静态源码快照。旧 architecture.md 的事件总线、3D 渲染等规划没有当作已实现能力加入。",
+    "sources": [
+      "src/main/index.ts",
+      "src/main/ipc.ts",
+      "src/preload/index.ts",
+      "src/renderer/src/App.tsx",
+      "package.json"
+    ],
+    "related": [
+      "processes",
+      "frontend",
+      "storage"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "processes",
+    "number": "02",
+    "group": "系统全景",
+    "title": "进程、线程与通信边界",
+    "subtitle": "把“模块分开”与“真正的执行隔离”区别开。",
+    "reading": [
+      "主窗口禁用 Node 集成并启用沙箱与上下文隔离；Renderer 通过 preload 与主进程通信。",
+      "AgentWorkerRPC 管理 utilityProcess 的请求与响应，执行结果再由主进程投递。",
+      "JournalService 在主进程持有一个 worker_threads 工作线程，日志数据库操作由 worker 承担。"
+    ],
+    "boundary": "不画成微服务集群，也不将可选 JSONL 能力桥接协议声称为已启动的服务。日志辅助窗口及不同平台辅助进程细节合并。",
+    "sources": [
+      "src/main/index.ts",
+      "src/preload/index.ts",
+      "src/main/agents/index.ts",
+      "src/main/agents/worker-rpc.ts",
+      "src/main/journal/service.ts",
+      "src/main/journal/activity-helper.ts"
+    ],
+    "related": [
+      "system",
+      "contacts",
+      "journal"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "frontend",
+    "number": "03",
+    "group": "系统全景",
+    "title": "前端工作区与模块入口",
+    "subtitle": "从 App 到工作区，再到六个主要页面。",
+    "reading": [
+      "上排展示面板外层与导航职责，下排展示工作区包含的六个页面，不是执行流水线。",
+      "桌面宠物与采集覆盖层位于 App 外层，业务页面位于 ChatPanel 工作区。",
+      "点击下排模块进入相应架构图；页面级的共用状态、搜索与导航不逐个画成节点。"
+    ],
+    "boundary": "只覆盖主要用户入口，不逐一列出叶子 React 组件或样式文件；设置中的记忆组件被复用到记忆工作区。",
+    "sources": [
+      "src/renderer/src/App.tsx",
+      "src/renderer/src/components/ChatPanel/ChatPanel.tsx",
+      "src/renderer/src/components/Workspace/WorkspaceNav.tsx",
+      "src/renderer/src/core/workspace-state.ts"
+    ],
+    "related": [
+      "chat",
+      "contacts",
+      "todos",
+      "settings"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "chat",
+    "number": "04",
+    "group": "聊天与任务",
+    "title": "一次带工具的聊天，经过哪些环节",
+    "subtitle": "固定示例：模型提出一个需授权的工具调用，用户同意后继续回答。",
+    "reading": [
+      "Renderer 的 streamChat 通过 IPC 发起请求；主进程校验会话归属并构造可信配置与上下文。",
+      "工具名称、参数、启用状态和授权在执行前检查；工具结果参与后续生成。",
+      "公共交流规则与角色身份由服务端入口注入，普通流式聊天不再额外调用模型审查每条消息。"
+    ],
+    "boundary": "不是每次聊天都会调用工具或询问授权；此图只画一个已同意的调用。记忆检索、停止与失败分支合并在注释中，回传箭头表示通道层响应而非精确网络包。",
+    "sources": [
+      "src/renderer/src/core/ai-engine.ts",
+      "src/main/ipc.ts",
+      "src/main/ai.ts",
+      "src/main/tools/registry.ts",
+      "src/main/tool-approval.ts",
+      "src/shared/contact-communication.ts"
+    ],
+    "related": [
+      "extensions",
+      "memory",
+      "delivery"
+    ],
+    "kind": "SEQUENCE"
+  },
+  {
+    "slug": "contacts",
+    "number": "05",
+    "group": "聊天与任务",
+    "title": "联系人任务：入口、适配、执行与呈现",
+    "subtitle": "UI 统一、能力差异和执行引擎分别承担什么。",
+    "reading": [
+      "共同页面复用 ContactTaskListCard、ContactTaskOverview、ContactTaskDialog 等组件。",
+      "自然语言网关验证能力、归属与版本；普通工作进入联系人服务，助手安排进入各自执行通道。",
+      "聊天修改通过 chat-changes 等路由处理；原任务和成果保留，取消旧执行后迟到结果不可覆盖。"
+    ],
+    "boundary": "此图画普通联系人任务的主链，定时安排另见第 08 张。内部任务字段不是新增 UI 输入项；不恢复标题、预算等多字段表单。",
+    "sources": [
+      "src/renderer/src/components/Contacts/ContactTopics.tsx",
+      "src/renderer/src/components/Contacts/ContactTaskDialog.tsx",
+      "src/renderer/src/components/Contacts/contactTaskPresentation.ts",
+      "src/main/assistant-routines/gateway.ts",
+      "src/main/agents/chat-changes.ts",
+      "src/main/agents/service.ts",
+      "docs/contact-task-spec.md"
+    ],
+    "related": [
+      "runtime",
+      "scheduling",
+      "assistant",
+      "delivery"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "runtime",
+    "number": "06",
+    "group": "聊天与任务",
+    "title": "联系人一轮工作的 LangGraph",
+    "subtitle": "把真实图节点、条件分支和持久提交摆到同一张图里。",
+    "reading": [
+      "主链是 choose → read → write → review → commit；首版收到回复时先进入 revise。",
+      "choose/read 判定需要等待时可以 deferred 提前结束，不等同于任务目标已经完成。",
+      "必要问题通过 LangGraph interrupt 与检查点恢复；commit 才提交正式成果与通知。"
+    ],
+    "boundary": "这是编排结构，不表示每个节点都调用一次模型。格式修复、正文恢复、权限检查和 Token 预留位于节点或调用封装内部。",
+    "sources": [
+      "src/main/agents/runtime.ts",
+      "src/main/agents/research.ts",
+      "src/main/agents/writing-recovery.ts",
+      "src/main/agents/store.ts"
+    ],
+    "related": [
+      "scheduling",
+      "delivery"
+    ],
+    "kind": "FLOWCHART"
+  },
+  {
+    "slug": "scheduling",
+    "number": "07",
+    "group": "聊天与任务",
+    "title": "并发、调度与资源边界",
+    "subtitle": "当前工作区已支持联系人内配置多任务并发，同一任务保持串行。",
+    "reading": [
+      "工作名额按联系人管理；等待回复、下次执行时间与无法恢复的额度阻塞不占实际执行槽。",
+      "启动、修订、继续和回复恢复共用限制；取消请求实际退出前不释放名额，防止同一任务重叠。",
+      "失败计数与恢复时间按任务持久化；调用和 Token 仍共享联系人每日额度，累计预算按任务核算。"
+    ],
+    "boundary": "这些是当前源码和产品规范描述的控制逻辑，本图不是并发压测报告。供应商余额、网络等故障与格式/权限失败的恢复策略不同，具体阈值见规范。",
+    "sources": [
+      "src/main/agents/service.ts",
+      "src/main/agents/store.ts",
+      "src/main/agents/task-failures.ts",
+      "src/main/agents/token-budget.ts",
+      "src/shared/work-settings.ts",
+      "docs/contact-task-spec.md"
+    ],
+    "related": [
+      "runtime",
+      "contacts",
+      "delivery"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "assistant",
+    "number": "08",
+    "group": "聊天与任务",
+    "title": "ChouYu 的安排、问候与晨报",
+    "subtitle": "定时安排和主动陪伴如何引用真实工作，并进入共同聊天体验。",
+    "reading": [
+      "长期安排由 AssistantRoutineService 保存和调度；问候、回来检查由 CompanionBriefing 维护变化基线与回执。",
+      "工作检查只读联系人真实任务、成果和待处理事项；不能把聊天承诺当进展，不能自动代答。",
+      "晨报与检查消息经公共投递进入 ChouYu；普通提醒可直接生成文案，不要求每次都调模型。"
+    ],
+    "boundary": "提醒、工作检查不是同一条固定流水线。已支持的周期与缺口以任务规范为准；不声称退出或休眠期间仍在运行。",
+    "sources": [
+      "src/main/assistant-routines/index.ts",
+      "src/main/assistant-routines/service.ts",
+      "src/main/assistant-routines/companion.ts",
+      "src/renderer/src/core/proactive.ts",
+      "src/shared/assistant-duties.ts"
+    ],
+    "related": [
+      "contacts",
+      "delivery",
+      "lifecycle"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "todos",
+    "number": "09",
+    "group": "聊天与任务",
+    "title": "用户待办：重复生成与提醒送达",
+    "subtitle": "任务列表背后的持久化、日期生成和通知链。",
+    "reading": [
+      "TasksStore 管理用户自己的待办；日程生成独立各期，不依赖完成上一期。",
+      "调度器先生成需要的实例，再认领到期提醒；消息回执先持久化，SQL 认领才提交。",
+      "新建、编辑、分组和视图继续用弹窗和现有控件；无快速新建、多选或批量处理。"
+    ],
+    "boundary": "本图聚焦按日期重复；按完成时间规则由完成操作驱动。应用离线期间不执行，恢复后实例补齐和提醒合并是两个不同操作。",
+    "sources": [
+      "src/main/tasks/index.ts",
+      "src/main/tasks/store.ts",
+      "src/main/tasks/scheduler.ts",
+      "src/shared/taskScheduling.ts",
+      "src/renderer/src/components/Tasks/TasksView.tsx",
+      "docs/task-scheduling.md"
+    ],
+    "related": [
+      "delivery",
+      "storage",
+      "frontend"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "delivery",
+    "number": "10",
+    "group": "聊天与任务",
+    "title": "成果如何可靠地进入聊天",
+    "subtitle": "从成果事务到发件箱、会话回执，再到未读状态。",
+    "reading": [
+      "成果版本与任务通知快照在 AgentStore 的同一 SQLite 事务内创建；事务失败不能提前交付。",
+      "主进程 appendAgentNotice 与 appendAssistantMessage 适配到同一持久投递函数。",
+      "跨 SQLite 和 JSON 的重试用稳定回执去重；读消息与处理交互事项是两种状态。"
+    ],
+    "boundary": "图中主链是任务成果交付；提醒和问候从自己的持久回执接入公共投递。普通聊天沿用流式会话保存，不套用任务发件箱。",
+    "sources": [
+      "src/main/agents/store.ts",
+      "src/main/agents/notices.ts",
+      "src/main/agents/index.ts",
+      "src/main/database.ts",
+      "src/shared/contact-communication.ts",
+      "src/main/agents/interactions.ts"
+    ],
+    "related": [
+      "runtime",
+      "assistant",
+      "storage"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "journal",
+    "number": "11",
+    "group": "功能模块",
+    "title": "工作日志：从真实活动到可追溯整理",
+    "subtitle": "采集、存储、检索、总结和工作资料复用的主要路径。",
+    "reading": [
+      "JournalService 协调活动辅助程序、采集和 OCR；worker 处理数据库与媒体文件，避免把所有数据库操作放在界面。",
+      "证据、语义检索和缓存为日问答与总结提供依据；周报、项目、收藏和手册是派生组织功能。",
+      "日志的候选事项和用户待办是不同的数据对象，转入用户待办需要明确操作。"
+    ],
+    "boundary": "屏幕采集受平台权限、暂停和配额限制。本图没有运行采集或上传任何画面；细分的 journal 子模块在页面覆盖表中列出。",
+    "sources": [
+      "src/main/journal/service.ts",
+      "src/main/journal/journal-worker.ts",
+      "src/main/journal/summary.ts",
+      "src/main/journal/semantic-search.ts",
+      "src/main/journal/weekly.ts",
+      "src/main/journal/projects.ts",
+      "src/main/journal/playbook.ts",
+      "src/main/journal/saved.ts"
+    ],
+    "related": [
+      "processes",
+      "perception",
+      "memory",
+      "storage"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "memory",
+    "number": "12",
+    "group": "功能模块",
+    "title": "长期记忆：确认、检索与可选同步",
+    "subtitle": "从候选到生效，再到相关上下文与来源反馈。",
+    "reading": [
+      "MemoryService 负责候选、冲突决策、版本恢复、主题与维护，Provider 承担具体存储和检索。",
+      "能力注册表选择 SQLite 或 Mem0 引擎；Embedding 与同步分别配置。",
+      "只有相关记忆进入上下文；聊天中可追溯引用，联系人 Agent 的工作记忆另存于 agents.db。"
+    ],
+    "boundary": "是否联网取决于当前引擎、Embedding 与同步配置。本图不读取个人记忆内容，也不声称当前已启用远程服务。",
+    "sources": [
+      "src/main/memory/service.ts",
+      "src/main/memory/provider.ts",
+      "src/main/memory/sqlite-provider.ts",
+      "src/main/memory/mem0-provider.ts",
+      "src/main/memory/sync/mem0-adapter.ts",
+      "src/main/capabilities/builtins.ts"
+    ],
+    "related": [
+      "chat",
+      "extensions",
+      "storage"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "extensions",
+    "number": "13",
+    "group": "功能模块",
+    "title": "工具、应用插件与服务能力",
+    "subtitle": "把三种容易混淆的扩展职责分开。",
+    "reading": [
+      "PluginRegistry 当前通过源码中的列表注册插件，并提供命令、认证和调用入口。",
+      "plugin-tools 将插件适配成 AI 工具定义；实际工具执行经过参数、开关和按需授权检查。",
+      "CapabilityRegistry 用于选择记忆引擎、Embedding 和同步能力；进程桥接协议是另一个可选边界。"
+    ],
+    "boundary": "图中不是插件市场或动态热加载承诺。这里的 ChouYu 应用插件与本次用来画图的 diagram-design 插件也不是同一运行系统。",
+    "sources": [
+      "src/main/plugins/registry.ts",
+      "src/main/tools/plugin-tools.ts",
+      "src/main/tools/registry.ts",
+      "src/main/capabilities/registry.ts",
+      "src/main/capabilities/builtins.ts",
+      "src/main/capabilities/process-bridge.ts",
+      "src/main/capabilities/process-transport.ts"
+    ],
+    "related": [
+      "chat",
+      "memory",
+      "settings"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "perception",
+    "number": "14",
+    "group": "功能模块",
+    "title": "屏幕、OCR、附件与剪贴板",
+    "subtitle": "哪些系统输入留在本地，哪些在用户发送后成为模型输入。",
+    "reading": [
+      "截图入口在 Renderer，捕获源枚举、区域校验和实际采集在主进程与平台辅助层。",
+      "图像可作为附件发给视觉模型，支持的平台也可先进行离线 OCR。",
+      "AttachmentStore 将图片落成独立文件；剪贴板监听受配置开关控制，默认关闭。"
+    ],
+    "boundary": "剪贴板作为独立、可选的输入来源汇入输入区，不由模型请求触发监听。周期性日志采集在日志图单独展开。",
+    "sources": [
+      "src/main/ipc.ts",
+      "src/main/scrolling-capture.ts",
+      "src/main/offline-ocr.ts",
+      "src/main/attachment-store.ts",
+      "src/main/clipboard.ts",
+      "src/renderer/src/components/ScreenCapture/ScreenCapture.tsx"
+    ],
+    "related": [
+      "chat",
+      "journal",
+      "storage"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "storage",
+    "number": "15",
+    "group": "数据与基础设施",
+    "title": "数据分别存在哪里，由谁负责",
+    "subtitle": "应用不是一个大 SQLite：会话、任务、联系人、记忆和日志各有存储边界。",
+    "reading": [
+      "database.ts 实际管理 JSON 会话与配置；文件名不能误导成全应用的 SQLite 层。",
+      "联系人任务数据与 LangGraph 检查点分别持久化；工作日志的图像和会话图片也是不同目录。",
+      "同库操作可用事务；跨 SQLite 与 JSON 的交付必须依赖回执协议，不画成一个全局原子事务。"
+    ],
+    "boundary": "图是存储目录与所有权地图，不暗示所有库具有相同备份策略或整库加密。字段级凭据保护与普通正文落盘分别说明。",
+    "sources": [
+      "src/main/database.ts",
+      "src/main/store-file.ts",
+      "src/main/agents/service.ts",
+      "src/main/agents/store.ts",
+      "src/main/capabilities/builtins.ts",
+      "src/main/tasks/index.ts",
+      "src/main/journal/journal-worker.ts",
+      "src/main/attachment-store.ts"
+    ],
+    "related": [
+      "delivery",
+      "memory",
+      "journal"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "search",
+    "number": "16",
+    "group": "功能模块",
+    "title": "全局搜索：并行查询，按来源定位",
+    "subtitle": "搜索入口如何连接五类资料，并处理部分服务失败。",
+    "reading": [
+      "GlobalSearch 并行请求会话、记忆、活动与画面、联系人以及任务。",
+      "使用 Promise.allSettled 汇总，失败类别明确提示；日志结果有日期、应用和分页覆盖范围。",
+      "结果携带对应 ID，回到原会话、任务、联系人或日志证据，而不是复制一份资料。"
+    ],
+    "boundary": "这是当前前端聚合搜索；不声称已有单一跨域向量库或完整全文索引。活动和 OCR 在 UI 上同组，实际是两路查询。",
+    "sources": [
+      "src/renderer/src/components/Workspace/GlobalSearch.tsx",
+      "src/renderer/src/core/journal-search.ts",
+      "src/shared/conversation-search.ts",
+      "src/main/database.ts"
+    ],
+    "related": [
+      "frontend",
+      "memory",
+      "journal"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "settings",
+    "number": "17",
+    "group": "数据与基础设施",
+    "title": "配置、人设、模型与能力诊断",
+    "subtitle": "控制平面如何影响各业务模块，而不混淆身份与执行配置。",
+    "reading": [
+      "设置写入共享配置模型；凭据经系统能力保护后保存，服务按配置变化重新配置。",
+      "联系人有独立身份和可选择的模型配置，公共交流规则来自共享契约。",
+      "模型连接诊断与 Embedding 诊断分开；任务工作参数有版本与权限检查。"
+    ],
+    "boundary": "不读取现有 API Key、角色私有正文或远程账户状态。本图说明静态代码组织，不表示某个 Provider 当前可用。",
+    "sources": [
+      "src/shared/config.ts",
+      "src/shared/characters.ts",
+      "src/shared/contact-communication.ts",
+      "src/main/provider-probe.ts",
+      "src/main/ai.ts",
+      "src/renderer/src/components/Settings/Settings.tsx",
+      "src/main/ipc.ts"
+    ],
+    "related": [
+      "chat",
+      "memory",
+      "extensions",
+      "lifecycle"
+    ],
+    "kind": "ARCHITECTURE"
+  },
+  {
+    "slug": "lifecycle",
+    "number": "18",
+    "group": "数据与基础设施",
+    "title": "启动、桌面陪伴与退出恢复",
+    "subtitle": "窗口之外的托盘、热键、更新和后台服务如何组成桌面应用。",
+    "reading": [
+      "入口先注册必要服务，再创建窗口和 IPC，异步初始化插件，最后接入托盘、热键和剪贴板。",
+      "主进程驱动托盘未读闪烁，Renderer 的状态机控制宠物显示与主动触发。",
+      "退出时关闭各服务并刷新持久数据；后台工作需要应用保持运行。"
+    ],
+    "boundary": "图合并了服务初始化顺序中的独立步骤，不能当作每个 await 的精确时序。更新与自启动行为受打包状态、平台及用户配置控制。",
+    "sources": [
+      "src/main/index.ts",
+      "src/main/tray.ts",
+      "src/main/tray-flasher.ts",
+      "src/main/hotkey.ts",
+      "src/main/updater.ts",
+      "src/renderer/src/core/state-machine.ts",
+      "src/renderer/src/core/proactive.ts",
+      "src/main/reminders/service.ts"
+    ],
+    "related": [
+      "processes",
+      "assistant",
+      "delivery",
+      "settings"
+    ],
+    "kind": "ARCHITECTURE"
+  }
+]

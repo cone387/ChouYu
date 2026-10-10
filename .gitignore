@@ -11,3 +11,5 @@ temp/
 .playwright-mcp/
 __pycache__/
 *.pyc
+# Local Diagram Design examples; maintained documentation lives in architecture-atlas.
+/docs/diagram-design-showcase/

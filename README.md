@@ -129,7 +129,8 @@ src/
 
 - [联系人任务产品与交互规范（现行 spec）](docs/contact-task-spec.md)
 
-- [系统架构](docs/architecture.md)
+- [系统与模块架构图册（18 张）](docs/architecture-atlas/README.md)
+- [早期架构规划](docs/architecture.md)
 - [联系人持续工作与 24h 实验架构](docs/contact-agents-architecture.md)
 - [V1 功能规格](docs/v1-spec.md)
 - [当前功能状态](docs/current-status.md)

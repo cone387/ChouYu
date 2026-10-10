@@ -1,0 +1,2 @@
+# Optional browser layout checks only; build and static verification use stdlib.
+playwright==1.61.0

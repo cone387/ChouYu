@@ -1,6 +1,6 @@
-# AI Pet 系统架构
+# AI Pet 早期架构规划
 
-> 联系人持续工作的当前实现见 [联系人持续工作与 24h 实验架构](contact-agents-architecture.md)（2026-09-29 更新，含简化架构图和运行规则）。下文保留全局分层设计，不代表所有规划模块均已实现。
+> 当前系统与模块关系见 [系统架构图册](architecture-atlas/README.md)，每张图附源码入口及核对版本。联系人持续工作详见 [联系人持续工作与 24h 实验架构](contact-agents-architecture.md)，产品与交互以 [联系人任务规范](contact-task-spec.md) 为准。下文保留早期全局分层规划，不代表所有模块均已实现。
 
 ## 产品定位
 
