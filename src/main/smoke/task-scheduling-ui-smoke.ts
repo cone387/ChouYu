@@ -39,6 +39,14 @@ export async function runTaskSchedulingUISmoke(window: BrowserWindow): Promise<v
   await click('.tasks-custom-reminder > button:last-child')
   await waitForRenderer(window, "document.querySelectorAll('.tasks-reminder-list li').length===3")
   await click('[aria-label=设置任务重复]')
+  await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  if (!await run("document.querySelector('.tasks-schedule-property-popover:popover-open').getBoundingClientRect().height < 180")) throw new Error('Default repeat panel contains excessive empty space')
+  if (process.env.CHOUYU_TASK_GROUP_ARTIFACTS) {
+    mkdirSync(process.env.CHOUYU_TASK_GROUP_ARTIFACTS, { recursive: true })
+    await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+    writeFileSync(join(process.env.CHOUYU_TASK_GROUP_ARTIFACTS, 'tasks-repeat-default.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+  }
   await fill('[aria-label="任务重复规则"]', 'custom')
   await fill('[aria-label="重复频率"]', 'monthly')
   await click('[aria-label="每月 31 日"]')
@@ -70,7 +78,7 @@ export async function runTaskSchedulingUISmoke(window: BrowserWindow): Promise<v
         window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height }, scale: 1 })
         await run(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`)
         if (!await run("document.querySelector('[aria-label=设置任务重复]').parentElement.open")) await click('[aria-label=设置任务重复]')
-        await run(`document.querySelector('.tasks-repeat-custom').scrollIntoView({block:'nearest'})`)
+        await run(`document.querySelector('.tasks-schedule-property-popover:popover-open .tasks-date-page').scrollTop=0`)
         await run(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`)
         const fits = await run(`(() => { const p=document.querySelector('.tasks-schedule-property-popover:popover-open'); const r=p.getBoundingClientRect(), footer=p.querySelector('footer').getBoundingClientRect(), body=p.querySelector('.tasks-date-page'); return p.matches(':popover-open') && p.scrollHeight<=p.clientHeight+1 && body.scrollWidth<=body.clientWidth+1 && p.scrollWidth<=p.clientWidth+1 && r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight && footer.bottom<=r.bottom && footer.top>=r.top })()`)
         if (!fits) {
@@ -87,6 +95,10 @@ export async function runTaskSchedulingUISmoke(window: BrowserWindow): Promise<v
           await run(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`)
           const pageFits = await run(`(() => {const p=document.querySelector('.tasks-schedule-property-popover:popover-open'),r=p.getBoundingClientRect();return p.scrollWidth<=p.clientWidth+1 && r.bottom<=innerHeight && r.top>=0})()`)
           if (!pageFits) throw new Error(`Schedule property ${page} overflows ${mode}/${width}`)
+          if (page === '提醒') {
+            await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+            writeFileSync(join(artifacts, `tasks-reminder-${mode}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+          }
         }
       }
     } finally {

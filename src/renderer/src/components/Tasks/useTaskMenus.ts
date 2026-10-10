@@ -14,10 +14,12 @@ export default function useTaskMenus(active: boolean) {
     const closeMenu = (menu: HTMLDetailsElement) => {
       for (const child of Array.from(menu.querySelectorAll<HTMLDetailsElement>(MENU_SELECTOR)).reverse()) {
         const childPopup = popupFor(child)
+        if (childPopup) observer.unobserve(childPopup)
         if (childPopup?.matches(':popover-open')) childPopup.hidePopover()
         child.open = false
       }
       const popup = popupFor(menu)
+      if (popup) observer.unobserve(popup)
       if (popup?.matches(':popover-open')) popup.hidePopover()
       menu.open = false
     }
@@ -37,13 +39,13 @@ export default function useTaskMenus(active: boolean) {
       Object.assign(popup.style, {
         inset: 'auto', margin: '0', position: 'fixed',
         left: `${leftEdge}px`, top: `${topEdge}px`,
-        minWidth: `${Math.min(160, maxWidth)}px`, width: menu.matches('.tasks-field-menu') ? `${Math.min(280, maxWidth)}px` : 'max-content', maxWidth: `${maxWidth}px`, maxHeight: `${maxHeight}px`
+        minWidth: `${Math.min(160, maxWidth)}px`, width: menu.matches('.tasks-schedule-property') ? `${Math.min(336, maxWidth)}px` : menu.matches('.tasks-field-menu') ? `${Math.min(280, maxWidth)}px` : 'max-content', maxWidth: `${maxWidth}px`, maxHeight: `${maxHeight}px`
       })
       popup.setAttribute('popover', 'manual')
       if (!popup.matches(':popover-open')) popup.showPopover()
       const size = popup.getBoundingClientRect()
-      // Calendars can overlap their trigger so the month and time settings stay visible together.
-      if (menu.matches('.tasks-composer-dates')) {
+      // Scheduling forms may overlap their trigger to use the editor's available height.
+      if (menu.matches('.tasks-composer-dates, .tasks-schedule-property')) {
         popup.style.left = `${Math.max(leftEdge, Math.min(anchor.left, rightEdge - size.width))}px`
         popup.style.top = `${Math.max(topEdge, Math.min(anchor.bottom + gap, bottomEdge - size.height))}px`
         return
@@ -81,6 +83,8 @@ export default function useTaskMenus(active: boolean) {
       if (!menu.open) { closeMenu(menu); return }
       for (const other of openMenus()) if (other !== menu && !other.contains(menu)) closeMenu(other)
       positionMenu(menu)
+      const popup = popupFor(menu)
+      if (popup && menu.matches('.tasks-schedule-property')) observer.observe(popup)
     }
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -101,6 +105,7 @@ export default function useTaskMenus(active: boolean) {
       closeAll()
     }
     const onResize = () => { for (const menu of openMenus()) positionMenu(menu) }
+    const observer = new ResizeObserver(onResize)
     if (!active) { closeAll(); return }
     document.addEventListener('pointerdown', closeOutside, true)
     document.addEventListener('click', onClick, true)
@@ -109,7 +114,6 @@ export default function useTaskMenus(active: boolean) {
     root.addEventListener('toggle', onToggle, true)
     document.addEventListener('scroll', onScroll, true)
     window.addEventListener('resize', onResize)
-    const observer = new ResizeObserver(onResize)
     observer.observe(root)
     return () => {
       closeAll()

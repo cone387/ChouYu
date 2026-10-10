@@ -102,30 +102,42 @@ export async function runTaskEditUISmoke(window: BrowserWindow): Promise<void> {
     }
   }
   await click(`.tasks-board-card${card} .task-card-due`)
-  await chooseDateTime('卡片截止时间', '2030-02-28T09:00')
+  await wait("!!document.querySelector('.app-datetime-dialog[open] .rdp-root')")
+  await assert("document.querySelectorAll('dialog[open]').length===1 && !document.querySelector('.tasks-field-editor')")
+  await click('.app-datetime-clear')
+  await assert("document.querySelector('[aria-label=截止时间日期]').value==='' && document.querySelector('.app-datetime-hint').textContent.includes('取消任务提醒和重复规则')")
+  await assert(`window.electronAPI.tasks.get('${task.id}').then(t=>t.dueAt===new Date(2030,0,31,9).getTime()&&t.recurrence==='monthly')`)
+  await click('.app-datetime-cancel')
+  await run("Array.from(document.querySelectorAll('.app-datetime-dialog button')).find(b=>b.textContent==='继续编辑').click()")
+  await fill('[aria-label=截止时间日期]', '2030-02-28')
   const directory = process.env.CHOUYU_TASK_GROUP_ARTIFACTS
   if (directory) {
     mkdirSync(directory, { recursive: true })
-    for (const theme of ['light', 'dark']) {
-      await run(`document.documentElement.dataset.theme='${theme}'`)
-      await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
-      await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
-      writeFileSync(join(directory, `task-field-${theme}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
-    }
+    try {
+      for (const theme of ['light', 'dark']) for (const width of [1100, 375]) {
+        await run(`document.documentElement.dataset.theme='${theme}'`)
+        window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 700 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 700 }, scale: 1 })
+        await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        await assert("(() => {const d=document.querySelector('.app-datetime-dialog'),r=d.getBoundingClientRect(),f=d.querySelector('footer').getBoundingClientRect();return d.scrollWidth<=d.clientWidth+1 && r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight && f.bottom<=r.bottom})()")
+        await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+        writeFileSync(join(directory, `task-field-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+      }
+    } finally { window.webContents.disableDeviceEmulation() }
   }
-  await click('.tasks-field-editor button[type=submit]')
-  await wait("!document.querySelector('.tasks-field-editor')")
+  await click('.app-datetime-dialog button[type=submit]')
+  await wait("!document.querySelector('.app-datetime-dialog')")
   await assert(`window.electronAPI.tasks.get('${task.id}').then(t=>t.dueAt===new Date(2030,1,28,9).getTime()&&t.reminders[0].at===t.dueAt-3600000&&t.recurrence==='monthly')`)
   // A storage/validation failure leaves the edited value available for retry.
   await click(`${card} .task-card-due`)
-  await chooseDateTime('卡片截止时间', '2030-03-28T09:00')
+  await wait("!!document.querySelector('.app-datetime-dialog[open]')")
+  await fill('[aria-label=截止时间日期]', '2030-03-28')
   await run(`window.electronAPI.tasks.update('${task.id}',{note:'外部更新'})`)
-  await click('.tasks-field-editor button[type=submit]')
-  await wait("document.querySelector('.tasks-field-editor [role=alert]')?.textContent.includes('任务已发生变化')")
-  await assert("document.querySelector('[aria-label=卡片截止时间]').dataset.value==='2030-03-28T09:00'")
-  await click('.tasks-field-editor .tasks-form-actions button:first-child')
-  await run("Array.from(document.querySelectorAll('.tasks-field-editor button')).find(b=>b.textContent==='放弃修改').click()")
-  await wait("!document.querySelector('.tasks-field-editor')")
+  await click('.app-datetime-dialog button[type=submit]')
+  await wait("document.querySelector('.app-datetime-dialog [role=alert]')?.textContent.includes('任务已发生变化')")
+  await assert("document.querySelector('[aria-label=截止时间日期]').value==='2030-03-28' && document.querySelector('.app-time-toggle strong').textContent==='09:00'")
+  await click('.app-datetime-cancel')
+  await run("Array.from(document.querySelectorAll('.app-datetime-dialog button')).find(b=>b.textContent==='放弃修改').click()")
+  await wait("!document.querySelector('.app-datetime-dialog')")
   // Checklist creation stays in a modal and sorting preserves each item's identity.
   await openEditor()
   await click('.tasks-checklist-collapse')
@@ -248,6 +260,15 @@ export async function runTaskEditUISmoke(window: BrowserWindow): Promise<void> {
   await click('.tasks-composer > form button[type=submit]')
   await wait("!document.querySelector('.tasks-composer')")
   await assert(`window.electronAPI.tasks.get('${task.id}').then(t=>t.startAt!==null && t.startAt<t.dueAt && new Date(t.startAt).getDate()===27 && new Date(t.dueAt).getDate()===28)`)
+  await click(`${card} .task-card-due`)
+  await wait("!!document.querySelector('.app-datetime-dialog[open]')")
+  await fill('[aria-label=截止时间日期]', '2030-02-26')
+  await click('.app-datetime-dialog button[type=submit]')
+  await wait("document.querySelector('.app-datetime-error')?.textContent.includes('允许范围')")
+  await click('.app-datetime-clear')
+  await click('.app-datetime-dialog button[type=submit]')
+  await wait("!document.querySelector('.app-datetime-dialog')")
+  await assert(`window.electronAPI.tasks.get('${task.id}').then(t=>t.dueAt===null && t.recurrence==='none' && t.reminders.length===0 && t.startAt!==null && t.note==='外部更新')`)
   await run(`window.electronAPI.tasks.remove('${task.id}')`)
   console.log('CHOUYU_TASK_EDIT_UI_SMOKE_PASSED')
 }

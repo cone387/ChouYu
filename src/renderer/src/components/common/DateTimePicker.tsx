@@ -36,7 +36,19 @@ export default function DateTimePicker({ label, value, onChange, placeholder = '
   </>
 }
 
-function DateTimeDialog({ label, value, mode, min, max, allowClear, onChange, onClose }: Required<Pick<DateTimePickerProps, 'label' | 'value' | 'mode' | 'allowClear' | 'onChange'>> & Pick<DateTimePickerProps, 'min' | 'max'> & { onClose(): void }) {
+interface DateTimeDialogProps extends Pick<DateTimePickerProps, 'label' | 'value' | 'min' | 'max'> {
+  mode?: 'date' | 'datetime'
+  allowClear?: boolean
+  onChange(value: string): void | Promise<void>
+  onClose(): void
+  subtitle?: string
+  confirmLabel?: string
+  clearAsDraft?: boolean
+  confirmDiscard?: boolean
+  getHint?(value: string): string
+}
+
+export function DateTimeDialog({ label, value, mode = 'datetime', min, max, allowClear = true, onChange, onClose, subtitle, confirmLabel = '确定', clearAsDraft = false, confirmDiscard = false, getHint }: DateTimeDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
   const [date, setDate] = useState(value.slice(0, 10))
@@ -44,6 +56,16 @@ function DateTimeDialog({ label, value, mode, min, max, allowClear, onChange, on
   const [month, setMonth] = useState(parseLocalDate(date) ?? new Date())
   const [error, setError] = useState('')
   const [timeOpen, setTimeOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const saving = useRef(false)
+  const [discard, setDiscard] = useState(false)
+  const draftValue = date ? (mode === 'date' ? date : `${date}T${time}`) : ''
+  const hint = getHint?.(draftValue)
+  const close = () => {
+    if (saving.current) return
+    if (confirmDiscard && draftValue !== value) setDiscard(true)
+    else onClose()
+  }
   const timeColumns = useRef<(HTMLDivElement | null)[]>([])
   const parts = time.split(':')
   const selectTime = (index: number, part: string) => {
@@ -53,23 +75,36 @@ function DateTimeDialog({ label, value, mode, min, max, allowClear, onChange, on
   const selected = parseLocalDate(date)
   const earliest = min ? parseLocalDate(min.slice(0, 10)) : undefined
   const latest = max ? parseLocalDate(max.slice(0, 10)) : undefined
-  useEffect(() => { dialog.current?.showModal() }, [])
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    dialog.current?.showModal()
+    return () => { if (opener?.isConnected) opener.focus({ preventScroll: true }) }
+  }, [])
   useEffect(() => {
     for (const column of timeColumns.current) {
       const selectedOption = column?.querySelector<HTMLElement>('[aria-selected=true]')
       if (column && selectedOption) column.scrollTop = selectedOption.offsetTop - column.clientHeight / 2 + selectedOption.offsetHeight / 2
     }
   }, [time, timeOpen])
+  const commit = async (next: string) => {
+    if (saving.current) return
+    saving.current = true; setBusy(true); setError('')
+    try { await onChange(next); onClose() }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { saving.current = false; setBusy(false) }
+  }
   const save = () => {
+    if (clearAsDraft && !date) { void commit(''); return }
     if (!selected) { setError('请选择有效日期。'); return }
     if (mode === 'datetime' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) { setError('请选择有效时间。'); return }
     const next = mode === 'date' ? date : `${date}T${time}`
     if (min && next < min || max && next > max) { setError('所选时间超出允许范围。'); return }
-    onChange(next); onClose()
+    void commit(next)
   }
-  return <dialog ref={dialog} className="app-datetime-dialog" data-interactive aria-labelledby={heading} onCancel={event => { event.preventDefault(); event.stopPropagation(); onClose() }} onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); onClose() } }} onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}>
+  return <dialog ref={dialog} className="app-datetime-dialog" data-interactive aria-labelledby={heading} aria-busy={busy} onCancel={event => { event.preventDefault(); event.stopPropagation(); if (discard) setDiscard(false); else close() }} onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); if (discard) setDiscard(false); else close() } }} onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}>
     <form onSubmit={event => { event.preventDefault(); event.stopPropagation(); save() }} noValidate>
-      <header><h2 id={heading}>{label}</h2><button type="button" aria-label="关闭日期时间选择" onClick={onClose}>×</button></header>
+      <fieldset className="app-datetime-controls" disabled={busy}>
+      <header><div><h2 id={heading}>{label}</h2>{subtitle && <p className="app-datetime-subtitle" title={subtitle}>{subtitle}</p>}</div><button type="button" aria-label="关闭日期时间选择" onClick={close}>×</button></header>
       <div className="app-datetime-body">
         <div className="app-datetime-stage">
         {!timeOpen && <DayPicker mode="single" locale={zhCN} weekStartsOn={1} fixedWeeks showOutsideDays month={month} onMonthChange={setMonth} selected={selected} onSelect={day => { if (day) { setDate(localDateValue(day)); setMonth(day); setError('') } }} disabled={[...(earliest ? [{ before: earliest }] : []), ...(latest ? [{ after: latest }] : [])]} labels={{ labelDayButton: day => localDateValue(day), labelPrevious: () => '上个月', labelNext: () => '下个月' }} />}
@@ -95,9 +130,12 @@ function DateTimeDialog({ label, value, mode, min, max, allowClear, onChange, on
           <label><span>日期</span><input autoFocus aria-label={`${label}日期`} placeholder="YYYY-MM-DD" value={date} inputMode="numeric" maxLength={10} onChange={event => { setDate(event.target.value); setError(''); const next = parseLocalDate(event.target.value); if (next) setMonth(next) }} /></label>
           {mode === 'datetime' && <button type="button" className="app-time-toggle" aria-label="选择时分" aria-expanded={timeOpen} onClick={() => setTimeOpen(!timeOpen)}><span>时间</span><strong>{time}</strong><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d={timeOpen ? 'm6 15 6-6 6 6' : 'm6 9 6 6 6-6'} /></svg></button>}
         </div>
+        {hint && <p className="app-datetime-hint">{hint}</p>}
         {error && <p role="alert" className="app-datetime-error">{error}</p>}
+        {discard && <p role="alert" className="app-datetime-hint">修改尚未保存。可以保存、继续编辑，或放弃修改。</p>}
       </div>
-      <footer>{allowClear && <button type="button" className="app-datetime-clear" onClick={() => { onChange(''); onClose() }}>清除</button>}<button type="button" onClick={onClose}>取消</button><button type="submit" className="app-datetime-confirm">确定</button></footer>
+      <footer>{allowClear && !discard && <button type="button" className="app-datetime-clear" disabled={clearAsDraft && !date} onClick={() => { if (clearAsDraft) { setDate(''); setError('') } else void commit('') }}>{clearAsDraft ? '清除时间' : '清除'}</button>}{discard ? <><button type="button" onClick={() => setDiscard(false)}>继续编辑</button><button type="button" onClick={onClose}>放弃修改</button></> : <button type="button" className="app-datetime-cancel" onClick={close}>取消</button>}<button type="submit" className="app-datetime-confirm">{busy ? '保存中…' : confirmLabel}</button></footer>
+      </fieldset>
     </form>
   </dialog>
 }

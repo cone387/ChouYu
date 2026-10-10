@@ -7,10 +7,14 @@
 .app-datetime-dialog::backdrop { background: #0004; }
 .app-datetime-dialog * { box-sizing: border-box; }
 .app-datetime-dialog form { margin: 0; }
+.app-datetime-controls { min-width: 0; padding: 0; margin: 0; border: 0; }
+.app-datetime-dialog header > div { min-width: 0; }
+.app-datetime-subtitle { margin: 5px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.app-datetime-hint { margin: 10px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .app-datetime-dialog header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; gap: 12px; }
 .app-datetime-dialog h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .app-datetime-dialog button { font: inherit; font-size: 13px; color: var(--text-primary); border: 0; background: transparent; border-radius: 5px; cursor: pointer; }
-.app-datetime-dialog header > button { width: 28px; height: 28px; color: var(--text-muted); font-size: 20px; }
+.app-datetime-dialog header > button { flex: none; align-self: flex-start; width: 28px; height: 28px; color: var(--text-muted); font-size: 20px; }
 .app-datetime-dialog button:hover { background: var(--hover-bg); }
 .app-datetime-dialog button:focus-visible { outline: 1px solid var(--text-muted); outline-offset: -2px; }
 .app-datetime-dialog button:disabled { opacity: .35; cursor: default; }
@@ -44,7 +48,7 @@
 .app-time-column-label { padding: 4px; text-align: center; color: var(--text-muted); font-size: 12px; }
 .app-time-column { position: relative; height: 160px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; border-radius: 6px; background: var(--bg-secondary); }
 .app-time-column > button { display: block; width: 100%; height: 32px; padding: 4px; font-variant-numeric: tabular-nums; }
-.app-time-column > button[aria-selected=true] { background: var(--hover-bg); color: var(--accent); font-weight: 600; box-shadow: inset 2px 0 var(--accent); }
+.app-time-column > button[aria-selected=true] { background: var(--hover-bg); color: var(--accent); font-weight: 600; }
 .app-time-presets { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .app-time-presets > span { margin-right: 2px; color: var(--text-muted); font-size: 12px; }
 .app-time-presets > button { flex: 1; height: 30px; font-variant-numeric: tabular-nums; }
