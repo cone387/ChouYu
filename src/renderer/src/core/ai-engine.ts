@@ -69,6 +69,7 @@ export async function streamChat(
     const result = await window.electronAPI.ai.startStream(request)
     if (signal?.aborted) throw createAbortError()
     if (!result.ok) throw new Error(result.error || 'AI 请求失败，请稍后重试。')
+    if (result.reply !== undefined && !completed) onChunk(result.reply, false)
     if (!completed) {
       completed = true
       onChunk('', true)

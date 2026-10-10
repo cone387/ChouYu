@@ -104,6 +104,37 @@ export function createContactTools(access: Access): RegisteredTool[] {
         } }
       }, execute: () => { throw new Error('请先准备任务。') }
     },
+    { source: 'builtin', risk: 'write', requiresConfirmation: false, alwaysConfirm: false,
+      name: 'edit_contact_task', displayName: '保存任务新要求',
+      description: '用户明确调整现有任务的目标、范围、长期要求、汇报方式、标题或任务额度时使用。先读取真实任务。仅传用户要求修改的字段，goal/constraints 是该字段的完整新内容，保留未撤销的要求。汇报数量不是研究数量，不能擅自改工作批次。不用于一次性正文或样式修订；不支持的定点时间、联系人级工作设置应如实说明。保存成功才可答应以后照做。',
+      inputSchema: { type: 'object', properties: { ...topicProperties,
+        reason: { type: 'string', description: '用户本次修改的原话', maxLength: 2000 },
+        separateEvaluations: { type: 'boolean', description: '用户要求每条只汇报一个评价时为true，明确恢复合并汇报时false；不改变研究批次' },
+        goal: { type: 'string', description: '需要修改时提供完整新目标', maxLength: 2000 },
+        constraints: { type: 'string', description: '需要修改时提供完整新约束，保留已有未撤销要求；空串仅用于明确清除', maxLength: 2000 },
+        title: { type: 'string', description: '仅明确改名时填写', maxLength: 100 },
+        modelCalls: { type: 'number', description: '仅用户明确指定的任务累计调用上限，不是每日额度' },
+        tokens: { type: 'number', description: '仅用户明确指定的任务累计 Token 上限，不是每日额度' }
+      }, required: ['topicId', 'revision', 'reason'], additionalProperties: false },
+      async prepareAsync(args, context) {
+        const id = owner(context), data = await access.request('get', id) as AgentOverview
+        const topic = data.topics.find(t => t.id === args.topicId)
+        if (!topic || topic.revision !== args.revision) throw new Error('任务已变化，请重新读取。')
+        if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('修改要求无效。')
+        const patch = Object.fromEntries(['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations'].filter(k => args[k] !== undefined).map(k => [k, args[k]]))
+        if (!Object.keys(patch).length || containsSecret(JSON.stringify(patch))) throw new Error('没有有效修改。')
+        let consumed = false
+        return { preview: `任务：${topic.title}\n修改要求：${args.reason}\n旧轮次会停止；已保存成果保留，暂停状态不会自动恢复。`, execute: async () => {
+          if (consumed) throw new Error('本次修改已提交，请勿重复执行。')
+          consumed = true
+          if (owner(context) !== id) throw new Error('聊天归属已变化。')
+          const result = await access.request('feedback', id, [data.revision, 'editTaskFromChat', [topic.id, topic.revision, patch, args.reason]]) as AgentOverview
+          const saved = result.topics.find(t => t.id === topic.id)
+          if (!saved) throw new Error('没有读取到保存后的任务。')
+          return { content: JSON.stringify({ saved: true, workCompleted: false, topic: saved, message: `已保存「${saved.title}」的新要求。${saved.status === 'paused' ? '任务仍保持暂停。' : '后续按新要求执行。'}已有成果保留。` }), summary: '任务新要求已保存' }
+        } }
+      }, execute: () => { throw new Error('请先准备任务修改。') }
+    },
     { ...common, name: 'get_contact_delivery', displayName: '读取自己的正式成果', risk: 'read', requiresConfirmation: false, alwaysConfirm: false,
       description: '读取当前聊天联系人的已保存成果目录、真实版本、需求与展示代码。核实完成进度或改排版前使用；需要实际正文时指定目录中的 sectionId。聊天草稿不计为已保存成果。',
       inputSchema: { type: 'object', properties: {

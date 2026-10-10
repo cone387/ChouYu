@@ -14,7 +14,8 @@ import type { ResolvedProviderProfile } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig } from '../shared/characters'
-import { agentContext, removeContactAgent } from './agents'
+import { agentContext, removeContactAgent, contactAgentsCall } from './agents'
+import { routeContactChange } from './agents/chat-changes'
 import {
   type MemoryCandidateInput,
   type MemoryConflictAction,
@@ -640,27 +641,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (owner) {
         try { privateContext = await agentContext(owner) } catch { privateContext = '\n独立工作记录暂时无法读取，请勿声称知道未提供的工作经历。' }
       }
-      await streamAIChat(
-        request.messages,
-        request.systemPrompt + privateContext + (owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation')),
-        effectiveConfig,
-        (chunk, done) => {
-          if (event.sender.isDestroyed()) return
-          const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk, done }
-          event.sender.send('ai:stream-event', streamEvent)
-        },
-        controller.signal,
-        config.aiToolsEnabled ? {
+      const chatTools = config.aiToolsEnabled ? {
           definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)
             && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
-          execute: async (call) => {
+          execute: async (call: AIToolCall) => {
             const definition = getRegisteredTool(call.name)
             if (!definition) return `工具不存在：${call.name}`
             if (!isToolEnabled(call.name)) return `工具已被用户禁用：${call.name}`
             const arguments_ = parseToolArguments(call.arguments)
             try {
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              const taskMutation = ['create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
+              const taskMutation = ['edit_contact_task', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
               if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
               const prepared = await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
               if (taskMutation) taskMutationRequested = true
@@ -727,6 +718,34 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             }
           }
         } : undefined
+      if (owner && owner !== ASSISTANT_CHARACTER_ID && owner !== DEFAULT_CHARACTER_ID && chatTools) {
+        const routed = await routeContactChange(request.messages, {
+          read: (method, args) => contactAgentsCall(owner, method, args),
+          model: async (prompt, content) => {
+            let output = ''
+            await streamAIChat([{ role: 'user', content }], prompt, effectiveConfig, chunk => {
+              output += chunk
+              if (output.length > 16000) throw new Error('任务修改解析结果过长，本次未修改。')
+            }, controller.signal, undefined, { timeoutMs: 60000, maxOutputTokens: 3000 })
+            return output
+          },
+          execute: chatTools.execute
+        })
+        if (routed !== undefined) {
+          return { ok: true, reply: routed }
+        }
+      }
+      await streamAIChat(
+        request.messages,
+        request.systemPrompt + privateContext + (owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation')),
+        effectiveConfig,
+        (chunk, done) => {
+          if (event.sender.isDestroyed()) return
+          const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk, done }
+          event.sender.send('ai:stream-event', streamEvent)
+        },
+        controller.signal,
+        chatTools
       )
       return { ok: true }
     } catch (error) {

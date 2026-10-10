@@ -81,7 +81,7 @@ export class AgentService {
       }
       case 'feedback': {
         if (this.store.overview(id).revision !== args[0]) throw new Error('工作设置已变化，请重新读取并确认。')
-        if (!['topicStatus', 'editTopic', 'continueTopic', 'answerChecked', 'assignTopic', 'reviseTopic'].includes(String(args[1]))) throw new Error('反馈操作无效。')
+        if (!['editTaskFromChat', 'topicStatus', 'editTopic', 'continueTopic', 'answerChecked', 'assignTopic', 'reviseTopic'].includes(String(args[1]))) throw new Error('反馈操作无效。')
         return this.request(String(args[1]), id, args[2] as unknown[])
       }
       case 'notices': return this.store.notices.pending(id)
@@ -156,6 +156,13 @@ export class AgentService {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         this.checkSearch(id)
         this.store.assignTopic(id, args[0], this.identity(id).conversation, args[1] as string | undefined, args[2] as number | undefined); break
+      }
+      case 'editTaskFromChat': {
+        const topicId = String(args[0])
+        this.store.editTaskFromChat(id, topicId, args[1] as number, args[2] as import('../../shared/contact-task-edit').ContactTaskEdit, args[3] as string)
+        const active = this.active.get(id)
+        if (active && this.store.getRun(active.id)?.topic_id === topicId) this.abort(id)
+        break
       }
       case 'editTopic':
       case 'topicStatus': {

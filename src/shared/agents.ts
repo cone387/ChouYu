@@ -73,6 +73,8 @@ export const TOPIC_STATUS = { planned: '待开始', researching: '尚未完成',
 export type AgentTopicStatus = keyof typeof TOPIC_STATUS
 export interface AgentTopicInput { title: string; goal: string; constraints: string }
 export interface AgentTopic extends AgentTopicInput {
+  /** Delivery grouping only; does not limit research/read batches. */
+  separateEvaluations?: boolean
   tokenLimit?: number
   resourceBudget?: import('./agent-resources').TaskResourceBudget
   initialPlan?: import('./agent-delivery').DeliveryPlan

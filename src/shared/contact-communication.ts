@@ -22,7 +22,7 @@ export function contactCommunicationInstructions(channel: ContactCommunicationCh
 export type ContactMessageIntent = 'reply' | 'delivery' | 'question' | 'status' | 'blocker' | 'reminder' | 'check-in'
 export type ContactMessageSource =
   | { kind: 'conversation'; sessionId: string }
-  | { kind: 'task'; topicId: string; runId: string; artifact?: { version: number; sectionId: string } }
+  | { kind: 'task'; topicId: string; runId: string; artifact?: { version: number; sectionId: string; evaluationIndex?: number } }
   | { kind: 'proactive'; eventIds: string[] }
 export interface ContactCommunication {
   version: 1
@@ -39,8 +39,9 @@ export function sanitizeContactCommunication(raw: unknown): ContactCommunication
   if (source.kind === 'conversation' && identifier(source.sessionId) && v.intent === 'reply') clean = { kind: source.kind, sessionId: source.sessionId }
   else if (source.kind === 'task' && identifier(source.topicId) && identifier(source.runId) && ['delivery', 'question', 'status', 'blocker'].includes(v.intent)) {
     if (source.artifact && (!Number.isSafeInteger(source.artifact.version) || source.artifact.version < 1 || !identifier(source.artifact.sectionId) || v.intent !== 'delivery')) return
+    if (source.artifact?.evaluationIndex !== undefined && (!Number.isSafeInteger(source.artifact.evaluationIndex) || source.artifact.evaluationIndex < 0 || source.artifact.evaluationIndex > 2)) return
     if (v.intent === 'delivery' && !source.artifact) return
-    clean = { kind: source.kind, topicId: source.topicId, runId: source.runId, ...(source.artifact ? { artifact: { version: source.artifact.version, sectionId: source.artifact.sectionId } } : {}) }
+    clean = { kind: source.kind, topicId: source.topicId, runId: source.runId, ...(source.artifact ? { artifact: { version: source.artifact.version, sectionId: source.artifact.sectionId, ...(source.artifact.evaluationIndex !== undefined ? { evaluationIndex: source.artifact.evaluationIndex } : {}) } } : {}) }
   } else if (source.kind === 'proactive' && Array.isArray(source.eventIds) && source.eventIds.length > 0 && source.eventIds.every(identifier) && ['status', 'blocker', 'reminder', 'check-in'].includes(v.intent)) clean = { kind: source.kind, eventIds: [...new Set(source.eventIds)] }
   else return
   return { version: 1, characterId: v.characterId, intent: v.intent, source: clean }

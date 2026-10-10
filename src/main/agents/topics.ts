@@ -42,6 +42,13 @@ export class AgentTopics {
     })()
     return topic
   }
+  evaluationDelivery(characterId: string, id: string, revision: number, separateEvaluations: boolean) {
+    if (typeof separateEvaluations !== 'boolean') throw new Error('评审交付方式无效。')
+    const before = this.check(characterId, id, revision)
+    const after = { ...before, separateEvaluations, revision: before.revision + 1, updatedAt: Date.now(), reason: '用户调整评审交付方式。' }
+    this.record(before, after, 'edited', after.reason)
+    return after
+  }
   tokenBudget(characterId: string, id: string, revision: number, tokenLimit: number) {
     if (!Number.isSafeInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 1000000000) throw new Error('任务 Token 上限应为 1–10 亿的整数。')
     const before = this.check(characterId, id, revision)

@@ -21,6 +21,8 @@ export interface AIStreamEvent {
 export interface AIStreamResult {
   ok: boolean
   error?: string
+  /** Atomic reply for a persisted contact operation; avoids cross-channel event races. */
+  reply?: string
 }
 
 export type AIModelListErrorCode =

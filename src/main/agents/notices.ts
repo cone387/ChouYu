@@ -1,4 +1,5 @@
 import { contactResultMessage } from './contact-message'
+import { evaluationMarkdown } from '../../shared/agent-evaluation'
 import type { DeliveryUpdate } from '../../shared/agent-delivery'
 import { validateContactMessage } from '../../shared/contact-communication'
 import type Database from 'better-sqlite3'
@@ -26,7 +27,13 @@ export class AgentNotices {
     if (source.artifact) {
       const row = this.db.prepare('SELECT value FROM delivery_versions WHERE topic_id=? AND version=? AND run_id=?').get(notice.topicId, source.artifact.version, notice.runId) as { value: string } | undefined
       const saved = row && JSON.parse(row.value).sections.find((s: { id: string; runId: string }) => s.id === source.artifact!.sectionId && s.runId === notice.runId)
-      if (!saved || !notice.content.endsWith(`${saved.title}\n\n${saved.body}`)) throw new Error('消息正文与已保存成果不一致，未发送。')
+      const index = source.artifact.evaluationIndex
+      if (index !== undefined) {
+        const reportRow = this.db.prepare('SELECT value FROM reports WHERE run_id=? AND character_id=?').get(notice.runId, notice.characterId) as { value: string } | undefined
+        const evaluation = reportRow && (JSON.parse(reportRow.value) as AgentReport).evaluations?.[index]
+        const body = evaluation && evaluationMarkdown([evaluation])
+        if (!saved || !evaluation || !body || !saved.body.includes(body) || !notice.content.endsWith(`${evaluation.subject}\n\n${body}`)) throw new Error('单项评价与已保存成果不一致，未发送。')
+      } else if (!saved || !notice.content.endsWith(`${saved.title}\n\n${saved.body}`)) throw new Error('消息正文与已保存成果不一致，未发送。')
     }
     const interactionId = this.offerInteraction?.(notice)
     notice = { ...notice, communication, ...(interactionId ? { interactionId } : {}) }
@@ -37,6 +44,15 @@ export class AgentNotices {
     const ended = ['completed', 'abandoned'].includes(after.status) && before.status !== after.status
     if (section && !deliveryChanged && !ended && previous && evidence(previous) === evidence(report)) return
     if (previous && !ended && !deliveryChanged && !(before.judgement !== after.judgement && (evidence(previous) !== evidence(report) || writing && previous.body !== report.body))) return
+    if (after.separateEvaluations && report.evaluations?.length && section && version) {
+      for (const [index, evaluation] of report.evaluations.entries()) {
+        this.enqueue({ id: `${report.runId}:evaluation:${index}`, characterId: after.characterId, topicId: after.id, runId: report.runId,
+          communication: { version: 1, characterId: after.characterId, intent: 'delivery', source: { kind: 'task', topicId: after.id, runId: report.runId, artifact: { version, sectionId: section.id, evaluationIndex: index } } },
+          topicRevision: after.revision, kind: 'progress', createdAt: Date.now(),
+          content: contactResultMessage(after, report, { ...section, title: evaluation.subject, body: evaluationMarkdown([evaluation]) }, ended && index === report.evaluations.length - 1) })
+      }
+      return
+    }
     this.enqueue({ id: `${report.runId}:progress`, characterId: after.characterId, topicId: after.id, runId: report.runId,
       ...(section && version ? { communication: { version: 1 as const, characterId: after.characterId, intent: 'delivery' as const,
         source: { kind: 'task' as const, topicId: after.id, runId: report.runId, artifact: { version, sectionId: section.id } } } } : {}),
@@ -53,7 +69,8 @@ export class AgentNotices {
       const presentation = notice.purpose === 'presentation'
       const failure = notice.purpose === 'failure'
       const savedProgress = !notice.purpose && notice.kind === 'progress' && run?.status === 'completed' && Boolean(this.db.prepare('SELECT 1 FROM reports WHERE run_id=?').get(notice.runId))
-      const key = `${notice.topicId}:${failure || savedProgress ? notice.runId : presentation ? `presentation:${notice.runId}` : direction ? 'direction' : notice.kind}`
+      const item = notice.communication?.source.kind === 'task' ? notice.communication.source.artifact?.evaluationIndex : undefined
+      const key = `${notice.topicId}:${failure || savedProgress ? `${notice.runId}:${item ?? 'whole'}` : presentation ? `presentation:${notice.runId}` : direction ? 'direction' : notice.kind}`
       if (!run || !topic || (failure ? run.status !== 'failed' : savedProgress ? false : presentation ? !['completed', 'failed'].includes(run.status) : direction ? ['cancelled', 'failed'].includes(run.status) : JSON.parse(topic.value).revision !== notice.topicRevision) || (notice.kind === 'question' && run.status !== 'waiting') || seen.has(key)) {
         this.db.prepare("UPDATE notices SET state='suppressed' WHERE id=?").run(row.id)
       } else { seen.add(key); valid.push(notice) }
@@ -61,7 +78,7 @@ export class AgentNotices {
     const profile = this.db.prepare('SELECT settings FROM profiles WHERE character_id=?').get(id) as { settings: string } | undefined
     if (!profile) return []
     const notifyProgress = JSON.parse(profile.settings).notifyProgress !== false
-    return valid.sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question') || Number(b.purpose === 'resources' || b.purpose === 'failure') - Number(a.purpose === 'resources' || a.purpose === 'failure') || a.createdAt - b.createdAt)
+    return valid.sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question') || Number(b.purpose === 'resources' || b.purpose === 'failure') - Number(a.purpose === 'resources' || a.purpose === 'failure') || a.createdAt - b.createdAt || a.id.localeCompare(b.id))
       .filter(n => n.kind === 'question' || n.purpose === 'resources' || n.purpose === 'presentation' || n.purpose === 'failure' || notifyProgress).slice(0, 32)
   }
   ack(id: string, noticeId: string, now = Date.now()) {

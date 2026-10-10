@@ -1,4 +1,5 @@
 import { runContactInteractionsSmoke } from './contact-interactions-smoke'
+import { runContactChatChangeSmoke } from './contact-chat-change-smoke'
 import { app, dialog, type BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -37,6 +38,13 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     let body = ''; request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       const payload = JSON.parse(body)
+      if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('判断用户最新一句是否在调整'))) {
+        const context = JSON.parse(payload.messages.at(-1).content)
+        const result = context.latest?.startsWith('验收聊天修改') ? { kind: 'action', topicId: context.topics[0].id, action: 'edit', patch: { constraints: '每条只汇报一个idea', separateEvaluations: true } } : { kind: 'none' }
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
+        return
+      }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('统一解析用户对联系人任务的自然语言请求'))) {
         const context = JSON.parse(payload.messages.at(-1).content)
         const result = context.target?.kind === 'edit-work' ? { kind: 'work-edit', input: { goal: context.description, constraints: '' } } : { kind: 'work', description: context.description }
@@ -121,6 +129,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
     saveConfig({ provider: 'openai', baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'agent-smoke-secret', model: 'agent-smoke', memoryEnabled: false, aiToolsEnabled: true, toolPermissionMode: 'full' })
     window.webContents.send('config:changed', getConfig())
+    if (process.env.CHOUYU_SMOKE_CHAT_CHANGE_ONLY === '1') {
+      await runContactChatChangeSmoke(window)
+      console.log('CHOUYU_SMOKE_AGENTS_PASSED chatChangeOnly=true')
+      return
+    }
     await run("document.querySelector('[aria-label=\"关闭面板\"]')?.click()")
     await waitForRenderer(window, "!document.querySelector('.chat-panel')")
     console.log('CHOUYU_SMOKE_AGENTS_STAGE closed-panel')
@@ -170,6 +183,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (!await run("(() => { const s=getComputedStyle(document.querySelector('[data-agent-sources]')); return s.outlineStyle==='none' && s.boxShadow==='none' })()")) throw new Error('Working settings inputs have a colored focus decoration')
     await run(`window.electronAPI.agents.save(${id}, ${JSON.stringify({ ...fixtureSettings, goal: 'Legacy research fixture' })})`)
     await run("document.querySelector('[data-agent-tab=work]').click()")
+    // Shared lists include ChouYu duties; selecting the current card may select a duty.
+    const legacyTopicId = (await get()).focusTopicId!
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-topic-id="${legacyTopicId}"]'))`)
+    await run(`document.querySelector('[data-topic-id="${legacyTopicId}"]').click()`)
     await waitForRenderer(window, "document.querySelector('[data-topic-run]')?.disabled === false")
     const other = listCharacters().find(c => c.id !== DEFAULT_CHARACTER_ID && c.id !== ASSISTANT_CHARACTER_ID)!
     await run(`window.electronAPI.agents.remember(${JSON.stringify(other.id)}, 'BOB_PRIVATE_SMOKE')`)
@@ -867,6 +884,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if ((await get()).queuedTopicIds?.includes(queuedId)) throw new Error('Paused task remained in the queue')
     console.log('CHOUYU_SMOKE_CONTACT_QUEUE_PASSED acceptedWithoutCapacity=true noCalls=true pause=true stableSelection=true')
     await runContactInteractionsSmoke(window)
+    await runContactChatChangeSmoke(window)
     console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 feedbackRevisionCalls=1 researchCalls=5 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true autonomousResearch=true unchangedBackoff=true deliverableVersions=true export=true revisionForm=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)

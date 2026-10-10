@@ -39,6 +39,18 @@ describe('AI stream parsers', () => {
       '尚未配置 API Key'
     )
   })
+  it('renders a durable operation receipt before completion even with no stream events', async () => {
+    let rendered = '', saved = ''
+    const unsubscribe = vi.fn()
+    vi.stubGlobal('window', { electronAPI: { ai: {
+      onStreamEvent: () => unsubscribe, cancelStream: vi.fn(),
+      startStream: async () => ({ ok: true, reply: '任务新要求已保存' })
+    } } })
+    try {
+      await streamChat([], '', { ...DEFAULT_APP_CONFIG, apiKey: 'key', model: 'model' }, (chunk, done) => { if (done) saved = rendered; else rendered += chunk })
+      expect(saved).toBe('任务新要求已保存'); expect(unsubscribe).toHaveBeenCalledOnce()
+    } finally { vi.unstubAllGlobals() }
+  })
 
   it('exposes the request id before streaming so events can be routed by session', async () => {
     let streamListener: ((event: { requestId: string; chunk: string; done: boolean }) => void) | undefined

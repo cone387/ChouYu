@@ -388,8 +388,8 @@ export class AgentStore {
       const baselineRun = this.db.prepare('SELECT topic_revision FROM runs WHERE id=?').get(previous[0]?.runId ?? '') as { topic_revision: number } | undefined
       const last = this.db.prepare('SELECT * FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id, topic.id) as RunRow | undefined
       const feedback = last?.status === 'failed' && JSON.parse(last.input).revisionScope !== 'presentation' ? [JSON.parse(last.input).feedback, last.answer ? `对问题「${last.question}」的回复：${last.answer}` : ''].filter(Boolean).join('\n').slice(0, 4000) : undefined
-      const input = JSON.stringify({ revisionScope, revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: overview.memories.filter(m => !m.runId || this.getRun(m.runId)?.topic_id === topic.id).slice(0, 12).map(m => ({ ...m, content: m.content.slice(0, 600) })), previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(0, 4000) })
-      const runInput = assignment ? JSON.stringify({ ...JSON.parse(input), assignment: true, conversation: scheduled!.conversation || context.slice(0, 4000) }) : input
+      const input = JSON.stringify({ revisionScope, revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: overview.memories.filter(m => !m.runId || this.getRun(m.runId)?.topic_id === topic.id).slice(0, 12).map(m => ({ ...m, content: m.content.slice(0, 600) })), previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(-4000) })
+      const runInput = assignment ? JSON.stringify({ ...JSON.parse(input), assignment: true, conversation: scheduled!.conversation || context.slice(-4000) }) : input
       this.db.prepare('INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input,topic_id,topic_revision) VALUES(?,?,?,\'queued\',?,?,?,?,?)').run(runId, id, profile.revision, now, now, runInput, topic.id, topic.revision)
       if (assignment) this.db.prepare("UPDATE task_schedule SET pending=0,conversation='' WHERE topic_id=?").run(topic.id)
       this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(now + settings.intervalMinutes * 60000, id)
@@ -415,7 +415,7 @@ export class AgentStore {
       }
       let topic = this.topics.create(id, { title: description.trim().slice(0, 80), goal: description.trim(), constraints: '' }, '用户交付任务，等待联系人整理方向。', Date.now(), requestLog)
       if (tokenLimit !== undefined) topic = this.topics.tokenBudget(id, topic.id, topic.revision, tokenLimit)
-      this.db.prepare('INSERT INTO task_schedule(topic_id,conversation,pending) VALUES(?,?,1)').run(topic.id, conversation.slice(0, 4000))
+      this.db.prepare('INSERT INTO task_schedule(topic_id,conversation,pending) VALUES(?,?,1)').run(topic.id, conversation.slice(-4000))
       if (!profile.focus_topic_id || !hasCurrentWork && !this.scheduled(id).some(task => task.topic_id === profile.focus_topic_id)) this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
       // Accepting work is independent from being able to execute it today.
       if (this.nextScheduledTopic(id) === topic.id) this.startScheduledTopic(id, topic.id, conversation)
@@ -489,7 +489,9 @@ export class AgentStore {
       const run = this.assertLive(runId), input = JSON.parse(run.input)
       if (input.briefAnswer) return
       const before = this.topics.get(run.character_id, run.topic_id!)
-      const topic = this.topics.edit(run.character_id, before.id, before.revision, { title: before.title, goal: before.goal, constraints: answer }, '用户补充任务方向。')
+      const topic = this.topics.edit(run.character_id, before.id, before.revision,
+        { title: before.title, goal: before.goal, constraints: [before.constraints, answer].filter(Boolean).join('\n') },
+        '用户补充任务方向。', appendTaskRequestLog(before.requestLog, `补充答复：${answer}`))
       this.db.prepare('UPDATE runs SET input=?,topic_revision=? WHERE id=?').run(JSON.stringify({ ...input, briefAnswer: answer, topic }), topic.revision, runId)
     })()
   }
@@ -683,10 +685,11 @@ export class AgentStore {
       if (deliveryInput.revisionSectionId && delivery?.section?.id !== deliveryInput.revisionSectionId) throw new Error('成果没有更新指定分节，本轮未提交。')
       if (run.topic_id && progress && JSON.parse(run.input).deliveryVersion === 1) this.deliveries.commit(run.topic_id, report, progress, delivery)
       const committed = run.topic_id ? this.deliveries.get(run.topic_id) : null
+      this.db.prepare('INSERT OR IGNORE INTO reports(run_id,character_id,value) VALUES(?,?,?)').run(runId, run.character_id, JSON.stringify(report))
       if (run.topic_id) {
         if (!progress) throw new Error('缺少事项进展，本轮不能提交。')
         const before = this.topics.get(run.character_id, run.topic_id)
-        const previous = this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 1').get(run.topic_id, run.character_id) as { value: string } | undefined
+        const previous = this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? AND runs.id<>? ORDER BY reports.rowid DESC LIMIT 1').get(run.topic_id, run.character_id, runId) as { value: string } | undefined
         if (presentationOnly) {
           this.topics.presentation(run.character_id, run.topic_id, run.topic_revision!, runId)
           this.notices.enqueue({ id: `${runId}:presentation`, purpose: 'presentation', characterId: run.character_id, topicId: run.topic_id, runId, topicRevision: before.revision + 1, kind: 'progress', createdAt: Date.now(), content: `「${before.title}」的阅读样式已保存为版本 ${previousDelivery!.version + 1}，正文与任务进度保持不变。可在任务成果中查看。` })
@@ -697,7 +700,6 @@ export class AgentStore {
           if (!delivery || section) this.notices.progress(before, this.topics.get(run.character_id, run.topic_id), report, previous ? JSON.parse(previous.value) : undefined, this.research(runId)?.plan.action === 'write', deliveryChanged, section, committed?.runId === runId ? committed.version : undefined)
         }
       }
-      this.db.prepare('INSERT OR IGNORE INTO reports(run_id,character_id,value) VALUES(?,?,?)').run(runId, run.character_id, JSON.stringify(report))
       for (const memory of memories.slice(0, 3)) {
         // A full library must not lose the report; record the reason explicitly.
         try { this.remember(run.character_id, memory, runId) } catch { this.event(runId, 'memory-skipped', '一条记忆未保存：内容含敏感信息或记忆库已满；成果仍保留。') }
@@ -792,6 +794,23 @@ export class AgentStore {
       return runId
     })()
   }
+  editTaskFromChat(id: string, topicId: string, revision: number, patch: import('../../shared/contact-task-edit').ContactTaskEdit, reason: string) {
+    return this.db.transaction(() => {
+      const before = this.topics.check(id, topicId, revision)
+      if (!patch || !Object.keys(patch).length || Object.keys(patch).some(k => !['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations'].includes(k))) throw new Error('任务修改字段无效。')
+      if (!reason?.trim() || reason.length > 2000) throw new Error('请保留有效的用户修改要求。')
+      const requestLog = appendTaskRequestLog(before.requestLog, `用户：${reason.trim()}`)
+      this.changeTopic(id, topicId, revision, { input: { title: patch.title ?? before.title, goal: patch.goal ?? before.goal, constraints: patch.constraints ?? before.constraints }, reason, requestLog })
+      let topic = this.topics.get(id, topicId)
+      if (patch.separateEvaluations !== undefined) topic = this.topics.evaluationDelivery(id, topicId, topic.revision, patch.separateEvaluations)
+      if (patch.modelCalls !== undefined) topic = this.setTaskBudget(id, topicId, topic.revision, { modelCalls: patch.modelCalls })
+      if (patch.tokens !== undefined) {
+        if (patch.tokens < (this.tokens.usage(id).tasks[topicId] ?? 0)) throw new Error('上限不能低于本任务已占用的 Token 额度。')
+        this.topics.tokenBudget(id, topicId, topic.revision, patch.tokens)
+      }
+      return this.overview(id)
+    })()
+  }
   changeTopic(id: string, topicId: string, revision: number, change: { input: unknown; reason: string; requestLog?: string } | { status: AgentTopicStatus; reason: string }) {
     return this.db.transaction(() => {
       const topic = 'input' in change ? this.topics.edit(id, topicId, revision, change.input, change.reason, change.requestLog) : this.topics.status(id, topicId, revision, change.status, change.reason)
@@ -818,3 +837,4 @@ export class AgentStore {
     })()
   }
 }
+import { appendTaskRequestLog } from '../../shared/task-request-log'
