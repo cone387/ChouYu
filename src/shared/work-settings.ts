@@ -16,11 +16,14 @@ export function contactWorkStatus(data: AgentOverview, keyConfigured: boolean, n
   const { settings } = data
   if (settings.dailyTokenLimit && data.tokenUsage && data.tokenUsage.today >= settings.dailyTokenLimit) return '今日工作 Token 额度已用完，次日恢复。'
   if (settings.searchEnabled && !keyConfigured) return '搜索密钥缺失。配置密钥，或关闭搜索服务。'
+  const running = data.runs.filter(run => run.status === 'running').length
+  if (running) return `正在推进 ${running} 项任务；同时推进上限 ${settings.maxConcurrentTasks ?? 1} 项。${running > (settings.maxConcurrentTasks ?? 1) ? '当前轮次完成后按新上限调度。' : ''}`
   const run = data.runs.find(run => ['running', 'queued', 'interrupted'].includes(run.status))
   if (run?.status === 'interrupted' && run.error) return run.error
   if (run) return run.status === 'running' ? '正在执行本轮工作。' : run.status === 'interrupted' ? '正在等待恢复中断的工作。' : '任务已排队，等待执行。'
   if (data.providerRecovery) return `服务暂时不可用，最早 ${new Date(data.providerRecovery.at).toLocaleString()} 自动尝试继续；仍受工作时间和额度限制。`
-  if ((data.failures ?? 0) >= 3) return '连续执行失败，自动推进暂时停止。请检查失败记录后重试任务。'
+  if (data.taskFailures && Object.values(data.taskFailures).some(failure => failure.failures >= 3)) return '部分任务连续执行失败，请查看对应任务记录；其他任务仍按设置推进。'
+  if (!data.taskFailures && (data.failures ?? 0) >= 3) return '连续执行失败，自动推进暂时停止。请检查失败记录后重试任务。'
   const needed = agentUsesPlanner(settings) ? 2 : 1
   if (data.callsToday + needed > settings.dailyCalls) return '今日共用额度不足下一轮。明日恢复，也可提高每日上限。'
   if (!settings.enabled) return '自动工作已关闭。手动启动或新交付的任务执行一轮后停止。'
@@ -42,9 +45,12 @@ export function taskWorkStatus(data: AgentOverview, topic: AgentTopic, now = Dat
   const needed = agentUsesPlanner(data.settings) ? 2 : 1
   if (topic.resourceBudget && (data.topicMetrics?.[topic.id]?.calls ?? 0) + needed > topic.resourceBudget.modelCalls) return '本任务累计预算不足，需要提高预算后继续。'
   if (data.callsToday + needed > data.settings.dailyCalls) return '联系人今日共用额度不足，等待明日恢复或提高每日上限。'
-  if (data.providerRecovery?.topicId === topic.id) return `服务暂时不可用，最早 ${new Date(data.providerRecovery.at).toLocaleString()} 自动尝试继续；仍受工作时间和额度限制。`
+  const failure = data.taskFailures?.[topic.id]
+  const retryAt = failure?.retryAt ?? (data.providerRecovery?.topicId === topic.id ? data.providerRecovery.at : undefined)
+  if (retryAt !== undefined) return `本任务暂时无法继续，最早 ${new Date(retryAt).toLocaleString()} 自动尝试；仍受工作时间和额度限制。`
+  if (failure && failure.failures >= 3) return '本任务连续执行失败，自动推进暂时停止；其他任务不受影响。请检查记录后重试。'
   if (data.queuedTopicIds?.includes(topic.id)) return '任务已交付，等待联系人按顺序执行。'
-  return data.settings.enabled ? data.focusTopicId === topic.id ? '自动工作已开启，按联系人规则继续推进。' : '自动工作已开启；当前优先推进其他任务，可在本任务中启动或继续。' : '自动工作已关闭，手动启动后执行一轮。'
+  return data.settings.enabled ? '自动工作已开启，按推进时间和可用名额继续。' : '自动工作已关闭，手动启动后执行一轮。'
 }
 
 /** Device-local recurring hours, start inclusive and end exclusive; equal means all day. */

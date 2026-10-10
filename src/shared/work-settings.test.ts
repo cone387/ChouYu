@@ -37,3 +37,21 @@ it('supports all-day, daytime and overnight local work hours with exclusive end'
   expect(withinWorkHours(night, at(6))).toBe(false)
   expect(withinWorkHours({ ...day, workHours: { start: '00:00', end: '00:00' } }, at(18))).toBe(true)
 })
+
+it('shows actual running counts even while draining a lowered concurrency limit', () => {
+  const data = overview()
+  data.settings.maxConcurrentTasks = 1
+  data.runs = [{ topicId: 'a', status: 'running' }, { topicId: 'b', status: 'running' }] as AgentOverview['runs']
+  expect(contactWorkStatus(data, true)).toContain('2 项')
+  expect(contactWorkStatus(data, true)).toContain('1 项')
+})
+
+it('reports task-specific recovery without claiming all contact work has stopped', () => {
+  const data = overview()
+  data.topicMetrics = {}
+  data.providerRecovery = { topicId: 'another', at: 1000 }
+  Object.assign(data, { taskFailures: { task: { failures: 3, retryAt: 2000 }, another: { failures: 3, retryAt: 1000 } } })
+  expect(taskWorkStatus(data, topic)).toContain(new Date(2000).toLocaleString())
+  data.providerRecovery = undefined; data.failures = 3
+  expect(contactWorkStatus(data, true)).not.toContain('自动推进暂时停止')
+})

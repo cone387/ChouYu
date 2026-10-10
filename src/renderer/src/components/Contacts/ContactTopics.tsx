@@ -95,7 +95,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   ] : [['触发规则', assistantTask?.description ?? '']]
 
   const currentRun = data.runs.find(run => run.topicId === topic?.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
-  const otherRunning = data.runs.some(run => run.topicId !== topic?.id && ['queued', 'running', 'interrupted'].includes(run.status))
+  const slotsFull = data.runs.filter(run => run.status === 'running').length >= (data.settings.maxConcurrentTasks ?? 1)
   const queued = Boolean(topic && data.queuedTopicIds?.includes(topic.id))
   const canPause = Boolean(topic && (queued || currentRun?.topicId === topic.id || (data.settings.enabled && data.focusTopicId === topic.id && researchable(topic))))
   const pauseAvailable = assistantTask ? Boolean(scheduleEnabled) : canPause
@@ -183,7 +183,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       <div className="topic-floating-action" data-running={activeRun?.status === 'running' || undefined}>
           <button type="button" className="primary" data-topic-run={!pauseAvailable || undefined} data-topic-pause={pauseAvailable || undefined}
             title={assistantTask ? (pauseAvailable ? '暂停此任务的自动触发' : '启用此任务的自动触发') : activeRun?.status === 'running' ? '本轮从开始到现在的耗时（含排队和等待回复），点击暂停；累计耗时见概览统计。' : canPause ? '点击暂停当前任务' : '启动本任务一轮工作'}
-            disabled={busy || Boolean(runAction) || Boolean(topic && !canPause && (settingsDirty || otherRunning))}
+            disabled={busy || Boolean(runAction) || Boolean(topic && !canPause && settingsDirty)}
             onClick={() => {
               if (assistantTask && !routine && !assistantTask.duty) { setScheduledEditor(assistantTask); return }
               setRunAction(pauseAvailable ? 'pause' : 'start')
@@ -238,7 +238,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         <p className="agent-caption">{topic.status === 'paused' ? '任务已暂停，已有成果保留。' : data.settings.enabled && data.focusTopicId === topic.id && researchable(topic) ? '持续工作已开启，本轮结束后会按工作设置继续。' : '启动后执行一轮；可在工作设置中开启持续工作。'}</p>
         {topic.nextStep && <p className="topic-next-step"><strong>下一步：</strong>{topic.nextStep}</p>}
         {settingsDirty && <p className="agent-caption">工作设置尚未保存，保存后再推进事项。</p>}
-        {otherRunning && <p className="agent-caption">联系人正在执行另一事项；本任务的回复会保存，待本轮结束后接续。</p>}
+        {slotsFull && <p className="agent-caption">同时推进名额已满；本任务的回复会保存，有空余名额后接续。</p>}
       </article>
       <details className="topic-goal"><summary>进展说明</summary><dl><dt>当前判断</dt><dd data-topic-judgement>{topic.judgement || '尚未形成判断。'}</dd>{topic.openQuestions && <><dt>待验证问题</dt><dd>{topic.openQuestions}</dd></>}{['completed', 'abandoned', 'paused'].includes(topic.status) && <><dt>停止原因</dt><dd>{topic.reason}</dd></>}</dl></details>
       <details className="topic-goal"><summary>目标与约束</summary><dl><dt>目标</dt><dd>{topic.goal}</dd>{topic.constraints && <><dt>约束</dt><dd>{topic.constraints}</dd></>}</dl></details>

@@ -22,7 +22,7 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
     let cardId: string, topicId: string, runId: string
     try {
       store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '写一篇介绍', dailyCalls: 100, enabled: kind === 'billing' })
-      if (kind === 'billing') store.db.prepare('UPDATE profiles SET failures=2 WHERE character_id=?').run(character.id)
+      if (kind === 'billing') for (let attempt = 0; attempt < 2; attempt++) store.fail(store.createRun(character.id, ''), 'API error 429: 余额不足或无可用资源包')
       runId = store.createRun(character.id, '')
       topicId = store.getRun(runId)!.topic_id!
       if (kind === 'budget' || kind === 'budget-success') {

@@ -6,7 +6,7 @@ if (!process.versions.electron) {
   const build = require('esbuild').buildSync
   build({ entryPoints: [path.join(root, 'tests/fixtures/work-settings-ui.tsx')], bundle: true, platform: 'browser', jsx: 'automatic', outfile: path.join(output, 'ui.js'), define: { 'process.env.NODE_ENV': '"development"' } })
   build({ entryPoints: [path.join(root, 'src/main/agents/service.ts')], bundle: true, platform: 'node', packages: 'external', outfile: path.join(output, 'service.cjs') })
-  fs.writeFileSync(path.join(output, 'preload.cjs'), `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('electronAPI',{agents:{get:id=>ipcRenderer.invoke('settings:get',id),savePreferences:(...args)=>ipcRenderer.invoke('settings:save',...args),searchCredential:(...args)=>ipcRenderer.invoke('settings:key',...args)}});contextBridge.exposeInMainWorld('settingsTest',{fail:()=>ipcRenderer.invoke('settings:fail'),conflict:()=>ipcRenderer.invoke('settings:conflict')});`)
+  fs.writeFileSync(path.join(output, 'preload.cjs'), `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('electronAPI',{agents:{continueTopic:(...args)=>ipcRenderer.invoke('settings:action','continueTopic',...args),topicStatus:(...args)=>ipcRenderer.invoke('settings:action','topicStatus',...args),onChanged:cb=>{const fn=(_event,id)=>cb(id);ipcRenderer.on('settings:changed',fn);return()=>ipcRenderer.removeListener('settings:changed',fn)},analytics:(...args)=>ipcRenderer.invoke('settings:action','analytics',...args),run:(...args)=>ipcRenderer.invoke('settings:action','run',...args),topicDetail:(...args)=>ipcRenderer.invoke('settings:action','topicDetail',...args),delivery:(...args)=>ipcRenderer.invoke('settings:action','delivery',...args),get:id=>ipcRenderer.invoke('settings:get',id),savePreferences:(...args)=>ipcRenderer.invoke('settings:save',...args),searchCredential:(...args)=>ipcRenderer.invoke('settings:key',...args)}});contextBridge.exposeInMainWorld('settingsTest',{fail:()=>ipcRenderer.invoke('settings:fail'),conflict:()=>ipcRenderer.invoke('settings:conflict')});`)
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
   require('node:child_process').spawn(require('electron'), [__filename], { cwd: root, env, stdio: 'inherit', windowsHide: true }).on('exit', code => process.exit(code ?? 1))
 } else {
@@ -17,12 +17,15 @@ if (!process.versions.electron) {
   const timeout = setTimeout(() => { console.error('Settings smoke timed out'); app.exit(1) }, 90000)
   app.whenReady().then(async () => {
     const { AgentService } = require(path.join(output, 'service.cjs'))
-    service = new AgentService(path.join(directory, 'agents'), () => {})
+    service = new AgentService(path.join(directory, 'agents'), id => { if (window && !window.isDestroyed()) window.webContents.send('settings:changed', id) }, () => async (_prompt, signal) => new Promise((_resolve, reject) => {
+      signal.throwIfAborted(); signal.addEventListener('abort', () => reject(Error('Isolated smoke stopped')), { once: true })
+    }))
     service.store.save('settings-smoke', { goal: '隔离设置验收', sources: [], intervalMinutes: 30, dailyCalls: 100, enabled: true, dailyTokenLimit: 100000, defaultTaskTokenLimit: 300000 }, Date.now(), false)
     service.store.db.prepare('INSERT INTO token_ledger VALUES(?,?,?,?,?,?)').run('synthetic', 'settings-smoke', null, Date.now(), 26000, 0)
     await service.sync([{ id: 'settings-smoke', soul: '', conversation: '', searchKey: 'synthetic', config: { provider: 'openai', baseUrl: 'http://127.0.0.1:1', apiKey: 'synthetic', model: 'synthetic' } }])
     let fail = false, configured = true
     ipcMain.handle('settings:get', (_event, id) => service.request('get', id))
+    ipcMain.handle('settings:action', (_event, method, id, ...args) => service.request(method, id, args))
     ipcMain.handle('settings:save', (_event, id, settings, revision) => {
       if (fail) { fail = false; throw Error('隔离测试：保存失败，输入应保留。') }
       return service.request('savePreferences', id, [settings, revision])
@@ -33,11 +36,21 @@ if (!process.versions.electron) {
     const css = fs.readFileSync(path.join(output, 'ui.css'), 'utf8')
     fs.writeFileSync(path.join(output, 'index.html'), `<html data-theme="light"><meta charset="UTF-8"><style>${css}\nbody{margin:0;background:var(--bg-primary);color:var(--text-primary);font:14px Arial,sans-serif}*{box-sizing:border-box}</style><body><div id="root"></div><script src="ui.js"></script></body></html>`)
     window = new BrowserWindow({ show: false, width: 1024, height: 1500, webPreferences: { preload: path.join(output, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, offscreen: true } })
+    window.webContents.on('console-message', (_event, level, message) => { if (level >= 2) console.error('Renderer:', message) })
     const run = code => window.webContents.executeJavaScript(code)
     const wait = async expression => { const end = Date.now() + 8000; while (!await run(expression)) { if (Date.now() > end) throw Error(`Timed out: ${expression}`); await new Promise(r => setTimeout(r, 40)) } }
     await window.loadFile(path.join(output, 'index.html'))
     await wait("Boolean(document.querySelector('[data-work-mode=auto]'))")
     await run(`window.field=(name)=>Array.from(document.querySelectorAll('.work-setting-row')).find(el=>el.querySelector('label')?.textContent===name); window.fill=(name,value)=>{const el=field(name).querySelector('input,textarea');Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));}; window.apply=(name)=>field(name).querySelector('button[type=submit]').click(); void 0;`)
+    if (!await run("field('最多同时推进任务数').querySelector('input').value==='1'")) throw Error('Missing legacy concurrency default')
+    await run("settingsTest.fail(); fill('最多同时推进任务数','3')")
+    await run("apply('最多同时推进任务数')")
+    await wait("field('最多同时推进任务数').innerText.includes('保存失败')")
+    if (!await run("field('最多同时推进任务数').querySelector('input').value==='3'")) throw Error('Concurrency input lost on failure')
+    await wait("document.querySelector('.work-settings-flat').getAttribute('aria-busy')==='false'")
+    await run("field('最多同时推进任务数').querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); void 0")
+    await wait("field('最多同时推进任务数').innerText.includes('已生效')")
+    if (service.store.overview('settings-smoke').settings.maxConcurrentTasks !== 3) throw Error('Concurrency did not persist')
     if (!await run("document.querySelectorAll('details').length===0 && !document.body.innerText.includes('保存设置') && !document.body.innerText.includes('对这个联系人的所有任务生效')")) throw Error('Collapsed settings or redundant global form remains')
     await run("document.querySelector('[data-work-mode=manual]').click()")
     await wait("document.querySelector('[data-work-mode=manual]').checked===true")
@@ -121,7 +134,31 @@ if (!process.versions.electron) {
     await run("document.querySelector('[data-work-hours]').requestSubmit()")
     await wait("document.querySelector('.work-settings-flat').getAttribute('aria-busy')==='false'")
     if (service.store.overview('settings-smoke').settings.workHours?.start !== '09:35') throw Error('Selected time did not save')
-    console.log('CHOUYU_WORK_SETTINGS_SMOKE_PASSED')
-    window.destroy(); await service.close(); service = undefined; clearTimeout(timeout); app.exit(0)
+    // Use the real task UI and runtime, with model requests held locally until cleanup.
+    await service.request('savePreferences', 'settings-smoke', [{ ...service.store.overview('settings-smoke').settings, enabled: false, maxConcurrentTasks: 2, dailyTokenLimit: undefined, defaultTaskTokenLimit: undefined }])
+    const tasks = ['并发任务甲', '并发任务乙', '排队任务丙'].map(title => {
+      service.store.createTopic('settings-smoke', { title, goal: title, constraints: '' })
+      return service.store.topics.list('settings-smoke').find(t => t.title === title).id
+    })
+    await service.request('run', 'settings-smoke', [tasks[0]])
+    const waitStore = async test => { const end = Date.now() + 8000; while (!test()) { if (Date.now() > end) throw Error('Task runtime timed out'); await new Promise(r => setTimeout(r, 30)) } }
+    await waitStore(() => service.store.overview('settings-smoke').runs.some(r => r.topicId === tasks[0] && r.status === 'running'))
+    for (const [index, status] of [[1, 'running'], [2, 'queued']]) {
+      service.store.focusTopic('settings-smoke', tasks[index])
+      window.setContentSize(1024, 900)
+      await window.loadFile(path.join(output, 'index.html'), { query: { tasks: '1' } })
+      await wait("Boolean(document.querySelector('[data-topic-run]'))")
+      if (!await run("!document.querySelector('[data-topic-run]').disabled")) throw Error('Another task incorrectly disabled the start button')
+      await run("document.querySelector('[data-topic-run]').click()")
+      await waitStore(() => service.store.overview('settings-smoke').runs.some(r => r.topicId === tasks[index] && r.status === status))
+      await wait(`document.querySelector('[data-topic-current]')?.getAttribute('data-topic-current')===${JSON.stringify(tasks[index])}`)
+      await wait(`document.querySelector('[data-topic-pause]')?.innerText.includes(${JSON.stringify(status === 'running' ? '运行中' : '排队中')})`)
+      await new Promise(resolve => setTimeout(resolve, 200))
+      fs.writeFileSync(path.join(output, `concurrency-${status}.png`), (await window.webContents.capturePage()).toPNG())
+    }
+    if (service.store.overview('settings-smoke').runs.filter(r => r.status === 'running').length !== 2) throw Error('Actual concurrency exceeded configured limit')
+    await window.loadURL('about:blank')
+    await service.close(); service = undefined; clearTimeout(timeout)
+    console.log('CHOUYU_WORK_SETTINGS_SMOKE_PASSED'); app.exit(0)
   }).catch(async error => { console.error(error); try { window?.destroy(); await service?.close() } catch {} clearTimeout(timeout); app.exit(1) })
 }

@@ -21,7 +21,7 @@ export class AgentService {
   private ready = false
   private closed = false
   private deleting = new Set<string>()
-  private active = new Map<string, { id: string; controller: AbortController; promise: Promise<void> }>()
+  private active = new Map<string, { id: string; characterId: string; topicId: string | null; controller: AbortController; promise: Promise<void> }>()
   private timer: ReturnType<typeof setInterval>
   constructor(directory: string, private changed: (id: string) => void, private modelFactory?: (identity: AgentIdentity) => AgentModel, reader?: ConstructorParameters<typeof AgentRuntime>[2], searcher?: AgentSearcher) {
     mkdirSync(directory, { recursive: true })
@@ -30,7 +30,8 @@ export class AgentService {
     this.store.recover()
     this.timer = setInterval(() => this.tick(), 15000)
   }
-  private abort(id: string) { this.active.get(id)?.controller.abort() }
+  private activeFor(id: string, topicId?: string) { return [...this.active.values()].filter(run => run.characterId === id && (topicId === undefined || run.topicId === topicId)) }
+  private abort(id: string, topicId?: string) { for (const run of this.activeFor(id, topicId)) run.controller.abort() }
   async sync(identities: AgentIdentity[]) {
     const signature = (identity: AgentIdentity) => createHash('sha256').update(JSON.stringify({ soul: identity.soul, config: identity.config, searchKey: identity.searchKey })).digest('hex')
     for (const identity of identities) {
@@ -49,7 +50,7 @@ export class AgentService {
     try {
       this.store.cancel(id, '联系人已删除。')
       this.abort(id)
-      await this.active.get(id)?.promise
+      await Promise.all(this.activeFor(id).map(run => run.promise))
       for (const runId of this.store.remove(id)) await this.cleanupThread(runId)
       this.identities.delete(id)
     } finally { this.deleting.delete(id) }
@@ -105,7 +106,7 @@ export class AgentService {
         const profile = this.store.profile(id)
         if (!profile) throw new Error('请先保存工作设置。')
         const settings = JSON.parse(profile.settings) as AgentSettings
-        this.store.db.prepare('UPDATE profiles SET settings=?,failures=0 WHERE character_id=?').run(JSON.stringify({ ...settings, enabled: true }), id)
+        this.store.db.prepare('UPDATE profiles SET settings=? WHERE character_id=?').run(JSON.stringify({ ...settings, enabled: true }), id)
         break
       }
       case 'setTaskTokenLimit': {
@@ -139,17 +140,15 @@ export class AgentService {
       case 'createTopic': this.store.createTopic(id, args[0]); break
       case 'deleteTopic': {
         const topicId = String(args[0])
-        const current = this.active.get(id)
-        const active = current && this.store.getRun(current.id)?.topic_id === topicId ? current : undefined
+        const active = this.activeFor(id, topicId)
         const runs = this.store.deleteTopic(id, topicId, args[1] as number)
-        this.deleting.add(id)
-        try {
-          active?.controller.abort()
-          await active?.promise
+        {
+          for (const run of active) run.controller.abort()
+          await Promise.all(active.map(run => run.promise))
           for (const runId of runs) {
             await this.cleanupThread(runId)
           }
-        } finally { this.deleting.delete(id) }
+        }
         break
       }
       case 'assignTopic': {
@@ -160,16 +159,14 @@ export class AgentService {
       case 'editTaskFromChat': {
         const topicId = String(args[0])
         this.store.editTaskFromChat(id, topicId, args[1] as number, args[2] as import('../../shared/contact-task-edit').ContactTaskEdit, args[3] as string)
-        const active = this.active.get(id)
-        if (active && this.store.getRun(active.id)?.topic_id === topicId) this.abort(id)
+        this.abort(id, topicId)
         break
       }
       case 'editTopic':
       case 'topicStatus': {
         const topicId = String(args[0])
         this.store.changeTopic(id, topicId, args[1] as number, method === 'editTopic' ? { input: args[2], reason: args[3] as string, requestLog: args[4] as string | undefined } : { status: args[2] as AgentTopicStatus, reason: args[3] as string })
-        const active = this.active.get(id)
-        if (active && this.store.getRun(active.id)?.topic_id === topicId) this.abort(id)
+        this.abort(id, topicId)
         break
       }
       case 'focusTopic': this.store.focusTopic(id, String(args[0])); break
@@ -206,39 +203,46 @@ export class AgentService {
     if (!this.ready || this.closed) return
     this.store.recordHeartbeats()
     for (const profile of this.store.profiles()) {
-      if (this.active.has(profile.character_id) || this.deleting.has(profile.character_id)) continue
+      if (this.deleting.has(profile.character_id)) continue
       const settings = JSON.parse(profile.settings) as AgentSettings
+      if (this.activeFor(profile.character_id).length >= (settings.maxConcurrentTasks ?? 1)) continue
       if (settings.searchEnabled && !this.identities.get(profile.character_id)?.searchKey) continue
       if (!this.identities.get(profile.character_id)?.config) continue
       this.store.decisions.checkScheduledResources(profile.character_id)
-      const topicId = this.store.nextScheduledTopic(profile.character_id, Date.now(), topicId => {
-        if (!settings.readContactDeliveries) return false
+      const considered = new Set(this.activeFor(profile.character_id).map(run => run.topicId).filter((id): id is string => id !== null))
+      while (true) {
+        const topicId = this.store.nextScheduledTopic(profile.character_id, Date.now(), topicId => {
+          if (!settings.readContactDeliveries) return false
+          const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === topicId)
+          const research = last && this.store.research(last.id)
+          if (last?.status !== 'completed' || research?.contactQuery === undefined) return false
+          const catalog = this.runtime.contactSources.discover(profile.character_id, topicId, research.contactQuery)
+          return catalog.items.some(item => !item.processed)
+        }, considered)
+        if (!topicId) break
+        considered.add(topicId)
         const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === topicId)
         const research = last && this.store.research(last.id)
-        if (last?.status !== 'completed' || research?.contactQuery === undefined) return false
-        const catalog = this.runtime.contactSources.discover(profile.character_id, topicId, research.contactQuery)
-        return catalog.items.some(item => !item.processed)
-      })
-      if (!topicId) continue
-      const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === topicId)
-      const research = last && this.store.research(last.id)
-      if (last?.status === 'completed' && research?.contactQuery !== undefined && settings.readContactDeliveries) {
-        const catalog = this.runtime.contactSources.discover(profile.character_id, topicId, research.contactQuery)
-        if (catalog.total > 0 && catalog.unprocessedTotal === 0) {
-          this.store.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(Date.now() + settings.intervalMinutes * 60000, profile.character_id)
-          this.store.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(Date.now() + settings.intervalMinutes * 60000, topicId)
-          continue
+        if (last?.status === 'completed' && research?.contactQuery !== undefined && settings.readContactDeliveries) {
+          const catalog = this.runtime.contactSources.discover(profile.character_id, topicId, research.contactQuery)
+          if (catalog.total > 0 && catalog.unprocessedTotal === 0) {
+            this.store.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=? AND focus_topic_id=?').run(Date.now() + settings.intervalMinutes * 60000, profile.character_id, topicId)
+            this.store.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(Date.now() + settings.intervalMinutes * 60000, topicId)
+            continue
+          }
         }
+        try { this.store.startScheduledTopic(profile.character_id, topicId, this.identity(profile.character_id).conversation); this.changed(profile.character_id) } catch { /* invalid profiles remain visible, without a hot retry loop */ }
       }
-      try { this.store.startScheduledTopic(profile.character_id, topicId, this.identity(profile.character_id).conversation); this.changed(profile.character_id) } catch { /* invalid profiles remain visible, without a hot retry loop */ }
     }
     for (const run of this.store.runnable()) {
-      if (this.active.has(run.character_id) || this.deleting.has(run.character_id)) continue
+      if (this.active.has(run.id) || this.deleting.has(run.character_id)) continue
       if (!this.identities.get(run.character_id)?.config || JSON.parse(run.input).revisionScope !== 'presentation' && JSON.parse(run.input).settings.searchEnabled && !this.identities.get(run.character_id)?.searchKey) continue
       const settings = JSON.parse(this.store.profile(run.character_id)!.settings) as AgentSettings
+      const active = this.activeFor(run.character_id)
+      if (active.length >= (settings.maxConcurrentTasks ?? 1) || active.some(current => current.topicId === run.topic_id)) continue
       if (run.status === 'waiting' && (!settings.enabled || settings.paceWriting || !withinWorkHours(settings))) continue
-      if (this.store.callCount(run.character_id) + this.store.callsNeededToResume(run.id) > settings.dailyCalls) continue
       if (!this.store.tokens.canResume(run.id, run.character_id, run.topic_id)) continue
+      if (!this.store.reserveRunCalls(run.id)) continue
       this.startRun(run)
     }
   }
@@ -267,14 +271,14 @@ export class AgentService {
       }
       return output
     }
-    // Claim this contact before execution can emit events; other contacts start independently.
+    // Claim the slot synchronously, including cancelled requests that have not exited yet.
     const promise = Promise.resolve().then(() => this.runtime.execute(run.id, identity.soul, model, controller.signal, () => this.changed(run.character_id), identity.searchKey))
       .catch(() => {
         if (this.closed) { if (this.store.getRun(run.id)?.status === 'running') this.store.setStatus(run.id, 'interrupted') }
         else this.store.fail(run.id, controller.signal.aborted ? '本轮已停止，可检查设置后重新运行。' : '执行进程发生错误，请检查配置后重试。')
       })
-      .finally(() => { this.active.delete(run.character_id); this.changed(run.character_id); if (!this.closed) setTimeout(() => this.tick(), 0) })
-    this.active.set(run.character_id, { id: run.id, controller, promise })
+      .finally(() => { this.active.delete(run.id); this.store.releaseRunCalls(run.id); this.changed(run.character_id); if (!this.closed) setTimeout(() => this.tick(), 0) })
+    this.active.set(run.id, { id: run.id, characterId: run.character_id, topicId: run.topic_id, controller, promise })
   }
   async close() {
     this.closed = true; clearInterval(this.timer)

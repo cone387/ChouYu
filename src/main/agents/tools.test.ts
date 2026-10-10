@@ -43,7 +43,9 @@ describe('confirmed contact feedback', () => {
     version = 5; await expect(tool.prepareAsync!(args, context)).rejects.toThrow('版本')
     version = 4; const pending = await tool.prepareAsync!(args, context); chatOwner = 'bob'
     await expect(pending.execute()).rejects.toThrow('归属')
-    chatOwner = 'alice'; data.runs.push({ status: 'running' })
+    chatOwner = 'alice'; data.runs.push({ topicId: 'other', status: 'running' })
+    await expect(tool.prepareAsync!(args, context)).resolves.toHaveProperty('preview')
+    data.runs.push({ topicId: 'topic', status: 'running' })
     await expect(tool.prepareAsync!(args, context)).rejects.toThrow('未完成')
   })
   it('previews revision feedback and keeps the captured topic and profile versions', async () => {

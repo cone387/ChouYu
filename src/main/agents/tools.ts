@@ -35,9 +35,9 @@ export function createContactTools(access: Access): RegisteredTool[] {
         method = 'topicStatus'; values = [topicId, revision, 'paused', reason]
         preview = `事项：${topic.title}\n状态：${TOPIC_STATUS[topic.status]} → 已暂停\n停止此事项未完成的工作。\n原因：${reason}`
       } else if (args.action === 'continue') {
-        if (overview.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status) && (r.topicId === topicId || r.status !== 'waiting'))) throw new Error('联系人仍有未完成工作；若本任务正在等你回复，请使用回答问题工具。')
+        if (overview.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status) && r.topicId === topicId)) throw new Error('本任务仍有未完成工作；若本任务正在等你回复，请使用回答问题工具。')
         method = 'continueTopic'; values = [topicId, revision, reason]
-        preview = `事项：${topic.title}\n设为当前事项，并立即运行一轮。\n持续工作：${overview.settings.enabled ? '保持开启' : '保持关闭'}\n按现有来源与调用预算执行。\n原因：${reason}`
+        preview = `事项：${topic.title}\n安排本事项执行一轮，有空余名额时开始。\n持续工作：${overview.settings.enabled ? '保持开启' : '保持关闭'}\n按现有来源与调用预算执行。\n原因：${reason}`
       } else if (args.action === 'revise') {
         method = 'reviseTopic'; values = [topicId, revision, reason]
         preview = `事项：${topic.title}\n修改意见：${reason}\n按原额度立即修订一轮，保留旧成果版本；不自动开启持续工作。`
@@ -157,7 +157,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
         const id = owner(context), data = await access.request('get', id) as AgentOverview
         const topic = data.topics.find(t => t.id === args.topicId)
         if (!topic || topic.revision !== args.revision) throw new Error('事项已变化，请重新读取。')
-        if (data.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status) && (r.topicId === topic.id || r.status !== 'waiting'))) throw new Error('当前还有工作未完成，请等待本轮结束；本任务待回复的问题需要先处理。')
+        if (data.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status) && r.topicId === topic.id)) throw new Error('当前还有工作未完成，请等待本轮结束；本任务待回复的问题需要先处理。')
         const artifact = await access.request('delivery', id, [topic.id])
         if (!artifact || !Number.isSafeInteger(args.deliveryVersion) || artifact.version !== args.deliveryVersion) throw new Error('成果版本已变化或尚未交付，请重新读取。')
         if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('请填写有效的样式修改要求。')

@@ -23,7 +23,7 @@ export class ContactInteractions {
     if (!profile) return
     const settings = JSON.parse(profile.settings) as AgentSettings
     const kind = notice.kind === 'question' ? 'question' : notice.purpose === 'resources' ? 'budget'
-      : notice.purpose === 'failure' && (profile.failures >= 3 || !settings.enabled) ? 'retry' : undefined
+      : notice.purpose === 'failure' && ((this.store.taskFailures.get(notice.topicId)?.failures ?? 0) >= 3 || !settings.enabled) ? 'retry' : undefined
     if (!kind) return
     const existing = this.store.db.prepare('SELECT id FROM contact_interactions WHERE id=?').get(notice.id)
     if (existing) return notice.id
@@ -60,18 +60,24 @@ export class ContactInteractions {
   checkScheduledResources(owner: string) {
     const s = this.store, profile = s.profile(owner)!
     const settings = JSON.parse(profile.settings) as AgentSettings
-    if (!settings.enabled || profile.failures >= 3) return
-    const live = s.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','interrupted') ORDER BY created_at LIMIT 1").get(owner) as ReturnType<AgentStore['getRun']>
-    const scheduled = s.scheduled(owner).find(task => task.next_at <= Date.now())
-    const run = live ?? (scheduled && s.db.prepare('SELECT * FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(scheduled.topic_id)) as ReturnType<AgentStore['getRun']>
-    if (!run?.topic_id) return
-    const topic = s.topics.get(owner, run.topic_id)
-    if (['paused', 'completed', 'abandoned'].includes(topic.status) || !['completed', 'queued', 'interrupted'].includes(run.status)) return
-    const candidate = { characterId: owner, topicId: topic.id, runId: run.id } as RecordValue
-    if (!this.fields(candidate).length || this.pending(owner).some(v => v.topicId === topic.id)) return
-    const day = new Date().toLocaleDateString('en-CA')
-    s.notices.enqueue({ id: `${run.id}:resource-check:${day}`, characterId: owner, topicId: topic.id, runId: run.id,
-      topicRevision: topic.revision, kind: 'progress', purpose: 'resources', createdAt: Date.now(), content: `「${topic.title}」暂时无法继续，当前额度不足。已有成果保留，可以在这里调整额度。` })
+    if (!settings.enabled) return
+    const candidates = s.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','interrupted') ORDER BY created_at,rowid").all(owner) as NonNullable<ReturnType<AgentStore['getRun']>>[]
+    for (const task of s.scheduled(owner).filter(task => task.next_at <= Date.now())) {
+      const run = s.db.prepare('SELECT * FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(task.topic_id) as ReturnType<AgentStore['getRun']>
+      if (run && !candidates.some(candidate => candidate.id === run.id)) candidates.push(run)
+    }
+    const pending = new Set(this.pending(owner).map(v => v.topicId))
+    for (const run of candidates) {
+      if (!run.topic_id) continue
+      const topic = s.topics.get(owner, run.topic_id)
+      if (['paused', 'completed', 'abandoned'].includes(topic.status) || !['completed', 'queued', 'interrupted'].includes(run.status)) continue
+      const candidate = { characterId: owner, topicId: topic.id, runId: run.id } as RecordValue
+      if (!this.fields(candidate).length || pending.has(topic.id)) continue
+      const day = new Date().toLocaleDateString('en-CA')
+      s.notices.enqueue({ id: `${run.id}:resource-check:${day}`, characterId: owner, topicId: topic.id, runId: run.id,
+        topicRevision: topic.revision, kind: 'progress', purpose: 'resources', createdAt: Date.now(), content: `「${topic.title}」暂时无法继续，当前额度不足。已有成果保留，可以在这里调整额度。` })
+      pending.add(topic.id)
+    }
   }
   private read(owner: string, id: string): RecordValue {
     const row = this.store.db.prepare('SELECT value FROM contact_interactions WHERE id=? AND character_id=?').get(id, owner) as { value: string } | undefined
@@ -119,7 +125,7 @@ export class ContactInteractions {
       if (v.status !== 'pending') this.save(v)
     }
     if (v.kind === 'retry' && v.status === 'pending') {
-      const recovery = s.providerRecovery(owner)
+      const recovery = s.providerRecovery(owner, v.topicId)
       v.automaticRetryAt = recovery?.runId === v.runId ? recovery.at : undefined
     }
     const { topicRevision: _revision, settingsGuard: _settings, questionEventId: _event, ...view } = v

@@ -113,6 +113,9 @@ export default function ContactWorkSettings({ characterId, data, keyConfigured, 
         {feedback.mode?.error ? <Result feedback={feedback.mode} /> : <p className="work-setting-hint">{saving === 'mode' ? '保存中…' : contactWorkStatus(data, keyConfigured)}</p>}
       </div>
       <WorkHours value={settings.workHours} disabled={disabled || !settings.enabled} feedback={feedback.workHours} onApply={value => save('workHours', { workHours: value })} />
+      <Field label="最多同时推进任务数" value={String(settings.maxConcurrentTasks ?? 1)} min={1} step="1" unit="个" disabled={disabled}
+        feedback={feedback.maxConcurrentTasks} onApply={value => numeric('maxConcurrentTasks', value)}
+        hint="其余任务排队；等你回复或等待下次执行的任务不占名额。调低后，当前轮次仍会完成。" />
 
 
       <div className="work-setting-row"><span>推进节奏</span><div className="work-setting-choices" role="radiogroup" aria-label="推进节奏">

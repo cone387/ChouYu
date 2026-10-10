@@ -1,5 +1,6 @@
 import { sanitizeProgressUpdate } from './agent-progress'
 export interface AgentSettings {
+  maxConcurrentTasks?: number
   workHours?: { start: string; end: string }
   dailyTokenLimit?: number
   defaultTaskTokenLimit?: number
@@ -50,6 +51,7 @@ export interface AgentInteractionPage { items: AgentInteraction[]; nextCursor?: 
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { evaluations?: import('./agent-evaluation').AgentEvaluation[]; runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
+  taskFailures?: Record<string, { failures: number; retryAt?: number }>
   providerRecovery?: { topicId: string; at: number }
   tokenUsage?: { today: number; estimated: number; tasks: Record<string, number> }
   failures?: number
@@ -165,6 +167,7 @@ export function validateAgentSettings(raw: unknown): AgentSettings {
   })
   if (!Number.isInteger(value.intervalMinutes) || value.intervalMinutes < 15 || value.intervalMinutes > 10080) throw new Error('工作间隔应为 15–10080 分钟。')
   if (!Number.isSafeInteger(value.dailyCalls) || value.dailyCalls < 2) throw new Error('每日模型调用上限应为不小于 2 的有效整数。')
+  if (value.maxConcurrentTasks !== undefined && (!Number.isSafeInteger(value.maxConcurrentTasks) || value.maxConcurrentTasks < 1)) throw new Error('最多同时推进任务数应为不小于 1 的有效整数。')
   for (const key of ['readContactDeliveries', 'shareDeliveries', 'paceWriting'] as const) if (value[key] !== undefined && typeof value[key] !== 'boolean') throw new Error('联系人成果权限或运行节奏无效。')
   if (value.workHours !== undefined && (!value.workHours || ![value.workHours.start, value.workHours.end].every(time => typeof time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(time)))) throw new Error('工作时段须为有效的开始与结束时间。')
   for (const key of ['dailyTokenLimit', 'defaultTaskTokenLimit'] as const) {
@@ -174,7 +177,7 @@ export function validateAgentSettings(raw: unknown): AgentSettings {
   if (value.notifyProgress !== undefined && typeof value.notifyProgress !== 'boolean') throw new Error('通知设置无效。')
   if (value.searchEnabled !== undefined && typeof value.searchEnabled !== 'boolean') throw new Error('搜索开关无效。')
   if (value.dailySearches !== undefined && (!Number.isInteger(value.dailySearches) || value.dailySearches < 1 || value.dailySearches > 24)) throw new Error('每日搜索上限应为 1–24 次。')
-  return { ...(value.workHours !== undefined ? { workHours: { start: value.workHours.start, end: value.workHours.end } } : {}), ...(value.dailyTokenLimit !== undefined ? { dailyTokenLimit: value.dailyTokenLimit } : {}), ...(value.defaultTaskTokenLimit !== undefined ? { defaultTaskTokenLimit: value.defaultTaskTokenLimit } : {}), ...(value.paceWriting !== undefined ? { paceWriting: value.paceWriting } : {}), ...(value.readContactDeliveries !== undefined ? { readContactDeliveries: value.readContactDeliveries } : {}), ...(value.shareDeliveries !== undefined ? { shareDeliveries: value.shareDeliveries } : {}), ...(value.permissionLevel !== undefined ? { permissionLevel: value.permissionLevel } : {}), goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled, ...(value.notifyProgress !== undefined ? { notifyProgress: value.notifyProgress } : {}), ...(value.searchEnabled !== undefined ? { searchEnabled: value.searchEnabled } : {}), ...(value.dailySearches !== undefined ? { dailySearches: value.dailySearches } : {}) }
+  return { ...(value.maxConcurrentTasks !== undefined ? { maxConcurrentTasks: value.maxConcurrentTasks } : {}), ...(value.workHours !== undefined ? { workHours: { start: value.workHours.start, end: value.workHours.end } } : {}), ...(value.dailyTokenLimit !== undefined ? { dailyTokenLimit: value.dailyTokenLimit } : {}), ...(value.defaultTaskTokenLimit !== undefined ? { defaultTaskTokenLimit: value.defaultTaskTokenLimit } : {}), ...(value.paceWriting !== undefined ? { paceWriting: value.paceWriting } : {}), ...(value.readContactDeliveries !== undefined ? { readContactDeliveries: value.readContactDeliveries } : {}), ...(value.shareDeliveries !== undefined ? { shareDeliveries: value.shareDeliveries } : {}), ...(value.permissionLevel !== undefined ? { permissionLevel: value.permissionLevel } : {}), goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled, ...(value.notifyProgress !== undefined ? { notifyProgress: value.notifyProgress } : {}), ...(value.searchEnabled !== undefined ? { searchEnabled: value.searchEnabled } : {}), ...(value.dailySearches !== undefined ? { dailySearches: value.dailySearches } : {}) }
 }
 export const AGENT_STATUS: Record<AgentRunStatus, string> = {
   queued: '等待执行', running: '正在工作', waiting: '等你回复', completed: '已完成', failed: '执行失败', cancelled: '已取消', interrupted: '等待恢复'
