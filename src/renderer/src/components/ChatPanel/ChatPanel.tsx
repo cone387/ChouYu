@@ -687,7 +687,9 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       setNavigationError('')
       void (async () => {
         const target = request.target
-        if (target.kind === 'task') {
+        if (target.kind === 'settings') {
+          window.dispatchEvent(new Event('chouyu:contact-navigation-opened')); navigate('settings')
+        } else if (target.kind === 'task') {
           const contacts = await window.electronAPI.characters.list()
           const contact = contacts.find(c => c.id === target.characterId)
           if (!contact) throw new Error('这项任务或联系人已删除，原始总结仍保留。')

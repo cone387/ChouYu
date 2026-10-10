@@ -21,7 +21,7 @@ export interface AgentResearchPlan { evaluation?: boolean; action: 'search' | 'r
 export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { contactQuery?: string; plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
-export interface AgentMessageRef { topicId: string; runId: string; kind: 'question' | 'progress'; update?: import('./agent-progress').AgentProgressUpdate }
+export interface AgentMessageRef { interactionId?: string; topicId: string; runId: string; kind: 'question' | 'progress'; update?: import('./agent-progress').AgentProgressUpdate }
 export interface AgentNotice extends AgentMessageRef { communication?: import('./contact-communication').ContactCommunication; id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' | 'presentation' | 'failure' }
 export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
 export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undefined {
@@ -29,7 +29,7 @@ export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undef
   const ref = value as AgentMessageRef
   if (!['progress', 'question'].includes(ref.kind) || ![ref.topicId, ref.runId].every(id => typeof id === 'string' && id.length > 0 && id.length <= 128)) return undefined
   const update = ref.kind === 'progress' ? sanitizeProgressUpdate(ref.update) : undefined
-  return { topicId: ref.topicId, runId: ref.runId, kind: ref.kind, ...(update ? { update } : {}) }
+  return { ...(typeof ref.interactionId === 'string' && ref.interactionId.length > 0 && ref.interactionId.length <= 256 ? { interactionId: ref.interactionId } : {}), topicId: ref.topicId, runId: ref.runId, kind: ref.kind, ...(update ? { update } : {}) }
 }
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = { goal: '', sources: [], intervalMinutes: 180, dailyCalls: 8, enabled: false }
 export function agentUsesPlanner(settings: AgentSettings): boolean {
@@ -108,6 +108,9 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI {
+  pendingInteractions(characterId: string): Promise<(import('./contact-interactions').ContactInteraction & { characterName: string })[]>
+  getInteraction(characterId: string, interactionId: string): Promise<import('./contact-interactions').ContactInteraction>
+  submitInteraction(characterId: string, interactionId: string, submission: import('./contact-interactions').ContactInteractionSubmission): Promise<import('./contact-interactions').ContactInteraction>
   dashboard(): Promise<AgentDashboard>
   summary(characterId: string): Promise<AgentSummary>
   continueTopic(characterId: string, topicId: string, revision: number, reason: string): Promise<AgentOverview>

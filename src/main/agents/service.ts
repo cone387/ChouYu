@@ -13,7 +13,7 @@ import type { AIResponseMetadata } from '../../shared/ai-usage'
 import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from './model-output'
 import { workSettingsRequireRestart, withinWorkHours } from '../../shared/work-settings'
 
-export interface AgentIdentity { id: string; name?: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
+export interface AgentIdentity { visibleNoticeIds?: string[]; id: string; name?: string; soul: string; conversation: string; searchKey?: string; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
   readonly store: AgentStore
   readonly runtime: AgentRuntime
@@ -40,6 +40,7 @@ export class AgentService {
     this.runtime.contactSources.names = new Map(identities.map(identity => [identity.id, identity.name || identity.id]))
     this.identities = new Map(identities.map(identity => [identity.id, identity]))
     for (const profile of this.store.profiles()) if (!this.identities.has(profile.character_id)) await this.remove(profile.character_id)
+    if (!this.ready) for (const identity of identities) this.store.decisions.publishOutstanding(identity.id, new Set(identity.visibleNoticeIds ?? []))
     this.ready = true; this.tick()
   }
   private identity(id: string) { const identity = this.identities.get(id); if (!identity) throw new Error('联系人不存在。'); return identity }
@@ -70,6 +71,14 @@ export class AgentService {
     }
     this.identity(id)
     switch (method) {
+      case 'pendingInteractions': return this.store.decisions.pending(id)
+      case 'getInteraction': return { ...this.store.decisions.get(id, String(args[0])), characterName: this.identity(id).name }
+      case 'submitInteraction': {
+        if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
+        this.checkSearch(id)
+        const result = this.store.decisions.submit(id, String(args[0]), args[1] as import('../../shared/contact-interactions').ContactInteractionSubmission, this.identity(id).conversation)
+        this.changed(id); this.tick(); return { ...result, characterName: this.identity(id).name }
+      }
       case 'feedback': {
         if (this.store.overview(id).revision !== args[0]) throw new Error('工作设置已变化，请重新读取并确认。')
         if (!['topicStatus', 'editTopic', 'continueTopic', 'answerChecked', 'assignTopic', 'reviseTopic'].includes(String(args[1]))) throw new Error('反馈操作无效。')
@@ -194,6 +203,7 @@ export class AgentService {
       const settings = JSON.parse(profile.settings) as AgentSettings
       if (settings.searchEnabled && !this.identities.get(profile.character_id)?.searchKey) continue
       if (!this.identities.get(profile.character_id)?.config) continue
+      this.store.decisions.checkScheduledResources(profile.character_id)
       const topicId = this.store.nextScheduledTopic(profile.character_id, Date.now(), topicId => {
         if (!settings.readContactDeliveries) return false
         const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === topicId)

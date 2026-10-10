@@ -1,3 +1,5 @@
+import { AgentWorkerRPC } from './worker-rpc'
+import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { registerPresentationProtocol } from './presentation-protocol'
 import { deliveryHtmlExport } from '../../shared/delivery-presentation'
@@ -10,7 +12,7 @@ import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, li
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { getRegisteredTool, registerTool } from '../tools/registry'
-import { ASSISTANT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
+import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
 import type { AgentIdentity } from './service'
 import { setupIdeaLab } from './idea-lab'
 
@@ -18,9 +20,15 @@ let child: UtilityProcess | undefined
 let starting: Promise<void> | undefined
 let closing = false
 let failures = 0
-let sequence = 0
 let syncTimer: ReturnType<typeof setInterval> | undefined
-const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+const requests = new AgentWorkerRPC(event => {
+  // Only protocol metadata; never persist credentials, prompts or provider responses.
+  try {
+    const path = join(app.getPath('userData'), 'contact-worker-diagnostics.log')
+    if (existsSync(path) && statSync(path).size > 65536) writeFileSync(path, '')
+    appendFileSync(path, JSON.stringify({ at: new Date().toISOString(), ...event }) + '\n')
+  } catch { /* Diagnostic storage must not block recovery. */ }
+})
 let delivering = false
 const dirty = new Set<string>()
 async function deliver(id: string) {
@@ -48,19 +56,15 @@ function broadcastChanged(characterId: string) {
   void deliver(characterId)
 }
 function rpc(method: string, id = '', args: unknown[] = []): Promise<any> {
-  return new Promise((resolve, reject) => {
-    if (!child) { reject(new Error('Agent 执行进程不可用，请稍后重试。')); return }
-    const requestId = ++sequence
-    const timer = setTimeout(() => { pending.delete(requestId); reject(new Error('Agent 执行进程响应超时。')); child?.kill() }, 15000)
-    pending.set(requestId, { resolve, reject, timer }); child.postMessage({ requestId, method, id, args })
-  })
+  if (!child) return Promise.reject(new Error('Agent 执行进程不可用，请稍后重试。'))
+  return requests.request(child, method, id, args)
 }
 function identities(): AgentIdentity[] {
   const config = getConfig(), sessions = getSessions()
   return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(character => {
     const resolved = resolveCharacterConfig(character, config)
     const conversation = sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages.slice(-8).map(m => `${m.role}: ${m.content.slice(0, 1500)}`) || []).join('\n').slice(0, 8000)
-    return { id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
+    return { visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
   })
 }
 async function ensure() {
@@ -78,16 +82,14 @@ async function ensure() {
     else process.stderr?.resume()
     const born = Date.now()
     process.on('message', message => {
+      if (child !== process) return
       if (message.changed) { broadcastChanged(message.changed); return }
-      const request = pending.get(message.requestId)
-      if (!request) return
-      clearTimeout(request.timer); pending.delete(message.requestId)
-      if (message.error) request.reject(new Error(message.error)); else request.resolve(message.result)
+      requests.receive(process, message)
     })
     process.on('exit', () => {
+      requests.exited(process)
       if (child !== process) return
       child = undefined
-      for (const request of pending.values()) { clearTimeout(request.timer); request.reject(new Error('Agent 执行进程已退出，未完成工作将在恢复后继续。')) }; pending.clear()
       if (!closing) {
         failures = Date.now() - born > 60000 ? 1 : failures + 1
         if (failures <= 3) setTimeout(() => { void ensure().catch(() => {}) }, failures * 2000)
@@ -111,7 +113,8 @@ export async function inspectContactWork(characterId: string) {
   if (!getCharacter(characterId) || characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
   await ensure()
   await rpc('sync', '', [identities()])
-  return await rpc('get', characterId) as import('../../shared/agents').AgentOverview
+  const overview = await rpc('get', characterId) as import('../../shared/agents').AgentOverview
+  return { ...overview, pendingInteractions: await rpc('pendingInteractions', characterId) as import('../../shared/contact-interactions').ContactInteraction[] }
 }
 export async function inspectContactDelivery(characterId: string, topicId: string) {
   if (!getCharacter(characterId) || characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
@@ -141,6 +144,17 @@ export function initializeAgents() {
     const artifact = await rpc('delivery', id, [topicId, version]) as AgentDelivery | null
     const detail = await rpc('topicDetail', id, [topicId])
     return { title: detail.topic.title, artifact }
+  })
+  ipcMain.handle('agents:pendingInteractions', async (_event, owner: string) => {
+    if (!getCharacter(owner)) throw new Error('联系人不存在。')
+    await ensure()
+    const contacts = listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID && c.id !== DEFAULT_CHARACTER_ID && (owner === DEFAULT_CHARACTER_ID || c.id === owner))
+    const result = []
+    for (const contact of contacts) {
+      const items = await rpc('pendingInteractions', contact.id) as import('../../shared/contact-interactions').ContactInteraction[]
+      for (const item of items) result.push({ ...item, characterName: contact.name })
+    }
+    return result
   })
   ipcMain.handle('agents:dashboard', async () => {
     await ensure()
@@ -176,7 +190,7 @@ export function initializeAgents() {
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const method of ['get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
+  for (const method of ['getInteraction', 'submitInteraction', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
     ipcMain.handle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)

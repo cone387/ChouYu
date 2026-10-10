@@ -49,6 +49,7 @@ describe('assistant routine integration', () => {
     const evidence = JSON.parse(state.model.mock.calls[0][0][0].content).evidence
     expect(evidence.contacts.map((c: { id: string }) => c.id)).toEqual(['alice', 'bob'])
     expect(evidence.contacts[1].unavailable).toBe(true)
+    expect(evidence.contacts[0].pendingInteractions).toEqual([])
     expect(state.delivery).toHaveBeenCalledTimes(1)
     expect(state.sent.mock.calls[0][0]).toContain('[阿笔 · 文章](#contact-task?characterId=alice&topicId=article)')
     expect(state.handlers.get('assistant-routines:history')!({}, state.handlers.get('assistant-routines:list')!()[0].id).items[0].status).toBe('completed')
@@ -66,6 +67,16 @@ describe('assistant routine integration', () => {
     const result = await readContactsForAssistant()
     expect(result.contacts).toHaveLength(2)
     expect(result.contacts[1]).toMatchObject({ id: 'bob', unavailable: true })
+  })
+  it('passes the shared pending decisions through read-only inspection', async () => {
+    const inspect = state.inspect.getMockImplementation()!
+    const item = { id: 'decision', topicId: 'article', kind: 'question', question: '写给谁看？', budgets: [] }
+    state.inspect.mockImplementationOnce(async (id: string) => ({ ...await inspect(id), pendingInteractions: [item] }))
+    const result = await readContactsForAssistant()
+    expect(result.contacts[0]).toMatchObject({ pendingInteractions: [item] })
+    expect(summaryTaskLinks(result)).toContain('#contact-interaction?characterId=alice&id=decision')
+    expect(summaryTaskLinks(result)).not.toContain('#contact-task?')
+    expect(state.model).not.toHaveBeenCalled()
   })
   it('stops a companion inspection before reading the next contact if permission is revoked', async () => {
     const inspect = state.inspect.getMockImplementation()!

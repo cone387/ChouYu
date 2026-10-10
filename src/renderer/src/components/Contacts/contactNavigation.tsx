@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { parseContactTaskHref } from '../../../../shared/contact-links'
 
-export type ContactNavigation = { kind: 'task'; characterId: string; topicId: string } | { kind: 'message'; sessionId: string; messageId: string }
+export type ContactNavigation = { kind: 'settings' } | { kind: 'task'; characterId: string; topicId: string } | { kind: 'message'; sessionId: string; messageId: string }
 export type ContactNavigationRequest = { target: ContactNavigation; handled: boolean; resolve: () => void; reject: (error: Error) => void }
 export const CONTACT_NAVIGATION = 'chouyu:contact-navigation'
 export function navigateContact(target: ContactNavigation): Promise<void> {

@@ -1,3 +1,4 @@
+import { interactionHref } from '../../shared/contact-interactions'
 import { contactCommunicationInstructions } from '../../shared/contact-communication'
 import { BrowserWindow, ipcMain } from 'electron'
 import { createHash } from 'node:crypto'
@@ -31,6 +32,7 @@ export async function readContactsForAssistant(signal?: AbortSignal) {
       results.push({ id: contact.id, name: contact.name, omittedTopics: Math.max(0, data.topics.length - topics.length), topics: topics.map(t => ({ id: t.id, revision: t.revision, title: t.title, status: t.status, judgement: t.judgement.slice(0, 600), reason: (t.reason ?? '').slice(0, 600), nextStep: t.nextStep, updatedAt: t.updatedAt })),
         runs: topics.flatMap(topic => { const r = data.runs.find(run => run.topicId === topic.id); return r ? [{ topicId: r.topicId, status: r.status, question: r.question?.slice(0, 600), error: r.error?.slice(0, 600), summary: r.summary.slice(0, 600) }] : [] }),
         queuedTopicIds: data.queuedTopicIds, latestActivity: data.latestActivity,
+        pendingInteractions: (data.pendingInteractions ?? []).map(item => ({ id: item.id, version: item.version, topicId: item.topicId, kind: item.kind, question: item.question, budgets: item.budgets, failure: item.failure, cardLink: interactionHref(contact.id, item.id) })),
         reports: data.reports.slice(0, 2).map(r => ({ title: r.title, createdAt: r.createdAt, nextStep: r.nextStep })) })
     } catch { results.push({ id: contact.id, name: contact.name, unavailable: true, error: '状态暂时无法读取，不能判断进展。' }) }
   }
@@ -78,6 +80,11 @@ export function summaryTaskLinks(evidence: Awaited<ReturnType<typeof readContact
   for (const contact of evidence.contacts) {
     if (!contact.topics) continue
     for (const topic of contact.topics) {
+      const pending = contact.pendingInteractions?.filter(item => item.topicId === topic.id) ?? []
+      if (pending.length) {
+        for (const item of pending) waiting.push(`[${escape(contact.name)} · 待处理](${item.cardLink})`)
+        continue
+      }
       const run = contact.runs?.find(r => r.topicId === topic.id)
       const link = `[${escape(contact.name.slice(0, 60))} · ${escape(topic.title.slice(0, 80))}](${contactTaskHref(contact.id, topic.id)})`
       if (run?.status === 'waiting') waiting.push(`- ${link}：${escape((run.question || '需要你的回复').slice(0, 160))}`)

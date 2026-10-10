@@ -6,7 +6,7 @@ export function createAssistantTools(service: AssistantRoutineService, owner: (s
   const base = { source: 'builtin' as const, risk: 'read' as const, requiresConfirmation: false }
   const check = (sessionId?: string) => { if (owner(sessionId) !== DEFAULT_CHARACTER_ID) throw new Error('请在 ChouYu 的聊天中管理助手安排。') }
   return [
-    { ...base, name: 'inspect_contacts', displayName: '检查各联系人状态', description: 'ChouYu 读取各联系人的真实任务、执行进展和待答复问题。只读；失败不等于没有任务，不把已结束当作成果已验证。',
+    { ...base, name: 'inspect_contacts', displayName: '检查各联系人状态', description: 'ChouYu 读取各联系人的真实任务、执行进展和待答复问题。只读；失败不等于没有任务，不把已结束当作成果已验证。用户询问需要处理什么时，读取 pendingInteractions 并原样使用 cardLink 生成 Markdown 链接，客户端会展示同一张可操作卡片。不得自编 ID 或替用户提交。',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       async execute(_args, context) { check(context.sessionId); return { content: JSON.stringify(await readContacts()), summary: '已检查联系人状态' } } },
     { ...base, name: 'list_assistant_routines', displayName: '查看助手长期安排', description: '读取 ChouYu 的长期安排、ID、版本、下次执行时间及最近结果。修改或暂停之前先读取。',

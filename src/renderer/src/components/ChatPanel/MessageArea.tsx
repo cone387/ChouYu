@@ -1,3 +1,6 @@
+import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
+import { interactionReferences } from '../../../../shared/contact-interactions'
+import ContactInteractionCard from './ContactInteractionCard'
 import AgentProgressCard from './AgentProgressCard'
 import { legacyProgressUpdate } from '../../../../shared/agent-progress'
 import ReminderActions from './ReminderActions'
@@ -246,6 +249,7 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
           ? normalizeAssistantMessageKind(msg.assistantKind) ?? legacyAssistantMessageKind(msg.content) : undefined
         const progressUpdate = msg.agentNotice?.kind === 'progress' ? msg.agentNotice.update ?? legacyProgressUpdate(msg.content) : undefined
         const canRetry = !msg.agentNotice && !isStreaming && getConversationForRetry(messages, msg.id) !== null
+        const linkedInteractions = character?.id === DEFAULT_CHARACTER_ID && msg.role === 'assistant' && !msg.toolData && !msg.agentNotice && !searching ? interactionReferences(msg.content) : { content: msg.content, refs: [] }
         const memorySourceCount = msg.memoryRefs?.reduce((total, memory) => total + (memory.compressedCount || 1), 0) || 0
         return (
         <div
@@ -266,19 +270,21 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
             {msg.role === 'assistant' && <span className="message-sender">{character?.name || '联系人'}</span>}
             {searching && !focusMessageId && (msg.role !== 'user' || msg.toolData) && <SearchMatch text={searchableMessageText(msg)} query={normalizedQuery} />}
             <div className={`message-bubble${msg.agentNotice?.kind === 'question' ? ' agent-confirmation-card' : ''}`}>
-              {msg.agentNotice?.kind === 'question' && <><strong className="agent-confirmation-heading">任务确认</strong>{character?.id && <AgentQuestionState characterId={character.id} runId={msg.agentNotice.runId} content={msg.content} />}</>}
+              {msg.agentNotice?.kind === 'question' && !msg.agentNotice.interactionId && <><strong className="agent-confirmation-heading">任务确认</strong>{character?.id && <AgentQuestionState characterId={character.id} runId={msg.agentNotice.runId} content={msg.content} />}</>}
               {assistantKind && <AssistantMessageLabel kind={assistantKind} />}
               {msg.imageUrl && (
                 <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
               )}
-              {msg.toolData ? (
+              {msg.agentNotice?.interactionId && character?.id && !searching ? (
+                <ContactInteractionCard characterId={character.id} interactionId={msg.agentNotice.interactionId} fallback={msg.content} onOpen={onAgentNotice ? () => onAgentNotice(msg.agentNotice!, 'work') : undefined} />
+              ) : msg.toolData ? (
                 <ToolActivityCard data={msg.toolData} />
               ) : msg.pluginData ? (
                 <PluginMessageCard data={msg.pluginData} />
               ) : progressUpdate && !searching ? (
                 <AgentProgressCard update={progressUpdate} />
               ) : msg.role === 'assistant' ? (
-                <ReactMarkdown
+                <> <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
                     a: ({ href, children }) => <ContactLink href={href}>{children}</ContactLink>,
@@ -295,7 +301,9 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
                       return <>{children}</>
                     }
                   }}
-                >{msg.content}</ReactMarkdown>
+                >{linkedInteractions.content}</ReactMarkdown>
+                {linkedInteractions.refs.map(ref => <ContactInteractionCard key={`${ref.characterId}:${ref.id}`} characterId={ref.characterId} interactionId={ref.id} fallback="待处理事项" showOwner />)}
+                </>
               ) : msg.id === editingId ? (
                 <div className="message-edit">
                   <textarea
@@ -327,12 +335,12 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
               ) : (
                 msg.content && <span>{searching ? <SearchHighlight text={msg.content} query={normalizedQuery} /> : msg.content}</span>
               )}
-              {msg.agentNotice?.kind === 'question' && onAgentNotice && <div className="agent-message-links" role="group" aria-label="任务确认操作">
+              {msg.agentNotice?.kind === 'question' && !msg.agentNotice.interactionId && onAgentNotice && <div className="agent-message-links" role="group" aria-label="任务确认操作">
                 <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>查看并回复</button>
                 <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>查看本轮记录</button>
               </div>}
             </div>
-            {msg.agentNotice && msg.agentNotice.kind !== 'question' && onAgentNotice && <div className="agent-message-links" role="group" aria-label="工作进展来源">
+            {msg.agentNotice && !msg.agentNotice.interactionId && msg.agentNotice.kind !== 'question' && onAgentNotice && <div className="agent-message-links" role="group" aria-label="工作进展来源">
               <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>查看任务</button>
               <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>{progressUpdate ? '查看本轮成果' : '查看本轮记录'}</button>
             </div>}

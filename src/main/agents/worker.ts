@@ -7,6 +7,7 @@ let messages = Promise.resolve()
 port.on('message', event => {
   messages = messages.then(async () => {
     const { requestId, method, id, args } = event.data
+    port.postMessage({ requestId, started: true })
     try {
       let result: unknown
       if (method === 'init') {

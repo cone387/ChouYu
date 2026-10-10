@@ -9,7 +9,7 @@ function fixture() {
     id: 'writer', name: '阿笔', omittedTopics: 0,
     topics: [{ id: 'novel', revision: 1, title: '小说', status: 'paused' as const, judgement: '已保存两章', reason: '预算已用 6/6 次', nextStep: '继续第三章', updatedAt: 1 }],
     runs: [{ topicId: 'novel', status: 'waiting' as const, question: '第三章用哪个视角？', error: '', summary: '' }],
-    queuedTopicIds: [], reports: [], latestActivity: undefined
+    pendingInteractions: [], queuedTopicIds: [], reports: [], latestActivity: undefined
   }] }
   const deps = {
     read: () => stored, write: vi.fn((value: string) => { stored = value }),

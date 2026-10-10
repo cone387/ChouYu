@@ -6,7 +6,7 @@ import type { AgentNotice, AgentReport, AgentTopic } from '../../shared/agents'
 
 /** The outbox shares the report transaction; delivery acknowledgement is separate. */
 export class AgentNotices {
-  constructor(private db: Database.Database) {
+  constructor(private db: Database.Database, private offerInteraction?: (notice: AgentNotice) => string | undefined) {
     db.exec(`CREATE TABLE IF NOT EXISTS notices (
       id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,
       value TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', sent_at INTEGER);
@@ -28,7 +28,8 @@ export class AgentNotices {
       const saved = row && JSON.parse(row.value).sections.find((s: { id: string; runId: string }) => s.id === source.artifact!.sectionId && s.runId === notice.runId)
       if (!saved || !notice.content.endsWith(`${saved.title}\n\n${saved.body}`)) throw new Error('消息正文与已保存成果不一致，未发送。')
     }
-    notice = { ...notice, communication }
+    const interactionId = this.offerInteraction?.(notice)
+    notice = { ...notice, communication, ...(interactionId ? { interactionId } : {}) }
     this.db.prepare('INSERT OR IGNORE INTO notices(id,character_id,value) VALUES(?,?,?)').run(notice.id, notice.characterId, JSON.stringify(notice))
   }
   progress(before: AgentTopic, after: AgentTopic, report: AgentReport, previous?: AgentReport, writing = false, deliveryChanged = false, section?: DeliveryUpdate['section'], version?: number) {

@@ -1,3 +1,4 @@
+import { runContactInteractionsSmoke } from './contact-interactions-smoke'
 import { app, dialog, type BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -699,7 +700,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
           await run('new Promise(resolve => setTimeout(resolve, 160))')
           const fits = await run(`(() => { const sheet=document.querySelector('.contact-work-sheet'), content=document.querySelector('.contact-work-sheet-content'), input=document.querySelector('.input-area'); const r=sheet.getBoundingClientRect(), i=input.getBoundingClientRect(); return r.x >= 0 && r.right <= ${width + 1} && content.scrollWidth <= content.clientWidth + 1 && i.bottom <= 769 && i.height > 0 })()`)
-          if (!await run("(() => { const sheet=document.querySelector('.contact-work-sheet'), card=sheet.querySelector('[data-topic-id]'), settings=sheet.querySelector('.agent-settings-view'); return sheet.clientHeight <= innerHeight - 16 && card.clientHeight < 125 && settings.getBoundingClientRect().height === 0 })()")) throw new Error('Task dialog density or settings separation regressed')
+          if (!await run("(() => { const sheet=document.querySelector('.contact-work-sheet'), card=sheet.querySelector('[data-topic-id]'), settings=sheet.querySelector('.agent-settings-view'); return sheet.clientHeight <= innerHeight - 16 && card.clientHeight < 125 && (!settings || settings.getBoundingClientRect().height === 0) })()")) throw new Error('Task dialog density or settings separation regressed')
           if (!fits) {
             const bounds = await run("JSON.stringify({ viewport:[innerWidth,innerHeight], panel:document.querySelector('.chat-panel').getBoundingClientRect().toJSON(), sheet:document.querySelector('.contact-work-sheet').getBoundingClientRect().toJSON(), input:document.querySelector('.input-area').getBoundingClientRect().toJSON(), content:[document.querySelector('.contact-work-sheet-content').scrollWidth,document.querySelector('.contact-work-sheet-content').clientWidth] })")
             throw new Error(`Chat work toolbar overflows the viewport or hides the composer: ${bounds}`)
@@ -865,6 +866,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('[data-topic-overview]')?.textContent.includes('已暂停')")
     if ((await get()).queuedTopicIds?.includes(queuedId)) throw new Error('Paused task remained in the queue')
     console.log('CHOUYU_SMOKE_CONTACT_QUEUE_PASSED acceptedWithoutCapacity=true noCalls=true pause=true stableSelection=true')
+    await runContactInteractionsSmoke(window)
     console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 feedbackRevisionCalls=1 researchCalls=5 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true autonomousResearch=true unchangedBackoff=true deliverableVersions=true export=true revisionForm=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)

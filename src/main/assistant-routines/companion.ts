@@ -8,6 +8,7 @@ export type CompanionKind = 'greeting' | 'return'
 export interface CompanionFact {
   key: string; hash: string; characterId: string; name: string; topicId: string; title: string
   status: string; judgement: string; reason: string; nextStep: string
+  cards?: { id: string; version: string; cardLink: string }[]
   runStatus?: string; question?: string; error?: string
 }
 interface Pending { receipt: string; kind: CompanionKind; content: string; hashes: Record<string, string>; checkedAt?: string }
@@ -28,7 +29,8 @@ const priority = (f: CompanionFact) => f.runStatus === 'waiting' ? 3 : f.runStat
 export function companionFacts(evidence: Evidence): CompanionFact[] {
   return evidence.contacts.flatMap(contact => (contact.topics ?? []).map(topic => {
     const run = contact.runs?.find(r => r.topicId === topic.id)
-    const detail = { revision: topic.revision, title: topic.title, status: topic.status, judgement: topic.judgement,
+    const cards = (contact.pendingInteractions ?? []).filter(item => item.topicId === topic.id).map(item => ({ id: item.id, version: item.version, cardLink: item.cardLink }))
+    const detail = { cards, revision: topic.revision, title: topic.title, status: topic.status, judgement: topic.judgement,
       reason: topic.reason, nextStep: topic.nextStep, runStatus: run?.status,
       question: run?.status === 'waiting' ? run.question : undefined,
       error: run?.status === 'failed' ? run.error : undefined }
@@ -145,6 +147,7 @@ export class CompanionBriefing {
               content += '\n\n这次模型整理失败，下面直接列出已读取的任务状态。'
             }
             content += '\n\n' + selected.map(f => {
+              if (f.cards?.length) return f.cards.map(card => `[${escape(f.name)} · 待处理](${card.cardLink})`).join('\n')
               const label = f.runStatus === 'waiting' ? `等你回复：${f.question || '请打开任务查看问题'}`
                 : f.runStatus === 'failed' ? '这次未能完成，请打开任务查看原因'
                   : TOPIC_STATUS[f.status as keyof typeof TOPIC_STATUS] ?? '状态暂时无法确认'

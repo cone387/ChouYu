@@ -1,3 +1,4 @@
+import ContactPending from './ContactPending'
 import { useEffect, useId, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { activatePanel } from '../../core/panel-layer'
@@ -151,6 +152,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
         }} />)}
     </dialog>, document.body)}
     <div className="contact-work-buttons" role="group" aria-label="联系人快捷工具" hidden={standalone}>
+      {!standalone && <ContactPending characterId={characterId} />}
       {entries.map(entry => <button key={entry.id} type="button" data-contact-work-tab={entry.id}
         aria-haspopup="dialog" aria-expanded={open && tab === entry.id} aria-controls={visited ? id : undefined}
         title={`查看${name}的${entry.label}。${hint(entry.id)}`} onClick={() => {

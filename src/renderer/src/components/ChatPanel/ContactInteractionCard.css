@@ -1,0 +1,26 @@
+.contact-interaction { width: 360px; max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
+.contact-interaction-title { display: block; font-size: 15px; line-height: 1.5; }
+.contact-interaction-task { margin-top: 4px; color: var(--text-secondary); font-size: 12px; }
+.message-bubble .contact-interaction p { margin: 12px 0; white-space: pre-wrap; line-height: 1.65; }
+.contact-interaction-field { display: flex; flex-direction: column; gap: 6px; margin: 14px 0; font-size: 13px; }
+.contact-interaction-usage { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.contact-interaction-input { display: flex; align-items: center; gap: 8px; }
+.contact-interaction input, .contact-interaction textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 10px; font: inherit; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; }
+.contact-interaction textarea { resize: vertical; min-height: 80px; }
+.contact-interaction input:focus, .contact-interaction textarea:focus { outline: none; border-color: var(--border); box-shadow: none; }
+.contact-interaction-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.contact-interaction button { min-height: 36px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font: inherit; font-size: 13px; }
+.contact-interaction button.primary { background: var(--text-primary); color: var(--bg-primary); border-color: var(--text-primary); }
+.contact-interaction button:disabled { opacity: .55; cursor: default; }
+.contact-interaction button:focus-visible { outline: 2px solid var(--text-secondary); outline-offset: 2px; }
+.contact-interaction-result { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: 13px; }
+.contact-interaction-error { margin-top: 10px; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
+.contact-interaction-error button { display: block; margin-top: 6px; }
+
+.contact-pending-dialog { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); margin: 0; box-sizing: border-box; width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow: auto; padding: 18px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; }
+.contact-pending-dialog::backdrop { background: #0005; }
+.contact-pending-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.contact-pending-dialog button { color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+.contact-pending-dialog article { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.contact-pending-dialog h3 { font-size: 14px; margin: 0 0 10px; }
+.contact-pending-dialog .contact-interaction { width: 100%; }

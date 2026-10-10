@@ -1,3 +1,4 @@
+import { ContactInteractions } from './interactions'
 import { AgentTokenBudget } from './token-budget'
 import Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
@@ -28,6 +29,7 @@ const failureDelay = (settings: AgentSettings, failures: number) => settings.pac
 export class AgentStore {
   readonly db: Database.Database
   readonly topics: AgentTopics
+  readonly decisions: ContactInteractions
   readonly notices: AgentNotices
   readonly tokens: AgentTokenBudget
   readonly deliveries: AgentDeliveries
@@ -71,7 +73,7 @@ export class AgentStore {
       }
       this.db.pragma('user_version = 2')
     })()
-    this.notices = new AgentNotices(this.db)
+    this.notices = new AgentNotices(this.db, notice => this.decisions.offer(notice))
     this.db.exec(`CREATE TABLE IF NOT EXISTS search_calls (id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS search_calls_character ON search_calls(character_id,at);
       CREATE TABLE IF NOT EXISTS research (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,value TEXT NOT NULL);
@@ -88,6 +90,7 @@ export class AgentStore {
     // Retire legacy contact deadlines without changing modes, revisions or live checkpoints.
     this.db.prepare("UPDATE profiles SET settings=json_remove(settings, '$.workUntil') WHERE json_type(settings, '$.workUntil') IS NOT NULL").run()
     this.tokens = new AgentTokenBudget(this.db)
+    this.decisions = new ContactInteractions(this)
     if (version < 8) this.db.transaction(() => { this.tokens.importHistory(); this.db.pragma('user_version = 8') })()
     this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)

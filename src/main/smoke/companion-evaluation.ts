@@ -16,7 +16,7 @@ export async function evaluateCompanion(config: AppConfig) {
   const service = new CompanionBriefing({
     read: () => state, write: value => { state = value }, enabled: () => true, allowed: () => true,
     inspect: async () => ({ checkedAt: new Date().toISOString(), timeZone: 'Asia/Shanghai', contacts: [{
-      id: 'synthetic-contact', name: '测试联系人', topics: [{ ...topic }], runs: [{ ...run }], omittedTopics: 0, queuedTopicIds: [], reports: [], latestActivity: undefined
+      id: 'synthetic-contact', name: '测试联系人', topics: [{ ...topic }], runs: [{ ...run }], omittedTopics: 0, pendingInteractions: [], queuedTopicIds: [], reports: [], latestActivity: undefined
     }] }),
     summarize: async (facts, signal) => {
       calls++
