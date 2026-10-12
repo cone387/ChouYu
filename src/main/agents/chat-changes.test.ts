@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { routeContactChange } from './chat-changes'
 import { contactConversation } from './conversation'
+import { waitForToolApproval } from '../tool-approval'
 
 function fixture(plan: unknown) {
   const data = { topics: [{ id: 't', revision: 4, title: '评审', goal: '可以一次评价1–3个 idea', constraints: '' }], runs: [{ id: 'r', topicId: 't', status: 'waiting' }], focusTopicId: 't' }
@@ -11,6 +12,29 @@ function fixture(plan: unknown) {
   return { data, read, model, execute, run }
 }
 describe('contact chat routing and receipts', () => {
+  it('keeps a continue request blocked without a failure reply, then resumes the same operation', async () => {
+    vi.useFakeTimers()
+    try {
+      const f = fixture({ kind: 'action', topicId: 't', action: 'continue' })
+      let approve!: (approved: boolean) => void
+      const resume = vi.fn(() => JSON.stringify({ workCompleted: false, message: '已继续' }))
+      f.execute.mockImplementation(async () => {
+        const outcome = await waitForToolApproval(new AbortController().signal, respond => { approve = respond; return () => {} })
+        if (outcome !== 'approved') throw new Error(`Unexpected outcome: ${outcome}`)
+        return resume()
+      })
+      const reply = vi.fn(), pending = f.run('嗯，继续续写').then(reply)
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+      expect(f.execute).toHaveBeenCalledOnce()
+      expect(resume).not.toHaveBeenCalled()
+      expect(reply).not.toHaveBeenCalled()
+      approve(true)
+      await pending
+      expect(resume).toHaveBeenCalledOnce()
+      expect(reply).toHaveBeenCalledWith('已提交继续执行，尚未产生新成果。')
+      expect(JSON.parse(f.execute.mock.calls[0][0].arguments)).toMatchObject({ topicId: 't', revision: 4, action: 'continue' })
+    } finally { vi.useRealTimers() }
+  })
   it.each([
     ['汇报单位', { constraints: '每条交付只含一个 idea，不限制研究批次' }],
     ['汇报语言', { constraints: '之后用中文汇报，保留依据' }],

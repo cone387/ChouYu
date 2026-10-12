@@ -1,6 +1,6 @@
 export type ToolApprovalOutcome = 'approved' | 'denied' | 'expired' | 'cancelled'
 
-/** Only an explicit renderer response counts as a user decision. */
+/** Human confirmation has no deadline; only a decision or request cancellation settles it. */
 export function waitForToolApproval(
   signal: AbortSignal,
   subscribe: (respond: (approved: boolean) => void) => () => void
@@ -10,7 +10,6 @@ export function waitForToolApproval(
     let settled = false
     let unsubscribe: (() => void) | undefined
     const cleanup = () => {
-      clearTimeout(timeout)
       signal.removeEventListener('abort', abort)
       unsubscribe?.()
     }
@@ -21,7 +20,6 @@ export function waitForToolApproval(
       resolve(outcome)
     }
     const abort = () => finish('cancelled')
-    const timeout = setTimeout(() => finish('expired'), 60_000)
     signal.addEventListener('abort', abort, { once: true })
     try {
       unsubscribe = subscribe(approved => finish(approved ? 'approved' : 'denied'))

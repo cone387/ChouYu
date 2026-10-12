@@ -544,8 +544,10 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await click(window, '[aria-label="窗口模式"]')
     await click(window, '[data-workspace-mode-option="workspace"]')
     await waitForRenderer(window, "document.querySelector('.workspace-sessions:not([hidden])')")
+    // Notices now share ChouYu's conversation; leave chat so arrival remains unread.
+    await click(window, '[data-workspace-nav="contacts"]')
     await window.webContents.executeJavaScript("window.electronAPI.proactiveAppend('冒烟助手消息')")
-    await waitForRenderer(window, "[...document.querySelectorAll('.conversation-item-title')].some(el => el.textContent.includes('助手消息'))")
+    await waitForRenderer(window, "[...document.querySelectorAll('.conversation-item-preview')].some(el => el.textContent.includes('冒烟助手消息'))")
     await waitForRenderer(window, "Boolean(document.querySelector('.conversation-item .conversation-item-unread'))")
     await window.webContents.executeJavaScript("document.querySelector('.conversation-item-main').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
     await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")

@@ -46,6 +46,7 @@ import { initAutoUpdater } from './updater'
 import { diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
 import { prepareRegisteredToolAsync, getRegisteredTool, getToolDefinitions, type PreparedTool } from './tools/registry'
 import { waitForToolApproval, toolApprovalFailure, type ToolApprovalOutcome } from './tool-approval'
+import { bindAIRequestLifecycle } from './ai-request-lifecycle'
 import {
   getMemoryProvider,
   createMemory,
@@ -637,8 +638,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     activeAIRequests.set(requestKey, controller)
     let taskMutationRequested = false
-    const abortWhenDestroyed = () => controller.abort()
-    event.sender.once('destroyed', abortWhenDestroyed)
+    const releaseRendererLifecycle = bindAIRequestLifecycle(event.sender, controller)
 
     try {
       const skillSnapshot = request.characterId ? getContactSkills(request.characterId) : { entries: [], instruction: '' }
@@ -761,7 +761,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (controller.signal.aborted) return { ok: false, error: 'AI 请求已取消。' }
       return { ok: false, error: getErrorMessage(error) }
     } finally {
-      event.sender.removeListener('destroyed', abortWhenDestroyed)
+      releaseRendererLifecycle()
       if (activeAIRequests.get(requestKey) === controller) activeAIRequests.delete(requestKey)
     }
   })

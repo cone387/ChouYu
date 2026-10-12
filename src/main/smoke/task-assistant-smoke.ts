@@ -60,7 +60,7 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
     await run("window.electronAPI.db.setState('workspace-active-page', 'chat')")
     window.webContents.send('open-chat-panel')
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true]') && document.querySelector('.input-textarea')")
-    await waitForRenderer(window, "document.querySelector('.conversation-item-main[aria-selected=true]')?.textContent.includes('AI任务助手验收')")
+    await waitForRenderer(window, "document.querySelector('.conversation-item-main[aria-selected=true]')?.getAttribute('title')==='AI任务助手验收'")
     target = (await run(`window.electronAPI.tasks.create(${JSON.stringify({ title: '助手验收同名', dueAt, remindAt: dueAt - 3600000, recurrence: 'daily' })})`)).id
     other = (await run("window.electronAPI.tasks.create({title:'助手验收同名'})")).id
 
@@ -108,6 +108,39 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
     await waitForRenderer(window, "!document.querySelector('.tool-approval-dialog')")
     if ((await get(target)).dueAt !== dueAt) throw new Error('Cancelled task changed data')
 
+    // A pending approval must surface above existing native contact dialogs.
+    await run("window.__approvalUnderlay=document.createElement('dialog');window.__approvalUnderlay.textContent='已有联系人弹窗';document.body.appendChild(window.__approvalUnderlay);window.__approvalUnderlay.showModal()")
+    await start('delayed')
+    if (!await run("(()=>{const el=document.querySelector('.tool-approval-dialog'),r=el.getBoundingClientRect();return el.matches(':modal') && el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))})()")) throw new Error('Approval is obscured by a native dialog')
+    await run('window.__approvalUnderlay.close();window.__approvalUnderlay.remove()')
+    await run("document.querySelector('[aria-label=\"隐藏面板\"]').click()")
+    await waitForRenderer(window, "getComputedStyle(document.querySelector('.chat-panel')).display==='none' && !document.querySelector('.tool-approval-dialog')")
+    window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+    // Real elapsed time, not a mocked renderer clock: crosses the former main-process deadline.
+    console.log('CHOUYU_APPROVAL_WAIT_STARTED hidden panel, original request retained')
+    await new Promise(resolve => setTimeout(resolve, 33_000))
+    await new Promise(resolve => setTimeout(resolve, 33_000))
+    if (await run('window.__taskAssistantResult !== null') || (await get(target)).dueAt !== dueAt) throw new Error('Unseen approval expired, resumed or executed without consent')
+    window.webContents.send('open-chat-panel')
+    await waitForRenderer(window, "document.querySelector('.tool-approval-dialog[open]') && document.querySelector('.tool-approval-help').textContent.includes('一直等待')")
+    await run("window.__approvalIgnored=null;window.__stopApprovalState=window.electronAPI.onMouseEventsState(v=>window.__approvalIgnored=v);window.electronAPI.setIgnoreMouseEvents(false);window.electronAPI.setIgnoreMouseEvents(true)")
+    await waitForRenderer(window, 'window.__approvalIgnored===true')
+    const approvalPoint = await run("(()=>{const r=document.querySelector('.tool-approval-actions .primary').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()")
+    window.webContents.send('cursor-position', approvalPoint)
+    await waitForRenderer(window, 'window.__approvalIgnored===false')
+    window.webContents.send('cursor-position', { x: 2, y: 2 })
+    await waitForRenderer(window, 'window.__approvalIgnored===true')
+    window.webContents.send('cursor-position', approvalPoint)
+    await waitForRenderer(window, 'window.__approvalIgnored===false')
+    window.webContents.sendInputEvent({ type: 'mouseMove', ...approvalPoint })
+    window.webContents.sendInputEvent({ type: 'mouseDown', ...approvalPoint, button: 'left', clickCount: 1 })
+    window.webContents.sendInputEvent({ type: 'mouseUp', ...approvalPoint, button: 'left', clickCount: 1 })
+    const resumed = await finish()
+    await run('window.__stopApprovalState();delete window.__stopApprovalState')
+    const receipt = JSON.parse(responses.at(-1) || '{}')
+    if (!resumed.ok || (await get(target)).dueAt !== dueAt + 86400000 || receipt.id !== target || receipt.dueAt !== new Date(dueAt + 86400000).toISOString()) throw new Error(`Delayed approval did not resume the original operation: ${JSON.stringify({ resumed, receipt })}`)
+    dueAt += 86400000
+
     await start('multiple')
     await run("document.querySelector('.tool-approval-actions .primary').click()")
     const completed = await finish()
@@ -121,7 +154,7 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
     if ((await get(target)).status !== 'done' || (await get(other)).status !== 'open') throw new Error('Wrong same-name task completed')
     await run("document.querySelector('.tool-task-sources button').click()")
     await waitForRenderer(window, "document.querySelector('.tasks-view')")
-    console.log('CHOUYU_TASK_ASSISTANT_SMOKE_PASSED query sources, five-round tools, forced approval in full mode, deny/cancel/stale guards, single-task boundary and recurring completion')
+    console.log('CHOUYU_TASK_ASSISTANT_SMOKE_PASSED query sources, five-round tools, forced approval in full mode, deny/cancel/stale guards, hidden approval retained beyond 60s, native top layer and pointer routing, late approval resumes, single-task boundary and recurring completion')
   } finally {
     server.closeAllConnections()
     await new Promise<void>(resolve => server.close(() => resolve()))

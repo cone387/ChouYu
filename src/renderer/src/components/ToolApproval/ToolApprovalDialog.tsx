@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { ToolApprovalRequest } from '../../../../shared/tools'
 import { getToolRiskLabel } from '../../../../shared/tools'
 import './ToolApprovalDialog.css'
@@ -18,10 +19,12 @@ function formatArguments(arguments_: Record<string, unknown>): string {
 }
 
 export default function ToolApprovalDialog({ request, onResolve }: ToolApprovalDialogProps) {
-  const dialogRef = useRef<HTMLElement>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null
-    dialogRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    const dialog = dialogRef.current
+    dialog?.showModal()
+    dialog?.querySelector<HTMLButtonElement>('button')?.focus()
     const denyOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -39,13 +42,14 @@ export default function ToolApprovalDialog({ request, onResolve }: ToolApprovalD
     window.addEventListener('keydown', denyOnEscape, true)
     return () => {
       window.removeEventListener('keydown', denyOnEscape, true)
+      dialog?.close()
       if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
     }
   }, [onResolve])
 
-  return (
-    <div className="tool-approval-overlay">
-      <section ref={dialogRef} className={`tool-approval-dialog risk-${request.risk}`} role="alertdialog" aria-modal="true" aria-labelledby="tool-approval-title" aria-describedby="tool-approval-description">
+  return createPortal(
+      <dialog ref={dialogRef} data-interactive data-interactive-bounds className={`tool-approval-dialog risk-${request.risk}`} role="alertdialog" aria-modal="true" aria-labelledby="tool-approval-title" aria-describedby="tool-approval-description"
+        onCancel={event => { event.preventDefault(); event.stopPropagation(); onResolve(false) }}>
         <div className="tool-approval-icon" aria-hidden="true">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 3l8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7zM9 12l2 2 4-4"/>
@@ -61,12 +65,10 @@ export default function ToolApprovalDialog({ request, onResolve }: ToolApprovalD
           {getToolRiskLabel(request.risk)}
         </div>
         <pre className={`tool-approval-arguments${request.preview ? ' tool-approval-preview' : ''}`}>{request.preview || formatArguments(request.arguments)}</pre>
-        <p className="tool-approval-help">仅本次调用有效，60 秒未确认将超时，操作不会执行。点击拒绝或按 Esc 才会告知 AI 你拒绝了操作。</p>
+        <p className="tool-approval-help">操作会一直等待你的确认，不会因等待时间结束。允许后继续执行；点击拒绝或按 Esc 拒绝本次操作。</p>
         <div className="tool-approval-actions">
           <button type="button" className="secondary" onClick={() => onResolve(false)}>拒绝</button>
           <button type="button" className="primary" onClick={() => onResolve(true)}>允许本次操作</button>
         </div>
-      </section>
-    </div>
-  )
+      </dialog>, document.body)
 }

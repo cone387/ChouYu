@@ -960,7 +960,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         aria-label={`从${edge === 'top' ? '顶部' : '底部'}调整聊天面板高度`} aria-orientation="horizontal"
         onPointerDown={event => handlePanelResizeStart(edge, event)} onPointerMove={handlePanelResizeMove}
         onPointerUp={handlePanelResizeEnd} onPointerCancel={handlePanelResizeEnd} />)}
-      {toolApprovalRequest && <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />}
+      {visible && panelReady && toolApprovalRequest && <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />}
       {navigationError && <div className="memory-candidate-error" role="alert">{navigationError}<button type="button" onClick={() => setNavigationError('')}>关闭</button></div>}
       {linkedTask && <ContactWorkToolbar key={`${linkedTask.characterId}:${linkedTask.focus.nonce}`} standalone characterId={linkedTask.characterId} name={linkedTask.name} initialTab="work" focusRequest={linkedTask.focus} onClose={() => setLinkedTask(null)} onChat={() => { void openCharacterChat(linkedTask.characterId).catch(error => setNavigationError(error.message)) }} />}
       {showGlobalSearch && visible && <GlobalSearch searchHotkey={config.searchHotkey} onContact={id => { setContactsFocusId(id); navigate('contacts') }} onTask={(id, done, query) => { setTaskFocusId(id); setTaskSearchRequest({ id, done, query, nonce: Date.now() }); navigate('tasks') }} snapshot={searchSnapshot} onClose={() => setShowGlobalSearch(false)}

@@ -16,24 +16,29 @@ function pendingApproval() {
 }
 
 describe('tool approval outcomes', () => {
-  it('expires after 60 seconds without attributing a refusal to the user', async () => {
+  it('keeps an unseen confirmation pending beyond the old deadline and resumes on approval', async () => {
     const pending = pendingApproval()
     const settled = vi.fn()
     void pending.result.then(settled)
     await vi.advanceTimersByTimeAsync(59_999)
     expect(settled).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(1)
-    expect(await pending.result).toBe('expired')
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+    expect(settled).not.toHaveBeenCalled()
+    expect(pending.cleanup).not.toHaveBeenCalled()
+    pending.respond(true)
+    expect(await pending.result).toBe('approved')
     expect(pending.cleanup).toHaveBeenCalledOnce()
     expect(vi.getTimerCount()).toBe(0)
-    pending.respond(true)
-    expect(await pending.result).toBe('expired')
+  })
+
+  it('keeps old expiry records distinguishable from a user refusal', () => {
     expect(toolApprovalFailure('expired')).toMatchObject({ status: 'expired', summary: expect.stringContaining('并非用户拒绝') })
     expect(toolApprovalFailure('expired').content).toContain('不要换用其他工具重试')
   })
 
   it.each([true, false])('preserves the explicit user decision %s', async approved => {
     const pending = pendingApproval()
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
     pending.respond(approved)
     expect(await pending.result).toBe(approved ? 'approved' : 'denied')
     expect(pending.cleanup).toHaveBeenCalledOnce()
@@ -46,6 +51,7 @@ describe('tool approval outcomes', () => {
 
   it('cancels on abort without treating it as a refusal', async () => {
     const pending = pendingApproval()
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
     pending.controller.abort()
     expect(await pending.result).toBe('cancelled')
     expect(pending.cleanup).toHaveBeenCalledOnce()
