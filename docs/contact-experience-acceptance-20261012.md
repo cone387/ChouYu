@@ -1,6 +1,6 @@
 # 联系人完整体验迭代：阶段验收
 
-日期：2026-10-12。完整目标仍未完成；[完整设计](superpowers/specs/2026-10-12-contact-experience-design.md)仍待审阅。
+日期：2026-10-12。完整目标仍未完成；用户已确认 [完整设计](superpowers/specs/2026-10-12-contact-experience-design.md)，[实施计划](superpowers/plans/2026-10-12-contact-experience.md)待审阅与执行方式选择。本页已有验证范围不因此扩大。
 
 ## 本轮落实的既有规范
 
