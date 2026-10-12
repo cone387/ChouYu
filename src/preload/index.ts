@@ -42,6 +42,7 @@ const api = {
     interactions: (id, topicId, cursor) => ipcRenderer.invoke('agents:interactions', id, topicId, cursor),
     delivery: (id, topicId, version) => ipcRenderer.invoke('agents:delivery', id, topicId, version),
     portfolio: (id, query) => ipcRenderer.invoke('agents:portfolio', id, query),
+    validateCitation: (id, citation) => ipcRenderer.invoke('agents:validateCitation', id, citation),
     setDeliveryFavorite: (id, topicId, value) => ipcRenderer.invoke('agents:setDeliveryFavorite', id, topicId, value),
     saveDeliveryReading: (id, position) => ipcRenderer.invoke('agents:saveDeliveryReading', id, position),
     deliveryReading: (id, topicId) => ipcRenderer.invoke('agents:deliveryReading', id, topicId),

@@ -1,4 +1,5 @@
 export interface AIChatMessage {
+  contactCitations?: import('./contact-content').ContentCitation[]
   role: 'user' | 'assistant' | 'system'
   content: string
   imageUrl?: string

@@ -49,6 +49,17 @@ afterEach(() => {
 })
 
 describe('durable conversations', () => {
+  it('persists exact contact citation versions across reload and rejects malformed or foreign references', () => {
+    const session = getActiveSession()
+    const citation = { ref: { characterId: session.characterId, topicId: 'topic', version: 1, sectionId: 'section' }, anchor: { start: 0, end: 2, quote: '原文', textHash: 'a'.repeat(64) } }
+    saveSessionMessages(session.id, [{ ...message('cited'), contactCitations: [citation] }])
+    flushDatabase(); initDatabase()
+    expect(getActiveSession().messages[0].contactCitations?.[0].ref.version).toBe(1)
+    expect(getActiveSession().messages[0].content).toBe('cited')
+    expect(() => saveSessionMessages(session.id, [{ ...message('bad'), contactCitations: [{ ...citation, ref: { ...citation.ref, characterId: 'someone-else' } }] }])).toThrow()
+    expect(() => saveSessionMessages(session.id, [{ ...message('bad'), contactCitations: Array(5).fill(citation) }])).toThrow()
+    expect(getActiveSession().messages[0].id).toBe('cited')
+  })
   it('reuses the current blank on repeated new-chat requests and after restart', () => {
     const initial = getActiveSession().id
     for (let i = 0; i < 10; i++) expect(createChatSession().activeSession.id).toBe(initial)

@@ -15,6 +15,7 @@ export type PortfolioItem = { ref: DeliveryRef; title: string; excerpt: string; 
 export type PortfolioPage = { items: PortfolioItem[]; nextCursor: string | null }
 export type ReadingPosition = { ref: DeliveryRef; anchor?: TextAnchor; scrollRatio: number; updatedAt: number }
 export interface ContactPortfolioAPI {
+  validateCitation(characterId: string, citation: ContentCitation): Promise<ContentCitation>
   portfolio(characterId: string, query: PortfolioQuery): Promise<PortfolioPage>
   setDeliveryFavorite(characterId: string, topicId: string, value: boolean): Promise<void>
   saveDeliveryReading(characterId: string, position: ReadingPosition): Promise<void>

@@ -50,6 +50,7 @@ export async function streamChat(
     messages: messages.map((message) => ({
       role: message.role,
       content: message.content,
+      contactCitations: message.contactCitations,
       imageUrl: message.imageUrl
     }))
   }

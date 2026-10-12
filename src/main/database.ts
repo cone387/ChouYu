@@ -1,5 +1,6 @@
 import { normalizeTaskReminderRef, type TaskReminderRef } from '../shared/reminders'
 import { normalizeAssistantMessageKind, type AssistantMessageKind } from '../shared/assistant-message'
+import { sanitizeCitations, validateCitationShapes } from '../shared/contact-citations'
 import { app, safeStorage } from 'electron'
 import { randomUUID } from 'crypto'
 import path from 'path'
@@ -28,6 +29,7 @@ import { sanitizeContactCommunication, validateContactMessage, type ContactCommu
 
 export interface Message {
   communication?: ContactCommunication
+  contactCitations?: import('../shared/contact-content').ContentCitation[]
   agentNotice?: AgentMessageRef
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -202,6 +204,7 @@ function sanitizeMessages(value: unknown): Message[] {
       communication: message.role === 'assistant' ? sanitizeContactCommunication(message.communication) : undefined,
       toolData: sanitizeToolData(message.toolData),
       memoryRefs: sanitizeMemoryRefs(message.memoryRefs),
+      contactCitations: sanitizeCitations(message.contactCitations),
       imageUrl: typeof message.imageUrl === 'string' ? message.imageUrl : undefined
     }))
 }
@@ -740,6 +743,10 @@ export function deleteCharacter(id: string): SessionWorkspace {
 export function saveSessionMessages(id: string, messages: Message[], readMessageId?: string): SessionWorkspace {
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
+  for (const message of messages) if (message.contactCitations !== undefined) {
+    const refs = validateCitationShapes(message.contactCitations)
+    if (refs.some(c => c.ref.characterId !== session.characterId)) throw new Error('正文引用与会话联系人不匹配。')
+  }
   const previousImages = new Map(session.messages.filter((message) => message.imageUrl && isAttachmentReference(message.imageUrl)).map((message) => [message.id, message.imageUrl]))
   const previousSnoozeKeys = new Map(session.messages.filter(m => m.snoozeKey).map(m => [m.id, m.snoozeKey]))
   const previousReminders = new Map(session.messages.filter(m => m.taskReminder).map(m => [m.id, m.taskReminder]))

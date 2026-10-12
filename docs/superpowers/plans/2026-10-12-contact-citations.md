@@ -1,6 +1,6 @@
 # 联系人正文引用 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 将精确引文带入聊天和修订，保留来源版本及返回阅读位置。
 **Architecture:** 复用 B 的正式成果定位，结构化引用独立于聊天正文保存；修订沿用原任务。
@@ -13,10 +13,10 @@
 
 **Files:** 新增 `src/main/agents/citations.ts`、`citations.test.ts`、`src/shared/contact-citations.ts`；修改 `src/main/database.ts`、`database.test.ts`、`src/renderer/src/shared/types.ts`、`src/main/ipc.ts`。
 **Interfaces:** `validateCitation(owner: string, input: ContentCitation, portfolio: AgentPortfolio): ContentCitation`；`citationContext(owner: string, refs: ContentCitation[], portfolio: AgentPortfolio): string`；消息新增 `contactCitations?: ContentCitation[]`，每条消息最多 4 条，每条 quote 最多 2000 字。消费 B1 的 `deliveryText(body: string): string`，不另写文本投影；TextAnchor 偏移按 JS UTF-16。
-- [ ] 单测用真实版本：篡改 quote/hash、另一联系人、重复段落错误 offset、负偏移/越界、source 已删均拒绝；同文重复的精确区间仍有效；旧消息无字段可加载，保存/备份恢复不丢 ref。断言 `expect(restored.contactCitations[0].ref.version).toBe(1)`，即使已有 v2。
-- [ ] 跑 `npx vitest run src/main/agents/citations.test.ts src/main/database.test.ts` 确认红。
-- [ ] 主进程核对会话 owner，正式引用由数据库 resolve；持久层校验长度/枚举，提供版本来源可用/已移除状态；发送时引用转换为数据上下文，内部 ID 不拼进用户消息文本。
-- [ ] 跑专项/类型检查并提交 `feat(contacts): persist validated delivery citations`。
+- [x] 单测用真实版本：篡改 quote/hash、另一联系人、重复段落错误 offset、负偏移/越界、source 已删均拒绝；同文重复的精确区间仍有效；旧消息无字段可加载，保存/备份恢复不丢 ref。断言 `expect(restored.contactCitations[0].ref.version).toBe(1)`，即使已有 v2。
+- [x] 跑 `npx vitest run src/main/agents/citations.test.ts src/main/database.test.ts` 确认红。
+- [x] 主进程核对会话 owner，正式引用由数据库 resolve；持久层校验长度/枚举，提供版本来源可用/已移除状态；发送时引用转换为数据上下文，内部 ID 不拼进用户消息文本。
+- [x] 跑专项/类型检查并提交 `feat(contacts): persist validated delivery citations`。
 
 ## Task C2：选择讨论与原版本修订
 

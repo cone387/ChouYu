@@ -1,4 +1,5 @@
 import { contactCommunicationInstructions } from '../shared/contact-communication'
+import { validateCitationShapes } from '../shared/contact-citations'
 import { contactSkillRunner, getContactSkills, contactSkillLibrary, registerSkillHandlers, syncSkillToolPolicy } from './skills'
 import { SKILL_TOOLS, skillToolRuntime } from './skills/tools'
 import { assistantWorkInstructions } from '../shared/assistant-work-instructions'
@@ -135,9 +136,12 @@ function parseAIStreamRequest(value: unknown): AIStreamRequest | null {
     if (!['user', 'assistant', 'system'].includes(String(message.role))) return null
     if (typeof message.content !== 'string' || message.content.length > 200_000) return null
     if (message.imageUrl !== undefined && (typeof message.imageUrl !== 'string' || message.imageUrl.length > 15_000_000)) return null
+    let contactCitations: import('../shared/contact-content').ContentCitation[] | undefined
+    try { if (message.contactCitations !== undefined) contactCitations = validateCitationShapes(message.contactCitations) } catch { return null }
     messages.push({
       role: message.role as AIChatMessage['role'],
       content: message.content,
+      contactCitations,
       imageUrl: message.imageUrl as string | undefined
     })
   }
@@ -740,7 +744,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             }
           }
         } : undefined
-      if (owner && owner !== ASSISTANT_CHARACTER_ID && owner !== DEFAULT_CHARACTER_ID && chatTools) {
+      const currentCitations = [...request.messages].reverse().find(m => m.role === 'user')?.contactCitations
+      if (owner && owner !== ASSISTANT_CHARACTER_ID && owner !== DEFAULT_CHARACTER_ID && chatTools && !currentCitations?.length) {
         const routed = await routeContactChange(request.messages, {
           read: (method, args) => contactAgentsCall(owner, method, args),
           model: async (prompt, content) => {
@@ -757,8 +762,20 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           return { ok: true, reply: routed }
         }
       }
+      const citedMessages: AIChatMessage[] = []
+      const lastUserIndex = request.messages.reduce((last, m, i) => m.role === 'user' ? i : last, -1)
+      for (let i = 0; i < request.messages.length; i++) {
+        const message = request.messages[i]
+        let referenceContext = ''
+        if (message.contactCitations?.length) {
+          if (!owner) throw new Error('请在原联系人的会话中讨论这份成果。')
+          try { referenceContext = await contactAgentsCall<string>(owner, 'citationContext', [message.contactCitations]) }
+          catch (e) { if (i === lastUserIndex) throw e; referenceContext = '\n（此历史消息引用的正文已移除或无法读取，请勿假定其内容。）' }
+        }
+        citedMessages.push({ role: message.role, content: message.content + referenceContext, imageUrl: message.imageUrl })
+      }
       await streamAIChat(
-        request.messages,
+        citedMessages,
         request.systemPrompt + privateContext + skillContext + (owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation')),
         effectiveConfig,
         (chunk, done) => {

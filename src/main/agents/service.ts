@@ -1,4 +1,5 @@
 import { TokenBudgetError } from './token-budget'
+import { citationContext, validateCitation } from './citations'
 import { SkillLibrary } from '../skills/library'
 import { SkillRunner } from '../skills/runner'
 import { skillToolRuntime } from '../skills/tools'
@@ -129,6 +130,8 @@ export class AgentService {
       }
       case 'delivery': this.store.topics.get(id, String(args[0])); return this.store.deliveries.get(String(args[0]), args[1] as number | undefined)
       case 'portfolio': return this.store.portfolio.list(id, args[0] as import('../../shared/contact-content').PortfolioQuery)
+      case 'citationContext': return citationContext(id, args[0] as import('../../shared/contact-content').ContentCitation[], this.store.portfolio)
+      case 'validateCitation': return validateCitation(id, args[0] as import('../../shared/contact-content').ContentCitation, this.store.portfolio)
       case 'setDeliveryFavorite': return this.store.portfolio.favorite(id, args[0] as string, args[1] as boolean)
       case 'saveDeliveryReading': return this.store.portfolio.saveReading(id, args[0] as import('../../shared/contact-content').ReadingPosition)
       case 'deliveryReading': return this.store.portfolio.reading(id, args[0] as string)

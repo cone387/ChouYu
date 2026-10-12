@@ -240,6 +240,7 @@ export interface Message {
   replyReadAt?: number
   toolData?: ToolActivityData
   memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>
+  contactCitations?: import('../../../shared/contact-content').ContentCitation[]
   /** Plugin result data - if present, render as plugin card instead of markdown */
   pluginData?: PluginMessageData
 }
