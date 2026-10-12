@@ -1,6 +1,7 @@
 import { runGlobalSearchSmoke } from './global-search-smoke'
 import { runSkillsSmoke } from './skills-smoke'
 import { runContactMemorySmoke } from './contact-memory-smoke'
+import { runContactPortfolioSmoke } from './contact-portfolio-smoke'
 import { contactSkillLibrary } from '../skills'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
@@ -115,6 +116,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     }
     if (await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail .agent-heading, .contacts-detail .contact-agent > .agent-description, .contacts-activity footer'))")) throw new Error('Removed contact description blocks returned')
     await runContactMemorySmoke(window, character.id)
+    if (process.env.CHOUYU_SMOKE_CONTACT_PORTFOLIO_ONLY === '1') { await runContactPortfolioSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_MEMORY_ONLY === '1') return
     await runSkillsSmoke(window, character.id)
     for (const tab of ['overview', 'history', 'memory', 'settings', 'skills', 'analytics', 'profile', 'work']) {

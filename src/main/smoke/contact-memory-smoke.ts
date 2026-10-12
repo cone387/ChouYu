@@ -26,7 +26,10 @@ export async function runContactMemorySmoke(window: BrowserWindow, characterId: 
   })()`)
   const modal = 'dialog[data-contact-memory-dialog][open]'
   await click('[data-agent-tab=memory]')
-  await waitForRenderer(window, "Boolean(document.querySelector('.agent-memories'))")
+  await waitForRenderer(window, "Boolean(document.querySelector('.agent-memories'))", 15000).catch(async error => {
+    console.error('MEMORY_SMOKE_DIAGNOSTIC', await run("Array.from(document.querySelectorAll('.contact-agent')).map(el=>({text:el.textContent,visible:!!el.getClientRects().length}))"))
+    throw error
+  })
   if (await run("Array.from(document.querySelectorAll('.contact-agent form textarea')).some(el => el.getClientRects().length > 0)")) throw new Error('Memory creation still uses an inline form')
   await click('[data-contact-memory-new]')
   await waitForRenderer(window, `Boolean(document.querySelector('${modal}'))`)

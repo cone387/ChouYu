@@ -1,5 +1,6 @@
 import { deliveryThemeCSS, DELIVERY_THEME_TOKENS } from './delivery-theme'
 import type { AgentDelivery } from './agent-delivery'
+import { deliveryText, textHash } from './contact-content'
 
 export const presentationPolicy = (nonce: string) => `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'`
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
@@ -15,6 +16,22 @@ export function deliveryDocument(title: string, artifact: AgentDelivery, nonce: 
   (()=>{
     const data=${json({ title, version, summary, inputs: inputs ?? [], sections })};
     const presentation=${json(presentation ?? null)};
+    const canonical=${json(sections.map(s => { const text = deliveryText(s.body); return { id: s.id, text, textHash: textHash(text) } }))};
+    let reader=null, userScrolled=false;
+    addEventListener('message',e=>{if(e.source===parent&&e.data?.type==='delivery-reader-init'&&typeof e.data.nonce==='string'&&e.data.ref?.version===data.version)reader={nonce:e.data.nonce,ref:e.data.ref}});
+    addEventListener('wheel',e=>{if(e.isTrusted)userScrolled=true},{passive:true});
+    addEventListener('keydown',e=>{if(e.isTrusted&&['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(e.key))userScrolled=true});
+    addEventListener('scroll',()=>{
+      if(!reader||!userScrolled)return;
+      const bodies=[...document.querySelectorAll('article[data-section-id] .body')];
+      const body=bodies.find(el=>{const r=el.getBoundingClientRect();return r.bottom>0&&r.top<innerHeight});
+      if(!body)return;
+      const id=body.closest('article').dataset.sectionId, original=data.sections.find(s=>s.id===id), projection=canonical.find(s=>s.id===id);
+      if(!original||!projection?.text||body.textContent!==original.body)return;
+      const r=body.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,-r.top/Math.max(1,r.height-innerHeight)));
+      const start=Math.min(Math.floor(projection.text.length*ratio),projection.text.length-1),end=Math.min(start+120,projection.text.length);
+      parent.postMessage({type:'delivery-reading',nonce:reader.nonce,ref:{...reader.ref,sectionId:id},scrollRatio:ratio,anchor:{start,end,quote:projection.text.slice(start,end),textHash:projection.textHash}},'*');
+    },{passive:true});
     const root=document.getElementById('root');
     const send=(state)=>parent.postMessage({type:'delivery-preview',state},'*');
     addEventListener('message',e=>{

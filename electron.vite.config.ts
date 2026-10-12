@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   main: {
     build: {
+      externalizeDeps: { exclude: ['unified', 'remark-parse', 'remark-gfm', '@noble/hashes'] },
       outDir: 'out/main',
       rollupOptions: { input: { index: resolve('src/main/index.ts'), 'journal-worker': resolve('src/main/journal/journal-worker.ts'), 'agent-worker': resolve('src/main/agents/worker.ts') } },
       minify: true

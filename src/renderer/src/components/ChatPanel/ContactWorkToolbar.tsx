@@ -10,10 +10,12 @@ import type { AgentFocusRequest } from '../../../../shared/agents'
 import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 import { ACTIVE_TASKS_HINT, summaryTokenHint, summaryTokens, useAgentSummary } from '../Contacts/useAgentSummary'
 import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
+import type { DeliveryRef, TextAnchor } from '../../../../shared/contact-content'
 
 const baseEntries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
   { id: 'overview', label: '概览', icon: 'today' },
   { id: 'work', label: '任务', icon: 'task' },
+  { id: 'portfolio', label: '成果', icon: 'archive' },
   { id: 'history', label: '工作记录', icon: 'clock' },
   { id: 'memory', label: '记忆', icon: 'archive' },
   { id: 'skills', label: '技能', icon: 'archive' },
@@ -21,7 +23,8 @@ const baseEntries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
 ]
 
 /** Mount per conversation: drafts survive closing, never cross contact/session boundaries. */
-export default function ContactWorkToolbar({ characterId, name, onClose, onChat, focusRequest, onDiscuss, initialTab = 'overview', standalone = false, profile }: {
+export default function ContactWorkToolbar({ characterId, name, onClose, onChat, focusRequest, onDiscuss, initialTab = 'overview', standalone = false, profile, deliveryFocus }: {
+  deliveryFocus?: { ref: DeliveryRef; anchor?: TextAnchor }
   characterId: string; name: string; onClose: () => void; focusRequest?: AgentFocusRequest
   onDiscuss?: (reference: AgentDiscussion) => void
   initialTab?: ContactAgentTab; standalone?: boolean
@@ -94,9 +97,9 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     keepInView()
   }
-  const close = () => { sheet.current?.close(); setOpen(false); onClose() }
+  const close = () => { window.dispatchEvent(new Event('chouyu:contact-reader-flush')); sheet.current?.close(); setOpen(false); onClose() }
   useEffect(() => {
-    const hide = () => { sheet.current?.close(); setOpen(false); if (standalone) onClose() }
+    const hide = () => { window.dispatchEvent(new Event('chouyu:contact-reader-flush')); sheet.current?.close(); setOpen(false); if (standalone) onClose() }
     window.addEventListener('chouyu:contact-navigation-opened', hide)
     return () => window.removeEventListener('chouyu:contact-navigation-opened', hide)
   }, [standalone, onClose])
@@ -129,7 +132,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onCancel={event => { event.preventDefault(); close() }}>
       <header className="contact-work-sheet-heading" onPointerDown={event => beginGesture(event, 'move')} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
-        <strong>{name}的{tab === 'overview' ? '今日概览' : tab === 'work' ? '任务' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : tab === 'skills' ? '技能' : '记忆'}</strong>
+        <strong>{name}的{tab === 'overview' ? '今日概览' : tab === 'work' ? '任务' : tab === 'portfolio' ? '成果' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : tab === 'skills' ? '技能' : '记忆'}</strong>
       <div className="contact-work-buttons contact-work-dialog-tabs" role="group" aria-label="联系人工作内容">
         {entries.map(entry => <button key={entry.id} type="button" data-contact-dialog-tab={entry.id}
           aria-label={`${entry.label}${badge(entry.id) !== undefined ? ` ${badge(entry.id)}` : ''}`} title={hint(entry.id)} aria-pressed={tab === entry.id} onClick={() => { if (entry.id === 'analytics') setAnalyticsReset(n => n + 1); select(entry.id) }}>
@@ -141,7 +144,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
         <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
       </header>
       <div className="contact-work-sheet-content" ref={content}>
-        <ContactAgentPanel characterId={characterId} name={name} profile={profile} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={taskFocus ?? focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={() => { close(); onChat?.() }} />
+        <ContactAgentPanel characterId={characterId} name={name} profile={profile} deliveryFocus={deliveryFocus} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={taskFocus ?? focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={() => { close(); onChat?.() }} />
       </div>
       {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const).map(edge => <div key={edge} className={`contact-work-resize contact-work-resize-${edge}`} data-resize-edge={edge} aria-label={`调整窗口大小 ${edge}`} role="separator" tabIndex={0}
         onPointerDown={event => beginGesture(event, edge)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}

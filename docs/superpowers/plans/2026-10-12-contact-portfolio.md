@@ -22,8 +22,8 @@
 
 **Files:** 新增 `src/renderer/src/components/Contacts/ContactPortfolio.tsx`、`ContactDeliveryReader.tsx`、`deliveryReading.ts`、`deliveryReading.test.ts`；修改 `ContactDelivery.tsx`、`ContactPresentation.tsx`、`ContactAgentPanel.tsx`、`contactNavigation.tsx`、`src/shared/delivery-presentation.ts`；新增 `src/main/smoke/contact-portfolio-smoke.ts`。
 **Interfaces:** ContactPortfolio({characterId,onOpen})；ContactDeliveryReader({characterId,topic,artifact,onNavigate,onCite?})；`restoreReading(position: ReadingPosition, sections: DeliverySection[]): {sectionId: string; anchor?: TextAnchor; changed: boolean}`；导航新增 `{kind:'delivery'; ref:DeliveryRef; anchor?:TextAnchor}`。onCite 在 C 接入，B 不伪造讨论。
-- [ ] 测试 restoreReading：重复段落/emoji 保留正确偏移，内容修改返回 changed=true 和该节开头，原节消失允许回旧版；仅滚动到的分节记录哈希，版本切换不误标全部读完。
-- [ ] 运行 reading 单测与新增 UI 场景，确认旧代码不具备作品集/重启续读。
-- [ ] 实现作品集搜索、任务范围、收藏和排序，30 项分页；组件请求代次防迟到覆盖。抽出阅读器供任务成果和作品集调用，保留原样式、版本比较、导出。阅读滚动 500ms 节流且切换/关闭 flush；禁止应用程序恢复滚动触发假已读。保存失败可见但不中断阅读。
-- [ ] 自定义展示通过 origin/source + ref + 请求 nonce 校验消息，只信正式正文可核对的 selection/位置；无法对齐提供正文定位。移除/关闭清理订阅，后台新版只显示入口。
-- [ ] 用 Electron 验证搜索命中原版、后台更新不抢阅读、收藏重启、窗口关闭末次位置、伪造 iframe 消息无效；375/1024 深浅色截图。专项/类型检查通过后提交 `feat(contacts): add portfolio browsing and resume reading`。
+- [x] 测试 restoreReading：重复段落/emoji 保留正确偏移，内容修改返回 changed=true 和该节开头，原节消失允许回旧版；仅滚动到的分节记录哈希，版本切换不误标全部读完。
+- [x] 运行 reading 单测与新增 UI 场景，确认旧代码不具备作品集/重启续读。
+- [x] 实现作品集搜索、任务范围、收藏和排序，30 项分页；组件请求代次防迟到覆盖。抽出阅读器供任务成果和作品集调用，保留原样式、版本比较、导出。阅读滚动 500ms 节流且切换/关闭 flush；禁止应用程序恢复滚动触发假已读。保存失败可见但不中断阅读。
+- [x] 自定义展示通过 origin/source + ref + 请求 nonce 校验消息，只信正式正文可核对的 selection/位置；无法对齐提供正文定位。移除/关闭清理订阅，后台新版只显示入口。
+- [x] 用 Electron 验证搜索命中原版、后台更新不抢阅读、收藏重启、窗口关闭末次位置、伪造 iframe 消息无效；375/1024 深浅色截图。专项/类型检查通过后提交 `feat(contacts): add portfolio browsing and resume reading`。

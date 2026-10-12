@@ -74,7 +74,7 @@ interface ChatPanelProps {
 
 export default function ChatPanel({ visible, position, onPositionChange, petState, onPetStateChange, onHide, onClose, petVisible, onPetVisibleChange, initialShowSettings, workspaceRequest, onSettingsClose, onScreenshot, onScrollScreenshot, initialPluginId, onPluginIdConsumed, pendingAttachment, onPendingAttachmentConsumed, pendingMessage, onPendingMessageConsumed, assistantFocusRequest }: ChatPanelProps) {
   const [agentFocus, setAgentFocus] = useState<(AgentFocusRequest & { sessionId: string }) | null>(null)
-  const [linkedTask, setLinkedTask] = useState<{ characterId: string; name: string; focus?: AgentFocusRequest; initialTab?: 'settings' | 'skills'; nonce?: number } | null>(null)
+  const [linkedTask, setLinkedTask] = useState<{ characterId: string; name: string; focus?: AgentFocusRequest; initialTab?: 'settings' | 'skills' | 'portfolio'; deliveryFocus?: { ref: import('../../../../shared/contact-content').DeliveryRef; anchor?: import('../../../../shared/contact-content').TextAnchor }; nonce?: number } | null>(null)
   const [messageFocus, setMessageFocus] = useState<{ sessionId: string; messageId: string } | null>(null)
   const [navigationError, setNavigationError] = useState('')
   const [agentDiscussion, setAgentDiscussion] = useState<(AgentDiscussion & { sessionId: string }) | null>(null)
@@ -695,6 +695,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           if (!contact) throw new Error('联系人已删除，无法打开设置。')
           window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
           setLinkedTask({ characterId: contact.id, name: contact.name, initialTab: target.tab, nonce: Date.now() })
+        } else if (target.kind === 'delivery') {
+          const contacts = await window.electronAPI.characters.list()
+          const contact = contacts.find(c => c.id === target.ref.characterId)
+          if (!contact) throw new Error('联系人已删除，无法打开成果。')
+          const artifact = await window.electronAPI.agents.delivery(contact.id, target.ref.topicId, target.ref.version)
+          if (!artifact || (target.ref.sectionId && !artifact.sections.some(s => s.id === target.ref.sectionId))) throw new Error('找不到引用的成果分节。')
+          window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
+          setLinkedTask({ characterId: contact.id, name: contact.name, initialTab: 'portfolio', deliveryFocus: target, nonce: Date.now() })
         } else if (target.kind === 'task') {
           const contacts = await window.electronAPI.characters.list()
           const contact = contacts.find(c => c.id === target.characterId)
@@ -968,7 +976,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         onPointerUp={handlePanelResizeEnd} onPointerCancel={handlePanelResizeEnd} />)}
       {visible && panelReady && toolApprovalRequest && <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />}
       {navigationError && <div className="memory-candidate-error" role="alert">{navigationError}<button type="button" onClick={() => setNavigationError('')}>关闭</button></div>}
-      {linkedTask && <ContactWorkToolbar key={`${linkedTask.characterId}:${linkedTask.focus?.nonce ?? linkedTask.nonce}`} standalone characterId={linkedTask.characterId} name={linkedTask.name} initialTab={linkedTask.initialTab ?? 'work'} focusRequest={linkedTask.focus} onClose={() => setLinkedTask(null)} onChat={() => { void openCharacterChat(linkedTask.characterId).catch(error => setNavigationError(error.message)) }} />}
+      {linkedTask && <ContactWorkToolbar key={`${linkedTask.characterId}:${linkedTask.focus?.nonce ?? linkedTask.nonce}`} standalone characterId={linkedTask.characterId} name={linkedTask.name} initialTab={linkedTask.initialTab ?? 'work'} focusRequest={linkedTask.focus} deliveryFocus={linkedTask.deliveryFocus} onClose={() => setLinkedTask(null)} onChat={() => { void openCharacterChat(linkedTask.characterId).catch(error => setNavigationError(error.message)) }} />}
       {showGlobalSearch && visible && <GlobalSearch searchHotkey={config.searchHotkey} onContact={id => { setContactsFocusId(id); navigate('contacts') }} onTask={(id, done, query) => { setTaskFocusId(id); setTaskSearchRequest({ id, done, query, nonce: Date.now() }); navigate('tasks') }} snapshot={searchSnapshot} onClose={() => setShowGlobalSearch(false)}
         onSession={async (id, query) => { await selectSession(id); navigate('chat'); setNarrowSessionsOpen(false); setMessageSearchQuery(query); setShowMessageSearch(true) }}
         onMemory={openMemoryWorkspace}
