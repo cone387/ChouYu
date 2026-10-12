@@ -1,6 +1,6 @@
 # 联系人资料空间 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 支持文本、Markdown、附件与网页资料的持久版本、范围读取和可追溯引用。
 **Architecture:** 资料版本由联系人数据库管理，导入不自动扩大权限；实际模型工具读取记录与来源关联。
@@ -13,9 +13,9 @@
 
 **Files:** 新增 `src/shared/contact-materials.ts`、`src/main/agents/materials.ts`、`materials.test.ts`；修改 store/API 接入与 D 的 ContextReferences。
 **Interfaces:** MaterialInput={name:string;scope:Exclude<ContactScope,{kind:'session'}>;content:string;source:{kind:'text'|'file'|'attachment'|'web';label:string;url?:string}}；MaterialRef={id:string;version:number}；MaterialVersion=MaterialInput & MaterialRef & {owner:string;hash:string;createdAt:number;status:'ready'|'withdrawn'}；MaterialSummary=Omit<MaterialVersion,'content'>。AgentMaterials(db) 提供 `save(owner:string,input:MaterialInput,id?:string,expectedVersion?:number):MaterialVersion`、`list(context:ContactReadContext):MaterialSummary[]`、`read(context:ContactReadContext,ref:MaterialRef,offset?:number):{text:string;nextOffset?:number;ref:MaterialRef}`（offset 默认 0）、`withdraw(owner:string,id:string,version:number):void`、`history(owner:string,id:string):MaterialSummary[]`。
-- [ ] SQLite 行为测试：同名不同内容不覆盖另一个 id；同 hash 更新不增版本；2 MB/100 份/200 MB 边界；12000 字分片及连续 offset 无遗漏；跨任务读取拒绝；撤回旧版本读取失败；失败更新原有效版本可读；版本冲突拒绝。运行 materials.test.ts 确认红。
-- [ ] 实现不可变正文版本和元数据事务、UTF-8 字节容量计数、整数游标范围校验；资料索引不复制为记忆。纯文本存 SQLite，无需把原路径作为身份；文件来源仅保留显示名。
-- [ ] 接入 API materialList/saveMaterial/readMaterial/materialHistory/withdrawMaterial，校验每个任务 scope；上下文有效性检查可核对撤回状态。迁移/重启测试与类型检查通过后提交 `feat(contacts): store versioned reference materials`。
+- [x] SQLite 行为测试：同名不同内容不覆盖另一个 id；同 hash 更新不增版本；2 MB/100 份/200 MB 边界；12000 字分片及连续 offset 无遗漏；跨任务读取拒绝；撤回旧版本读取失败；失败更新原有效版本可读；版本冲突拒绝。运行 materials.test.ts 确认红。
+- [x] 实现不可变正文版本和元数据事务、UTF-8 字节容量计数、整数游标范围校验；资料索引不复制为记忆。纯文本存 SQLite，无需把原路径作为身份；文件来源仅保留显示名。
+- [x] 接入 API materialList/saveMaterial/readMaterial/materialHistory/withdrawMaterial，校验每个任务 scope；上下文有效性检查可核对撤回状态。迁移/重启测试与类型检查通过后提交 `feat(contacts): store versioned reference materials`。
 
 ## Task E2：导入 UI、读取工具和来源
 

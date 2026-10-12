@@ -218,6 +218,11 @@ export class AgentService {
       }
       case 'answer': this.store.answer(id, String(args[0]), args[1] as string, args[2]); break
       case 'remember': this.store.remember(id, args[0] as string); break
+      case 'materialList': return this.store.materials.list({ ...(args[0] as ContactReadContext), characterId: id })
+      case 'readMaterial': return this.store.materials.read({ ...(args[0] as ContactReadContext), characterId: id }, args[1] as import('../../shared/contact-materials').MaterialRef, args[2] as number | undefined)
+      case 'materialHistory': return this.store.materials.history(id, args[0] as string)
+      case 'saveMaterial': { const result = this.store.materials.save(id, args[0] as import('../../shared/contact-materials').MaterialInput, args[1] as string | undefined, args[2] as number | undefined); this.changed(id); return result }
+      case 'withdrawMaterial': this.store.materials.withdraw(id, args[0] as string, args[1] as number); this.changed(id); return
       case 'memoryList': return this.store.memoryLibrary.list(id)
       case 'memoryHistory': return this.store.memoryLibrary.history(id, args[0] as string)
       case 'createMemory': { const result = this.store.memoryLibrary.create(id, args[0] as MemoryInput); this.changed(id); return result }

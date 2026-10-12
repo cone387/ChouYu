@@ -1,6 +1,7 @@
 import { providerRecoveryDelay } from '../../shared/contact-failure'
 import { citationContext, validateCitation } from './citations'
 import { AgentMemories } from './memories'
+import { AgentMaterials } from './materials'
 import type { ContentCitation } from '../../shared/contact-content'
 import { validateChapterContinuation } from './chapter-continuation'
 import { AgentTaskFailures } from './task-failures'
@@ -43,13 +44,14 @@ export class AgentStore {
   get portfolio() { return this.deliveries.portfolio }
   readonly taskFailures: AgentTaskFailures
   readonly memoryLibrary: AgentMemories
+  readonly materials: AgentMaterials
   constructor(filename: string) {
     this.db = new Database(filename)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 10) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 11) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -103,6 +105,7 @@ export class AgentStore {
     this.decisions = new ContactInteractions(this)
     if (version < 8) this.db.transaction(() => { this.tokens.importHistory(); this.db.pragma('user_version = 8') })()
     if (version < 9) this.db.transaction(() => { this.portfolio.backfill(); this.db.pragma('user_version = 9') })()
+    this.materials = new AgentMaterials(this.db)
     this.memoryLibrary = new AgentMemories(this.db)
     if (version < 10) this.db.transaction(() => {
       // Scope is part of the new identity; equal text in different scopes must remain independent.
@@ -114,6 +117,7 @@ export class AgentStore {
       this.memoryLibrary.migrateLegacy()
       this.db.pragma('user_version = 10')
     })()
+    if (version < 11) this.db.pragma('user_version = 11')
     this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)
     this.db.exec(`CREATE TABLE IF NOT EXISTS task_schedule (
@@ -263,6 +267,7 @@ export class AgentStore {
     for (const row of rows) { this.setStatus(row.id, 'cancelled', now); this.event(row.id, 'cancelled', reason, now) }
   }
   assertContextCurrent(owner: string, refs: ContextReferences) {
+    for (const ref of refs.materials ?? []) this.materials.get(owner, ref)
     for (const ref of refs.memories) {
       const memory = this.memoryLibrary.get(owner, ref.id)
       if (memory.status !== 'active' || memory.revision !== ref.revision) throw new Error('参考记忆已被纠正或忘记，本轮不能继续提交。')
