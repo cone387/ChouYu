@@ -16,6 +16,7 @@ const settings = { ...DEFAULT_AGENT_SETTINGS, goal: 'First', sources: ['https://
 const config = { provider: 'openai' as const, baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] }
 const result = (question = '') => JSON.stringify({ title: 'Saved', body: 'Actual evidence [1].', nextStep: '', memories: [], question,
   progress: { judgement: 'Saved', openQuestions: question, nextStep: question ? 'Use the answer' : 'Continue research', reason: 'Saved evidence [1].', status: 'researching' } })
+const writingResult = () => JSON.stringify({ ...JSON.parse(result()), delivery: { completionCriteria: 'Deliver requested text', summary: 'Saved text', stages: [{ id: 'draft', title: 'Draft', status: 'active' }], section: { id: 'text', title: 'Saved', body: 'Actual requested text.' } } })
 
 async function fixture(limit?: number, ignoreAbort = false) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-task-concurrency-'))
@@ -288,7 +289,7 @@ it('reserves planning and execution together so one task can finish with two dai
   expect(s.getRun(runs[1])?.status).toBe('queued')
   f.pending[0].resolve(JSON.stringify({ action: 'write', reason: 'Produce text', query: '', urls: [], checkAfterMinutes: 180 }))
   await vi.waitFor(() => expect(f.pending).toHaveLength(2))
-  f.pending[1].resolve(result())
+  f.pending[1].resolve(writingResult())
   await vi.waitFor(() => expect(s.getRun(runs[0])?.status).toBe('completed'))
   expect(s.callCount('alice')).toBe(2)
   expect(s.getRun(runs[1])?.status).toBe('queued')
@@ -318,7 +319,7 @@ it('does not let a format repair consume the execution call reserved for another
   expect(f.pending).toHaveLength(2)
   f.pending[1].resolve(JSON.stringify({ action: 'write', reason: 'Produce text', query: '', urls: [], checkAfterMinutes: 180 }))
   await vi.waitFor(() => expect(f.pending).toHaveLength(3))
-  f.pending[2].resolve(result())
+  f.pending[2].resolve(writingResult())
   await vi.waitFor(() => expect(s.getRun(runs[1])?.status).toBe('completed'))
   expect(s.callCount('alice')).toBe(3)
 })

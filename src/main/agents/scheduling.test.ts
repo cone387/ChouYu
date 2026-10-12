@@ -140,14 +140,17 @@ describe('persistent contact task scheduling', () => {
   })
 })
 
-it.each([false, true])('schedules the actually committed compatibility body with interval mode=%s', paceWriting => {
+it.each([false, true])('requires structured prose and schedules only actual changed text with interval mode=%s', paceWriting => {
   const { store, path } = fixture()
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '持续写小说', enabled: true, paceWriting, dailyCalls: 100 })
   const finish = (body: string) => {
     const run = store.createRun('alice', '')
     store.saveResearch(run, { plan: { action: 'write', reason: '创作正文', query: '', urls: [], checkAfterMinutes: 180 }, searches: [], reads: [] })
+    expect(() => store.finish(run, { runId: run, title: '章节', body: '声称交付正文的摘要', nextStep: '继续下一节', evidence: [], createdAt: Date.now() }, [],
+      { judgement: '已交付本节', reason: '保存正文', nextStep: '继续下一节', openQuestions: '', status: 'researching' })).toThrow('变化摘要不能作为正文')
     store.finish(run, { runId: run, title: '章节', body, nextStep: '继续下一节', evidence: [], createdAt: Date.now() }, [],
-      { judgement: '已交付本节', reason: '保存正文', nextStep: '继续下一节', openQuestions: '', status: 'researching' })
+      { judgement: '已交付本节', reason: '保存正文', nextStep: '继续下一节', openQuestions: '', status: 'researching' },
+      { completionCriteria: '完成小说', summary: '已保存本节', stages: [{ id: 'draft', title: '初稿', status: 'active' }], section: { id: run, title: '章节', body } })
     return run
   }
   const first = finish('陆沉拨动琴弦，灯火随之摇曳。')

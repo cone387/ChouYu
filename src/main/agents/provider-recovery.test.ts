@@ -80,7 +80,7 @@ it('restarts the real scheduler after an outage and saves recovered output witho
     ? JSON.stringify({ mode: 'finite', satisfied: true, endsAt: null, reason: '要求的正文已交付', nextStep: '', completionCriteria: '交付正文' })
     : prompt.startsWith('为联系人')
     ? JSON.stringify({ action: 'write', reason: '写正文', query: '', urls: [], checkAfterMinutes: 180 })
-    : JSON.stringify({ title: '恢复后的成果', body: '已经保存的正文。', nextStep: '', memories: [], question: '', progress: { judgement: '完成', openQuestions: '', nextStep: '', reason: '已保存', status: 'completed' } }))
+    : JSON.stringify({ title: '恢复后的成果', body: '已经保存的正文。', nextStep: '', memories: [], question: '', progress: { judgement: '完成', openQuestions: '', nextStep: '', reason: '已保存', status: 'completed' }, delivery: { completionCriteria: '交付正文', summary: '正文已保存', stages: [{ id: 'draft', title: '正文', status: 'done' }], section: { id: 'text', title: '恢复后的成果', body: '已经保存的正文。' } } }))
   const service = new AgentService(dirname(path), () => {}, () => model)
   cleanups.push(() => service.close())
   await service.sync([{ id: 'alice', soul: '写作者', conversation: '', config: { provider: 'openai', baseUrl: 'http://test.invalid', apiKey: 'fixture', model: 'fixture', thinkingDisabledModels: [] } }])

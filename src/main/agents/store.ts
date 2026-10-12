@@ -1,4 +1,5 @@
 import { providerRecoveryDelay } from '../../shared/contact-failure'
+import { validateChapterContinuation } from './chapter-continuation'
 import { AgentTaskFailures } from './task-failures'
 import { ContactInteractions } from './interactions'
 import { AgentTokenBudget } from './token-budget'
@@ -738,6 +739,8 @@ export class AgentStore {
       if (this.getRun(runId)?.status === 'completed') return
       const run = this.assertLive(runId)
       const deliveryInput = JSON.parse(run.input)
+      if (deliveryInput.deliveryVersion === 1 && this.research(runId)?.plan.action === 'write' && !delivery) throw new Error('写作成果缺少 delivery.section.body，变化摘要不能作为正文保存。')
+      validateChapterContinuation({ delivery, progress, nextStep: report.nextStep }, deliveryInput.chapterContinuation?.decision, false)
       const previousDelivery = run.topic_id ? this.deliveries.get(run.topic_id) : null
       const presentationOnly = deliveryInput.revisionScope === 'presentation'
       if (presentationOnly && (!previousDelivery || previousDelivery.version !== deliveryInput.revisionBaseVersion || !delivery || delivery.presentation === undefined || delivery.section || delivery.inputs || memories.length || delivery.summary !== previousDelivery.summary || delivery.completionCriteria !== previousDelivery.completionCriteria || JSON.stringify(delivery.stages) !== JSON.stringify(previousDelivery.stages))) throw new Error('样式修订版本已变化或试图修改正文与进度，本轮未保存。')

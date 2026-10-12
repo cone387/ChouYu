@@ -280,7 +280,7 @@ it('keeps the allocated budget through malformed plan repair and draft output', 
   const badBudget = { modelCalls: 0, reason: '' }
   const model = vi.fn().mockResolvedValueOnce('broken JSON')
     .mockResolvedValueOnce(JSON.stringify({ ...plan, action: 'write', query: '', resourceBudget: badBudget }))
-    .mockResolvedValueOnce(JSON.stringify({ ...draft, body: '实际交付', resourceBudget: badBudget }))
+    .mockResolvedValueOnce(JSON.stringify({ ...draft, body: '实际交付', resourceBudget: badBudget, delivery: { completionCriteria: '交付所需文本', summary: '已保存正文', stages: [{ id: 'draft', title: '正文', status: 'active' }], section: { id: 'text', title: '交付', body: '实际交付的正文' } } }))
   await runtime.execute(id, '', model, new AbortController().signal)
   expect(store.getRun(id)?.status).toBe('completed')
   expect(store.detail('alice', id).report?.body).toBe('实际交付')
