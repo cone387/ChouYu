@@ -9,6 +9,7 @@ import type { AgentTopic } from '../../../../shared/agents'
 import { deliveryText, textHash, type ContentCitation, type DeliveryRef, type ReadingPosition, type TextAnchor } from '../../../../shared/contact-content'
 import { readingAt, restoreReading, selectedCitation, highlightAnchor } from './deliveryReading'
 import { navigateContact } from './contactNavigation'
+import ContactFiles from './ContactFiles'
 import ContactRevisionDialog from './ContactRevisionDialog'
 import ContactHandoffDialog from './ContactHandoffDialog'
 import ContactHandoffs from './ContactHandoffs'
@@ -172,6 +173,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       <button type="button" data-delivery-handoff disabled={busy} onClick={() => setHandoff(true)}>交给联系人评审</button>
     </div>}
     {citationError && <p role="alert">{citationError}</p>}
+    {!!artifact?.fileIds?.length && <ContactFiles owner={characterId} topicId={topic.id} fileIds={artifact.fileIds} />}
     {revisionDialog && <ContactRevisionDialog characterId={characterId} topic={topic} citation={revisionDialog.citation} scope={revisionDialog.scope} onClose={() => setRevisionDialog(null)} onSaved={() => setNotice('修改意见已保存，将沿用任务额度修订一轮。')} />}
     {artifact && handoff && <ContactHandoffDialog source={{ characterId, topicId: topic.id, version: artifact.version, ...(readingId ? { sectionId: readingId } : {}) }} title={topic.title} onClose={() => setHandoff(false)} onSaved={() => setNotice('评审任务已保存，接收者会按原权限和额度执行。')} />}
     {artifact && <ContactHandoffs owner={characterId} topicId={topic.id} getCitation={async () => {

@@ -22,7 +22,7 @@
 
 **Files:** 新增 `src/shared/contact-capabilities.ts`、`src/shared/contact-capabilities.test.ts`、`src/renderer/src/components/Contacts/ContactFiles.tsx`；修改 Contacts 目录的 `ContactSkills.tsx`、`SkillRuntimeDialog.tsx`、`ContactTaskDialog.tsx`、作品集/阅读器，及 `src/renderer/src/components/ChatPanel/ContactInteractionCard.tsx`、`src/main/agents/index.ts`；新增 `src/main/smoke/contact-capability-smoke.ts`。
 **Interfaces:** `skillCapability(skill:ContactSkill,runtime:SkillRuntimeStatus):{instructionReady:boolean;scriptReady:boolean;requirements:string[];examples:string[]}`，examples 仅从技能明确用法摘取，无匹配返回空；新 API fileList/readContactFile/exportContactFile，导出使用原系统保存对话框，不接受渲染层任意路径。
-- [ ] 测试无需脚本的技能在 Docker 未就绪时 instructionReady=true；脚本未授权不可运行；外部服务只显示未验证条件；没有示例不杜撰；环境修复不清待处理状态。运行 capability 测试确认红。
-- [ ] 卡片区分安装/启用/脚本授权/环境/依赖/外部条件，示例只填普通任务弹窗。失败跳精确配置/日志并保留返回原事项定位，明确点击才重试。
-- [ ] 文件页预览文本和常见图片，HTML 沙箱/其他格式下载；只读协议核对归属，预览无宿主访问和网络，保留文件来源/历史版本。工作文件与正式成果明确分区。
-- [ ] UI 真鼠标验证示例不隐式执行、文件预览/导出取消/权限错误、失败往返；深浅色窄宽屏与类型检查通过后提交 `feat(contacts): surface usable skills and file outcomes`。
+- [x] 测试无需脚本的技能在 Docker 未就绪时 instructionReady=true；脚本未授权不可运行；外部服务只显示未验证条件；没有示例不杜撰；环境修复不清待处理状态。运行 capability 测试确认红。
+- [x] 卡片区分安装/启用/脚本授权/环境/依赖/外部条件，示例只填普通任务弹窗。失败跳精确配置/日志并保留返回原事项定位，明确点击才重试。
+- [x] 文件页预览文本和常见图片，HTML 沙箱/其他格式下载；只读协议核对归属，预览无宿主访问和网络，保留文件来源/历史版本。工作文件与正式成果明确分区。
+- [x] UI 真鼠标验证示例不隐式执行、文件预览/导出取消/权限错误、失败往返；深浅色窄宽屏与类型检查通过后提交 `feat(contacts): surface usable skills and file outcomes`。

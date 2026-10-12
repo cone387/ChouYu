@@ -39,7 +39,8 @@ export function registerSkillHandlers(window: BrowserWindow) {
     return id
   }
   const handlers: Record<string, (...args: any[]) => unknown> = {
-    'runtime-status': () => contactSkillRunner().status(),
+    'runtime-status': id => contactSkillRunner().statusForSkill(id),
+    'work-files': owner => contactSkillRunner().workFiles(assertOwner(owner)),
     logs: (owner, id) => contactSkillRunner().logs(assertOwner(owner), id),
     browse: query => catalog.browse(query),
     categories: () => catalog.categories(),

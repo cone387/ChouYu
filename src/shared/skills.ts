@@ -40,7 +40,7 @@ export interface SkillCatalogQuery {
 }
 export interface SkillCatalogPage { skills: SkillCatalogItem[]; total: number }
 export interface SkillCategory { key: string; name: string }
-export interface SkillRuntimeStatus { ready: boolean; engineReady: boolean; message: string }
+export interface SkillRuntimeStatus { ready: boolean; engineReady: boolean; message: string; dependencies?: Record<string, boolean> }
 export interface SkillRunLog { id: string; characterId: string; skillId?: string; kind: 'environment' | 'dependencies' | 'script'; startedAt: number; finishedAt?: number; status: 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'; script?: string; output: string; error?: string; ownerPid: number; containerName?: string; cleanupPending?: boolean }
 export interface SkillHubStatus { ready: boolean; version?: string; error?: string }
 export interface SkillCompatibility {
@@ -52,7 +52,8 @@ export interface SkillCompatibility {
 }
 export type SkillAction = 'enable' | 'disable' | 'remove' | 'enable_scripts' | 'disable_scripts'
 export interface SkillAPI {
-  runtimeStatus(): Promise<SkillRuntimeStatus>
+  workFiles(characterId: string): Promise<{ skillId: string; name: string; bytes: number; hash: string }[]>
+  runtimeStatus(skillId?: string): Promise<SkillRuntimeStatus>
   prepareRuntime(): Promise<SkillRuntimeStatus>
   prepareDependencies(characterId: string, id: string): Promise<void>
   logs(characterId: string, id?: string): Promise<SkillRunLog[]>

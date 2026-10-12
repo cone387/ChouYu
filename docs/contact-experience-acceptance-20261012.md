@@ -70,3 +70,9 @@ Evidence: handoffs.test.ts and handoff-review.test.ts (5 passing), F2-final-suit
 ### G1: Attributable file archive
 
 EXP-13 storage: validated runner byte snapshots are content-addressed SQLite BLOB copies. Metadata and bytes commit atomically; no arbitrary host path enters the API. File/tool tests cover immutable overwrites, rollback, restart, cancelled runs, run/session ownership, hardlinks, traversal and existing limits. Formal fileIds attach only with the actual matching delivery transaction. G1-final-tests: 15 passed; G1-final-types passed; CHOUYU_TEST_DOCKER=1 docker.integration.test.ts: 2 passed, including archive of real script output. File previews and navigation remain G2.
+
+### G2: Usable skills and file previews
+
+EXP-12/13: instruction readiness is independent from Docker. Script readiness requires authorization, actual environment status and dependency image inspection; external requirements remain explicitly unverified. Only examples extracted from explicit skill usage sections can fill the ordinary task dialog. File lists distinguish archived work, formally attached files and legacy files with unknown provenance. Text/image previews and static HTML sandbox never expose the host; native export revalidates ownership and archived bytes.
+
+Evidence: capability projection tests, G2-suite 1438 passed/19 skipped; G2-final-types/build passed; G2-smoke-final exited 0 with CHOUYU_CONTACT_CAPABILITY_SMOKE_PASSED. Actual mouse/IPC checks include example cancellation without a task, immutable export/cancel, PNG preview, removal of HTML navigation/executable content, corruption errors and foreign-owner denial. Final screenshots in artifacts/contact-files inspected. Shared settings-return and pending-state integration will be verified by A2/FINAL.

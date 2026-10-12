@@ -19,7 +19,8 @@ ipcRenderer.on('open-assistant-chat', () => openAssistantChatEvent.emit())
 
 const api = {
   skills: {
-    runtimeStatus: () => ipcRenderer.invoke('skills:runtime-status'),
+    runtimeStatus: id => ipcRenderer.invoke('skills:runtime-status', id),
+    workFiles: owner => ipcRenderer.invoke('skills:work-files', owner),
     prepareRuntime: () => ipcRenderer.invoke('skills:prepare-runtime'),
     prepareDependencies: (owner, id) => ipcRenderer.invoke('skills:prepare-dependencies', owner, id),
     logs: (owner, id) => ipcRenderer.invoke('skills:logs', owner, id),

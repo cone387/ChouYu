@@ -4,11 +4,13 @@ import type { ContactSkill, SkillAction, SkillHubStatus, SkillListing, SkillSear
 import './ContactSkills.css'
 import SkillMarket from './SkillMarket'
 import SkillRuntimeDialog from './SkillRuntimeDialog'
+import { extractSkillExamples } from '../../../../shared/contact-capabilities'
+import ContactTaskDialog from './ContactTaskDialog'
 
 const message = (error: unknown) => error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '') : '操作失败，请重试。'
 type Detail = { item: SkillSearchResult | ContactSkill; mode: 'view' | 'install' | 'uninstall' }
 
-function SkillDialog({ detail, busy, error, onClose, onSubmit, onCancelOperation }: { detail: Detail; busy: boolean; error: string; onClose: () => void; onSubmit: () => void; onCancelOperation: () => void }) {
+function SkillDialog({ detail, busy, error, onClose, onSubmit, onCancelOperation, onExample }: { detail: Detail; busy: boolean; error: string; onClose: () => void; onSubmit: () => void; onCancelOperation: () => void; onExample: (description: string) => void }) {
   const dialog = useRef<HTMLDialogElement>(null), title = useId()
   const [content, setContent] = useState(''), [readError, setReadError] = useState('')
   const [loading, setLoading] = useState(detail.mode === 'view')
@@ -35,6 +37,7 @@ function SkillDialog({ detail, busy, error, onClose, onSubmit, onCancelOperation
       {installed?.unavailableReason && <p className="skill-unavailable">{installed.unavailableReason}</p>}
       {loading && <p role="status">正在读取技能正文…</p>}
       {content && <pre className="skill-content" tabIndex={0}>{content}</pre>}
+      {content && extractSkillExamples(content).length > 0 && <section aria-label="技能原文示例"><h4>原文中的使用示例</h4><p className="agent-caption">选择后填入普通任务弹窗，保存后才交给联系人。</p>{extractSkillExamples(content).map(example => <button type="button" key={example} data-skill-example onClick={() => onExample(example)}>{example}</button>)}</section>}
       {(error || readError) && <p role="alert" className="agent-error">{error || readError}</p>}
       <footer>
         <button type="button" onClick={() => busy ? onCancelOperation() : onClose()}>{busy ? '取消操作' : detail.mode === 'view' ? '关闭' : '取消'}</button>
@@ -51,6 +54,7 @@ export default function ContactSkills({ characterId, name }: { characterId: stri
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [detail, setDetail] = useState<Detail>()
   const [runtimeSkillId, setRuntimeSkillId] = useState<string>()
+  const [example, setExample] = useState<string>()
   const mounted = useRef(false), pending = useRef(false), cancelled = useRef(false)
   const cancelOperation = () => { cancelled.current = true; void window.electronAPI.skills.cancel() }
   useEffect(() => {
@@ -111,6 +115,7 @@ export default function ContactSkills({ characterId, name }: { characterId: stri
         </div>
         <p className="skill-card-description" title={skill.description}>{skill.description || '未提供简介，可查看技能正文。'}</p>
         <div className="skill-card-status"><span data-active={skill.enabled}>{skill.enabled ? '说明已启用' : skill.assigned ? '已停用' : '未配置'}</span><span>{skill.compatibility?.scripts.length ? skill.scriptsEnabled ? '脚本已授权' : `${skill.compatibility.scripts.length} 个脚本 · 未授权` : '无需脚本'}</span></div>
+        <p className="agent-caption">已安装{skill.compatibility?.scripts.length ? ' · 环境与依赖见「能力与运行」' : ' · 说明使用不需要 Docker'}{skill.compatibility?.externalRequirements.length ? ' · 外部条件尚未验证' : ''}</p>
         {skill.unavailableReason && <p className="skill-unavailable">{skill.unavailableReason}</p>}
         <div className="skill-actions">
           <button type="button" disabled={busy} onClick={() => { setError(''); setDetail({ item: skill, mode: 'view' }) }}>查看正文</button>
@@ -126,7 +131,8 @@ export default function ContactSkills({ characterId, name }: { characterId: stri
       </li>)}</ul></section>)}
     </> : null}
     <div hidden={view !== 'market'}><SkillMarket installed={new Set(listing?.skills.map(skill => skill.id))} busy={busy} refreshKey={marketRefresh} onSelect={skill => { setError(''); setDetail({ item: skill, mode: listing?.skills.some(item => item.id === skill.id) ? 'view' : 'install' }) }} /></div>
-    {detail && <SkillDialog key={`${detail.item.id}:${detail.mode}`} detail={detail} error={error} busy={busy} onClose={() => { setDetail(undefined); setError('') }} onSubmit={submitDialog} onCancelOperation={cancelOperation} />}
+    {detail && <SkillDialog key={`${detail.item.id}:${detail.mode}`} detail={detail} error={error} busy={busy} onClose={() => { setDetail(undefined); setError('') }} onSubmit={submitDialog} onCancelOperation={cancelOperation} onExample={description => { setDetail(undefined); setExample(description) }} />}
+    {example !== undefined && <ContactTaskDialog characterId={characterId} initialDescription={example} onClose={() => setExample(undefined)} onAction={async action => { await action() }} onDone={() => { setExample(undefined); setNotice('任务已保存。') }} />}
     {runtimeSkillId && listing?.skills.find(skill => skill.id === runtimeSkillId) && <SkillRuntimeDialog characterId={characterId} skill={listing.skills.find(skill => skill.id === runtimeSkillId)!} revision={listing.revision} onChange={setListing} onClose={() => setRuntimeSkillId(undefined)} />}
   </section>
 }

@@ -113,6 +113,14 @@ export class SkillRunner {
       }
     })
   }
+  async statusForSkill(id?: string): Promise<SkillRuntimeStatus> {
+    const status = await this.status()
+    if (!id) return status
+    const skill = this.library.detail(id).skill
+    let ready = !skill.compatibility?.dependencyFiles.length
+    if (!ready && status.ready) try { await this.command(['image', 'inspect', `chouyu-skill-${skill.digest}:2`], AbortSignal.timeout(10000)); ready = true } catch { /* Missing or inaccessible image remains unverified. */ }
+    return { ...status, dependencies: { [skill.digest]: ready } }
+  }
   async status(): Promise<SkillRuntimeStatus> {
     await this.recover()
     try {
@@ -173,6 +181,23 @@ export class SkillRunner {
   workspace(owner: string, id: string) {
     this.recoverWorkspace(owner, id)
     const directory = join(this.root, 'work', hash(owner), hash(id)); mkdirSync(directory, { recursive: true }); return directory
+  }
+  workFiles(owner: string) {
+    const files: { skillId: string; name: string; bytes: number; hash: string }[] = []
+    for (const skill of this.library.list(owner).skills) {
+      const root = join(this.root, 'work', hash(owner), hash(skill.id))
+      if (!existsSync(root)) continue
+      this.recoverWorkspace(owner, skill.id); this.inventory(root)
+      const visit = (directory: string) => {
+        for (const entry of readdirSync(directory)) {
+          const name = relative(root, join(directory, entry)).replaceAll('\\', '/'), path = safePath(root, name)
+          if (lstatSync(path).isDirectory()) visit(path)
+          else { const bytes = readFileSync(path); files.push({ skillId: skill.id, name, bytes: bytes.length, hash: createHash('sha256').update(bytes).digest('hex') }) }
+        }
+      }
+      visit(root)
+    }
+    return files
   }
   readFile(owner: string, snapshot: SkillSnapshot, id: string, file: string, source: 'package' | 'workspace') {
     const { directory } = this.entry(owner, snapshot, id)

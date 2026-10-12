@@ -4,6 +4,7 @@ import { runContactMemorySmoke } from './contact-memory-smoke'
 import { runContactPortfolioSmoke } from './contact-portfolio-smoke'
 import { runContactMaterialSmoke } from './contact-material-smoke'
 import { runContactHandoffSmoke, handoffSmokeResponse } from './contact-handoff-smoke'
+import { runContactCapabilitySmoke } from './contact-capability-smoke'
 import { contactSkillLibrary } from '../skills'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
@@ -132,6 +133,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await runContactMemorySmoke(window, character.id, () => chatBody)
     if (process.env.CHOUYU_SMOKE_CONTACT_PORTFOLIO_ONLY === '1') { await runContactPortfolioSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_MEMORY_ONLY === '1') return
+    if (process.env.CHOUYU_SMOKE_CONTACT_CAPABILITY_ONLY === '1') { await runContactCapabilitySmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_MATERIAL_ONLY === '1') { await runContactMaterialSmoke(window, character.id, ref => { materialReference = ref }, () => chatBody); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_HANDOFF_ONLY === '1') { handoffMode = true; await runContactHandoffSmoke(window, character.id, () => reviewRequests); return }
     await runSkillsSmoke(window, character.id)
