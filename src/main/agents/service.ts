@@ -1,4 +1,5 @@
 import { TokenBudgetError } from './token-budget'
+import { contactHome } from './home'
 import { citationContext, validateCitation } from './citations'
 import { buildContactContext } from './context'
 import { createMaterialTools } from './material-tools'
@@ -85,6 +86,7 @@ export class AgentService {
     }
     this.identity(id)
     switch (method) {
+      case 'contactHome': return contactHome(this.store, id)
       case 'pendingInteractions': return this.store.decisions.pending(id)
       case 'getInteraction': return { ...this.store.decisions.get(id, String(args[0])), characterName: this.identity(id).name }
       case 'submitInteraction': {

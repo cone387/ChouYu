@@ -121,6 +121,7 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, ContactMaterialAPI, ContactHandoffAPI, ContactFileAPI {
+  contactHome(characterId: string): Promise<import('./contact-home').ContactHomeData>
   pendingInteractions(characterId: string): Promise<(import('./contact-interactions').ContactInteraction & { characterName: string })[]>
   getInteraction(characterId: string, interactionId: string): Promise<import('./contact-interactions').ContactInteraction>
   submitInteraction(characterId: string, interactionId: string, submission: import('./contact-interactions').ContactInteractionSubmission): Promise<import('./contact-interactions').ContactInteraction>
@@ -154,7 +155,7 @@ export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, Contact
 }
 export interface AgentSummary { tasks: number; activeTasks: number; memories: number; calls: number; reported: number; tokens: number }
 export type AgentActivityContext = Pick<AgentOverview, 'settings' | 'focusTopicId' | 'topics' | 'nextAt' | 'callsToday'>
-export interface AgentDashboardContact extends AgentActivityContext { summary: AgentSummary; run?: AgentRun; latestActivity?: AgentEvent; lastWorkedAt?: number }
+export interface AgentDashboardContact extends AgentActivityContext { highlights?: ReturnType<typeof import('./contact-home').cardHighlights>; summary: AgentSummary; run?: AgentRun; latestActivity?: AgentEvent; lastWorkedAt?: number }
 export interface AgentDashboard { contacts: Record<string, AgentDashboardContact>; events: (AgentEvent & { characterId: string; topicTitle: string })[] }
 export function validateAgentSettings(raw: unknown): AgentSettings {
   if (!raw || typeof raw !== 'object') throw new Error('工作设置无效。')

@@ -259,6 +259,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const [modelFilter, setModelFilter] = useState('all')
   const [sort, setSort] = useState<SortKey>('pinyin')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const stableOrder = useRef<{ key: string; ids: string[] }>({ key: '', ids: [] })
   const { data: dashboard, error: dashboardError } = useContactsDashboard(active && !detailOnly)
   const [detail, setDetail] = useState<CharacterStats | null>(null)
   const [expandedTab, setExpandedTab] = useState<ContactAgentTab | null>(null)
@@ -312,7 +313,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return characters
+    const ordered = characters
       .filter((character) => character.id !== ASSISTANT_CHARACTER_ID && character.id !== DEFAULT_CHARACTER_ID)
       .filter((character) => category === 'all'
         || (category === 'other' ? !character.category : character.category === category))
@@ -323,6 +324,11 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       .sort((a, b) => sort === 'tokens' || sort === 'tasks'
         ? compareMetrics(dashboard?.contacts[a.id]?.summary, dashboard?.contacts[b.id]?.summary, `${sort}-${sortDirection}`) || sortByName(a, b)
         : compareBySort(a, b, sort) * (sort === 'pinyin' ? sortDirection === 'asc' ? 1 : -1 : sortDirection === 'desc' ? 1 : -1))
+    const key = JSON.stringify([query, category, modelFilter, sort, sortDirection])
+    if (stableOrder.current.key !== key) stableOrder.current = { key, ids: ordered.map(item => item.id) }
+    else stableOrder.current.ids = [...stableOrder.current.ids.filter(id => ordered.some(item => item.id === id)), ...ordered.filter(item => !stableOrder.current.ids.includes(item.id)).map(item => item.id)]
+    const ranks = new Map(stableOrder.current.ids.map((id, rank) => [id, rank]))
+    return ordered.sort((a, b) => ranks.get(a.id)! - ranks.get(b.id)!)
   }, [characters, query, category, modelFilter, sort, dashboard, sortDirection, config.model])
 
   const profileNameOf = useCallback((character: CharacterStats): string => {
@@ -480,6 +486,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           </span>
           <span className="contacts-card-tags"><span className="contacts-card-tag" data-contact-work-mode={DEFAULT_CHARACTER_ID}>{dashboard?.contacts[DEFAULT_CHARACTER_ID] ? dashboard.contacts[DEFAULT_CHARACTER_ID].settings.enabled ? '自动推进' : '按需推进' : '工作方式加载中'}</span></span>
           <span className="contacts-card-desc">我会记住你的安排，到点提醒你，也能检查各联系人的进展后向你汇报。</span>
+          {dashboard?.contacts[DEFAULT_CHARACTER_ID]?.highlights?.pending && <span className="contacts-card-highlights"><span><strong>等你回应</strong>{dashboard.contacts[DEFAULT_CHARACTER_ID].highlights!.pending}</span></span>}
         </button>
         {assistant && <button type="button" className="contacts-card-detail" data-contacts-card-detail={assistant.id} onClick={() => setDetail(assistant)}>详情</button>}
         </div>
@@ -493,10 +500,11 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
               <span className="contacts-card-avatar" aria-hidden="true"><CharacterAvatar character={character} /></span>
               <span className="contacts-card-title">
                 <span className="contacts-card-name">{character.name}{character.builtIn && <em className="contacts-builtin">内置</em>}</span>
-                <span className="contacts-card-subtitle">{model}</span>
               </span>
             </span>
             <span className="contacts-card-desc">{soulSummary || '尚未设置人设'}</span>
+            {dashboard?.contacts[character.id]?.highlights && <span className="contacts-card-highlights">{Object.entries(dashboard.contacts[character.id].highlights!).map(([kind, text]) => <span key={kind}><strong>{{ pending: '等你回应', delivery: '最近交付', task: '正在推进' }[kind]}</strong>{text}</span>)}</span>}
+            <span className="contacts-card-subtitle">{model}</span>
             <ContactCardStats data={dashboard?.contacts[character.id]?.summary} error={dashboardError} lastWorkedAt={dashboard?.contacts[character.id]?.lastWorkedAt} />
             <span className="contacts-card-tags">
               <span className="contacts-card-tag" data-contact-work-mode={character.id}>{dashboard?.contacts[character.id] ? dashboard.contacts[character.id].settings.enabled ? '自动推进' : '按需推进' : '工作方式加载中'}</span>

@@ -4,6 +4,8 @@ import { AgentMemories } from './memories'
 import { AgentMaterials } from './materials'
 import { AgentHandoffs } from './handoffs'
 import { AgentFiles } from './files'
+import { contactHome } from './home'
+import { cardHighlights } from '../../shared/contact-home'
 import type { ContentCitation } from '../../shared/contact-content'
 import { validateChapterContinuation } from './chapter-continuation'
 import { AgentTaskFailures } from './task-failures'
@@ -183,6 +185,7 @@ export class AgentStore {
       const work = this.db.prepare(`SELECT MAX(e.at) AS at FROM events e JOIN runs r ON r.id=e.run_id
         WHERE r.character_id=? AND e.kind NOT IN ('queued','answer','waiting','interrupted','heartbeat')`).get(id) as { at: number | null }
       contacts[id] = {
+        ...(profile ? { highlights: cardHighlights(contactHome(this, id)) } : {}),
         summary: this.summary(id), settings: profile ? JSON.parse(profile.settings) : { ...DEFAULT_AGENT_SETTINGS },
         focusTopicId: profile?.focus_topic_id ?? null,
         topics: profile?.focus_topic_id ? [this.topics.get(id, profile.focus_topic_id)] : [],

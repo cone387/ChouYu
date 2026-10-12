@@ -2,7 +2,7 @@ import ContactWorkSettings from './ContactWorkSettings'
 import ContactSkills from './ContactSkills'
 import ContactTaskInputForm from './ContactTaskInputForm'
 import ContactAnalytics from './ContactAnalytics'
-import ContactDailyOverview from './ContactDailyOverview'
+import ContactHome from './ContactHome'
 import ContactMarkdown from './ContactMarkdown'
 import ContactMemories from './ContactMemories'
 import ContactMaterials from './ContactMaterials'
@@ -35,6 +35,8 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const [sources, setSources] = useState('')
   const [keyConfigured, setKeyConfigured] = useState(false)
   const [localTab, setLocalTab] = useState<ContactAgentTab>('overview')
+  const [homeFocus, setHomeFocus] = useState<AgentFocusRequest>()
+  useEffect(() => { setHomeFocus(undefined) }, [focusRequest, characterId])
   const tab = selectedTab ?? localTab
   const setTab = (next: ContactAgentTab) => { setLocalTab(next); onTabChange?.(next) }
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)
@@ -141,10 +143,10 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     {!data && !error && !readError && tab !== 'profile' && tab !== 'skills' && <p role="status">正在读取工作状态…</p>}
     {tab === 'profile' && profile}
     {tab === 'skills' && <ContactSkills key={characterId} characterId={characterId} name={name} />}
-    {tab === 'overview' && <ContactDailyOverview characterId={characterId} />}
+    {tab === 'overview' && <ContactHome key={characterId} characterId={characterId} overview={data} onTask={topicId => { setHomeFocus({ topicId, runId: data?.runs.find(run => run.topicId === topicId)?.id || '', kind: 'progress', tab: 'work', nonce: Date.now() }); setTab('work') }} />}
     {tab === 'portfolio' && <ContactPortfolio key={characterId} characterId={characterId} initialRef={deliveryFocus?.ref} initialAnchor={deliveryFocus?.anchor} />}
     {data && <div className="agent-task-view" hidden={tab !== 'work'}>
-      <ContactTopics onWorkSettings={() => setTab('settings')} active={tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={focusRequest}
+      <ContactTopics onWorkSettings={() => setTab('settings')} active={tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={homeFocus ?? focusRequest}
         renderActivity={topicId => {
           const logRun = data.runs.find(run => run.topicId === topicId)
           const draftKey = `${characterId}:${logRun?.id}:${logRun?.question}`

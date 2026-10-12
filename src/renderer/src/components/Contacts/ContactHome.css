@@ -1,0 +1,10 @@
+.contact-home { display: grid; gap: 24px; min-width: 0; }
+.contact-home h3 { font-size: 15px; margin: 0 0 12px; }
+.contact-home-deliveries { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.contact-home-deliveries button { width: 100%; text-align: left; padding: 14px; }
+.contact-home-deliveries p { margin: 8px 0; line-height: 1.7; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.contact-home-tasks { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(230px,100%),1fr)); gap: 10px; }
+.contact-home details > summary { cursor: pointer; color: var(--text-secondary); }
+.contacts-card-highlights { display: grid; gap: 6px; min-width: 0; font-size: 12px; line-height: 1.6; }
+.contacts-card-highlights > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.contacts-card-highlights strong { margin-right: 5px; font-weight: 600; }

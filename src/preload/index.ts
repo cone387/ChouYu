@@ -47,6 +47,7 @@ const api = {
     commitHandoff: (owner, preparation) => ipcRenderer.invoke('agents:commitHandoff', owner, preparation),
     handoffs: (owner, topicId) => ipcRenderer.invoke('agents:handoffs', owner, topicId),
     fileList: (owner, topicId) => ipcRenderer.invoke('agents:fileList', owner, topicId),
+    contactHome: owner => ipcRenderer.invoke('agents:contactHome', owner),
     readContactFile: (owner, id) => ipcRenderer.invoke('agents:readContactFile', owner, id),
     exportContactFile: (owner, id) => ipcRenderer.invoke('agents:exportContactFile', owner, id),
     handoffState: (owner, id) => ipcRenderer.invoke('agents:handoffState', owner, id),
