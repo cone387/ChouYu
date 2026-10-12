@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { requestContactTask } from './gateway'
+import { requestContactTask, prepareHandoffWork } from './gateway'
 import { AssistantRoutineService } from './service'
 import { ContactTaskDraftStore } from './drafts'
 
@@ -21,6 +21,18 @@ function fixture(agentsImpl?: (id: string, method: string, args: unknown[]) => P
 const createTarget = { kind: 'create' as const, characterId: 'chouyu' }
 
 describe('contact task gateway', () => {
+  it('prepares handoff work with the same parser without saving a task or routine', async () => {
+    const { deps, agents, routineService } = fixture()
+    const result = await prepareHandoffWork('alice', '只评审本版，最多 5 万 Token', deps, async (prompt) => {
+      expect(prompt).toContain('continuousReview')
+      return JSON.stringify({ kind: 'work', description: '评审本版', budget: { tokens: 50000 } })
+    })
+    expect(result).toMatchObject({ kind: 'work', work: { description: '评审本版', tokens: 50000, continuous: false } })
+    expect(agents.mock.calls.every(([, method]) => method === 'get')).toBe(true)
+    expect((await prepareHandoffWork('chouyu', '每天评审', deps, async () => JSON.stringify({ kind: 'routine', input: routineInput }))).kind).toBe('question')
+    expect(routineService.list()).toEqual([])
+    expect(await prepareHandoffWork('alice', '持续评审新版本', deps, async () => JSON.stringify({ kind: 'work', description: '持续评审新版本', continuousReview: true }))).toMatchObject({ kind: 'work', work: { continuous: true } })
+  })
   it('passes an explicit creation Token cap separately from the archived description', async () => {
     const { deps, agents } = fixture(async (_id, method) => method === 'get' ? { topics: [] } : {})
     await requestContactTask({ kind: 'create', characterId: 'alice' }, '写文章，最多 30 万 Token', deps,

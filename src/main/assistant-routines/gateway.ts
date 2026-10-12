@@ -18,6 +18,27 @@ export interface GatewayDeps {
   defaultCharacterId: string
 }
 type Model = (instruction: string, content: string) => Promise<string>
+/** Reuse task parsing/clarification and budget validation, capturing the write for atomic handoff commit. */
+export async function prepareHandoffWork(recipientId: string, message: string, deps: GatewayDeps, model: Model): Promise<{ kind: 'question'; question: string } | { kind: 'work'; work: import('../../shared/contact-handoffs').HandoffWork }> {
+  let work: import('../../shared/contact-handoffs').HandoffWork | undefined, continuous = false
+  const result = await requestContactTask({ kind: 'create', characterId: recipientId }, message, { ...deps, agents: async (id, method, args) => {
+    if (id !== recipientId) throw new Error('交接接收者已变化。')
+    if (method === 'assignTopic') { work = { description: args[0] as string, requestLog: args[1] as string, tokens: args[2] as number | undefined, continuous }; return }
+    if (method !== 'get') throw new Error('交接准备不能改变其他任务。')
+    return deps.agents(id, method, args)
+  } }, async (instruction, content) => {
+    const raw = await model(instruction + '\n本次是对指定成果版本的评审交接。仅允许 work 或必要的 question，不创建定时安排。work 可增加 continuousReview 布尔字段；只有用户明确要求持续跟进新版本时为 true，其余为 false。默认评审这一个版本，不批准意见、不自动修改作者正文。', content)
+    try {
+      const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
+      if (!['work', 'question'].includes(parsed?.kind)) return JSON.stringify({ kind: 'question', question: '请描述要对这份成果进行的评审；定时安排请在 ChouYu 任务中单独创建。' })
+      continuous = parsed.continuousReview === true
+    } catch { /* The shared parser reports malformed responses. */ }
+    return raw
+  })
+  if (result.kind === 'question') return result
+  if (!work) throw new Error('没有解析出有效评审任务，尚未交接。')
+  return { kind: 'work', work }
+}
 
 const DUTY_RANGES = { proactiveReturnAwayMinutes: [1, 120], proactiveRestMinutes: [10, 480], proactiveCooldownMinutes: [5, 240] } as const
 type DutyParamKey = keyof typeof DUTY_RANGES

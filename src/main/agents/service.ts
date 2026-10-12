@@ -220,6 +220,10 @@ export class AgentService {
       }
       case 'answer': this.store.answer(id, String(args[0]), args[1] as string, args[2]); break
       case 'remember': this.store.remember(id, args[0] as string); break
+      case 'checkHandoff': { const request = this.store.handoffs.validate(id, args[0] as import('../../shared/contact-handoffs').HandoffRequest); return this.store.handoffs.existing(id, request) }
+      case 'stageHandoff': return this.store.handoffs.stage(id, args[0] as import('../../shared/contact-handoffs').HandoffRequest, args[1] as import('../../shared/contact-handoffs').HandoffWork)
+      case 'commitHandoff': { const result = this.store.handoffs.commit(id, args[0] as import('../../shared/contact-handoffs').HandoffPreparation); this.changed(id); this.changed(result.recipientId); this.tick(); return result }
+      case 'handoffs': return this.store.handoffs.list(id, args[0] as string | undefined)
       case 'materialList': return this.store.materials.list({ ...(args[0] as ContactReadContext), characterId: id })
       case 'assertContextCurrent': this.store.assertContextCurrent(id, args[0] as import('../../shared/contact-content').ContextReferences); return
       case 'readMaterial': return this.store.materials.read({ ...(args[0] as ContactReadContext), characterId: id }, args[1] as import('../../shared/contact-materials').MaterialRef, args[2] as number | undefined)

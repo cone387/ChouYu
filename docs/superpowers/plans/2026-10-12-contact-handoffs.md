@@ -1,6 +1,6 @@
 # 联系人版本协作 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把明确成果交给另一联系人评审，并将用户认可的意见交回原作者。
 **Architecture:** 在原任务创建/调度上加入幂等交接记录，共用 ContactSources 读取权限；源任务保持独立。
@@ -13,10 +13,10 @@
 
 **Files:** 新增 `src/shared/contact-handoffs.ts`、`src/main/agents/handoffs.ts`、`handoffs.test.ts`；修改 `agents/{service,topics,contact-sources}.ts`、`src/main/assistant-routines/gateway.ts`、API 接入。
 **Interfaces:** HandoffRequest={requestId:string;source:DeliveryRef;recipientId:string;description:string}；Handoff={id:string;source:DeliveryRef;recipientId:string;topicId:string;description:string;createdAt:number}；`prepareHandoff(owner,request):Promise<HandoffPreparation>`（包含解析后的既有任务需求或必要补问）；`commitHandoff(owner,preparation):Handoff`；`handoffs(owner,topicId?):Handoff[]`。prepare 不写任务，commit 在一次事务中创建接收任务与交接记录；幂等键按发起者/requestId，重复但 payload 不同拒绝。
-- [ ] 真实 service 测试：重复提交只建一个任务，接收/共享权限缺失都失败；版本/作者不匹配拒绝；prepare 期间撤权拒绝 commit；事务注入失败无半条任务；重启相同 requestId 返回原任务；源任务状态/预算不变。运行 handoffs.test.ts 确认红。
-- [ ] 用原自然语言解析建立接收任务，来源作为只读证据约束持久保存，不将手工拼接标题当模型理解；缺信息补问共用原任务描述表单及草稿。
-- [ ] 当前版本可发起一次性交接；只有明确持续要求才设持续评审。权限检查复用 ContactSources.allowed，用户界面发起不暗开分享或读取。
-- [ ] 新 API 接入和跨联系人/过期/重启测试通过后提交 `feat(contacts): persist versioned review handoffs`。
+- [x] 真实 service 测试：重复提交只建一个任务，接收/共享权限缺失都失败；版本/作者不匹配拒绝；prepare 期间撤权拒绝 commit；事务注入失败无半条任务；重启相同 requestId 返回原任务；源任务状态/预算不变。运行 handoffs.test.ts 确认红。
+- [x] 用原自然语言解析建立接收任务，来源作为只读证据约束持久保存，不将手工拼接标题当模型理解；缺信息补问共用原任务描述表单及草稿。
+- [x] 当前版本可发起一次性交接；只有明确持续要求才设持续评审。权限检查复用 ContactSources.allowed，用户界面发起不暗开分享或读取。
+- [x] 新 API 接入和跨联系人/过期/重启测试通过后提交 `feat(contacts): persist versioned review handoffs`。
 
 ## Task F2：评审链路和意见交回
 

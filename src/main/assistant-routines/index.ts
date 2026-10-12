@@ -12,7 +12,7 @@ import { streamAIChat } from '../ai'
 import { getRegisteredTool, registerTool } from '../tools/registry'
 import { AssistantRoutineService } from './service'
 import { createAssistantTools } from './tools'
-import { requestContactTask } from './gateway'
+import { requestContactTask, prepareHandoffWork } from './gateway'
 import { ContactTaskDraftStore } from './drafts'
 import { contactTaskHref } from '../../shared/contact-links'
 import { CompanionBriefing, type CompanionKind } from './companion'
@@ -185,6 +185,15 @@ export function initializeAssistantRoutines() {
   ipcMain.handle('contact-task:request', (_event, target, message) => requestContactTask(target, message, {
     routineService: service!, drafts, agents: contactAgentsCall, config: getConfig, saveConfig: patch => { saveConfig(patch) }, defaultCharacterId: DEFAULT_CHARACTER_ID
   }, modelForRequest))
+  ipcMain.handle('agents:prepareHandoff', async (_event, owner: string, request: import('../../shared/contact-handoffs').HandoffRequest) => {
+    const existing = await contactAgentsCall(owner, 'checkHandoff', [request])
+    if (existing) return { kind: 'committed', handoff: existing }
+    const key = `contact-handoff-draft:${owner}:${request.requestId}`
+    const draft = new ContactTaskDraftStore({ read: () => getState(key), write: value => setState(key, value), quarantine: value => setState(`${key}:quarantined`, value) })
+    const result = await prepareHandoffWork(request.recipientId, request.description, { routineService: service!, drafts: draft, agents: contactAgentsCall, config: getConfig, saveConfig: patch => { saveConfig(patch) }, defaultCharacterId: DEFAULT_CHARACTER_ID }, modelForRequest)
+    if (result.kind === 'question') return result
+    return contactAgentsCall(owner, 'stageHandoff', [request, result.work])
+  })
   ipcMain.handle('contact-task:drafts', () => drafts.list())
   for (const tool of createAssistantTools(service, id => id ? getSession(id)?.characterId : undefined, readContactsForAssistant)) if (!getRegisteredTool(tool.name)) registerTool(tool)
   const tick = () => {
