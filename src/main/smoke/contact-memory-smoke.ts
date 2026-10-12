@@ -4,9 +4,10 @@ import { join } from 'node:path'
 import { AgentStore } from '../agents/store'
 import { waitForRenderer } from './storage-smoke'
 import { restartAgentsForSmoke } from '../agents'
+import { getActiveSession, selectChatSession, flushDatabase } from '../database'
 
 /** Real modal/IPC/disk failure flow; only run in the isolated smoke profile. */
-export async function runContactMemorySmoke(window: BrowserWindow, characterId: string) {
+export async function runContactMemorySmoke(window: BrowserWindow, characterId: string, modelRequest?: () => unknown) {
   const run = (script: string) => window.webContents.executeJavaScript(script)
   const click = async (selector: string) => {
     const point = await run(`(() => {
@@ -94,6 +95,16 @@ export async function runContactMemorySmoke(window: BrowserWindow, characterId: 
   await restartAgentsForSmoke()
   const versions = await run(`window.electronAPI.agents.memoryHistory(${JSON.stringify(characterId)},${JSON.stringify(original.id)})`)
   if (versions.length !== 2 || versions[0].content !== '用户偏好：请先给结论，再解释依据。') throw new Error('Memory correction/history lost after restart')
+  const active = getActiveSession().id
+  try {
+    const workspace = await run(`window.electronAPI.db.createSession('Memory references smoke', ${JSON.stringify(characterId)})`)
+    const sessionId = workspace.activeSession.id
+    const result = await run(`window.electronAPI.ai.startStream(${JSON.stringify({ requestId: 'memory-context-smoke', characterId, sessionId, messages: [{ role: 'user', content: '请按我的偏好回答' }], systemPrompt: 'Reply briefly.' })})`)
+    if (!result.ok || !result.contactContext?.memories.some((m: { id: string; revision: number }) => m.id === original.id && m.revision === 2)) throw new Error('Actual chat did not record supplied memory version')
+    if (modelRequest && !JSON.stringify(modelRequest()).includes(versions[0].content)) throw new Error('Reference receipt was not actually included in the provider request')
+    const saved = await run(`window.electronAPI.db.saveSessionMessages(${JSON.stringify(sessionId)},${JSON.stringify([{ id: 'memory-context-reply', role: 'assistant', content: '喵', timestamp: Date.now(), contactContext: result.contactContext }])})`)
+    if (saved.activeSession.messages[0].contactContext?.memories[0]?.revision !== 2) throw new Error('Actual context receipt was not persisted with reply')
+  } finally { selectChatSession(active); await flushDatabase() }
   await click(`${row} [data-memory-forget]`)
   await waitForRenderer(window, `!document.querySelector('${row}')`)
   const forgotten = await run(`window.electronAPI.agents.memoryHistory(${JSON.stringify(characterId)},${JSON.stringify(original.id)})`)

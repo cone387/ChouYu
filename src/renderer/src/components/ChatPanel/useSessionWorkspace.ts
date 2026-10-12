@@ -313,6 +313,7 @@ export function useSessionWorkspace({
         console.info(`[Chat] memory recall took ${Date.now() - recallStartedAt}ms`)
       }
     }
+    let contactContext: Message['contactContext']
     const memoryRefs = relevantMemories.map((memory) => ({
       id: memory.id,
       content: memory.content,
@@ -350,10 +351,10 @@ export function useSessionWorkspace({
         if (existing) {
           // 续写针对同一条用户消息重新检索记忆，保留原引用（含用户反馈标记）而不是整组替换。
           return previous.map((message) => message.id === targetMessageId
-            ? { ...message, content, responseStatus: undefined, replyCompletedAt: undefined, memoryRefs: options.appendTo ? message.memoryRefs : memoryRefs }
+            ? { ...message, content, contactContext: contactContext ?? message.contactContext, responseStatus: undefined, replyCompletedAt: undefined, memoryRefs: options.appendTo ? message.memoryRefs : memoryRefs }
             : message)
         }
-        return [...previous, { id: targetMessageId, role: 'assistant', content, timestamp: Date.now(), memoryRefs }]
+        return [...previous, { id: targetMessageId, role: 'assistant', content, timestamp: Date.now(), memoryRefs, contactContext }]
       })
     }
     const scheduleRender = () => {
@@ -420,7 +421,8 @@ export function useSessionWorkspace({
           requestSessionRef.current.set(requestId, sessionId)
         },
         character && !character.builtIn ? character.id : undefined,
-        sessionId
+        sessionId,
+        references => { contactContext = references }
       )
     } catch (error) {
       renderAccumulated()
@@ -432,6 +434,7 @@ export function useSessionWorkspace({
         id: aiMsgId,
         role: 'assistant',
         content: options.appendTo ? (accumulated || STOPPED_PLACEHOLDER_CONTENT) : `请求失败：${message}`,
+        contactContext,
         timestamp: Date.now(),
         // 失败的续写保持可继续状态：'stopped' 让「继续生成」按钮仍然可用，
         // 而不是退化成会丢弃半截内容的整体重试。

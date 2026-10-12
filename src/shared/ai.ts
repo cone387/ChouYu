@@ -20,6 +20,7 @@ export interface AIStreamEvent {
 }
 
 export interface AIStreamResult {
+  contactContext?: import('./contact-content').ContactContextRecord
   ok: boolean
   error?: string
   /** Atomic reply for a persisted contact operation; avoids cross-channel event races. */

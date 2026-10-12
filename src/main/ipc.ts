@@ -642,6 +642,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     activeAIRequests.set(requestKey, controller)
     let taskMutationRequested = false
+    let contactContext: import('../shared/contact-content').ContactContextRecord | undefined
+    let contextSent = false
     const releaseRendererLifecycle = bindAIRequestLifecycle(event.sender, controller)
 
     try {
@@ -651,7 +653,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const skillTools = skillToolRuntime(request.characterId || '', skillSnapshot, contactSkillRunner(), controller.signal)
       let privateContext = ''
       if (owner) {
-        try { privateContext = await agentContext(owner) } catch { privateContext = '\n独立工作记录暂时无法读取，请勿声称知道未提供的工作经历。' }
+        try {
+          const latest = request.messages.filter(m => m.role === 'user').at(-1)
+          const refs = latest?.contactCitations
+          const topicId = refs?.length && refs.every(ref => ref.ref.topicId === refs[0].ref.topicId) ? refs[0].ref.topicId : undefined
+          const selected = await agentContext(owner, { characterId: owner, sessionId: request.sessionId, topicId, query: latest?.content || '' })
+          privateContext = selected.text
+          contactContext = { characterId: owner, requestId: request.requestId, memories: selected.memories, truncated: selected.truncated, status: 'completed' }
+        } catch { privateContext = '\n独立工作记录暂时无法读取，请勿声称知道未提供的工作经历。' }
       }
       const chatTools = config.aiToolsEnabled ? {
           definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)
@@ -784,12 +793,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           event.sender.send('ai:stream-event', streamEvent)
         },
         controller.signal,
-        chatTools
+        chatTools,
+        { onMetadata: () => { contextSent = true } }
       )
-      return { ok: true }
+      if (contextSent && contactContext) setState(`contact-context:${request.requestId}`, JSON.stringify(contactContext))
+      return { ok: true, contactContext: contextSent ? contactContext : undefined }
     } catch (error) {
+      if (contextSent && contactContext) { contactContext.status = 'failed'; setState(`contact-context:${request.requestId}`, JSON.stringify(contactContext)) }
       if (controller.signal.aborted) return { ok: false, error: 'AI 请求已取消。' }
-      return { ok: false, error: getErrorMessage(error) }
+      return { ok: false, error: getErrorMessage(error), contactContext: contextSent && contactContext ? { ...contactContext, status: 'failed' } : undefined }
     } finally {
       releaseRendererLifecycle()
       if (activeAIRequests.get(requestKey) === controller) activeAIRequests.delete(requestKey)

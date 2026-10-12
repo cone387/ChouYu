@@ -11,6 +11,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { AgentSettings, AgentRun, AgentOverview, AgentMemory, AgentReport, AgentRunDetail, AgentRunStatus, AgentTopicProgress, AgentTopicStatus } from '../../shared/agents'
 import { agentUsesPlanner, DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 import { containsSecret } from '../../shared/memory'
+import type { ContextReferences } from '../../shared/contact-content'
 import { validateTaskResourceBudget, type TaskResourceBudget } from '../../shared/agent-resources'
 import { AgentTopics, canResearch } from './topics'
 import { AgentNotices } from './notices'
@@ -261,6 +262,24 @@ export class AgentStore {
     const rows = this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(id) as RunRow[]
     for (const row of rows) { this.setStatus(row.id, 'cancelled', now); this.event(row.id, 'cancelled', reason, now) }
   }
+  assertContextCurrent(owner: string, refs: ContextReferences) {
+    for (const ref of refs.memories) {
+      const memory = this.memoryLibrary.get(owner, ref.id)
+      if (memory.status !== 'active' || memory.revision !== ref.revision) throw new Error('参考记忆已被纠正或忘记，本轮不能继续提交。')
+    }
+  }
+  invalidateMemory(owner: string, memoryId: string) {
+    const affected: string[] = []
+    for (const run of this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(owner) as RunRow[]) {
+      const input = JSON.parse(run.input)
+      if ((input.contextReferences?.memories ?? input.memories ?? []).some((m: { id: string }) => m.id === memoryId)) {
+        this.setStatus(run.id, 'cancelled'); this.event(run.id, 'cancelled', '参考记忆已被纠正或忘记，本轮停止，已有成果保留。'); affected.push(run.id)
+        // Remove cached plaintext while retaining reference IDs for the work history.
+        input.memories = []; this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), run.id)
+      }
+    }
+    return affected
+  }
   remove(id: string) { const runs = (this.db.prepare('SELECT id FROM runs WHERE character_id=?').all(id) as { id: string }[]).map(r => r.id); this.db.prepare('DELETE FROM profiles WHERE character_id=?').run(id); this.db.prepare('DELETE FROM token_ledger WHERE character_id=?').run(id); for (const runId of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(runId); return runs }
   overview(id: string, now = Date.now()): AgentOverview {
     const profile = this.profile(id)
@@ -457,12 +476,12 @@ export class AgentStore {
       if (this.callCount(id, now) + needed > settings.dailyCalls) throw new Error(`联系人今日资源不足：已用 ${this.callCount(id, now)}/${settings.dailyCalls} 次，本轮需预留 ${needed} 次（规划与执行）。可等明日恢复或调整联系人资源上限。`)
       this.assertTaskBudget(id, topic.id, needed)
       const runId = randomUUID()
-      const overview = this.overview(id, now)
+      const selectedMemories = this.memoryLibrary.select({ characterId: id, topicId: topic.id, query: `${topic.goal}\n${context}` })
       const previous = (this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 3').all(topic.id, id) as { value: string }[]).map(row => JSON.parse(row.value) as AgentReport)
       const baselineRun = this.db.prepare('SELECT topic_revision FROM runs WHERE id=?').get(previous[0]?.runId ?? '') as { topic_revision: number } | undefined
       const last = this.db.prepare('SELECT * FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id, topic.id) as RunRow | undefined
       const feedback = last?.status === 'failed' && JSON.parse(last.input).revisionScope !== 'presentation' ? [JSON.parse(last.input).feedback, last.answer ? `对问题「${last.question}」的回复：${last.answer}` : ''].filter(Boolean).join('\n').slice(0, 4000) : undefined
-      const input = JSON.stringify({ revisionScope, revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: overview.memories.filter(m => !m.runId || this.getRun(m.runId)?.topic_id === topic.id).slice(0, 12).map(m => ({ ...m, content: m.content.slice(0, 600) })), previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(-4000) })
+      const input = JSON.stringify({ revisionScope, revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: selectedMemories.items, contextReferences: { memories: selectedMemories.items.map(m => ({ id: m.id, revision: m.revision })) }, memoriesTruncated: selectedMemories.truncated, previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(-4000) })
       const runInput = assignment ? JSON.stringify({ ...JSON.parse(input), assignment: true, conversation: scheduled!.conversation || context.slice(-4000) }) : input
       this.db.prepare('INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input,topic_id,topic_revision) VALUES(?,?,?,\'queued\',?,?,?,?,?)').run(runId, id, profile.revision, now, now, runInput, topic.id, topic.revision)
       if (assignment) this.db.prepare("UPDATE task_schedule SET pending=0,conversation='' WHERE topic_id=?").run(topic.id)
@@ -581,6 +600,8 @@ export class AgentStore {
     const run = this.getRun(runId)
     const profile = run && this.profile(run.character_id)
     if (!run || !profile || run.revision !== profile.revision || !['running', 'queued', 'interrupted', 'waiting'].includes(run.status)) throw new Error('本轮工作已取消或角色已删除。')
+    const refs = JSON.parse(run.input).contextReferences as ContextReferences | undefined
+    if (refs) this.assertContextCurrent(run.character_id, refs)
     if (run.topic_id) {
       const topic = this.topics.check(run.character_id, run.topic_id, run.topic_revision!)
       if (!canResearch(topic.status) && JSON.parse(run.input).revisionScope !== 'presentation') throw new Error('此事项已暂停或结束。')

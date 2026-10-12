@@ -384,8 +384,8 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       if (!await run(`window.electronAPI.agents.exportDelivery(${id}, ${JSON.stringify(completed.focusTopicId)}, 1)`)) throw new Error('Deliverable export cancelled')
       if (!readFileSync(exportPath, 'utf8').includes('按用户回复只研究开发者工具')) throw new Error('Export omitted revised text')
     } finally { dialog.showSaveDialog = originalSaveDialog }
-    const ownContext = await agentContext(DEFAULT_CHARACTER_ID), otherContext = await agentContext(other.id)
-    if (!ownContext.includes('开发者机会研究') || ownContext.includes('BOB_PRIVATE_SMOKE') || otherContext.includes('开发者机会研究')) throw new Error('Private chat recall crossed contacts')
+    const ownContext = await agentContext(DEFAULT_CHARACTER_ID, { characterId: DEFAULT_CHARACTER_ID, query: '' }), otherContext = await agentContext(other.id, { characterId: other.id, query: '' })
+    if (!ownContext.text.includes('开发者机会研究') || ownContext.text.includes('BOB_PRIVATE_SMOKE') || otherContext.text.includes('开发者机会研究')) throw new Error('Private chat recall crossed contacts')
     const mismatched = await run(`window.electronAPI.ai.startStream(${JSON.stringify({ requestId: 'agent-owner-boundary', sessionId: fixtureSession, characterId: other.id, systemPrompt: 'test', messages: [{ role: 'user', content: 'test' }] })})`)
     if (mismatched.ok || calls !== 1) throw new Error('A mismatched session was allowed to select another agent identity')
     const record = await run(`window.electronAPI.agents.detail(${id}, ${JSON.stringify(waiting.runs[0].id)})`)

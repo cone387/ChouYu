@@ -22,7 +22,7 @@
 
 **Files:** 新增 `src/main/agents/context.ts`、`context.test.ts`、`memory-tools.ts`、`memory-tools.test.ts`；修改 `src/main/{ipc,database}.ts`、`agents/{index,service,store,runtime}.ts`、`assistant-routines/companion.ts`、`src/renderer/src/components/ChatPanel/MessageArea.tsx`、`src/shared/contact-communication.ts`。
 **Interfaces:** `buildContactContext(store:AgentStore, context:ContactReadContext):{text:string; memories:{id:string;revision:number}[];truncated:boolean}`；`assertContextCurrent(owner:string, refs:ContextReferences):void`。ContextReferences 在 contact-content.ts 定义 memories 数组及可选 materials（E 提供）；actual request/消息/轮次保存此快照。工具名称 list_contact_memories、update_contact_memory、remember_contact_memory、forget_contact_memory。
-- [ ] 捕获实际聊天和后台模型请求：任务 A 不见任务 B/会话 C 记忆；ChouYu 检查别人不见其记忆；改变旧记忆后原检查点提交拒绝；参数含糊不写；跨人 ID 拒绝；关闭 UI 的迟到回调不展示到另一人；工具策略确认次数与原配置一致。运行 context/memory-tools 测试确认红。
-- [ ] 移除聊天最近 12 条硬截取，统一传 context（会话 ID/明确任务/当前用户文本），后台构造相同范围快照；普通聊天自动聚焦任务不等于用户指定任务。请求发出后才记录实际提供项，失败标实际失败，不显示为模型必然使用。
-- [ ] 记忆纠正走工具读真实 id/revision 后更新；必要才追问。共同经历允许从真实消息/成果创建有 source 的候选，未经事实核对不写 active；用户明确记住直接按权限策略保存。更新/忘记取消引用受影响版本的轮次，保留暂停及原调度，不取消无关任务。
-- [ ] MessageArea 展示「本次参考记忆」，打开当时版本；被忘记只显示移除提示。运行真实 IPC 烟测与最终 --experience 模型样本；通过专项/类型检查后提交 `feat(contacts): share scoped memory context and corrections`。
+- [x] 捕获实际聊天和后台模型请求：任务 A 不见任务 B/会话 C 记忆；ChouYu 检查别人不见其记忆；改变旧记忆后原检查点提交拒绝；参数含糊不写；跨人 ID 拒绝；关闭 UI 的迟到回调不展示到另一人；工具策略确认次数与原配置一致。运行 context/memory-tools 测试确认红。
+- [x] 移除聊天最近 12 条硬截取，统一传 context（会话 ID/明确任务/当前用户文本），后台构造相同范围快照；普通聊天自动聚焦任务不等于用户指定任务。请求发出后才记录实际提供项，失败标实际失败，不显示为模型必然使用。
+- [x] 记忆纠正走工具读真实 id/revision 后更新；必要才追问。共同经历允许从真实消息/成果创建有 source 的候选，未经事实核对不写 active；用户明确记住直接按权限策略保存。更新/忘记取消引用受影响版本的轮次，保留暂停及原调度，不取消无关任务。
+- [x] MessageArea 展示「本次参考记忆」，打开当时版本；被忘记只显示移除提示。运行真实 IPC 烟测与最终 --experience 模型样本；通过专项/类型检查后提交 `feat(contacts): share scoped memory context and corrections`。

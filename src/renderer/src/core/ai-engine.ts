@@ -30,7 +30,8 @@ export async function streamChat(
   signal?: AbortSignal,
   onRequestStart?: (requestId: string) => void,
   characterId?: string,
-  sessionId?: string
+  sessionId?: string,
+  onContactContext?: (context: import('../../../shared/contact-content').ContactContextRecord) => void
 ): Promise<void> {
   if (!characterId && !config.apiKey.trim()) {
     throw new Error('尚未配置 API Key，请先打开设置完成配置。')
@@ -58,16 +59,14 @@ export async function streamChat(
   const unsubscribe = window.electronAPI.ai.onStreamEvent((event) => {
     if (event.requestId !== requestId) return
     if (event.chunk) onChunk(event.chunk, false)
-    if (event.done && !completed) {
-      completed = true
-      onChunk('', true)
-    }
+    // The IPC result carries actual context references; attach them before final persistence.
   })
   const abortRequest = () => window.electronAPI.ai.cancelStream(requestId)
   signal?.addEventListener('abort', abortRequest, { once: true })
 
   try {
     const result = await window.electronAPI.ai.startStream(request)
+    if (result.contactContext) onContactContext?.(result.contactContext)
     if (signal?.aborted) throw createAbortError()
     if (!result.ok) throw new Error(result.error || 'AI 请求失败，请稍后重试。')
     if (result.reply !== undefined && !completed) onChunk(result.reply, false)

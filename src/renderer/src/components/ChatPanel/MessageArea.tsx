@@ -13,6 +13,7 @@ import AssistantMessageLabel from './AssistantMessageLabel'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import ReactMarkdown from 'react-markdown'
 import ContactCitation from '../Contacts/ContactCitation'
+import ContactContextReferences from '../Contacts/ContactContextReferences'
 import { ContactLink } from '../Contacts/contactNavigation'
 import remarkGfm from 'remark-gfm'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../../../../shared/conversation-search'
@@ -390,6 +391,7 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
               )}
             </div>
             {msg.contactCitations?.map((citation, index) => <ContactCitation key={index} citation={citation} />)}
+            {msg.contactContext && <ContactContextReferences record={msg.contactContext} />}
             {msg.role === 'assistant' && msg.memoryRefs && msg.memoryRefs.length > 0 && (
               <details className="message-memory-refs">
                 <summary>使用了 {memorySourceCount} 条长期记忆{memorySourceCount > msg.memoryRefs.length ? ` · 压缩为 ${msg.memoryRefs.length} 个主题` : ''}</summary>

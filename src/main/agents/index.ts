@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState } from '../database'
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
+import { createMemoryTools } from './memory-tools'
 import { contactConversation } from './conversation'
 import { getRegisteredTool, registerTool } from '../tools/registry'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
@@ -111,7 +112,7 @@ async function ensure() {
   })().finally(() => { starting = undefined; for (const id of dirty) void deliver(id) })
   return starting
 }
-export async function agentContext(characterId: string) { await ensure(); return await rpc('context', characterId) as string }
+export async function agentContext(characterId: string, context: import('../../shared/contact-content').ContactReadContext) { await ensure(); await rpc('sync', '', [identities()]); return await rpc('contextSnapshot', characterId, [context]) as { text: string; memories: { id: string; revision: number }[]; truncated: boolean } }
 /** Read-only access for ChouYu's assistant; no contact mutations are exposed. */
 export async function inspectContactWork(characterId: string) {
   if (!getCharacter(characterId) || characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
@@ -152,6 +153,7 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  for (const tool of createMemoryTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   registerPresentationProtocol(async (id, topicId, version) => {
     if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     await ensure()

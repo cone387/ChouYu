@@ -1,6 +1,7 @@
 import { normalizeTaskReminderRef, type TaskReminderRef } from '../shared/reminders'
 import { normalizeAssistantMessageKind, type AssistantMessageKind } from '../shared/assistant-message'
 import { sanitizeCitations, validateCitationShapes } from '../shared/contact-citations'
+import { sanitizeContactContext } from '../shared/contact-content'
 import { app, safeStorage } from 'electron'
 import { randomUUID } from 'crypto'
 import path from 'path'
@@ -30,6 +31,7 @@ import { sanitizeContactCommunication, validateContactMessage, type ContactCommu
 export interface Message {
   communication?: ContactCommunication
   contactCitations?: import('../shared/contact-content').ContentCitation[]
+  contactContext?: import('../shared/contact-content').ContactContextRecord
   agentNotice?: AgentMessageRef
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -205,6 +207,7 @@ function sanitizeMessages(value: unknown): Message[] {
       toolData: sanitizeToolData(message.toolData),
       memoryRefs: sanitizeMemoryRefs(message.memoryRefs),
       contactCitations: sanitizeCitations(message.contactCitations),
+      contactContext: sanitizeContactContext(message.contactContext),
       imageUrl: typeof message.imageUrl === 'string' ? message.imageUrl : undefined
     }))
 }
@@ -542,6 +545,7 @@ export function createChatSession(title?: string, characterId: string = DEFAULT_
 export function selectChatSession(id: string): SessionWorkspace {
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
+
   store.activeSessionId = id
   persist()
   return getSessionWorkspace()
@@ -743,6 +747,16 @@ export function deleteCharacter(id: string): SessionWorkspace {
 export function saveSessionMessages(id: string, messages: Message[], readMessageId?: string): SessionWorkspace {
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
+  const verifiedContexts = new Map<string, Message['contactContext']>()
+  for (const message of messages) {
+    const previous = session.messages.find(m => m.id === message.id)?.contactContext
+    if (previous) verifiedContexts.set(message.id, previous)
+    if (message.contactContext) {
+      let actual: Message['contactContext']
+      try { actual = sanitizeContactContext(JSON.parse(getState(`contact-context:${message.contactContext.requestId}`) || 'null')) } catch { /* malformed receipts are not evidence */ }
+      if (actual?.characterId === session.characterId && message.role === 'assistant') verifiedContexts.set(message.id, actual)
+    }
+  }
   for (const message of messages) if (message.contactCitations !== undefined) {
     const refs = validateCitationShapes(message.contactCitations)
     if (refs.some(c => c.ref.characterId !== session.characterId)) throw new Error('正文引用与会话联系人不匹配。')
@@ -756,6 +770,7 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
   const previousReplies = new Map(session.messages.filter(message => message.replyReadAt).map(message => [message.id, message]))
   let nextMessages: Message[] = sanitizeMessages(messages).map((message) => previousProactive.get(message.id) ?? ({
     ...message,
+    contactContext: verifiedContexts.get(message.id),
     communication: message.role === 'assistant' && !message.toolData && !message.pluginData && message.content.trim()
       ? { version: 1, characterId: session.characterId, intent: 'reply', source: { kind: 'conversation', sessionId: session.id } }
       : undefined,

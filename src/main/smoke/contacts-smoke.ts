@@ -115,7 +115,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
       writeFileSync(join(artifacts, 'contact-profile-tab.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
     }
     if (await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail .agent-heading, .contacts-detail .contact-agent > .agent-description, .contacts-activity footer'))")) throw new Error('Removed contact description blocks returned')
-    await runContactMemorySmoke(window, character.id)
+    await runContactMemorySmoke(window, character.id, () => chatBody)
     if (process.env.CHOUYU_SMOKE_CONTACT_PORTFOLIO_ONLY === '1') { await runContactPortfolioSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_MEMORY_ONLY === '1') return
     await runSkillsSmoke(window, character.id)

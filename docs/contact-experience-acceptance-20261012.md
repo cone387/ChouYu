@@ -25,7 +25,7 @@
 
 全部界面测试使用隔离数据，不写用户真实任务或记忆。本轮未跑真实模型、后台全天工作或所有 agent 引擎专项；没有改变这些执行逻辑。专项的恰好一条断言覆盖失败后重试，不声称已做保存中切换联系人或快速重复提交的独立 UI 验收。
 
-列表/概览重排、正文引用、记忆版本与适用范围、资料空间、协作交接、技能文件成果仍在实施；不以单个模块替代完整目标。
+列表/概览重排、资料空间、协作交接、技能文件成果仍在实施；不以单个模块替代完整目标。
 
 ## B：成果集与续读
 
@@ -46,3 +46,9 @@
 - 单意见弹窗在 375/1024、深浅色下验证边界与无彩色聚焦装饰；截图 `artifacts/contact-citations/citation-dialog-*.png`，检查浅色 375 和深色 1024。原始 IPC 错误前缀已从弹窗提示中移除。
 - 旧任务和成果集会同时保留组件，烟测选择器已限定可见成果集，避免误点击隐藏任务阅读器；续读恢复也改为按实际加载对象执行布局恢复，避免同版本快速加载漏掉恢复。
 - 以上是隔离数据与本地模型夹具，真实模型意见质量及最终跨模块流程仍待验收。
+
+## D: Versioned, scoped contact memories
+
+Schema 10 migrates existing sources without inferred scopes. Corrections preserve identity and history; research creates candidates requiring user confirmation. Scope selection precedes ranking, limited to 12 records / 16000 characters. Updates invalidate affected run snapshots without resetting unrelated schedules. Chat tools use existing permission policy. Main-process receipts identify actual supplied revisions, persisted on the reply and displayed without asserting model use. Forgotten history is redacted.
+
+Validation: D1 SQLite/service/runtime/portfolio 52 passed; D2 full suite 1419 passed, 19 skipped; typecheck and build passed. Electron memory smoke passed failure/retry, edit/history, restart, forgetting, actual provider request capture and persisted reply references. Real-model quality remains in FINAL acceptance.
