@@ -28,7 +28,7 @@ describe('contact notice outbox', () => {
     const diagnostic = '工作计划不是完整 JSON，字段 nextStep/active/done 校验失败'
     store.fail(run, diagnostic)
     const notice = store.notices.pending('alice')[0]
-    expect(notice.content).toContain('没有作为成果交给你')
+    expect(notice.content).toContain('尚未执行这份计划')
     expect(notice.content).not.toMatch(/JSON|nextStep|active|done/)
     expect(notice.communication?.intent).toBe('blocker')
     expect(store.detail('alice', run).run.error).toBe(diagnostic)

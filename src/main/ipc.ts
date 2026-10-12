@@ -675,7 +675,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                 return result.content.slice(0, 50_000)
               }
               if (taskMutation) taskMutationRequested = true
-              const needsApproval = shouldConfirmTool(definition, config.toolPermissionMode)
+              const contactPolicy = owner ? (await contactAgentsCall(owner, 'get') as import('../shared/agents').AgentOverview).settings.toolPermissionMode : undefined
+              if (controller.signal.aborted) throw new Error('AI 请求已取消。')
+              const needsApproval = shouldConfirmTool(definition, getConfig().toolPermissionMode, contactPolicy)
               sendToolEvent(event.sender, {
                 requestId: request.requestId,
                 callId: call.id,

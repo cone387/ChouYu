@@ -1,5 +1,6 @@
 export type ToolRisk = 'safe' | 'read' | 'write'
 export type ToolPermissionMode = 'confirm' | 'auto' | 'full'
+export type ContactToolPermissionMode = 'inherit' | ToolPermissionMode
 export type ToolSource = 'builtin' | 'plugin'
 export type ToolExecutionStatus = 'requested' | 'running' | 'completed' | 'denied' | 'expired' | 'cancelled' | 'error'
 
@@ -95,8 +96,12 @@ export function getToolRiskLabel(risk: ToolRisk): string {
 
 export function shouldConfirmTool(
   definition: Pick<AIToolDefinition, 'risk' | 'requiresConfirmation' | 'alwaysConfirm'>,
-  mode: ToolPermissionMode
+  mode: ToolPermissionMode,
+  contactMode: ContactToolPermissionMode = 'inherit'
 ): boolean {
+  if (contactMode === 'full') return false
+  if (contactMode === 'auto') return definition.risk === 'write'
+  if (contactMode === 'confirm') return definition.alwaysConfirm === true || definition.requiresConfirmation || definition.risk === 'write'
   if (definition.alwaysConfirm) return true
   if (mode === 'full') return false
   if (mode === 'auto') return definition.risk === 'write'

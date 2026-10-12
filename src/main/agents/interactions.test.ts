@@ -87,20 +87,58 @@ it('answers the original checkpoint once, recognizes external answers and does n
   expect(store.getRun(run)?.answer).toBe('两千字左右')
   expect(store.getRun(run)?.status).toBe('queued')
 })
-it('offers retry only after automatic retries stop, and restarts the same task once', () => {
+it('offers actionable feedback on every failure, with the actual automatic retry time', () => {
   const { store } = fixture()
   for (let i = 0; i < 3; i++) {
     const run = store.createRun('alice', '')
     store.fail(run, '模型输出格式无效')
     const notice = store.notices.pending('alice').find(n => n.runId === run)!
-    if (i < 2) expect(notice.interactionId).toBeUndefined()
+    const card = store.decisions.get('alice', notice.interactionId!)
+    expect(card.failure?.kind).toBe('format')
+    if (i < 2) expect(card.automaticRetryAt).toBeGreaterThan(Date.now())
     else {
-      const card = store.decisions.get('alice', notice.interactionId!)
+      expect(card.automaticRetryAt).toBeUndefined()
       store.decisions.submit('alice', card.id, { version: card.version }, '')
       expect(store.overview('alice').failures).toBe(0)
       expect(store.overview('alice').runs.find(r => r.status === 'queued')?.topicId).toBe(card.topicId)
     }
   }
+})
+it('lets the user retry the first failure once and expires the old card when automatic work has already resumed', () => {
+  const { store } = fixture(), run = store.createRun('alice', '')
+  store.fail(run, '工作计划 urls 必须为数组')
+  const card = store.decisions.pending('alice')[0]
+  expect(card).toMatchObject({ kind: 'retry', status: 'pending' })
+  store.decisions.submit('alice', card.id, { version: card.version }, '')
+  store.decisions.submit('alice', card.id, { version: card.version }, '')
+  expect(store.overview('alice').runs).toHaveLength(2)
+  const second = store.overview('alice').runs.find(r => r.id !== run)!
+  store.fail(second.id, '网络超时')
+  const current = store.decisions.pending('alice')[0]
+  store.createRun('alice', '')
+  expect(store.decisions.get('alice', current.id).status).toBe('obsolete')
+})
+it('shows exact non-sensitive diagnostics and hides credentials in the interactive explanation', () => {
+  const { store } = fixture(), run = store.createRun('alice', '')
+  store.fail(run, '工作计划 urls 必须为数组')
+  expect(store.decisions.pending('alice')[0].failureDetail).toBe('工作计划 urls 必须为数组')
+  const next = store.createRun('alice', '')
+  store.fail(next, 'API error api_key=do-not-display-this-value')
+  const detail = store.decisions.pending('alice')[0].failureDetail
+  expect(detail).not.toContain('do-not-display-this-value')
+  expect(detail).toContain('已隐藏')
+})
+it('refreshes a failure card after changing permissions and requires its latest version to retry', () => {
+  const { store } = fixture(), run = store.createRun('alice', '')
+  store.fail(run, '未授权读取联系人的共享成果。')
+  const before = store.decisions.pending('alice')[0]
+  store.save('alice', { ...store.overview('alice').settings, readContactDeliveries: true }, Date.now(), false)
+  const after = store.decisions.get('alice', before.id)
+  expect(after.status).toBe('pending')
+  expect(after.version).not.toBe(before.version)
+  expect(() => store.decisions.submit('alice', before.id, { version: before.version }, '')).toThrow('已变化')
+  store.decisions.submit('alice', after.id, { version: after.version }, '')
+  expect(store.overview('alice').runs.filter(r => r.status === 'queued')).toHaveLength(1)
 })
 it('resumes interrupted daily Token work without discarding its checkpoint', () => {
   const { store } = fixture()
@@ -155,4 +193,29 @@ it('does not resurrect a cleared historical message during upgrade', () => {
   store.decisions.publishOutstanding('alice', new Set())
   expect(store.decisions.pending('alice')).toHaveLength(0)
   expect(store.notices.pending('alice').some(n => n.interactionId)).toBe(false)
+})
+it('retries failed presentation changes in their original scope, including paused tasks', () => {
+  const { store } = fixture(), run = store.createRun('alice', '')
+  store.finish(run, { runId: run, title: '第一节', body: '已保存正文', nextStep: '继续', evidence: [], createdAt: Date.now() }, [],
+    { judgement: '已写第一节', reason: '实际交付', nextStep: '继续', openQuestions: '', status: 'researching' })
+  const topicId = store.getRun(run)!.topic_id!
+  let topic = store.topics.get('alice', topicId)
+  store.changeTopic('alice', topicId, topic.revision, { status: 'paused', reason: '保留正文，仅调整阅读样式' })
+  topic = store.topics.get('alice', topicId)
+  const artifact = store.deliveries.get(topicId)!
+  const revision = store.revisePresentation('alice', topicId, topic.revision, '行距改为两倍', '', artifact.version)
+  store.fail(revision, 'API error 503')
+  const notice = store.notices.pending('alice').find(n => n.runId === revision)!
+  expect(notice.interactionId).toBeTruthy()
+  const card = store.decisions.get('alice', notice.interactionId!)
+  expect(card.status).toBe('pending')
+  expect(card.automaticRetryAt).toBeUndefined()
+  expect(card.failure?.action).toBe('重试本次样式修改')
+  store.decisions.submit('alice', card.id, { version: card.version }, '')
+  store.decisions.submit('alice', card.id, { version: card.version }, '')
+  const queued = store.overview('alice').runs.filter(r => r.status === 'queued')
+  expect(queued).toHaveLength(1)
+  expect(JSON.parse(store.getRun(queued[0].id)!.input)).toMatchObject({ revisionScope: 'presentation', revisionBaseVersion: artifact.version, feedback: '行距改为两倍' })
+  expect(store.deliveries.get(topicId)).toEqual(artifact)
+  expect(store.topics.get('alice', topicId).status).toBe('paused')
 })

@@ -139,6 +139,15 @@ export default function ContactWorkSettings({ characterId, data, keyConfigured, 
     </section>
     <section className="work-setting-section" aria-label="资料与协作权限">
       <h3>资料与协作权限</h3>
+      <div className="work-setting-row" data-contact-tool-policy><label htmlFor={`${modeId}-tools`}>工具执行确认</label>
+        <div className="work-setting-editor"><select id={`${modeId}-tools`} aria-label="工具执行确认" disabled={disabled} value={settings.toolPermissionMode ?? 'inherit'}
+          onChange={e => void save('toolPermissionMode', { toolPermissionMode: e.target.value as AgentSettings['toolPermissionMode'] })}>
+          <option value="inherit">沿用系统设置</option><option value="confirm">需要确认的操作逐次询问</option>
+          <option value="auto">读取自动，修改前确认</option><option value="full">已授权工具自动执行</option>
+        </select></div>
+        <p className="work-setting-hint">仅对这个联系人生效。自动执行包括修改操作，不再逐次弹窗；关闭的工具、网页范围和技能脚本授权仍然有效。后台工作继续遵守下方资料权限和技能授权。</p>
+        <Result feedback={feedback.toolPermissionMode} />
+      </div>
       <div className="work-setting-row"><span>网页访问</span><div className="work-setting-options" role="group" aria-label="网页访问">
         <button type="button" data-work-permission="public" aria-pressed={!restricted} disabled={disabled} onClick={() => void save('permission', { permissionLevel: 'public' }).then(ok => { if (ok) setRestrictedSelected(false) })}>公开网页</button>
         <button type="button" aria-pressed={restricted} disabled={disabled} onClick={() => {

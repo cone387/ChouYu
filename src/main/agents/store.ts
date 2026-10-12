@@ -711,7 +711,7 @@ export class AgentStore {
     if (JSON.parse(run.input).revisionScope === 'presentation') {
       if (run.topic_id) {
         const topic = this.topics.get(run.character_id, run.topic_id)
-        this.notices.enqueue({ id: `${id}:presentation-failed`, purpose: 'presentation', characterId: run.character_id, topicId: topic.id, runId: id, topicRevision: topic.revision, kind: 'progress', createdAt: Date.now(), content: `「${topic.title}」的阅读样式修改未完成，原成果与正文已保留。${contactFailureReason(error)}\n可在工作记录中查看详情并重试本次样式修改。` })
+        this.notices.enqueue({ id: `${id}:presentation-failed`, purpose: 'presentation', characterId: run.character_id, topicId: topic.id, runId: id, topicRevision: topic.revision, kind: 'progress', createdAt: Date.now(), content: `「${topic.title}」的阅读样式修改未完成，原成果与正文已保留。${contactFailureReason(error)}\n可在这条消息的处理卡片中查看原因、打开对应设置或重试本次样式修改。` })
       }
       return
     }
@@ -730,7 +730,7 @@ export class AgentStore {
       const recovery = providerDelay !== undefined ? `服务暂时不可用，将在 ${providerDelay / 60000} 分钟后自动尝试继续；仍受工作时间和额度限制。` : failures >= 3 ? '已连续失败 3 次，自动推进已停止，请查看工作记录后重试。'
         : settings.enabled ? `将在 ${failureDelay(settings, failures) / 60000} 分钟后尝试继续；仍受工作时间和额度限制。` : '可在工作记录中重试。'
       this.notices.enqueue({ id: `${id}:failure`, characterId: run.character_id, topicId: topic.id, runId: id, topicRevision: topic.revision,
-        kind: 'progress', purpose: 'failure', createdAt: Date.now(), content: `关于「${topic.title}」：${contactFailureReason(error)}之前保存的内容还在。\n\n${recovery}\n详细原因留在这次的工作记录里。` })
+        kind: 'progress', purpose: 'failure', createdAt: Date.now(), content: `关于「${topic.title}」：${contactFailureReason(error)}\n\n${recovery}\n可在这条消息的处理卡片中重试或打开对应设置；已有成果保留。` })
     }
   }
   finish(runId: string, report: AgentReport, memories: string[], progress?: AgentTopicProgress, delivery?: DeliveryUpdate) {

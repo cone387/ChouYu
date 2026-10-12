@@ -9,6 +9,8 @@
 .work-settings-flat input:not([type=checkbox]):not([type=radio]), .work-settings-flat textarea { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; }
 .work-settings-flat input:not([type=checkbox]):not([type=radio]):focus, .work-settings-flat textarea:focus { border-color: var(--border); outline: none; box-shadow: none; }
 .work-settings-flat textarea { resize: vertical; }
+.work-settings-flat select { min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; }
+.work-settings-flat select:focus { border-color: var(--border); outline: none; box-shadow: none; }
 .work-settings-flat input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: 0 0 auto; cursor: pointer; }
 .work-setting-switch-row > label { display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; min-height: 34px; }
 .work-settings-flat button { padding: 7px 12px; min-height: 34px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }

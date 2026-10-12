@@ -54,6 +54,7 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       <strong className="contact-interaction-title">{title}</strong>
       <div className="contact-interaction-task">{view.topicTitle}</div>
       {view.kind === 'question' ? <p className="contact-interaction-question">{view.question}</p> : <p>{view.kind === 'budget' ? '已有成果保留，当前额度不足以继续。' : view.failure?.message || fallback}</p>}
+      {view.failureDetail && <details className="contact-interaction-diagnostic"><summary>具体原因</summary><p>{view.failureDetail}</p></details>}
       {view.status === 'pending' && view.automaticRetryAt && <p className="contact-interaction-usage">最早 {new Date(view.automaticRetryAt).toLocaleString()} 自动尝试继续，仍受工作时间和额度限制。也可以现在重试。</p>}
       {view.status === 'pending' ? <form onSubmit={submit} noValidate>
         {view.budgets.map(field => <label className="contact-interaction-field" key={field.key}>
@@ -68,7 +69,9 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
         </label>}
         <div className="contact-interaction-actions">
           <button type="submit" className="primary" disabled={busy || view.kind === 'question' && !answer.trim()}>{busy ? '正在处理…' : view.kind === 'question' ? '回复并继续' : view.kind === 'budget' || view.budgets.length ? '调整并继续' : view.failure?.action || '重试本任务'}</button>
-          {view.failure?.settings && <button type="button" disabled={busy} onClick={() => void navigateContact({ kind: 'settings' }).catch(e => setError(e.message))}>模型服务设置</button>}
+          {view.failure?.settings && <button type="button" disabled={busy} onClick={() => void navigateContact(view.failure?.settingsTarget
+            ? { kind: 'contact-settings', characterId, tab: view.failure.settingsTarget === 'skills' ? 'skills' : 'settings' }
+            : { kind: 'settings' }).catch(e => setError(e.message))}>{view.failure.settingsTarget === 'skills' ? '检查技能与运行环境' : view.failure.settingsTarget === 'work' ? '联系人权限设置' : view.failure.kind === 'permission' ? '工具设置' : '模型服务设置'}</button>}
           {openTask && <button type="button" onClick={openTask} disabled={busy}>查看任务</button>}
         </div>
       </form> : <div className="contact-interaction-result" role="status">{view.result || '此事项已处理'}{openTask && <div className="contact-interaction-actions"><button type="button" onClick={openTask}>查看任务</button></div>}</div>}

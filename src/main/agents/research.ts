@@ -59,7 +59,11 @@ export function parseResearchPlan(raw: string, allowed: string[], minimum: numbe
   const query = typeof value.query === 'string' ? value.query.trim() : ''
   if (query.length > 300 || containsSecret(query) || value.action === 'search' && !query) throw new Error('搜索词无效或包含敏感凭据。')
   if (value.action === 'search' && (!searchEnabled || permission === 'sources')) throw new Error('当前权限或配置不允许自主搜索。')
-  if (!Array.isArray(value.urls) || value.urls.length > 5 || value.urls.some((url: unknown) => !researchUrl(url) || permission === 'sources' && !allowed.includes(researchUrl(url)!))) throw new Error('研究计划包含当前权限不允许读取的网页。')
+  if (!Array.isArray(value.urls)) throw new ResearchPlanFormatError('工作计划 urls 必须为数组；不读取网页时应填写空数组。')
+  if (value.urls.length > 5) throw new ResearchPlanFormatError('工作计划 urls 超过单次最多 5 个网页的数量限制。')
+  const invalidUrl = value.urls.findIndex((url: unknown) => !researchUrl(url))
+  if (invalidUrl >= 0) throw new ResearchPlanFormatError(`工作计划 urls[${invalidUrl}] 不是有效的公开 HTTPS 地址；不允许登录凭据、密钥或非标准端口。`)
+  if (permission === 'sources' && value.urls.some((url: unknown) => !allowed.includes(researchUrl(url)!))) throw new Error('网页访问权限不足：计划地址不在允许访问的网页范围内。')
   if (value.action === 'read' && !value.urls.length) throw new Error('读取计划缺少网页。')
   if (value.action === 'write' && (value.urls.length || query)) throw new Error('直接写作计划不能声称搜索或读取网页。')
   if (!Number.isInteger(value.checkAfterMinutes) || value.checkAfterMinutes < 15 || value.checkAfterMinutes > 10080) throw new Error('下次检查间隔无效。')

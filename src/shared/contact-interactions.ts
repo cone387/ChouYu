@@ -9,7 +9,8 @@ export interface ContactInteraction {
   characterName?: string
   id: string; version: string; characterId: string; topicId: string; runId: string; topicTitle: string
   kind: ContactInteractionKind; status: ContactInteractionStatus; question?: string
-  failure?: { kind: 'billing' | 'configuration' | 'network' | 'format' | 'unknown'; message: string; action: string; settings: boolean }
+  failureDetail?: string
+  failure?: { kind: 'billing' | 'configuration' | 'network' | 'format' | 'permission' | 'skill' | 'source' | 'unknown'; message: string; action: string; settings: boolean; settingsTarget?: 'work' | 'skills' }
   budgets: ContactBudgetField[]; result?: string; createdAt: number
 }
 export interface ContactInteractionSubmission {

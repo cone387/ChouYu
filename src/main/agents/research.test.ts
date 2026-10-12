@@ -36,6 +36,16 @@ function fixture() {
 afterEach(() => { vi.unstubAllGlobals(); for (const close of closers.splice(0).reverse()) close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 describe('autonomous evidence research', () => {
+  it('repairs missing URL arrays as planning format errors without reading or granting access', async () => {
+    const { store, runtime, reader, searcher } = fixture(), id = store.createRun('alice', '')
+    const model = vi.fn().mockResolvedValueOnce(JSON.stringify({ action: 'wait', reason: '等待新内容', query: '', checkAfterMinutes: 180 }))
+      .mockResolvedValueOnce(JSON.stringify({ ...plan, action: 'wait', query: '' }))
+    await runtime.execute(id, '', model, new AbortController().signal)
+    expect(store.getRun(id)?.status).toBe('completed')
+    expect(store.detail('alice', id).events.some(e => e.kind === 'plan-format-invalid' && e.text.includes('urls'))).toBe(true)
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(reader).not.toHaveBeenCalled(); expect(searcher).not.toHaveBeenCalled()
+  })
   it('accepts a single plan surrounded by explanatory text without relaxing permissions', () => {
     const wrapped = `以下是本轮计划：\n\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`\n请按计划执行。`
     expect(parseResearchPlan(wrapped, [], 180, 'public', true).action).toBe('search')

@@ -1,5 +1,6 @@
 import { sanitizeProgressUpdate } from './agent-progress'
 export interface AgentSettings {
+  toolPermissionMode?: import('./tools').ContactToolPermissionMode
   maxConcurrentTasks?: number
   workHours?: { start: string; end: string }
   dailyTokenLimit?: number
@@ -153,6 +154,7 @@ export interface AgentDashboard { contacts: Record<string, AgentDashboardContact
 export function validateAgentSettings(raw: unknown): AgentSettings {
   if (!raw || typeof raw !== 'object') throw new Error('工作设置无效。')
   const value = raw as AgentSettings
+  if (value.toolPermissionMode !== undefined && !['inherit', 'confirm', 'auto', 'full'].includes(value.toolPermissionMode)) throw new Error('联系人工具确认策略无效。')
   if (typeof value.goal !== 'string' || !value.goal.trim() || value.goal.length > 2000) throw new Error('请填写 1–2000 字的工作方向。')
   if (value.permissionLevel !== undefined && !['public', 'sources'].includes(value.permissionLevel)) throw new Error('工作权限等级无效。')
   if (!Array.isArray(value.sources) || value.sources.length > 5) throw new Error('参考资料最多 5 个网页地址，可留空。')
@@ -179,7 +181,7 @@ export function validateAgentSettings(raw: unknown): AgentSettings {
   if (value.notifyProgress !== undefined && typeof value.notifyProgress !== 'boolean') throw new Error('通知设置无效。')
   if (value.searchEnabled !== undefined && typeof value.searchEnabled !== 'boolean') throw new Error('搜索开关无效。')
   if (value.dailySearches !== undefined && (!Number.isInteger(value.dailySearches) || value.dailySearches < 1 || value.dailySearches > 24)) throw new Error('每日搜索上限应为 1–24 次。')
-  return { ...(value.maxConcurrentTasks !== undefined ? { maxConcurrentTasks: value.maxConcurrentTasks } : {}), ...(value.workHours !== undefined ? { workHours: { start: value.workHours.start, end: value.workHours.end } } : {}), ...(value.dailyTokenLimit !== undefined ? { dailyTokenLimit: value.dailyTokenLimit } : {}), ...(value.defaultTaskTokenLimit !== undefined ? { defaultTaskTokenLimit: value.defaultTaskTokenLimit } : {}), ...(value.paceWriting !== undefined ? { paceWriting: value.paceWriting } : {}), ...(value.readContactDeliveries !== undefined ? { readContactDeliveries: value.readContactDeliveries } : {}), ...(value.shareDeliveries !== undefined ? { shareDeliveries: value.shareDeliveries } : {}), ...(value.permissionLevel !== undefined ? { permissionLevel: value.permissionLevel } : {}), goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled, ...(value.notifyProgress !== undefined ? { notifyProgress: value.notifyProgress } : {}), ...(value.searchEnabled !== undefined ? { searchEnabled: value.searchEnabled } : {}), ...(value.dailySearches !== undefined ? { dailySearches: value.dailySearches } : {}) }
+  return { ...(value.toolPermissionMode !== undefined ? { toolPermissionMode: value.toolPermissionMode } : {}), ...(value.maxConcurrentTasks !== undefined ? { maxConcurrentTasks: value.maxConcurrentTasks } : {}), ...(value.workHours !== undefined ? { workHours: { start: value.workHours.start, end: value.workHours.end } } : {}), ...(value.dailyTokenLimit !== undefined ? { dailyTokenLimit: value.dailyTokenLimit } : {}), ...(value.defaultTaskTokenLimit !== undefined ? { defaultTaskTokenLimit: value.defaultTaskTokenLimit } : {}), ...(value.paceWriting !== undefined ? { paceWriting: value.paceWriting } : {}), ...(value.readContactDeliveries !== undefined ? { readContactDeliveries: value.readContactDeliveries } : {}), ...(value.shareDeliveries !== undefined ? { shareDeliveries: value.shareDeliveries } : {}), ...(value.permissionLevel !== undefined ? { permissionLevel: value.permissionLevel } : {}), goal: value.goal.trim(), sources: [...new Set(sources)], intervalMinutes: value.intervalMinutes, dailyCalls: value.dailyCalls, enabled: value.enabled, ...(value.notifyProgress !== undefined ? { notifyProgress: value.notifyProgress } : {}), ...(value.searchEnabled !== undefined ? { searchEnabled: value.searchEnabled } : {}), ...(value.dailySearches !== undefined ? { dailySearches: value.dailySearches } : {}) }
 }
 export const AGENT_STATUS: Record<AgentRunStatus, string> = {
   queued: '等待执行', running: '正在工作', waiting: '等你回复', completed: '已完成', failed: '执行失败', cancelled: '已取消', interrupted: '等待恢复'

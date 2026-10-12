@@ -1,4 +1,5 @@
 import { contactFailure } from '../../shared/contact-failure'
+import { containsSecret } from '../../shared/memory'
 import { createHash } from 'node:crypto'
 import { agentUsesPlanner, type AgentNotice, type AgentSettings } from '../../shared/agents'
 import type { ContactBudgetField, ContactInteraction, ContactInteractionSubmission } from '../../shared/contact-interactions'
@@ -22,8 +23,9 @@ export class ContactInteractions {
     const profile = this.store.profile(notice.characterId)
     if (!profile) return
     const settings = JSON.parse(profile.settings) as AgentSettings
+    const sourceRun = this.store.getRun(notice.runId)
     const kind = notice.kind === 'question' ? 'question' : notice.purpose === 'resources' ? 'budget'
-      : notice.purpose === 'failure' && ((this.store.taskFailures.get(notice.topicId)?.failures ?? 0) >= 3 || !settings.enabled) ? 'retry' : undefined
+      : notice.purpose === 'failure' || notice.purpose === 'presentation' && sourceRun?.status === 'failed' ? 'retry' : undefined
     if (!kind) return
     const existing = this.store.db.prepare('SELECT id FROM contact_interactions WHERE id=?').get(notice.id)
     if (existing) return notice.id
@@ -45,7 +47,7 @@ export class ContactInteractions {
     for (const row of rows) {
       const notice = JSON.parse(row.value) as AgentNotice
       if (visibleNoticeIds && !visibleNoticeIds.has(notice.id)) continue
-      if (seen.has(notice.topicId) || !['resources', 'failure'].includes(notice.purpose ?? '') && notice.kind !== 'question') continue
+      if (seen.has(notice.topicId) || !['resources', 'failure', 'presentation'].includes(notice.purpose ?? '') && notice.kind !== 'question') continue
       const run = this.store.getRun(notice.runId)
       const topicRow = this.store.db.prepare('SELECT value FROM topics WHERE id=? AND character_id=?').get(notice.topicId, owner) as { value: string } | undefined
       const latest = this.store.db.prepare('SELECT id FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(notice.topicId) as { id: string } | undefined
@@ -88,7 +90,7 @@ export class ContactInteractions {
     const s = this.store, run = s.getRun(v.runId)!, topic = s.topics.get(v.characterId, v.topicId)
     const settings = JSON.parse(s.profile(v.characterId)!.settings) as AgentSettings
     const continuing = ['waiting', 'queued', 'interrupted'].includes(run.status)
-    const callsNeeded = continuing ? s.callsNeededToResume(run.id) : agentUsesPlanner(settings) ? 2 : 1
+    const callsNeeded = continuing ? s.callsNeededToResume(run.id) : JSON.parse(run.input).revisionScope === 'presentation' ? 1 : agentUsesPlanner(settings) ? 2 : 1
     const block = s.db.prepare('SELECT needed FROM token_blocks WHERE run_id=?').get(run.id) as { needed: number } | undefined
     const usage = s.tokens.usage(v.characterId), fields: ContactBudgetField[] = []
     const add = (key: ContactBudgetField['key'], label: string, unit: string, used: number, limit: number | undefined, needed: number, max: number) => {
@@ -102,7 +104,15 @@ export class ContactInteractions {
   }
   get(owner: string, id: string): ContactInteraction {
     const v = this.read(owner, id), s = this.store
-    if (v.kind === 'retry') v.failure = contactFailure(s.getRun(v.runId)?.error ?? '')
+    const sourceRun = s.getRun(v.runId)
+    const presentation = sourceRun && JSON.parse(sourceRun.input).revisionScope === 'presentation'
+    if (v.kind === 'retry') {
+      const error = s.getRun(v.runId)?.error ?? ''
+      v.failure = contactFailure(error)
+      if (presentation) v.failure = { ...v.failure, action: '重试本次样式修改' }
+      v.failureDetail = containsSecret(error) || /Bearer\s+\S+|https?:\/\/[^\s]+[?@]/i.test(error)
+        ? '原始诊断含有凭据或带参数的地址，已隐藏。请核对对应设置。' : error.slice(0, 600)
+    }
     if (v.status === 'pending') {
       const run = s.getRun(v.runId)
       const row = s.db.prepare('SELECT value FROM topics WHERE character_id=? AND id=?').get(owner, v.topicId) as { value: string } | undefined
@@ -111,12 +121,17 @@ export class ContactInteractions {
       const newer = s.db.prepare('SELECT id FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(v.topicId) as { id: string } | undefined
       if (v.kind === 'question' && s.db.prepare("SELECT 1 FROM events WHERE run_id=? AND kind='answer' AND id>?").get(v.runId, v.questionEventId ?? Number.MAX_SAFE_INTEGER)) {
         v.status = 'resolved'; v.result = '已收到回复'
-      } else if (!run || !topic || !profile || topic.revision !== v.topicRevision || settingsGuard(JSON.parse(profile.settings)) !== v.settingsGuard
-        || ['completed', 'abandoned'].includes(topic.status) || newer?.id !== v.runId
+      } else if (!run || !topic || !profile || topic.revision !== v.topicRevision || v.kind !== 'retry' && settingsGuard(JSON.parse(profile.settings)) !== v.settingsGuard
+        || !presentation && ['completed', 'abandoned'].includes(topic.status) || newer?.id !== v.runId
+        || presentation && s.deliveries.get(v.topicId)?.version !== JSON.parse(run.input).revisionBaseVersion
         || v.kind === 'question' && (run.status !== 'waiting' || run.question !== v.question)
-        || v.kind === 'retry' && (run.status !== 'failed' || topic.status === 'paused')) {
+        || v.kind === 'retry' && (run.status !== 'failed' || !presentation && topic.status === 'paused')) {
         v.status = 'obsolete'; v.result = '任务状态已变化，此操作已失效'
       } else {
+        if (v.kind === 'retry') {
+          const guard = settingsGuard(JSON.parse(profile.settings))
+          if (guard !== v.settingsGuard) { v.settingsGuard = guard; this.save(v) }
+        }
         v.budgets = this.fields(v)
         if (v.kind === 'budget' && !v.budgets.length) {
           v.status = 'resolved'; v.result = topic.status === 'paused' ? '额度限制已解除；任务仍暂停，可在任务中继续' : '额度限制已解除'
@@ -124,9 +139,12 @@ export class ContactInteractions {
       }
       if (v.status !== 'pending') this.save(v)
     }
-    if (v.kind === 'retry' && v.status === 'pending') {
+    if (v.kind === 'retry' && v.status === 'pending' && !presentation) {
       const recovery = s.providerRecovery(owner, v.topicId)
-      v.automaticRetryAt = recovery?.runId === v.runId ? recovery.at : undefined
+      const settings = JSON.parse(s.profile(owner)!.settings) as AgentSettings
+      const failure = s.taskFailures.get(v.topicId)
+      v.automaticRetryAt = recovery?.runId === v.runId ? recovery.at
+        : settings.enabled && failure?.run_id === v.runId && failure.failures < 3 ? failure.next_at : undefined
     }
     const { topicRevision: _revision, settingsGuard: _settings, questionEventId: _event, ...view } = v
     view.version = createHash('sha256').update(JSON.stringify([v.id, v.topicRevision, v.settingsGuard, v.budgets.map(f => [f.key, f.limit])])).digest('hex')
@@ -171,8 +189,14 @@ export class ContactInteractions {
         s.db.prepare("UPDATE runs SET status='queued',topic_revision=? WHERE id=?").run(topic.revision, run.id)
         record.result = '额度已调整，本轮已排队继续'
       } else {
-        s.continueTopic(owner, topic.id, topic.revision, current.kind === 'budget' ? '用户通过聊天卡片调整额度并继续。' : '用户通过聊天卡片重试本任务。', conversation)
-        record.result = current.kind === 'budget' ? '额度已调整，任务已排队' : '已重试，任务已排队'
+        const input = JSON.parse(run.input)
+        if (input.revisionScope === 'presentation') {
+          s.revisePresentation(owner, topic.id, topic.revision, input.feedback, conversation, input.revisionBaseVersion)
+          record.result = '本次样式修改已排队重试，正文保持不变'
+        } else {
+          s.continueTopic(owner, topic.id, topic.revision, current.kind === 'budget' ? '用户通过聊天卡片调整额度并继续。' : '用户通过聊天卡片重试本任务。', conversation)
+          record.result = current.kind === 'budget' ? '额度已调整，任务已排队' : '已重试，任务已排队'
+        }
       }
       record.status = 'resolved'; record.budgets = current.budgets
       this.save(record)

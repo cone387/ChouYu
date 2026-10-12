@@ -1,5 +1,6 @@
 import { runContactInteractionsSmoke } from './contact-interactions-smoke'
 import { runContactChatChangeSmoke } from './contact-chat-change-smoke'
+import { runContactPermissionsSmoke } from './contact-permissions-smoke'
 import { app, dialog, type BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -46,7 +47,8 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('判断用户最新一句是否在调整'))) {
         const context = JSON.parse(payload.messages.at(-1).content)
-        const result = context.latest?.startsWith('验收聊天修改') ? { kind: 'action', topicId: context.topics[0].id, action: 'edit', patch: { constraints: '每条只汇报一个idea', separateEvaluations: true } } : { kind: 'none' }
+        const result = context.latest?.startsWith('验收联系人权限') ? { kind: 'action', topicId: context.topics[0].id, action: 'pause' }
+          : context.latest?.startsWith('验收聊天修改') ? { kind: 'action', topicId: context.topics[0].id, action: 'edit', patch: { constraints: '每条只汇报一个idea', separateEvaluations: true } } : { kind: 'none' }
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })
         response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
         return
@@ -78,10 +80,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
         toolResponses = payload.messages.filter((m: { role: string }) => m.role === 'tool').map((m: { content: string }) => m.content)
         const data = toolResponses.flatMap(value => { try { const parsed = JSON.parse(value); return parsed.topics ? [parsed] : [] } catch { return [] } }).at(-1)
         let name = '', args: Record<string, unknown> = {}
-        if (toolStep === 0) name = 'get_contact_topics'
-        if (toolStep === 1) {
+        const requestStep = continuingExisting ? toolResponses.length : toolStep
+        if (requestStep === 0) name = 'get_contact_topics'
+        if (requestStep === 1) {
           const topic = data.topics.find((t: { id: string }) => t.id === data.focusTopicId)
-          name = scenario === 'assign' ? 'assign_contact_task' : scenario === 'answer' ? 'answer_contact_question' : 'update_contact_topic'
+          name = continuingExisting ? 'update_contact_topic' : scenario === 'assign' ? 'assign_contact_task' : scenario === 'answer' ? 'answer_contact_question' : 'update_contact_topic'
           args = scenario === 'assign' ? { description: '核对团队知识库的检索需求，只读验证，预算 500 元' } : { topicId: topic.id, revision: topic.revision, ...(scenario === 'answer' ? { runId: data.pending[0].id, answer: '开发者工具' } : { action: 'constraints', constraints: '仅验证开发者工具，预算 200 元', reason: '缩小研究范围' }) }
           if (continuingExisting) args = { topicId: topic.id, revision: topic.revision, action: 'continue', reason: '继续' }
         }
@@ -137,6 +140,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
     saveConfig({ provider: 'openai', baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'agent-smoke-secret', model: 'agent-smoke', memoryEnabled: false, aiToolsEnabled: true, toolPermissionMode: 'full' })
     window.webContents.send('config:changed', getConfig())
+    if (process.env.CHOUYU_SMOKE_PERMISSIONS_ONLY === '1') {
+      await runContactPermissionsSmoke(window)
+      console.log('CHOUYU_SMOKE_AGENTS_PASSED permissionsOnly=true')
+      return
+    }
     if (process.env.CHOUYU_SMOKE_CHAT_CHANGE_ONLY === '1') {
       await runContactChatChangeSmoke(window)
       console.log('CHOUYU_SMOKE_AGENTS_PASSED chatChangeOnly=true')
@@ -820,7 +828,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('[data-delivery-submit]')?.disabled === false")
     await run("document.querySelector('[data-delivery-submit]').click()")
     await waitForRenderer(window, `document.querySelector('.contact-delivery')?.dataset.deliveryVersion === '${beforeRevision.version + 1}'`, 20000)
-    if (!await run("document.querySelector('.delivery-reader')?.textContent.includes('已按修改意见补充局限')")) throw new Error('Revision form did not update the deliverable')
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .delivery-reader')?.textContent.includes('已按修改意见补充局限')")
     await run("document.querySelector('[data-delivery-prev]').click()")
     await waitForRenderer(window, `document.querySelector('.contact-delivery')?.dataset.deliveryVersion === '${beforeRevision.version}'`)
     if (await run("document.querySelector('.delivery-reader')?.textContent.includes('已按修改意见补充局限')")) throw new Error('Old artifact version was overwritten')

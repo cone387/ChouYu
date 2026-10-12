@@ -15,6 +15,21 @@ function fixture() {
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '写作', enabled: true, dailyCalls: 100, dailyTokenLimit: 10000, defaultTaskTokenLimit: 6000 }, Date.now(), false)
   return { store, path }
 }
+it('persists independent contact confirmation policies without cancelling waiting work or changing tool access', () => {
+  const { store, path } = fixture()
+  store.assignTopic('alice', '写文章', '')
+  const run = store.overview('alice').runs[0]
+  store.wait(run.id, '文章主题？')
+  const before = store.overview('alice')
+  store.save('alice', { ...before.settings, toolPermissionMode: 'full' }, Date.now(), false, before.revision)
+  store.save('bob', { ...DEFAULT_AGENT_SETTINGS, goal: '另一个联系人' }, Date.now(), false)
+  const reopened = new AgentStore(path); cleanups.push(() => reopened.close())
+  expect(reopened.overview('alice').settings).toMatchObject({ toolPermissionMode: 'full' })
+  expect(reopened.overview('bob').settings.toolPermissionMode).toBeUndefined()
+  expect(reopened.getRun(run.id)?.status).toBe('waiting')
+  expect(reopened.overview('alice').settings.permissionLevel).toBe(before.settings.permissionLevel)
+  expect(() => store.save('alice', { ...before.settings, toolPermissionMode: 'anything' }, Date.now(), false)).toThrow('确认策略')
+})
 it('preserves running and waiting rounds when switching to manual, and rejects stale settings', () => {
   const { store } = fixture()
   const task = store.assignTopic('alice', '写一篇文章', '')

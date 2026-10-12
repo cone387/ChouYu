@@ -31,7 +31,7 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
         store.finish(runId, { runId, title: '介绍初稿', body: '正文已经保存。', nextStep: '继续', evidence: [], createdAt: Date.now() }, [], { judgement: '已交稿', nextStep: '继续', openQuestions: '', reason: '实际交付', status: 'researching' })
       } else if (kind === 'question') store.wait(runId, '这篇介绍主要写给谁看？')
       else store.fail(runId, kind === 'billing' ? 'API error 429: 余额不足或无可用资源包' : '验收中的模型输出格式错误')
-      const notice = store.notices.pending(character.id).find(n => n.interactionId)!
+      const notice = store.notices.pending(character.id).find(n => n.interactionId && n.runId === runId)!
       cardId = notice.interactionId!
       appendAgentNotice(notice); store.notices.ack(character.id, notice.id)
     } finally { store.close() }
@@ -80,6 +80,7 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
         if (recovered.topics.get(character.id, topicId!).resourceBudget?.modelCalls !== 3) throw new Error('Failed submit changed budget')
         recovered.db.exec('DROP TRIGGER interaction_failure')
       } finally { recovered.close() }
+      await waitForRenderer(window, `document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-busy')==='false'`)
       await run(`(() => {const b=document.querySelector(${JSON.stringify(selector)}).querySelector('button[type=submit]');b.click();b.click()})()`)
       await waitForRenderer(window, `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('额度已调整，任务已排队')`, 10000)
       const latest = await run(`window.electronAPI.agents.topicDetail(${JSON.stringify(character.id)},${JSON.stringify(topicId!)})`)
@@ -107,7 +108,7 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
       await run(`document.querySelector(${JSON.stringify(selector)}).querySelector('form')?.requestSubmit()`)
       await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(selector)})?.querySelector('.contact-interaction-result'))`)
     } else if (kind === 'billing') {
-      const text = await run(`document.querySelector(${JSON.stringify(selector)}).textContent`)
+      const text = await run(`document.querySelector(${JSON.stringify(selector)}).innerText`)
       if (!text.includes('模型服务商') || !text.includes('自动尝试继续') || text.includes('API error')) throw new Error('Billing card exposes raw error instead of useful guidance')
       if (process.env.CHOUYU_SMOKE_ARTIFACTS) writeFileSync(join(process.env.CHOUYU_SMOKE_ARTIFACTS, 'contact-billing-auto.png'), (await window.webContents.capturePage()).toPNG())
       await run(`Array.from(document.querySelector(${JSON.stringify(selector)}).querySelectorAll('button')).find(b=>b.textContent==='模型服务设置').click()`)

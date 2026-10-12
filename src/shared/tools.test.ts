@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { getToolRiskLabel, parseToolArguments, shouldConfirmTool, validateToolArguments } from './tools'
 
 describe('tool protocol helpers', () => {
+  it('uses an explicit contact policy without weakening inherited forced confirmation', () => {
+    const forced = { risk: 'write' as const, requiresConfirmation: true, alwaysConfirm: true }
+    expect(shouldConfirmTool(forced, 'full', 'inherit')).toBe(true)
+    expect(shouldConfirmTool(forced, 'confirm', 'full')).toBe(false)
+    expect(shouldConfirmTool(forced, 'full', 'confirm')).toBe(true)
+    expect(shouldConfirmTool(forced, 'full', 'auto')).toBe(true)
+    expect(shouldConfirmTool({ ...forced, risk: 'read' }, 'confirm', 'auto')).toBe(false)
+  })
   it('respects confirm, auto-review, and full-access permission modes', () => {
     const readTool = { risk: 'read' as const, requiresConfirmation: true }
     const writeTool = { risk: 'write' as const, requiresConfirmation: true }
