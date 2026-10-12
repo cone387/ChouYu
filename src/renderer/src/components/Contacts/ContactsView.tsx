@@ -416,7 +416,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
 
   const detailProfile = detail && (
     <section className="contacts-profile-details" aria-label="人设">
-      <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '（未设置，使用默认丑鱼人格）'}</div>
+      <div className="contacts-detail-soul">{(detail.id === DEFAULT_CHARACTER_ID ? config.soulMd : detail.soulMd) || '尚未设置人设'}</div>
     </section>
   )
 
@@ -496,7 +496,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
                 <span className="contacts-card-subtitle">{model}</span>
               </span>
             </span>
-            <span className="contacts-card-desc">{soulSummary || '未设置人设，使用默认丑鱼人格'}</span>
+            <span className="contacts-card-desc">{soulSummary || '尚未设置人设'}</span>
             <ContactCardStats data={dashboard?.contacts[character.id]?.summary} error={dashboardError} lastWorkedAt={dashboard?.contacts[character.id]?.lastWorkedAt} />
             <span className="contacts-card-tags">
               <span className="contacts-card-tag" data-contact-work-mode={character.id}>{dashboard?.contacts[character.id] ? dashboard.contacts[character.id].settings.enabled ? '自动推进' : '按需推进' : '工作方式加载中'}</span>
@@ -603,7 +603,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         {form.id === DEFAULT_CHARACTER_ID && <p className="contacts-hint">内置角色的人设与模型会写回设置页的全局配置。</p>}
         <label className="contacts-field contacts-field-multiline"><span className="contacts-field-name">人设</span>
           <textarea data-contacts-soulmd rows={3} value={form.soulMd}
-            onChange={(event) => setForm({ ...form, soulMd: event.target.value })} placeholder="系统提示词，留空使用默认丑鱼人格" /></label>
+            onChange={(event) => setForm({ ...form, soulMd: event.target.value })} placeholder="描述这位联系人的身份和交流风格，可留空" /></label>
         {error && <div className="contacts-error" role="alert">{error}</div>}
         <div className="contacts-form-actions">
           <button type="button" onClick={() => setForm(null)}>取消</button>
