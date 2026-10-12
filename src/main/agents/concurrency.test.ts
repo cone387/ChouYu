@@ -7,6 +7,7 @@ import { AgentStore } from './store'
 import { DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 import { evidenceFromText } from './sources'
 import { createContactTools } from './tools'
+import { routeContactChange } from './chat-changes'
 import type { ToolExecutionContext } from '../tools/registry'
 
 const cleanups: (() => void | Promise<void>)[] = []
@@ -196,6 +197,37 @@ it('lets chat continue another task while a peer is running', async () => {
   const prepared = await tool.prepareAsync!({ topicId: topic.id, revision: topic.revision, action: 'continue', reason: 'Continue the second task' }, { sessionId: 'chat' } as ToolExecutionContext)
   await prepared.execute()
   await vi.waitFor(() => expect(f.active()).toHaveLength(2))
+})
+
+it('routes repeated continuation through real persisted states without duplicate runs and resumes the exact answered run', async () => {
+  const f = await fixture(1)
+  await f.run(0)
+  await f.run(1)
+  await vi.waitFor(() => expect(f.pending).toHaveLength(1))
+  const tools = createContactTools({ owner: () => 'alice', request: (...args) => f.service.request(...args) })
+  const previews: string[] = []
+  const execute = vi.fn(async (call: { name: string; arguments: string }) => {
+    const prepared = await tools.find(t => t.name === call.name)!.prepareAsync!(JSON.parse(call.arguments), { sessionId: 'chat' } as ToolExecutionContext)
+    previews.push(prepared.preview ?? '')
+    return (await prepared.execute()).content
+  })
+  const route = (index: number, message: string, plan: Record<string, unknown> = {}) => routeContactChange([{ role: 'user', content: message }], {
+    read: (method, args) => f.service.request(method, 'alice', args),
+    model: async () => JSON.stringify({ kind: 'action', topicId: f.topics[index], action: 'continue', targetText: index === 0 ? 'First' : 'Second', ...plan }), execute
+  })
+  expect(await route(0, '继续 First')).toContain('正在执行')
+  expect(await route(1, '继续 Second')).toContain('排队')
+  expect(execute).not.toHaveBeenCalled()
+  f.pending[0].resolve(result('你熟悉哪个行业？'))
+  await vi.waitFor(() => expect(f.service.store.overview('alice').runs.some(r => r.status === 'waiting')).toBe(true))
+  const waiting = f.service.store.overview('alice').runs.find(r => r.status === 'waiting')!
+  expect(await route(0, '继续 First')).toContain('你熟悉哪个行业？')
+  expect(execute).not.toHaveBeenCalled()
+  expect(await route(0, 'First 评审请关注开发者工具', { action: 'answer', runId: waiting.id })).toContain('已保存你的回复')
+  expect(previews).toHaveLength(1)
+  expect(previews[0]).toContain('你熟悉哪个行业？')
+  expect(f.service.store.overview('alice').runs.find(r => r.id === waiting.id)).toMatchObject({ topicId: f.topics[0], answer: 'First 评审请关注开发者工具' })
+  expect(f.service.store.overview('alice').runs).toHaveLength(2)
 })
 
 it('gives queued assignments a turn when a continuously producing task finishes a round', async () => {

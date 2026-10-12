@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { routeContactChange } from './chat-changes'
 import { contactConversation } from './conversation'
 import { waitForToolApproval } from '../tool-approval'
+import { createContactTools } from './tools'
+import type { ToolExecutionContext } from '../tools/registry'
 
 function fixture(plan: unknown) {
   const data = { topics: [{ id: 't', revision: 4, title: '评审', goal: '可以一次评价1–3个 idea', constraints: '' }], runs: [{ id: 'r', topicId: 't', status: 'waiting' }], focusTopicId: 't' }
@@ -12,10 +14,79 @@ function fixture(plan: unknown) {
   return { data, read, model, execute, run }
 }
 describe('contact chat routing and receipts', () => {
+  it.each(['running', 'waiting'])('returns an unchanged result if work becomes %s during tool preparation', async status => {
+    const f = fixture({ kind: 'action', topicId: 't', action: 'continue', targetText: '评审' })
+    f.data.runs = []
+    const request = vi.fn(async (method: string) => {
+      if (method !== 'get') throw new Error('Must not write or create another round')
+      return { ...f.data, runs: [{ id: 'r', topicId: 't', status, question: '原问题仍在等回复' }] }
+    })
+    const tools = createContactTools({ owner: () => 'alice', request })
+    f.execute.mockImplementation(async call => {
+      const prepared = await tools.find(t => t.name === call.name)!.prepareAsync!(JSON.parse(call.arguments), { sessionId: 'chat' } as ToolExecutionContext)
+      expect(prepared).toHaveProperty('noOpResult')
+      return (await prepared.execute()).content
+    })
+    const reply = await f.run('继续评审')
+    expect(reply).toContain(status === 'running' ? '正在执行' : '原问题仍在等回复')
+    expect(reply).not.toMatch(/已提交|失败/)
+    expect(request).toHaveBeenCalledExactlyOnceWith('get', 'alice')
+  })
+  it.each([
+    ['running', '正在执行'], ['queued', '排队'], ['interrupted', '等待恢复'], ['waiting', '你熟悉哪个行业？']
+  ])('reports the actual %s state without attempting a duplicate continuation', async (status, expected) => {
+    const f = fixture({ kind: 'action', topicId: 't', action: 'continue', targetText: '评审' })
+    Object.assign(f.data.runs[0], { status, question: status === 'waiting' ? '你熟悉哪个行业？' : '' })
+    const reply = await f.run('继续评审')
+    expect(reply).toContain(expected)
+    expect(reply).not.toMatch(/失败|回答问题工具/)
+    expect(f.execute).not.toHaveBeenCalled()
+  })
+  it('does not attach an explicitly different book to the only existing task', async () => {
+    const f = fixture({ kind: 'action', topicId: 't', action: 'continue', targetText: '吞噬星空续' })
+    f.data.topics[0].title = '写一本音乐修炼题材的玄幻小说'
+    f.data.runs[0].status = 'running'
+    const reply = await f.run('我说的是继续写吞噬星空续')
+    expect(reply).toContain('没有找到')
+    expect(reply).toContain('吞噬星空续')
+    expect(f.execute).not.toHaveBeenCalled()
+  })
+  it('does not trust an empty target when the user names a different book', async () => {
+    const f = fixture({ kind: 'action', topicId: 't', action: 'continue', targetText: '' })
+    f.data.topics[0].title = '写一本音乐修炼题材的玄幻小说'
+    expect(await f.run('我说的是继续写吞噬星空续')).toContain('任务名称')
+    expect(f.execute).not.toHaveBeenCalled()
+  })
+  it('recovers a missing extraction from an exact task title in a simple continuation', async () => {
+    const f = fixture({ kind: 'action', topicId: 't', action: 'continue', targetText: '' })
+    f.data.runs[0].status = 'running'
+    expect(await f.run('继续评审')).toContain('正在执行')
+    expect(await f.run('继续评审，不是音乐小说')).toContain('任务名称')
+    expect(f.execute).not.toHaveBeenCalled()
+  })
+  it.each([['running', 'completed'], ['completed', 'running']])('uses fresh state after model latency: %s to %s', async (before, after) => {
+    const plan = { kind: 'action', topicId: 't', action: 'continue', targetText: '评审' }
+    const f = fixture(plan)
+    f.read.mockResolvedValueOnce({ ...f.data, runs: [{ id: 'r', topicId: 't', status: before }] })
+    f.data.runs[0].status = after
+    const reply = await f.run('继续评审')
+    if (after === 'completed') { expect(reply).toContain('已提交'); expect(f.execute).toHaveBeenCalledOnce() }
+    else { expect(reply).toContain('正在执行'); expect(f.execute).not.toHaveBeenCalled() }
+  })
+  it('rejects invented target evidence and repairs missing target evidence before continuing', async () => {
+    const f = fixture({ kind: 'action', topicId: 't', action: 'continue', targetText: '评审' })
+    expect(await f.run('继续写小说')).toContain('任务名称')
+    expect(f.execute).not.toHaveBeenCalled()
+    f.data.runs = []
+    f.model.mockResolvedValueOnce(JSON.stringify({ kind: 'action', topicId: 't', action: 'continue' }))
+    expect(await f.run('继续评审')).toContain('已提交')
+    expect(f.model).toHaveBeenCalledTimes(3)
+  })
   it('keeps a continue request blocked without a failure reply, then resumes the same operation', async () => {
     vi.useFakeTimers()
     try {
-      const f = fixture({ kind: 'action', topicId: 't', action: 'continue' })
+      const f = fixture({ kind: 'action', topicId: 't', action: 'continue', targetText: '' })
+      f.data.runs = []
       let approve!: (approved: boolean) => void
       const resume = vi.fn(() => JSON.stringify({ workCompleted: false, message: '已继续' }))
       f.execute.mockImplementation(async () => {
@@ -52,8 +123,9 @@ describe('contact chat routing and receipts', () => {
     expect(JSON.parse((f.execute.mock.calls[0] as any)[0].arguments)).toEqual({ topicId: 't', revision: 4, reason: '一次汇报一个就行了，可以吗', ...patch })
   })
   it.each(['pause', 'continue', 'revise', 'answer', 'presentation'])('routes %s using actual persisted identity', async action => {
-    const f = fixture({ kind: 'action', topicId: 't', action, runId: 'r' })
-    await f.run('我的明确要求')
+    const f = fixture({ kind: 'action', topicId: 't', action, runId: 'r', targetText: '' })
+    if (action === 'continue') f.data.runs = []
+    await f.run(action === 'continue' ? '继续吧' : '我的明确要求')
     const call = (f.execute.mock.calls[0] as any)[0], args = JSON.parse(call.arguments)
     expect(args).toMatchObject({ topicId: 't', revision: 4 })
     if (action === 'answer') expect(args.answer).toBe('我的明确要求')

@@ -12,6 +12,8 @@ export interface ToolExecutionContext {
 
 export interface PreparedTool {
   preview?: string
+  /** Already satisfied by existing state; no mutation or approval is needed. */
+  noOpResult?: ToolResult
   execute: () => Promise<ToolResult> | ToolResult
 }
 

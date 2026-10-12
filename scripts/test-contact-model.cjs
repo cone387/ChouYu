@@ -6,7 +6,7 @@ const { tmpdir } = require('node:os')
 
 if (!process.versions.electron) {
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
-  const child = spawn(require('electron'), [__filename, process.execPath], { stdio: 'inherit', windowsHide: true, env })
+  const child = spawn(require('electron'), [__filename, process.execPath, ...process.argv.slice(2)], { stdio: 'inherit', windowsHide: true, env })
   child.on('exit', code => process.exit(code ?? 1))
 } else {
   const { app, safeStorage } = require('electron')
@@ -21,9 +21,10 @@ if (!process.versions.electron) {
     const unprotect = value => { try { return typeof value === 'string' && value.startsWith(prefix) ? safeStorage.decryptString(Buffer.from(value.slice(prefix.length), 'base64')) : value } catch { return '' } }
     const config = { ...source.config, apiKey: unprotect(source.config.apiKey), providerProfiles: source.config.providerProfiles?.map(profile => ({ ...profile, apiKey: unprotect(profile.apiKey) })) }
     const characters = source.characters.filter(character => character.id === 'preset-copywriter-bi')
-    const child = spawn(process.argv[2], ['node_modules/vitest/vitest.mjs', 'run', 'src/main/agents/contact-model.acceptance.test.ts'], {
+    const chatChanges = process.argv.includes('--chat-changes')
+    const child = spawn(process.argv[2], ['node_modules/vitest/vitest.mjs', 'run', chatChanges ? 'src/main/agents/chat-change-model.acceptance.test.ts' : 'src/main/agents/contact-model.acceptance.test.ts'], {
       stdio: 'inherit', windowsHide: true,
-      env: { ...process.env, CHOUYU_CONTACT_MODEL_ACCEPTANCE: '1', CHOUYU_ACCEPTANCE_CONFIG: JSON.stringify({ config, characters }) }
+      env: { ...process.env, ...(chatChanges ? { CHOUYU_CHAT_CHANGE_ACCEPTANCE: '1', CHOUYU_ACCEPTANCE_CHARACTER: 'preset-copywriter-bi' } : { CHOUYU_CONTACT_MODEL_ACCEPTANCE: '1' }), CHOUYU_ACCEPTANCE_CONFIG: JSON.stringify({ config, characters }) }
     })
     const timer = setTimeout(() => { child.kill(); finish(1) }, 295000)
     child.on('error', () => { clearTimeout(timer); finish(1) })

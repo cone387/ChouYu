@@ -16,27 +16,37 @@ const cases = [
   ['quote', '朋友说“一次汇报一个”，我还没决定，你觉得呢？先不改。', undefined],
   ['unsupported', '从明天起每天上午九点准时评价。', 'question'],
   ['daily-budget', '你的每日Token上限改为30万。', 'question'],
-  ['ambiguous', '把那个任务改成中文。', 'question']
+  ['ambiguous', '把那个任务改成中文。', 'question'],
+  ['wrong-book', '我说的是继续写吞噬星空续', 'question'],
+  ['continue-running', '继续产品评价', 'question'],
+  ['continue-waiting', '继续产品评价', 'question'],
+  ['continue-free', '继续产品评价', 'update_contact_topic'],
+  ['continue-unnamed', '嗯，继续吧', 'update_contact_topic']
 ] as const
 it.skipIf(!enabled).each(cases)('live model routes %s without a verbal-only promise', async (key, message, expected) => {
   const data = JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG || readFileSync(join(process.env.APPDATA!, 'chouyu', 'chouyu-data.json'), 'utf8'))
-  const character = data.characters.find((c: { id: string }) => c.id === 'ca2bb3cb-805a-453d-9c3c-d580e130ae5d')
+  const character = data.characters.find((c: { id: string }) => c.id === (process.env.CHOUYU_ACCEPTANCE_CHARACTER || 'ca2bb3cb-805a-453d-9c3c-d580e130ae5d'))
   const resolved = resolveCharacterConfig(character, data.config)
   if (!resolved.ok) throw new Error('验收模型不可用')
   const calls: { name: string; args: any }[] = []
+  const decisions: string[] = []
   const tasks = [{ id: 'review', revision: 3, title: '产品评价', goal: '持续评价AI产品idea。可以一次评价1–3个idea。保留依据，不重复评价。', constraints: '只读取真实成果，不修改原作者成果。', status: 'researching' }]
   if (key === 'ambiguous') tasks.push({ ...tasks[0], id: 'another', title: '市场研究' })
+  if (key === 'wrong-book') Object.assign(tasks[0], { title: '写一本音乐修炼题材的玄幻小说', goal: '以音乐修炼为核心，节奏爽快，持续写作。' })
+  const runs = key === 'continue-waiting' ? [{ id: 'run', topicId: 'review', status: 'waiting', question: '请确定这次评价面向哪个行业？' }]
+    : key === 'continue-running' || key === 'wrong-book' ? [{ id: 'run', topicId: 'review', status: 'running', question: '' }] : []
   const output = await routeContactChange([{ role: 'user', content: message }], {
-    read: async () => ({ topics: tasks, runs: [], focusTopicId: 'review' }),
+    read: async () => ({ topics: tasks, runs, focusTopicId: 'review' }),
     model: async (prompt, content) => {
       let result = ''
       await streamAIChat([{ role: 'user', content }], prompt, { ...data.config, ...resolved.config }, chunk => { result += chunk }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
+      decisions.push(result)
       return result
     },
     execute: async call => { calls.push({ name: call.name, args: JSON.parse(call.arguments) }); return JSON.stringify({ saved: true, workCompleted: false, message: '验收夹具保存成功' }) }
   })
   mkdirSync('temp/chat-change-model', { recursive: true })
-  writeFileSync(`temp/chat-change-model/${key}.json`, JSON.stringify({ message, calls, output }, null, 2))
+  writeFileSync(`temp/chat-change-model/${key}.json`, JSON.stringify({ message, decisions, calls, output }, null, 2))
   if (expected === 'question') { expect(calls).toHaveLength(0); expect(output).toBeTruthy() }
   else if (!expected) { expect(calls).toHaveLength(0); expect(output).toBeUndefined() }
   else {
@@ -46,4 +56,6 @@ it.skipIf(!enabled).each(cases)('live model routes %s without a verbal-only prom
     if (key === 'pause') expect(calls[0].args.action).toBe('pause')
     if (key === 'report-unit') { expect(calls[0].args.goal).toBeUndefined(); expect(calls[0].args.separateEvaluations).toBe(true) }
   }
+  if (key === 'continue-running') expect(output).toContain('正在执行')
+  if (key === 'continue-waiting') expect(output).toContain('请确定这次评价面向哪个行业？')
 }, 65000)

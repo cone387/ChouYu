@@ -3,6 +3,7 @@ import { TOPIC_STATUS } from '../../shared/agents'
 import { ASSISTANT_CHARACTER_ID } from '../../shared/characters'
 import { containsSecret } from '../../shared/memory'
 import type { PreparedTool, RegisteredTool, ToolExecutionContext } from '../tools/registry'
+import { pendingContinuation } from './continuation'
 
 interface Access {
   owner(sessionId?: string): string | undefined
@@ -35,7 +36,15 @@ export function createContactTools(access: Access): RegisteredTool[] {
         method = 'topicStatus'; values = [topicId, revision, 'paused', reason]
         preview = `事项：${topic.title}\n状态：${TOPIC_STATUS[topic.status]} → 已暂停\n停止此事项未完成的工作。\n原因：${reason}`
       } else if (args.action === 'continue') {
-        if (overview.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status) && r.topicId === topicId)) throw new Error('本任务仍有未完成工作；若本任务正在等你回复，请使用回答问题工具。')
+        const pending = pendingContinuation(overview, topicId)
+        if (pending) {
+          if (owner(context) !== id) throw new Error('聊天归属已变化，请重新确认。')
+          const result = { content: JSON.stringify({ pending: true, workCompleted: false, message: pending }), summary: pending }
+          return { noOpResult: result, execute: () => {
+            if (owner(context) !== id) throw new Error('聊天归属已变化，请重新确认。')
+            return result
+          } }
+        }
         method = 'continueTopic'; values = [topicId, revision, reason]
         preview = `事项：${topic.title}\n安排本事项执行一轮，有空余名额时开始。\n持续工作：${overview.settings.enabled ? '保持开启' : '保持关闭'}\n按现有来源与调用预算执行。\n原因：${reason}`
       } else if (args.action === 'revise') {

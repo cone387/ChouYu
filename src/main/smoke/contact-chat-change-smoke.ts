@@ -29,5 +29,22 @@ export async function runContactChatChangeSmoke(window: BrowserWindow) {
   const saved = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
   const topic = saved.topics.find((t: { id: string }) => t.id === topicId)
   if (!topic.separateEvaluations || !topic.constraints.includes('一个') || !topic.requestLog.includes(request.messages[0].content) || topic.status !== 'paused') throw new Error('Chat change was not durably applied or resumed a paused task')
+  const fixture = new AgentStore(join(directory, 'agents.db'))
+  let runId: string
+  try {
+    fixture.changeTopic(character.id, topicId, topic.revision, { status: 'planned', reason: '隔离验收已有工作' })
+    runId = fixture.createRun(character.id, '', Date.now(), topicId)
+    fixture.wait(runId, '请确定这次评价面向哪个行业？')
+  } finally { fixture.close() }
+  const continuation = { ...request, requestId: 'chat-continue-existing-smoke', messages: [{ role: 'user', content: '验收已有工作：继续' }] }
+  const existing = await window.webContents.executeJavaScript(`(async()=>{
+    const events=[];
+    const off=window.electronAPI.ai.onToolEvent(e=>{if(e.requestId===${JSON.stringify(continuation.requestId)})events.push(e);});
+    try { const response=await window.electronAPI.ai.startStream(${JSON.stringify(continuation)});return {response,events}; }finally{off();}
+  })()`)
+  if (!existing.response.ok || existing.events.some((e: { status: string }) => ['error', 'requested', 'denied', 'expired'].includes(e.status)) || !existing.events.some((e: { name: string; status: string; summary: string }) => e.name === 'update_contact_topic' && e.status === 'completed' && e.summary.includes('请确定这次评价面向哪个行业？'))) throw new Error(`Existing work was not returned without approval/failure: ${JSON.stringify(existing)}`)
+  const after = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
+  if (after.runs.length !== 1 || after.runs[0].id !== runId || after.runs[0].status !== 'waiting' || after.runs[0].answer) throw new Error('Continuation duplicated or answered the pending round')
+  console.log('CHOUYU_SMOKE_CONTINUE_EXISTING_PASSED question=true noApproval=true noFailure=true sameRun=true')
   console.log('CHOUYU_SMOKE_CHAT_CHANGE_PASSED routed=true persisted=true receipt=true pausedPreserved=true')
 }

@@ -73,6 +73,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
         return
       }
       if (payload.tools?.length) {
+        const continuingExisting = payload.messages.some((message: { role: string; content?: unknown }) => message.role === 'user' && typeof message.content === 'string' && message.content === '验收已有工作：继续')
         discussionReceived = payload.messages.findLast((message: { role: string; content?: string }) => message.role === 'user' && typeof message.content === 'string' && message.content.includes('【引用联系人工作记录】'))?.content || discussionReceived
         toolResponses = payload.messages.filter((m: { role: string }) => m.role === 'tool').map((m: { content: string }) => m.content)
         const data = toolResponses.flatMap(value => { try { const parsed = JSON.parse(value); return parsed.topics ? [parsed] : [] } catch { return [] } }).at(-1)
@@ -82,6 +83,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           const topic = data.topics.find((t: { id: string }) => t.id === data.focusTopicId)
           name = scenario === 'assign' ? 'assign_contact_task' : scenario === 'answer' ? 'answer_contact_question' : 'update_contact_topic'
           args = scenario === 'assign' ? { description: '核对团队知识库的检索需求，只读验证，预算 500 元' } : { topicId: topic.id, revision: topic.revision, ...(scenario === 'answer' ? { runId: data.pending[0].id, answer: '开发者工具' } : { action: 'constraints', constraints: '仅验证开发者工具，预算 200 元', reason: '缩小研究范围' }) }
+          if (continuingExisting) args = { topicId: topic.id, revision: topic.revision, action: 'continue', reason: '继续' }
         }
         const step = toolStep++
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })

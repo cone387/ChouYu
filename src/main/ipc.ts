@@ -663,6 +663,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               const taskMutation = ['edit_contact_task', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
               if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
               const prepared: PreparedTool = SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
+              if (controller.signal.aborted) throw new Error('AI 请求已取消。')
+              if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) throw new Error('工具已被用户禁用。')
+              if (prepared.noOpResult) {
+                const result = prepared.noOpResult
+                sendToolEvent(event.sender, {
+                  requestId: request.requestId, callId: call.id, name: definition.name,
+                  displayName: definition.displayName, risk: definition.risk,
+                  status: 'completed', summary: result.summary.slice(0, 500)
+                })
+                return result.content.slice(0, 50_000)
+              }
               if (taskMutation) taskMutationRequested = true
               const needsApproval = shouldConfirmTool(definition, config.toolPermissionMode)
               sendToolEvent(event.sender, {
