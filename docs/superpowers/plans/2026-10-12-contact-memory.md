@@ -1,6 +1,6 @@
 # 联系人独立记忆 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 提供记忆纠正、历史、范围和真实模型参考记录，保留独立身份与共同经历。
 **Architecture:** 把 store 的直接记忆增删抽到领域存储；聊天和任务共用范围检索并在提交前检查撤回。
@@ -13,10 +13,10 @@
 
 **Files:** 新增 `src/shared/contact-memories.ts`、`src/main/agents/memories.ts`、`memories.test.ts`；修改 `store.ts`、`agents.ts`、API 接入；扩展 `ContactMemoryDialog.tsx`，抽出 `ContactMemories.tsx`。
 **Interfaces:** MemoryKind='preference'|'project'|'experience'|'research'；ContactMemory 含 id/owner/revision/content/kind/scope/source/createdAt/updatedAt/status('active'|'candidate'|'forgotten')；MemoryInput 含 content/kind/scope/source。AgentMemories(db) 提供 `create(owner:string,input:MemoryInput):ContactMemory`、`update(owner:string,id:string,revision:number,input:MemoryInput):ContactMemory`、`list(owner:string):ContactMemory[]`、`history(owner:string,id:string):ContactMemory[]`、`forget(owner:string,id:string,revision:number):void`、`select(context:ContactReadContext):{items:ContactMemory[];truncated:boolean}`。
-- [ ] 真实 SQLite 测试：update 同一 id 的 revision 1→2，旧 revision 拒绝；研究候选不覆盖用户纠正；100 条有效记忆上限，101 条拒绝、历史不计数；任务/会话交叉检索为空；忘记后历史正文也不继续暴露；旧记录保留原来源不猜范围。运行 `npx vitest run src/main/agents/memories.test.ts` 确认红。
-- [ ] 实现增量迁移（原 memories 可保持兼容投影），幂等新建与原位更新；检索先范围过滤，再按查询词命中/明确纠正/更新时间稳定排序，总提供最多 12 条和 16000 字，截断返回 truncated；没有相关信息时不靠另一联系人补齐。
-- [ ] 原 remember/forget API 兼容调用新模块；新增 memoryList/updateMemory/memoryHistory/createMemory/forgetMemory，分别绑定领域 list/update/history/create/forget（list 按 owner 返回可见 active/candidate，select 用于模型检索）。研究输出写候选，用户明确记忆写 active；记忆 UI 新建/编辑/历史均显示来源及范围，不增加任务字段。任务/会话 scope 服务端验证真实归属。
-- [ ] 跑专项、现有 service 测试、类型检查和记忆 Electron 新增/改正/忘记/重启/写失败场景，通过后提交 `feat(contacts): version and scope independent memories`。
+- [x] 真实 SQLite 测试：update 同一 id 的 revision 1→2，旧 revision 拒绝；研究候选不覆盖用户纠正；100 条有效记忆上限，101 条拒绝、历史不计数；任务/会话交叉检索为空；忘记后历史正文也不继续暴露；旧记录保留原来源不猜范围。运行 `npx vitest run src/main/agents/memories.test.ts` 确认红。
+- [x] 实现增量迁移（原 memories 可保持兼容投影），幂等新建与原位更新；检索先范围过滤，再按查询词命中/明确纠正/更新时间稳定排序，总提供最多 12 条和 16000 字，截断返回 truncated；没有相关信息时不靠另一联系人补齐。
+- [x] 原 remember/forget API 兼容调用新模块；新增 memoryList/updateMemory/memoryHistory/createMemory/forgetMemory，分别绑定领域 list/update/history/create/forget（list 按 owner 返回可见 active/candidate，select 用于模型检索）。研究输出写候选，用户明确记忆写 active；记忆 UI 新建/编辑/历史均显示来源及范围，不增加任务字段。任务/会话 scope 服务端验证真实归属。
+- [x] 跑专项、现有 service 测试、类型检查和记忆 Electron 新增/改正/忘记/重启/写失败场景，通过后提交 `feat(contacts): version and scope independent memories`。
 
 ## Task D2：统一检索、聊天纠正与参考记录
 

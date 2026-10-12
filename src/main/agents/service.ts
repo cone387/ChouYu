@@ -1,5 +1,6 @@
 import { TokenBudgetError } from './token-budget'
 import { citationContext, validateCitation } from './citations'
+import type { MemoryInput } from '../../shared/contact-memories'
 import { SkillLibrary } from '../skills/library'
 import { SkillRunner } from '../skills/runner'
 import { skillToolRuntime } from '../skills/tools'
@@ -18,7 +19,7 @@ import type { AIResponseMetadata } from '../../shared/ai-usage'
 import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from './model-output'
 import { workSettingsRequireRestart, withinWorkHours } from '../../shared/work-settings'
 
-export interface AgentIdentity { skillToolsEnabled?: boolean; disabledSkillTools?: string[]; visibleNoticeIds?: string[]; id: string; name?: string; soul: string; conversation: string; searchKey?: string; skills?: SkillSnapshot; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
+export interface AgentIdentity { sessionIds?: string[]; skillToolsEnabled?: boolean; disabledSkillTools?: string[]; visibleNoticeIds?: string[]; id: string; name?: string; soul: string; conversation: string; searchKey?: string; skills?: SkillSnapshot; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
   private readonly skillRunner: SkillRunner
   readonly store: AgentStore
@@ -47,6 +48,7 @@ export class AgentService {
     }
     this.runtime.contactSources.names = new Map(identities.map(identity => [identity.id, identity.name || identity.id]))
     this.identities = new Map(identities.map(identity => [identity.id, identity]))
+    for (const identity of identities) { this.store.ensure(identity.id); this.store.memoryLibrary.registerSessions(identity.id, identity.sessionIds ?? []) }
     for (const profile of this.store.profiles()) if (!this.identities.has(profile.character_id)) await this.remove(profile.character_id)
     if (!this.ready) for (const identity of identities) this.store.decisions.publishOutstanding(identity.id, new Set(identity.visibleNoticeIds ?? []))
     this.ready = true; this.tick()
@@ -213,6 +215,11 @@ export class AgentService {
       }
       case 'answer': this.store.answer(id, String(args[0]), args[1] as string, args[2]); break
       case 'remember': this.store.remember(id, args[0] as string); break
+      case 'memoryList': return this.store.memoryLibrary.list(id)
+      case 'memoryHistory': return this.store.memoryLibrary.history(id, args[0] as string)
+      case 'createMemory': { const result = this.store.memoryLibrary.create(id, args[0] as MemoryInput); this.changed(id); return result }
+      case 'updateMemory': { const result = this.store.memoryLibrary.update(id, args[0] as string, args[1] as number, args[2] as MemoryInput); this.changed(id); return result }
+      case 'forgetMemory': this.store.memoryLibrary.forget(id, args[0] as string, args[1] as number); this.changed(id); return
       case 'forget': this.store.forget(id, String(args[0])); this.store.cancel(id, '独立记忆已修改，本轮停止。'); this.abort(id); break
       default: throw new Error('未知 Agent 操作。')
     }

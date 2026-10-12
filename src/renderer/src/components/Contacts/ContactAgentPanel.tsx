@@ -4,7 +4,7 @@ import ContactTaskInputForm from './ContactTaskInputForm'
 import ContactAnalytics from './ContactAnalytics'
 import ContactDailyOverview from './ContactDailyOverview'
 import ContactMarkdown from './ContactMarkdown'
-import ContactMemoryDialog from './ContactMemoryDialog'
+import ContactMemories from './ContactMemories'
 import ContactPortfolio from './ContactPortfolio'
 import type { DeliveryRef, TextAnchor } from '../../../../shared/contact-content'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -78,8 +78,6 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   }, [detail, tab])
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [readError, setReadError] = useState('')
-  const [memoryDialog, setMemoryDialog] = useState(false)
-  useEffect(() => { setMemoryDialog(false) }, [characterId])
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({})
   const epoch = useRef(0), mounted = useRef(true), initialized = useRef(false)
   const draftSnapshot = useRef<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS }), savedSnapshot = useRef<string | null>(null)
@@ -201,13 +199,6 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
         <details><summary>查看工作经过 · {detail.events.length} 条记录</summary><ol>{detail.events.map(event => <li key={event.id}><time>{time(event.at)}</time><p>{event.text}</p></li>)}</ol></details>
       </article>}
     </>}
-    {data && tab === 'memory' && <>
-      <p className="agent-description">只属于{name}。研究结论会保留来源，可能需要修正；其他联系人不会读取这里的记忆。旧的全局记忆仍由默认丑鱼使用。</p>
-      <button type="button" data-contact-memory-new disabled={busy} onClick={() => setMemoryDialog(true)}>新增记忆</button>
-      {memoryDialog && <ContactMemoryDialog key={characterId} characterId={characterId} name={name} onSaved={setData} onClose={() => setMemoryDialog(false)} />}
-      {!data.memories.length && <p className="agent-empty">独立记忆还是空的，会随着真实工作逐渐积累。</p>}
-      <ul className="agent-memories">{data.memories.map(memory => <li key={memory.id}><p>{memory.content}</p><div className="agent-memory-footer"><span className="agent-caption">{time(memory.createdAt)} · {memory.runId ? '研究结论' : '你告诉我的'}</span>{memory.runId && <button type="button" disabled={busy} onClick={() => void perform(async () => { setDetail(await window.electronAPI.agents.detail(characterId, memory.runId!)); setTab('history') })}>来源</button>}<button type="button" disabled={busy} aria-label={`忘记：${memory.content.slice(0, 20)}`} onClick={() => void perform(() => window.electronAPI.agents.forget(characterId, memory.id))}>忘记</button></div></li>)}</ul>
-      <p className="agent-caption">最多 100 条。忘记会停止当前工作；历史成果仍保留。</p>
-    </>}
+    {data && tab === 'memory' && <ContactMemories key={characterId} characterId={characterId} name={name} data={data} onSaved={setData} />}
   </section>
 }

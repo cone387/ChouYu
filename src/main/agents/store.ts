@@ -1,5 +1,6 @@
 import { providerRecoveryDelay } from '../../shared/contact-failure'
 import { citationContext, validateCitation } from './citations'
+import { AgentMemories } from './memories'
 import type { ContentCitation } from '../../shared/contact-content'
 import { validateChapterContinuation } from './chapter-continuation'
 import { AgentTaskFailures } from './task-failures'
@@ -40,13 +41,14 @@ export class AgentStore {
   readonly deliveries: AgentDeliveries
   get portfolio() { return this.deliveries.portfolio }
   readonly taskFailures: AgentTaskFailures
+  readonly memoryLibrary: AgentMemories
   constructor(filename: string) {
     this.db = new Database(filename)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 9) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 10) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -100,6 +102,17 @@ export class AgentStore {
     this.decisions = new ContactInteractions(this)
     if (version < 8) this.db.transaction(() => { this.tokens.importHistory(); this.db.pragma('user_version = 8') })()
     if (version < 9) this.db.transaction(() => { this.portfolio.backfill(); this.db.pragma('user_version = 9') })()
+    this.memoryLibrary = new AgentMemories(this.db)
+    if (version < 10) this.db.transaction(() => {
+      // Scope is part of the new identity; equal text in different scopes must remain independent.
+      this.db.exec(`ALTER TABLE memories RENAME TO memories_v9;
+        CREATE TABLE memories(id TEXT PRIMARY KEY,character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,content TEXT NOT NULL,run_id TEXT,created_at INTEGER NOT NULL);
+        INSERT INTO memories SELECT * FROM memories_v9;
+        DROP TABLE memories_v9;
+        CREATE INDEX memories_owner ON memories(character_id);`)
+      this.memoryLibrary.migrateLegacy()
+      this.db.pragma('user_version = 10')
+    })()
     this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)
     this.db.exec(`CREATE TABLE IF NOT EXISTS task_schedule (
@@ -339,17 +352,15 @@ export class AgentStore {
     return result
   }
   memories(id: string): AgentMemory[] {
-    return (this.db.prepare('SELECT * FROM memories WHERE character_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100').all(id) as { id: string; content: string; run_id: string | null; created_at: number }[]).map(r => ({ id: r.id, content: r.content, runId: r.run_id, createdAt: r.created_at }))
+    return this.memoryLibrary.list(id).filter(m => m.status === 'active').map(m => ({ ...m, runId: m.source.kind === 'research' ? m.source.runId : null }))
   }
   remember(id: string, text: string, runId: string | null = null) {
     if (typeof text !== 'string' || !text.trim() || text.length > 2000) throw new Error('记忆内容应为 1–2000 字。')
     if (containsSecret(text)) throw new Error('请勿将密码、密钥等敏感凭据写入记忆。')
     this.ensure(id)
-    const count = (this.db.prepare('SELECT count(*) AS n FROM memories WHERE character_id=?').get(id) as { n: number }).n
-    if (count >= 100 && !this.db.prepare('SELECT id FROM memories WHERE character_id=? AND content=?').get(id, text.trim())) throw new Error('独立记忆已达 100 条，请先整理。')
-    this.db.prepare('INSERT OR IGNORE INTO memories(id,character_id,content,run_id,created_at) VALUES(?,?,?,?,?)').run(randomUUID(), id, text.trim(), runId, Date.now())
+    this.memoryLibrary.create(id, { content: text, kind: runId ? 'research' : 'preference', scope: { kind: 'contact' }, source: runId ? { kind: 'research', runId } : { kind: 'user', at: Date.now() } })
   }
-  forget(id: string, memoryId: string) { this.db.prepare('DELETE FROM memories WHERE character_id=? AND id=?').run(id, memoryId) }
+  forget(id: string, memoryId: string) { const memory = this.memoryLibrary.get(id, memoryId); this.memoryLibrary.forget(id, memoryId, memory.revision) }
   callCount(id: string, now = Date.now()) { return (this.db.prepare('SELECT count(*) AS n FROM calls WHERE character_id=? AND at>=?').get(id, dayStart(now)) as { n: number }).n }
   private callReservations = new Map<string, { owner: string; topicId: string | null; callsAtStart: number; needed: number }>()
   private runCalls(runId: string) { return (this.db.prepare('SELECT COUNT(*) AS n FROM calls WHERE run_id=?').get(runId) as { n: number }).n }
@@ -834,6 +845,9 @@ export class AgentStore {
     return this.db.transaction(() => {
       this.topics.check(id, topicId, revision)
       const runs = this.db.prepare('SELECT id FROM runs WHERE character_id=? AND topic_id=?').all(id, topicId) as { id: string }[]
+      for (const memory of this.memoryLibrary.list(id)) {
+        if ((memory.scope.kind === 'task' && memory.scope.topicId === topicId) || (memory.source.kind === 'research' && runs.some(run => memory.source.kind === 'research' && run.id === memory.source.runId))) this.memoryLibrary.forget(id, memory.id, memory.revision)
+      }
       for (const run of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(run.id)
       this.db.prepare("DELETE FROM notices WHERE character_id=? AND json_extract(value,'$.topicId')=?").run(id, topicId)
       this.db.prepare('DELETE FROM memories WHERE character_id=? AND run_id IN (SELECT id FROM runs WHERE character_id=? AND topic_id=?)').run(id, id, topicId)

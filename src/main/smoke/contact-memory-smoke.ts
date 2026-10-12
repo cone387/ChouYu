@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AgentStore } from '../agents/store'
 import { waitForRenderer } from './storage-smoke'
+import { restartAgentsForSmoke } from '../agents'
 
 /** Real modal/IPC/disk failure flow; only run in the isolated smoke profile. */
 export async function runContactMemorySmoke(window: BrowserWindow, characterId: string) {
@@ -80,8 +81,23 @@ export async function runContactMemorySmoke(window: BrowserWindow, characterId: 
   try {
     const memories = saved.memories(characterId).filter(m => m.content === '用户偏好：请用简洁的中文回答。')
     if (memories.length !== 1) throw new Error('Memory retry did not save exactly once')
-    saved.forget(characterId, memories[0].id)
   } finally { saved.close() }
+  const original = (await run(`window.electronAPI.agents.memoryList(${JSON.stringify(characterId)})`)).find((m: { content: string }) => m.content === '用户偏好：请用简洁的中文回答。')
+  const row = `[data-memory-id="${original.id}"]`
+  await click(`${row} [data-memory-edit]`)
+  await waitForRenderer(window, `Boolean(document.querySelector('${modal}'))`)
+  await fill('用户偏好：请先给结论，再解释依据。')
+  await click('[data-contact-memory-save]')
+  await waitForRenderer(window, `!document.querySelector('${modal}') && document.querySelector('${row}')?.textContent.includes('第 2 版')`)
+  await click(`${row} [data-memory-history]`)
+  await waitForRenderer(window, `document.querySelector('${row} ol')?.textContent.includes('请用简洁的中文回答')`)
+  await restartAgentsForSmoke()
+  const versions = await run(`window.electronAPI.agents.memoryHistory(${JSON.stringify(characterId)},${JSON.stringify(original.id)})`)
+  if (versions.length !== 2 || versions[0].content !== '用户偏好：请先给结论，再解释依据。') throw new Error('Memory correction/history lost after restart')
+  await click(`${row} [data-memory-forget]`)
+  await waitForRenderer(window, `!document.querySelector('${row}')`)
+  const forgotten = await run(`window.electronAPI.agents.memoryHistory(${JSON.stringify(characterId)},${JSON.stringify(original.id)})`)
+  if (forgotten.some((m: { content: string }) => m.content)) throw new Error('Forgotten history leaked content')
   await click('[data-agent-tab=profile]')
-  console.log('CHOUYU_CONTACT_MEMORY_SMOKE_PASSED modal, Escape/focus, failure draft, retry and persisted memory')
+  console.log('CHOUYU_CONTACT_MEMORY_SMOKE_PASSED modal, Escape/focus, failure draft, correction/history, restart and forgotten redaction')
 }

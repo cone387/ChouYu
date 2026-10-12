@@ -18,6 +18,7 @@ import { getRegisteredTool, registerTool } from '../tools/registry'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
 import type { AgentIdentity } from './service'
 import { setupIdeaLab } from './idea-lab'
+import { validateMemoryInput } from '../../shared/contact-memories'
 
 let child: UtilityProcess | undefined
 let starting: Promise<void> | undefined
@@ -67,7 +68,7 @@ function identities(): AgentIdentity[] {
   return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(character => {
     const resolved = resolveCharacterConfig(character, config)
     const conversation = contactConversation(sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages ?? []))
-    return { skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: SKILL_TOOLS.filter(tool => getState(`tool:${tool.name}:enabled`) === 'false').map(tool => tool.name), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
+    return { sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: SKILL_TOOLS.filter(tool => getState(`tool:${tool.name}:enabled`) === 'false').map(tool => tool.name), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
   })
 }
 async function ensure() {
@@ -127,7 +128,17 @@ export async function inspectContactDelivery(characterId: string, topicId: strin
 /** Main-process entry for the contact-task gateway; mirrors the agents:* IPC guards. */
 export async function contactAgentsCall<T = unknown>(id: string, method: string, args: unknown[] = []): Promise<T> {
   if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
+  validateMemoryBoundary(id, method, args)
   await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args) as Promise<T>
+}
+function validateMemoryBoundary(owner: string, method: string, args: unknown[]) {
+  if (method !== 'createMemory' && method !== 'updateMemory') return
+  const input = validateMemoryInput(args[method === 'createMemory' ? 0 : 2])
+  if (input.scope.kind === 'session' && getSession(input.scope.sessionId)?.characterId !== owner) throw new Error('记忆会话不属于此联系人。')
+  if (input.source.kind === 'conversation') {
+    const source = input.source, session = getSession(source.sessionId)
+    if (session?.characterId !== owner || !session.messages.some(message => message.id === source.messageId)) throw new Error('对话来源不存在或不属于此联系人。')
+  }
 }
 export async function startIdeaLab() {
   await ensure()
@@ -193,9 +204,10 @@ export function initializeAgents() {
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const method of ['getInteraction', 'submitInteraction', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
+  for (const method of ['getInteraction', 'submitInteraction', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
     ipcMain.handle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
+      validateMemoryBoundary(id, method, args)
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
     })
   }

@@ -1,0 +1,72 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { AgentStore } from './store'
+import type { MemoryInput } from '../../shared/contact-memories'
+const stores: AgentStore[] = []
+afterEach(() => stores.splice(0).forEach(s => s.close()))
+function fixture() {
+  const store = new AgentStore(':memory:'); stores.push(store)
+  store.ensure('alice'); store.ensure('bob')
+  const a = store.topics.create('alice', { title: '项目甲', goal: '研究甲', constraints: '' }, '用户创建')
+  const b = store.topics.create('alice', { title: '项目乙', goal: '研究乙', constraints: '' }, '用户创建')
+  const foreign = store.topics.create('bob', { title: '项目丙', goal: '研究丙', constraints: '' }, '用户创建')
+  return { store, a, b, foreign }
+}
+const input = (content: string): MemoryInput => ({ content, kind: 'preference', scope: { kind: 'contact' }, source: { kind: 'user', at: 1 } })
+describe('versioned contact memories', () => {
+  it('edits the same identity, preserves history and rejects stale or foreign writes', () => {
+    const { store } = fixture(), memory = store.memoryLibrary.create('alice', input('偏好中文'))
+    const updated = store.memoryLibrary.update('alice', memory.id, 1, input('偏好简洁中文'))
+    expect(updated.id).toBe(memory.id); expect(updated.revision).toBe(2)
+    expect(store.memoryLibrary.history('alice', memory.id).map(m => m.content)).toEqual(['偏好简洁中文', '偏好中文'])
+    expect(() => store.memoryLibrary.update('alice', memory.id, 1, input('旧修改'))).toThrow()
+    expect(() => store.memoryLibrary.update('bob', memory.id, 2, input('串人'))).toThrow()
+    expect(store.memoryLibrary.create('alice', input('偏好简洁中文')).id).toBe(memory.id)
+  })
+  it('keeps unconfirmed research separate from a user correction and requires explicit confirmation', () => {
+    const { store, a } = fixture(), memory = store.memoryLibrary.create('alice', input('用户确认：团队不收费'))
+    const runId = store.createRun('alice', '', Date.now(), a.id)
+    const candidate = store.memoryLibrary.update('alice', memory.id, 1, { ...input('研究推测：团队收费'), kind: 'research', source: { kind: 'research', runId } })
+    expect(candidate.id).not.toBe(memory.id); expect(candidate.status).toBe('candidate')
+    expect(store.memoryLibrary.history('alice', memory.id)).toHaveLength(1)
+    expect(store.memoryLibrary.select({ characterId: 'alice', query: '团队' }).items.map(m => m.content)).toEqual(['用户确认：团队不收费'])
+    const confirmed = store.memoryLibrary.update('alice', candidate.id, 1, { ...input(candidate.content), kind: 'research' })
+    expect(confirmed.status).toBe('active')
+  })
+  it('filters owner and task/session scope before relevance and bounds selected context', () => {
+    const { store, a, b, foreign } = fixture()
+    store.memoryLibrary.registerSessions('alice', ['session-a', 'session-b'])
+    store.memoryLibrary.create('alice', { ...input('项目甲的背景'), kind: 'project', scope: { kind: 'task', topicId: a.id } })
+    store.memoryLibrary.create('alice', { ...input('本次会话经历'), kind: 'experience', scope: { kind: 'session', sessionId: 'session-a' } })
+    store.memoryLibrary.create('bob', input('另一人的私有偏好'))
+    expect(store.memoryLibrary.select({ characterId: 'alice', topicId: b.id, sessionId: 'session-b', query: '' }).items).toEqual([])
+    expect(store.memoryLibrary.select({ characterId: 'alice', topicId: a.id, query: '背景' }).items).toHaveLength(1)
+    expect(() => store.memoryLibrary.create('alice', { ...input('串范围'), scope: { kind: 'task', topicId: foreign.id } })).toThrow()
+    expect(() => store.memoryLibrary.create('alice', { ...input('假会话'), scope: { kind: 'session', sessionId: 'unknown' } })).toThrow()
+    for (let n = 0; n < 15; n++) store.memoryLibrary.create('alice', input(`${n} ${'长期偏好'.repeat(380)}`))
+    const selected = store.memoryLibrary.select({ characterId: 'alice', query: '长期偏好' })
+    expect(selected.items.length).toBeLessThanOrEqual(12)
+    expect(selected.items.reduce((n, m) => n + m.content.length, 0)).toBeLessThanOrEqual(16000)
+    expect(selected.truncated).toBe(true)
+  })
+  it('counts active records rather than revision history and redacts all forgotten versions', () => {
+    const { store } = fixture(), first = store.memoryLibrary.create('alice', input('旧偏好'))
+    store.memoryLibrary.update('alice', first.id, 1, input('新偏好'))
+    for (let n = 0; n < 99; n++) store.memoryLibrary.create('alice', input(`偏好${n}`))
+    expect(() => store.memoryLibrary.create('alice', input('第101条'))).toThrow('100')
+    store.memoryLibrary.forget('alice', first.id, 2)
+    expect(store.memoryLibrary.history('alice', first.id).every(m => m.content === '' && m.status === 'forgotten')).toBe(true)
+    expect(store.memoryLibrary.list('alice')).toHaveLength(99)
+    expect(store.memories('alice').some(m => m.id === first.id)).toBe(false)
+    expect(store.memoryLibrary.create('alice', input('第101条')).status).toBe('active')
+  })
+  it('migrates old owner/source records honestly and rolls back compatibility projection failures', () => {
+    const { store } = fixture()
+    store.db.prepare('INSERT INTO memories VALUES(?,?,?,?,?)').run('legacy', 'alice', '旧记忆', null, 1234)
+    store.memoryLibrary.migrateLegacy()
+    expect(store.memoryLibrary.list('alice')[0]).toMatchObject({ id: 'legacy', content: '旧记忆', scope: { kind: 'contact' }, source: { kind: 'user', at: 1234 } })
+    store.db.exec("CREATE TRIGGER fail_memory BEFORE UPDATE ON memories BEGIN SELECT RAISE(ABORT, 'disk failure'); END")
+    expect(() => store.memoryLibrary.update('alice', 'legacy', 1, input('不能保存'))).toThrow('disk failure')
+    expect(store.memoryLibrary.history('alice', 'legacy')).toHaveLength(1)
+    expect(store.memoryLibrary.list('alice')[0].content).toBe('旧记忆')
+  })
+})
