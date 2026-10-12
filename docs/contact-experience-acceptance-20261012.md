@@ -80,3 +80,9 @@ Evidence: capability projection tests, G2-suite 1438 passed/19 skipped; G2-final
 ### A1: Content-first overview
 
 EXP-01: home aggregation includes unresolved interactions, pinned latest formal results and actual task states; it excludes private memory text. UI reuses original interaction/task cards and assistant arrangement adapters, with statistics/timeline behind an expansion. Contact highlights precede model/usage details, and background activity preserves the displayed sort snapshot. A1 home tests and state regressions passed (6), typecheck/build passed, A1-smoke exited 0 with failure/retry and read-versus-resolved assertions. Visual inspection found narrow detail header/metadata crowding; A2 will correct and recapture before final acceptance.
+
+### A2: Navigation and return context
+
+EXP-02: grouped daily/personal/tool navigation; bounded window-local return tokens retain owner, task, exact delivery version, pending interaction, focus and scroll. Source components remain mounted while settings are open. Deleted sources fail explicitly; delayed navigation cannot replace newer work. Pending replies remain unresolved with drafts preserved.
+
+Evidence: A2 token/validation tests (4); full suite 1444 passed/20 opt-in skipped; typecheck/build passed. A2-smoke-final exit0 covers handoff permission failure -> recipient settings -> original v1 and draft despite published v2, nested Escape, analytics return, deleted source, actual chat pending draft, late lookup rejection. Home grid overflow fixed and A1-visual exit0; inspected light375/dark1024 home and navigation screenshots. Resizable detail captures use the full available viewport to represent user resizing.

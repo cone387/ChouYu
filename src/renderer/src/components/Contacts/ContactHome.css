@@ -1,4 +1,5 @@
-.contact-home { display: grid; gap: 24px; min-width: 0; }
+.contact-home { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; min-width: 0; }
+.contact-home > section { min-width: 0; }
 .contact-home h3 { font-size: 15px; margin: 0 0 12px; }
 .contact-home-deliveries { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .contact-home-deliveries button { width: 100%; text-align: left; padding: 14px; }

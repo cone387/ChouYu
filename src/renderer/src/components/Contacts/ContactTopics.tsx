@@ -146,7 +146,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   }, [characterId, selected, topic?.revision])
   const stageToggle = <button type="button" className="topic-stage-toggle" aria-label={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} title={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} aria-expanded={!stagesCollapsed} aria-controls={`${tabId}-stages-nav`} onClick={() => setStagesCollapsed(value => !value)}><TaskIcon name="sidebar" /></button>
   const closeSettings = () => { setShowSettings(false) }
-  return <section ref={container} className="contact-topics" aria-label="持续推进的事项">
+  return <section ref={container} className="contact-topics" aria-label="持续推进的事项" data-selected-topic={selected}>
     {(taskDialog || scheduledEditor || scheduledDelete) && <ContactTaskDialog characterId={characterId} routine={scheduledEditor?.routine} initialDescription={scheduledEditor && !scheduledEditor.routine ? '每天早上检查各联系人的进展，汇总需要我关注和回复的事情。' : ''}
       deletion={scheduledDelete?.routine ? { title: scheduledDelete.title, description: '停止后续执行并删除此安排，聊天消息保留。', execute: async () => { await window.electronAPI.assistantRoutines.remove(scheduledDelete.routine!.id, scheduledDelete.routine!.revision); await assistant.refresh(); if (selected === scheduledDelete.id) { setSelected(''); setMobileDetail(false) } } }
         : taskDialog && taskDialog !== 'create' ? { title: taskDialog.title, description: '任务会停止执行，成果、运行和互动记录将一并删除，聊天消息保留。此操作无法撤销。', execute: async () => { const next = await window.electronAPI.agents.deleteTopic(characterId, taskDialog.id, taskDialog.revision); if (selected === taskDialog.id) { setSelected(next.focusTopicId ?? next.topics[0]?.id ?? ''); setMobileDetail(false) } } } : undefined}

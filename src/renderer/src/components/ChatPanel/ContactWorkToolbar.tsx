@@ -3,7 +3,7 @@ import ContactCurrentTask from './ContactCurrentTask'
 import { useEffect, useId, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { activatePanel } from '../../core/panel-layer'
-import { ContactAgentPanel, type ContactAgentTab } from '../Contacts/ContactAgentPanel'
+import { CONTACT_TAB_GROUPS, ContactAgentPanel, type ContactAgentTab } from '../Contacts/ContactAgentPanel'
 import TaskIcon, { type IconName } from '../Tasks/TaskIcon'
 import './ContactWorkToolbar.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
@@ -24,7 +24,8 @@ const baseEntries: { id: ContactAgentTab; label: string; icon: IconName }[] = [
 ]
 
 /** Mount per conversation: drafts survive closing, never cross contact/session boundaries. */
-export default function ContactWorkToolbar({ characterId, name, onClose, onChat, focusRequest, onDiscuss, initialTab = 'overview', standalone = false, profile, deliveryFocus }: {
+export default function ContactWorkToolbar({ characterId, name, onClose, onChat, focusRequest, onDiscuss, initialTab = 'overview', standalone = false, profile, deliveryFocus, suspended = false, onReturn }: {
+  suspended?: boolean; onReturn?: () => void
   deliveryFocus?: { ref: DeliveryRef; anchor?: TextAnchor }
   characterId: string; name: string; onClose: () => void; focusRequest?: AgentFocusRequest
   onDiscuss?: (reference: AgentDiscussion) => void
@@ -100,18 +101,20 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
   }
   const close = () => { window.dispatchEvent(new Event('chouyu:contact-reader-flush')); sheet.current?.close(); setOpen(false); onClose() }
   useEffect(() => {
-    const hide = () => { window.dispatchEvent(new Event('chouyu:contact-reader-flush')); sheet.current?.close(); setOpen(false); if (standalone) onClose() }
+    const hide = () => { window.dispatchEvent(new Event('chouyu:contact-reader-flush')); sheet.current?.close(); setOpen(false) }
+    const restore = (event: Event) => { const location = (event as CustomEvent<import('../Contacts/contactReturnLocation').ContactReturnLocation>).detail; if (location.surfaceId === id) { setTab(location.tab); setOpen(true) } }
     window.addEventListener('chouyu:contact-navigation-opened', hide)
-    return () => window.removeEventListener('chouyu:contact-navigation-opened', hide)
-  }, [standalone, onClose])
+    window.addEventListener('chouyu:contact-return', restore)
+    return () => { window.removeEventListener('chouyu:contact-navigation-opened', hide); window.removeEventListener('chouyu:contact-return', restore) }
+  }, [id])
   useEffect(() => {
     if (focusRequest) { setTaskFocus(focusRequest); setTab(focusRequest.tab); setVisited(true); setOpen(true) }
   }, [focusRequest])
   useEffect(() => {
     const dialog = sheet.current
-    if (open && dialog && !dialog.open) { positioned.current = false; dialog.show(); keepInView(); activatePanel(dialog) }
+    if (open && !suspended && dialog && !dialog.open) { positioned.current = false; dialog.show(); keepInView(); activatePanel(dialog) }
     return () => { if (dialog?.open) dialog.close() }
-  }, [open])
+  }, [open, suspended])
   useEffect(() => {
     window.addEventListener('resize', keepInView)
     return () => window.removeEventListener('resize', keepInView)
@@ -126,22 +129,23 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
     setTab(next)
     if (next !== tab && content.current) content.current.scrollTop = 0
   }
+  const selectFromHeader = (next: ContactAgentTab) => window.dispatchEvent(new CustomEvent('chouyu:contact-select-tab', { detail: { surface: id, tab: next } }))
 
   return <div ref={toolbar} className="contact-work-tools" data-contact-work-tools={characterId} style={standalone ? { display: 'none' } : undefined}>
-    {visited && createPortal(<dialog className="contact-work-sheet" id={id} ref={sheet} data-view={tab} data-interactive aria-modal="false" data-panel-window="contact" onPointerDownCapture={event => activatePanel(event.target)}
+    {visited && createPortal(<dialog className="contact-work-sheet" id={id} ref={sheet} data-contact-work-surface={id} data-view={tab} data-interactive aria-modal="false" data-panel-window="contact" onPointerDownCapture={event => activatePanel(event.target)}
       aria-label={`${name} · ${tab === 'settings' ? '工作设置' : entries.find(entry => entry.id === tab)!.label}`}
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onCancel={event => { event.preventDefault(); close() }}>
       <header className="contact-work-sheet-heading" onPointerDown={event => beginGesture(event, 'move')} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
         <strong>{name}的{tab === 'overview' ? '今日概览' : tab === 'work' ? '任务' : tab === 'portfolio' ? '成果' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : tab === 'materials' ? '资料' : tab === 'skills' ? '技能' : '记忆'}</strong>
       <div className="contact-work-buttons contact-work-dialog-tabs" role="group" aria-label="联系人工作内容">
-        {entries.map(entry => <button key={entry.id} type="button" data-contact-dialog-tab={entry.id}
-          aria-label={`${entry.label}${badge(entry.id) !== undefined ? ` ${badge(entry.id)}` : ''}`} title={hint(entry.id)} aria-pressed={tab === entry.id} onClick={() => { if (entry.id === 'analytics') setAnalyticsReset(n => n + 1); select(entry.id) }}>
-          <TaskIcon name={entry.icon} /><span>{entry.label}</span>{badge(entry.id) !== undefined && <small className="contact-work-count">{badge(entry.id)}</small>}
-        </button>)}
-        <button type="button" className="contact-work-settings-link" data-contact-dialog-tab="settings" aria-pressed={tab === 'settings'} onClick={() => select('settings')}>工作设置</button>
+        {CONTACT_TAB_GROUPS.map(group => <div key={group.label} className="contact-work-tab-group" role="group" aria-label={group.label}><small>{group.label}</small>{group.tabs.filter(([entry]) => entry !== 'profile' || profile).map(([entry, label]) => <button key={entry} type="button" data-contact-dialog-tab={entry}
+          aria-label={`${name}的${label}`} title={hint(entry)} aria-pressed={tab === entry} onClick={() => { if (entry === 'analytics') setAnalyticsReset(n => n + 1); selectFromHeader(entry) }}>
+          <span>{label}</span>{badge(entry) !== undefined && <small className="contact-work-count">{badge(entry)}</small>}
+        </button>)}</div>)}
       </div>
         {onChat && <button type="button" data-agent-chat aria-label={`与${name}聊天`} onClick={() => { close(); onChat() }}>聊天</button>}
+        {onReturn && <button type="button" data-contact-return aria-label={`从${name}的设置返回原事项`} onClick={onReturn}>返回原事项</button>}
         <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
       </header>
       <div className="contact-work-sheet-content" ref={content}>

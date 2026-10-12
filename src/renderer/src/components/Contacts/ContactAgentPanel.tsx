@@ -7,6 +7,7 @@ import ContactMarkdown from './ContactMarkdown'
 import ContactMemories from './ContactMemories'
 import ContactMaterials from './ContactMaterials'
 import ContactPortfolio from './ContactPortfolio'
+import { captureReturnLocation, saveReturnLocation, takeReturnLocation, peekReturnLocation, validateReturnLocation } from './contactReturnLocation'
 import type { DeliveryRef, TextAnchor } from '../../../../shared/contact-content'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { agentUsesPlanner, AGENT_STATUS, DEFAULT_AGENT_SETTINGS, type AgentOverview, type AgentRunDetail, type AgentSettings } from '../../../../shared/agents'
@@ -19,6 +20,11 @@ import type { AgentDiscussion } from './agentDiscussion'
 
 const time = (value: number) => new Date(value).toLocaleString()
 export type ContactAgentTab = 'overview' | 'work' | 'portfolio' | 'history' | 'memory' | 'materials' | 'settings' | 'analytics' | 'profile' | 'skills'
+export const CONTACT_TAB_GROUPS: { label: string; tabs: [ContactAgentTab, string][] }[] = [
+  { label: '日常', tabs: [['overview', '概览'], ['work', '任务'], ['portfolio', '成果']] },
+  { label: '个人内容', tabs: [['memory', '独立记忆'], ['materials', '资料']] },
+  { label: '工具', tabs: [['skills', '技能'], ['profile', '人设'], ['settings', '工作设置'], ['history', '工作记录'], ['analytics', '活动与消耗']] }
+]
 export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset, onExpand, profile, deliveryFocus }: {
   deliveryFocus?: { ref: DeliveryRef; anchor?: TextAnchor }
   characterId: string; name: string; selectedTab?: ContactAgentTab
@@ -38,7 +44,33 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const [homeFocus, setHomeFocus] = useState<AgentFocusRequest>()
   useEffect(() => { setHomeFocus(undefined) }, [focusRequest, characterId])
   const tab = selectedTab ?? localTab
-  const setTab = (next: ContactAgentTab) => { setLocalTab(next); onTabChange?.(next) }
+  const [returnToken, setReturnToken] = useState<string>(), [portfolioVisited, setPortfolioVisited] = useState(false)
+  const returnOrigin = useRef<ReturnType<typeof captureReturnLocation>>()
+  const panel = useRef<HTMLElement>(null), returnEpoch = useRef(0)
+  useEffect(() => () => { returnEpoch.current++ }, [characterId])
+  useEffect(() => { if (tab === 'portfolio') setPortfolioVisited(true) }, [tab])
+  const setTab = (next: ContactAgentTab) => {
+    returnEpoch.current++
+    if (['settings', 'analytics', 'skills'].includes(next) && ['work', 'portfolio', 'overview'].includes(tab)) { const origin = captureReturnLocation(); if (origin) { returnOrigin.current = origin; setReturnToken(saveReturnLocation(origin.location)) } }
+    setLocalTab(next); onTabChange?.(next)
+  }
+  useEffect(() => {
+    const select = (event: Event) => { const request = (event as CustomEvent<{ surface: string; tab: ContactAgentTab }>).detail; if (panel.current?.closest<HTMLElement>('[data-contact-work-surface]')?.dataset.contactWorkSurface === request.surface) setTab(request.tab) }
+    window.addEventListener('chouyu:contact-select-tab', select)
+    return () => window.removeEventListener('chouyu:contact-select-tab', select)
+  })
+  const returnToContent = async () => {
+    if (!returnToken) return
+    const location = peekReturnLocation(returnToken)
+    const ticket = ++returnEpoch.current
+    try {
+      if (!location) throw new Error('返回位置已失效。')
+      await validateReturnLocation(location)
+      if (ticket !== returnEpoch.current) return
+      takeReturnLocation(returnToken); setReturnToken(undefined); setLocalTab(location.tab); onTabChange?.(location.tab)
+      requestAnimationFrame(() => { const origin = returnOrigin.current; if (origin?.scroll?.isConnected) origin.scroll.scrollTop = location.scrollTop; if (origin?.focus?.isConnected) origin.focus.focus({ preventScroll: true }) })
+    } catch (e) { if (ticket === returnEpoch.current) setError(e instanceof Error ? e.message : '无法返回原事项。') }
+  }
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)
   const [analyticsTopic, setAnalyticsTopic] = useState<string | undefined>()
   const [analyticsFilterReset, resetAnalyticsFilter] = useState(0)
@@ -133,18 +165,18 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     : data.callsToday + (agentUsesPlanner(data.settings) ? 2 : 1) > data.settings.dailyCalls ? '今日模型额度已用完，明日恢复后可继续。' : ''
   const discuss = (runId: string, topicId: string, text: string) => onDiscuss?.({ runId, topicId, text,
     title: data?.topics.find(topic => topic.id === topicId)?.title || '工作记录' })
-  return <section className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId}>
+  return <section ref={panel} className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId} data-selected-tab={tab}>
     {!compact && <div className="agent-tabs" aria-label="工作内容">
-      {([['overview', '概览'], ['work', '任务'], ['portfolio', '成果'], ['history', '工作记录'], ['memory', '独立记忆'], ['materials', '资料'], ['settings', '工作设置'], ['skills', '技能'], ['analytics', '活动与消耗']] as const).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
-      {profile && <button type="button" data-agent-tab="profile" aria-pressed={tab === 'profile'} onClick={() => setTab('profile')}>人设</button>}
+      {CONTACT_TAB_GROUPS.map(group => <div key={group.label} className="agent-tab-group" role="group" aria-label={group.label}><span className="agent-tab-group-label">{group.label}</span>{group.tabs.filter(([id]) => id !== 'profile' || profile).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-label={`${name}的${label}`} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}</div>)}
       {onExpand && <button type="button" className="agent-expand" data-agent-expand aria-label="在大窗口中打开" title="在大窗口中打开" onClick={() => onExpand(tab)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg></button>}
     </div>}
+    {returnToken && ['settings', 'analytics', 'skills'].includes(tab) && <button type="button" data-contact-return onClick={() => void returnToContent()}>返回原内容</button>}
     {tab !== 'profile' && tab !== 'skills' && (error || readError) && <div className="agent-error" role="alert">{error || readError}<button type="button" disabled={busy} onClick={() => { setError(''); setReadError(''); void refresh() }}>重新读取</button></div>}
     {!data && !error && !readError && tab !== 'profile' && tab !== 'skills' && <p role="status">正在读取工作状态…</p>}
     {tab === 'profile' && profile}
     {tab === 'skills' && <ContactSkills key={characterId} characterId={characterId} name={name} />}
     {tab === 'overview' && <ContactHome key={characterId} characterId={characterId} overview={data} onTask={topicId => { setHomeFocus({ topicId, runId: data?.runs.find(run => run.topicId === topicId)?.id || '', kind: 'progress', tab: 'work', nonce: Date.now() }); setTab('work') }} />}
-    {tab === 'portfolio' && <ContactPortfolio key={characterId} characterId={characterId} initialRef={deliveryFocus?.ref} initialAnchor={deliveryFocus?.anchor} />}
+    {(tab === 'portfolio' || portfolioVisited) && <div hidden={tab !== 'portfolio'}><ContactPortfolio key={characterId} characterId={characterId} initialRef={deliveryFocus?.ref} initialAnchor={deliveryFocus?.anchor} /></div>}
     {data && <div className="agent-task-view" hidden={tab !== 'work'}>
       <ContactTopics onWorkSettings={() => setTab('settings')} active={tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={homeFocus ?? focusRequest}
         renderActivity={topicId => {

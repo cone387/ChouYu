@@ -48,7 +48,7 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
   }
   const openTask = onOpen ?? (view ? () => { void navigateContact({ kind: 'task', characterId, topicId: view.topicId }).catch(e => setError(e.message)) } : undefined)
   const title = view?.kind === 'question' ? '需要你的回复' : view?.kind === 'budget' ? '需要补充额度' : '本次工作未完成'
-  return <section className="contact-interaction" data-contact-interaction={interactionId} aria-busy={busy}>
+  return <section className="contact-interaction" data-contact-interaction={interactionId} data-contact-owner={characterId} data-topic-id={view?.topicId} aria-busy={busy}>
     {view ? <>
       {showOwner && view.characterName && <div className="contact-interaction-task">{view.characterName}</div>}
       <strong className="contact-interaction-title">{title}</strong>

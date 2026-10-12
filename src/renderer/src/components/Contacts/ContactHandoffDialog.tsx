@@ -28,7 +28,7 @@ export default function ContactHandoffDialog({ source, title, onClose, onSaved }
     finally { pending.current = false; if (alive.current) setBusy(false) }
   }
   const settings = async (characterId: string) => { try { await navigateContact({ kind: 'contact-settings', characterId, tab: 'settings' }); onClose() } catch (e) { setError(String(e)) } }
-  return createPortal(<dialog ref={dialog} className="contact-task-dialog" data-contact-handoff-dialog data-interactive data-interactive-bounds aria-labelledby={label} onCancel={e => { e.preventDefault(); e.stopPropagation(); if (!pending.current) onClose() }} onKeyDown={e => { if (e.key === 'Escape') e.stopPropagation() }}>
+  return createPortal(<dialog ref={dialog} className="contact-task-dialog" data-contact-handoff-dialog data-contact-owner={source.characterId} data-source-ref={JSON.stringify(source)} data-interactive data-interactive-bounds aria-labelledby={label} onCancel={e => { e.preventDefault(); e.stopPropagation(); if (!pending.current) onClose() }} onKeyDown={e => { if (e.key === 'Escape') e.stopPropagation() }}>
     <form onSubmit={e => { e.preventDefault(); void submit() }} aria-busy={busy}>
       <h3 id={label}>交给联系人评审</h3><p>{title} · 第 {source.version} 版{source.sectionId ? ' · 当前分节' : ''}</p>
       <label htmlFor={`${label}-recipient`}>接收者</label><select id={`${label}-recipient`} data-handoff-recipient required value={recipient} disabled={busy} onChange={e => { edit(); requestId.current = crypto.randomUUID(); setQuestion(''); setRecipient(e.target.value) }}><option value="">选择一位联系人</option>{characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>

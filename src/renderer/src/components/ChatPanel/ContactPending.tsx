@@ -37,8 +37,10 @@ export default function ContactPending({ characterId }: { characterId: string })
   }, [open])
   useEffect(() => {
     window.addEventListener('chouyu:contact-navigation-opened', close)
-    return () => window.removeEventListener('chouyu:contact-navigation-opened', close)
-  }, [])
+    const restore = (event: Event) => { const location = (event as CustomEvent<import('../Contacts/contactReturnLocation').ContactReturnLocation>).detail; if (location.interactionId && (location.characterId === characterId || characterId === DEFAULT_CHARACTER_ID) && shown.some(item => item.id === location.interactionId)) setOpen(true) }
+    window.addEventListener('chouyu:contact-return', restore)
+    return () => { window.removeEventListener('chouyu:contact-navigation-opened', close); window.removeEventListener('chouyu:contact-return', restore) }
+  }, [characterId, shown])
   return <>
     <button type="button" ref={trigger} aria-haspopup="dialog" data-contact-pending={characterId} onClick={() => { setShown(items); setOpen(true); refreshRef.current() }}>待处理{error ? ' · 读取失败' : loaded ? ` ${items.length}` : ' …'}</button>
     {createPortal(<dialog ref={dialog} className="contact-pending-dialog" data-interactive data-interactive-bounds aria-label="待处理事项"
@@ -48,7 +50,7 @@ export default function ContactPending({ characterId }: { characterId: string })
       {error && <p role="alert">{error}<button type="button" onClick={() => refreshRef.current()}>重新读取</button></p>}
       {!error && !loaded && <p role="status">正在读取…</p>}
       {!error && loaded && !shown.length && <p>目前没有需要你处理的事项。</p>}
-      {open && shown.map(item => <article key={`${item.characterId}:${item.id}`}><h3>{item.characterName}</h3><ContactInteractionCard characterId={item.characterId} interactionId={item.id} fallback="待处理事项" /></article>)}
+      {shown.map(item => <article key={`${item.characterId}:${item.id}`}><h3>{item.characterName}</h3><ContactInteractionCard characterId={item.characterId} interactionId={item.id} fallback="待处理事项" /></article>)}
     </dialog>, document.body)}
   </>
 }

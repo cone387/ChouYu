@@ -549,7 +549,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         </div>
         </div>
         <section className="contacts-profile-details" aria-label="角色资料" hidden={detailTab === 'work'}>
-          <h3>角色资料</h3>
+          <details><summary>角色资料与模型</summary>
           <dl className="contacts-detail-fields">
             <div><dt>模型</dt><dd>{detail.builtIn || !detail.model ? `跟随默认 · ${config.model}` : detail.model}</dd></div>
             <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
@@ -557,6 +557,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
             <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
           </dl>
+          </details>
         </section>
         {detail.id === ASSISTANT_CHARACTER_ID && <section className="contact-agent">
           <div className="agent-tabs"><button type="button" data-agent-tab="profile" aria-pressed="true">人设</button></div>

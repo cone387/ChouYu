@@ -25,8 +25,11 @@
 .contact-work-sheet[open] { display: flex; flex-direction: column; }
 .contact-work-sheet:not([open]) { display: none; }
 
-.contact-work-dialog-tabs { flex-shrink: 0; flex-wrap: nowrap; margin-left: auto; padding: 0; border: 0; }
-.contact-work-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 14px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.contact-work-dialog-tabs { flex: 1 1 100%; flex-wrap: wrap; order: 3; margin: 0; padding: 0; border: 0; min-width: 0; }
+.contact-work-tab-group { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: 100%; }
+.contact-work-tab-group > small { font-size: 10px; color: var(--text-secondary); margin: 0 4px; }
+.contact-work-tab-group:first-child button { font-weight: 600; }
+.contact-work-sheet-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 14px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
 .contact-work-sheet-heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .contact-work-sheet-heading button { flex-shrink: 0; }
 .contact-work-sheet-content { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0; }
@@ -76,8 +79,4 @@
   .contact-work-dialog-tabs { gap: 0; order: 3; width: 100%; min-width: 0; margin: 0; flex-wrap: wrap; }
   .contact-work-dialog-tabs button { padding: 4px 6px; }
   .contact-work-dialog-tabs svg { display: none; }
-}
-@media (max-width: 760px) {
-  .contact-work-dialog-tabs [data-contact-dialog-tab=analytics] span { display: none; }
-  .contact-work-dialog-tabs [data-contact-dialog-tab=analytics] svg { display: block; }
 }

@@ -15,6 +15,7 @@ import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import InputArea, { PendingAttachment } from './InputArea'
 import ContactWorkToolbar from './ContactWorkToolbar'
 import { CONTACT_NAVIGATION, type ContactNavigationRequest } from '../Contacts/contactNavigation'
+import { captureReturnLocation, saveReturnLocation, peekReturnLocation, takeReturnLocation, validateReturnLocation } from '../Contacts/contactReturnLocation'
 import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
@@ -80,6 +81,10 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   const [agentDiscussion, setAgentDiscussion] = useState<(AgentDiscussion & { sessionId: string }) | null>(null)
   const [activePage, setActivePage] = useState<WorkspacePage>(initialShowSettings ? 'settings' : 'chat')
   const [visitedPages, setVisitedPages] = useState<Partial<Record<WorkspacePage, boolean>>>({ settings: initialShowSettings })
+  const [returnToken, setReturnToken] = useState<string>()
+  const returnRecords = useRef(new Map<string, { task: typeof linkedTask; page: WorkspacePage; focus: HTMLElement | null; scroll: HTMLElement | null }>())
+  const [parkedTasks, setParkedTasks] = useState<{ token: string; task: NonNullable<typeof linkedTask> }[]>([])
+  const navigationSequence = useRef(0)
   const [pageLoaded, setPageLoaded] = useState(false)
   const pageChanged = useRef(false)
   const [taskFocusId, setTaskFocusId] = useState<string | undefined>()
@@ -681,25 +686,56 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
   // 仅在获得焦点且读到最新内容时，按渲染层已展示的消息边界标读。
   const activeAssistantUnread = sessions.find((session) => session.id === activeSessionId)?.unreadCount ?? 0
   useEffect(() => { setAgentFocus(null) }, [activeSessionId, isChat])
+  useEffect(() => { navigationSequence.current++ }, [activeSessionId])
+  const restoreContactOrigin = async () => {
+    if (!returnToken) return
+    const token = returnToken, location = peekReturnLocation(token), record = returnRecords.current.get(token)
+    if (!location || !record) { setNavigationError('返回位置已失效，请重新打开原事项。'); return }
+    const ticket = ++navigationSequence.current
+    try {
+      await validateReturnLocation(location)
+      if (ticket !== navigationSequence.current) throw new Error('页面已切换，请重新返回。')
+      takeReturnLocation(token); returnRecords.current.delete(token)
+      setParkedTasks(items => items.filter(item => item.token !== token)); setLinkedTask(record.task); navigate(record.page)
+      setReturnToken([...returnRecords.current.keys()].at(-1)); setNavigationError('')
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent('chouyu:contact-return', { detail: location }))
+        if (record.scroll?.isConnected) record.scroll.scrollTop = location.scrollTop
+        if (record.focus?.isConnected) record.focus.focus({ preventScroll: true })
+      }))
+    } catch (e) { if (ticket === navigationSequence.current) setNavigationError(e instanceof Error ? e.message : '无法返回原事项。') }
+  }
   useEffect(() => {
     const handle = (event: Event) => {
       const request = (event as CustomEvent<ContactNavigationRequest>).detail
       request.handled = true
       setNavigationError('')
+      const ticket = ++navigationSequence.current
+      const current = () => { if (ticket !== navigationSequence.current) throw new Error('导航已被新的操作替代。') }
+      const origin = ['settings', 'contact-settings'].includes(request.target.kind) ? captureReturnLocation() : undefined
+      const saveOrigin = () => {
+        if (!origin) return
+        const token = saveReturnLocation(origin.location)
+        returnRecords.current.set(token, { task: linkedTask, page: activePage, focus: origin.focus, scroll: origin.scroll })
+        for (const old of returnRecords.current.keys()) if (!peekReturnLocation(old)) returnRecords.current.delete(old)
+        setParkedTasks(items => [...items.filter(item => peekReturnLocation(item.token)), ...(linkedTask ? [{ token, task: linkedTask }] : [])]); setReturnToken(token)
+      }
       void (async () => {
         const target = request.target
         if (target.kind === 'settings') {
-          window.dispatchEvent(new Event('chouyu:contact-navigation-opened')); navigate('settings')
+          saveOrigin(); window.dispatchEvent(new CustomEvent('chouyu:contact-navigation-opened', { detail: { preserve: !!origin } })); if (origin) setLinkedTask(null); navigate('settings')
         } else if (target.kind === 'contact-settings') {
           const contacts = await window.electronAPI.characters.list()
+          current()
           const contact = contacts.find(c => c.id === target.characterId)
           if (!contact) throw new Error('联系人已删除，无法打开设置。')
-          window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
+          saveOrigin(); window.dispatchEvent(new CustomEvent('chouyu:contact-navigation-opened', { detail: { preserve: !!origin } }))
           setLinkedTask({ characterId: contact.id, name: contact.name, initialTab: target.tab, nonce: Date.now() })
         } else if (target.kind === 'discuss') {
           const ref = target.citation.ref
           const citation = await window.electronAPI.agents.validateCitation(ref.characterId, target.citation)
           const artifact = await window.electronAPI.agents.delivery(ref.characterId, ref.topicId, ref.version)
+          current()
           if (!artifact) throw new Error('引用的成果已移除。')
           const section = artifact.sections.find(s => s.id === ref.sectionId)
           window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
@@ -713,6 +749,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           const contact = contacts.find(c => c.id === target.ref.characterId)
           if (!contact) throw new Error('联系人已删除，无法打开成果。')
           const artifact = await window.electronAPI.agents.delivery(contact.id, target.ref.topicId, target.ref.version)
+          current()
           if (!artifact || (target.ref.sectionId && !artifact.sections.some(s => s.id === target.ref.sectionId))) throw new Error('找不到引用的成果分节。')
           window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
           setLinkedTask({ characterId: contact.id, name: contact.name, initialTab: 'portfolio', deliveryFocus: target, nonce: Date.now() })
@@ -721,6 +758,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           const contact = contacts.find(c => c.id === target.characterId)
           if (!contact) throw new Error('这项任务或联系人已删除，原始总结仍保留。')
           const work = await window.electronAPI.agents.get(target.characterId)
+          current()
           if (!work.topics.some(t => t.id === target.topicId)) throw new Error('这项任务或联系人已删除，原始总结仍保留。')
           const run = work.runs.find(r => r.topicId === target.topicId)
           window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
@@ -733,11 +771,11 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           setMessageFocus(target); setShowMessageSearch(false); setLinkedTask(null); navigate('chat')
         }
         request.resolve()
-      })().catch(error => { setNavigationError(error.message); request.reject(error) })
+      })().catch(error => { if (ticket === navigationSequence.current) setNavigationError(error.message); request.reject(error) })
     }
     window.addEventListener(CONTACT_NAVIGATION, handle)
     return () => window.removeEventListener(CONTACT_NAVIGATION, handle)
-  }, [selectSession, navigate, openCharacterChat])
+  }, [selectSession, navigate, openCharacterChat, linkedTask, activePage])
   useEffect(() => { setAgentDiscussion(previous => previous?.sessionId === activeSessionId ? previous : null) }, [activeSessionId])
   const markVisibleMessagesRead = useCallback(() => {
     if (!visible || !isChat || !workspaceLoaded || !activeAssistantUnread) return
@@ -974,7 +1012,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         </section>
         <section className="workspace-page workspace-settings" hidden={!showSettings} aria-label="设置工作区">
           {visitedPages.settings && <>
-            <Settings active={visible && showSettings} onClose={() => navigate('chat')} petVisible={petVisible} onPetVisibleChange={onPetVisibleChange}
+            {returnToken && <button type="button" data-contact-return onClick={() => void restoreContactOrigin()}>返回原联系人事项</button>}
+            <Settings active={visible && showSettings} onClose={() => returnToken ? void restoreContactOrigin() : navigate('chat')} petVisible={petVisible} onPetVisibleChange={onPetVisibleChange}
               onOpenMemoryWorkspace={() => openMemoryWorkspace()} onOpenJournalWorkspace={() => navigate('journal')} embedded />
           </>}
         </section>
@@ -990,7 +1029,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
         onPointerUp={handlePanelResizeEnd} onPointerCancel={handlePanelResizeEnd} />)}
       {visible && panelReady && toolApprovalRequest && <ToolApprovalDialog request={toolApprovalRequest} onResolve={resolveToolApproval} />}
       {navigationError && <div className="memory-candidate-error" role="alert">{navigationError}<button type="button" onClick={() => setNavigationError('')}>关闭</button></div>}
-      {linkedTask && <ContactWorkToolbar key={`${linkedTask.characterId}:${linkedTask.focus?.nonce ?? linkedTask.nonce}`} standalone characterId={linkedTask.characterId} name={linkedTask.name} initialTab={linkedTask.initialTab ?? 'work'} focusRequest={linkedTask.focus} deliveryFocus={linkedTask.deliveryFocus} onClose={() => setLinkedTask(null)} onChat={() => { void openCharacterChat(linkedTask.characterId).catch(error => setNavigationError(error.message)) }} />}
+      {[...parkedTasks.map(item => ({ task: item.task, parked: true })), ...(linkedTask ? [{ task: linkedTask, parked: false }] : [])].map(({ task, parked }) => <ContactWorkToolbar key={`${task.characterId}:${task.focus?.nonce ?? task.nonce}`} standalone suspended={parked} characterId={task.characterId} name={task.name} initialTab={task.initialTab ?? 'work'} focusRequest={task.focus} deliveryFocus={task.deliveryFocus} onReturn={!parked && returnToken ? () => void restoreContactOrigin() : undefined} onClose={() => { if (!parked) { if (returnToken) void restoreContactOrigin(); else setLinkedTask(null) } }} onChat={() => { void openCharacterChat(task.characterId).catch(error => setNavigationError(error.message)) }} />)}
       {showGlobalSearch && visible && <GlobalSearch searchHotkey={config.searchHotkey} onContact={id => { setContactsFocusId(id); navigate('contacts') }} onTask={(id, done, query) => { setTaskFocusId(id); setTaskSearchRequest({ id, done, query, nonce: Date.now() }); navigate('tasks') }} snapshot={searchSnapshot} onClose={() => setShowGlobalSearch(false)}
         onSession={async (id, query) => { await selectSession(id); navigate('chat'); setNarrowSessionsOpen(false); setMessageSearchQuery(query); setShowMessageSearch(true) }}
         onMemory={openMemoryWorkspace}

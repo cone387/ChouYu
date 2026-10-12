@@ -28,7 +28,10 @@ export async function runContactHomeSmoke(window: BrowserWindow, owner: string) 
       for (const theme of ['light', 'dark']) for (const width of [375, 1024]) {
         await run(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`)
         window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 900 }, scale: 1 })
-        await waitForRenderer(window, `innerWidth===${width}`); await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))'); await window.webContents.capturePage()
+        await waitForRenderer(window, `innerWidth===${width}`)
+        await run("(()=>{const e=document.querySelector('.contacts-detail'),p=e.offsetParent;Object.assign(e.style,{left:'8px',top:'8px',width:(p.clientWidth-16)+'px',height:(p.clientHeight-16)+'px'});e.scrollTop=0})()")
+        await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))'); await window.webContents.capturePage()
+        if (!await run("(()=>{const e=document.querySelector('.contacts-detail');return e.scrollWidth<=e.clientWidth+1})()")) { console.error('HOME_OVERFLOW', await run("(()=>{const e=document.querySelector('.contacts-detail'),r=e.getBoundingClientRect();return {width:e.clientWidth,scroll:e.scrollWidth,children:[...e.querySelectorAll('*')].filter(n=>n.getClientRects().length&&n.getBoundingClientRect().right>r.right).slice(0,25).map(n=>({tag:n.tagName,cls:n.className,width:n.getBoundingClientRect().width}))}})()")); throw new Error('Home detail has horizontal overflow') }
         writeFileSync(join(directory, `${theme}-${width}.png`), (await window.webContents.capturePage({ x: 0, y: 0, width, height: 900 })).toPNG())
       }
     } finally { window.webContents.disableDeviceEmulation(); await window.webContents.removeInsertedCSS(css); await run("document.documentElement.dataset.theme='light'") }

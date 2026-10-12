@@ -33,6 +33,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   const [revisionDialog, setRevisionDialog] = useState<{ citation: ContentCitation; scope: 'content' | 'presentation' } | null>(null)
   const [citationError, setCitationError] = useState('')
   const [handoff, setHandoff] = useState(false)
+  const readerRoot = useRef<HTMLElement>(null)
   const [frameCitation, setFrameCitation] = useState<ContentCitation | null>(null)
   const cite = async (action: 'discuss' | 'content' | 'presentation') => {
     if (!artifact) return
@@ -121,7 +122,11 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
     const frame = requestAnimationFrame(() => { restoring.current = false })
     return () => cancelAnimationFrame(frame)
   }, [artifact, readingId, plain, loading, initialAnchor])
-  return <section className="contact-delivery" aria-label="阶段计划与成果" data-delivery-version={artifact?.version}>
+  useEffect(() => {
+    const restore = (event: Event) => { const location = (event as CustomEvent<import('./contactReturnLocation').ContactReturnLocation>).detail; requestAnimationFrame(() => { if (readerRoot.current?.getClientRects().length && readerRoot.current.closest<HTMLElement>('[data-contact-work-surface]')?.dataset.contactWorkSurface === location.surfaceId && location.handoff && location.delivery?.ref.characterId === characterId && location.delivery.ref.topicId === topic.id && location.delivery.ref.version === artifact?.version) setHandoff(true) }) }
+    window.addEventListener('chouyu:contact-return', restore); return () => window.removeEventListener('chouyu:contact-return', restore)
+  }, [characterId, topic.id, artifact?.version])
+  return <section ref={readerRoot} className="contact-delivery" aria-label="阶段计划与成果" data-delivery-version={artifact?.version} data-reading-reference={artifact ? JSON.stringify({ characterId, topicId: topic.id, version: artifact.version, ...(readingId ? { sectionId: readingId } : {}) }) : undefined}>
     <div hidden={view !== 'stages'}>
       {inputs?.length ? <details className="delivery-inputs" open><summary>任务需求</summary><ContactTaskInputForm key={`${topic.id}:${artifact?.version ?? 0}:${topic.revision}`} fields={inputs} busy={busy} label="更新需求并继续" onSubmit={async reply => { await onAction(async () => { await window.electronAPI.agents.reviseTopic(characterId, topic.id, topic.revision, reply); setNotice('需求已提交，联系人会据此继续工作。') }) }} />{busy && <p className="agent-caption">有待回复的问题时，请在任务概览中补充；其他调整可在本轮结束或暂停后提交。</p>}</details> : null}
       <div className="topic-heading"><h4>阶段计划</h4>{artifact && <span className="agent-caption">版本 {artifact.version} / {latest}</span>}</div>

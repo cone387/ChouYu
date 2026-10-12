@@ -6,6 +6,7 @@ import { runContactMaterialSmoke } from './contact-material-smoke'
 import { runContactHandoffSmoke, handoffSmokeResponse } from './contact-handoff-smoke'
 import { runContactCapabilitySmoke } from './contact-capability-smoke'
 import { runContactHomeSmoke } from './contact-home-smoke'
+import { runContactNavigationSmoke } from './contact-navigation-smoke'
 import { contactSkillLibrary } from '../skills'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
@@ -115,7 +116,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
     if (!await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-close]')) && Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-start-chat]')) && document.querySelector('.contacts-detail-actions').getBoundingClientRect().top < document.querySelector('.contact-agent').getBoundingClientRect().top")) throw new Error('Contact detail actions are not at the top')
-    if (!await window.webContents.executeJavaScript("(() => { const head=document.querySelector('.contacts-detail-head').getBoundingClientRect(); const actions=document.querySelector('.contacts-detail-actions').getBoundingClientRect(); const agent=document.querySelector('.contact-agent'); const fields=document.querySelector('.contacts-detail-fields'); return actions.left >= head.right && actions.top < head.bottom && fields?.querySelectorAll('dt').length === 5 && fields.getBoundingClientRect().bottom <= agent.getBoundingClientRect().top && !document.querySelector('.contacts-detail-soul') && !agent.nextElementSibling })()")) throw new Error('Contact metadata must remain above tabs; only persona text belongs inside its tab')
+    if (!await window.webContents.executeJavaScript("(() => { const head=document.querySelector('.contacts-detail-head').getBoundingClientRect(); const actions=document.querySelector('.contacts-detail-actions').getBoundingClientRect(); const agent=document.querySelector('.contact-agent'); const fields=document.querySelector('.contacts-detail-fields'); return actions.top < agent.getBoundingClientRect().top && fields?.querySelectorAll('dt').length === 5 && fields.closest('details').getBoundingClientRect().bottom <= agent.getBoundingClientRect().top && !document.querySelector('.contacts-detail-soul') && !agent.nextElementSibling })()")) throw new Error('Contact metadata must remain above tabs; only persona text belongs inside its tab')
     if (!await window.webContents.executeJavaScript("(() => { const sizes=Array.from(document.querySelectorAll('.contacts-detail-actions button')).map(el => el.getBoundingClientRect()); return sizes.every(rect => rect.height === sizes[0].height && rect.width === sizes[0].width) })()")) throw new Error('Header buttons must have matching sizes')
     const detailHeight = await window.webContents.executeJavaScript("document.querySelector('.contacts-detail').getBoundingClientRect().height")
     if (!await window.webContents.executeJavaScript("document.querySelector('[data-agent-tab=overview]').getAttribute('aria-pressed') === 'true'")) throw new Error('Contact details must default to overview')
@@ -134,6 +135,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await runContactMemorySmoke(window, character.id, () => chatBody)
     if (process.env.CHOUYU_SMOKE_CONTACT_PORTFOLIO_ONLY === '1') { await runContactPortfolioSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_MEMORY_ONLY === '1') return
+    if (process.env.CHOUYU_SMOKE_CONTACT_NAVIGATION_ONLY === '1') { await runContactNavigationSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_HOME_ONLY === '1') { await runContactHomeSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_CAPABILITY_ONLY === '1') { await runContactCapabilitySmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_MATERIAL_ONLY === '1') { await runContactMaterialSmoke(window, character.id, ref => { materialReference = ref }, () => chatBody); return }

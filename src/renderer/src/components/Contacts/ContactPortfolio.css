@@ -1,4 +1,5 @@
 .contact-portfolio { min-width: 0; }
+.contact-work-sheet .contact-portfolio { padding: 16px 20px; }
 .citation-quote { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; margin: 12px 0; padding: 12px; border-left: 2px solid var(--border); font-size: 14px; line-height: 1.7; }
 .contact-citation { margin: 12px 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
 .portfolio-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 16px 0; }
