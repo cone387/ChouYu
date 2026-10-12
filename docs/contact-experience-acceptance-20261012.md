@@ -66,3 +66,7 @@ Validation: 1426 full-suite tests passed, 19 skipped; typecheck/build passed; El
 EXP-10/11: persisted source/version and an actual receiver task; both sharing permissions are checked before preparation, commit, reading and delivery. Continuous reviews compare prose hashes and preserve paused/completed states. Returning a selected opinion uses the original author revision flow with both source versions validated.
 
 Evidence: handoffs.test.ts and handoff-review.test.ts (5 passing), F2-final-suite (1432 passed/19 skipped), typecheck and build passed. Electron F2-smoke-final exited 0 with CHOUYU_CONTACT_HANDOFF_SMOKE_PASSED: real modal mouse actions, parser and reviewer requests, private-memory isolation, worker restart, returned opinion, author version 2 and stale draft retention. Inspected light375/dark1024 screenshots in artifacts/contact-handoffs. Real-model semantic quality remains a FINAL acceptance requirement.
+
+### G1: Attributable file archive
+
+EXP-13 storage: validated runner byte snapshots are content-addressed SQLite BLOB copies. Metadata and bytes commit atomically; no arbitrary host path enters the API. File/tool tests cover immutable overwrites, rollback, restart, cancelled runs, run/session ownership, hardlinks, traversal and existing limits. Formal fileIds attach only with the actual matching delivery transaction. G1-final-tests: 15 passed; G1-final-types passed; CHOUYU_TEST_DOCKER=1 docker.integration.test.ts: 2 passed, including archive of real script output. File previews and navigation remain G2.

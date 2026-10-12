@@ -232,6 +232,13 @@ export class AgentService {
         break
       }
       case 'materialList': return this.store.materials.list({ ...(args[0] as ContactReadContext), characterId: id })
+      case 'archiveFiles': {
+        const context = args[0] as import('../../shared/contact-files').WorkFileContext
+        if (context.characterId !== id) throw new Error('文件归属不匹配。')
+        const result = this.store.files.archive(context, args[1] as import('../../shared/contact-files').ValidatedWorkFile[]); this.changed(id); return result
+      }
+      case 'fileList': return this.store.files.list(id, args[0] as string | undefined)
+      case 'readContactFile': return this.store.files.read(id, args[0] as string)
       case 'assertContextCurrent': this.store.assertContextCurrent(id, args[0] as import('../../shared/contact-content').ContextReferences); return
       case 'readMaterial': return this.store.materials.read({ ...(args[0] as ContactReadContext), characterId: id }, args[1] as import('../../shared/contact-materials').MaterialRef, args[2] as number | undefined)
       case 'materialHistory': return this.store.materials.history(id, args[0] as string)
@@ -347,7 +354,11 @@ export class AgentService {
         this.store.tokens.settle(reservation.key, metadata)
         reservation = undefined; this.changed(run.character_id)
       }
-      const skillRuntime = skillToolRuntime(identity.id, skills, this.skillRunner, signal)
+      const skillRuntime = skillToolRuntime(identity.id, skills, this.skillRunner, signal, async (skillId, files) => {
+        signal.throwIfAborted(); this.store.assertLive(run.id)
+        if (!run.topic_id) throw new Error('工作文件缺少任务来源。')
+        return this.store.files.archive({ characterId: identity.id, skillId, runId: run.id, topicId: run.topic_id, requestId: run.id }, files)
+      })
       const materialTools = createMaterialTools({ owner: () => identity.id, request: async (method, owner, args) => {
         this.store.assertLive(run.id)
         if (method === 'materialList') return input.materialDirectory

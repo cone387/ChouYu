@@ -13,7 +13,7 @@ export const SKILL_TOOLS: AIToolDefinition[] = [
   { ...base, name: 'get_skill_logs', displayName: '读取技能运行记录', description: '读取当前联系人的技能脚本、依赖准备和运行环境日志，用于核实实际结果及失败原因。', inputSchema: { type: 'object', properties: { skillId: skill }, required: ['skillId'], additionalProperties: false } }
 ]
 
-export function skillToolRuntime(owner: string, snapshot: SkillSnapshot, runner: SkillRunner, signal: AbortSignal) {
+export function skillToolRuntime(owner: string, snapshot: SkillSnapshot, runner: SkillRunner, signal: AbortSignal, archive?: (skillId: string, files: import('../../shared/contact-files').ValidatedWorkFile[]) => Promise<import('../../shared/contact-files').ContactFile[]>) {
   const definitions = snapshot.entries.length ? SKILL_TOOLS.filter(tool => tool.name !== 'run_skill_script' || snapshot.entries.some(entry => entry.scriptsEnabled)) : []
   const executeResult = async (call: AIToolCall) => {
     signal.throwIfAborted()
@@ -27,11 +27,16 @@ export function skillToolRuntime(owner: string, snapshot: SkillSnapshot, runner:
       if (!['package', 'workspace'].includes(String(args.source))) throw new Error('文件来源必须是 package 或 workspace。')
       return { content: runner.readFile(owner, snapshot, id, String(args.path), args.source as 'package' | 'workspace'), summary: `已读取 ${args.path}` }
     }
-    if (call.name === 'write_skill_file') { const result = runner.writeFile(owner, snapshot, id, String(args.path), String(args.content)); return { content: result, summary: result } }
+    if (call.name === 'write_skill_file') {
+      const result = runner.writeFile(owner, snapshot, id, String(args.path), String(args.content))
+      signal.throwIfAborted()
+      const files = archive ? await archive(id, [{ name: String(args.path), bytes: Buffer.from(String(args.content), 'utf8') }]) : undefined
+      return { content: files ? JSON.stringify({ message: result, files }) : result, summary: result }
+    }
     if (call.name === 'get_skill_logs') return { content: JSON.stringify(runner.logs(owner, id)), summary: '已读取实际运行日志。' }
     const timeout = args.timeoutSeconds ?? 60
     if (typeof timeout !== 'number' || !Number.isFinite(timeout) || timeout < 1 || timeout > 120) throw new Error('脚本超时必须为 1–120 秒。')
-    const result = await runner.run(owner, snapshot, id, String(args.path), scriptArguments(String(args.argumentsJson || '[]')), signal, timeout * 1000)
+    const result = await runner.run(owner, snapshot, id, String(args.path), scriptArguments(String(args.argumentsJson || '[]')), signal, timeout * 1000, archive && (files => archive(id, files)))
     return { content: JSON.stringify(result), summary: result.summary }
   }
   return { definitions, executeResult, execute: async (call: AIToolCall) => { try { return (await executeResult(call)).content } catch (error) { if (signal.aborted) throw error; return `技能工具失败：${error instanceof Error ? error.message : String(error)}` } } }

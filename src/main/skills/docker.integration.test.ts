@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { SkillLibrary } from './library'
 import { SkillRunner, containerArguments } from './runner'
+import { AgentStore } from '../agents/store'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -26,7 +27,21 @@ it.skipIf(process.env.CHOUYU_TEST_DOCKER !== '1')('runs Node, Python and Bash, i
   const status = await runner.status(); expect(status.engineReady, status.message).toBe(true)
   if (!status.ready) expect((await runner.prepare(signal)).ready).toBe(true)
   const snapshot = library.snapshot('alice')
-  for (const script of ['node.cjs', 'python.py', 'shell.sh', 'bounds.cjs', 'network.cjs']) await runner.run('alice', snapshot, 'runtime', script, [], signal)
+  const archive = new AgentStore(join(root, 'archive.db'))
+  archive.ensure('alice'); archive.memoryLibrary.registerSessions('alice', ['docker-session'])
+  try {
+    for (const script of ['node.cjs', 'python.py', 'shell.sh', 'bounds.cjs', 'network.cjs']) {
+      const result = await runner.run('alice', snapshot, 'runtime', script, [], signal, 60000, async files => archive.files.archive({ characterId: 'alice', skillId: 'runtime', sessionId: 'docker-session', requestId: script }, files))
+      expect(result.files?.every(file => !file.deliveryRef)).toBe(true)
+    }
+    const first = archive.files.list('alice').find(file => file.name === 'node.txt')!
+    expect(Buffer.from(archive.files.read('alice', first.id).bytes).toString()).toBe('node passed')
+    runner.writeFile('alice', snapshot, 'runtime', 'node.txt', 'new workspace bytes')
+    expect(Buffer.from(archive.files.read('alice', first.id).bytes).toString()).toBe('node passed')
+    expect(() => archive.files.read('bob', first.id)).toThrow()
+  } finally { archive.close() }
+  // Restore the workspace fixture before the existing runtime checks.
+  runner.writeFile('alice', snapshot, 'runtime', 'node.txt', 'node passed')
   for (const runtime of ['node', 'python', 'shell']) expect(runner.readFile('alice', snapshot, 'runtime', `${runtime}.txt`, 'workspace')).toBe(`${runtime} passed`)
   await expect(runner.run('alice', snapshot, 'runtime', 'timeout.cjs', [], signal, 1000)).rejects.toThrow()
   expect(runner.logs('alice')[0].status).toBe('cancelled')

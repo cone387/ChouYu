@@ -1,11 +1,13 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, renameSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, linkSync, renameSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SkillLibrary } from './library'
 import { SkillRunner, scriptArguments, containerArguments } from './runner'
 import { exportedFiles } from './container-worker'
+import { skillToolRuntime } from './tools'
+import { AgentStore } from '../agents/store'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -24,6 +26,21 @@ it('keeps contact workspaces separate and rejects traversal and unassigned packa
   expect(() => runner.readFile('bob', { entries: [], instruction: '' }, 'script', 'SKILL.md', 'package')).toThrow()
   expect(() => runner.writeFile('alice', snapshot, 'script', '../escape', 'bad')).toThrow()
   expect(() => runner.readFile('alice', snapshot, 'script', 'C:/secret', 'workspace')).toThrow()
+})
+it('archives actual tool writes with chat attribution and never imports hardlinked files', async () => {
+  const { root, runner, snapshot } = setup(), store = new AgentStore(':memory:')
+  store.ensure('alice'); store.memoryLibrary.registerSessions('alice', ['session'])
+  try {
+    const tools = skillToolRuntime('alice', snapshot, runner, new AbortController().signal, async (skillId, files) => store.files.archive({ characterId: 'alice', skillId, sessionId: 'session', requestId: 'request' }, files))
+    const result = await tools.executeResult({ id: 'write', name: 'write_skill_file', arguments: JSON.stringify({ skillId: 'script', path: 'note.md', content: 'Original bytes' }) })
+    const file = JSON.parse(result.content).files[0]
+    runner.writeFile('alice', snapshot, 'script', 'note.md', 'Changed bytes')
+    expect(Buffer.from(store.files.read('alice', file.id).bytes).toString()).toBe('Original bytes')
+    const source = join(root, 'external.txt'); writeFileSync(source, 'private')
+    linkSync(source, join(runner.workspace('alice', 'script'), 'linked.txt'))
+    await expect(tools.executeResult({ id: 'link', name: 'write_skill_file', arguments: JSON.stringify({ skillId: 'script', path: 'linked.txt', content: 'changed' }) })).rejects.toThrow()
+    expect(store.files.list('alice')).toHaveLength(1)
+  } finally { store.close() }
 })
 it('rejects links created inside a workspace and validates argv without shell parsing', () => {
   const { root, runner, snapshot } = setup()

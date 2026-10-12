@@ -230,7 +230,7 @@ export class SkillRunner {
       }, id, undefined, name)
     } finally { this.preparing.delete(entry.digest) }
   }
-  async run(owner: string, snapshot: SkillSnapshot, id: string, file: string, args: string[], signal: AbortSignal, timeoutMs = 60000) {
+  async run(owner: string, snapshot: SkillSnapshot, id: string, file: string, args: string[], signal: AbortSignal, timeoutMs = 60000, archive?: (files: import('../../shared/contact-files').ValidatedWorkFile[]) => Promise<import('../../shared/contact-files').ContactFile[]>) {
     this.assertToolAllowed('run_skill_script')
     const { entry, directory } = this.entry(owner, snapshot, id, true), detail = this.library.detail(id)
     const script = detail.skill.compatibility!.scripts.find(item => item.path === file)
@@ -262,7 +262,9 @@ export class SkillRunner {
           } catch (error) { this.recoverWorkspace(owner, id, true); throw error }
           this.recoverWorkspace(owner, id, true)
         } finally { this.removeDirectory(stage) }
-        return { id: log.id, output: log.output.slice(-50000), summary: `脚本 ${file} 已完成；保存 ${files.length} 个工作文件。` }
+        activeSignal.throwIfAborted(); this.assertToolAllowed('run_skill_script'); this.entry(owner, snapshot, id, true)
+        const archived = archive ? await archive(files.map(item => ({ name: item.path, bytes: item.data }))) : undefined
+        return { id: log.id, output: log.output.slice(-50000), ...(archived ? { files: archived } : {}), summary: `脚本 ${file} 已完成；保存 ${files.length} 个工作文件。` }
       } finally { clearInterval(checker) }
     }, id, file, name) } finally { release() }
   }

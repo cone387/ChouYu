@@ -2,6 +2,7 @@ import type { ContactPortfolioAPI } from './contact-content'
 import type { ContactMemoryAPI } from './contact-memories'
 import type { ContactMaterialAPI } from './contact-materials'
 import type { ContactHandoffAPI } from './contact-handoffs'
+import type { ContactFileAPI } from './contact-files'
 import { sanitizeProgressUpdate } from './agent-progress'
 export interface AgentSettings {
   toolPermissionMode?: import('./tools').ContactToolPermissionMode
@@ -119,7 +120,7 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
   return { status: value.status, judgement: value.judgement.trim(), openQuestions: value.openQuestions.trim(), nextStep: value.nextStep.trim(), reason: value.reason.trim() }
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
-export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, ContactMaterialAPI, ContactHandoffAPI {
+export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, ContactMaterialAPI, ContactHandoffAPI, ContactFileAPI {
   pendingInteractions(characterId: string): Promise<(import('./contact-interactions').ContactInteraction & { characterName: string })[]>
   getInteraction(characterId: string, interactionId: string): Promise<import('./contact-interactions').ContactInteraction>
   submitInteraction(characterId: string, interactionId: string, submission: import('./contact-interactions').ContactInteractionSubmission): Promise<import('./contact-interactions').ContactInteraction>

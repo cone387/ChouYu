@@ -28,6 +28,7 @@ export function validateDeliveryPlan(raw: unknown): DeliveryPlan {
 }
 export interface DeliverySection { id: string; title: string; body: string; runId: string; sources?: { url: string; title: string; capturedAt: number }[] }
 export interface DeliveryUpdate {
+  fileIds?: string[]
   completionCriteria: string
   stages: DeliveryStage[]
   summary: string
@@ -36,6 +37,7 @@ export interface DeliveryUpdate {
   presentation?: DeliveryPresentation | null
 }
 export interface AgentDelivery {
+  fileIds?: string[]
   version: number; runId: string; createdAt: number
   completionCriteria: string; stages: DeliveryStage[]; summary: string
   sections: DeliverySection[]
@@ -45,6 +47,7 @@ export interface AgentDelivery {
 export function validateDeliveryUpdate(raw: unknown): DeliveryUpdate {
   if (!raw || typeof raw !== 'object') throw new Error('缺少成果内容。')
   const v = raw as DeliveryUpdate
+  if (v.fileIds !== undefined && (!Array.isArray(v.fileIds) || v.fileIds.length > 128 || new Set(v.fileIds).size !== v.fileIds.length || v.fileIds.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(id)))) throw new Error('成果文件引用无效。')
   const text = (s: unknown, max: number): s is string => typeof s === 'string' && Boolean(s.trim()) && s.length <= max
   const id = (s: unknown): s is string => typeof s === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(s)
   if (!text(v.completionCriteria, 1000) || !text(v.summary, 2000)) throw new Error('成果必须有完成条件与累积摘要。')
@@ -52,7 +55,7 @@ export function validateDeliveryUpdate(raw: unknown): DeliveryUpdate {
   if (!Array.isArray(v.stages) || !v.stages.length || v.stages.length > 300 || v.stages.some(s => !s || !id(s.id) || !text(s.title, 160) || !['pending', 'active', 'done'].includes(s.status)) || new Set(v.stages.map(s => s.id)).size !== v.stages.length) throw new Error('阶段计划无效。')
   if (v.section !== undefined && (!v.section || !id(v.section.id) || !text(v.section.title, 160) || !text(v.section.body, 10000))) throw new Error('成果分节无效。')
   if (!v.section && v.presentation === undefined && v.inputs === undefined) throw new Error('缺少成果正文或展示更新。')
-  return { completionCriteria: v.completionCriteria.trim(), summary: v.summary.trim(), stages: v.stages.map(s => ({ id: s.id, title: s.title.trim(), status: s.status })), ...(v.section ? { section: { id: v.section.id, title: v.section.title.trim(), body: v.section.body.trim() } } : {}), ...(v.inputs === undefined ? {} : { inputs: validateTaskInputs(v.inputs) }), ...(v.presentation === undefined ? {} : { presentation: v.presentation === null ? null : validatePresentation(v.presentation) }) }
+  return { ...(v.fileIds === undefined ? {} : { fileIds: [...v.fileIds] }), completionCriteria: v.completionCriteria.trim(), summary: v.summary.trim(), stages: v.stages.map(s => ({ id: s.id, title: s.title.trim(), status: s.status })), ...(v.section ? { section: { id: v.section.id, title: v.section.title.trim(), body: v.section.body.trim() } } : {}), ...(v.inputs === undefined ? {} : { inputs: validateTaskInputs(v.inputs) }), ...(v.presentation === undefined ? {} : { presentation: v.presentation === null ? null : validatePresentation(v.presentation) }) }
 }
 export function deliveryMarkdown(title: string, value: AgentDelivery): string {
   return `# ${title}\n\n版本 ${value.version}\n\n## 完成条件\n\n${value.completionCriteria}\n\n## 阶段\n\n${value.stages.map(s => `- [${s.status === 'done' ? 'x' : ' '}] ${s.title}${s.status === 'active' ? '（进行中）' : ''}`).join('\n')}\n\n## 进展摘要\n\n${value.summary}\n\n${value.sections.map(s => `## ${s.title}\n\n${s.body}\n\n${(s.sources || []).map((source, i) => `[${i + 1}] ${source.title}: ${source.url}（读取于 ${new Date(source.capturedAt).toISOString()}）`).join('\n')}\n来源轮次：${s.runId}`).join('\n\n')}\n`

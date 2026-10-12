@@ -157,6 +157,16 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  ipcMain.handle('agents:exportContactFile', async (event, owner: string, id: string) => {
+    const result = await contactAgentsCall<{ file: import('../../shared/contact-files').ContactFile; bytes: Uint8Array }>(owner, 'readContactFile', [id])
+    const parent = BrowserWindow.fromWebContents(event.sender), options = { title: '导出归档文件', defaultPath: result.file.name.split('/').at(-1) }
+    const selected = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
+    if (selected.canceled || !selected.filePath) return false
+    // Revalidate ownership and bytes after the native dialog returns.
+    const current = await contactAgentsCall<typeof result>(owner, 'readContactFile', [id])
+    await writeFile(selected.filePath, current.bytes)
+    return true
+  })
   const imports = new Map<string, AbortController>()
   ipcMain.handle('agents:cancelMaterialImport', (event, owner: string, requestId: string) => { imports.get(`${event.sender.id}:${owner}:${requestId}`)?.abort() })
   ipcMain.handle('agents:importMaterial', async (event, owner: string, input: import('../../shared/contact-materials').MaterialImport) => {
@@ -235,7 +245,7 @@ export function initializeAgents() {
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const method of ['getInteraction', 'submitInteraction', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
+  for (const method of ['getInteraction', 'submitInteraction', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
     ipcMain.handle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       validateMemoryBoundary(id, method, args)

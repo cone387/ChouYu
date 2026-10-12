@@ -650,7 +650,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const skillSnapshot = request.characterId ? getContactSkills(request.characterId) : { entries: [], instruction: '' }
       if (skillSnapshot.error) throw new Error(skillSnapshot.error)
       const skillContext = skillSnapshot.instruction
-      const skillTools = skillToolRuntime(request.characterId || '', skillSnapshot, contactSkillRunner(), controller.signal)
+      const skillTools = skillToolRuntime(request.characterId || '', skillSnapshot, contactSkillRunner(), controller.signal, async (skillId, files) => {
+        controller.signal.throwIfAborted()
+        if (!owner || !request.sessionId || getSession(request.sessionId)?.characterId !== owner) throw new Error('文件缺少可验证的会话来源。')
+        return contactAgentsCall(owner, 'archiveFiles', [{ characterId: owner, skillId, sessionId: request.sessionId, requestId: request.requestId }, files])
+      })
       let privateContext = ''
       if (owner) {
         try {

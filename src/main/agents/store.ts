@@ -3,6 +3,7 @@ import { citationContext, validateCitation } from './citations'
 import { AgentMemories } from './memories'
 import { AgentMaterials } from './materials'
 import { AgentHandoffs } from './handoffs'
+import { AgentFiles } from './files'
 import type { ContentCitation } from '../../shared/contact-content'
 import { validateChapterContinuation } from './chapter-continuation'
 import { AgentTaskFailures } from './task-failures'
@@ -47,13 +48,14 @@ export class AgentStore {
   readonly memoryLibrary: AgentMemories
   readonly materials: AgentMaterials
   readonly handoffs: AgentHandoffs
+  readonly files: AgentFiles
   constructor(filename: string) {
     this.db = new Database(filename)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 12) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 13) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -122,6 +124,8 @@ export class AgentStore {
     })()
     if (version < 11) this.db.pragma('user_version = 11')
     if (version < 12) this.db.pragma('user_version = 12')
+    this.files = new AgentFiles(this.db)
+    if (version < 13) this.db.pragma('user_version = 13')
     this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)
     this.db.exec(`CREATE TABLE IF NOT EXISTS task_schedule (
@@ -833,6 +837,10 @@ export class AgentStore {
       if (deliveryInput.revisionSectionId && delivery?.section?.id !== deliveryInput.revisionSectionId) throw new Error('成果没有更新指定分节，本轮未提交。')
       if (run.topic_id && progress && JSON.parse(run.input).deliveryVersion === 1) this.deliveries.commit(run.topic_id, report, progress, delivery)
       const committed = run.topic_id ? this.deliveries.get(run.topic_id) : null
+      if (delivery?.fileIds?.length) {
+        if (!committed || committed.runId !== runId || !run.topic_id) throw new Error('工作文件尚无对应的正式成果。')
+        this.files.attach(run.character_id, { characterId: run.character_id, topicId: run.topic_id, version: committed.version }, delivery.fileIds)
+      }
       if (progress?.status === 'completed' && committed?.runId === runId && this.handoffs.completeReview(runId)) {
         progress = { ...progress, status: 'needs_evidence', nextStep: '等待原文有实质变化后继续评审。' }
         report = { ...report, nextStep: progress.nextStep }

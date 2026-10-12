@@ -1,6 +1,6 @@
 # 联系人技能与文件成果 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把技能说明、可运行状态、失败恢复和真实文件成果连起来。
 **Architecture:** 保留现有隔离运行器与授权模型，增加不可变文件归档及任务/会话来源。
@@ -13,10 +13,10 @@
 
 **Files:** 新增 `src/shared/contact-files.ts`、`src/main/agents/files.ts`、`files.test.ts`；修改 `src/main/skills/{runner,tools}.ts`、`src/shared/skills.ts`、`agents/{service,delivery}.ts`、`src/main/ipc.ts`。
 **Interfaces:** WorkFileContext={characterId:string;skillId:string;runId?:string;topicId?:string;sessionId?:string;requestId:string}；ContactFile={id:string;context:WorkFileContext;name:string;hash:string;bytes:number;mediaType:string;createdAt:number;deliveryRef?:DeliveryRef}；`archive(context,validatedFiles:{name:string;bytes:Uint8Array}[]):ContactFile[]`、`read(owner,id):{file:ContactFile;bytes:Uint8Array}`、`attach(owner,ref:DeliveryRef,fileIds:string[]):void`。AgentFiles(db,root) 只接受运行器校验后的普通文件。
-- [ ] 文件集成测试：同名改写归档后 v1 字节不变；另一联系人读取失败；软链/硬链/路径穿越拒绝；8 MB/128 件/200 KB 边界沿用 runner；临时文件只列工作文件，attach 后才是成果；失败/取消不附会交付；元数据失败保留旧版且清理暂存；重启恢复安全。运行 files.test.ts 确认红。
-- [ ] 存储采用内容哈希受管副本与事务元数据、所有删除前校验实际路径；工作目录路径不是成果身份。以实际工具调用传入 context，后台带 run/task，聊天带 session/request；旧文件缺少证明时仅标历史工作文件。
-- [ ] 正式交付可引用本轮已归档 fileIds，服务端核对 owner/run/hash；与成果 commit 同事务关联，不凭模型文件名假定生成。取消时即便临时文件存在也不标成功。
-- [ ] 运行专项/现有 runner 测试及真实 Docker 输出归档测试、类型检查，通过后提交 `feat(contacts): archive attributable file deliverables`。
+- [x] 文件集成测试：同名改写归档后 v1 字节不变；另一联系人读取失败；软链/硬链/路径穿越拒绝；8 MB/128 件/200 KB 边界沿用 runner；临时文件只列工作文件，attach 后才是成果；失败/取消不附会交付；元数据失败保留旧版且清理暂存；重启恢复安全。运行 files.test.ts 确认红。
+- [x] 存储采用内容哈希受管副本与事务元数据、所有删除前校验实际路径；工作目录路径不是成果身份。以实际工具调用传入 context，后台带 run/task，聊天带 session/request；旧文件缺少证明时仅标历史工作文件。
+- [x] 正式交付可引用本轮已归档 fileIds，服务端核对 owner/run/hash；与成果 commit 同事务关联，不凭模型文件名假定生成。取消时即便临时文件存在也不标成功。
+- [x] 运行专项/现有 runner 测试及真实 Docker 输出归档测试、类型检查，通过后提交 `feat(contacts): archive attributable file deliverables`。
 
 ## Task G2：能力呈现和可用成果
 

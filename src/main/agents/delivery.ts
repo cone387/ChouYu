@@ -61,7 +61,8 @@ export class AgentDeliveries {
     if (sections.length > 300 || sections.reduce((n, s) => n + s.body.length, 0) > 1000000) throw new Error('单个成果已达到容量上限，请结束此事项并分卷继续。')
     const presentation = value.presentation === undefined ? previous?.presentation : value.presentation ?? undefined
     const inputs = value.inputs ?? previous?.inputs ?? initial?.inputs
-    const artifact: AgentDelivery = { version: (previous?.version ?? 0) + 1, runId: report.runId, createdAt: report.createdAt, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, sections, ...(presentation ? { presentation } : {}), ...(inputs ? { inputs } : {}) }
+    const fileIds = [...new Set([...(previous?.fileIds ?? []), ...(value.fileIds ?? [])])]
+    const artifact: AgentDelivery = { ...(fileIds.length ? { fileIds } : {}), version: (previous?.version ?? 0) + 1, runId: report.runId, createdAt: report.createdAt, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, sections, ...(presentation ? { presentation } : {}), ...(inputs ? { inputs } : {}) }
     this.db.transaction(() => {
       this.db.prepare('INSERT INTO delivery_versions VALUES(?,?,?,?)').run(topicId, artifact.version, report.runId, JSON.stringify(artifact))
       this.portfolio.index(topicId, artifact)
