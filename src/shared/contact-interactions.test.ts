@@ -1,5 +1,17 @@
 import { expect, it } from 'vitest'
 import { contactFailure } from './contact-failure'
+
+it('reports the underlying plan repair failure rather than calling it a rejected delivery', () => {
+  expect(contactFailure('工作计划自动修复后仍未通过校验：网页访问权限不足：计划地址不在允许访问的网页范围内。 本轮已停止，已有成果保留。')).toMatchObject({ kind: 'permission', settingsTarget: 'work' })
+  expect(contactFailure('工作计划自动修复后仍未通过校验：研究计划包含当前权限不允许读取的网页。 本轮已停止，已有成果保留。')).toMatchObject({ kind: 'source', settingsTarget: 'work' })
+  expect(contactFailure('工作计划不是完整、唯一的 JSON 对象（返回 797 字符），尚未执行计划。').message).toContain('未按要求返回完整的工作计划')
+  expect(contactFailure('下次检查间隔无效。')).toMatchObject({ kind: 'format', settings: false })
+})
+
+it('explains repeated tool calls and points to contact skills without raising the limit', () => {
+  expect(contactFailure('工具调用次数超过安全上限。')).toMatchObject({ kind: 'tool-limit', settingsTarget: 'skills' })
+  expect(contactFailure('工具调用次数超过安全上限。').message).toContain('连续调用工具')
+})
 import { interactionHref, interactionReferences } from './contact-interactions'
 it('distinguishes billing from transient 429 and leaves format errors actionable', () => {
   expect(contactFailure('API error 429: 余额不足或无可用资源包')).toMatchObject({ kind: 'billing', settings: true })

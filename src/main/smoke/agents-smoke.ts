@@ -1,5 +1,6 @@
 import { runContactInteractionsSmoke } from './contact-interactions-smoke'
 import { runContactChatChangeSmoke } from './contact-chat-change-smoke'
+import { runContactTaskToolbarSmoke } from './contact-task-toolbar-smoke'
 import { runContactPermissionsSmoke } from './contact-permissions-smoke'
 import { app, dialog, type BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
@@ -143,6 +144,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (process.env.CHOUYU_SMOKE_PERMISSIONS_ONLY === '1') {
       await runContactPermissionsSmoke(window)
       console.log('CHOUYU_SMOKE_AGENTS_PASSED permissionsOnly=true')
+      return
+    }
+    if (process.env.CHOUYU_SMOKE_TASK_TOOLBAR_ONLY === '1') {
+      await runContactTaskToolbarSmoke(window)
+      console.log('CHOUYU_SMOKE_AGENTS_PASSED taskToolbarOnly=true')
       return
     }
     if (process.env.CHOUYU_SMOKE_CHAT_CHANGE_ONLY === '1') {

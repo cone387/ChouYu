@@ -1,4 +1,20 @@
 .contact-work-tools { flex-shrink: 0; min-width: 0; color: var(--text-primary); }
+.contact-current-task { display: inline-flex; align-items: center; max-width: 100%; min-width: 0; font-size: 12px; }
+.contact-current-task-controls { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.contact-current-task .contact-current-task-name, .contact-current-task select { width: 94px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contact-current-task-status { display: inline-flex; flex: 0 0 16px; color: var(--text-secondary); }
+.contact-current-task-status[data-task-status=running] { color: var(--accent); }
+.contact-current-task-status[data-task-status=waiting] { color: var(--warning); }
+.contact-task-running-arc { transform-origin: 12px 12px; animation: contact-task-spin 1s linear infinite; }
+@keyframes contact-task-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .contact-task-running-arc { animation: none; } }
+.contact-current-task .contact-current-task-name { display: block; text-align: left; }
+#root .contact-current-task select:not([multiple]):not([size]) { height: 30px; min-height: 30px; font: inherit; color: var(--text-secondary); background: transparent; border: 0; border-radius: 6px; padding: 4px; gap: 4px; }
+#root .contact-current-task select:not([multiple]):not([size]):is(:hover, :focus, :focus-visible, :open) { border-color: transparent; outline: none; box-shadow: none; }
+.contact-current-task select option { color: var(--text-primary); background: var(--bg-primary); }
+.contact-current-task button { flex-shrink: 0; white-space: nowrap; }
+.contact-current-task button:disabled { opacity: .5; cursor: default; }
+.contact-current-task-error { color: var(--danger, #c43b3b); overflow-wrap: anywhere; margin-top: 5px; }
 .contact-work-count { min-width: 15px; padding: 0 4px; border-radius: 4px; background: var(--bg-secondary); color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; }
 .contact-work-usage { font-size: 11px; font-variant-numeric: tabular-nums; }
 .contact-work-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 14px; border-top: 1px solid var(--border); }

@@ -1,4 +1,5 @@
 import ContactPending from './ContactPending'
+import ContactCurrentTask from './ContactCurrentTask'
 import { useEffect, useId, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { activatePanel } from '../../core/panel-layer'
@@ -29,6 +30,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
 }) {
   const entries = profile ? [...baseEntries, { id: 'profile' as const, label: '人设', icon: 'edit' as const }] : baseEntries
   const [tab, setTab] = useState<ContactAgentTab>(initialTab)
+  const [taskFocus, setTaskFocus] = useState<AgentFocusRequest>()
   const { data: summary, error: summaryError } = useAgentSummary(characterId)
   const badge = (entry: ContactAgentTab) => entry === 'work' ? summary ? `共 ${summary.tasks} 项` : '—' : entry === 'memory' ? summary?.memories ?? '—' : undefined
   const hint = (entry: ContactAgentTab) => summaryError || (entry === 'overview' ? '查看今日趋势、24 小时工作记录与任务日志' : entry === 'work' ? `${ACTIVE_TASKS_HINT}${characterId === DEFAULT_CHARACTER_ID ? ' 同时包含已启用的日常陪伴、定时提醒和联系人总结；待设置时间不计入。' : ''}` : entry === 'analytics' ? summaryTokenHint(summary) : entry === 'memory' ? '当前保留的独立记忆条数' : '查看工作记录')
@@ -99,7 +101,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
     return () => window.removeEventListener('chouyu:contact-navigation-opened', hide)
   }, [standalone, onClose])
   useEffect(() => {
-    if (focusRequest) { setTab(focusRequest.tab); setVisited(true); setOpen(true) }
+    if (focusRequest) { setTaskFocus(focusRequest); setTab(focusRequest.tab); setVisited(true); setOpen(true) }
   }, [focusRequest])
   useEffect(() => {
     const dialog = sheet.current
@@ -139,7 +141,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
         <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
       </header>
       <div className="contact-work-sheet-content" ref={content}>
-        <ContactAgentPanel characterId={characterId} name={name} profile={profile} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={() => { close(); onChat?.() }} />
+        <ContactAgentPanel characterId={characterId} name={name} profile={profile} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={taskFocus ?? focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={() => { close(); onChat?.() }} />
       </div>
       {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const).map(edge => <div key={edge} className={`contact-work-resize contact-work-resize-${edge}`} data-resize-edge={edge} aria-label={`调整窗口大小 ${edge}`} role="separator" tabIndex={0}
         onPointerDown={event => beginGesture(event, edge)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}
@@ -154,6 +156,7 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
     </dialog>, document.body)}
     <div className="contact-work-buttons" role="group" aria-label="联系人快捷工具" hidden={standalone}>
       {!standalone && <ContactPending characterId={characterId} />}
+      {!standalone && <ContactCurrentTask key={characterId} characterId={characterId} onOpen={focus => { setTaskFocus(focus); setTab(focus.tab); setVisited(true); setOpen(true); if (open) activatePanel(sheet.current) }} />}
       {entries.map(entry => <button key={entry.id} type="button" data-contact-work-tab={entry.id}
         aria-haspopup="dialog" aria-expanded={open && tab === entry.id} aria-controls={visited ? id : undefined}
         title={`查看${name}的${entry.label}。${hint(entry.id)}`} onClick={() => {

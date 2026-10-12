@@ -10,7 +10,7 @@ export interface ContactInteraction {
   id: string; version: string; characterId: string; topicId: string; runId: string; topicTitle: string
   kind: ContactInteractionKind; status: ContactInteractionStatus; question?: string
   failureDetail?: string
-  failure?: { kind: 'billing' | 'configuration' | 'network' | 'format' | 'permission' | 'skill' | 'source' | 'unknown'; message: string; action: string; settings: boolean; settingsTarget?: 'work' | 'skills' }
+  failure?: { kind: 'billing' | 'configuration' | 'network' | 'format' | 'permission' | 'skill' | 'source' | 'tool-limit' | 'unknown'; message: string; action: string; settings: boolean; settingsTarget?: 'work' | 'skills' }
   budgets: ContactBudgetField[]; result?: string; createdAt: number
 }
 export interface ContactInteractionSubmission {

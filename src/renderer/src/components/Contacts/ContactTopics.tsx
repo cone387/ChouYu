@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import ContactTaskRunButton from './ContactTaskRunButton'
+import { contactTaskExecution } from './contactTaskExecution'
 import { AGENT_STATUS, TOPIC_STATUS, type AgentOverview, type AgentTopic, type AgentTopicDetail } from '../../../../shared/agents'
 import './ContactTopics.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
@@ -94,10 +96,11 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     ['最近完成', routine.lastAt ? `${time(routine.lastAt)} · 已发到聊天` : '尚未执行']
   ] : [['触发规则', assistantTask?.description ?? '']]
 
-  const currentRun = topic && researchable(topic) ? data.runs.find(run => run.topicId === topic.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status)) : undefined
+  const execution = topic ? contactTaskExecution(data, topic) : undefined
+  const currentRun = execution?.run
   const slotsFull = data.runs.filter(run => run.status === 'running').length >= (data.settings.maxConcurrentTasks ?? 1)
   const queued = Boolean(topic && data.queuedTopicIds?.includes(topic.id))
-  const canPause = Boolean(topic && researchable(topic) && (queued || currentRun?.topicId === topic.id || (data.settings.enabled && (data.focusTopicId === topic.id || data.taskSchedule?.[topic.id]))))
+  const canPause = Boolean(execution?.canPause)
   const pauseAvailable = assistantTask ? Boolean(scheduleEnabled) : canPause
   const waiting = currentRun?.topicId === topic?.id && currentRun?.status === 'waiting'
   useEffect(() => { setTab('overview'); setShowSettings(false) }, [selected, focusRequest])
@@ -181,10 +184,12 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         {!selectedItem && <div className="topic-content-scroll"><header className="topic-content-header"><div className="topic-title-group">{stageToggle}<h4>任务详情</h4></div></header><p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '选择或新建任务，在这里查看进度与成果。'}</p></div>}
     {selectedItem && <>
       <div className="topic-floating-action" data-running={activeRun?.status === 'running' || undefined}>
-          <button type="button" className="primary" data-topic-run={!pauseAvailable || undefined} data-topic-pause={pauseAvailable || undefined}
-            title={assistantTask ? (pauseAvailable ? '暂停此任务的自动触发' : '启用此任务的自动触发') : activeRun?.status === 'running' ? '本轮从开始到现在的耗时（含排队和等待回复），点击暂停；累计耗时见概览统计。' : canPause ? '点击暂停当前任务' : '启动本任务一轮工作'}
+          <ContactTaskRunButton pause={pauseAvailable}
+            label={execution?.action === 'inspect' ? '处理样式失败' : runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '处理中…' : assistantTask ? pauseAvailable ? '暂停' : routine ? '启用定时' : assistantTask.duty ? '启用提醒' : '安排时间' : executionLabel}
+            title={execution?.action === 'inspect' ? '打开本次样式失败记录，保留原修改范围重试' : assistantTask ? (pauseAvailable ? '暂停此任务的自动触发' : '启用此任务的自动触发') : activeRun?.status === 'running' ? '本轮从开始到现在的耗时（含排队和等待回复），点击暂停；累计耗时见概览统计。' : canPause ? '点击暂停当前任务' : '启动本任务一轮工作'}
             disabled={busy || Boolean(runAction) || Boolean(topic && !canPause && settingsDirty)}
             onClick={() => {
+              if (topic && execution?.action === 'inspect' && execution.latestRun) { onReport(execution.latestRun.id, topic.id); return }
               if (assistantTask && !routine && !assistantTask.duty) { setScheduledEditor(assistantTask); return }
               setRunAction(pauseAvailable ? 'pause' : 'start')
               void onAction(async () => {
@@ -197,7 +202,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
                   else await window.electronAPI.agents.continueTopic(characterId, topic.id, topic.revision, '用户启动任务')
                 }
               }).finally(() => setRunAction(null))
-            }}><ContactTaskIcon name={pauseAvailable ? 'pause' : 'play'} />{runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '处理中…' : assistantTask ? pauseAvailable ? '暂停' : routine ? '启用定时' : assistantTask.duty ? '启用提醒' : '安排时间' : executionLabel}</button>
+            }} />
           <button type="button" aria-label="查看本任务的活动与消耗" title={topic ? '活动与消耗' : '此任务尚未记录消耗统计'} disabled={!topic} onClick={() => { if (topic) onAnalytics(topic.id) }}><TaskIcon name="chart" />消耗</button>
           <button type="button" data-topic-settings aria-haspopup="dialog" aria-expanded={showSettings} disabled={busy} onClick={event => { event.currentTarget.focus({ preventScroll: true }); setShowSettings(true) }}><ContactTaskIcon name="settings" />设置</button>
       </div>

@@ -30,7 +30,7 @@ export default function ContactPending({ characterId }: { characterId: string })
   useEffect(() => {
     if (open) setShown(previous => [...previous, ...items.filter(item => !previous.some(p => p.id === item.id && p.characterId === item.characterId))])
   }, [items, open])
-  const close = () => { setOpen(false); trigger.current?.focus() }
+  const close = () => { dialog.current?.close(); setOpen(false); trigger.current?.focus({ preventScroll: true }) }
   useEffect(() => {
     if (open) dialog.current?.showModal()
     else dialog.current?.close()
@@ -41,7 +41,9 @@ export default function ContactPending({ characterId }: { characterId: string })
   }, [])
   return <>
     <button type="button" ref={trigger} aria-haspopup="dialog" data-contact-pending={characterId} onClick={() => { setShown(items); setOpen(true); refreshRef.current() }}>待处理{error ? ' · 读取失败' : loaded ? ` ${items.length}` : ' …'}</button>
-    {createPortal(<dialog ref={dialog} className="contact-pending-dialog" aria-label="待处理事项" onCancel={e => { e.preventDefault(); close() }}>
+    {createPortal(<dialog ref={dialog} className="contact-pending-dialog" data-interactive data-interactive-bounds aria-label="待处理事项"
+      onKeyDown={event => { if (event.key === 'Escape') event.stopPropagation() }}
+      onCancel={e => { e.preventDefault(); e.stopPropagation(); close() }}>
       <header><strong>待处理事项</strong><button type="button" aria-label="关闭待处理事项" onClick={close}>关闭</button></header>
       {error && <p role="alert">{error}<button type="button" onClick={() => refreshRef.current()}>重新读取</button></p>}
       {!error && !loaded && <p role="status">正在读取…</p>}

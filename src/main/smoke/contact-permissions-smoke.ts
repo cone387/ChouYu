@@ -70,7 +70,7 @@ export async function runContactPermissionsSmoke(window: BrowserWindow) {
     const topic = failureStore.topics.get(character.id, topicId)
     failureStore.changeTopic(character.id, topicId, topic.revision, { status: 'planned', reason: '隔离权限失败验收' })
     const runId = failureStore.createRun(character.id, '')
-    failureStore.fail(runId, '网页访问权限不足：计划地址不在允许访问的网页范围内。')
+    failureStore.fail(runId, '工作计划自动修复后仍未通过校验：网页访问权限不足：计划地址不在允许访问的网页范围内。 本轮已停止，已有成果保留。')
     const notice = failureStore.notices.pending(character.id).find(n => n.runId === runId)!
     if (!notice.interactionId) throw new Error('First failure has no interactive remedy')
     cardId = notice.interactionId; appendAgentNotice(notice); failureStore.notices.ack(character.id, notice.id)

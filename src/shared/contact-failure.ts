@@ -1,5 +1,10 @@
 import type { ContactInteraction } from './contact-interactions'
 export function contactFailure(error: string): NonNullable<ContactInteraction['failure']> {
+  // The repair wrapper describes the attempt, not the underlying cause or remedy.
+  error = error.replace(/^工作计划自动修复后仍未通过校验：/, '').trim()
+  if (/工具调用次数超过安全上限/.test(error)) return { kind: 'tool-limit', message: '模型连续调用工具，达到单次请求的安全上限后仍未返回可交付结果，本次工作已停止。可以重试；反复出现时请检查当前联系人启用的技能是否适合这项任务。已有正文保留。', action: '重新尝试', settings: true, settingsTarget: 'skills' }
+  if (/工作计划不是完整、唯一的 JSON|工作计划返回为空/.test(error)) return { kind: 'format', message: '模型未按要求返回完整的工作计划，尚未开始本轮资料读取或正文写作。自动修正也未能获得有效计划，可以重新生成计划后继续。', action: '重新生成计划并继续', settings: false }
+  if (/下次检查间隔无效/.test(error)) return { kind: 'format', message: '模型返回的下一次检查间隔无效，工作计划未能执行。已有正文保留，可以重新生成计划后继续。', action: '重新生成计划并继续', settings: false }
   if (/工具.*(?:关闭|禁用)/.test(error)) return { kind: 'permission', message: '任务需要的工具已关闭。请在系统工具设置中启用所需工具后重试；联系人自动执行策略不会开启被关闭的工具。', action: '已处理，重试本任务', settings: true }
   if (/搜索失败|Brave.*(?:HTTP|失败)/i.test(error)) return { kind: 'source', message: /429|限流|rate.?limit/i.test(error)
     ? '搜索服务请求受限或搜索额度不足。可以稍后重试，或在这个联系人的工作设置中检查搜索服务额度。'
