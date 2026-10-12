@@ -128,6 +128,10 @@ export class AgentService {
         return this.store.deliveries.inspect(String(args[0]), args[1] as number | undefined, args[2] as string | undefined)
       }
       case 'delivery': this.store.topics.get(id, String(args[0])); return this.store.deliveries.get(String(args[0]), args[1] as number | undefined)
+      case 'portfolio': return this.store.portfolio.list(id, args[0] as import('../../shared/contact-content').PortfolioQuery)
+      case 'setDeliveryFavorite': return this.store.portfolio.favorite(id, args[0] as string, args[1] as boolean)
+      case 'saveDeliveryReading': return this.store.portfolio.saveReading(id, args[0] as import('../../shared/contact-content').ReadingPosition)
+      case 'deliveryReading': return this.store.portfolio.reading(id, args[0] as string)
       case 'reviseTopic': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         if (args[4] === 'presentation') {

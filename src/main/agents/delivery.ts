@@ -1,14 +1,17 @@
 import type Database from 'better-sqlite3'
 import { validateDeliveryUpdate, type AgentDelivery, type DeliveryUpdate } from '../../shared/agent-delivery'
 import type { AgentReport, AgentTopicProgress } from '../../shared/agents'
+import { AgentPortfolio } from './portfolio'
 
 /** All writes share the report transaction. Each version is an immutable full snapshot. */
 export class AgentDeliveries {
+  readonly portfolio: AgentPortfolio
   constructor(private db: Database.Database) {
     db.exec(`CREATE TABLE IF NOT EXISTS delivery_versions (
       topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
       version INTEGER NOT NULL, run_id TEXT NOT NULL UNIQUE REFERENCES runs(id) ON DELETE CASCADE,
       value TEXT NOT NULL, PRIMARY KEY(topic_id, version));`)
+    this.portfolio = new AgentPortfolio(db)
   }
   get(topicId: string, version?: number): AgentDelivery | null {
     if (version !== undefined && (!Number.isSafeInteger(version) || version < 1)) throw new Error('成果版本无效。')
@@ -59,7 +62,10 @@ export class AgentDeliveries {
     const presentation = value.presentation === undefined ? previous?.presentation : value.presentation ?? undefined
     const inputs = value.inputs ?? previous?.inputs ?? initial?.inputs
     const artifact: AgentDelivery = { version: (previous?.version ?? 0) + 1, runId: report.runId, createdAt: report.createdAt, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, sections, ...(presentation ? { presentation } : {}), ...(inputs ? { inputs } : {}) }
-    this.db.prepare('INSERT INTO delivery_versions VALUES(?,?,?,?)').run(topicId, artifact.version, report.runId, JSON.stringify(artifact))
+    this.db.transaction(() => {
+      this.db.prepare('INSERT INTO delivery_versions VALUES(?,?,?,?)').run(topicId, artifact.version, report.runId, JSON.stringify(artifact))
+      this.portfolio.index(topicId, artifact)
+    })()
   }
   context(topicId: string) {
     const value = this.get(topicId)

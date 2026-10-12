@@ -36,6 +36,7 @@ export class AgentStore {
   readonly notices: AgentNotices
   readonly tokens: AgentTokenBudget
   readonly deliveries: AgentDeliveries
+  get portfolio() { return this.deliveries.portfolio }
   readonly taskFailures: AgentTaskFailures
   constructor(filename: string) {
     this.db = new Database(filename)
@@ -43,7 +44,7 @@ export class AgentStore {
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 8) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 9) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -96,6 +97,7 @@ export class AgentStore {
     this.tokens = new AgentTokenBudget(this.db)
     this.decisions = new ContactInteractions(this)
     if (version < 8) this.db.transaction(() => { this.tokens.importHistory(); this.db.pragma('user_version = 8') })()
+    if (version < 9) this.db.transaction(() => { this.portfolio.backfill(); this.db.pragma('user_version = 9') })()
     this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)
     this.db.exec(`CREATE TABLE IF NOT EXISTS task_schedule (

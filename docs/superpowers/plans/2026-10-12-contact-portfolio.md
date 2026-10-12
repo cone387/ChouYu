@@ -1,6 +1,6 @@
 # 联系人成果与续读 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 建立跨任务作品集、收藏、全文查询、精确版本阅读和重启续读。
 **Architecture:** 以正式 delivery_versions 为唯一正文源；索引和阅读状态独立保存，共用原成果阅读器。
@@ -13,10 +13,10 @@
 
 **Files:** 新增 `src/shared/contact-content.ts`、`src/main/agents/portfolio.ts`、`portfolio.test.ts`；修改 `agents/store.ts`、`delivery.ts` 及总计划的 API 接入文件。
 **Interfaces:** `AgentPortfolio(db: Database.Database)` 提供 `resolve(owner: string, ref: DeliveryRef): { artifact: AgentDelivery; section?: DeliverySection }`、`list(owner: string, query: PortfolioQuery): PortfolioPage`、`favorite(owner: string, topicId: string, value: boolean): void`、`saveReading(owner: string, input: ReadingPosition): void`、`reading(owner: string, topicId: string): ReadingPosition | null`。公共查询类型在 contact-content.ts 定义：PortfolioQuery 包含可选 query/topicId/cursor、favoritesOnly、sort='updated'|'name'；PortfolioPage 含 items/nextCursor；每项含 ref/title/excerpt/createdAt/favorite。ReadingPosition 含 ref、可选 anchor、scrollRatio(0～1)、updatedAt；已读分节哈希另表记录。
-- [ ] 在 portfolio.test.ts 用真实 AgentStore/临时数据库和正式 commit 构造 31 项、两联系人及多版本夹具。测试：`expect(first.items).toHaveLength(30)`；并发新增后旧 cursor 最后一页只剩原第 31 项；跨联系人 resolve 抛错；只搜最新版正文；相同时间/中文同名稳定分页；收藏和阅读 reopen 后一致；样式更新不变更已读正文哈希；坏 cursor/非法版本/事务失败不更新。
-- [ ] 运行 `npx vitest run src/main/agents/portfolio.test.ts`，确认失败。
-- [ ] 实现公共契约及增量数据库迁移；在 contact-content.ts 定义 `deliveryText(body:string):string`，作为正文选择/阅读锚点的唯一纯文本投影（复用当前 Markdown 语义，保留可见段落与代码文本，统一换行），偏移按 JS UTF-16。索引保留版本创建时的标题/正文哈希，查询水位锁定索引序号，删除仅移除该任务。原成果 commit 事务同步写索引；旧库按真实成果重建索引而非伪造阅读记录。API 名为 portfolio、setDeliveryFavorite、saveDeliveryReading、deliveryReading。
-- [ ] 重跑专项与 `npm run typecheck`，补旧库升级/未来 schema 拒绝测试，通过后提交 `feat(contacts): persist portfolio and reading state`。
+- [x] 在 portfolio.test.ts 用真实 AgentStore/临时数据库和正式 commit 构造 31 项、两联系人及多版本夹具。测试：`expect(first.items).toHaveLength(30)`；并发新增后旧 cursor 最后一页只剩原第 31 项；跨联系人 resolve 抛错；只搜最新版正文；相同时间/中文同名稳定分页；收藏和阅读 reopen 后一致；样式更新不变更已读正文哈希；坏 cursor/非法版本/事务失败不更新。
+- [x] 运行 `npx vitest run src/main/agents/portfolio.test.ts`，确认失败。
+- [x] 实现公共契约及增量数据库迁移；在 contact-content.ts 定义 `deliveryText(body:string):string`，作为正文选择/阅读锚点的唯一纯文本投影（复用当前 Markdown 语义，保留可见段落与代码文本，统一换行），偏移按 JS UTF-16。索引保留版本创建时的标题/正文哈希，查询水位锁定索引序号，删除仅移除该任务。原成果 commit 事务同步写索引；旧库按真实成果重建索引而非伪造阅读记录。API 名为 portfolio、setDeliveryFavorite、saveDeliveryReading、deliveryReading。
+- [x] 重跑专项与 `npm run typecheck`，补旧库升级/未来 schema 拒绝测试，通过后提交 `feat(contacts): persist portfolio and reading state`。
 
 ## Task B2：作品集与共用阅读器
 

@@ -6,7 +6,7 @@
 **Architecture:** 在原联系人数据库、worker/service、任务执行与消息链路上增量扩展；正式成果保持不可变版本。阅读、消息、资料和协作共用有归属的版本引用，任务 UI 与执行引擎不分叉。
 **Tech Stack:** Electron 44、React 18、TypeScript 5.6、SQLite/better-sqlite3、现有 LangGraph、Vitest 5；Node 项目要求 >=24.0.0 <25。
 **Spec:** [已确认完整设计](../specs/2026-10-12-contact-experience-design.md)，唯一产品规范为 [contact-task-spec.md](../../contact-task-spec.md)。
-**Status:** 用户以「en」确认设计；此总计划及七份子计划已完成，待审阅与执行方式选择。仅已有规范修复 ea98736 已实现，不能将本计划打勾为已完成。
+**Status:** 用户已确认完整计划并要求由当前会话实施。按 B→C→D→E→F→G→A 顺序推进，逐项验证后标记完成。
 
 ## Global Constraints
 
@@ -95,4 +95,4 @@ type ContactSourceRef =
 
 已逐条映射设计七模块；五项 Review Focus 均指向拥有测试的任务。现有 ea98736 修复作为基线保留，不重复实现。所有新增功能的实施复选框保持未勾选。
 
-建议 Native：由当前会话顺序实施，最后独立复核。模块共用版本、来源、数据库与 IPC，顺序推进能减少跨任务接口返工。另一选项是 Subagent-driven，每个任务由新的实施者和审查者完成，独立检查更频繁，消耗更多上下文。等待用户审阅本总计划（包含所链接七份子计划）并选择方式。
+Execution: user approved inline implementation of all linked plans, followed by one independent review.

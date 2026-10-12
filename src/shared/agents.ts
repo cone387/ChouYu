@@ -1,3 +1,4 @@
+import type { ContactPortfolioAPI } from './contact-content'
 import { sanitizeProgressUpdate } from './agent-progress'
 export interface AgentSettings {
   toolPermissionMode?: import('./tools').ContactToolPermissionMode
@@ -115,7 +116,7 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
   return { status: value.status, judgement: value.judgement.trim(), openQuestions: value.openQuestions.trim(), nextStep: value.nextStep.trim(), reason: value.reason.trim() }
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
-export interface AgentAPI {
+export interface AgentAPI extends ContactPortfolioAPI {
   pendingInteractions(characterId: string): Promise<(import('./contact-interactions').ContactInteraction & { characterName: string })[]>
   getInteraction(characterId: string, interactionId: string): Promise<import('./contact-interactions').ContactInteraction>
   submitInteraction(characterId: string, interactionId: string, submission: import('./contact-interactions').ContactInteractionSubmission): Promise<import('./contact-interactions').ContactInteraction>
