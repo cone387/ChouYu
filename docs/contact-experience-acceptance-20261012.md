@@ -1,10 +1,10 @@
-# 联系人完整体验迭代：阶段验收
+# 联系人完整体验迭代：验收记录
 
-日期：2026-10-12。完整目标仍未完成；用户已确认 [完整设计](superpowers/specs/2026-10-12-contact-experience-design.md)与[实施计划](superpowers/plans/2026-10-12-contact-experience.md)，选择当前会话顺序实施。本页按实际完成范围登记。
+日期：2026-10-12。用户已确认 [完整设计](superpowers/specs/2026-10-12-contact-experience-design.md)与[实施计划](superpowers/plans/2026-10-12-contact-experience.md)，选择当前会话顺序实施。A–G 已实现；最终整合验证和独立审计记录在文末。前面保留各阶段的实际测试边界，不将较早的局部通过当作最终结论。
 
 ## 本轮落实的既有规范
 
-本轮只修正早已明确的身份与新增表单约定，不将这两项修复当作完整设计的实现。
+开始实施前先修正身份与新增表单约定，随后按 B→C→D→E→F→G→A 实现完整设计。
 
 - 联系人卡片、资料页、人设编辑占位文案不再声称空人设会使用默认丑鱼人格；改为未设置说明及该联系人的身份/交流风格提示。未改模型人设处理。
 - 独立记忆页通过「新增记忆」打开模态表单，保留原单条 2000 字、容量和存储接口。保存成功后更新列表并关闭，失败保留文字及弹窗内错误。同步提交锁防止重入，卸载后忽略迟到回调。
@@ -86,3 +86,24 @@ EXP-01: home aggregation includes unresolved interactions, pinned latest formal 
 EXP-02: grouped daily/personal/tool navigation; bounded window-local return tokens retain owner, task, exact delivery version, pending interaction, focus and scroll. Source components remain mounted while settings are open. Deleted sources fail explicitly; delayed navigation cannot replace newer work. Pending replies remain unresolved with drafts preserved.
 
 Evidence: A2 token/validation tests (4); full suite 1444 passed/20 opt-in skipped; typecheck/build passed. A2-smoke-final exit0 covers handoff permission failure -> recipient settings -> original v1 and draft despite published v2, nested Escape, analytics return, deleted source, actual chat pending draft, late lookup rejection. Home grid overflow fixed and A1-visual exit0; inspected light375/dark1024 home and navigation screenshots. Resizable detail captures use the full available viewport to represent user resizing.
+
+## FINAL：整合证据与验收矩阵
+
+| 验收 | 实现与证据 |
+| --- | --- |
+| EXP-01/02 | `home.test.ts`、`summary.test.ts`、`contactReturnLocation.test.ts`；home/navigation Electron 烟测与 `artifacts/contact-home`、`artifacts/contact-navigation` 深浅色 375/1024 截图。统计只计算有效记忆，研究候选不冒充已生效记忆。 |
+| EXP-03/04 | `portfolio.test.ts`、`deliveryReading.test.ts`；portfolio 重启/收藏/搜索/新版隔离和 iframe 伪造事件烟测。 |
+| EXP-05 | `citations.test.ts`、`citation-revision.test.ts`、citation Electron；实际模型历史版本评审与最终整合消息引用持久化。 |
+| EXP-06/07 | `memories.test.ts`、`memory-tools.test.ts`、`context.test.ts`；memory Electron 失败保稿、历史/忘记和实际请求回执；真实模型使用纠正后的任务记忆。 |
+| EXP-08/09 | `materials.test.ts`、`material-tools.test.ts`、material 导入烟测；最终整合后台实际工具读取资料；真实模型实际 `read_contact_material`，输出对应姓名/地点/日期/颜色和资料版本。 |
+| EXP-10/11 | `handoffs.test.ts`、`handoff-review.test.ts`；handoff/navigation/experience 烟测覆盖来源权限、独立评审、重启、交回意见、新版冲突与保稿。 |
+| EXP-12/13 | capability/file/runner 单测；capability Electron 真实文件预览与原字节导出；真实 Docker opt-in 测试 2/2 通过，含 Node/Python/Bash 及文件归档。 |
+| EXP-14/15 | 各模块事务/失效测试与 Electron 故障注入；公共任务、联系人权限、交互、聊天修改、定时安排及展示回归。既有未读闪烁、单描述与运行限制保留。 |
+
+最终整合 `--contact-experience` 在同一作者任务上通过：文字资料导入、任务范围记忆、真实 worker 的模型工具请求、正文与文件事务保存、worker 重启、固定版本引用讨论、独立接收者评审、用户交回意见、作者版本 2、旧意见冲突保稿及新版定位。原归档文件字节不受修订影响。证据：`artifacts/contact-experience/result.json`、`receipt.png`；通过标记 `CHOUYU_CONTACT_EXPERIENCE_SMOKE_PASSED`。
+
+最终命令：`npm run typecheck`、`npm test`（1444 通过 / 20 默认 opt-in 跳过）、`npm run build`；Electron `--agents`、`--assistant-routines`、`--presentation`、`--contacts`、`--contact-experience` 均退出 0 并出现通过标记。日志归档在 `artifacts/contact-experience/verification/`。构建仍有既有 chunk 大小提示。
+
+实际环境抽测：`CHOUYU_TEST_DOCKER=1 npx vitest run src/main/skills/docker.integration.test.ts` 通过 2 项；`node scripts/test-contact-model.cjs --experience` 通过 1 项。后者仅从本机已配置联系人读取模型配置和凭据，全部资料、人物与任务为合成数据，未修改用户聊天或真实任务。实际模型为 `as-glm-5.2`，供应方回报 `glm-5.2`；最后两次响应记录共 2244 Token，不将该值冒充含工具请求及前次抽测在内的账单总量。原始输出和用量回执位于 `artifacts/contact-experience-model.json`，无凭据。人工检查确认纠正姓名、资料事实与第 1 版评审对象；模型仍可能加短说明，未声称覆盖任意模型的长期措辞质量。
+
+最终独立审计：待审阅当前完整分支后补充结果。

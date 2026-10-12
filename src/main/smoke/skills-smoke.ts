@@ -47,8 +47,8 @@ export async function runSkillsSmoke(window: BrowserWindow, characterId: string)
     } finally { await js('window.__stopSkillMouse();delete window.__stopSkillMouse') }
   }
   const nativeClick = async (selector: string) => {
-    await js(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'nearest'});new Promise(resolve=>requestAnimationFrame(resolve))`)
-    const point = await js(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
+    await js(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
+    const point = await js(`(()=>{const e=document.querySelector(${JSON.stringify(selector)}),r=e.getBoundingClientRect(),x=Math.round(r.x+r.width/2),y=Math.round(r.y+r.height/2);if(!e.contains(document.elementFromPoint(x,y)))throw Error('Skill pointer blocked by '+document.elementFromPoint(x,y)?.outerHTML.slice(0,250));return {x,y}})()`)
     window.webContents.send('cursor-position', point)
     window.webContents.sendInputEvent({ type: 'mouseMove', ...point })
     window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })

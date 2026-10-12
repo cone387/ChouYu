@@ -23,9 +23,10 @@ if (!process.versions.electron) {
     const characters = source.characters.filter(character => character.id === 'preset-copywriter-bi')
     const chatChanges = process.argv.includes('--chat-changes')
     const chapters = process.argv.includes('--chapter-continuation')
-    const child = spawn(process.argv[2], ['node_modules/vitest/vitest.mjs', 'run', chapters ? 'src/main/agents/chapter-model.acceptance.test.ts' : chatChanges ? 'src/main/agents/chat-change-model.acceptance.test.ts' : 'src/main/agents/contact-model.acceptance.test.ts'], {
+    const experience = process.argv.includes('--experience')
+    const child = spawn(process.argv[2], ['node_modules/vitest/vitest.mjs', 'run', experience ? 'src/main/agents/experience-model.acceptance.test.ts' : chapters ? 'src/main/agents/chapter-model.acceptance.test.ts' : chatChanges ? 'src/main/agents/chat-change-model.acceptance.test.ts' : 'src/main/agents/contact-model.acceptance.test.ts'], {
       stdio: 'inherit', windowsHide: true,
-      env: { ...process.env, ...(chapters ? { CHOUYU_CHAPTER_MODEL_ACCEPTANCE: '1' } : chatChanges ? { CHOUYU_CHAT_CHANGE_ACCEPTANCE: '1', CHOUYU_ACCEPTANCE_CHARACTER: 'preset-copywriter-bi' } : { CHOUYU_CONTACT_MODEL_ACCEPTANCE: '1' }), CHOUYU_ACCEPTANCE_CONFIG: JSON.stringify({ config, characters }) }
+      env: { ...process.env, ...(experience ? { CHOUYU_EXPERIENCE_ACCEPTANCE: '1' } : chapters ? { CHOUYU_CHAPTER_MODEL_ACCEPTANCE: '1' } : chatChanges ? { CHOUYU_CHAT_CHANGE_ACCEPTANCE: '1', CHOUYU_ACCEPTANCE_CHARACTER: 'preset-copywriter-bi' } : { CHOUYU_CONTACT_MODEL_ACCEPTANCE: '1' }), CHOUYU_ACCEPTANCE_CONFIG: JSON.stringify({ config, characters }) }
     })
     const timer = setTimeout(() => { child.kill(); finish(1) }, 295000)
     child.on('error', () => { clearTimeout(timer); finish(1) })

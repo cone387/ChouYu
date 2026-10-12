@@ -58,3 +58,8 @@ node scripts/smoke-electron.js --agents
 Windows 手动真实模型验收：`node scripts/test-contact-model.cjs`。此命令使用阿笔配置的供应商并消耗少量额度；只发送合成任务和误导性历史样例，不发送实际聊天或稿件，不修改真实联系人数据。模型须正确读取成果、纠正虚假完成记录、提交样式修改，并在隔离任务中生成可保存的展示代码。普通 `npm test` 跳过这两项真实模型检查。凭据只在内存中解密和传递，不写入报告。
 
 验收输出位于 `artifacts/contact-model-acceptance.json` 和 `artifacts/contact-model-delivery.json`。将后者路径放入 `CHOUYU_SMOKE_MODEL_DELIVERY` 再运行 `--presentation`，可在 Electron 中检查真实生成代码的正文可见性、亮暗模式与窄屏布局；设置 `CHOUYU_SMOKE_ARTIFACTS` 可保存截图供人工复核。模型输出存在随机性，验收结果不代表每次生成都符合预期。
+# 2026-10-12 成果阅读增量
+
+任务成果与联系人成果集共用 `ContactDeliveryReader`。历史消息引用固定版本，后台新版不替换正在阅读的正文；收藏按任务指向最新成果。搜索索引覆盖正式正文，每页 30 项，以快照游标保持稳定分页。
+
+阅读记录保存版本、分节、正文哈希、段落锚点与位置；自定义展示仅通过校验的 iframe 消息报告阅读或选文。正文引用经主进程重新核对 UTF-16 偏移和哈希；版本冲突保留修改草稿，不能静默应用到新版。归档 HTML 文件预览另走静态沙箱，不能执行文件脚本或访问外部地址。详见 [完整验收](contact-experience-acceptance-20261012.md)。

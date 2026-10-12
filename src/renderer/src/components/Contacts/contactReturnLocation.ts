@@ -50,5 +50,5 @@ export function captureReturnLocation(): { location: ContactReturnLocation; focu
   let delivery: ContentCitation | undefined
   try { if (handoff?.dataset.sourceRef || reader?.dataset.readingReference) delivery = { ref: JSON.parse(handoff?.dataset.sourceRef || reader!.dataset.readingReference!) } } catch { /* A malformed transient DOM value is not restored. */ }
   const tab = (handoff ? 'portfolio' : agent?.dataset.selectedTab || 'work') as ContactAgentTab
-  return { location: { characterId: owner, tab, ...(delivery ? { delivery, topicId: delivery.ref.topicId } : { topicId: interaction?.dataset.topicId || agent?.querySelector<HTMLElement>('.contact-topics')?.dataset.selectedTopic || undefined }), interactionId: interaction?.dataset.contactInteraction, scrollTop: scroll?.scrollTop || 0, surfaceId: surface?.dataset.contactWorkSurface, handoff: !!handoff }, focus, scroll }
+  return { location: { characterId: owner, tab, ...(delivery ? { delivery, topicId: delivery.ref.topicId } : { topicId: interaction?.dataset.interactionTopic || agent?.querySelector<HTMLElement>('.contact-topics')?.dataset.selectedTopic || undefined }), interactionId: interaction?.dataset.contactInteraction, scrollTop: scroll?.scrollTop || 0, surfaceId: surface?.dataset.contactWorkSurface, handoff: !!handoff }, focus, scroll }
 }

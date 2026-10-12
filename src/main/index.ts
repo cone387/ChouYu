@@ -139,7 +139,7 @@ function createWindow(): void {
           await runDeliveryPresentationSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_AGENTS_ONLY === '1') {
           await runAgentsSmoke(mainWindow!)
-        } else if (process.env.CHOUYU_SMOKE_CONTACTS_ONLY === '1') {
+        } else if (process.env.CHOUYU_SMOKE_CONTACTS_ONLY === '1' || process.env.CHOUYU_SMOKE_CONTACT_EXPERIENCE_ONLY === '1') {
           await runContactsSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_TASK_ASSISTANT_ONLY === '1') {
           await runTaskAssistantSmoke(mainWindow!)

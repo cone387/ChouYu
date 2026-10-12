@@ -75,7 +75,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
         response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify({ title: '研究另一个独立方向', nextStep: '先核对团队检索场景', question: '团队通常检索什么内容？', plan: { completionCriteria: '核对团队需求并交付分析', stages: [{ id: 'research', title: '验证需求', status: 'pending' }] } }) } }] })}\n\ndata: [DONE]\n\n`)
         return
       }
-      if (payload.tools?.length) {
+      if (payload.tools?.some((tool: { function?: { name?: string } }) => tool.function?.name === 'get_contact_topics')) {
         const continuingExisting = payload.messages.some((message: { role: string; content?: unknown }) => message.role === 'user' && typeof message.content === 'string' && message.content === '验收已有工作：继续')
         discussionReceived = payload.messages.findLast((message: { role: string; content?: string }) => message.role === 'user' && typeof message.content === 'string' && message.content.includes('【引用联系人工作记录】'))?.content || discussionReceived
         toolResponses = payload.messages.filter((m: { role: string }) => m.role === 'tool').map((m: { content: string }) => m.content)
@@ -231,6 +231,8 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('[data-agent-tab=overview]').click()")
     await waitForRenderer(window, "document.querySelector('[data-agent-tab=overview]')?.getAttribute('aria-pressed') === 'true'")
     await run("document.querySelector('[data-agent-expand]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open][data-view=overview] [data-contact-home] > details > summary'))")
+    await run("document.querySelector('.contact-work-sheet[open] [data-contact-home] > details > summary').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open][data-view=overview] .daily-segment'))")
     if (!await run("Array.from(document.querySelectorAll('.contact-work-sheet .daily-lane')).every(row => { const bars=row.querySelectorAll('.daily-segment'); const line=bars[0]?.querySelector('span').getBoundingClientRect(); return bars.length >= 1 && line.height > 0 && getComputedStyle(bars[0]).minWidth === '0px' && row.querySelector('.daily-line-tip') })")) throw new Error('Work timeline must show horizontal intervals with labels beside the lines')
     if (!await run("Array.from(document.querySelectorAll('.contact-work-sheet .daily-segment[data-state=running] span')).every(line => line.getBoundingClientRect().width >= 12)")) throw new Error('Short work intervals must remain readable horizontal lines')
@@ -375,7 +377,8 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     console.log('CHOUYU_SMOKE_AGENTS_STAGE completed')
     const interactionPage = await run(`window.electronAPI.agents.interactions(${id}, ${JSON.stringify(waiting.focusTopicId)})`)
     if (!interactionPage.items.some((item: { kind: string; text: string }) => item.kind === 'answer' && item.text === '开发者工具') || !interactionPage.items.some((item: { kind: string }) => item.kind === 'waiting')) throw new Error('Confirmation question and reply were not retained')
-    if (calls !== 1 || revisionCalls !== 1 || completed.callsToday !== 2 || completed.reports.length !== 1 || !completed.reports[0].body.includes('开发者工具') || completed.memories.length !== 1) throw new Error('Agent resume duplicated work or lost results')
+    const researchMemories = await run(`window.electronAPI.agents.memoryList(${id})`)
+    if (calls !== 1 || revisionCalls !== 1 || completed.callsToday !== 2 || completed.reports.length !== 1 || !completed.reports[0].body.includes('开发者工具') || completed.memories.length !== 0 || !researchMemories.some((memory: { status: string; source: { kind: string } }) => memory.status === 'candidate' && memory.source.kind === 'research')) throw new Error('Agent resume duplicated work or lost results')
     const artifact = await run(`window.electronAPI.agents.delivery(${id}, ${JSON.stringify(completed.focusTopicId)})`)
     if (artifact.version !== 1 || !artifact.sections[0].body.includes('只研究开发者工具')) throw new Error('Feedback did not revise the actual deliverable')
     const exportPath = join(app.getPath('userData'), 'delivery-smoke.md'), originalSaveDialog = dialog.showSaveDialog
@@ -407,7 +410,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     const taskMetrics = (await get()).topicMetrics![topicId]
     if (taskMetrics.calls !== 5 || taskMetrics.totalTokens !== 600 || taskMetrics.totalReported !== 5 || taskMetrics.runs !== 3 || taskMetrics.models[0] !== 'agent-smoke') throw new Error('Task metrics did not persist real model usage across rounds and restart')
     const contactSummary = await run(`window.electronAPI.agents.summary(${id})`)
-    if (contactSummary.tokens !== 600 || contactSummary.activeTasks !== 0 || contactSummary.tasks !== 1 || contactSummary.memories !== (await get()).memories.length) throw new Error('Contact summary does not match current task state and retained usage')
+    if (contactSummary.tokens !== 600 || contactSummary.activeTasks !== 0 || contactSummary.tasks !== 1 || contactSummary.memories !== (await get()).memories.length) { console.error('CONTACT_SUMMARY_DIAGNOSTIC', contactSummary, (await get()).memories); throw new Error('Contact summary does not match current task state and retained usage') }
     const analytics = await run(`(() => { const d=new Date(); const date=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-'); return window.electronAPI.agents.analytics(${id}, {date,days:1,topicId:${JSON.stringify(topicId)}}) })()`)
     if (analytics.totals.tokens !== 600 || analytics.totals.calls !== 5 || analytics.totals.reported !== 5 || analytics.totals.executionMs <= 0 || analytics.totals.reports !== 3) throw new Error('Daily analytics disagrees with persisted task usage')
     await run("document.querySelector('[data-agent-tab=analytics]').click()")

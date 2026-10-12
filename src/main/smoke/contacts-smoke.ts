@@ -7,6 +7,7 @@ import { runContactHandoffSmoke, handoffSmokeResponse } from './contact-handoff-
 import { runContactCapabilitySmoke } from './contact-capability-smoke'
 import { runContactHomeSmoke } from './contact-home-smoke'
 import { runContactNavigationSmoke } from './contact-navigation-smoke'
+import { runContactExperienceSmoke } from './contact-experience-smoke'
 import { contactSkillLibrary } from '../skills'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
@@ -135,6 +136,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await runContactMemorySmoke(window, character.id, () => chatBody)
     if (process.env.CHOUYU_SMOKE_CONTACT_PORTFOLIO_ONLY === '1') { await runContactPortfolioSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_MEMORY_ONLY === '1') return
+    if (process.env.CHOUYU_SMOKE_CONTACT_EXPERIENCE_ONLY === '1') { await runContactExperienceSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_NAVIGATION_ONLY === '1') { await runContactNavigationSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_HOME_ONLY === '1') { await runContactHomeSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_CAPABILITY_ONLY === '1') { await runContactCapabilitySmoke(window, character.id); return }

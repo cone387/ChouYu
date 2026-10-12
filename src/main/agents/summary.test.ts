@@ -20,6 +20,8 @@ it('summarizes active tasks, all retained usage and current memories per contact
     }
     store.remember('alice', 'one')
     store.remember('alice', 'two')
+    store.remember('alice', 'Unconfirmed research is not an active memory', run)
+    expect(store.memoryLibrary.list('alice').some(memory => memory.status === 'candidate')).toBe(true)
     store.remember('bob', 'private')
     const other = store.createRun('bob', '')
     store.charge(other)

@@ -210,7 +210,7 @@ export class AgentStore {
       COUNT(CASE WHEN json_type(metadata,'$.usage.totalTokens')='integer' AND json_extract(metadata,'$.usage.totalTokens')>=0 THEN 1 END) AS reported,
       COALESCE(SUM(CASE WHEN json_type(metadata,'$.usage.totalTokens')='integer' AND json_extract(metadata,'$.usage.totalTokens')>=0 THEN json_extract(metadata,'$.usage.totalTokens') ELSE 0 END),0) AS tokens
       FROM calls WHERE character_id=?`).get(characterId) as { calls: number; reported: number; tokens: number }
-    const memories = (this.db.prepare('SELECT COUNT(*) AS n FROM memories WHERE character_id=?').get(characterId) as { n: number }).n
+    const memories = this.memories(characterId).length
     return { tasks: topics.length, activeTasks: topics.filter(t => ['researching', 'needs_evidence'].includes(t.status) || t.status === 'planned' && active.has(t.id)).length, memories, ...usage }
   }
   profile(id: string) { return this.db.prepare('SELECT * FROM profiles WHERE character_id=?').get(id) as Profile | undefined }
