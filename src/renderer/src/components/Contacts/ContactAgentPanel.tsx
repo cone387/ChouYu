@@ -5,6 +5,7 @@ import ContactAnalytics from './ContactAnalytics'
 import ContactDailyOverview from './ContactDailyOverview'
 import ContactMarkdown from './ContactMarkdown'
 import ContactMemories from './ContactMemories'
+import ContactMaterials from './ContactMaterials'
 import ContactPortfolio from './ContactPortfolio'
 import type { DeliveryRef, TextAnchor } from '../../../../shared/contact-content'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -17,7 +18,7 @@ import ContactWorkLog from './ContactWorkLog'
 import type { AgentDiscussion } from './agentDiscussion'
 
 const time = (value: number) => new Date(value).toLocaleString()
-export type ContactAgentTab = 'overview' | 'work' | 'portfolio' | 'history' | 'memory' | 'settings' | 'analytics' | 'profile' | 'skills'
+export type ContactAgentTab = 'overview' | 'work' | 'portfolio' | 'history' | 'memory' | 'materials' | 'settings' | 'analytics' | 'profile' | 'skills'
 export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset, onExpand, profile, deliveryFocus }: {
   deliveryFocus?: { ref: DeliveryRef; anchor?: TextAnchor }
   characterId: string; name: string; selectedTab?: ContactAgentTab
@@ -132,7 +133,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     title: data?.topics.find(topic => topic.id === topicId)?.title || '工作记录' })
   return <section className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId}>
     {!compact && <div className="agent-tabs" aria-label="工作内容">
-      {([['overview', '概览'], ['work', '任务'], ['portfolio', '成果'], ['history', '工作记录'], ['memory', '独立记忆'], ['settings', '工作设置'], ['skills', '技能'], ['analytics', '活动与消耗']] as const).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
+      {([['overview', '概览'], ['work', '任务'], ['portfolio', '成果'], ['history', '工作记录'], ['memory', '独立记忆'], ['materials', '资料'], ['settings', '工作设置'], ['skills', '技能'], ['analytics', '活动与消耗']] as const).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
       {profile && <button type="button" data-agent-tab="profile" aria-pressed={tab === 'profile'} onClick={() => setTab('profile')}>人设</button>}
       {onExpand && <button type="button" className="agent-expand" data-agent-expand aria-label="在大窗口中打开" title="在大窗口中打开" onClick={() => onExpand(tab)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg></button>}
     </div>}
@@ -199,6 +200,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
         <details><summary>查看工作经过 · {detail.events.length} 条记录</summary><ol>{detail.events.map(event => <li key={event.id}><time>{time(event.at)}</time><p>{event.text}</p></li>)}</ol></details>
       </article>}
     </>}
+    {data && tab === 'materials' && <ContactMaterials key={characterId} owner={characterId} topics={data.topics} />}
     {data && tab === 'memory' && <ContactMemories key={characterId} characterId={characterId} name={name} data={data} onSaved={setData} />}
   </section>
 }

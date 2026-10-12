@@ -1,6 +1,8 @@
 import { TokenBudgetError } from './token-budget'
 import { citationContext, validateCitation } from './citations'
 import { buildContactContext } from './context'
+import { createMaterialTools } from './material-tools'
+import type { ToolExecutionContext } from '../tools/registry'
 import type { ContactReadContext } from '../../shared/contact-content'
 import type { MemoryInput } from '../../shared/contact-memories'
 import { SkillLibrary } from '../skills/library'
@@ -219,10 +221,15 @@ export class AgentService {
       case 'answer': this.store.answer(id, String(args[0]), args[1] as string, args[2]); break
       case 'remember': this.store.remember(id, args[0] as string); break
       case 'materialList': return this.store.materials.list({ ...(args[0] as ContactReadContext), characterId: id })
+      case 'assertContextCurrent': this.store.assertContextCurrent(id, args[0] as import('../../shared/contact-content').ContextReferences); return
       case 'readMaterial': return this.store.materials.read({ ...(args[0] as ContactReadContext), characterId: id }, args[1] as import('../../shared/contact-materials').MaterialRef, args[2] as number | undefined)
       case 'materialHistory': return this.store.materials.history(id, args[0] as string)
       case 'saveMaterial': { const result = this.store.materials.save(id, args[0] as import('../../shared/contact-materials').MaterialInput, args[1] as string | undefined, args[2] as number | undefined); this.changed(id); return result }
-      case 'withdrawMaterial': this.store.materials.withdraw(id, args[0] as string, args[1] as number); this.changed(id); return
+      case 'withdrawMaterial': {
+        this.store.materials.withdraw(id, args[0] as string, args[1] as number)
+        for (const runId of this.store.invalidateMaterial(id, args[0] as string)) { this.active.get(runId)?.controller.abort(); void this.cleanupThread(runId).catch(() => {}) }
+        this.changed(id); return
+      }
       case 'memoryList': return this.store.memoryLibrary.list(id)
       case 'memoryHistory': return this.store.memoryLibrary.history(id, args[0] as string)
       case 'createMemory': { const result = this.store.memoryLibrary.create(id, args[0] as MemoryInput); this.changed(id); return result }
@@ -290,6 +297,10 @@ export class AgentService {
     if (run.topic_id && JSON.parse(run.input).revisionScope !== 'presentation') this.store.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(run.topic_id, run.character_id)
     const identity = this.identity(run.character_id), controller = new AbortController()
     const input = JSON.parse(run.input)
+    if (!input.materialDirectory) {
+      input.materialDirectory = this.store.materials.list({ characterId: run.character_id, topicId: run.topic_id || undefined, query: '' })
+      this.store.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), run.id)
+    }
     // Persist once; resumed checkpoints never acquire a different skill configuration.
     if (!Object.hasOwn(input, 'skills')) {
       const priorCall = this.store.db.prepare('SELECT 1 FROM calls WHERE run_id=? LIMIT 1').get(run.id)
@@ -302,6 +313,7 @@ export class AgentService {
     const model: AgentModel = async (prompt, signal, options) => {
       if (skills.error) throw new Error(`联系人技能不可用：${skills.error}`)
       prompt = skills.instruction ? `${skills.instruction}\n${prompt}` : prompt
+      if (input.materialDirectory.length) prompt += `\n本轮资料目录（尚未读取正文；需使用 read_contact_material 工具读取实际版本后引用）：${JSON.stringify(input.materialDirectory)}`
       let output = ''
       let callId: number | undefined, reservation: { key: string; maxOutputTokens: number } | undefined
       let metadata: AIResponseMetadata = { model: identity.config!.model }
@@ -322,7 +334,21 @@ export class AgentService {
         this.store.tokens.settle(reservation.key, metadata)
         reservation = undefined; this.changed(run.character_id)
       }
-      const tools = identity.skillToolsEnabled ? skillToolRuntime(identity.id, skills, this.skillRunner, signal) : undefined
+      const skillRuntime = skillToolRuntime(identity.id, skills, this.skillRunner, signal)
+      const materialTools = createMaterialTools({ owner: () => identity.id, request: async (method, owner, args) => {
+        this.store.assertLive(run.id)
+        if (method === 'materialList') return input.materialDirectory
+        const reference = args[1] as import('../../shared/contact-materials').MaterialRef
+        if (!input.materialDirectory.some((m: import('../../shared/contact-materials').MaterialRef) => m.id === reference.id && m.version === reference.version)) throw new Error('资料不在本轮目录快照内，请按本轮提供的版本读取。')
+        return this.request(method, owner, [{ query: '', topicId: run.topic_id || undefined }, ...args.slice(1)])
+      } })
+      const tools = identity.skillToolsEnabled ? { definitions: [...skillRuntime.definitions, ...materialTools], execute: async (call: import('../../shared/tools').AIToolCall) => {
+        const material = materialTools.find(t => t.name === call.name)
+        if (!material) return skillRuntime.execute(call)
+        const result = await material.execute({ ...JSON.parse(call.arguments), topicId: run.topic_id || undefined }, {} as ToolExecutionContext)
+        if (call.name === 'read_contact_material') this.store.recordMaterialRead(run.id, JSON.parse(result.content).materialRead)
+        return result.content
+      } } : undefined
       if (tools) {
         tools.definitions = tools.definitions.filter(tool => !identity.disabledSkillTools?.includes(tool.name))
         const execute = tools.execute

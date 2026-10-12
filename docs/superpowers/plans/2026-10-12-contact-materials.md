@@ -21,7 +21,7 @@
 
 **Files:** 新增 `ContactMaterials.tsx`、`ContactMaterialDialog.tsx`（Contacts 目录）、`src/main/agents/material-tools.ts`、`material-tools.test.ts`、`src/main/smoke/contact-material-smoke.ts`；修改 `ContactAgentPanel.tsx`、聊天附件 UI、`src/main/{ipc,database}.ts`、`agents/{context,service,runtime,sources}.ts`、`src/shared/agent-delivery.ts`。
 **Interfaces:** `importMaterial(owner,request:{name:string;scope:MaterialInput['scope'];source:MaterialInput['source'];content?:string;id?:string;expectedVersion?:number}):Promise<MaterialVersion>`；工具 list_contact_materials、read_contact_material；实际读取存 {id,version,start,end}。本地选择只接受 .txt/.md/.markdown 的有效 UTF-8，无 NUL；网页经过原 reader 与当前访问权限。
-- [ ] 工具测试：目录不伪称读正文；读取结果实际回给下一次模型；网页失败保留旧版；新 URL 不扩权；PDF/二进制拒绝；取消解析不提交；读取后撤回使原轮次提交失效；更新允许该轮保留旧版快照。运行专项确认红。
-- [ ] 模态添加/更新，默认范围按显式 task 上下文，否则 contact；文本附件菜单「保存为资料」保留真实附件来源，普通发送不自动入库。导入每次一份，读取失败/超限/取消可见，迟到结果和切联系人不混用。
-- [ ] 聊天和后台提供目录/读取工具，实际读取资料进入 D 的参考记录；正文来源含 material ref 和分片位置，引用点击打开当时版本。撤回取消受影响工作、禁止新读取，不删除既有成果正文。
-- [ ] UI 导入、更新、删除/撤回、来源、失败保留草稿，类型检查/专项和 Electron 通过后提交 `feat(contacts): use persistent materials in conversations and tasks`；在线理解质量由最终模型样本验证。
+- [x] 工具测试：目录不伪称读正文；读取结果实际回给下一次模型；网页失败保留旧版；新 URL 不扩权；PDF/二进制拒绝；取消解析不提交；读取后撤回使原轮次提交失效；更新允许该轮保留旧版快照。运行专项确认红。
+- [x] 模态添加/更新，默认范围按显式 task 上下文，否则 contact；文本附件菜单「保存为资料」保留真实附件来源，普通发送不自动入库。导入每次一份，读取失败/超限/取消可见，迟到结果和切联系人不混用。
+- [x] 聊天和后台提供目录/读取工具，实际读取资料进入 D 的参考记录；正文来源含 material ref 和分片位置，引用点击打开当时版本。撤回取消受影响工作、禁止新读取，不删除既有成果正文。
+- [x] UI 导入、更新、删除/撤回、来源、失败保留草稿，类型检查/专项和 Electron 通过后提交 `feat(contacts): use persistent materials in conversations and tasks`；在线理解质量由最终模型样本验证。

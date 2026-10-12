@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import CommandMenu, { getFilteredCommands } from './CommandMenu'
+import ContactMaterialDialog from '../Contacts/ContactMaterialDialog'
 import { useComposerResize } from './useComposerResize'
 import ModelPicker from '../ModelPicker/ModelPicker'
 import { quoteAgentDiscussion, type AgentDiscussion } from '../Contacts/agentDiscussion'
@@ -17,6 +18,7 @@ import {
 export type { PendingAttachment } from '../../core/attachments'
 
 interface InputAreaProps {
+  characterId?: string
   contactTasks?: boolean
   discussion?: AgentDiscussion
   onDiscussionConsumed?: () => void
@@ -44,7 +46,9 @@ interface InputAreaProps {
   history?: string[]
 }
 
-export default function InputArea({ contactTasks, discussion, onDiscussionConsumed, sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, fetchModels, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
+export default function InputArea({ characterId, contactTasks, discussion, onDiscussionConsumed, sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, fetchModels, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
+  const [materialAttachment, setMaterialAttachment] = useState<PendingAttachment | null>(null)
+  useEffect(() => setMaterialAttachment(null), [sessionId])
   const [value, setValue] = useState('')
   const citationSending = useRef(false), currentSession = useRef(sessionId)
   currentSession.current = sessionId
@@ -581,6 +585,7 @@ export default function InputArea({ contactTasks, discussion, onDiscussionConsum
         onDragLeave={handleDragLeave}
       >
         {attachmentError && <div className="attachment-error" role="alert">{attachmentError}</div>}
+        {materialAttachment && characterId && <ContactMaterialDialog key={`${sessionId}:${characterId}`} owner={characterId} topics={[]} attachment={materialAttachment} onClose={() => setMaterialAttachment(null)} onSaved={() => setAttachmentError('资料已保存，可在联系人资料空间查看。')} />}
         {attachments.length > 0 && (
           <>
             <div className="attachment-list">
@@ -594,6 +599,7 @@ export default function InputArea({ contactTasks, discussion, onDiscussionConsum
                         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"><path d="M3 1.5h6l4 4v9H3zM9 1.5v4h4"/></svg>
                       </span>
                       <span className="attachment-file-name">{att.name}</span>
+                      {characterId && contactTasks && /\.(txt|md|markdown)$/i.test(att.name) && <button type="button" onClick={() => setMaterialAttachment(att)}>保存为资料</button>}
                     </div>
                   )}
                   <button className="attachment-remove" onClick={() => removeAttachment(i)} aria-label={`移除附件 ${att.name}`}>✕</button>

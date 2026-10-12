@@ -728,6 +728,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
               if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) throw new Error('工具已被用户禁用。')
               const result = await prepared.execute()
+              if (call.name === 'read_contact_material' && contactContext) {
+                const ref = JSON.parse(result.content).materialRead as import('../shared/contact-materials').MaterialReadRef
+                contactContext.materials = [...(contactContext.materials ?? []), ref]
+              }
               sendToolEvent(event.sender, {
                 requestId: request.requestId,
                 callId: call.id,
@@ -796,6 +800,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         chatTools,
         { onMetadata: () => { contextSent = true } }
       )
+      if (owner && contactContext?.materials?.length) await contactAgentsCall(owner, 'assertContextCurrent', [{ memories: [], materials: contactContext.materials }])
       if (contextSent && contactContext) setState(`contact-context:${request.requestId}`, JSON.stringify(contactContext))
       return { ok: true, contactContext: contextSent ? contactContext : undefined }
     } catch (error) {

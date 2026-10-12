@@ -14,6 +14,10 @@ import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, li
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { createMemoryTools } from './memory-tools'
+import { createMaterialTools, MATERIAL_TOOL_NAMES } from './material-tools'
+import { loadMaterialImport } from './material-import'
+import { readSource } from './sources'
+import { readFile, stat } from 'node:fs/promises'
 import { contactConversation } from './conversation'
 import { getRegisteredTool, registerTool } from '../tools/registry'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
@@ -69,7 +73,7 @@ function identities(): AgentIdentity[] {
   return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(character => {
     const resolved = resolveCharacterConfig(character, config)
     const conversation = contactConversation(sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages ?? []))
-    return { sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: SKILL_TOOLS.filter(tool => getState(`tool:${tool.name}:enabled`) === 'false').map(tool => tool.name), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
+    return { sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: [...SKILL_TOOLS.map(tool => tool.name), ...MATERIAL_TOOL_NAMES].filter(name => getState(`tool:${name}:enabled`) === 'false'), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
   })
 }
 async function ensure() {
@@ -153,6 +157,31 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  const imports = new Map<string, AbortController>()
+  ipcMain.handle('agents:cancelMaterialImport', (event, owner: string, requestId: string) => { imports.get(`${event.sender.id}:${owner}:${requestId}`)?.abort() })
+  ipcMain.handle('agents:importMaterial', async (event, owner: string, input: import('../../shared/contact-materials').MaterialImport) => {
+    if (!getCharacter(owner)) throw new Error('联系人不存在。')
+    const key = `${event.sender.id}:${owner}:${input.requestId}`, controller = new AbortController()
+    imports.get(key)?.abort(); imports.set(key, controller)
+    const destroyed = () => controller.abort(); event.sender.once('destroyed', destroyed)
+    try {
+      const value = await loadMaterialImport(input, {
+        chooseFile: async () => {
+          const parent = BrowserWindow.fromWebContents(event.sender), options = { title: '选择一份文本资料', properties: ['openFile' as const], filters: [{ name: '文本资料', extensions: ['txt', 'md', 'markdown'] }] }
+          const selected = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+          if (selected.canceled || !selected.filePaths[0]) return null
+          if ((await stat(selected.filePaths[0])).size > 2 * 1024 * 1024) throw new Error('单份资料不得超过 2 MB。')
+          return { name: selected.filePaths[0], data: await readFile(selected.filePaths[0]) }
+        },
+        readWeb: async (url, signal) => (await readSource(url, signal)).text,
+        allowed: async url => { const overview = await contactAgentsCall<import('../../shared/agents').AgentOverview>(owner, 'get'); return overview.settings.permissionLevel !== 'sources' || overview.settings.sources.includes(url) }
+      }, controller.signal)
+      controller.signal.throwIfAborted()
+      if (!value) return null
+      return await contactAgentsCall(owner, 'saveMaterial', [value, input.id, input.expectedVersion])
+    } finally { event.sender.removeListener('destroyed', destroyed); if (imports.get(key) === controller) imports.delete(key) }
+  })
+  for (const tool of createMaterialTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   for (const tool of createMemoryTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   registerPresentationProtocol(async (id, topicId, version) => {
     if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')

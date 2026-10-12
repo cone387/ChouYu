@@ -1,3 +1,4 @@
+import ContactMaterialLink from './ContactMaterialLink'
 import ContactPresentation from './ContactPresentation'
 import './ContactPortfolio.css'
 import ContactTaskInputForm from './ContactTaskInputForm'
@@ -146,7 +147,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
         if (restoring.current || !active || view !== 'delivery' || !event.isTrusted) return
         const el = event.currentTarget, ratio = el.scrollHeight > el.clientHeight ? el.scrollTop / (el.scrollHeight - el.clientHeight) : 0
         recordReading(readingAt({ characterId, topicId: topic.id, version: artifact.version }, section, Math.max(0, Math.min(1, ratio))))
-      }}><h5>{section.title}</h5><ContactMarkdown>{section.body}</ContactMarkdown>{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><a href={source.url} target="_blank" rel="noopener noreferrer">[{i + 1}] {source.title}</a></li>)}</ol></details> : null}</article>)}
+      }}><h5>{section.title}</h5><ContactMarkdown>{section.body}</ContactMarkdown>{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><ContactMaterialLink href={source.url}>[{i + 1}] {source.title}</ContactMaterialLink></li>)}</ol></details> : null}</article>)}
       </div>
       <details><summary>版本与导出</summary>
       <div className="agent-actions">

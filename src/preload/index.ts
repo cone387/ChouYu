@@ -44,6 +44,7 @@ const api = {
     portfolio: (id, query) => ipcRenderer.invoke('agents:portfolio', id, query),
     materialList: (id, context) => ipcRenderer.invoke('agents:materialList', id, context),
     saveMaterial: (id, input, materialId, version) => ipcRenderer.invoke('agents:saveMaterial', id, input, materialId, version),
+    cancelMaterialImport: (id, requestId) => ipcRenderer.invoke('agents:cancelMaterialImport', id, requestId),
     importMaterial: (id, input) => ipcRenderer.invoke('agents:importMaterial', id, input),
     readMaterial: (id, context, ref, offset) => ipcRenderer.invoke('agents:readMaterial', id, context, ref, offset),
     materialHistory: (id, materialId) => ipcRenderer.invoke('agents:materialHistory', id, materialId),

@@ -52,3 +52,11 @@
 Schema 10 migrates existing sources without inferred scopes. Corrections preserve identity and history; research creates candidates requiring user confirmation. Scope selection precedes ranking, limited to 12 records / 16000 characters. Updates invalidate affected run snapshots without resetting unrelated schedules. Chat tools use existing permission policy. Main-process receipts identify actual supplied revisions, persisted on the reply and displayed without asserting model use. Forgotten history is redacted.
 
 Validation: D1 SQLite/service/runtime/portfolio 52 passed; D2 full suite 1419 passed, 19 skipped; typecheck and build passed. Electron memory smoke passed failure/retry, edit/history, restart, forgetting, actual provider request capture and persisted reply references. Real-model quality remains in FINAL acceptance.
+
+## E: Persistent materials
+
+Schema 11 stores immutable UTF-8 versions with contact/task scope. Limits: 2 MB per version, 100 active documents, 200 MB retained versions, 12000 UTF-16 units per tool read. Identical content with identical metadata is idempotent; metadata changes preserve a new version. File imports copy only supported text files, strip original paths, and reject invalid UTF-8/NUL; web imports reuse the existing reader and source restrictions. Cancellation prevents late imports from committing.
+
+Chat and background work receive a directory, not invented reading receipts. Read tools return real slices; background directory versions remain fixed per run. Actual reads appear in chat references and saved outcome sources. Withdrawal invalidates affected runs while saved outcomes remain intact.
+
+Validation: 1426 full-suite tests passed, 19 skipped; typecheck/build passed; Electron import failure/retry, update/history, file copy, worker restart, real tool-to-provider content and withdrawal all passed. Modal screenshots at artifacts/contact-materials cover 375/1024 and both themes; inspected light375/dark1024, corrected native select/input styling to match established controls without focus decoration.

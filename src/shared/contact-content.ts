@@ -9,12 +9,13 @@ export type DeliveryRef = { characterId: string; topicId: string; version: numbe
 export type TextAnchor = { start: number; end: number; quote: string; textHash: string }
 export type ContentCitation = { ref: DeliveryRef; anchor?: TextAnchor }
 export type ContactReadContext = { characterId: string; topicId?: string; sessionId?: string; query: string }
-export type ContextReferences = { memories: { id: string; revision: number }[]; materials?: { id: string; version: number }[] }
+export type ContextReferences = { memories: { id: string; revision: number }[]; materials?: { id: string; version: number; start?: number; end?: number; topicId?: string }[] }
 export type ContactContextRecord = ContextReferences & { characterId: string; requestId: string; status: 'completed' | 'failed'; truncated: boolean }
 export function sanitizeContactContext(value: unknown): ContactContextRecord | undefined {
   const v = value as ContactContextRecord
   if (!v || !validId(v.characterId) || !validId(v.requestId) || !['completed', 'failed'].includes(v.status) || typeof v.truncated !== 'boolean' || !Array.isArray(v.memories) || v.memories.length > 12 || v.memories.some(m => !validId(m.id) || !Number.isSafeInteger(m.revision) || m.revision < 1)) return undefined
-  return { characterId: v.characterId, requestId: v.requestId, status: v.status, truncated: v.truncated, memories: v.memories.map(m => ({ id: m.id, revision: m.revision })) }
+  const materials = Array.isArray(v.materials) ? v.materials.filter(m => validId(m.id) && Number.isSafeInteger(m.version) && m.version > 0 && (m.start === undefined || Number.isSafeInteger(m.start) && m.start >= 0) && (m.end === undefined || Number.isSafeInteger(m.end) && m.end >= (m.start ?? 0)) && (m.topicId === undefined || validId(m.topicId))).map(m => ({ id: m.id, version: m.version, start: m.start, end: m.end, topicId: m.topicId })) : undefined
+  return { characterId: v.characterId, requestId: v.requestId, status: v.status, truncated: v.truncated, memories: v.memories.map(m => ({ id: m.id, revision: m.revision })), materials }
 }
 export type ContactSourceRef = { kind: 'conversation'; sessionId: string; messageId: string } | { kind: 'delivery'; ref: DeliveryRef } | { kind: 'research'; runId: string } | { kind: 'user'; at: number }
 export type PortfolioQuery = { query?: string; topicId?: string; cursor?: string; favoritesOnly?: boolean; sort?: 'updated' | 'name' }

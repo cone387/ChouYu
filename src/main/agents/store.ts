@@ -285,6 +285,25 @@ export class AgentStore {
     }
     return affected
   }
+  recordMaterialRead(runId: string, ref: import('../../shared/contact-materials').MaterialReadRef) {
+    const run = this.assertLive(runId), input = JSON.parse(run.input)
+    const chunk = this.materials.read({ characterId: run.character_id, topicId: run.topic_id || undefined, query: '' }, ref, ref.start)
+    if (!Number.isSafeInteger(ref.end) || ref.end < ref.start || ref.end > ref.start + chunk.text.length) throw new Error('资料引用范围无效。')
+    ref = { id: ref.id, version: ref.version, start: ref.start, end: ref.end, ...(run.topic_id ? { topicId: run.topic_id } : {}) }
+    input.contextReferences ??= { memories: [] }
+    input.contextReferences.materials ??= []
+    if (!input.contextReferences.materials.some((m: import('../../shared/contact-materials').MaterialReadRef) => m.id === ref.id && m.version === ref.version && m.start === ref.start && m.end === ref.end)) input.contextReferences.materials.push(ref)
+    this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), runId)
+  }
+  invalidateMaterial(owner: string, materialId: string) {
+    const affected: string[] = []
+    for (const run of this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(owner) as RunRow[]) {
+      if ((JSON.parse(run.input).contextReferences?.materials ?? []).some((m: { id: string }) => m.id === materialId)) {
+        this.setStatus(run.id, 'cancelled'); this.event(run.id, 'cancelled', '参考资料已撤回，本轮停止，已有成果保留。'); affected.push(run.id)
+      }
+    }
+    return affected
+  }
   remove(id: string) { const runs = (this.db.prepare('SELECT id FROM runs WHERE character_id=?').all(id) as { id: string }[]).map(r => r.id); this.db.prepare('DELETE FROM profiles WHERE character_id=?').run(id); this.db.prepare('DELETE FROM token_ledger WHERE character_id=?').run(id); for (const runId of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(runId); return runs }
   overview(id: string, now = Date.now()): AgentOverview {
     const profile = this.profile(id)
@@ -780,6 +799,10 @@ export class AgentStore {
       if (this.getRun(runId)?.status === 'completed') return
       const run = this.assertLive(runId)
       const deliveryInput = JSON.parse(run.input)
+      for (const ref of deliveryInput.contextReferences?.materials ?? []) {
+        const value = this.materials.get(run.character_id, ref)
+        report = { ...report, evidence: [...report.evidence, { url: `contact-material://${encodeURIComponent(run.character_id)}/${value.id}/${value.version}?start=${ref.start}&end=${ref.end}${ref.topicId ? `&topic=${encodeURIComponent(ref.topicId)}` : ''}`, title: value.name, text: value.content.slice(ref.start, ref.end), capturedAt: value.createdAt, hash: value.hash }] }
+      }
       if (deliveryInput.revisionCitation) {
         const citation = validateCitation(run.character_id, deliveryInput.revisionCitation, this.portfolio)
         if (this.deliveries.get(citation.ref.topicId)?.version !== citation.ref.version) throw new Error('引用的成果版本已变化，本轮修改未保存。')

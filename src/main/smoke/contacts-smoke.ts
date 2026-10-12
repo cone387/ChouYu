@@ -2,6 +2,7 @@ import { runGlobalSearchSmoke } from './global-search-smoke'
 import { runSkillsSmoke } from './skills-smoke'
 import { runContactMemorySmoke } from './contact-memory-smoke'
 import { runContactPortfolioSmoke } from './contact-portfolio-smoke'
+import { runContactMaterialSmoke } from './contact-material-smoke'
 import { contactSkillLibrary } from '../skills'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
@@ -33,6 +34,7 @@ async function click(window: BrowserWindow, selector: string): Promise<void> {
 export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
   const originalConfig = getConfig()
   let chatBody: Record<string, unknown> | undefined
+  let materialReference: { id: string; version: number } | undefined
   const server = createServer((request, response) => {
     let body = ''
     request.on('data', (chunk: Buffer) => { body += chunk.toString() })
@@ -41,6 +43,10 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
         const payload = JSON.parse(body || '{}')
         chatBody = payload
         response.setHeader('Content-Type', 'text/event-stream')
+        if (materialReference && payload.messages?.some((m: { role: string; content: unknown }) => m.role === 'user' && String(m.content).includes('MATERIAL_TOOL_SMOKE')) && !payload.messages?.some((m: { role: string }) => m.role === 'tool')) {
+          response.write(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'read-material', type: 'function', function: { name: 'read_contact_material', arguments: JSON.stringify(materialReference) } }] } }] })}\n\n`)
+          response.write('data: [DONE]\n\n'); response.end(); return
+        }
         response.write('data: {"choices":[{"delta":{"content":"喵"}}]}\n\n')
         response.write('data: [DONE]\n\n')
       }
@@ -118,6 +124,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await runContactMemorySmoke(window, character.id, () => chatBody)
     if (process.env.CHOUYU_SMOKE_CONTACT_PORTFOLIO_ONLY === '1') { await runContactPortfolioSmoke(window, character.id); return }
     if (process.env.CHOUYU_SMOKE_CONTACT_MEMORY_ONLY === '1') return
+    if (process.env.CHOUYU_SMOKE_CONTACT_MATERIAL_ONLY === '1') { await runContactMaterialSmoke(window, character.id, ref => { materialReference = ref }, () => chatBody); return }
     await runSkillsSmoke(window, character.id)
     for (const tab of ['overview', 'history', 'memory', 'settings', 'skills', 'analytics', 'profile', 'work']) {
       await click(window, `[data-agent-tab=${tab}]`)
