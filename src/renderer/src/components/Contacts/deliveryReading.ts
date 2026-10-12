@@ -19,6 +19,14 @@ export function validPresentationEvent(event: MessageEvent, source: Window | nul
     return { ref: actual, anchor, scrollRatio: ratio, updatedAt: Date.now() }
   } catch { return null }
 }
+export function validSelectionClear(event: MessageEvent, source: Window | null, ref: DeliveryRef, nonce: string): 'empty' | 'unmappable' | 'too-long' | null {
+  if (!source || event.source !== source || event.origin !== 'null' || event.data?.type !== 'delivery-selection-clear' || event.data.nonce !== nonce) return null
+  try {
+    const actual = validateDeliveryRef(event.data.ref)
+    if (actual.characterId !== ref.characterId || actual.topicId !== ref.topicId || actual.version !== ref.version || !['empty', 'unmappable', 'too-long'].includes(event.data.reason)) return null
+    return event.data.reason
+  } catch { return null }
+}
 export function readingAt(ref: DeliveryRef, section: DeliverySection, scrollRatio: number): ReadingPosition {
   const text = deliveryText(section.body)
   // A short verified anchor also detects changes when no text is selected.

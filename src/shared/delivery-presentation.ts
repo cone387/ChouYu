@@ -22,14 +22,16 @@ export function deliveryDocument(title: string, artifact: AgentDelivery, nonce: 
     addEventListener('wheel',e=>{if(e.isTrusted)userScrolled=true},{passive:true});
     addEventListener('keydown',e=>{if(e.isTrusted&&['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(e.key))userScrolled=true});
     document.addEventListener('selectionchange',()=>{
-      const selection=getSelection();if(!reader||!selection||selection.isCollapsed||!selection.rangeCount)return;
+      if(!reader)return;
+      const clear=reason=>parent.postMessage({type:'delivery-selection-clear',nonce:reader.nonce,ref:reader.ref,reason},'*');
+      const selection=getSelection();if(!selection||selection.isCollapsed||!selection.rangeCount){clear('empty');return;}
       const range=selection.getRangeAt(0),body=range.startContainer.parentElement?.closest('article[data-section-id] .body');
-      if(!body||!body.contains(range.endContainer))return;
+      if(!body||!body.contains(range.endContainer)){clear('unmappable');return;}
       const id=body.closest('article').dataset.sectionId,projection=canonical.find(s=>s.id===id);
-      if(!projection||body.textContent!==projection.text)return;
+      if(!projection||body.textContent!==projection.text){clear('unmappable');return;}
       const before=document.createRange();before.selectNodeContents(body);before.setEnd(range.startContainer,range.startOffset);
       const through=document.createRange();through.selectNodeContents(body);through.setEnd(range.endContainer,range.endOffset);
-      const start=before.toString().length,end=through.toString().length;if(end-start>2000)return;
+      const start=before.toString().length,end=through.toString().length;if(end-start>2000){clear('too-long');return;}
       parent.postMessage({type:'delivery-selection',nonce:reader.nonce,ref:{...reader.ref,sectionId:id},scrollRatio:0,anchor:{start,end,quote:projection.text.slice(start,end),textHash:projection.textHash}},'*');
     });
     addEventListener('scroll',()=>{

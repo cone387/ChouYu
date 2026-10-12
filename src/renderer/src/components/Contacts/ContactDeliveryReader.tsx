@@ -3,13 +3,16 @@ import ContactPresentation from './ContactPresentation'
 import './ContactPortfolio.css'
 import ContactTaskInputForm from './ContactTaskInputForm'
 import ContactMarkdown from './ContactMarkdown'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ReadingSaveQueue } from './readingSaveQueue'
 import type { AgentDelivery } from '../../../../shared/agent-delivery'
 import type { AgentTopic } from '../../../../shared/agents'
 import { deliveryText, textHash, type ContentCitation, type DeliveryRef, type ReadingPosition, type TextAnchor } from '../../../../shared/contact-content'
 import { readingAt, restoreReading, selectedCitation, highlightAnchor } from './deliveryReading'
 import { navigateContact } from './contactNavigation'
 import ContactFiles from './ContactFiles'
+import ContactContextReferences from './ContactContextReferences'
+import type { ContactContextRecord } from '../../../../shared/contact-content'
 import ContactRevisionDialog from './ContactRevisionDialog'
 import ContactHandoffDialog from './ContactHandoffDialog'
 import ContactHandoffs from './ContactHandoffs'
@@ -35,14 +38,17 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   const [handoff, setHandoff] = useState(false)
   const readerRoot = useRef<HTMLElement>(null)
   const [frameCitation, setFrameCitation] = useState<ContentCitation | null>(null)
+  const [contextRecord, setContextRecord] = useState<ContactContextRecord>()
+  const [frameSelectionError, setFrameSelectionError] = useState('')
+  const frameSourceMatches = frameCitation?.ref.characterId === characterId && frameCitation.ref.topicId === topic.id && frameCitation.ref.version === artifact?.version
   const cite = async (action: 'discuss' | 'content' | 'presentation') => {
     if (!artifact) return
     setCitationError('')
     try {
-      if (artifact.presentation && !plain && action !== 'presentation' && frameCitation?.ref.version !== artifact.version) { setPlain(true); throw new Error('当前展示无法对应选中文字，已打开正文，请重新选择。') }
+      if (artifact.presentation && !plain && action !== 'presentation' && frameSelectionError) { setPlain(true); throw new Error(frameSelectionError) }
       const section = artifact.sections.find(s => s.id === readingId)
       const ref = { characterId, topicId: topic.id, version: artifact.version }
-      const citation = await window.electronAPI.agents.validateCitation(characterId, action === 'presentation' || !section ? { ref } : artifact.presentation && !plain && frameCitation ? frameCitation : selectedCitation(ref, section, bodyRef.current?.querySelector('.contact-markdown') ?? null))
+      const citation = await window.electronAPI.agents.validateCitation(characterId, action === 'presentation' || !section ? { ref } : artifact.presentation && !plain ? frameSourceMatches && frameCitation ? frameCitation : { ref: { ...ref, sectionId: section.id } } : selectedCitation(ref, section, bodyRef.current?.querySelector('.contact-markdown') ?? null))
       if (!alive.current) return
       if (action === 'discuss') { if (onCite) onCite(citation); else await navigateContact({ kind: 'discuss', citation }) }
       else setRevisionDialog({ citation, scope: action })
@@ -51,22 +57,17 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   const [plain, setPlain] = useState(false)
   const [readingError, setReadingError] = useState('')
   const [resume, setResume] = useState<ReadingPosition | null>(null)
-  const bodyRef = useRef<HTMLElement>(null), pendingReading = useRef<ReadingPosition | null>(null)
+  const bodyRef = useRef<HTMLElement>(null)
   const readingTimer = useRef<ReturnType<typeof setTimeout>>()
   const restoring = useRef(false), alive = useRef(true)
   const scrollToPosition = useRef<ReadingPosition | null>(null)
   const [readHashes, setReadHashes] = useState<Record<string, string>>({})
-  const flushReading = () => {
-    clearTimeout(readingTimer.current)
-    const position = pendingReading.current
-    if (!position) return
-    pendingReading.current = null
-    void window.electronAPI.agents.saveDeliveryReading(characterId, position).then(() => {
+  const readingQueue = useMemo(() => new ReadingSaveQueue(position => window.electronAPI.agents.saveDeliveryReading(characterId, position), position => {
       if (alive.current) { setReadingError(''); if (position.anchor) setReadHashes(h => ({ ...h, [position.ref.sectionId!]: position.anchor!.textHash })) }
-    }).catch(e => { if (alive.current) { pendingReading.current = position; setReadingError(`阅读位置未保存：${e instanceof Error ? e.message : '请重试'}`) } })
-  }
+    }, e => { if (alive.current) setReadingError(`阅读位置未保存：${e instanceof Error ? e.message : '请重试'}`) }), [characterId, topic.id])
+  const flushReading = () => { clearTimeout(readingTimer.current); void readingQueue.flush() }
   const recordReading = (position: ReadingPosition) => {
-    pendingReading.current = position
+    readingQueue.record(position)
     clearTimeout(readingTimer.current); readingTimer.current = setTimeout(flushReading, 500)
   }
   const inputs = artifact?.inputs ?? topic.initialPlan?.inputs
@@ -108,6 +109,12 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
     return () => { current = false }
   }, [characterId, topic.id, topic.revision])
   useEffect(() => { if (!artifact && latest && !loading && !error) void load(latest) }, [latest, artifact, loading, error])
+  useEffect(() => {
+    let current = true; setContextRecord(undefined)
+    const runId = artifact?.sections.find(section => section.id === readingId)?.runId ?? artifact?.runId
+    if (runId) void window.electronAPI.agents.detail(characterId, runId).then(detail => { if (current) setContextRecord(detail.run.contactContext) }).catch(() => {})
+    return () => { current = false }
+  }, [characterId, artifact?.version, artifact?.runId, readingId])
   useEffect(() => { if (!active || view !== 'delivery') flushReading() }, [active, view])
   useLayoutEffect(() => {
     const el = bodyRef.current
@@ -149,7 +156,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       {resume && <button type="button" data-delivery-resume onClick={() => { setPlain(true); void load(resume.ref.version, resume) }}>继续阅读 · 版本 {resume.ref.version}</button>}
       {readingError && <p role="alert">{readingError}<button type="button" onClick={flushReading}>重试保存位置</button></p>}
       {artifact.presentation && <div className="agent-actions" aria-label="成果阅读方式"><button type="button" aria-pressed={!plain} onClick={() => setPlain(false)}>{artifact.presentation.title}</button><button type="button" aria-pressed={plain} onClick={() => setPlain(true)}>正文</button></div>}
-      {artifact.presentation && !plain && view === 'delivery' && active && <ContactPresentation key={`${topic.id}:${artifact.version}`} characterId={characterId} topicId={topic.id} artifact={artifact} onFallback={() => setPlain(true)} onReading={recordReading} onSelection={setFrameCitation} />}
+      {artifact.presentation && !plain && view === 'delivery' && active && <ContactPresentation key={`${topic.id}:${artifact.version}`} characterId={characterId} topicId={topic.id} artifact={artifact} onFallback={() => setPlain(true)} onReading={position => { recordReading(position); if (position.ref.sectionId) setReadingId(position.ref.sectionId) }} onSelection={(citation, reason) => { setFrameCitation(citation); if (citation?.ref.sectionId) setReadingId(citation.ref.sectionId); setFrameSelectionError(reason === 'too-long' ? '选择不能超过 2000 字，已打开正文，请重新选择。' : reason === 'unmappable' ? '当前展示无法对应选中文字，已打开正文，请重新选择。' : '') }} />}
       <div hidden={Boolean(artifact.presentation && !plain)}>
       <nav className="delivery-directory" aria-label="成果目录">{artifact.sections.map(section => <button type="button" key={section.id} aria-pressed={readingId === section.id} onClick={() => { flushReading(); scrollToPosition.current = null; setReadingId(section.id); recordReading(readingAt({ characterId, topicId: topic.id, version: artifact.version }, section, 0)); onNavigate?.({ characterId, topicId: topic.id, version: artifact.version, sectionId: section.id }) }}>{section.title}{readHashes[section.id] ? readHashes[section.id] === textHash(deliveryText(section.body)) ? ' · 已读' : ' · 已修改' : ' · 未读'}</button>)}</nav>
       {artifact.sections.filter(section => section.id === readingId).map(section => <article ref={bodyRef} className="delivery-reader delivery-reader-scroll" key={section.id} aria-label={section.title} tabIndex={0} onScroll={event => {
@@ -178,13 +185,14 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       <button type="button" data-delivery-handoff disabled={busy} onClick={() => setHandoff(true)}>交给联系人评审</button>
     </div>}
     {citationError && <p role="alert">{citationError}</p>}
+    {contextRecord && <ContactContextReferences key={contextRecord.requestId} record={contextRecord} />}
     {!!artifact?.fileIds?.length && <ContactFiles owner={characterId} topicId={topic.id} fileIds={artifact.fileIds} />}
     {revisionDialog && <ContactRevisionDialog characterId={characterId} topic={topic} citation={revisionDialog.citation} scope={revisionDialog.scope} onClose={() => setRevisionDialog(null)} onSaved={() => setNotice('修改意见已保存，将沿用任务额度修订一轮。')} />}
     {artifact && handoff && <ContactHandoffDialog source={{ characterId, topicId: topic.id, version: artifact.version, ...(readingId ? { sectionId: readingId } : {}) }} title={topic.title} onClose={() => setHandoff(false)} onSaved={() => setNotice('评审任务已保存，接收者会按原权限和额度执行。')} />}
     {artifact && <ContactHandoffs owner={characterId} topicId={topic.id} getCitation={async () => {
       if (artifact.presentation && !plain) {
-        if (frameCitation?.ref.version === artifact.version) return window.electronAPI.agents.validateCitation(characterId, frameCitation)
-        setPlain(true); throw new Error('当前展示无法对应选中文字，已打开正文，请重新选择。')
+        if (frameSelectionError) { setPlain(true); throw new Error(frameSelectionError) }
+        return window.electronAPI.agents.validateCitation(characterId, frameSourceMatches && frameCitation ? frameCitation : { ref: { characterId, topicId: topic.id, version: artifact.version, sectionId: readingId } })
       }
       const section = artifact.sections.find(s => s.id === readingId), ref = { characterId, topicId: topic.id, version: artifact.version }
       return window.electronAPI.agents.validateCitation(characterId, section ? selectedCitation(ref, section, bodyRef.current?.querySelector('.contact-markdown') ?? null) : { ref })

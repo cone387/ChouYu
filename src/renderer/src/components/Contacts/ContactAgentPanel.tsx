@@ -1,3 +1,5 @@
+import ContactContextReferences from './ContactContextReferences'
+import ContactMaterialLink from './ContactMaterialLink'
 import ContactWorkSettings from './ContactWorkSettings'
 import ContactSkills from './ContactSkills'
 import ContactTaskInputForm from './ContactTaskInputForm'
@@ -227,9 +229,10 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       })}</ol>
       {!detail && historyTopic && !data.runs.some(run => run.topicId === historyTopic) && <p className="agent-empty">最近 30 轮中没有这个任务的记录。更早的记录可从任务的历史变化中查看。</p>}
       {detail && <article className="agent-record" ref={record} tabIndex={-1} aria-label="工作记录详情"><button type="button" onClick={() => { returnToRun.current = detail.run.id; setDetail(null) }}>← 返回工作记录</button><p className="agent-caption">{time(detail.run.createdAt)} · {AGENT_STATUS[detail.run.status]}</p><h4>{detail.report?.title || detail.run.summary || AGENT_STATUS[detail.run.status]}</h4>{detail.run.error && <p role="alert">{detail.run.error}</p>}
+        {detail.run.contactContext && <ContactContextReferences record={detail.run.contactContext} />}
         {detail.run.question && <div className="agent-question"><strong>这一轮的问题</strong><p>{detail.run.question}</p>{detail.run.answer && <p>你的回复：{detail.run.answer}</p>}</div>}
         {onDiscuss && detail.run.topicId && <button type="button" className="primary" onClick={() => discuss(detail.run.id, detail.run.topicId!, detail.report ? `${detail.report.title}\n${detail.report.body}\n下一步：${detail.report.nextStep}\n资料：\n${detail.report.evidence.map(source => `${source.title} ${source.url}`).join('\n')}` : detail.run.question || detail.run.summary)}>聊聊这个{detail.run.status === 'waiting' ? '问题' : '发现'}</button>}
-        {detail.report && <><div className="agent-report"><ContactMarkdown>{detail.report.body}</ContactMarkdown></div><p><strong>下一步：</strong>{detail.report.nextStep || '尚未安排'}</p><h4>当时读到的资料</h4>{detail.report.evidence.map((source, i) => <details key={source.url}><summary>[{i + 1}] {source.title}</summary>{source.url.startsWith('contact-delivery://') ? <span>{source.url}</span> : <a href={source.url} target="_blank" rel="noopener noreferrer">打开原网页</a>}<p className="agent-caption">读取于 {time(source.capturedAt)} · 保存正文节选，非完整网页<br />SHA-256：{source.hash}</p><div className="agent-source-text">{source.text}</div></details>)}</>}
+        {detail.report && <><div className="agent-report"><ContactMarkdown>{detail.report.body}</ContactMarkdown></div><p><strong>下一步：</strong>{detail.report.nextStep || '尚未安排'}</p><h4>当时读到的资料</h4>{detail.report.evidence.map((source, i) => <details key={source.url}><summary>[{i + 1}] {source.title}</summary><ContactMaterialLink href={source.url}>{source.title}</ContactMaterialLink><p className="agent-caption">读取于 {time(source.capturedAt)} · 保存正文节选，非完整网页<br />SHA-256：{source.hash}</p><div className="agent-source-text">{source.text}</div></details>)}</>}
         {detail.research && <details><summary>研究过程与搜索记录</summary><ContactResearchRecord research={detail.research} /></details>}
         <details><summary>查看工作经过 · {detail.events.length} 条记录</summary><ol>{detail.events.map(event => <li key={event.id}><time>{time(event.at)}</time><p>{event.text}</p></li>)}</ol></details>
       </article>}

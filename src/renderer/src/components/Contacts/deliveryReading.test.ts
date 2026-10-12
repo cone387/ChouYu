@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { deliveryText, textHash, type ReadingPosition } from '../../../../shared/contact-content'
-import { anchorFromRenderedText, restoreReading, validPresentationEvent } from './deliveryReading'
+import { anchorFromRenderedText, restoreReading, validPresentationEvent, validSelectionClear } from './deliveryReading'
 
 describe('reading restoration', () => {
   const text = deliveryText('重复😀\n\n重复😀'), ref = { characterId: 'alice', topicId: 'task', version: 1, sectionId: 'a' }
@@ -25,5 +25,11 @@ describe('reading restoration', () => {
     for (const change of [{ source: {} }, { origin: 'https://example.com' }, { data: { ...data, nonce: 'stale' } }, { data: { ...data, ref: { ...ref, version: 2 } } }, { data: { ...data, anchor: { ...position.anchor, quote: 'forged' } } }]) {
       expect(validPresentationEvent({ ...event, ...change } as MessageEvent, source, ref, 'nonce', [section])).toBeNull()
     }
+  })
+  it('accepts selection invalidation only from this exact opaque frame and source', () => {
+    const source = {} as Window, data = { type: 'delivery-selection-clear', ref, nonce: 'nonce', reason: 'too-long' }
+    const event = { source, origin: 'null', data } as unknown as MessageEvent
+    expect(validSelectionClear(event, source, ref, 'nonce')).toBe('too-long')
+    for (const changed of [{ ...event, source: {} }, { ...event, origin: 'https://example.com' }, { ...event, data: { ...data, ref: { ...ref, topicId: 'other' } } }, { ...event, data: { ...data, nonce: 'old' } }]) expect(validSelectionClear(changed as MessageEvent, source, ref, 'nonce')).toBeNull()
   })
 })

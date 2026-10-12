@@ -17,7 +17,7 @@ import type { ResolvedProviderProfile } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig } from '../shared/characters'
-import { agentContext, removeContactAgent, contactAgentsCall } from './agents'
+import { agentContext, removeContactAgent, contactAgentsCall, onContactContextChanged } from './agents'
 import { routeContactChange } from './agents/chat-changes'
 import {
   type MemoryCandidateInput,
@@ -644,6 +644,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     let taskMutationRequested = false
     let contactContext: import('../shared/contact-content').ContactContextRecord | undefined
     let contextSent = false
+    let ownMemoryMutation = false, memoryMutationReceipt = ''
+    const assertContext = async () => {
+      controller.signal.throwIfAborted()
+      if (owner && contactContext) await contactAgentsCall(owner, 'assertContextCurrent', [contactContext])
+      controller.signal.throwIfAborted()
+    }
+    const releaseContext = onContactContextChanged(id => {
+      if (id === owner && contactContext && !ownMemoryMutation) void assertContext().catch(() => { if (!ownMemoryMutation) controller.abort() })
+    })
     const releaseRendererLifecycle = bindAIRequestLifecycle(event.sender, controller)
 
     try {
@@ -676,7 +685,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) return `工具已被用户禁用：${call.name}`
             const arguments_ = parseToolArguments(call.arguments)
             try {
-              if (controller.signal.aborted) throw new Error('AI 请求已取消。')
+              await assertContext()
               const taskMutation = ['edit_contact_task', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
               if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
               const prepared: PreparedTool = SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
@@ -731,7 +740,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               }
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
               if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) throw new Error('工具已被用户禁用。')
+              await assertContext()
+              ownMemoryMutation = ['update_contact_memory', 'forget_contact_memory'].includes(call.name) && Boolean(contactContext?.memories.some(m => m.id === arguments_.id))
               const result = await prepared.execute()
+              if (ownMemoryMutation) { memoryMutationReceipt = result.summary; ownMemoryMutation = false; controller.abort() }
               if (call.name === 'read_contact_material' && contactContext) {
                 const ref = JSON.parse(result.content).materialRead as import('../shared/contact-materials').MaterialReadRef
                 contactContext.materials = [...(contactContext.materials ?? []), ref]
@@ -747,6 +759,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               })
               return result.content.slice(0, 50_000)
             } catch (error) {
+              ownMemoryMutation = false
               const message = getErrorMessage(error)
               sendToolEvent(event.sender, {
                 requestId: request.requestId,
@@ -802,16 +815,18 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         },
         controller.signal,
         chatTools,
-        { onMetadata: () => { contextSent = true } }
+        { onMetadata: () => { contextSent = true }, beforeRound: async () => { await assertContext(); return undefined } }
       )
-      if (owner && contactContext?.materials?.length) await contactAgentsCall(owner, 'assertContextCurrent', [{ memories: [], materials: contactContext.materials }])
+      await assertContext()
       if (contextSent && contactContext) setState(`contact-context:${request.requestId}`, JSON.stringify(contactContext))
       return { ok: true, contactContext: contextSent ? contactContext : undefined }
     } catch (error) {
       if (contextSent && contactContext) { contactContext.status = 'failed'; setState(`contact-context:${request.requestId}`, JSON.stringify(contactContext)) }
+      if (memoryMutationReceipt) return { ok: true, reply: memoryMutationReceipt }
       if (controller.signal.aborted) return { ok: false, error: 'AI 请求已取消。' }
       return { ok: false, error: getErrorMessage(error), contactContext: contextSent && contactContext ? { ...contactContext, status: 'failed' } : undefined }
     } finally {
+      releaseContext()
       releaseRendererLifecycle()
       if (activeAIRequests.get(requestKey) === controller) activeAIRequests.delete(requestKey)
     }

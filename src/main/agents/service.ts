@@ -244,6 +244,8 @@ export class AgentService {
       case 'assertContextCurrent': this.store.assertContextCurrent(id, args[0] as import('../../shared/contact-content').ContextReferences); return
       case 'readMaterial': return this.store.materials.read({ ...(args[0] as ContactReadContext), characterId: id }, args[1] as import('../../shared/contact-materials').MaterialRef, args[2] as number | undefined)
       case 'materialHistory': return this.store.materials.history(id, args[0] as string)
+      case 'materialInventory': return this.store.materials.inventory(id)
+      case 'purgeMaterial': { this.store.materials.purge(id, args[0] as string, args[1] as number); this.changed(id); return }
       case 'saveMaterial': { const result = this.store.materials.save(id, args[0] as import('../../shared/contact-materials').MaterialInput, args[1] as string | undefined, args[2] as number | undefined); this.changed(id); return result }
       case 'withdrawMaterial': {
         this.store.materials.withdraw(id, args[0] as string, args[1] as number)
@@ -332,6 +334,8 @@ export class AgentService {
     }
     const skills = input.skills as SkillSnapshot
     const testModel = this.modelFactory?.(identity)
+    let recordedMemoryContext = false
+    const recordMemoryContext = () => { if (!recordedMemoryContext) { this.store.recordMemoryContext(run.id); recordedMemoryContext = true } }
     const model: AgentModel = async (prompt, signal, options) => {
       if (skills.error) throw new Error(`联系人技能不可用：${skills.error}`)
       prompt = skills.instruction ? `${skills.instruction}\n${prompt}` : prompt
@@ -381,8 +385,8 @@ export class AgentService {
         tools.execute = call => tools.definitions.some(tool => tool.name === call.name) ? execute(call) : Promise.resolve('工具已被用户禁用。')
       }
       try {
-        if (testModel) { beforeRound(0, prompt); return await testModel(prompt, signal, options) }
-        await streamAIChat([{ role: 'user', content: prompt }], options?.plainText ? 'Output the requested plain text, without JSON.' : 'Follow the work instruction and return JSON. Distinguish facts, assumptions, and sources.', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) }, signal, tools, { timeoutMs: 180000, beforeRound, afterRound, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model } } })
+        if (testModel) { beforeRound(0, prompt); const result = await testModel(prompt, signal, options); if (options?.suppliesMemories) recordMemoryContext(); return result }
+        await streamAIChat([{ role: 'user', content: prompt }], options?.plainText ? 'Output the requested plain text, without JSON.' : 'Follow the work instruction and return JSON. Distinguish facts, assumptions, and sources.', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) }, signal, tools, { timeoutMs: 180000, beforeRound, afterRound, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model }; if (options?.suppliesMemories) recordMemoryContext() } })
         if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError(output)
       } finally { afterRound() }
       return output

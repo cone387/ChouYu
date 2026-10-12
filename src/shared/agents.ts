@@ -45,6 +45,7 @@ export function agentUsesPlanner(settings: AgentSettings): boolean {
 export type AgentRunStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
 export interface AgentEvidence { url: string; title: string; text: string; capturedAt: number; hash: string }
 export interface AgentRun {
+  contactContext?: import('./contact-content').ContactContextRecord
   revisionScope?: 'presentation'
   inputFields?: import('./agent-delivery').TaskInputField[]
   id: string; characterId: string; revision: number; status: AgentRunStatus; createdAt: number; updatedAt: number

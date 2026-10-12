@@ -7,6 +7,7 @@ import { containsSecret } from '../../shared/memory'
 import { citationContext, validateCitation } from './citations'
 import type { ContactHandoffAPI, HandoffState } from '../../shared/contact-handoffs'
 import type { DeliveryRef } from '../../shared/contact-content'
+import { taskState } from '../../shared/task-state'
 export type HandoffPin = { id: string; source: DeliveryRef; hash: string }
 export class AgentHandoffs {
   constructor(private store: AgentStore) {
@@ -122,9 +123,9 @@ export class AgentHandoffs {
   }
   state(owner: string, id: string): HandoffState {
     const handoff = this.get(owner, id), last = this.last(id)
-    let status = '任务已移除'
-    try { status = this.store.topics.get(handoff.recipientId, handoff.topicId).status } catch { /* Honest deleted state. */ }
-    return { handoff, status, reviewedVersion: last ? JSON.parse(last.source).version : undefined, latestVersion: this.store.deliveries.get(handoff.source.topicId)?.version ?? 0 }
+    let state = { code: 'removed', label: '任务已移除', description: '评审任务已移除，历史引用保留。' }
+    try { state = taskState(this.store.overview(handoff.recipientId), this.store.topics.get(handoff.recipientId, handoff.topicId)) } catch { /* Honest deleted state. */ }
+    return { handoff, status: state.code, state, reviewedVersion: last ? JSON.parse(last.source).version : undefined, latestVersion: this.store.deliveries.get(handoff.source.topicId)?.version ?? 0 }
   }
   returnReview(owner: string, request: Parameters<ContactHandoffAPI['returnReview']>[1], conversation: string) {
     return this.store.db.transaction(() => {

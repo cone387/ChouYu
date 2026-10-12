@@ -54,3 +54,15 @@ it('validates both permissions, ownership and pinned version again on commit', a
   store.save('bob', { ...store.overview('bob').settings, readContactDeliveries: true })
   for (const source of [{ ...f.request.source, characterId: 'bob' }, { ...f.request.source, version: 999 }]) await expect(f.service.request('stageHandoff', 'alice', [{ ...f.request, source }, { description: 'Review', requestLog: '', continuous: false }])).rejects.toThrow()
 })
+it('projects actual review execution independently of the reviewed version', async () => {
+  const f = await fixture(), store = f.service.store
+  const prepared = await f.service.request('stageHandoff', 'alice', [f.request, { description: 'Review once', requestLog: '', continuous: false }])
+  const handoff = await f.service.request('commitHandoff', 'alice', [prepared])
+  const run = store.overview('bob').runs.find(r => r.topicId === handoff.topicId)!
+  for (const status of ['queued', 'running', 'waiting', 'failed'] as const) {
+    store.setStatus(run.id, status)
+    expect(store.handoffs.state('alice', handoff.id).status).toBe(status)
+  }
+  store.topics.status('bob', handoff.topicId, store.topics.get('bob', handoff.topicId).revision, 'paused', 'Pause this task')
+  expect(store.handoffs.state('alice', handoff.id).status).toBe('paused')
+})

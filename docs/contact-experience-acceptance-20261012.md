@@ -102,8 +102,16 @@ Evidence: A2 token/validation tests (4); full suite 1444 passed/20 opt-in skippe
 
 最终整合 `--contact-experience` 在同一作者任务上通过：文字资料导入、任务范围记忆、真实 worker 的模型工具请求、正文与文件事务保存、worker 重启、固定版本引用讨论、独立接收者评审、用户交回意见、作者版本 2、旧意见冲突保稿及新版定位。原归档文件字节不受修订影响。证据：`artifacts/contact-experience/result.json`、`receipt.png`；通过标记 `CHOUYU_CONTACT_EXPERIENCE_SMOKE_PASSED`。
 
-最终命令：`npm run typecheck`、`npm test`（1444 通过 / 20 默认 opt-in 跳过）、`npm run build`；Electron `--agents`、`--assistant-routines`、`--presentation`、`--contacts`、`--contact-experience` 均退出 0 并出现通过标记。日志归档在 `artifacts/contact-experience/verification/`。构建仍有既有 chunk 大小提示。
+最终命令：`npm run typecheck`、`npm test`（1453 通过 / 20 默认 opt-in 跳过）、`npm run build`；Electron `--agents`、`--assistant-routines`、`--presentation`、`--contacts`、`--contact-experience` 均退出 0 并出现通过标记。日志归档在 `artifacts/contact-experience/verification/`。构建仍有既有 chunk 大小提示。
 
-实际环境抽测：`CHOUYU_TEST_DOCKER=1 npx vitest run src/main/skills/docker.integration.test.ts` 通过 2 项；`node scripts/test-contact-model.cjs --experience` 通过 1 项。后者仅从本机已配置联系人读取模型配置和凭据，全部资料、人物与任务为合成数据，未修改用户聊天或真实任务。实际模型为 `as-glm-5.2`，供应方回报 `glm-5.2`；最后两次响应记录共 2244 Token，不将该值冒充含工具请求及前次抽测在内的账单总量。原始输出和用量回执位于 `artifacts/contact-experience-model.json`，无凭据。人工检查确认纠正姓名、资料事实与第 1 版评审对象；模型仍可能加短说明，未声称覆盖任意模型的长期措辞质量。
+实际环境抽测：`CHOUYU_TEST_DOCKER=1 npx vitest run src/main/skills/docker.integration.test.ts` 通过 2 项；`node scripts/test-contact-model.cjs --experience` 通过 1 项。后者仅从本机已配置联系人读取模型配置和凭据，全部资料、人物与任务为合成数据，未修改用户聊天或真实任务。实际模型为 `as-glm-5.2`，供应方回报 `glm-5.2`；最后两次响应记录共 2220 Token，不将该值冒充含工具请求及前次抽测在内的账单总量。原始输出和用量回执位于 `artifacts/contact-experience-model.json`，无凭据。人工检查确认纠正姓名、资料事实与第 1 版评审对象；模型仍可能加短说明，未声称覆盖任意模型的长期措辞质量。
 
-最终独立审计：待审阅当前完整分支后补充结果。
+最终独立审计：完整分支一次审查，无 Critical，发现 9 项 Important，已在一次修复中处理；没有延后 Minor，也没有 Declined to judge。另在真实 IPC 回归中发现无对应请求的工具事件会落入当前会话，已移除这种回退归属，迁移夹具继续严格验证原会话两条消息不被改写。逐项修复、失败测试与取舍见[最终审查记录](contact-experience-review-20261012.md)。
+
+最终补充行为：清除或无法映射的 iframe 选择不会沿用旧引文；阅读位置串行合并保存；资料引用打开当时片段；后台成果按分节所属轮次显示实际提供的记忆版本；交付回执和评审来源均打开固定版本正文；交接卡复用真实任务状态；成果集更新入口保留原快照；已撤回资料可经单份确认清理正文以释放容量，来源记录及旧引用移除提示保留。
+
+早期各阶段的“待最终验收”是阶段时点记录，当前结果以 FINAL 和最终审查记录为准。
+
+收尾验证：`REVIEW-suite.log` 为 1453 通过、20 默认跳过；类型检查、构建、五组 Electron、单独资料清理故障注入、真实 Docker 2/2 和模型 1/1 均通过。新增清理弹窗在浅色 375 与深色 1024 已人工检查，边界断言覆盖两种主题与两种宽度。旧桌面脚本同步改为选择可见窗口中的控件，并等待暂停状态刷新后编辑，以避免操作隐藏的保留界面或持有过期任务版本。构建只保留既有大 chunk 提示。
+
+交付分支为 `feat/contact-experience`，位于隔离工作树 `C:/Users/Administrator/.codex/worktrees/1376/ChouYu`。实现、审查修复与文档均已完成；合并回 master、推送 PR 或保留分支的最终方式等待用户选择，不擅自发布。

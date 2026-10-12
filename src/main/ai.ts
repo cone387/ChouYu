@@ -1,7 +1,7 @@
 import { readAIUsage, type AIResponseMetadata } from '../shared/ai-usage'
 // Explicit timeoutMs is a total deadline (used by journal generation).
 // Interactive chat defaults to an inactivity deadline while the stream is live.
-export interface AIStreamOptions { timeoutMs?: number; maxOutputTokens?: number; onMetadata?: (metadata: AIResponseMetadata) => void; beforeRound?: (round: number, input: string) => number | undefined; afterRound?: () => void }
+export interface AIStreamOptions { timeoutMs?: number; maxOutputTokens?: number; onMetadata?: (metadata: AIResponseMetadata) => void; beforeRound?: (round: number, input: string) => number | undefined | Promise<number | undefined>; afterRound?: () => void }
 
 import type { AppConfig } from '../shared/config'
 import { isAIConfigured } from '../shared/config'
@@ -327,7 +327,7 @@ async function streamOpenAI(
 
   // Resolve a list, search, read, confirm a change, then summarize the result.
   for (let round = 0; round < 6; round++) {
-    const maxOutputTokens = options.beforeRound?.(round, JSON.stringify({ messages: apiMessages, tools })) ?? options.maxOutputTokens
+    const maxOutputTokens = await options.beforeRound?.(round, JSON.stringify({ messages: apiMessages, tools })) ?? options.maxOutputTokens
     let result: Awaited<ReturnType<typeof streamOpenAIRound>>
     try { result = await streamOpenAIRound(apiMessages, config, onChunk, signal, tools, { ...options, maxOutputTokens }) }
     finally { options.afterRound?.() }
@@ -495,7 +495,7 @@ async function streamClaude(
   }))
 
   for (let round = 0; round < 6; round++) {
-    const maxOutputTokens = options.beforeRound?.(round, JSON.stringify({ messages: apiMessages, systemPrompt, tools })) ?? options.maxOutputTokens
+    const maxOutputTokens = await options.beforeRound?.(round, JSON.stringify({ messages: apiMessages, systemPrompt, tools })) ?? options.maxOutputTokens
     let result: Awaited<ReturnType<typeof streamClaudeRound>>
     try { result = await streamClaudeRound(apiMessages, systemPrompt, config, onChunk, signal, tools, { ...options, maxOutputTokens }) }
     finally { options.afterRound?.() }

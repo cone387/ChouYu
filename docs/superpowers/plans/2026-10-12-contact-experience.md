@@ -84,15 +84,18 @@ type ContactSourceRef =
 ## Task FINAL：完整验收与交付
 
 **Files:** 更新 `docs/contact-task-spec.md`、`docs/contact-experience-acceptance-20261012.md`、`docs/contact-topics.md`、`docs/contact-custom-deliveries.md`、`docs/contact-skills-20261010.md`；新增 `src/main/smoke/contact-experience-smoke.ts`，接入 `src/main/index.ts` 与 `scripts/smoke-electron.js` 的 `--contact-experience` 开关；扩展 `scripts/test-contact-model.cjs` 的 `--experience` 与 `src/main/agents/experience-model.acceptance.test.ts`。
-- [ ] 实现跨模块场景：导入资料 → 保存有范围记忆 → 联系人产出正文和文件 → 重启续读 → 引文讨论 → 交给另一人评审 → 新版冲突 → 用户选择意见交回 → 修订后从回执定位。每步断言真实数据库版本、请求来源和 UI，失败注入不改用户数据。
-- [ ] 执行 `npm run typecheck`、`npm test`、`npm run build`；全部通过才进入最终烟测。
-- [ ] 执行 `node scripts/smoke-electron.js --agents`、`--assistant-routines`、`--presentation`、`--contacts`、`--contact-experience`；各命令退出 0 且有对应通过标记，保存日志与截图。
-- [ ] 设置 `CHOUYU_TEST_DOCKER=1` 后执行 `npx vitest run src/main/skills/docker.integration.test.ts`；执行 `node scripts/test-contact-model.cjs --experience`，验证实际模型的记忆纠正、资料/引文引用与版本评审。明确测试账户/合成数据和实际消耗，不记录凭据；真实环境失败不能用夹具结果替代。
-- [ ] 逐项检查设计 A1–G7、迁移/失败规则与 EXP-01～15；在阶段验收表给出代码、测试/截图证据和边界。缺失任何功能或证据继续推进，不缩减目标。
+- [x] 实现跨模块场景：导入资料 → 保存有范围记忆 → 联系人产出正文和文件 → 重启续读 → 引文讨论 → 交给另一人评审 → 新版冲突 → 用户选择意见交回 → 修订后从回执定位。每步断言真实数据库版本、请求来源和 UI，失败注入不改用户数据。
+- [x] 执行 `npm run typecheck`、`npm test`、`npm run build`；全部通过才进入最终烟测。
+- [x] 执行 `node scripts/smoke-electron.js --agents`、`--assistant-routines`、`--presentation`、`--contacts`、`--contact-experience`；各命令退出 0 且有对应通过标记，保存日志与截图。
+- [x] 设置 `CHOUYU_TEST_DOCKER=1` 后执行 `npx vitest run src/main/skills/docker.integration.test.ts`；执行 `node scripts/test-contact-model.cjs --experience`，验证实际模型的记忆纠正、资料/引文引用与版本评审。明确测试账户/合成数据和实际消耗，不记录凭据；真实环境失败不能用夹具结果替代。
+- [x] 逐项检查设计 A1–G7、迁移/失败规则与 EXP-01～15；在阶段验收表给出代码、测试/截图证据和边界。缺失任何功能或证据继续推进，不缩减目标。
 - [ ] 最终独立代码复核、按执行技能完成开发分支整合；确认工作树、文档与最终代码一致后才能标记目标完成。
+
 
 ## 自检与交接
 
-已逐条映射设计七模块；五项 Review Focus 均指向拥有测试的任务。现有 ea98736 修复作为基线保留，不重复实现。所有新增功能的实施复选框保持未勾选。
+已逐条映射设计七模块；五项 Review Focus 均指向拥有测试的任务。现有 ea98736 修复作为基线保留，不重复实现。实施状态见上方最终验收与各子计划；最后的分支整合方式待用户选择。
 
 Execution: user approved inline implementation of all linked plans, followed by one independent review.
+
+FINAL implementation and review fixes are complete. Full suite: 1453 passed / 20 default skips; types/build, five Electron modes, material cleanup UI, real Docker and real model acceptance passed. The remaining integration checkbox is deliberately open pending the user's finishing-branch choice (local master merge, PR, or keep branch). No product capability is deferred. Evidence: docs/contact-experience-acceptance-20261012.md and docs/contact-experience-review-20261012.md.

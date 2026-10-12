@@ -285,13 +285,14 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       setToolApprovalRequests((current) => current.some((item) => item.approvalId === request.approvalId) ? current : [...current, request])
     })
     const unsubscribeEvents = window.electronAPI.ai.onToolEvent((event: ToolExecutionEvent) => {
-      const sessionId = requestSessionRef.current.get(event.requestId) || activeSessionIdRef.current
-      if (!sessionId) return
-      const generation = sessionGenerationsRef.current.get(sessionId)
       if (['completed', 'denied', 'expired', 'cancelled', 'error'].includes(event.status)) {
-        if (generation) generation.toolBoundary = true
         setToolApprovalRequests((current) => current.filter((request) => request.callId !== event.callId))
       }
+      const sessionId = requestSessionRef.current.get(event.requestId)
+      // Unknown/finished requests have no authority to append to whichever chat is open.
+      if (!sessionId) return
+      const generation = sessionGenerationsRef.current.get(sessionId)
+      if (generation && ['completed', 'denied', 'expired', 'cancelled', 'error'].includes(event.status)) generation.toolBoundary = true
       updateSessionMessages(sessionId, (previous) => {
         const id = `tool-${event.callId}`
         const toolData = {

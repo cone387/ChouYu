@@ -1,7 +1,7 @@
 import type { ContactReadContext, ContactScope } from './contact-content'
 export type MaterialInput = { name: string; scope: Exclude<ContactScope, { kind: 'session' }>; content: string; source: { kind: 'text' | 'file' | 'attachment' | 'web'; label: string; url?: string } }
 export type MaterialRef = { id: string; version: number }
-export type MaterialVersion = MaterialInput & MaterialRef & { owner: string; hash: string; createdAt: number; status: 'ready' | 'withdrawn' }
+export type MaterialVersion = MaterialInput & MaterialRef & { owner: string; hash: string; createdAt: number; status: 'ready' | 'withdrawn' | 'removed' }
 export type MaterialSummary = Omit<MaterialVersion, 'content'>
 export type MaterialRead = { text: string; nextOffset?: number; ref: MaterialRef }
 export type MaterialImport = Omit<MaterialInput, 'content'> & { content?: string; id?: string; expectedVersion?: number; requestId?: string }
@@ -14,4 +14,6 @@ export interface ContactMaterialAPI {
   readMaterial(owner: string, context: Omit<ContactReadContext, 'characterId'>, ref: MaterialRef, offset?: number): Promise<MaterialRead>
   materialHistory(owner: string, id: string): Promise<MaterialSummary[]>
   withdrawMaterial(owner: string, id: string, version: number): Promise<void>
+  materialInventory(owner: string): Promise<MaterialSummary[]>
+  purgeMaterial(owner: string, id: string, version: number): Promise<void>
 }

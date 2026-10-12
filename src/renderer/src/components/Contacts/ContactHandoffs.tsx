@@ -29,7 +29,7 @@ export default function ContactHandoffs({ owner, topicId, getCitation }: { owner
   const navigate = (fn: () => Promise<void>) => { void fn().catch(reason => { if (alive.current) setError(String(reason)) }) }
   if (!states.length && !error) return null
   return <section className="contact-handoffs"><h4>评审交接</h4>{error && <p role="alert">{error}</p>}{states.map(state => <article key={state.handoff.id} data-handoff-record={state.handoff.id}>
-    <p>{names[state.handoff.source.characterId] || '原作者'} → {names[state.handoff.recipientId] || '接收者'} · {TOPIC_STATUS[state.status as keyof typeof TOPIC_STATUS] || state.status}</p>
+    <p title={state.state?.description}>{names[state.handoff.source.characterId] || '原作者'} → {names[state.handoff.recipientId] || '接收者'} · {state.state?.label || TOPIC_STATUS[state.status as keyof typeof TOPIC_STATUS] || state.status}</p>
     <p className="agent-caption">{state.reviewedVersion ? `已评审原文第 ${state.reviewedVersion} 版` : `交接原文第 ${state.handoff.source.version} 版，尚未完成评审`}{state.latestVersion > (state.reviewedVersion ?? state.handoff.source.version) ? ` · 原文已有第 ${state.latestVersion} 版，尚未评审` : ''}{state.handoff.continuous ? ' · 持续跟进正文变化' : ' · 仅本次交接'}</p>
     <div className="agent-actions"><button type="button" onClick={() => navigate(() => navigateContact({ kind: 'delivery', ref: state.handoff.source }))}>交接原文</button><button type="button" onClick={() => navigate(() => navigateContact({ kind: 'task', characterId: state.handoff.recipientId, topicId: state.handoff.topicId }))}>评审任务</button>{owner === state.handoff.recipientId && <button type="button" data-return-review onMouseDown={e => e.preventDefault()} onClick={() => void returnReview(state)}>将所选意见交回作者</button>}</div>
   </article>)}

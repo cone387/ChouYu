@@ -39,7 +39,7 @@ function parseBrief(raw: string): Brief {
   return { title: value.title.trim(), nextStep: value.nextStep.trim(), question: value.question.trim(), plan, ...(value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }
 }
 const State = Annotation.Root({ evidence: Annotation<AgentEvidence[]>(), draft: Annotation<Draft>(), answer: Annotation<string>(), plan: Annotation<AgentResearchPlan>(), boundaryPrompt: Annotation<string>(), deferred: Annotation<boolean>() })
-export type AgentModel = (prompt: string, signal: AbortSignal, options?: { plainText?: boolean; onPartial?: (text: string) => void }) => Promise<string>
+export type AgentModel = (prompt: string, signal: AbortSignal, options?: { plainText?: boolean; onPartial?: (text: string) => void; suppliesMemories?: boolean }) => Promise<string>
 export function parseDraft(raw: string, evidenceCount?: number, evaluationRequired = false, budgetAllocated = false): Draft {
   let value: Record<string, unknown>
   try { value = researchPlanValue(raw); if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error() } catch { throw new AgentOutputFormatError(`模型未返回有效的结构化成果：需要完整、唯一的 JSON 对象（${raw.length} 字符），本轮未写入记忆。`) }
@@ -354,11 +354,12 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
         }
         const recovery = writing && !plan?.evaluation && input.deliveryVersion === 1 && input.topic
           ? new WritingRecovery(this.store, runId, { title: input.topic.title, goal: input.topic.goal, constraints: input.topic.constraints, nextStep: input.topic.nextStep, deliveryVersion: input.delivery?.version, selectedId, feedback: input.feedback || undefined, chapter }) : undefined
-        const recover = () => recovery!.generate(model, signal, { soul: soul.slice(0, 4000), topic: input.topic, delivery: input.delivery, selectedSection, feedback: input.feedback, memories: input.memories, chapter, chapterInstruction: chapterContinuationPrompt(chapter) }, generationPrompt, validate, changed)
+        const withMemories: AgentModel = (prompt, signal, options) => model(prompt, signal, { ...options, suppliesMemories: true })
+        const recover = () => recovery!.generate(withMemories, signal, { soul: soul.slice(0, 4000), topic: input.topic, delivery: input.delivery, selectedSection, feedback: input.feedback, memories: input.memories, chapter, chapterInstruction: chapterContinuationPrompt(chapter) }, generationPrompt, validate, changed)
         if (recovery?.read()) output = await recover()
         else {
           this.store.charge(runId)
-          try { output = await model(generationPrompt, signal) } catch (error) {
+          try { output = await withMemories(generationPrompt, signal) } catch (error) {
             signal.throwIfAborted()
             if (error instanceof AgentOutputTruncatedError) {
               if (!recovery) throw error

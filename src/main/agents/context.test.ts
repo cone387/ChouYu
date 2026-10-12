@@ -30,3 +30,18 @@ it('uses the same explicit scope for chat and run context and rejects corrected 
   expect(store.scheduled('alice')).toEqual(beforeSchedule)
   expect(JSON.parse(store.getRun(runA)!.input).memories).toEqual([])
 })
+it('exposes only actually supplied background memory versions and preserves references after corrections', () => {
+  const store = new AgentStore(':memory:'); stores.push(store); store.ensure('alice')
+  const topic = store.topics.create('alice', { title: 'A', goal: 'A', constraints: '' }, 'test')
+  const input: MemoryInput = { content: 'original', kind: 'project', scope: { kind: 'task', topicId: topic.id }, source: { kind: 'user', at: 1 } }
+  const memory = store.memoryLibrary.create('alice', input), run = store.createRun('alice', '', Date.now(), topic.id)
+  expect(store.detail('alice', run).run.contactContext).toBeUndefined()
+  store.recordMemoryContext(run)
+  expect(store.detail('alice', run).run.contactContext?.memories).toEqual([{ id: memory.id, revision: 1 }])
+  store.memoryLibrary.update('alice', memory.id, 1, { ...input, content: 'corrected' })
+  expect(store.detail('alice', run).run.contactContext?.memories).toEqual([{ id: memory.id, revision: 1 }])
+  store.setStatus(run, 'failed')
+  expect(store.detail('alice', run).run.contactContext?.status).toBe('failed')
+  store.memoryLibrary.forget('alice', memory.id, 2)
+  expect(store.memoryLibrary.history('alice', memory.id).every(m => !m.content)).toBe(true)
+})

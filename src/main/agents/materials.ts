@@ -17,6 +17,7 @@ export class AgentMaterials {
   get(owner: string, ref: MaterialRef): MaterialVersion {
     if (!validId(ref?.id) || !Number.isSafeInteger(ref.version) || ref.version < 1) throw new Error('资料版本无效。')
     const head = this.head(owner, ref.id)
+    if (head.status === 'removed') throw new Error('资料正文已移除，来源记录仍保留。')
     if (head.status === 'withdrawn') throw new Error('资料已撤回，无法继续读取。')
     const row = this.db.prepare('SELECT value FROM contact_material_versions WHERE id=? AND version=?').get(ref.id, ref.version) as { value: string } | undefined
     if (!row) throw new Error('资料版本不存在。')
@@ -49,7 +50,7 @@ export class AgentMaterials {
         id = randomUUID()
       }
       const retained = this.db.prepare('SELECT coalesce(sum(v.bytes),0) n FROM contact_material_versions v JOIN contact_materials m ON m.id=v.id WHERE m.owner=?').get(owner) as { n: number }
-      if (retained.n + bytes > 200 * 1024 * 1024) throw new Error('资料历史总量不得超过 200 MB。')
+      if (retained.n + bytes > 200 * 1024 * 1024) throw new Error('资料历史总量不得超过 200 MB。请在资料整理中清理已撤回资料的正文。')
       const value: MaterialVersion = { name: input.name.trim(), content: input.content, scope, source, id, version, owner, hash, createdAt: Date.now(), status: 'ready' }
       this.db.prepare("INSERT INTO contact_materials VALUES(?,?,?,'ready') ON CONFLICT(id) DO UPDATE SET version=excluded.version").run(id, owner, version)
       this.db.prepare('INSERT INTO contact_material_versions VALUES(?,?,?,?)').run(id, version, bytes, JSON.stringify(value))
@@ -75,5 +76,17 @@ export class AgentMaterials {
     const head = this.head(owner, id)
     if (head.version !== version || head.status !== 'ready') throw new Error('资料已变化或已撤回。')
     this.db.prepare("UPDATE contact_materials SET status='withdrawn' WHERE id=?").run(id)
+  }
+  inventory(owner: string): MaterialSummary[] {
+    return (this.db.prepare('SELECT v.value,m.status FROM contact_materials m JOIN contact_material_versions v ON v.id=m.id AND v.version=m.version WHERE m.owner=? ORDER BY m.rowid DESC').all(owner) as { value: string; status: MaterialVersion['status'] }[]).map(row => ({ ...this.summary(JSON.parse(row.value)), status: row.status }))
+  }
+  purge(owner: string, id: string, version: number) {
+    this.db.transaction(() => {
+      const head = this.head(owner, id)
+      if (head.version !== version || head.status !== 'withdrawn') throw new Error('只能清理当前已撤回资料，请重新读取。')
+      const rows = this.db.prepare('SELECT version,value FROM contact_material_versions WHERE id=?').all(id) as { version: number; value: string }[]
+      for (const row of rows) this.db.prepare('UPDATE contact_material_versions SET bytes=0,value=? WHERE id=? AND version=?').run(JSON.stringify({ ...JSON.parse(row.value), content: '', status: 'removed' }), id, row.version)
+      this.db.prepare("UPDATE contact_materials SET status='removed' WHERE id=?").run(id)
+    })()
   }
 }

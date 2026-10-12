@@ -32,7 +32,12 @@ import type { AnalyticsQuery } from '../../shared/agent-analytics'
 
 type Profile = { character_id: string; settings: string; revision: number; next_at: number; failures: number; focus_topic_id: string | null }
 type RunRow = { id: string; character_id: string; revision: number; status: AgentRunStatus; created_at: number; updated_at: number; question: string; answer: string; summary: string; error: string; input: string; topic_id: string | null; topic_revision: number | null }
-const mapRun = (row: RunRow): AgentRun => ({ id: row.id, characterId: row.character_id, revision: row.revision, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, question: row.question, answer: row.answer, summary: row.summary, error: row.error, topicId: row.topic_id, ...(JSON.parse(row.input).revisionScope === 'presentation' ? { revisionScope: 'presentation' as const } : {}), ...(row.status === 'waiting' && JSON.parse(row.input).questionInputs ? { inputFields: JSON.parse(row.input).questionInputs } : {}) })
+function runContext(row: RunRow): import('../../shared/contact-content').ContactContextRecord | undefined {
+  const input = JSON.parse(row.input), memories = input.suppliedMemories ?? [], materials = input.contextReferences?.materials ?? []
+  if (!memories.length && !materials.length) return undefined
+  return { characterId: row.character_id, requestId: row.id, memories, materials, truncated: input.memoriesTruncated === true, status: ['failed', 'cancelled', 'interrupted'].includes(row.status) ? 'failed' : 'completed' }
+}
+const mapRun = (row: RunRow): AgentRun => ({ contactContext: runContext(row), id: row.id, characterId: row.character_id, revision: row.revision, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, question: row.question, answer: row.answer, summary: row.summary, error: row.error, topicId: row.topic_id, ...(JSON.parse(row.input).revisionScope === 'presentation' ? { revisionScope: 'presentation' as const } : {}), ...(row.status === 'waiting' && JSON.parse(row.input).questionInputs ? { inputFields: JSON.parse(row.input).questionInputs } : {}) })
 const dayStart = (now: number) => { const date = new Date(now); date.setHours(0, 0, 0, 0); return date.getTime() }
 
 const failureDelay = (settings: AgentSettings, failures: number) => settings.paceWriting
@@ -304,6 +309,13 @@ export class AgentStore {
     input.contextReferences ??= { memories: [] }
     input.contextReferences.materials ??= []
     if (!input.contextReferences.materials.some((m: import('../../shared/contact-materials').MaterialReadRef) => m.id === ref.id && m.version === ref.version && m.start === ref.start && m.end === ref.end)) input.contextReferences.materials.push(ref)
+    this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), runId)
+  }
+  recordMemoryContext(runId: string) {
+    const run = this.getRun(runId)
+    if (!run) throw new Error('工作记录不存在。')
+    const input = JSON.parse(run.input)
+    input.suppliedMemories = input.contextReferences?.memories ?? []
     this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), runId)
   }
   invalidateMaterial(owner: string, materialId: string) {

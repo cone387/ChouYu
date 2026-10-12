@@ -12,14 +12,17 @@ export default function ContactPortfolio({ characterId, onOpen, initialRef, init
   const [items, setItems] = useState<PortfolioItem[]>([]), [topics, setTopics] = useState<AgentTopic[]>([])
   const [cursor, setCursor] = useState<string | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false)
   const [opened, setOpened] = useState<DeliveryRef | null>(initialRef ?? null)
+  const [hasUpdates, setHasUpdates] = useState(false), updates = useRef(0)
   const generation = useRef(0), list = useRef<HTMLElement>(null), returnButton = useRef<HTMLButtonElement | null>(null)
   const load = async (next?: string) => {
     const request = ++generation.current
+    const updateAtStart = updates.current
     setLoading(true); setError('')
     try {
       const [page, work] = await Promise.all([window.electronAPI.agents.portfolio(characterId, { ...query, ...(next ? { cursor: next } : {}) }), window.electronAPI.agents.get(characterId)])
       if (request !== generation.current) return
       setTopics(work.topics); setItems(old => next ? [...old, ...page.items] : page.items); setCursor(page.nextCursor)
+      if (!next && updates.current === updateAtStart) setHasUpdates(false)
     } catch (e) { if (request === generation.current) setError(e instanceof Error ? e.message : String(e)) }
     finally { if (request === generation.current) setLoading(false) }
   }
@@ -28,7 +31,7 @@ export default function ContactPortfolio({ characterId, onOpen, initialRef, init
   useEffect(() => {
     let alive = true, request = 0
     const update = async () => { const n = ++request; try { const data = await window.electronAPI.agents.get(characterId); if (alive && n === request) setTopics(data.topics) } catch (e) { if (alive && n === request) setError(String(e)) } }
-    const dispose = window.electronAPI.agents.onChanged(id => { if (id === characterId) void update() })
+    const dispose = window.electronAPI.agents.onChanged(id => { if (id === characterId) { updates.current++; setHasUpdates(true); void update() } })
     const timer = setInterval(update, 5000)
     return () => { alive = false; dispose(); clearInterval(timer) }
   }, [characterId])
@@ -36,6 +39,7 @@ export default function ContactPortfolio({ characterId, onOpen, initialRef, init
   return <section className="contact-portfolio" data-contact-portfolio={characterId} aria-label="成果集">
     <section ref={list} hidden={Boolean(opened)}>
       <div className="topic-heading"><h4>成果集</h4><span className="agent-caption">已正式保存的作品</span></div>
+      {hasUpdates && <p role="status">联系人有更新，当前列表与阅读版本保持不变。<button type="button" data-portfolio-refresh disabled={loading} onClick={() => void load()}>重新读取成果集</button></p>}
       <form className="portfolio-filters" onSubmit={e => { e.preventDefault(); setQuery(q => ({ ...q, query: search })) }}>
         <label>搜索正文<input data-portfolio-search type="search" value={search} maxLength={1000} onChange={e => setSearch(e.target.value)} placeholder="标题或正文中的文字" /></label>
         <button type="submit" disabled={loading}>搜索</button>

@@ -83,7 +83,7 @@ const verifyMigration = () => {
   if (!Array.isArray(migrated.sessions) || migrated.sessions.length === 0) throw new Error('Migrated session list is empty')
   const active = migrated.sessions.find((session) => session.id === migrated.activeSessionId)
   if (!active) throw new Error('Migrated active session is missing')
-  if (active.messages?.length !== 2) throw new Error(`Expected 2 migrated messages, received ${active.messages?.length}`)
+  if (active.messages?.length !== 2) throw new Error(`Expected 2 migrated messages, received ${active.messages?.length}: ${JSON.stringify(active.messages?.map(({ id, role, content }) => ({ id, role, content: content.slice(0, 160) })))}`)
   if (active.title !== '迁移测试对话') throw new Error(`Unexpected migrated title: ${active.title}`)
   if (!fs.existsSync(memoryDatabasePath) || fs.statSync(memoryDatabasePath).size === 0) {
     throw new Error('SQLite memory database was not created')

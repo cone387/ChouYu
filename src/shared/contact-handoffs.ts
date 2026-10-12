@@ -4,7 +4,7 @@ export type HandoffRequest = { requestId: string; source: DeliveryRef; recipient
 export type Handoff = { id: string; source: DeliveryRef; recipientId: string; topicId: string; description: string; createdAt: number; continuous: boolean }
 export type HandoffWork = { description: string; requestLog: string; tokens?: number; continuous: boolean }
 export type HandoffPreparation = { kind: 'ready'; token: string; request: HandoffRequest; work: HandoffWork } | { kind: 'question'; question: string } | { kind: 'committed'; handoff: Handoff }
-export type HandoffState = { handoff: Handoff; status: string; reviewedVersion?: number; latestVersion: number }
+export type HandoffState = { handoff: Handoff; status: string; state?: import('./task-state').TaskState; reviewedVersion?: number; latestVersion: number }
 export interface ContactHandoffAPI {
   prepareHandoff(owner: string, request: HandoffRequest): Promise<HandoffPreparation>
   commitHandoff(owner: string, preparation: HandoffPreparation): Promise<Handoff>

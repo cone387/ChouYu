@@ -55,6 +55,28 @@ export async function runContactMaterialSmoke(window: BrowserWindow, owner: stri
     await click(`${row} [data-material-withdraw]`); await waitForRenderer(window, `!document.querySelector('${row}')`)
     const rejected = await run(`window.electronAPI.agents.readMaterial(${ownerJson},{query:''},${JSON.stringify(original)}).then(()=>false,()=>true)`)
     if (!rejected) throw new Error('Withdrawn old material remains readable')
+    await click('.contact-material-cleanup summary')
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-material-cleanup="${original.id}"]'))`)
+    await click(`[data-material-cleanup="${original.id}"]`)
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-material-cleanup-dialog][open]'))")
+    if (process.env.CHOUYU_SMOKE_ARTIFACTS) {
+      const themeBefore = await run('document.documentElement.dataset.theme')
+      for (const theme of ['light', 'dark']) for (const width of [375, 1024]) {
+        await run(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`)
+        window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewSize: { width, height: 900 }, deviceScaleFactor: 1, scale: 1, viewPosition: { x: 0, y: 0 } })
+        await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+        if (!await run("(()=>{const d=document.querySelector('[data-material-cleanup-dialog]'),r=d.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight&&d.scrollWidth<=d.clientWidth+1})()")) throw Error('Material cleanup dialog overflows')
+        writeFileSync(join(process.env.CHOUYU_SMOKE_ARTIFACTS, `material-cleanup-${theme}-${width}.png`), (await window.webContents.capturePage()).toPNG())
+      }
+      window.webContents.disableDeviceEmulation(); await run(`document.documentElement.dataset.theme=${JSON.stringify(themeBefore || 'light')}`)
+    }
+    store.db.exec("CREATE TRIGGER material_purge_failure BEFORE UPDATE ON contact_material_versions BEGIN SELECT RAISE(ABORT,'material purge failure'); END")
+    try {
+      await click('[data-material-purge]'); await waitForRenderer(window, "document.querySelector('[data-material-cleanup-dialog] [role=alert]')?.textContent.includes('material purge failure')")
+    } finally { store.db.exec('DROP TRIGGER material_purge_failure') }
+    await click('[data-material-purge]'); await waitForRenderer(window, "!document.querySelector('[data-material-cleanup-dialog]')")
+    if (store.materials.history(owner, original.id).some(v => v.status !== 'removed')) throw Error('Cleanup did not retain removed source versions')
+    if (await run(`window.electronAPI.agents.readMaterial(${ownerJson},{query:''},${JSON.stringify(original)}).then(()=>false,e=>String(e).includes('正文已移除'))`) !== true) throw Error('Removed source does not explain missing body')
     console.log('CHOUYU_CONTACT_MATERIAL_SMOKE_PASSED import failure/retry, update/history, file copy, restart, actual tool reference and withdrawal')
   } finally { setReference(undefined); store.db.exec('DROP TRIGGER IF EXISTS material_smoke_failure'); store.close(); saveConfig(config); selectChatSession(active); await flushDatabase() }
 }

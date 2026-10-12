@@ -14,6 +14,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefO
 import ReactMarkdown from 'react-markdown'
 import ContactCitation from '../Contacts/ContactCitation'
 import ContactContextReferences from '../Contacts/ContactContextReferences'
+import ContactDeliveryReceipt from '../Contacts/ContactDeliveryReceipt'
 import { ContactLink } from '../Contacts/contactNavigation'
 import remarkGfm from 'remark-gfm'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../../../../shared/conversation-search'
@@ -344,7 +345,8 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
             </div>
             {msg.agentNotice && !msg.agentNotice.interactionId && msg.agentNotice.kind !== 'question' && onAgentNotice && <div className="agent-message-links" role="group" aria-label="工作进展来源">
               <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'work')}>查看任务</button>
-              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>{progressUpdate ? '查看本轮成果' : '查看本轮记录'}</button>
+              <ContactDeliveryReceipt communication={msg.communication} />
+              <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>查看本轮记录</button>
             </div>}
               {sessionId && assistantKind && ['rest', 'task', 'snooze', 'task-backlog'].includes(assistantKind) && <ReminderActions sessionId={sessionId} message={msg} pending={snoozes} canPostpone={assistantKind !== 'task-backlog'} />}
             <div className="message-meta">

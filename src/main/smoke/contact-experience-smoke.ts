@@ -20,17 +20,31 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
   }
   const fill = (selector: string, value: string, select = false) => run(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLTextAreaElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}))})()`)
   const navigate = (target: unknown) => run(`new Promise((resolve,reject)=>{const detail={target:${JSON.stringify(target)},handled:false,resolve,reject};window.dispatchEvent(new CustomEvent('chouyu:contact-navigation',{detail}));if(!detail.handled)reject(Error('No navigation handler'))})`)
+  await run(`window.electronAPI.agents.get(${JSON.stringify(owner)})`)
   const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db')), originalConfig = getConfig(), originalSession = getActiveSession().id
   let material: { id: string; version: number }, topicId = '', initial = true
+  let stale: { id: string; revision: number; mode: string; changed: boolean } | undefined
   const requests: { model: string; messages: unknown[] }[] = []
   const prose = '沈青站在雾港，望着周四亮起的蓝色灯光。潮汐带来一封信，她读了很久，才慢慢转身。'
   const server = createServer((request, response) => {
-    let body = ''; request.on('data', chunk => { body += chunk }); request.on('end', () => {
+    let body = ''; request.on('data', chunk => { body += chunk }); request.on('end', async () => {
       try {
         const payload = JSON.parse(body), prompt = JSON.stringify(payload.messages); requests.push({ model: payload.model, messages: payload.messages })
         let delta: unknown
         const call = (name: string, args: unknown) => ({ tool_calls: [{ index: 0, id: name, type: 'function', function: { name, arguments: JSON.stringify(args) } }] })
-        if (payload.messages.some((message: { role: string; content?: unknown }) => message.role === 'user' && typeof message.content === 'string' && message.content.startsWith('EXPERIENCE_DISCUSSION'))) delta = { content: '蓝色灯光与来信形成了悬念，节奏可以在结尾收紧。' }
+        if (prompt.includes('EXPERIENCE_STALE_CONTEXT') && prompt.includes('你只负责路由')) delta = { content: '{"kind":"none"}' }
+        else if (prompt.includes('EXPERIENCE_STALE_CONTEXT') && stale) {
+          if (!stale.changed) {
+            stale.changed = true
+            if (stale.mode === 'self') delta = call('update_contact_memory', { id: stale.id, revision: stale.revision, content: 'explicit correction' })
+            else {
+            if (stale.mode === 'forget') await run(`window.electronAPI.agents.forgetMemory(${JSON.stringify(owner)},${JSON.stringify(stale.id)},${stale.revision})`)
+            else await run(`window.electronAPI.agents.updateMemory(${JSON.stringify(owner)},${JSON.stringify(stale.id)},${stale.revision},${JSON.stringify({ content: 'corrected fact', kind: 'preference', scope: { kind: 'contact' }, source: { kind: 'user', at: Date.now() } })})`)
+            delta = stale.mode === 'tool' ? call('write_skill_file', { skillId: 'experience-output', path: 'stale.md', content: 'must not be written' }) : { content: 'late obsolete answer' }
+            }
+          } else delta = { content: 'late obsolete answer' }
+        }
+        else if (payload.messages.some((message: { role: string; content?: unknown }) => message.role === 'user' && typeof message.content === 'string' && message.content.startsWith('EXPERIENCE_DISCUSSION'))) delta = { content: '蓝色灯光与来信形成了悬念，节奏可以在结尾收紧。' }
         else if (payload.model !== 'review-model' && initial && prompt.includes('正在执行用户交付的写作任务')) {
           const toolMessages = payload.messages.filter((m: { role: string }) => m.role === 'tool')
           if (!toolMessages.length) delta = call('read_contact_material', { ...material, topicId })
@@ -58,6 +72,29 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
     store.remember(owner, 'EXPERIENCE_PRIVATE_OWNER_MEMORY')
     const root = join(app.getPath('userData'), 'experience-skill'); mkdirSync(root); writeFileSync(join(root, 'SKILL.md'), '---\nname: 整理正文文件\ndescription: 保存实际正文。\n---\n使用 write_skill_file 保存正文到 story.md。')
     const library = contactSkillLibrary(); library.publish('experience-output', root); library.configure(owner, 'experience-output', 'enable', library.list(owner).revision)
+    for (const mode of ['update', 'forget', 'tool', 'unrelated', 'self']) {
+      const workspace = await run(`window.electronAPI.db.createSession('Stale context regression',${JSON.stringify(owner)})`)
+      const sessionId = workspace.activeSession.id
+      const memory = await run(`window.electronAPI.agents.createMemory(${JSON.stringify(owner)},${JSON.stringify({ content: 'obsolete fact', kind: 'preference', scope: { kind: 'session', sessionId }, source: { kind: 'user', at: Date.now() } })})`)
+      stale = { id: memory.id, revision: 1, mode, changed: false }
+      const requestSession = mode === 'unrelated' ? (await run(`window.electronAPI.db.createSession('Unrelated context',${JSON.stringify(owner)})`)).activeSession.id : sessionId
+      if (mode === 'self') await run("window.__approveMemoryRegression=window.electronAPI.ai.onToolApprovalRequest(request=>{if(request.name==='update_contact_memory')window.electronAPI.ai.resolveToolRequest(request.approvalId,true)});true")
+      const result = await run(`window.electronAPI.ai.startStream(${JSON.stringify({ requestId: 'stale-' + mode, characterId: owner, sessionId: requestSession, messages: [{ role: 'user', content: 'EXPERIENCE_STALE_CONTEXT just answer' }], systemPrompt: 'Reply briefly.' })})`)
+      if (mode === 'self') await run('window.__approveMemoryRegression()')
+      if (mode === 'unrelated' || mode === 'self') {
+        if (!result.ok) throw Error('Valid memory operation failed: ' + JSON.stringify(result))
+        if (mode === 'self' && store.memoryLibrary.get(owner, memory.id).content !== 'explicit correction') throw Error('Acknowledged memory tool did not write')
+      } else {
+        if (result.ok || !stale.changed) throw Error('Stale memory request succeeded: ' + mode)
+        if (!/记忆|取消/.test(result.error || '')) throw Error('Unexpected stale request failure: ' + JSON.stringify(result))
+      }
+      if (store.files.list(owner).some(f => f.name === 'stale.md')) throw Error('Late tool archived obsolete output')
+    }
+    stale = undefined
+    console.log('CHOUYU_CONTEXT_INVALIDATION_PASSED update/forget/late tool')
+    if (process.env.CHOUYU_SMOKE_CONTEXT_INVALIDATION_ONLY) return
+    await click('[data-agent-tab=portfolio]')
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-portfolio .portfolio-list'))")
     await run(`window.electronAPI.agents.run(${JSON.stringify(owner)},${JSON.stringify(topicId)})`)
     await waitForRenderer(window, `(async()=>{const d=await window.electronAPI.agents.delivery(${JSON.stringify(owner)},${JSON.stringify(topicId)});return d?.version===1})()`, 40000).catch(e => { console.error('EXPERIENCE_RUN', store.overview(owner).runs, requests.map(r => ({ model: r.model, tail: JSON.stringify(r.messages).slice(-900) }))); throw e })
     const first = store.deliveries.get(topicId)!, fileId = first.fileIds?.[0]
@@ -65,6 +102,10 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
     if (Buffer.from(store.files.read(owner, fileId).bytes).toString() !== prose) throw Error('Archived bytes mismatch')
     const snapshot = JSON.parse(store.getRun(first.runId)!.input)
     if (!JSON.stringify(snapshot).includes(memory.id) || !JSON.stringify(snapshot).includes(material.id)) throw Error('Task lacks scoped source snapshots')
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-portfolio-refresh]'))")
+    if (await run(`Boolean(document.querySelector('[data-portfolio-item="${topicId}"]'))`)) throw Error('Portfolio reordered its existing snapshot')
+    await click('[data-portfolio-refresh]')
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-portfolio-item="${topicId}"]'))`)
     initial = false
     const ref = { characterId: owner, topicId, version: 1, sectionId: 'text' }
     await navigate({ kind: 'delivery', ref }); await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-reading-reference]'))")
@@ -90,6 +131,10 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
     await waitForRenderer(window, `(async()=>{const s=await window.electronAPI.agents.handoffState(${JSON.stringify(owner)},${JSON.stringify(handoff.id)});return s.reviewedVersion===1})()`, 40000)
     if (requests.filter(r => r.model === 'review-model').some(r => JSON.stringify(r.messages).includes('EXPERIENCE_PRIVATE_OWNER_MEMORY'))) throw Error('Private memory crossed review boundary')
     await navigate({ kind: 'delivery', ref: { characterId: reviewer.id, topicId: handoff.topicId, version: 1 } }); await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-return-review]'))")
+    await run("document.querySelector('.contact-work-sheet[open] .delivery-reader details').open=true")
+    await click('.contact-work-sheet[open] [data-delivery-source]')
+    await waitForRenderer(window, `(()=>{const r=document.querySelector('.contact-work-sheet[open] [data-reading-reference]');if(!r)return false;const ref=JSON.parse(r.dataset.readingReference);return ref.characterId===${JSON.stringify(owner)}&&ref.topicId===${JSON.stringify(topicId)}&&ref.version===1})()`)
+    await navigate({ kind: 'delivery', ref: { characterId: reviewer.id, topicId: handoff.topicId, version: 1 } }); await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] [data-return-review]'))")
     await click('.contact-work-sheet[open] [data-return-review]'); await waitForRenderer(window, "Boolean(document.querySelector('[data-delivery-feedback]'))")
     await fill('[data-delivery-feedback]', '采纳精简结尾的意见。'); await click('[data-delivery-submit]'); await waitForRenderer(window, "!document.querySelector('[data-contact-revision-dialog]')", 15000)
     await waitForRenderer(window, `(async()=>{const d=await window.electronAPI.agents.delivery(${JSON.stringify(owner)},${JSON.stringify(topicId)});return d?.version===2})()`, 40000).catch(e => { console.error('EXPERIENCE_REVISION', JSON.stringify({ runs: store.overview(owner).runs, requests: requests.slice(-6) })); throw e })
@@ -98,7 +143,24 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
     if (await run("document.querySelector('[data-delivery-feedback]').value") !== '过期意见草稿') throw Error('Conflict erased opinion')
     await waitForRenderer(window, "document.querySelector('[data-contact-revision-dialog] footer button[type=button]')?.disabled===false")
     await click('[data-contact-revision-dialog] footer button[type=button]')
-    await navigate({ kind: 'delivery', ref: { characterId: owner, topicId, version: 2 } }); await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .contact-markdown')?.textContent.includes('转身回家')")
+    await flushDatabase()
+    for (const version of [1, 2]) {
+      const session = getSessions().filter(s => s.characterId === owner).map(s => getSession(s.id)!).find(s => s.messages.some(m => m.communication?.source.kind === 'task' && m.communication.source.topicId === topicId && m.communication.source.artifact?.version === version))
+      const message = session?.messages.find(m => m.communication?.source.kind === 'task' && m.communication.source.topicId === topicId && m.communication.source.artifact?.version === version)
+      if (!message || !session) throw Error('No persisted delivery receipt for version ' + version)
+      await navigate({ kind: 'message', sessionId: session.id, messageId: message.id })
+      const selector = `[data-message-id="${message.id}"] [data-delivery-receipt]`
+      await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(selector)}))`); await click(selector)
+      await waitForRenderer(window, `document.querySelector('.contact-work-sheet[open] [data-delivery-version]')?.dataset.deliveryVersion==='${version}'`)
+    }
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .contact-markdown')?.textContent.includes('转身回家')")
+    await waitForRenderer(window, "Boolean(document.querySelector('.contact-work-sheet[open] .contact-context-references summary'))").catch(e => { console.error('BACKGROUND_REFERENCES', JSON.stringify(store.detail(owner, store.deliveries.get(topicId)!.runId))); throw e })
+    await click('.contact-work-sheet[open] .contact-context-references summary')
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .contact-context-references')?.textContent.includes('本任务主角叫沈青')")
+    await run(`window.electronAPI.agents.updateMemory(${JSON.stringify(owner)},${JSON.stringify(memory.id)},1,${JSON.stringify({ content: '后来改名陆白', kind: 'project', scope: { kind: 'task', topicId }, source: { kind: 'user', at: Date.now() } })})`)
+    if (!await run("document.querySelector('.contact-work-sheet[open] .contact-context-references').textContent.includes('第 1 版：本任务主角叫沈青')")) throw Error('Background references drifted to corrected memory')
+    await run(`window.electronAPI.agents.forgetMemory(${JSON.stringify(owner)},${JSON.stringify(memory.id)},2)`)
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .contact-context-references')?.textContent.includes('此记忆已移除')")
     if (Buffer.from(store.files.read(owner, fileId).bytes).toString() !== prose) throw Error('Revision changed archived original bytes')
     mkdirSync('artifacts/contact-experience', { recursive: true }); writeFileSync('artifacts/contact-experience/receipt.png', (await window.webContents.capturePage()).toPNG())
     writeFileSync('artifacts/contact-experience/result.json', JSON.stringify({ owner, topicId, material, memoryId: memory.id, fileId, handoff, sourceVersion: 1, revisedVersion: 2, requests: requests.length }, null, 2))
