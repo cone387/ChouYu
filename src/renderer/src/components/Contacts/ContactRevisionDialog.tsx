@@ -4,8 +4,9 @@ import type { AgentTopic } from '../../../../shared/agents'
 import { deliveryText, type ContentCitation } from '../../../../shared/contact-content'
 import type { AgentDelivery } from '../../../../shared/agent-delivery'
 
-export default function ContactRevisionDialog({ characterId, topic, citation, scope = 'content', onClose, onSaved }: {
+export default function ContactRevisionDialog({ characterId, topic, citation, review, scope = 'content', onClose, onSaved }: {
   characterId: string; topic: AgentTopic; citation: ContentCitation; scope?: 'content' | 'presentation'; onClose: () => void; onSaved: () => void
+  review?: { handoffId: string; citation: ContentCitation }
 }) {
   const dialog = useRef<HTMLDialogElement>(null), alive = useRef(true), pending = useRef(false), title = useId()
   const [feedback, setFeedback] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false)
@@ -16,7 +17,8 @@ export default function ContactRevisionDialog({ characterId, topic, citation, sc
     if (pending.current || !feedback.trim()) return
     pending.current = true; setBusy(true); setError('')
     try {
-      if (scope === 'presentation') await window.electronAPI.agents.reviseTopic(characterId, topic.id, revision, feedback, undefined, 'presentation', basis.ref.version)
+      if (review) await window.electronAPI.agents.returnReview(characterId, { handoffId: review.handoffId, review: review.citation, source: basis, feedback, topicRevision: revision })
+      else if (scope === 'presentation') await window.electronAPI.agents.reviseTopic(characterId, topic.id, revision, feedback, undefined, 'presentation', basis.ref.version)
       else await window.electronAPI.agents.reviseCitation(characterId, revision, basis, feedback)
       if (alive.current) { onSaved(); onClose() }
     } catch (e) {
@@ -30,6 +32,7 @@ export default function ContactRevisionDialog({ characterId, topic, citation, sc
       <h3 id={title}>{scope === 'presentation' ? '修改阅读样式' : '提出修改意见'}</h3>
       <p>{topic.title} · 版本 {basis.ref.version}</p>
       {basis.anchor && <blockquote className="citation-quote">{basis.anchor.quote}</blockquote>}
+      {review && <p className="citation-quote">交回评审第 {review.citation.ref.version} 版中的意见：{review.citation.anchor?.quote || '当前选择的评审分节'}</p>}
       <label htmlFor={`${title}-feedback`}>修改意见</label>
       <textarea id={`${title}-feedback`} data-delivery-feedback autoFocus rows={4} maxLength={2000} required disabled={busy} value={feedback} onChange={e => setFeedback(e.target.value)} placeholder={scope === 'presentation' ? '描述希望调整的阅读样式，正文与进度保持不变。' : '例如：保留引用的这一段，调整后面的对话。'} />
       <p className="agent-caption">按所选版本修订一轮，保留旧版本，并沿用任务的额度与权限。</p>
@@ -37,10 +40,11 @@ export default function ContactRevisionDialog({ characterId, topic, citation, sc
       {latest && <details open><summary>已有版本 {latest.version}，请先核对变化</summary>
         {basis.anchor && <><strong>原引用</strong><blockquote className="citation-quote">{basis.anchor.quote}</blockquote></>}
         <strong>新版对应分节</strong><p className="citation-quote">{deliveryText(latest.sections.find(s => s.id === basis.ref.sectionId)?.body ?? '原分节已移除。').slice(0, 2000)}</p>
-        <button type="button" disabled={busy || Boolean(basis.ref.sectionId && !latest.sections.some(s => s.id === basis.ref.sectionId))} onClick={async () => {
+        {review && <p>这份评审针对旧版原文，请先评审新版后再交回意见。</p>}
+        {!review && <button type="button" disabled={busy || Boolean(basis.ref.sectionId && !latest.sections.some(s => s.id === basis.ref.sectionId))} onClick={async () => {
           try { const work = await window.electronAPI.agents.get(characterId), current = work.topics.find(t => t.id === topic.id); if (!current) throw new Error('任务已删除。'); if (alive.current) { setRevision(current.revision); setBasis({ ref: { ...basis.ref, version: latest.version } }); setLatest(null); setError('已改为基于新版分节；意见仍保留，请核对后提交。') } }
           catch (e) { if (alive.current) setError(String(e)) }
-        }}>改为基于此新版分节</button></details>}
+        }}>改为基于此新版分节</button>}</details>}
       <footer><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="submit" data-delivery-submit className="primary" disabled={busy || !feedback.trim()}>{busy ? '提交中…' : '提交并修订'}</button></footer>
     </form>
   </dialog>, document.body)

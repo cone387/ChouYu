@@ -60,3 +60,9 @@ Schema 11 stores immutable UTF-8 versions with contact/task scope. Limits: 2 MB 
 Chat and background work receive a directory, not invented reading receipts. Read tools return real slices; background directory versions remain fixed per run. Actual reads appear in chat references and saved outcome sources. Withdrawal invalidates affected runs while saved outcomes remain intact.
 
 Validation: 1426 full-suite tests passed, 19 skipped; typecheck/build passed; Electron import failure/retry, update/history, file copy, worker restart, real tool-to-provider content and withdrawal all passed. Modal screenshots at artifacts/contact-materials cover 375/1024 and both themes; inspected light375/dark1024, corrected native select/input styling to match established controls without focus decoration.
+
+### F: Versioned review handoffs
+
+EXP-10/11: persisted source/version and an actual receiver task; both sharing permissions are checked before preparation, commit, reading and delivery. Continuous reviews compare prose hashes and preserve paused/completed states. Returning a selected opinion uses the original author revision flow with both source versions validated.
+
+Evidence: handoffs.test.ts and handoff-review.test.ts (5 passing), F2-final-suite (1432 passed/19 skipped), typecheck and build passed. Electron F2-smoke-final exited 0 with CHOUYU_CONTACT_HANDOFF_SMOKE_PASSED: real modal mouse actions, parser and reviewer requests, private-memory isolation, worker restart, returned opinion, author version 2 and stale draft retention. Inspected light375/dark1024 screenshots in artifacts/contact-handoffs. Real-model semantic quality remains a FINAL acceptance requirement.

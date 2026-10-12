@@ -6,11 +6,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn() })
-async function fixture() {
+async function fixture(execute = false) {
   const directory = mkdtempSync(join(tmpdir(), 'contact-handoff-'))
-  let service = new AgentService(directory, () => {})
+  let service = new AgentService(directory, () => {}, () => async (_prompt, signal) => new Promise<string>((_resolve, reject) => { signal.throwIfAborted(); signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }) }))
   cleanup.push(async () => { await service.close(); if (!directory.startsWith(join(tmpdir(), 'contact-handoff-'))) throw Error('Unexpected cleanup path'); rmSync(directory, { recursive: true, force: true }) })
-  const identities = ['alice', 'bob'].map(id => ({ id, soul: id, conversation: '', config: null }))
+  const identities = ['alice', 'bob'].map(id => ({ id, soul: id, conversation: '', config: execute ? { provider: 'openai' as const, baseUrl: 'https://example.invalid', apiKey: 'fixture', model: 'fixture', thinkingDisabledModels: [] } : null }))
   await service.sync(identities)
   for (const id of ['alice', 'bob']) service.store.save(id, { ...DEFAULT_AGENT_SETTINGS, goal: 'Work', enabled: false, shareDeliveries: true, readContactDeliveries: true })
   const topic = service.store.topics.create('alice', { title: 'Source', goal: 'Write', constraints: '' }, 'user')
@@ -34,6 +34,13 @@ it('commits one actual receiver task atomically and replays it after restart wit
   await f.reopen()
   expect((await f.service.request('commitHandoff', 'alice', [prepared])).topicId).toBe(handoff.topicId)
   await expect(f.service.request('stageHandoff', 'alice', [{ ...f.request, description: 'Different request' }, { description: 'Different request', requestLog: '', continuous: false }])).rejects.toThrow()
+})
+it('retains the immutable source pin when the worker starts the newly assigned review', async () => {
+  const f = await fixture(true)
+  const prepared = await f.service.request('stageHandoff', 'alice', [f.request, { description: 'Review once', requestLog: '', continuous: false }])
+  const handoff = await f.service.request('commitHandoff', 'alice', [prepared])
+  const run = f.service.store.overview('bob').runs.find(r => r.topicId === handoff.topicId)!
+  expect(JSON.parse(f.service.store.getRun(run.id)!.input).handoffPin?.source).toEqual(f.request.source)
 })
 it('validates both permissions, ownership and pinned version again on commit', async () => {
   const f = await fixture(), store = f.service.store, receiverCount = store.topics.list('bob').length

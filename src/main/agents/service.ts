@@ -224,6 +224,13 @@ export class AgentService {
       case 'stageHandoff': return this.store.handoffs.stage(id, args[0] as import('../../shared/contact-handoffs').HandoffRequest, args[1] as import('../../shared/contact-handoffs').HandoffWork)
       case 'commitHandoff': { const result = this.store.handoffs.commit(id, args[0] as import('../../shared/contact-handoffs').HandoffPreparation); this.changed(id); this.changed(result.recipientId); this.tick(); return result }
       case 'handoffs': return this.store.handoffs.list(id, args[0] as string | undefined)
+      case 'handoffState': return this.store.handoffs.state(id, args[0] as string)
+      case 'returnReview': {
+        if (!this.identity(id).config) throw new Error('请先配置模型。')
+        this.checkSearch(id)
+        this.store.handoffs.returnReview(id, args[0] as Parameters<import('../../shared/contact-handoffs').ContactHandoffAPI['returnReview']>[1], this.identity(id).conversation)
+        break
+      }
       case 'materialList': return this.store.materials.list({ ...(args[0] as ContactReadContext), characterId: id })
       case 'assertContextCurrent': this.store.assertContextCurrent(id, args[0] as import('../../shared/contact-content').ContextReferences); return
       case 'readMaterial': return this.store.materials.read({ ...(args[0] as ContactReadContext), characterId: id }, args[1] as import('../../shared/contact-materials').MaterialRef, args[2] as number | undefined)
@@ -298,6 +305,8 @@ export class AgentService {
     }
   }
   private startRun(run: NonNullable<ReturnType<AgentStore['getRun']>>) {
+    try { this.store.handoffs.bindRun(run.id) } catch (error) { this.store.fail(run.id, error instanceof Error ? error.message : '交接来源无法读取。'); this.changed(run.character_id); return }
+    run = this.store.getRun(run.id)!
     if (run.topic_id && JSON.parse(run.input).revisionScope !== 'presentation') this.store.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(run.topic_id, run.character_id)
     const identity = this.identity(run.character_id), controller = new AbortController()
     const input = JSON.parse(run.input)

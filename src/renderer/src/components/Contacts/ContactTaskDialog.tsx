@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import ContactTaskDescription from './ContactTaskDescription'
 import type { AgentTopic, AgentOverview } from '../../../../shared/agents'
 import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 import type { AssistantRoutine } from '../../../../shared/assistant-routines'
@@ -75,8 +76,7 @@ export default function ContactTaskDialog({ characterId, editTask, deletion, rou
       {savedNotice ? <p role="status">任务已保存。{savedNotice}</p> : deleting ? <p>确定删除「{deletion?.title}」？{deletion?.description ?? '任务会停止执行，成果、运行和互动记录将一并删除，聊天消息保留。此操作无法撤销。'}</p> : <>
         {context.length > 0 && <section className="task-request-context" aria-label="已交代的任务"><strong>已交代的任务</strong>{context.map((turn, index) => <div key={index}><p>{index ? '你的补充：' : ''}{turn.request}</p>{index < context.length - 1 && <p className="agent-caption">{turn.question}</p>}</div>)}</section>}
         {question && <p role="status">{question}</p>}
-        <label htmlFor={`${titleId}-description`}>{question ? '补充说明' : '任务描述'}</label>
-        <textarea id={`${titleId}-description`} data-task-description autoFocus rows={question ? 3 : 6} maxLength={2000} required value={description} disabled={pending} onChange={event => setDescription(event.target.value)} placeholder={question ? "补充这个问题即可……" : "说说你想完成什么……"} />
+        <ContactTaskDescription id={`${titleId}-description`} question={question} value={description} disabled={pending} onChange={setDescription} />
         <p className="agent-caption">{duty ? `${duty.values.map(([label, value]) => `${label}：${value} 分钟`).join('；')}。直接说要改成多少。${duty.key === 'proactiveGreeting' ? '每日问好没有可调参数，只能启用或暂停。' : ''}` : editTask ? '直接描述任务目标和要求。保存会停止当前执行，已有成果和历史保留。' : question ? '保留前面的任务要求，只补充缺少的信息。' : characterId === DEFAULT_CHARACTER_ID ? '直接描述要做什么、什么时候做。例如：每个工作日早上八点半，汇总各联系人的进展和需要我回复的事情。缺少必要信息时我会继续问你。' : 'AI 会接下任务。忙碌或今日额度不足时先排队，当前任务完成或等待回复时接续；缺少必要信息会发消息向你确认。'}</p>
       </>}
       {error && <p role="alert" className="agent-error">{error}</p>}

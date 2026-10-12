@@ -512,6 +512,7 @@ export class AgentStore {
       const input = JSON.stringify({ revisionScope, revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: selectedMemories.items, contextReferences: { memories: selectedMemories.items.map(m => ({ id: m.id, revision: m.revision })) }, memoriesTruncated: selectedMemories.truncated, previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(-4000) })
       const runInput = assignment ? JSON.stringify({ ...JSON.parse(input), assignment: true, conversation: scheduled!.conversation || context.slice(-4000) }) : input
       this.db.prepare('INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input,topic_id,topic_revision) VALUES(?,?,?,\'queued\',?,?,?,?,?)').run(runId, id, profile.revision, now, now, runInput, topic.id, topic.revision)
+      this.handoffs.bindRun(runId)
       if (assignment) this.db.prepare("UPDATE task_schedule SET pending=0,conversation='' WHERE topic_id=?").run(topic.id)
       if (revisionScope !== 'presentation' && (settings.maxConcurrentTasks ?? 1) > 1) this.db.prepare('INSERT OR IGNORE INTO task_schedule(topic_id) VALUES(?)').run(topic.id)
       this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=? AND focus_topic_id=?').run(now + settings.intervalMinutes * 60000, id, topic.id)
@@ -583,6 +584,7 @@ export class AgentStore {
       if (busy.has(candidate.topic_id) || excluded.has(candidate.topic_id) || !candidate.pending && !settings.enabled) continue
       const topic = this.topics.get(id, candidate.topic_id)
       if (!canResearch(topic.status)) continue
+      if (!this.handoffs.needsReview(id, topic.id)) continue
       const failure = this.taskFailures.get(topic.id)
       const recovery = failure && failure.failures >= 3 ? this.providerRecovery(id, topic.id) : undefined
       if (failure && (failure.failures >= 3 && !recovery || Math.max(failure.next_at, recovery?.at ?? 0) > now)) continue
@@ -628,6 +630,7 @@ export class AgentStore {
     const run = this.getRun(runId)
     const profile = run && this.profile(run.character_id)
     if (!run || !profile || run.revision !== profile.revision || !['running', 'queued', 'interrupted', 'waiting'].includes(run.status)) throw new Error('本轮工作已取消或角色已删除。')
+    this.handoffs.checkRun(runId)
     const refs = JSON.parse(run.input).contextReferences as ContextReferences | undefined
     if (refs) this.assertContextCurrent(run.character_id, refs)
     if (run.topic_id) {
@@ -830,6 +833,10 @@ export class AgentStore {
       if (deliveryInput.revisionSectionId && delivery?.section?.id !== deliveryInput.revisionSectionId) throw new Error('成果没有更新指定分节，本轮未提交。')
       if (run.topic_id && progress && JSON.parse(run.input).deliveryVersion === 1) this.deliveries.commit(run.topic_id, report, progress, delivery)
       const committed = run.topic_id ? this.deliveries.get(run.topic_id) : null
+      if (progress?.status === 'completed' && committed?.runId === runId && this.handoffs.completeReview(runId)) {
+        progress = { ...progress, status: 'needs_evidence', nextStep: '等待原文有实质变化后继续评审。' }
+        report = { ...report, nextStep: progress.nextStep }
+      }
       this.db.prepare('INSERT OR IGNORE INTO reports(run_id,character_id,value) VALUES(?,?,?)').run(runId, run.character_id, JSON.stringify(report))
       if (run.topic_id) {
         if (!progress) throw new Error('缺少事项进展，本轮不能提交。')

@@ -80,7 +80,7 @@ export class AgentRuntime {
   async execute(runId: string, soul: string, model: AgentModel, signal: AbortSignal, changed: () => void = () => {}, searchKey = '') {
     const run = this.store.assertLive(runId)
     if (JSON.parse(run.input).revisionScope === 'presentation') return revisePresentation(this.store, runId, soul, model, signal, changed)
-    let input = JSON.parse(run.input) as { citationContext?: string; revisionSectionId?: string; deliveryVersion?: number; delivery?: Pick<AgentDelivery, 'version' | 'summary' | 'stages' | 'completionCriteria' | 'sections' | 'inputs' | 'presentation'> & { directory: { id: string; title: string }[] }; feedback?: string; assignment?: boolean; brief?: Brief; briefAnswer?: string; researchVersion?: number; baseline?: { evidence: { url: string; hash: string }[]; topicRevision: number }; settings: AgentSettings; topic?: AgentTopic; memories: unknown[]; previous: unknown[]; conversation: string }
+    let input = JSON.parse(run.input) as { handoffPin?: import('./handoffs').HandoffPin; citationContext?: string; revisionSectionId?: string; deliveryVersion?: number; delivery?: Pick<AgentDelivery, 'version' | 'summary' | 'stages' | 'completionCriteria' | 'sections' | 'inputs' | 'presentation'> & { directory: { id: string; title: string }[] }; feedback?: string; assignment?: boolean; brief?: Brief; briefAnswer?: string; researchVersion?: number; baseline?: { evidence: { url: string; hash: string }[]; topicRevision: number }; settings: AgentSettings; topic?: AgentTopic; memories: unknown[]; previous: unknown[]; conversation: string }
     const live = () => {
       signal.throwIfAborted(); this.store.assertLive(runId)
       for (const ref of this.store.research(runId)?.plan.contactRefs ?? []) this.contactSources.allowed(run.character_id, ref.characterId)
@@ -109,6 +109,11 @@ export class AgentRuntime {
     const graph = new StateGraph(State)
       .addNode('choose', async () => {
         live()
+        if (input.handoffPin) {
+          const pin = input.handoffPin, artifact = this.store.deliveries.get(pin.source.topicId, pin.source.version)!
+          const plan: AgentResearchPlan = { action: 'read_contacts', urls: [], query: '', reason: '读取用户指定的交接版本进行评审。', checkAfterMinutes: input.settings.intervalMinutes, contactRefs: artifact.sections.filter(s => !pin.source.sectionId || s.id === pin.source.sectionId).map(s => ({ ...pin.source, sectionId: s.id })) }
+          this.store.saveResearch(runId, { plan, searches: [], reads: [] }); return { plan, deferred: false }
+        }
         if (!autonomous) return { plan: defaultPlan, deferred: false }
         const cached = this.store.research(runId)
         if (cached) {
@@ -246,7 +251,7 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
       .addNode('read', async state => {
         if (state.plan?.action === 'read_contacts') {
           live()
-          const evidence = this.contactSources.read(run.character_id, run.topic_id!, state.plan.contactRefs!)
+          const evidence = input.handoffPin ? this.store.handoffs.evidence(runId) : this.contactSources.read(run.character_id, run.topic_id!, state.plan.contactRefs!)
           this.store.saveResearch(runId, { contactQuery: this.store.research(runId)?.contactQuery, plan: state.plan, searches: [], reads: evidence.map(e => ({ url: e.url, hash: e.hash, status: 'read' })) })
           if (!evidence.length) { this.store.defer(runId, '所选成果版本已处理，等待新增或修改后的内容', true); changed(); return { evidence, deferred: true } }
           for (const item of evidence) this.store.event(runId, 'contact-source', `已读取共享成果：${item.title}\n${item.url}\n内容指纹：${item.hash}`)

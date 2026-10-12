@@ -22,7 +22,7 @@
 
 **Files:** 新增 `ContactHandoffDialog.tsx`、`ContactHandoffs.tsx`、`src/main/smoke/contact-handoff-smoke.ts`、`src/main/agents/handoff-review.test.ts`；修改阅读器、`ContactTaskDialog.tsx`、`agents/{runtime,contact-sources,service}.ts`、`assistant-routines/companion.ts`、C 的引用/修订入口。
 **Interfaces:** `handoffState(owner,id):{handoff:Handoff;status:string;reviewedVersion?:number;latestVersion:number}` 使用原任务投影；`returnReview(owner,request:{handoffId:string;review:ContentCitation;source:ContentCitation;feedback:string;topicRevision:number}):Promise<AgentOverview>` 复用 C 的 reviseCitation，另保存评审来源，不直接改写正文。
-- [ ] 测试一份 v1 评审保留源版本，作者 v2 后显示未评审；持续模式只处理有变化哈希，样式变化不重评；普通交接不自动追新版；同文重复不重发；暂停/删除/撤权不复活；过期意见交回拒绝且草稿保留。运行 handoff-review.test.ts 确认红。
-- [ ] UI 接收者选择与任务描述弹窗共享输入组件，来源只读，缺权限跳原工作设置后可回草稿。协作记录可打开原文/评审任务，状态只读实际执行数据。
-- [ ] 持续评审沿原资料等待唤醒/预算/并发机制运行，记录实际处理 ref/hash；接收结果正文准确引用被评审原文。用户单次选意见交回作者，版本检查后创建原任务修订；ChouYu 只读引用阻塞，不批准意见。
-- [ ] Electron 两联系人全流程、重启/权限撤回/新版冲突场景通过，专项/类型检查通过后提交 `feat(contacts): connect review results to author revisions`。
+- [x] 测试一份 v1 评审保留源版本，作者 v2 后显示未评审；持续模式只处理有变化哈希，样式变化不重评；普通交接不自动追新版；同文重复不重发；暂停/删除/撤权不复活；过期意见交回拒绝且草稿保留。运行 handoff-review.test.ts 确认红。
+- [x] UI 接收者选择与任务描述弹窗共享输入组件，来源只读，缺权限跳原工作设置后可回草稿。协作记录可打开原文/评审任务，状态只读实际执行数据。
+- [x] 持续评审沿原资料等待唤醒/预算/并发机制运行，记录实际处理 ref/hash；接收结果正文准确引用被评审原文。用户单次选意见交回作者，版本检查后创建原任务修订；ChouYu 只读引用阻塞，不批准意见。
+- [x] Electron 两联系人全流程、重启/权限撤回/新版冲突场景通过，专项/类型检查通过后提交 `feat(contacts): connect review results to author revisions`。

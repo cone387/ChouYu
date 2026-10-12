@@ -10,6 +10,8 @@ import { deliveryText, textHash, type ContentCitation, type DeliveryRef, type Re
 import { readingAt, restoreReading, selectedCitation, highlightAnchor } from './deliveryReading'
 import { navigateContact } from './contactNavigation'
 import ContactRevisionDialog from './ContactRevisionDialog'
+import ContactHandoffDialog from './ContactHandoffDialog'
+import ContactHandoffs from './ContactHandoffs'
 
 const stageLabel = { pending: '待开始', active: '进行中', done: '已完成' }
 export default function ContactDeliveryReader({ characterId, topic, busy = false, onAction = async action => { await action() }, onReport, view = 'delivery', active = true, initialRef, initialAnchor, onNavigate, onCite }: {
@@ -29,6 +31,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   const [readingId, setReadingId] = useState('')
   const [revisionDialog, setRevisionDialog] = useState<{ citation: ContentCitation; scope: 'content' | 'presentation' } | null>(null)
   const [citationError, setCitationError] = useState('')
+  const [handoff, setHandoff] = useState(false)
   const [frameCitation, setFrameCitation] = useState<ContentCitation | null>(null)
   const cite = async (action: 'discuss' | 'content' | 'presentation') => {
     if (!artifact) return
@@ -166,9 +169,19 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       <button type="button" data-delivery-discuss onMouseDown={e => e.preventDefault()} onClick={() => void cite('discuss')}>引用讨论</button>
       <button type="button" data-delivery-revise disabled={busy} onMouseDown={e => e.preventDefault()} onClick={() => void cite('content')}>提出修改</button>
       <button type="button" data-delivery-style disabled={busy} onClick={() => void cite('presentation')}>修改阅读样式</button>
+      <button type="button" data-delivery-handoff disabled={busy} onClick={() => setHandoff(true)}>交给联系人评审</button>
     </div>}
     {citationError && <p role="alert">{citationError}</p>}
     {revisionDialog && <ContactRevisionDialog characterId={characterId} topic={topic} citation={revisionDialog.citation} scope={revisionDialog.scope} onClose={() => setRevisionDialog(null)} onSaved={() => setNotice('修改意见已保存，将沿用任务额度修订一轮。')} />}
+    {artifact && handoff && <ContactHandoffDialog source={{ characterId, topicId: topic.id, version: artifact.version, ...(readingId ? { sectionId: readingId } : {}) }} title={topic.title} onClose={() => setHandoff(false)} onSaved={() => setNotice('评审任务已保存，接收者会按原权限和额度执行。')} />}
+    {artifact && <ContactHandoffs owner={characterId} topicId={topic.id} getCitation={async () => {
+      if (artifact.presentation && !plain) {
+        if (frameCitation?.ref.version === artifact.version) return window.electronAPI.agents.validateCitation(characterId, frameCitation)
+        setPlain(true); throw new Error('当前展示无法对应选中文字，已打开正文，请重新选择。')
+      }
+      const section = artifact.sections.find(s => s.id === readingId), ref = { characterId, topicId: topic.id, version: artifact.version }
+      return window.electronAPI.agents.validateCitation(characterId, section ? selectedCitation(ref, section, bodyRef.current?.querySelector('.contact-markdown') ?? null) : { ref })
+    }} />}
     {notice && <p role="status">{notice}</p>}
     </div>
     {view === 'stages' && notice && <p role="status">{notice}</p>}
