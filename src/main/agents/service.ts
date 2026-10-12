@@ -132,6 +132,12 @@ export class AgentService {
       case 'portfolio': return this.store.portfolio.list(id, args[0] as import('../../shared/contact-content').PortfolioQuery)
       case 'citationContext': return citationContext(id, args[0] as import('../../shared/contact-content').ContentCitation[], this.store.portfolio)
       case 'validateCitation': return validateCitation(id, args[0] as import('../../shared/contact-content').ContentCitation, this.store.portfolio)
+      case 'reviseCitation': {
+        if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
+        this.checkSearch(id)
+        this.store.reviseCitation(id, args[0] as number, args[1] as import('../../shared/contact-content').ContentCitation, args[2] as string, this.identity(id).conversation)
+        break
+      }
       case 'setDeliveryFavorite': return this.store.portfolio.favorite(id, args[0] as string, args[1] as boolean)
       case 'saveDeliveryReading': return this.store.portfolio.saveReading(id, args[0] as import('../../shared/contact-content').ReadingPosition)
       case 'deliveryReading': return this.store.portfolio.reading(id, args[0] as string)

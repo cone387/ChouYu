@@ -2,11 +2,13 @@ import ContactPresentation from './ContactPresentation'
 import './ContactPortfolio.css'
 import ContactTaskInputForm from './ContactTaskInputForm'
 import ContactMarkdown from './ContactMarkdown'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { AgentDelivery } from '../../../../shared/agent-delivery'
 import type { AgentTopic } from '../../../../shared/agents'
 import { deliveryText, textHash, type ContentCitation, type DeliveryRef, type ReadingPosition, type TextAnchor } from '../../../../shared/contact-content'
-import { readingAt, restoreReading } from './deliveryReading'
+import { readingAt, restoreReading, selectedCitation, highlightAnchor } from './deliveryReading'
+import { navigateContact } from './contactNavigation'
+import ContactRevisionDialog from './ContactRevisionDialog'
 
 const stageLabel = { pending: '待开始', active: '进行中', done: '已完成' }
 export default function ContactDeliveryReader({ characterId, topic, busy = false, onAction = async action => { await action() }, onReport, view = 'delivery', active = true, initialRef, initialAnchor, onNavigate, onCite }: {
@@ -22,10 +24,24 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   const [artifact, setArtifact] = useState<AgentDelivery | null>(null)
   const [previous, setPrevious] = useState<AgentDelivery | null>(null)
   const [latest, setLatest] = useState(0), [loading, setLoading] = useState(true)
-  const [error, setError] = useState(''), [feedback, setFeedback] = useState(''), [notice, setNotice] = useState('')
-  const [sectionId, setSectionId] = useState('')
+  const [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [readingId, setReadingId] = useState('')
-  const [scope, setScope] = useState<'content' | 'presentation'>('content')
+  const [revisionDialog, setRevisionDialog] = useState<{ citation: ContentCitation; scope: 'content' | 'presentation' } | null>(null)
+  const [citationError, setCitationError] = useState('')
+  const [frameCitation, setFrameCitation] = useState<ContentCitation | null>(null)
+  const cite = async (action: 'discuss' | 'content' | 'presentation') => {
+    if (!artifact) return
+    setCitationError('')
+    try {
+      if (artifact.presentation && !plain && action !== 'presentation' && frameCitation?.ref.version !== artifact.version) { setPlain(true); throw new Error('当前展示无法对应选中文字，已打开正文，请重新选择。') }
+      const section = artifact.sections.find(s => s.id === readingId)
+      const ref = { characterId, topicId: topic.id, version: artifact.version }
+      const citation = await window.electronAPI.agents.validateCitation(characterId, action === 'presentation' || !section ? { ref } : artifact.presentation && !plain && frameCitation ? frameCitation : selectedCitation(ref, section, bodyRef.current?.querySelector('.contact-markdown') ?? null))
+      if (!alive.current) return
+      if (action === 'discuss') { if (onCite) onCite(citation); else await navigateContact({ kind: 'discuss', citation }) }
+      else setRevisionDialog({ citation, scope: action })
+    } catch (e) { if (alive.current) setCitationError(e instanceof Error ? e.message : String(e)) }
+  }
   const [plain, setPlain] = useState(false)
   const [readingError, setReadingError] = useState('')
   const [resume, setResume] = useState<ReadingPosition | null>(null)
@@ -66,13 +82,12 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       setReadingId(id => value?.sections.some(s => s.id === (restored?.sectionId ?? initialRef?.sectionId)) ? (restored?.sectionId ?? initialRef!.sectionId!) : value?.sections.some(section => section.id === id) ? id : value?.sections.find(section => section.runId === value.runId)?.id ?? value?.sections[0]?.id ?? '')
       if (restored?.changed) setNotice('内容已更新，已定位到原分节开头；仍可通过版本入口查看旧版。')
       if (position && !restored?.changed) setResume(position)
-      setSectionId(id => value?.sections.some(section => section.id === id) ? id : '')
       if (version === undefined) setLatest(value?.version ?? 0)
     } catch (e) { if (request === epoch.current) setError(e instanceof Error ? e.message : '成果读取失败。') }
     finally { if (request === epoch.current) setLoading(false) }
   }
   useEffect(() => {
-    alive.current = true; setArtifact(null); setPrevious(null); setResume(null)
+    alive.current = true; setArtifact(null); setPrevious(null); setResume(null); setPlain(Boolean(initialAnchor))
     void load(initialRef?.version)
     void window.electronAPI.agents.deliveryReading(characterId, topic.id).then(position => { if (alive.current) setResume(position) }).catch(e => { if (alive.current) setReadingError(String(e)) })
     void window.electronAPI.agents.portfolio(characterId, { topicId: topic.id }).then(page => { if (alive.current) setReadHashes(Object.fromEntries((page.items[0]?.sections ?? []).filter(s => s.readHash).map(s => [s.id, s.readHash!]))) }).catch(() => {})
@@ -88,15 +103,19 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   }, [characterId, topic.id, topic.revision])
   useEffect(() => { if (!artifact && latest && !loading && !error) void load(latest) }, [latest, artifact, loading, error])
   useEffect(() => { if (!active || view !== 'delivery') flushReading() }, [active, view])
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = bodyRef.current
     if (!el || !artifact) return
     restoring.current = true
     const position = scrollToPosition.current
     el.scrollTop = position?.ref.version === artifact.version && position.ref.sectionId === readingId ? position.scrollRatio * (el.scrollHeight - el.clientHeight) : 0
+    if (initialAnchor && plain) {
+      const section = artifact.sections.find(s => s.id === readingId), container = el.querySelector<HTMLElement>('.contact-markdown')
+      if (section && container) try { highlightAnchor(container, section.body, initialAnchor) } catch (e) { setCitationError(String(e)) }
+    }
     const frame = requestAnimationFrame(() => { restoring.current = false })
     return () => cancelAnimationFrame(frame)
-  }, [artifact?.version, readingId, plain, loading])
+  }, [artifact, readingId, plain, loading, initialAnchor])
   return <section className="contact-delivery" aria-label="阶段计划与成果" data-delivery-version={artifact?.version}>
     <div hidden={view !== 'stages'}>
       {inputs?.length ? <details className="delivery-inputs" open><summary>任务需求</summary><ContactTaskInputForm key={`${topic.id}:${artifact?.version ?? 0}:${topic.revision}`} fields={inputs} busy={busy} label="更新需求并继续" onSubmit={async reply => { await onAction(async () => { await window.electronAPI.agents.reviseTopic(characterId, topic.id, topic.revision, reply); setNotice('需求已提交，联系人会据此继续工作。') }) }} />{busy && <p className="agent-caption">有待回复的问题时，请在任务概览中补充；其他调整可在本轮结束或暂停后提交。</p>}</details> : null}
@@ -120,14 +139,14 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       {resume && <button type="button" data-delivery-resume onClick={() => { setPlain(true); void load(resume.ref.version, resume) }}>继续阅读 · 版本 {resume.ref.version}</button>}
       {readingError && <p role="alert">{readingError}<button type="button" onClick={flushReading}>重试保存位置</button></p>}
       {artifact.presentation && <div className="agent-actions" aria-label="成果阅读方式"><button type="button" aria-pressed={!plain} onClick={() => setPlain(false)}>{artifact.presentation.title}</button><button type="button" aria-pressed={plain} onClick={() => setPlain(true)}>正文</button></div>}
-      {artifact.presentation && !plain && view === 'delivery' && active && <ContactPresentation key={`${topic.id}:${artifact.version}`} characterId={characterId} topicId={topic.id} artifact={artifact} onFallback={() => setPlain(true)} onReading={recordReading} />}
+      {artifact.presentation && !plain && view === 'delivery' && active && <ContactPresentation key={`${topic.id}:${artifact.version}`} characterId={characterId} topicId={topic.id} artifact={artifact} onFallback={() => setPlain(true)} onReading={recordReading} onSelection={setFrameCitation} />}
       <div hidden={Boolean(artifact.presentation && !plain)}>
       <nav className="delivery-directory" aria-label="成果目录">{artifact.sections.map(section => <button type="button" key={section.id} aria-pressed={readingId === section.id} onClick={() => { flushReading(); scrollToPosition.current = null; setReadingId(section.id); recordReading(readingAt({ characterId, topicId: topic.id, version: artifact.version }, section, 0)); onNavigate?.({ characterId, topicId: topic.id, version: artifact.version, sectionId: section.id }) }}>{section.title}{readHashes[section.id] ? readHashes[section.id] === textHash(deliveryText(section.body)) ? ' · 已读' : ' · 已修改' : ' · 未读'}</button>)}</nav>
       {artifact.sections.filter(section => section.id === readingId).map(section => <article ref={bodyRef} className="delivery-reader delivery-reader-scroll" key={section.id} aria-label={section.title} tabIndex={0} onScroll={event => {
         if (restoring.current || !active || view !== 'delivery' || !event.isTrusted) return
         const el = event.currentTarget, ratio = el.scrollHeight > el.clientHeight ? el.scrollTop / (el.scrollHeight - el.clientHeight) : 0
         recordReading(readingAt({ characterId, topicId: topic.id, version: artifact.version }, section, Math.max(0, Math.min(1, ratio))))
-      }}><h5>{section.title}</h5><ContactMarkdown>{section.body}</ContactMarkdown>{onCite && <button type="button" onClick={() => onCite({ ref: { characterId, topicId: topic.id, version: artifact.version, sectionId: section.id }, ...(initialAnchor ? { anchor: initialAnchor } : {}) })}>引用本节</button>}{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><a href={source.url} target="_blank" rel="noopener noreferrer">[{i + 1}] {source.title}</a></li>)}</ol></details> : null}</article>)}
+      }}><h5>{section.title}</h5><ContactMarkdown>{section.body}</ContactMarkdown>{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><a href={source.url} target="_blank" rel="noopener noreferrer">[{i + 1}] {source.title}</a></li>)}</ol></details> : null}</article>)}
       </div>
       <details><summary>版本与导出</summary>
       <div className="agent-actions">
@@ -142,15 +161,13 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       })}<p className="agent-caption">完成条件与阶段以当前查看版本为准；未列出的分节正文保持不变。</p></details>}
       </details>
     </>}
-    <details><summary>提出修改意见</summary>
-    <form onSubmit={event => { event.preventDefault(); void onAction(async () => { await window.electronAPI.agents.reviseTopic(characterId, topic.id, topic.revision, feedback, scope === 'presentation' ? undefined : sectionId || undefined, scope, scope === 'presentation' ? artifact?.version : undefined); setFeedback(''); setNotice('修改意见已提交，将按当前成果修订一轮。') }) }}>
-      {artifact && <label>修改范围<select value={scope} onChange={e => setScope(e.target.value as 'content' | 'presentation')}><option value="content">内容或任务需求</option><option value="presentation">仅阅读样式（保留正文与进度）</option></select></label>}
-      {artifact && scope === 'content' && <label>修订位置<select value={sectionId} onChange={e => setSectionId(e.target.value)}><option value="">由联系人根据意见安排</option>{artifact.sections.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>}
-      <label>修改意见<textarea data-delivery-feedback value={feedback} onChange={e => setFeedback(e.target.value)} maxLength={2000} rows={2} required placeholder="例如：第二章改用主角视角；或只调整排版，正文使用宋体并加大行距" /></label>
-      <p className="agent-caption">按最新成果立即修订一轮，保留旧版本并使用现有额度。多节修改会分轮推进。</p>
-      <button data-delivery-submit type="submit" disabled={busy || !feedback.trim()}>提交并修订</button>
-    </form>
-    </details>
+      {artifact && <div className="agent-actions" aria-label="正文引用与修订">
+      <button type="button" data-delivery-discuss onMouseDown={e => e.preventDefault()} onClick={() => void cite('discuss')}>引用讨论</button>
+      <button type="button" data-delivery-revise disabled={busy} onMouseDown={e => e.preventDefault()} onClick={() => void cite('content')}>提出修改</button>
+      <button type="button" data-delivery-style disabled={busy} onClick={() => void cite('presentation')}>修改阅读样式</button>
+    </div>}
+    {citationError && <p role="alert">{citationError}</p>}
+    {revisionDialog && <ContactRevisionDialog characterId={characterId} topic={topic} citation={revisionDialog.citation} scope={revisionDialog.scope} onClose={() => setRevisionDialog(null)} onSaved={() => setNotice('修改意见已保存，将沿用任务额度修订一轮。')} />}
     {notice && <p role="status">{notice}</p>}
     </div>
     {view === 'stages' && notice && <p role="status">{notice}</p>}

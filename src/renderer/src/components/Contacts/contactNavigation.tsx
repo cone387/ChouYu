@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react'
 import { parseContactTaskHref } from '../../../../shared/contact-links'
-import type { DeliveryRef, TextAnchor } from '../../../../shared/contact-content'
+import type { ContentCitation, DeliveryRef, TextAnchor } from '../../../../shared/contact-content'
 
-export type ContactNavigation = { kind: 'settings' } | { kind: 'contact-settings'; characterId: string; tab: 'settings' | 'skills' } | { kind: 'task'; characterId: string; topicId: string } | { kind: 'delivery'; ref: DeliveryRef; anchor?: TextAnchor } | { kind: 'message'; sessionId: string; messageId: string }
+export type ContactNavigation = { kind: 'discuss'; citation: ContentCitation } | { kind: 'settings' } | { kind: 'contact-settings'; characterId: string; tab: 'settings' | 'skills' } | { kind: 'task'; characterId: string; topicId: string } | { kind: 'delivery'; ref: DeliveryRef; anchor?: TextAnchor } | { kind: 'message'; sessionId: string; messageId: string }
 export type ContactNavigationRequest = { target: ContactNavigation; handled: boolean; resolve: () => void; reject: (error: Error) => void }
 export const CONTACT_NAVIGATION = 'chouyu:contact-navigation'
 export function navigateContact(target: ContactNavigation): Promise<void> {

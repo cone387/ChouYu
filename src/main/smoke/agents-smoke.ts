@@ -827,12 +827,16 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     }
     await run("document.querySelector('[data-contact-dialog-tab=\"work\"]').click()")
     await run("document.querySelector('.topic-content-tabs [id$=delivery]').click()")
-    await waitForRenderer(window, "document.querySelector('.contact-delivery')?.clientWidth > 0 && Boolean(document.querySelector('[data-delivery-feedback]'))")
+    await waitForRenderer(window, "document.querySelector('.contact-delivery')?.clientWidth > 0 && Boolean(document.querySelector('[data-delivery-revise]'))")
     const beforeRevision = await run(`window.electronAPI.agents.delivery(${id}, ${JSON.stringify(target.id)})`)
     revisedSectionId = beforeRevision.sections[0].id; revisingDelivery = true
+    await run("document.querySelector('[data-delivery-revise]').click()")
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-contact-revision-dialog][open]'))")
     await fill('[data-delivery-feedback]', '明确指出团队付费仍缺乏证据')
     await waitForRenderer(window, "document.querySelector('[data-delivery-submit]')?.disabled === false")
     await run("document.querySelector('[data-delivery-submit]').click()")
+    await waitForRenderer(window, 'Boolean(document.querySelector("[data-delivery-latest]"))', 20000)
+    await run('document.querySelector("[data-delivery-latest]").click()')
     await waitForRenderer(window, `document.querySelector('.contact-delivery')?.dataset.deliveryVersion === '${beforeRevision.version + 1}'`, 20000)
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .delivery-reader')?.textContent.includes('已按修改意见补充局限')")
     await run("document.querySelector('[data-delivery-prev]').click()")

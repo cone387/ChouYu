@@ -21,7 +21,7 @@ interface InputAreaProps {
   discussion?: AgentDiscussion
   onDiscussionConsumed?: () => void
   sessionId: string
-  onSend: (content: string, attachments?: PendingAttachment[]) => void
+  onSend: (content: string, attachments?: PendingAttachment[], citations?: import('../../../../shared/contact-content').ContentCitation[]) => void
   onStop?: () => void
   disabled: boolean
   isStreaming?: boolean
@@ -46,6 +46,8 @@ interface InputAreaProps {
 
 export default function InputArea({ contactTasks, discussion, onDiscussionConsumed, sessionId, onSend, onStop, disabled, isStreaming = false, autoFocus, focusRequest = 0, active = true, model, onModelChange, fetchModels, onScreenshot, onScrollScreenshot, plugins, pluginCommands, initialActivePlugin, onInitialPluginConsumed, initialAttachment, onInitialAttachmentConsumed, history = [] }: InputAreaProps) {
   const [value, setValue] = useState('')
+  const citationSending = useRef(false), currentSession = useRef(sessionId)
+  currentSession.current = sessionId
   const [showCommands, setShowCommands] = useState(false)
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
   const [showScreenshotMenu, setShowScreenshotMenu] = useState(false)
@@ -212,7 +214,7 @@ export default function InputArea({ contactTasks, discussion, onDiscussionConsum
     return () => cancelAnimationFrame(frame)
   }, [disabled, focusComposer])
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmed = value.trim()
     if ((!trimmed && attachments.length === 0) || disabled) return
     if (discussion && activePlugin) { setAttachmentError('请先移除工作记录引用，再使用插件。'); return }
@@ -226,14 +228,23 @@ export default function InputArea({ contactTasks, discussion, onDiscussionConsum
       restoreComposerFocus()
       return
     }
-    onSend(discussion ? quoteAgentDiscussion(discussion, trimmed) : trimmed, attachments.length > 0 ? attachments : undefined)
+    if (discussion?.citation) {
+      if (citationSending.current) return
+      if (trimmed.startsWith('/')) { setAttachmentError('请先移除正文引用，再使用命令。'); return }
+      citationSending.current = true
+      try { await window.electronAPI.agents.validateCitation(discussion.citation.ref.characterId, discussion.citation) }
+      catch (e) { if (currentSession.current === sessionId) setAttachmentError(e instanceof Error ? e.message : String(e)); return }
+      finally { citationSending.current = false }
+      if (currentSession.current !== sessionId) return
+    }
+    onSend(discussion ? quoteAgentDiscussion(discussion, trimmed) : trimmed, attachments.length > 0 ? attachments : undefined, discussion?.citation ? [discussion.citation] : undefined)
     onDiscussionConsumed?.()
     setValue('')
     setAttachments([])
     setAttachmentError('')
     setShowCommands(false)
     restoreComposerFocus()
-  }, [value, disabled, onSend, attachments, activePlugin, restoreComposerFocus, discussion, onDiscussionConsumed])
+  }, [value, disabled, onSend, attachments, activePlugin, restoreComposerFocus, discussion, onDiscussionConsumed, sessionId])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape' && activePlugin) {

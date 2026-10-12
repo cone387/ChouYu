@@ -1,4 +1,6 @@
 import { providerRecoveryDelay } from '../../shared/contact-failure'
+import { citationContext, validateCitation } from './citations'
+import type { ContentCitation } from '../../shared/contact-content'
 import { validateChapterContinuation } from './chapter-continuation'
 import { AgentTaskFailures } from './task-failures'
 import { ContactInteractions } from './interactions'
@@ -741,6 +743,10 @@ export class AgentStore {
       if (this.getRun(runId)?.status === 'completed') return
       const run = this.assertLive(runId)
       const deliveryInput = JSON.parse(run.input)
+      if (deliveryInput.revisionCitation) {
+        const citation = validateCitation(run.character_id, deliveryInput.revisionCitation, this.portfolio)
+        if (this.deliveries.get(citation.ref.topicId)?.version !== citation.ref.version) throw new Error('引用的成果版本已变化，本轮修改未保存。')
+      }
       if (deliveryInput.deliveryVersion === 1 && this.research(runId)?.plan.action === 'write' && !delivery) throw new Error('写作成果缺少 delivery.section.body，变化摘要不能作为正文保存。')
       validateChapterContinuation({ delivery, progress, nextStep: report.nextStep }, deliveryInput.chapterContinuation?.decision, false)
       const previousDelivery = run.topic_id ? this.deliveries.get(run.topic_id) : null
@@ -849,6 +855,17 @@ export class AgentStore {
       const input = JSON.parse(this.getRun(runId)!.input)
       this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify({ ...input, revisionSectionId: undefined, revisionBaseVersion: baseVersion, feedback: feedback.trim() }), runId)
       this.event(runId, 'feedback', `仅修改阅读样式：${feedback.trim()}`)
+      return runId
+    })()
+  }
+  reviseCitation(id: string, revision: number, raw: ContentCitation, feedback: string, conversation: string) {
+    return this.db.transaction(() => {
+      const citation = validateCitation(id, raw, this.portfolio)
+      if (this.deliveries.get(citation.ref.topicId)?.version !== citation.ref.version) throw new Error('已有新版成果，请查看差异后重新选择修改依据。')
+      const context = citationContext(id, [citation], this.portfolio)
+      const runId = this.reviseTopic(id, citation.ref.topicId, revision, feedback, conversation, citation.ref.sectionId)
+      const input = { ...JSON.parse(this.getRun(runId)!.input), revisionCitation: citation, citationContext: context }
+      this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), runId)
       return runId
     })()
   }

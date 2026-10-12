@@ -22,7 +22,7 @@
 
 **Files:** 修改 B 的阅读器、`agentDiscussion.ts`、`src/renderer/src/components/ChatPanel/{ChatPanel,InputArea,MessageArea}.tsx`、`src/main/agents/{service,tools,chat-changes}.ts`；新增 `ContactRevisionDialog.tsx`、`src/main/smoke/contact-citation-smoke.ts`、`src/main/agents/citation-revision.test.ts`。
 **Interfaces:** `reviseCitation(owner: string, topicRevision: number, citation: ContentCitation, feedback: string): Promise<AgentOverview>`，意见上限沿用 2000 字；AgentDiscussion 扩展可选 citation，不影响原工作记录讨论。UI 通过 B 的 delivery 导航返回精确位置。
-- [ ] 写集成测试：讨论不增加 runs；修订把引文/原版本/「保留本段」写入实际运行输入；v1 引文在 v2 后提交失败且不改任务；只改样式保持正文哈希；模型迟到回复不能越过取消。运行专项确认红。
-- [ ] 实现文本选择工具和键盘入口、可移除引用草稿、气泡原文链接；取消不发消息。改写模态单意见输入和只读引用；明确过期版本、打开差异、重新基于新版提交；不自动替用户确认新版。
-- [ ] 修订服务在创建轮次和提交成果前校验原版本/任务 revision，复用预算/并发/权限。记录反馈和引用，更新后回执可以打开本轮保存版本及修改前后。
-- [ ] Electron 验证选择/取消/发送/重启引用/过期草稿保留/返回原位置；运行 `npx vitest run src/main/agents/citation-revision.test.ts src/main/agents/chat-changes.test.ts`、类型检查，通过后提交 `feat(contacts): discuss and revise cited passages`。
+- [x] 写集成测试：讨论不增加 runs；修订把引文/原版本/「保留本段」写入实际运行输入；v1 引文在 v2 后提交失败且不改任务；只改样式保持正文哈希；模型迟到回复不能越过取消。运行专项确认红。
+- [x] 实现文本选择工具和键盘入口、可移除引用草稿、气泡原文链接；取消不发消息。改写模态单意见输入和只读引用；明确过期版本、打开差异、重新基于新版提交；不自动替用户确认新版。
+- [x] 修订服务在创建轮次和提交成果前校验原版本/任务 revision，复用预算/并发/权限。记录反馈和引用，更新后回执可以打开本轮保存版本及修改前后。
+- [x] Electron 验证选择/取消/发送/重启引用/过期草稿保留/返回原位置；运行 `npx vitest run src/main/agents/citation-revision.test.ts src/main/agents/chat-changes.test.ts`、类型检查，通过后提交 `feat(contacts): discuss and revise cited passages`。

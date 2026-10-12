@@ -1,11 +1,11 @@
 import { DELIVERY_THEME_TOKENS } from '../../../../shared/delivery-theme'
 import { useEffect, useRef, useState } from 'react'
 import type { AgentDelivery } from '../../../../shared/agent-delivery'
-import type { ReadingPosition } from '../../../../shared/contact-content'
+import type { ContentCitation, ReadingPosition } from '../../../../shared/contact-content'
 import { validPresentationEvent } from './deliveryReading'
 
-export default function ContactPresentation({ characterId, topicId, artifact, onFallback, onReading }: {
-  characterId: string; topicId: string; artifact: AgentDelivery; onFallback: () => void; onReading?: (position: ReadingPosition) => void
+export default function ContactPresentation({ characterId, topicId, artifact, onFallback, onReading, onSelection }: {
+  characterId: string; topicId: string; artifact: AgentDelivery; onFallback: () => void; onReading?: (position: ReadingPosition) => void; onSelection?: (citation: ContentCitation) => void
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const [state, setState] = useState('loading')
@@ -14,6 +14,7 @@ export default function ContactPresentation({ characterId, topicId, artifact, on
   const source = `chouyu-artifact://view/${encodeURIComponent(characterId)}/${encodeURIComponent(topicId)}/${artifact.version}`
   const nonce = useRef(crypto.randomUUID())
   const readingCallback = useRef(onReading); readingCallback.current = onReading
+  const selectionCallback = useRef(onSelection); selectionCallback.current = onSelection
   const sendTheme = () => {
     const styles = getComputedStyle(document.documentElement)
     const tokens = Object.fromEntries(Object.entries(DELIVERY_THEME_TOKENS).map(([target, source]) => [target, styles.getPropertyValue(source).trim()]))
@@ -26,7 +27,7 @@ export default function ContactPresentation({ characterId, topicId, artifact, on
     const timeout = window.setTimeout(() => setState(s => s === 'loading' ? 'error' : s), 15000)
     const receive = (event: MessageEvent) => {
       const reading = validPresentationEvent(event, frame.current?.contentWindow ?? null, { characterId, topicId, version: artifact.version }, nonce.current, artifact.sections)
-      if (reading) { readingCallback.current?.(reading); return }
+      if (reading) { if (event.data.type === 'delivery-selection') selectionCallback.current?.({ ref: reading.ref, anchor: reading.anchor }); else readingCallback.current?.(reading); return }
       if (event.origin !== 'null') return
       if (event.source !== frame.current?.contentWindow || event.data?.type !== 'delivery-preview' || !['ready', 'error'].includes(event.data.state)) return
       setState(s => s === 'error' ? s : event.data.state)

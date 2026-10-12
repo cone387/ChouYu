@@ -452,7 +452,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }).catch((error) => showMemoryWriteNotice(error instanceof Error ? `Mem0 记忆写入失败：${error.message}` : 'Mem0 记忆写入失败，请检查连接配置'))
   }, [config.memoryEnabled, showMemoryWriteNotice])
 
-  const handleSend = async (content: string, attachments?: PendingAttachment[]) => {
+  const handleSend = async (content: string, attachments?: PendingAttachment[], contactCitations?: import('../../../../shared/contact-content').ContentCitation[]) => {
     const originatingSessionId = activeSessionIdRef.current
     if (happyTimerRef.current) {
       clearTimeout(happyTimerRef.current)
@@ -586,6 +586,7 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
       id: Date.now().toString(),
       role: 'user',
       content: messageContent,
+      ...(contactCitations?.length ? { contactCitations } : {}),
       timestamp: Date.now(),
       imageUrl: imageAttachment?.data
     }
@@ -695,6 +696,18 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           if (!contact) throw new Error('联系人已删除，无法打开设置。')
           window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
           setLinkedTask({ characterId: contact.id, name: contact.name, initialTab: target.tab, nonce: Date.now() })
+        } else if (target.kind === 'discuss') {
+          const ref = target.citation.ref
+          const citation = await window.electronAPI.agents.validateCitation(ref.characterId, target.citation)
+          const artifact = await window.electronAPI.agents.delivery(ref.characterId, ref.topicId, ref.version)
+          if (!artifact) throw new Error('引用的成果已移除。')
+          const section = artifact.sections.find(s => s.id === ref.sectionId)
+          window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
+          await openCharacterChat(ref.characterId)
+          const workspace = await window.electronAPI.db.getSessionWorkspace()
+          if (workspace.activeSession.characterId !== ref.characterId) throw new Error('会话已切换，请重新引用。')
+          setAgentDiscussion({ sessionId: workspace.activeSession.id, citation, title: `${section?.title ?? '成果'} · 版本 ${ref.version}`, topicId: ref.topicId, runId: artifact.runId, text: citation.anchor?.quote ?? section?.body.slice(0, 2000) ?? artifact.summary })
+          setLinkedTask(null)
         } else if (target.kind === 'delivery') {
           const contacts = await window.electronAPI.characters.list()
           const contact = contacts.find(c => c.id === target.ref.characterId)
@@ -724,8 +737,8 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
     }
     window.addEventListener(CONTACT_NAVIGATION, handle)
     return () => window.removeEventListener(CONTACT_NAVIGATION, handle)
-  }, [selectSession, navigate])
-  useEffect(() => { setAgentDiscussion(null) }, [activeSessionId])
+  }, [selectSession, navigate, openCharacterChat])
+  useEffect(() => { setAgentDiscussion(previous => previous?.sessionId === activeSessionId ? previous : null) }, [activeSessionId])
   const markVisibleMessagesRead = useCallback(() => {
     if (!visible || !isChat || !workspaceLoaded || !activeAssistantUnread) return
     void window.electronAPI.db.markSessionRead(activeSessionId, messages[messages.length - 1]?.id)

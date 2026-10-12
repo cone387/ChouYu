@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { deliveryText, textHash, type ReadingPosition } from '../../../../shared/contact-content'
-import { restoreReading, validPresentationEvent } from './deliveryReading'
+import { anchorFromRenderedText, restoreReading, validPresentationEvent } from './deliveryReading'
 
 describe('reading restoration', () => {
   const text = deliveryText('重复😀\n\n重复😀'), ref = { characterId: 'alice', topicId: 'task', version: 1, sectionId: 'a' }
@@ -8,6 +8,11 @@ describe('reading restoration', () => {
   const section = { id: 'a', title: '正文', runId: 'r', body: '重复😀\n\n重复😀' }
   it('restores the exact second duplicate and UTF16 anchor', () => {
     expect(restoreReading(position, [section])).toEqual({ sectionId: 'a', anchor: position.anchor, changed: false })
+  })
+  it('maps rendered selection across Markdown block separators without choosing the first duplicate', () => {
+    const canonical = '重复😀\n\n重复😀', rendered = '重复😀重复😀'
+    expect(anchorFromRenderedText(canonical, rendered, 4, 8)).toEqual({ start: 6, end: 10, quote: '重复😀', textHash: textHash(canonical) })
+    expect(() => anchorFromRenderedText(canonical, '另一份正文', 0, 2)).toThrow()
   })
   it('returns the same section start after a body edit and retains a removed section identity', () => {
     expect(restoreReading(position, [{ ...section, body: '修改后' }])).toEqual({ sectionId: 'a', changed: true })
