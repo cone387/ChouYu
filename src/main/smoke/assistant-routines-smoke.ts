@@ -24,10 +24,10 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
       }
       // The agent child also posts plain-text briefing prompts here; answering them
       // benignly keeps an uncaught JSON.parse from killing the smoke process.
-      let context: { evidence?: unknown; target?: { kind?: string }; capabilities?: { scheduled?: boolean }; existing?: { title: string; instruction: string; cadence: string; weekday?: number; kind: string; enabled: boolean }; conversation?: unknown[]; description?: string }
+      let context: { 工作证据?: unknown; target?: { kind?: string }; capabilities?: { scheduled?: boolean }; existing?: { title: string; instruction: string; cadence: string; weekday?: number; kind: string; enabled: boolean }; conversation?: unknown[]; description?: string }
       try { context = JSON.parse(payload.messages.at(-1).content) } catch { return respond('收到，我会处理好。') }
       const onceMatch = /(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/.exec(context.description ?? '')
-      const result = context.evidence ? '对照联系人的任务已建立，目前尚未执行。' : fail ? 'invalid-json'
+      const result = context.工作证据 ? '对照联系人的任务已建立，目前尚未执行。' : fail ? 'invalid-json'
         : context.target?.kind === 'edit-duty' ? JSON.stringify({ kind: 'duty', params: { proactiveReturnAwayMinutes: 15 } })
         : context.description?.includes('每隔三天') ? JSON.stringify({ kind: 'routine', input: { title: '每月想法', instruction: '给我一个新的想法', times: ['09:00'], cadence: 'interval', intervalDays: 3, anchorDate: '2030-01-01', kind: 'contact-summary', enabled: false } })
         : context.target?.kind === 'edit-work' ? JSON.stringify({ kind: 'work-edit', input: { goal: context.description, constraints: '' }, budget: { modelCalls: 20 } })

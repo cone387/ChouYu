@@ -26,6 +26,23 @@ beforeEach(() => {
 })
 afterEach(() => { closeAssistantRoutines(); vi.useRealTimers() })
 describe('assistant routine integration', () => {
+  it('marks saved length and completion criteria as metadata, never as a completed requirements check', async () => {
+    state.delivery.mockResolvedValue({ version: 1, latestVersion: 1, savedSectionCount: 1, savedTextLength: 598,
+      completionCriteria: '每期300至500字正文', directory: [{ id: 'opening', title: '第一节', characters: 598 }] })
+    state.model.mockImplementation(async (_messages, _prompt, _config, chunk, _signal, runtime) => {
+      const verified = JSON.parse(await runtime.execute({ name: 'read_contact_delivery', arguments: JSON.stringify({ characterId: 'alice', topicId: 'article' }) }))
+      expect(verified.savedTextLength).toBe(598)
+      expect(verified.savedTextLengthUnit).toBe('utf16_code_units_including_whitespace_and_punctuation')
+      expect(verified.lengthScope).toBe('all_saved_sections')
+      expect(verified.verification).toEqual({ scope: 'metadata_only', textRead: false, requirementsChecked: false })
+      expect(verified).not.toHaveProperty('section')
+      chunk('已保存一节，尚未核对是否符合篇幅要求。')
+    })
+    initializeAssistantRoutines()
+    state.handlers.get('assistant-routines:save')!({}, { title: '晨间总结', instruction: '核实真实交付，不夸大成果', time: '09:00', cadence: 'daily', kind: 'contact-summary', enabled: true })
+    vi.setSystemTime(new Date(2026, 8, 30, 9)); await vi.advanceTimersByTimeAsync(15000)
+    expect(state.sent).toHaveBeenCalledWith(expect.stringContaining('尚未核对'), undefined, 'notification', expect.anything())
+  })
   it('does not revive a paused task question in scheduled briefing links', async () => {
     const evidence = await readContactsForAssistant()
     Object.assign(evidence.contacts[0].topics![0], { status: 'paused', workState: { code: 'paused', label: '已暂停', description: '用户暂停' } })
@@ -56,7 +73,7 @@ describe('assistant routine integration', () => {
     vi.setSystemTime(new Date(2026, 8, 30, 9)); await vi.advanceTimersByTimeAsync(15000)
     expect(state.model).toHaveBeenCalledTimes(1)
     expect(state.sent).toHaveBeenCalledWith(expect.stringContaining('老周的状态暂时无法读取'), undefined, 'notification', { receiptIds: [expect.stringContaining('routine:')], messageId: expect.stringMatching(/^routine-/) })
-    const evidence = JSON.parse(state.model.mock.calls[0][0][0].content).evidence
+    const evidence = JSON.parse(state.model.mock.calls[0][0][0].content).工作证据
     expect(evidence.contacts.map((c: { id: string }) => c.id)).toEqual(['alice', 'bob'])
     expect(evidence.contacts[1].unavailable).toBe(true)
     expect(evidence.contacts[0].pendingInteractions).toEqual([])
