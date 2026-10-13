@@ -106,7 +106,8 @@ export async function runAgentsSmoke(window: BrowserWindow) {
         const result = planning ? { action: 'search', query: '团队 免费 替代品', urls: [], reason: '核对团队免费替代品与定价', checkAfterMinutes: 180, ...(revisingDelivery ? { sectionId: revisedSectionId } : {}) } : {
           title: '自主搜索发现的证据', body: '原网页 [1] 有团队收费说明，尚待验证真实付费需求。', nextStep: '跟踪该定价页面变化', question: '', memories: [],
           progress: { judgement: '新来源区分免费个人版和收费团队版', reason: '新读取的网页 [1] 支持进一步核对团队场景', openQuestions: '谁实际愿意付费', nextStep: '跟踪该定价页面变化', status: 'needs_evidence' },
-          ...(revisingDelivery ? { delivery: { completionCriteria: '核对团队需求和证据局限', summary: '按用户意见明确证据局限', stages: [{ id: 'verify', title: '验证需求', status: 'active' }], section: { id: revisedSectionId, title: '团队需求与局限', body: '已按修改意见补充局限：资料 [1] 的价格不能证明团队愿意付费。' } } } : {})
+          delivery: { completionCriteria: '核对团队需求和证据局限', summary: revisingDelivery ? '按用户意见明确证据局限' : '已保存本轮分析正文', stages: [{ id: 'verify', title: '验证需求', status: 'active' }],
+            section: { id: revisingDelivery ? revisedSectionId : 'team-findings', title: '团队需求与局限', body: revisingDelivery ? '已按修改意见补充局限：资料 [1] 的价格不能证明团队愿意付费。' : '原网页 [1] 有团队收费说明，尚待验证真实付费需求。' } }
         }
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })
         response.end(`data: ${JSON.stringify({ model: 'agent-smoke', usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }, choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`); return
@@ -810,10 +811,14 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run(`window.electronAPI.agents.run(${id}, ${JSON.stringify(target.id)})`)
     const discovered = await waitStatus('completed')
     if (researchCalls !== 2 || discovered.reports[0].evidence[0].url !== 'https://chouyu-agent-smoke.invalid/search-evidence') throw new Error('Autonomous search did not read discovered original evidence')
+    const savedResearch = await run(`window.electronAPI.agents.delivery(${id}, ${JSON.stringify(target.id)})`)
+    if (!savedResearch?.sections.some((section: { body: string }) => section.body.includes('团队收费说明'))) throw new Error('The research fixture did not save its explicit substantive delivery')
     await restartAgentsForSmoke()
     await run(`window.electronAPI.agents.run(${id}, ${JSON.stringify(target.id)})`)
     const unchanged = await waitStatus('completed')
     if (Number(researchCalls) !== 3 || unchanged.reports.length !== discovered.reports.length || unchanged.searchesToday !== 2 || unchanged.nextAt < Date.now() + 359 * 60000) throw new Error('Unchanged evidence repeated analysis or lost search accounting/backoff')
+    if ((await run(`window.electronAPI.agents.delivery(${id}, ${JSON.stringify(target.id)})`))?.version !== savedResearch.version) throw new Error('Restart lost the saved research delivery')
+    console.log('CHOUYU_RESEARCH_DELIVERY_PERSISTED', { version: savedResearch.version, sections: savedResearch.sections.length })
     await run("document.querySelector('[data-contact-dialog-tab=\"history\"]').click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet .agent-history button')?.textContent.includes('资料没有变化')")
     await run("document.querySelector('.contact-work-sheet .agent-history button').click()")

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { nextRoutineAt, validateRoutine, type AssistantRoutine, type AssistantRoutineExecution, type AssistantRoutineHistoryPage } from '../../shared/assistant-routines'
+import { nextRoutineAt, latestRoutineAt, validateRoutine, type AssistantRoutine, type AssistantRoutineExecution, type AssistantRoutineHistoryPage } from '../../shared/assistant-routines'
 
 interface Dependencies {
   read(): string | undefined | null
@@ -46,9 +46,10 @@ export class AssistantRoutineService {
     const normalized = value.map((v: AssistantRoutine & { time?: string }) => (v.time !== undefined && v.times === undefined ? { ...v, times: [v.time], time: undefined } : v))
     normalized.forEach(item => {
       if (item.finishedAt !== undefined && !Number.isFinite(item.finishedAt)) throw new Error('助手安排无法读取，请恢复数据后重试。')
+      if (item.attemptAt !== undefined && !Number.isFinite(item.attemptAt)) throw new Error('助手安排执行时间无效。')
       if (item.requestLog !== undefined && (typeof item.requestLog !== 'string' || item.requestLog.length > 8000)) throw new Error('助手安排无法读取，请恢复数据后重试。')
     })
-    normalized.forEach(validateRoutine)
+    normalized.forEach(item => validateRoutine(item))
     return normalized
   }
   save(raw: unknown, id?: string, revision?: number, now = Date.now(), requestLog?: string) {
@@ -77,28 +78,31 @@ export class AssistantRoutineService {
       for (const item of this.list()) {
         if (this.closed) break
         if (!item.enabled || item.finishedAt || item.nextAt > now || (item.retryAt ?? 0) > now) continue
-        const dueAt = item.pending?.dueAt ?? item.nextAt
+        const dueAt = item.pending?.dueAt ?? item.attemptAt ?? Math.max(item.nextAt, latestRoutineAt(item, now) ?? item.nextAt)
         const entry: AssistantRoutineExecution = { id: randomUUID(), receipt: `routine:${item.id}:${item.revision}:${dueAt}`, title: item.title, scheduledAt: dueAt, startedAt: now + Math.max(0, Date.now() - startedAt), status: 'running' }
         this.executionId = entry.id
         try {
+          // Pin before generating: retries/restarts keep the same occurrence and receipt.
+          const pinned = this.list()
+          pinned.find(current => current.id === item.id)!.attemptAt = dueAt
+          this.deps.write(JSON.stringify(pinned))
           // A crash leaves an honest interrupted attempt, never a false completion.
           for (const previous of this.records(item.id).filter(r => r.status === 'running')) this.record(item.id, { ...previous, status: 'failed', finishedAt: entry.startedAt, error: '上次执行被应用退出中断，本次重新接续。' })
           this.record(item.id, entry)
           this.controller = new AbortController()
-          const content = item.pending?.content ?? (item.kind === 'reminder' ? item.instruction : await this.deps.generate(item, this.controller.signal))
+          const content = item.pending?.content ?? (item.kind === 'reminder' ? item.instruction : await this.deps.generate({ ...item, nextAt: dueAt, attemptAt: dueAt }, this.controller.signal))
           if (!content.trim() || content.length > 18000) throw new Error('助手没有生成有效结果。')
           if (this.closed) break
           let items = this.list(), current = items.find(i => i.id === item.id)
           // Editing/pausing/deleting while the model works invalidates that result.
           if (!current?.enabled || current.revision !== item.revision) { this.record(item.id, { ...entry, status: 'cancelled', finishedAt: now + Math.max(0, Date.now() - startedAt), error: '任务已修改、暂停或删除，本次结果未发送。' }); continue }
-          const dueAt = current.pending?.dueAt ?? item.nextAt
           current.pending = { dueAt, content }
           this.deps.write(JSON.stringify(items))
           const target = this.deps.deliver(entry.receipt, `${item.title}\n\n${content}`)
           Object.assign(entry, target)
           items = this.list(); current = items.find(i => i.id === item.id)!
           const completedAt = now + Math.max(0, Date.now() - startedAt)
-          current.lastAt = completedAt; current.lastResult = content; current.lastError = undefined; current.pending = undefined
+          current.lastAt = completedAt; current.lastResult = content; current.lastError = undefined; current.pending = undefined; current.attemptAt = undefined
           this.record(item.id, { ...entry, status: 'completed', finishedAt: completedAt, content })
           if (current.cadence === 'once') current.finishedAt = completedAt
           else current.nextAt = nextRoutineAt(current, completedAt)

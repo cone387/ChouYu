@@ -99,7 +99,7 @@ export class AgentService {
       }
       case 'feedback': {
         if (this.store.overview(id).revision !== args[0]) throw new Error('工作设置已变化，请重新读取并确认。')
-        if (!['editTaskFromChat', 'topicStatus', 'deleteTopic', 'editTopic', 'continueTopic', 'answerChecked', 'assignTopic', 'reviseTopic'].includes(String(args[1]))) throw new Error('反馈操作无效。')
+        if (!['editTaskFromChat', 'editCalendarTopic', 'assignCalendarTopic', 'topicStatus', 'deleteTopic', 'editTopic', 'continueTopic', 'answerChecked', 'assignTopic', 'reviseTopic'].includes(String(args[1]))) throw new Error('反馈操作无效。')
         return this.request(String(args[1]), id, args[2] as unknown[])
       }
       case 'notices': return this.store.notices.pending(id)
@@ -187,11 +187,31 @@ export class AgentService {
         this.checkSearch(id)
         this.store.assignTopic(id, args[0], this.identity(id).conversation, args[1] as string | undefined, args[2] as number | undefined); break
       }
+      case 'assignCalendarTopic': {
+        if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
+        this.checkSearch(id)
+        this.store.assignCalendarTopic(id, args[0], this.identity(id).conversation, args[1] as string | undefined)
+        break
+      }
+      case 'editCalendarTopic': {
+        this.store.editCalendarTopic(id, String(args[0]), args[1] as number, args[2], args[3] as string)
+        this.abort(id, String(args[0])); break
+      }
       case 'editTaskFromChat': {
         const topicId = String(args[0])
         this.store.editTaskFromChat(id, topicId, args[1] as number, args[2] as import('../../shared/contact-task-edit').ContactTaskEdit, args[3] as string)
         this.abort(id, topicId)
         break
+      }
+      case 'editTaskFromDescription': {
+        const topicId = String(args[0]), status = args[3], log = args[4]
+        if (typeof log !== 'string' || !log.trim() || log.length > 8000) throw new Error('任务修改原文无效。')
+        if (status !== undefined && !['paused', 'planned', 'completed', 'abandoned'].includes(String(status))) throw new Error('任务状态无效。')
+        this.store.db.transaction(() => {
+          this.store.editTaskFromChat(id, topicId, args[1] as number, args[2] as import('../../shared/contact-task-edit').ContactTaskEdit, log.slice(-2000), log)
+          if (status !== undefined) this.store.changeTopic(id, topicId, this.store.topics.get(id, topicId).revision, { status: status as AgentTopicStatus, reason: log.slice(-2000) })
+        })()
+        this.abort(id, topicId); break
       }
       case 'editTopic':
       case 'topicStatus': {
@@ -300,7 +320,7 @@ export class AgentService {
         considered.add(topicId)
         const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === topicId)
         const research = last && this.store.research(last.id)
-        if (last?.status === 'completed' && research?.contactQuery !== undefined && settings.readContactDeliveries) {
+        if (!this.store.topics.get(profile.character_id, topicId).calendar && last?.status === 'completed' && research?.contactQuery !== undefined && settings.readContactDeliveries) {
           const catalog = this.runtime.contactSources.discover(profile.character_id, topicId, research.contactQuery)
           if (catalog.total > 0 && catalog.unprocessedTotal === 0) {
             this.store.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=? AND focus_topic_id=?').run(Date.now() + settings.intervalMinutes * 60000, profile.character_id, topicId)
@@ -316,6 +336,7 @@ export class AgentService {
       if (!this.identities.get(run.character_id)?.config || JSON.parse(run.input).revisionScope !== 'presentation' && JSON.parse(run.input).settings.searchEnabled && !this.identities.get(run.character_id)?.searchKey) continue
       const settings = JSON.parse(this.store.profile(run.character_id)!.settings) as AgentSettings
       const active = this.activeFor(run.character_id)
+      if (JSON.parse(run.input).calendar && (!settings.enabled || !withinWorkHours(settings))) continue
       if (active.length >= (settings.maxConcurrentTasks ?? 1) || active.some(current => current.topicId === run.topic_id)) continue
       if (run.status === 'waiting' && (!settings.enabled || settings.paceWriting || !withinWorkHours(settings))) continue
       if (!this.store.tokens.canResume(run.id, run.character_id, run.topic_id)) continue

@@ -1,3 +1,4 @@
+import { calendarScheduleLabel } from '../../../../shared/calendar-schedule'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import ContactTaskRunButton from './ContactTaskRunButton'
 import { contactTaskExecution } from './contactTaskExecution'
@@ -97,6 +98,8 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   ] : [['触发规则', assistantTask?.description ?? '']]
 
   const execution = topic ? contactTaskExecution(data, topic) : undefined
+  const calendarFinished = topic && data.taskSchedule?.[topic.id]?.finishedAt
+  const calendarNeedsSettings = Boolean(topic?.calendar && !data.settings.enabled)
   const currentRun = execution?.run
   const slotsFull = data.runs.filter(run => run.status === 'running').length >= (data.settings.maxConcurrentTasks ?? 1)
   const queued = Boolean(topic && data.queuedTopicIds?.includes(topic.id))
@@ -122,7 +125,8 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     : activeRun?.status === 'queued' ? '排队中 · 暂停'
     : activeRun?.status === 'interrupted' ? '恢复中 · 暂停'
     : queued ? '排队中 · 暂停'
-    : canPause ? '等待续跑 · 暂停'
+    : canPause ? topic?.calendar ? '按日历执行 · 暂停' : '等待续跑 · 暂停'
+    : topic?.calendar ? calendarFinished ? '修改安排' : calendarNeedsSettings ? '检查工作设置' : '启用定时'
     : topicRun?.status === 'failed' ? '重试本轮' : '立即执行'
   useEffect(() => {
     // A just-created topic can arrive before the parent's overview refresh.
@@ -186,9 +190,13 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       <div className="topic-floating-action" data-running={activeRun?.status === 'running' || undefined}>
           <ContactTaskRunButton pause={pauseAvailable}
             label={execution?.action === 'inspect' ? '处理样式失败' : runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '处理中…' : assistantTask ? pauseAvailable ? '暂停' : routine ? '启用定时' : assistantTask.duty ? '启用提醒' : '安排时间' : executionLabel}
-            title={execution?.action === 'inspect' ? '打开本次样式失败记录，保留原修改范围重试' : assistantTask ? (pauseAvailable ? '暂停此任务的自动触发' : '启用此任务的自动触发') : activeRun?.status === 'running' ? '本轮从开始到现在的耗时（含排队和等待回复），点击暂停；累计耗时见概览统计。' : canPause ? '点击暂停当前任务' : '启动本任务一轮工作'}
+            title={execution?.action === 'inspect' ? '打开本次样式失败记录，保留原修改范围重试' : assistantTask ? (pauseAvailable ? '暂停此任务的自动触发' : '启用此任务的自动触发') : activeRun?.status === 'running' ? '本轮从开始到现在的耗时（含排队和等待回复），点击暂停；累计耗时见概览统计。' : canPause ? '点击暂停当前任务' : topic?.calendar ? calendarFinished ? '修改为新的未来时间后再启用' : calendarNeedsSettings ? '查看联系人自动工作设置' : '恢复日历安排，到期后按工作时间和额度执行' : '启动本任务一轮工作'}
             disabled={busy || Boolean(runAction) || Boolean(topic && !canPause && settingsDirty)}
             onClick={() => {
+              if (topic?.calendar && !canPause && execution?.action !== 'inspect') {
+                if (calendarFinished) { setShowSettings(true); return }
+                if (calendarNeedsSettings && onWorkSettings) { onWorkSettings(); return }
+              }
               if (topic && execution?.action === 'inspect' && execution.latestRun) { onReport(execution.latestRun.id, topic.id); return }
               if (assistantTask && !routine && !assistantTask.duty) { setScheduledEditor(assistantTask); return }
               setRunAction(pauseAvailable ? 'pause' : 'start')
@@ -217,7 +225,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         duty={assistantTask?.duty ? { key: assistantTask.duty, title: assistantTask.title, values: assistant.config ? [
           ['离开判定', assistant.config.proactiveReturnAwayMinutes], ['连续使用提醒', assistant.config.proactiveRestMinutes], ['共享冷却', assistant.config.proactiveCooldownMinutes]
         ] : [] } : undefined}
-        initialDescription={topic ? [topic.goal, topic.constraints].filter(Boolean).join('\n\n') : routine ? `${scheduleFields[0][1]}\n${routine.instruction}` : assistantTask?.description ?? ''}
+        initialDescription={topic ? [topic.calendar ? calendarScheduleLabel(topic.calendar) : undefined, topic.goal, topic.constraints].filter(Boolean).join('\n\n') : routine ? `${scheduleFields[0][1]}\n${routine.instruction}` : assistantTask?.description ?? ''}
         onClose={closeSettings} onAction={onAction} onDone={() => { void load() }} onRoutineDone={() => { void assistant.refresh() }} onDutyDone={() => { void assistant.refresh() }} />}
       <div>
       <section role="tabpanel" id={`${tabId}-overview-panel`} aria-labelledby={`${tabId}-overview`} hidden={tab !== 'overview'} tabIndex={0}>

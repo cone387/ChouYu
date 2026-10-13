@@ -59,7 +59,7 @@ it('restores exact old snapshots on restart and invalidates them only on withdra
     const first = store.materials.save('alice', input('version one'))
     store.materials.save('alice', input('version two'), first.id, 1)
     store.close(); store = new AgentStore(path)
-    expect(store.db.pragma('user_version', { simple: true })).toBe(14)
+    expect(store.db.pragma('user_version', { simple: true })).toBe(15)
     expect(store.materials.read({ characterId: 'alice', query: '' }, first).text).toBe('version one')
     expect(() => store.assertContextCurrent('alice', { memories: [], materials: [first] })).not.toThrow()
     store.materials.withdraw('alice', first.id, 2)

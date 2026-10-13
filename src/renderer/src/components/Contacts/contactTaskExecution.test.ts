@@ -33,6 +33,15 @@ it('does not offer a guessed task after deletion, and omits never-started unrela
   expect(currentTaskChoices(data).map(item => item.topic.id)).toEqual(['a'])
   expect(selectCurrentTask(currentTaskChoices(data), 'deleted')).toBeUndefined()
 })
+it('includes future calendar tasks and does not offer to continue a finished once schedule', () => {
+  const data = fixture(), topic = data.topics[1]
+  topic.status = 'planned'
+  topic.calendar = { cadence: 'once', date: '2026-12-31', times: ['09:00'] }
+  data.taskSchedule = { b: { calendar: topic.calendar, nextAt: Date.now() + 10000 } }
+  expect(currentTaskChoices(data).some(item => item.topic.id === 'b')).toBe(true)
+  data.taskSchedule.b.finishedAt = Date.now()
+  expect(contactTaskExecution(data, topic)).toMatchObject({ canPause: false, action: undefined })
+})
 it('opens the original failed presentation record instead of continuing prose', () => {
   const data = fixture(), topic = data.topics[0]
   data.settings.enabled = false

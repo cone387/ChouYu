@@ -17,9 +17,11 @@ export function createAssistantTools(service: AssistantRoutineService, owner: (s
       inputSchema: { type: 'object', properties: {
         id: { type: 'string', description: '修改已有安排时填写真实 ID' }, revision: { type: 'number', description: '修改已有安排时填写版本' },
         title: { type: 'string', maxLength: 100 }, instruction: { type: 'string', maxLength: 2000, description: '保留用户的安排与关注重点；仅支持提醒或联系人状态总结' },
-        time: { type: 'string', description: 'HH:mm，本地时间' }, cadence: { type: 'string', description: 'daily / weekdays / weekly' }, weekday: { type: 'number', description: 'weekly 时必填，0 周日至 6 周六' },
+        time: { type: 'string', description: 'HH:mm，本地时间；多个时刻用英文逗号分隔，最多5个，一次性只能1个' }, cadence: { type: 'string', description: 'daily / weekdays / weekly / once / monthly / interval' }, weekday: { type: 'number', description: 'weekly 时必填，0 周日至 6 周六' },
+        date: { type: 'string', description: 'once 的未来日期，YYYY-MM-DD' }, monthDay: { type: 'string', description: 'monthly 的日期1–31或last（明确的最后一天）；不存在指定日的月份跳过' },
+        intervalDays: { type: 'number', description: 'interval 的间隔日历日数，1–36500' }, anchorDate: { type: 'string', description: 'interval 必填的起始日期YYYY-MM-DD；缺少起点先询问' },
         kind: { type: 'string', description: 'reminder 直接提醒；contact-summary 先查联系人再由模型总结' }, enabled: { type: 'boolean', description: 'false 暂停，true 启用' }
       }, required: ['title', 'instruction', 'time', 'cadence', 'kind', 'enabled'], additionalProperties: false },
-      execute(args, context) { check(context.sessionId); const items = service.save(args, args.id as string | undefined, args.revision as number | undefined); return { content: JSON.stringify({ saved: true, routines: items }), summary: '助手安排已保存' } } }
+      execute(args, context) { check(context.sessionId); const items = service.save({ ...args, times: typeof args.time === 'string' ? args.time.split(',').map(t => t.trim()) : undefined, monthDay: args.monthDay === 'last' ? 'last' : args.monthDay === undefined ? undefined : Number(args.monthDay) }, args.id as string | undefined, args.revision as number | undefined); return { content: JSON.stringify({ saved: true, routines: items }), summary: '助手安排已保存' } } }
   ]
 }

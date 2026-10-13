@@ -1,5 +1,8 @@
 import { providerRecoveryDelay } from '../../shared/contact-failure'
 import { initializeCompletionReviews } from './completion-batches'
+import { ContactCalendars, type CalendarOccurrence } from './calendar'
+import { validateRoutine } from '../../shared/assistant-routines'
+import { validateCalendarSchedule, calendarScheduleLabel } from '../../shared/calendar-schedule'
 import { citationContext, validateCitation } from './citations'
 import { AgentMemories } from './memories'
 import { AgentMaterials } from './materials'
@@ -38,13 +41,14 @@ function runContext(row: RunRow): import('../../shared/contact-content').Contact
   if (!memories.length && !materials.length) return undefined
   return { characterId: row.character_id, requestId: row.id, memories, materials, truncated: input.memoriesTruncated === true, status: ['failed', 'cancelled', 'interrupted'].includes(row.status) ? 'failed' : 'completed' }
 }
-const mapRun = (row: RunRow): AgentRun => ({ contactContext: runContext(row), id: row.id, characterId: row.character_id, revision: row.revision, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, question: row.question, answer: row.answer, summary: row.summary, error: row.error, topicId: row.topic_id, ...(JSON.parse(row.input).revisionScope === 'presentation' ? { revisionScope: 'presentation' as const } : {}), ...(row.status === 'waiting' && JSON.parse(row.input).questionInputs ? { inputFields: JSON.parse(row.input).questionInputs } : {}) })
+const mapRun = (row: RunRow): AgentRun => ({ calendar: JSON.parse(row.input).calendar, contactContext: runContext(row), id: row.id, characterId: row.character_id, revision: row.revision, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, question: row.question, answer: row.answer, summary: row.summary, error: row.error, topicId: row.topic_id, ...(JSON.parse(row.input).revisionScope === 'presentation' ? { revisionScope: 'presentation' as const } : {}), ...(row.status === 'waiting' && JSON.parse(row.input).questionInputs ? { inputFields: JSON.parse(row.input).questionInputs } : {}) })
 const dayStart = (now: number) => { const date = new Date(now); date.setHours(0, 0, 0, 0); return date.getTime() }
 
 const failureDelay = (settings: AgentSettings, failures: number) => settings.paceWriting
   ? Math.max(settings.intervalMinutes * 60000, 15 * 60000) : (failures === 1 ? 60000 : 180000)
 
 export class AgentStore {
+  readonly calendars: ContactCalendars
   readonly db: Database.Database
   readonly topics: AgentTopics
   readonly decisions: ContactInteractions
@@ -63,7 +67,7 @@ export class AgentStore {
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 14) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 15) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -149,6 +153,8 @@ export class AgentStore {
       topic_id TEXT PRIMARY KEY REFERENCES topics(id) ON DELETE CASCADE,
       conversation TEXT NOT NULL DEFAULT '', pending INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0);`)
     this.taskFailures = new AgentTaskFailures(this.db)
+    this.calendars = new ContactCalendars(this.db)
+    if (version < 15) this.db.pragma('user_version = 15')
     this.restoreFailureSchedules()
   }
   private restoreFailureSchedules() {
@@ -350,9 +356,11 @@ export class AgentStore {
     if (profile?.focus_topic_id && !taskSchedule[profile.focus_topic_id]) taskSchedule[profile.focus_topic_id] = { nextAt: profile.next_at }
     for (const topic of this.topics.list(id)) {
       const topicId = topic.id, schedule = taskSchedule[topicId]
+      const calendar = topic.calendar && this.calendars.get(topicId)
+      if (calendar && schedule) Object.assign(schedule, { nextAt: calendar.next_at, calendar: topic.calendar, finishedAt: calendar.finished_at ?? undefined, lastDueAt: calendar.last_due_at ?? undefined })
       const latest = this.db.prepare('SELECT id,status FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(topicId) as { id: string; status: string } | undefined
       const research = latest && this.research(latest.id)
-      if (schedule) schedule.waitingForUpdates = latest?.status === 'completed' && Boolean(research?.unchanged || research?.plan.action === 'wait')
+      if (schedule) schedule.waitingForUpdates = !calendar && latest?.status === 'completed' && Boolean(research?.unchanged || research?.plan.action === 'wait')
       const block = latest && this.db.prepare('SELECT needed FROM token_blocks WHERE run_id=?').get(latest.id) as { needed: number } | undefined
       taskResources[topicId] = {
         callsNeeded: latest && ['queued', 'waiting', 'interrupted', 'running'].includes(latest.status) ? this.callsNeededToResume(latest.id)
@@ -378,7 +386,7 @@ export class AgentStore {
       callsToday: this.callCount(id, now),
       searchesToday: this.searchCount(id, now),
       topics: this.topics.list(id), focusTopicId: profile?.focus_topic_id ?? null,
-      queuedTopicIds: this.scheduled(id).filter(task => task.pending && canResearch(this.topics.get(id, task.topic_id).status)).map(task => task.topic_id),
+      queuedTopicIds: this.scheduled(id).filter(task => task.pending && canResearch(this.topics.get(id, task.topic_id).status) && !this.topics.get(id, task.topic_id).calendar).map(task => task.topic_id),
       runs: (this.db.prepare("SELECT * FROM runs WHERE character_id=? AND (status IN ('queued','running','waiting','interrupted') OR id IN (SELECT id FROM runs WHERE character_id=? ORDER BY created_at DESC,rowid DESC LIMIT 30)) ORDER BY created_at DESC,rowid DESC").all(id, id) as RunRow[]).map(mapRun),
       memories: this.memories(id), reports: (this.db.prepare('SELECT value FROM reports WHERE character_id=? ORDER BY rowid DESC LIMIT 20').all(id) as { value: string }[]).map(r => JSON.parse(r.value))
     }
@@ -577,6 +585,38 @@ export class AgentStore {
       return topic
     })()
   }
+  assignCalendarTopic(id: string, raw: unknown, conversation: string, requestLog?: string) {
+    const input = validateRoutine(raw), rule = validateCalendarSchedule(input)
+    return this.db.transaction(() => {
+      this.ensure(id)
+      const profile = this.profile(id)!, settings = JSON.parse(profile.settings) as AgentSettings
+      if (!settings.goal) this.db.prepare('UPDATE profiles SET settings=?,revision=revision+1 WHERE character_id=?')
+        .run(JSON.stringify({ ...settings, goal: '根据用户交付的任务独立工作。', enabled: true }), id)
+      let topic = this.topics.create(id, { title: input.title, goal: input.instruction, constraints: '' }, '用户交付定时任务。', Date.now(), requestLog)
+      topic = this.topics.calendar(id, topic.id, topic.revision, rule)
+      this.calendars.save(topic.id, rule, Date.now())
+      if (!input.enabled) topic = this.topics.status(id, topic.id, topic.revision, 'paused', '用户暂停定时任务。')
+      this.db.prepare('INSERT INTO task_schedule(topic_id,conversation,pending,next_at) VALUES(?,?,1,?)').run(topic.id, conversation.slice(-4000), this.calendars.get(topic.id)!.next_at)
+      const hasCurrentWork = profile.focus_topic_id && this.db.prepare("SELECT 1 FROM runs WHERE topic_id=? AND status!='cancelled' LIMIT 1").get(profile.focus_topic_id)
+      if (!profile.focus_topic_id || !hasCurrentWork && !this.scheduled(id).some(task => task.topic_id === profile.focus_topic_id)) this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
+      return topic
+    })()
+  }
+  editCalendarTopic(id: string, topicId: string, revision: number, raw: unknown, reason: string) {
+    const input = validateRoutine(raw, 160), rule = validateCalendarSchedule(input)
+    return this.db.transaction(() => {
+      const previous = this.topics.check(id, topicId, revision)
+      this.changeTopic(id, topicId, revision, { input: { title: input.title, goal: input.instruction, constraints: previous.constraints }, reason,
+        requestLog: appendTaskRequestLog(previous.requestLog, `用户：${reason}`) })
+      let topic = this.topics.get(id, topicId)
+      topic = this.topics.calendar(id, topicId, topic.revision, rule)
+      this.calendars.save(topicId, rule, Date.now())
+      // Editing an ended task never revives it. Explicit continue remains a separate operation.
+      if (!input.enabled && canResearch(topic.status)) this.topics.status(id, topicId, topic.revision, 'paused', '用户暂停定时任务。')
+      this.db.prepare('INSERT INTO task_schedule(topic_id,next_at) VALUES(?,?) ON CONFLICT(topic_id) DO UPDATE SET next_at=excluded.next_at').run(topicId, this.calendars.get(topicId)!.next_at)
+      return this.overview(id)
+    })()
+  }
   scheduled(id: string) {
     return this.db.prepare('SELECT s.* FROM task_schedule s JOIN topics t ON t.id=s.topic_id WHERE t.character_id=? ORDER BY s.rowid').all(id) as { topic_id: string; conversation: string; pending: number; next_at: number }[]
   }
@@ -616,11 +656,13 @@ export class AgentStore {
       if (busy.has(candidate.topic_id) || excluded.has(candidate.topic_id) || !candidate.pending && !settings.enabled) continue
       const topic = this.topics.get(id, candidate.topic_id)
       if (!canResearch(topic.status)) continue
+      const calendar = topic.calendar && this.calendars.get(topic.id)
+      if (topic.calendar && (!settings.enabled || !calendar || calendar.finished_at || calendar.next_at > now)) continue
       if (!this.handoffs.needsReview(id, topic.id)) continue
       const failure = this.taskFailures.get(topic.id)
       const recovery = failure && failure.failures >= 3 ? this.providerRecovery(id, topic.id) : undefined
       if (failure && (failure.failures >= 3 && !recovery || Math.max(failure.next_at, recovery?.at ?? 0) > now)) continue
-      if (candidate.next_at > now && !(settings.enabled && !settings.paceWriting && !failure && newSources?.(candidate.topic_id))) continue
+      if (!calendar && candidate.next_at > now && !(settings.enabled && !settings.paceWriting && !failure && newSources?.(candidate.topic_id))) continue
       const needed = (agentUsesPlanner(settings) ? 2 : 1) + (candidate.pending ? 1 : 0)
       if (this.callCount(id, now) + needed > settings.dailyCalls) continue
       if (topic.resourceBudget && this.taskCallCount(id, topic.id) + needed > topic.resourceBudget.modelCalls) continue
@@ -629,7 +671,15 @@ export class AgentStore {
   }
   startScheduledTopic(id: string, topicId: string, conversation: string) {
     return this.db.transaction(() => {
+      const active = this.db.prepare("SELECT id FROM runs WHERE topic_id=? AND status IN ('queued','running','waiting','interrupted')").get(topicId) as { id: string } | undefined
+      if (active) { this.topics.get(id, topicId); return active.id }
+      const topic = this.topics.get(id, topicId)
+      const occurrence = topic.calendar ? this.calendars.claim(topicId, topic.calendar, Date.now()) : undefined
       const runId = this.createRun(id, conversation, Date.now(), topicId)
+      if (occurrence) {
+        this.db.prepare("UPDATE runs SET input=json_set(input,'$.calendar',json(?)) WHERE id=?").run(JSON.stringify(occurrence), runId)
+        this.event(runId, 'calendar', `计划时间：${new Date(occurrence.dueAt).toLocaleString()}；实际启动：${new Date().toLocaleString()}。${calendarScheduleLabel(occurrence.rule)}`)
+      }
       this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topicId, id)
       return runId
     })()
@@ -713,7 +763,8 @@ export class AgentStore {
       this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=? AND focus_topic_id=?').run(nextAt, run.character_id, run.topic_id)
       this.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(nextAt, run.topic_id)
       this.db.prepare("UPDATE runs SET status='completed',summary=?,updated_at=? WHERE id=?").run(reason, Date.now(), runId)
-      this.event(runId, 'deferred', `${reason}\n本轮未生成新报告；下次检查：${new Date(nextAt).toISOString()}`)
+      const calendarNext = this.completeCalendar(run)
+      this.event(runId, 'deferred', `${reason}\n本轮未生成新报告；${calendarNext === undefined ? `下次检查：${new Date(nextAt).toISOString()}` : '已记录本期检查。'}`)
       this.pauseForTaskBudget(runId)
     })()
   }
@@ -896,7 +947,7 @@ export class AgentStore {
       if (!presentationOnly) this.taskFailures.clear(run.character_id, run.topic_id)
       if (run.topic_id) this.db.prepare('DELETE FROM research_idle WHERE topic_id=?').run(run.topic_id)
       const research = this.research(runId)
-      if (research) {
+      if (research && !JSON.parse(run.input).calendar) {
         const settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
         const savedSection = committed?.runId === runId ? committed.sections.find(section => section.runId === runId) : delivery?.section
         const changedSection = savedSection && !previousDelivery?.sections.some(section => section.body.trim() === savedSection.body.trim())
@@ -912,6 +963,7 @@ export class AgentStore {
         else if (research.plan.action === 'write' && !changedSection) this.event(runId, 'deferred', '本轮没有新增或修改正文，按工作间隔再检查，避免重复消耗额度。')
       }
       this.event(runId, 'completed', report.nextStep || '本轮工作完成。')
+      if (!presentationOnly) this.completeCalendar(run)
       if (!presentationOnly) this.pauseForTaskBudget(runId)
     })()
   }
@@ -922,6 +974,16 @@ export class AgentStore {
       if (!this.profile(id)!.focus_topic_id) this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
       return this.overview(id)
     })()
+  }
+  private completeCalendar(run: RunRow) {
+    if (!run.topic_id) return
+    const occurrence = JSON.parse(run.input).calendar as CalendarOccurrence | undefined
+    const nextAt = this.calendars.complete(run.topic_id, occurrence, Date.now())
+    if (nextAt !== undefined) {
+      this.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(nextAt, run.topic_id)
+      this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=? AND focus_topic_id=?').run(nextAt, run.character_id, run.topic_id)
+    }
+    return nextAt
   }
   private pauseForTaskBudget(runId: string) {
     const run = this.getRun(runId)
@@ -997,13 +1059,13 @@ export class AgentStore {
       return runId
     })()
   }
-  editTaskFromChat(id: string, topicId: string, revision: number, patch: import('../../shared/contact-task-edit').ContactTaskEdit, reason: string) {
+  editTaskFromChat(id: string, topicId: string, revision: number, patch: import('../../shared/contact-task-edit').ContactTaskEdit, reason: string, archivedLog?: string) {
     return this.db.transaction(() => {
       const before = this.topics.check(id, topicId, revision)
       if (!patch || !Object.keys(patch).length || Object.keys(patch).some(k => !['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations', 'clearTokenLimit'].includes(k))) throw new Error('任务修改字段无效。')
       if (patch.clearTokenLimit !== undefined && (patch.clearTokenLimit !== true || patch.tokens !== undefined)) throw new Error('解除任务Token上限不能同时设置新上限。')
       if (!reason?.trim() || reason.length > 2000) throw new Error('请保留有效的用户修改要求。')
-      const requestLog = appendTaskRequestLog(before.requestLog, `用户：${reason.trim()}`)
+      const requestLog = archivedLog ?? appendTaskRequestLog(before.requestLog, `用户：${reason.trim()}`)
       this.changeTopic(id, topicId, revision, { input: { title: patch.title ?? before.title, goal: patch.goal ?? before.goal, constraints: patch.constraints ?? before.constraints }, reason, requestLog })
       let topic = this.topics.get(id, topicId)
       if (patch.separateEvaluations !== undefined) topic = this.topics.evaluationDelivery(id, topicId, topic.revision, patch.separateEvaluations)
@@ -1032,12 +1094,14 @@ export class AgentStore {
   }
   continueTopic(id: string, topicId: string, revision: number, reason: string, conversation: string) {
     return this.db.transaction(() => {
-      this.topics.check(id, topicId, revision)
+      const topic = this.topics.check(id, topicId, revision)
+      if (topic.calendar && this.calendars.get(topicId)?.finished_at) throw new Error('这次安排已经执行；请先修改为新的未来时间，再恢复。')
       this.taskFailures.clear(id, topicId)
       const active = this.db.prepare("SELECT status FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted') AND topic_id=?").get(id, topicId) as { status: string } | undefined
       if (active) throw new Error(active.status === 'waiting' ? '请先回答当前待确认的问题。' : '联系人已有一轮工作未完成。')
       this.topics.status(id, topicId, revision, 'planned', reason)
       this.focusTopic(id, topicId)
+      if (topic.calendar) return
       return this.startScheduledTopic(id, topicId, conversation)
     })()
   }

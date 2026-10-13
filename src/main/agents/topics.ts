@@ -49,6 +49,12 @@ export class AgentTopics {
     this.record(before, after, 'edited', after.reason)
     return after
   }
+  calendar(characterId: string, id: string, revision: number, calendar: import('../../shared/calendar-schedule').CalendarSchedule) {
+    const before = this.check(characterId, id, revision)
+    const after = { ...before, calendar, revision: before.revision + 1, updatedAt: Date.now(), reason: '用户修改任务日历安排。' }
+    this.record(before, after, 'edited', after.reason)
+    return after
+  }
   tokenBudget(characterId: string, id: string, revision: number, tokenLimit: number | undefined) {
     if (tokenLimit !== undefined && (!Number.isSafeInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 1000000000)) throw new Error('任务 Token 上限应为 1–10 亿的整数。')
     const before = this.check(characterId, id, revision)

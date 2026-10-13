@@ -45,6 +45,7 @@ export function agentUsesPlanner(settings: AgentSettings): boolean {
 export type AgentRunStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
 export interface AgentEvidence { url: string; title: string; text: string; capturedAt: number; hash: string }
 export interface AgentRun {
+  calendar?: import('./calendar-schedule').CalendarOccurrence
   contactContext?: import('./contact-content').ContactContextRecord
   revisionScope?: 'presentation'
   inputFields?: import('./agent-delivery').TaskInputField[]
@@ -58,7 +59,7 @@ export interface AgentInteractionPage { items: AgentInteraction[]; nextCursor?: 
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { evaluations?: import('./agent-evaluation').AgentEvaluation[]; runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
-  taskSchedule?: Record<string, { nextAt: number; waitingForUpdates?: boolean }>
+  taskSchedule?: Record<string, { nextAt: number; waitingForUpdates?: boolean; calendar?: import('./calendar-schedule').CalendarSchedule; finishedAt?: number; lastDueAt?: number }>
   taskResources?: Record<string, { callsNeeded: number; tokensNeeded?: number }>
   taskFailures?: Record<string, { failures: number; retryAt?: number }>
   providerRecovery?: { topicId: string; at: number }
@@ -84,6 +85,7 @@ export const TOPIC_STATUS = { planned: '待开始', researching: '推进中', ne
 export type AgentTopicStatus = keyof typeof TOPIC_STATUS
 export interface AgentTopicInput { title: string; goal: string; constraints: string }
 export interface AgentTopic extends AgentTopicInput {
+  calendar?: import('./calendar-schedule').CalendarSchedule
   /** Delivery grouping only; does not limit research/read batches. */
   separateEvaluations?: boolean
   tokenLimit?: number

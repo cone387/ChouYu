@@ -46,7 +46,7 @@ describe('contact task gateway', () => {
       async () => JSON.stringify({ kind: 'work-edit', input: { goal: '写文章', constraints: '' }, budget: { tokens: 500000 } }))
     expect(result).toMatchObject({ kind: 'work-edited', budgetApplied: true })
     expect(agents.mock.calls.some(([, method]) => method === 'setTaskBudget')).toBe(false)
-    expect(agents).toHaveBeenCalledWith('alice', 'setTaskTokenLimit', ['task', expect.any(Number), 500000])
+    expect(agents).toHaveBeenCalledWith('alice', 'editTaskFromDescription', ['task', 1, expect.objectContaining({ tokens: 500000 }), undefined, expect.stringContaining('50 万')])
   })
   it('asks follow-up questions and keeps the draft chain', async () => {
     const { deps, drafts } = fixture()
@@ -78,34 +78,33 @@ describe('contact task gateway', () => {
     expect(log).toContain('几点？')
     expect(log).toContain('改成九点')
   })
-  it('honestly refuses scheduled requests for non-scheduled contacts and keeps the refusal in the draft chain', async () => {
-    const { deps, drafts } = fixture()
+  it('saves an ordinary contact schedule through its own engine', async () => {
+    const { deps, drafts, agents, routineService } = fixture(async () => ({ topics: [] }))
     const result = await requestContactTask({ kind: 'create', characterId: 'other' }, '每天八点提醒我喝水', deps, async () => JSON.stringify({ kind: 'routine', input: { ...routineInput, kind: 'reminder' } }))
-    expect(result).toMatchObject({ kind: 'question' })
-    expect((result as { question: string }).question).toContain('定点')
-    expect(drafts.get('create:other')?.turns.map(turn => turn.role)).toEqual(['user', 'assistant'])
+    expect(result).toMatchObject({ kind: 'work-created' })
+    expect(agents).toHaveBeenCalledWith('other', 'assignCalendarTopic', [expect.objectContaining({ times: ['08:30'] }), expect.stringContaining('每天八点')])
+    expect(routineService.list()).toEqual([])
+    expect(drafts.get('create:other')).toBeUndefined()
   })
-  it('edits work topics through the model parse: goal, budget, status with honest partial failure', async () => {
+  it('keeps the whole edit and draft uncommitted when the atomic goal/budget save fails', async () => {
     const topic = { id: 't1', revision: 4, title: '对照任务', goal: '旧目标', constraints: '', status: 'planned' }
     let revision = 4
     const { deps, agents } = fixture(async (_id, method, args) => {
       if (method === 'get') return { topics: [{ ...topic, revision }] }
       if (method === 'topicDetail') return { topic: { ...topic, revision }, changes: [] }
       if (method === 'editTopic') { revision++; return { topics: [{ ...topic, revision, goal: (args[2] as { goal: string }).goal }] } }
-      if (method === 'setTaskBudget') throw new Error('预算不能低于已使用的 30 次调用。')
+      if (method === 'editTaskFromDescription') throw new Error('预算不能低于已使用的 30 次调用。')
       throw new Error(`unexpected ${method}`)
     })
-    const result = await requestContactTask({ kind: 'edit-work', characterId: 'other', topicId: 't1', topicRevision: 4 }, '目标改为验证新方案，预算调到 50 次', deps, async () => JSON.stringify({ kind: 'work-edit', input: { goal: '验证新方案', constraints: '' }, budget: { modelCalls: 50 } }))
-    expect(result).toMatchObject({ kind: 'work-edited', budgetApplied: false })
-    expect((result as { budgetError?: string }).budgetError).toContain('预算不能低于')
-    expect(agents.mock.calls.some(([, method]) => method === 'editTopic')).toBe(true)
+    await expect(requestContactTask({ kind: 'edit-work', characterId: 'other', topicId: 't1', topicRevision: 4 }, '目标改为验证新方案，预算调到 50 次', deps, async () => JSON.stringify({ kind: 'work-edit', input: { goal: '验证新方案', constraints: '' }, budget: { modelCalls: 50 } }))).rejects.toThrow('预算不能低于')
+    expect(agents.mock.calls.some(([, method]) => method === 'editTopic')).toBe(false)
   })
   it('rejects invalid budget or status before saving the goal edit', async () => {
     const topic = { id: 't1', revision: 4, title: '对照任务', goal: '旧目标', constraints: '', status: 'planned' }
     const { deps, agents } = fixture(async (_id, method) => { if (method === 'get') return { topics: [{ ...topic }] }; throw new Error(`unexpected ${method}`) })
     const target = { kind: 'edit-work' as const, characterId: 'other', topicId: 't1', topicRevision: 4 }
     await expect(requestContactTask(target, '预算调到 0 次', deps, async () => JSON.stringify({ kind: 'work-edit', input: { goal: '新目标', constraints: '' }, budget: { modelCalls: 0 } }))).rejects.toThrow('1–10000')
-    await expect(requestContactTask(target, '结束这个任务', deps, async () => JSON.stringify({ kind: 'work-edit', input: { goal: '新目标', constraints: '' }, status: 'completed' }))).rejects.toThrow('任务页操作')
+    await expect(requestContactTask(target, '调整这个任务', deps, async () => JSON.stringify({ kind: 'work-edit', input: { goal: '新目标', constraints: '' }, status: 'unknown' }))).rejects.toThrow('状态')
     expect(agents.mock.calls.some(([, method]) => method === 'editTopic')).toBe(false)
   })
   it('applies duty parameter edits with range validation and unknown-key rejection', async () => {

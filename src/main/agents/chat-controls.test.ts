@@ -12,11 +12,11 @@ import type { ToolExecutionContext } from '../tools/registry'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
-async function fixture() {
+async function fixture(config: import('./service').AgentIdentity['config'] = null) {
   const dir = mkdtempSync(join(tmpdir(), 'contact-chat-controls-'))
   const service = new AgentService(dir, () => {})
   cleanup.push(async () => { await service.close(); rmSync(dir, { recursive: true, force: true }) })
-  await service.sync([{ id: 'alice', name: '作者', soul: '', conversation: '', config: null }, { id: 'bob', name: '评审', soul: '', conversation: '', config: null }])
+  await service.sync([{ id: 'alice', name: '作者', soul: '', conversation: '', config }, { id: 'bob', name: '评审', soul: '', conversation: '', config: null }])
   let owner = 'alice'
   const context = { sessionId: 'chat' } as ToolExecutionContext
   const tools = createContactTools({ owner: () => owner, request: (method, id, args) => service.request(method, id, args) })
@@ -45,6 +45,44 @@ it('saves working hours through chat for a contact without tasks and retains a d
     expect(reopened.overview('alice').settings.workHours).toEqual({ start: '20:00', end: '23:00' })
     expect(reopened.db.prepare('SELECT reason FROM work_settings_changes WHERE character_id=?').get('alice')).toEqual({ reason: '以后只在晚上八点到十一点工作' })
   } finally { reopened.close() }
+})
+it('reschedules an existing paused task through chat without changing its identity or automatically resuming it', async () => {
+  const f = await fixture()
+  const topic = f.store.topics.create('alice', { title: '文章', goal: '写文章', constraints: '保持原要求' })
+  f.store.changeTopic('alice', topic.id, topic.revision, { status: 'paused', reason: '用户暂停' })
+  const schedule = { cadence: 'monthly', monthDay: 'last', times: ['09:00'] }
+  const reply = await f.route('文章改成每月最后一天九点写，继续保持暂停', { kind: 'action', action: 'schedule', topicId: topic.id, schedule })
+  expect(reply).toContain('已保存')
+  expect(reply).toContain('暂停')
+  expect(f.store.topics.get('alice', topic.id)).toMatchObject({ calendar: schedule, status: 'paused', constraints: '保持原要求' })
+  expect(f.store.topics.list('alice')).toHaveLength(1)
+  expect(f.store.overview('alice').runs).toEqual([])
+  const current = f.store.topics.get('alice', topic.id)
+  const prepared = await f.prepare('set_contact_schedule', { topicId: current.id, revision: current.revision, schedule: JSON.stringify(schedule), reason: '再保存' })
+  f.store.topics.edit('alice', topic.id, current.revision, current, '新版本')
+  await expect(prepared.execute()).rejects.toThrow('变化')
+})
+it('accepts a new calendar through the chat tool without immediately running the task', async () => {
+  const f = await fixture({ provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] })
+  const schedule = { cadence: 'monthly', monthDay: 'last', times: ['09:00'] }
+  const prepared = await f.prepare('assign_contact_task', { description: '每月最后一天九点写一篇文章', schedule: JSON.stringify(schedule) })
+  const result = JSON.parse((await prepared.execute()).content)
+  expect(result.saved).toBe(true)
+  expect(result.message).toContain('每月最后一天')
+  expect(f.store.topics.list('alice')[0].calendar).toEqual(schedule)
+  expect(f.store.overview('alice').runs).toEqual([])
+  await expect(prepared.execute()).rejects.toThrow('已经提交')
+})
+it('applies the single-description editor atomically, including clear token and ending with the original request', async () => {
+  const f = await fixture()
+  let topic = f.store.topics.create('alice', { title: '文章', goal: '旧目标', constraints: '' })
+  topic = f.store.topics.tokenBudget('alice', topic.id, topic.revision, 5000)
+  await expect(f.service.request('editTaskFromDescription', 'alice', [topic.id, topic.revision, { goal: '不应保存', tokens: -1 }, 'completed', '用户：坏参数'])).rejects.toThrow()
+  expect(f.store.topics.get('alice', topic.id)).toMatchObject({ goal: '旧目标', tokenLimit: 5000, revision: topic.revision })
+  await f.service.request('editTaskFromDescription', 'alice', [topic.id, topic.revision, { goal: '新目标', clearTokenLimit: true }, 'completed', '用户：取消Token上限并结束任务'])
+  const saved = f.store.topics.get('alice', topic.id)
+  expect(saved).toMatchObject({ goal: '新目标', status: 'completed', requestLog: '用户：取消Token上限并结束任务' })
+  expect(saved.tokenLimit).toBeUndefined()
 })
 it('exposes the actual settings revision to model tools before preparing a settings change', async () => {
   const f = await fixture(), before = f.store.overview('alice')

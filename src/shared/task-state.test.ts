@@ -6,6 +6,15 @@ const topic: AgentTopic = { id: 'ideas', characterId: 'alice', title: '持续生
 function data(): AgentOverview {
   return { settings: { ...DEFAULT_AGENT_SETTINGS, enabled: true, dailyCalls: 100 }, revision: 1, callsToday: 0, nextAt: 2000, focusTopicId: topic.id, topics: [topic], runs: [], reports: [], memories: [], taskSchedule: { ideas: { nextAt: 2000 } } }
 }
+it('projects the saved calendar and completed once occurrence without inventing further continuous work', () => {
+  const d = data()
+  const calendar = { cadence: 'monthly' as const, monthDay: 'last' as const, times: ['09:00'] }
+  d.taskSchedule!.ideas = { nextAt: 2000, calendar }
+  expect(taskState(d, { ...topic, calendar }, 1000).description).toContain('每月最后一天')
+  d.taskSchedule!.ideas.finishedAt = 900
+  d.callsToday = 100
+  expect(taskState(d, { ...topic, calendar }, 1000).code).toBe('calendar-finished')
+})
 it('distinguishes a completed round, waiting for updates and executing without declaring the task incomplete', () => {
   const d = data()
   d.runs = [{ topicId: topic.id, status: 'completed' }] as AgentOverview['runs']

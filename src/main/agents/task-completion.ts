@@ -13,6 +13,13 @@ interface Decision { mode: 'ongoing' | 'finite' | 'until'; satisfied: boolean; e
 export async function reviewTaskCompletion<T extends Candidate>(store: AgentStore, runId: string, topic: AgentTopic, draft: T,
   model: AgentModel, signal: AbortSignal, live: () => void, context?: unknown): Promise<T> {
   if (!draft.progress || !['completed', 'abandoned'].includes(draft.progress.status)) return draft
+  if (topic.calendar && topic.calendar.cadence !== 'once') {
+    live(); signal.throwIfAborted()
+    const nextStep = '按已保存的日历安排等待下次执行。'
+    const reason = '本期交付已完成，重复日历任务仍保留；只有用户明确结束才停止后续期次。'
+    store.event(runId, 'completion-deferred', reason)
+    return { ...draft, nextStep, progress: { ...draft.progress, status: 'researching', nextStep, reason } }
+  }
   const saved = store.deliveries.get(topic.id)
   const sections = [...(saved?.sections ?? [])]
   if (draft.delivery?.section) {

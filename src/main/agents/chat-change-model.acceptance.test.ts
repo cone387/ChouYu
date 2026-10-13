@@ -15,7 +15,7 @@ const cases = [
   ['pause', '先暂停这个评审任务。', 'update_contact_topic'],
   ['discussion', '你觉得这个评价标准合理吗？先讨论，不要改。', undefined],
   ['quote', '朋友说“一次汇报一个”，我还没决定，你觉得呢？先不改。', undefined],
-  ['unsupported', '从明天起每天上午九点准时评价。', 'question'],
+  ['daily-schedule', '从明天起每天上午九点准时评价。', 'set_contact_schedule'],
   ['daily-budget', '你的每日Token上限改为30万。', 'edit_contact_work_settings'],
   ['work-hours', '以后只在晚上八点到十一点工作，其他不变。', 'edit_contact_work_settings'],
   ['clear-token', '取消这个任务的Token上限，保留调用上限。', 'edit_contact_task'],

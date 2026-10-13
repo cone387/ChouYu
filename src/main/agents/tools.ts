@@ -5,6 +5,7 @@ import { containsSecret } from '../../shared/memory'
 import type { PreparedTool, RegisteredTool, ToolExecutionContext } from '../tools/registry'
 import { pendingContinuation } from './continuation'
 import { contactWorkSettingProperties, validateContactWorkSettingsPatch, applyContactWorkSettingsPatch, describeContactWorkSettingsPatch } from '../../shared/contact-work-settings'
+import { validateCalendarSchedule, calendarScheduleLabel } from '../../shared/calendar-schedule'
 
 interface Access {
   owner(sessionId?: string): string | undefined
@@ -54,7 +55,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
           } }
         }
         method = 'continueTopic'; values = [topicId, revision, reason]
-        preview = `事项：${topic.title}\n安排本事项执行一轮，有空余名额时开始。\n持续工作：${overview.settings.enabled ? '保持开启' : '保持关闭'}\n按现有来源与调用预算执行。\n原因：${reason}`
+        preview = `事项：${topic.title}\n${topic.calendar ? `恢复日历安排：${calendarScheduleLabel(topic.calendar)}；到期后按工作时间和额度执行。` : '安排本事项执行一轮，有空余名额时开始。'}\n持续工作：${overview.settings.enabled ? '保持开启' : '保持关闭'}\n按现有来源与调用预算执行。\n原因：${reason}`
       } else if (args.action === 'revise') {
         method = 'reviseTopic'; values = [topicId, revision, reason]
         preview = `事项：${topic.title}\n修改意见：${reason}\n按原额度立即修订一轮，保留旧成果版本；不自动开启持续工作。`
@@ -80,6 +81,10 @@ export function createContactTools(access: Access): RegisteredTool[] {
         if (result.topics.find(topic => topic.id === topicId)?.status !== status) throw new Error('未能确认任务状态已保存。')
         const message = `${TOPIC_STATUS[status]}这项任务，已有成果与历史保留。`
         return { content: JSON.stringify({ saved: true, status, message, workCompleted: false }), summary: message }
+      }
+      if (args.action === 'continue' && topic.calendar) {
+        const message = `已恢复「${topic.title}」的日历安排。${result.settings.enabled ? '到期后按工作时间和额度执行，尚未产生本期成果。' : '联系人自动工作仍未开启，启用后才会按日历执行。'}`
+        return { content: JSON.stringify({ saved: true, message, workCompleted: false }), summary: message }
       }
       return { content: JSON.stringify({ message: `请求已受理。${preview}`, workCompleted: false, run: result.runs?.find(r => r.topicId === topicId), instruction: '继续或修订仅代表已排入执行，成果是否完成须重新读取实际保存版本。' }), summary: answer ? '已回复，继续本轮工作' : '已提交事项调整' }
     } }
@@ -113,19 +118,27 @@ export function createContactTools(access: Access): RegisteredTool[] {
       prepareAsync: (args, context) => prepare(args, context, true), execute: () => { throw new Error('必须先预览确认。') } },
     { source: 'builtin', risk: 'write', requiresConfirmation: false, alwaysConfirm: false,
       name: 'assign_contact_task', displayName: '接下联系人任务',
-      description: '用户明确把一项需要执行、研究或持续跟进的任务交给当前联系人时使用。普通问答、讨论想法、引用他人话语不创建任务。只需原始任务描述，自动整理方向并开始；不写入个人待办。已有事项的回复或调整使用对应工具。',
-      inputSchema: { type: 'object', properties: { description: { type: 'string', description: '用户交付的单个任务，保留目标和明确约束，不自行添加要求', maxLength: 2000 } }, required: ['description'], additionalProperties: false },
+      description: '用户明确把一项需要执行、研究或持续跟进的任务交给当前联系人时使用。普通问答、讨论想法、引用他人话语不创建任务。保留原始描述；明确指定钟点/日历周期必须填写schedule保存真实安排，不得仅写进description后立即执行；时间或起点不明确先询问。不写入个人待办。已有事项的回复或调整使用对应工具。',
+      inputSchema: { type: 'object', properties: { description: { type: 'string', description: '用户交付的单个任务，保留目标和明确约束，不自行添加要求', maxLength: 2000 },
+        schedule: { type: 'string', description: '仅用户指定日历时间时填写JSON：times=[HH:mm]，cadence=daily/weekdays/weekly/once/monthly/interval；weekly附weekday(0–6)，once附date且只1个时刻，monthly附monthDay(1–31或last)，interval附intervalDays和anchorDate(YYYY-MM-DD)。最多5个时刻，缺必要信息先询问。' }
+      }, required: ['description'], additionalProperties: false },
       async prepareAsync(args, context) {
         const id = owner(context), description = typeof args.description === 'string' ? args.description.trim() : ''
         if (!description || description.length > 2000 || containsSecret(description)) throw new Error('请提供有效的任务描述，不要包含密钥。')
+        const schedule = args.schedule === undefined ? undefined : validateCalendarSchedule(JSON.parse(String(args.schedule)))
         const overview = await access.request('get', id) as AgentOverview
         let consumed = false
         return { preview: `交给当前联系人：${description}\n按联系人的权限与额度执行；忙碌或今日额度不足时先排队，当前任务完成或等待回复时接续。`, execute: async () => {
           if (consumed) throw new Error('此任务已经提交，请勿重复创建。')
           consumed = true
           if (owner(context) !== id) throw new Error('聊天归属已变化，请重新发起。')
-          const result = await access.request('feedback', id, [overview.revision, 'assignTopic', [description]]) as AgentOverview
+          const result = await access.request('feedback', id, [overview.revision, schedule ? 'assignCalendarTopic' : 'assignTopic', schedule ? [{ ...schedule, title: description.slice(0, 100), instruction: description, kind: 'contact-summary', enabled: true }, `用户：${description}`] : [description]]) as AgentOverview
           const topic = result.topics.find(topic => !overview.topics.some(previous => previous.id === topic.id))
+          if (schedule) {
+            if (!topic?.calendar || !result.taskSchedule?.[topic.id]) throw new Error('未能确认日历安排已保存。')
+            const message = `已保存安排：${calendarScheduleLabel(topic.calendar)}。${result.settings.enabled ? '到期由我按工作时间和额度执行，尚未开始本轮工作。' : '当前自动工作未开启，启用后才会按安排执行。'}`
+            return { content: JSON.stringify({ saved: true, topicId: topic.id, message, nextAt: result.taskSchedule[topic.id].nextAt, workCompleted: false }), summary: '已保存联系人定时任务' }
+          }
           const queued = Boolean(topic && result.queuedTopicIds?.includes(topic.id))
           return { content: JSON.stringify({ message: queued ? '任务已接下并排队，尚未开始执行。不要再次创建。' : '任务已接下，已安排整理方向。不要再次创建，也不要声称研究已经完成。', topicId: topic?.id, queued, run: result.runs.find(run => run.topicId === topic?.id) }), summary: queued ? '已接下任务，排队等待执行' : '已接下任务，已安排执行' }
         } }
@@ -162,6 +175,33 @@ export function createContactTools(access: Access): RegisteredTool[] {
           return { content: JSON.stringify({ saved: true, workCompleted: false, topic: saved, message: `已保存「${saved.title}」的新要求。${['paused', 'completed', 'abandoned'].includes(saved.status) ? `任务仍为${TOPIC_STATUS[saved.status]}。` : '后续按新要求执行。'}已有成果保留。` }), summary: '任务新要求已保存' }
         } }
       }, execute: () => { throw new Error('请先准备任务修改。') }
+    },
+    { ...common, name: 'set_contact_schedule', displayName: '保存任务日历安排',
+      description: '为当前联系人的现有任务保存或修改真实日历安排。保留目标、约束与暂停/结束状态。必须先读取任务版本；不能仅在普通任务描述中写时间冒充保存。',
+      inputSchema: { type: 'object', properties: { ...topicProperties,
+        schedule: { type: 'string', description: 'JSON字符串：times为1–5个HH:mm，cadence为daily/weekdays/weekly/once/monthly/interval；weekly须weekday(0–6)，once须date且仅一个时刻，monthly须monthDay(1–31或last)，interval须intervalDays和anchorDate。日期YYYY-MM-DD，缺必要信息先询问。' },
+        reason: { type: 'string', maxLength: 2000, description: '本次用户原话' }
+      }, required: ['topicId', 'revision', 'schedule', 'reason'], additionalProperties: false },
+      async prepareAsync(args, context) {
+        const id = owner(context), data = await access.request('get', id) as AgentOverview
+        const topic = data.topics.find(t => t.id === args.topicId)
+        if (!topic || topic.revision !== args.revision) throw new Error('任务已变化，请重新读取。')
+        if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('安排修改要求无效。')
+        const rule = validateCalendarSchedule(JSON.parse(String(args.schedule)))
+        const input = { ...rule, title: topic.title, instruction: topic.goal, enabled: !['paused', 'completed', 'abandoned'].includes(topic.status), kind: 'contact-summary' }
+        let consumed = false
+        return { preview: `任务：${topic.title}\n安排：${calendarScheduleLabel(rule)}\n由本联系人到期执行，仍受工作时间和额度限制；暂停/结束不会自动恢复。`, execute: async () => {
+          if (consumed) throw new Error('此安排已经提交。')
+          consumed = true
+          if (owner(context) !== id) throw new Error('聊天归属已变化。')
+          const result = await access.request('feedback', id, [data.revision, 'editCalendarTopic', [topic.id, topic.revision, input, args.reason]]) as AgentOverview
+          const saved = result.topics.find(t => t.id === topic.id)
+          if (!saved?.calendar || saved.revision <= topic.revision) throw new Error('没有读取到保存后的安排。')
+          const nextAt = result.taskSchedule?.[topic.id]?.nextAt
+          const message = `已保存「${saved.title}」的安排：${calendarScheduleLabel(saved.calendar)}。${['paused', 'completed', 'abandoned'].includes(saved.status) ? `任务仍为${TOPIC_STATUS[saved.status]}。` : `下次计划时间：${new Date(nextAt!).toLocaleString()}；仍受工作时间和额度限制。`}`
+          return { content: JSON.stringify({ saved: true, topic: saved, nextAt, message, workCompleted: false }), summary: '已保存任务日历安排' }
+        } }
+      }, execute: () => { throw new Error('请先准备日历安排。') }
     },
     { ...common, name: 'get_contact_delivery', displayName: '读取自己的正式成果', risk: 'read', requiresConfirmation: false, alwaysConfirm: false,
       description: '读取当前聊天联系人的已保存成果目录、真实版本、需求与展示代码。核实完成进度或改排版前使用；需要实际正文时指定目录中的 sectionId。聊天草稿不计为已保存成果。',

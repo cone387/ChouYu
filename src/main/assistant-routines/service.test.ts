@@ -64,6 +64,7 @@ describe('assistant routine execution', () => {
     await restored.tick(at(28, 10)); await restored.tick(at(28, 11))
     expect(f.deps.generate).toHaveBeenCalledTimes(1); expect(f.messages).toHaveLength(1)
     expect(restored.list()[0].nextAt).toBe(at(29, 9))
+    expect(restored.history(restored.list()[0].id).items[0].scheduledAt).toBe(at(28, 9))
   })
   it('does not use the model for simple reminders and pause survives restart', async () => {
     const f = fixture(), [item] = f.service.save({ ...input, kind: 'reminder' }, undefined, undefined, at(25, 8))
@@ -172,5 +173,16 @@ describe('extended schedule persistence', () => {
     await f.service.tick(at(26, 10))
     expect(f.service.list()[0].finishedAt).toBeTruthy()
     expect(f.messages).toHaveLength(1)
+  })
+  it('pins a failed calendar occurrence across days and restart instead of retrying a new period', async () => {
+    const f = fixture(), [item] = f.service.save(input, undefined, undefined, at(24, 8))
+    f.deps.generate.mockRejectedValueOnce(new Error('offline'))
+    await f.service.tick(at(26, 10))
+    await new AssistantRoutineService(f.deps).tick(at(28, 10))
+    const history = f.service.history(item.id).items
+    expect(history).toHaveLength(2)
+    expect(history.map(entry => entry.scheduledAt)).toEqual([at(26, 9), at(26, 9)])
+    expect(history[0].receipt).toBe(history[1].receipt)
+    expect(f.service.list()[0].nextAt).toBe(at(29, 9))
   })
 })

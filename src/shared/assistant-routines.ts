@@ -1,10 +1,7 @@
-export interface AssistantRoutineInput {
+import { validateCalendarSchedule, nextCalendarAt, latestCalendarAt, type CalendarSchedule } from './calendar-schedule'
+export interface AssistantRoutineInput extends CalendarSchedule {
   title: string
   instruction: string
-  times: string[]
-  cadence: 'daily' | 'weekdays' | 'weekly' | 'once'
-  date?: string
-  weekday?: number
   kind: 'reminder' | 'contact-summary'
   enabled: boolean
 }
@@ -20,6 +17,8 @@ export interface AssistantRoutine extends AssistantRoutineInput {
   retryAt?: number
   failures?: number
   pending?: { dueAt: number; content: string }
+  /** Frozen scheduled time, including failures before content is generated. */
+  attemptAt?: number
   finishedAt?: number
   requestLog?: string
 }
@@ -44,47 +43,12 @@ export interface AssistantRoutineExecution {
   messageId?: string
 }
 export interface AssistantRoutineHistoryPage { items: AssistantRoutineExecution[]; nextCursor?: number }
-export function validateRoutine(raw: unknown): AssistantRoutineInput {
+export function validateRoutine(raw: unknown, titleLimit: 100 | 160 = 100): AssistantRoutineInput {
   if (!raw || typeof raw !== 'object') throw new Error('助手安排无效。')
   const v = raw as AssistantRoutineInput & { time?: string }
-  if (typeof v.title !== 'string' || !v.title.trim() || v.title.length > 100 || typeof v.instruction !== 'string' || !v.instruction.trim() || v.instruction.length > 2000) throw new Error('请填写标题和具体安排（最多 100 / 2000 字）。')
-  const rawTimes = Array.isArray(v.times) ? v.times : typeof v.time === 'string' ? [v.time] : undefined
-  if (!rawTimes || !rawTimes.every(t => typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t))) throw new Error('请使用 HH:mm 格式填写时间。')
-  const times = [...new Set(rawTimes)].sort()
-  if (!times.length || times.length > 5) throw new Error('最多安排 5 个时刻。')
-  if (!['daily', 'weekdays', 'weekly', 'once'].includes(v.cadence) || !['reminder', 'contact-summary'].includes(v.kind) || typeof v.enabled !== 'boolean') throw new Error('安排类型或重复规则无效。')
-  let date: string | undefined
-  if (v.cadence === 'once') {
-    // Compare parsed components: new Date rolls 2026-02-30 over into March instead of rejecting.
-    const parts = typeof v.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.date) ? v.date.split('-').map(Number) : undefined
-    const [year, month, day] = parts ?? []
-    const parsed = new Date(year!, month! - 1, day!)
-    if (!parts || Number.isNaN(parsed.getTime()) || parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) throw new Error('一次性安排请填写合法日期（YYYY-MM-DD）。')
-    if (times.length !== 1) throw new Error('一次性安排只能有一个时刻。')
-    date = v.date
-  }
-  if (v.cadence === 'weekly' && (!Number.isInteger(v.weekday) || v.weekday! < 0 || v.weekday! > 6)) throw new Error('请选择星期。')
-  return { title: v.title.trim(), instruction: v.instruction.trim(), times, cadence: v.cadence, ...(date ? { date } : {}), weekday: v.cadence === 'weekly' ? v.weekday : undefined, kind: v.kind, enabled: v.enabled }
+  if (typeof v.title !== 'string' || !v.title.trim() || v.title.length > titleLimit || typeof v.instruction !== 'string' || !v.instruction.trim() || v.instruction.length > 2000) throw new Error(`请填写标题和具体安排（最多 ${titleLimit} / 2000 字）。`)
+  if (!['reminder', 'contact-summary'].includes(v.kind) || typeof v.enabled !== 'boolean') throw new Error('安排类型无效。')
+  return { ...validateCalendarSchedule(v), title: v.title.trim(), instruction: v.instruction.trim(), kind: v.kind, enabled: v.enabled }
 }
-/** Device-local wall clock, recalculated by calendar day (including DST). */
-export function nextRoutineAt(input: AssistantRoutineInput, after: number): number {
-  if (input.cadence === 'once') {
-    const [hour, minute] = input.times[0].split(':').map(Number)
-    const date = new Date(`${input.date}T00:00:00`)
-    date.setHours(hour, minute, 0, 0)
-    if (date.getTime() <= after) throw new Error('一次性安排的时间已过，请选择未来的时间。')
-    return date.getTime()
-  }
-  for (let offset = 0; offset < 8; offset++) {
-    const day = new Date(after)
-    day.setDate(day.getDate() + offset)
-    for (const time of input.times) {
-      const [hour, minute] = time.split(':').map(Number)
-      const date = new Date(day)
-      date.setHours(hour, minute, 0, 0)
-      const weekday = date.getDay()
-      if (date.getTime() > after && (input.cadence === 'daily' || input.cadence === 'weekdays' && weekday > 0 && weekday < 6 || input.cadence === 'weekly' && weekday === input.weekday)) return date.getTime()
-    }
-  }
-  throw new Error('无法计算下次执行时间。')
-}
+export const nextRoutineAt = nextCalendarAt
+export const latestRoutineAt = latestCalendarAt

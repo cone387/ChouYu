@@ -51,7 +51,7 @@ describe('persistent contact task scheduling', () => {
     expect(store.nextScheduledTopic('alice')).toBeUndefined()
     expect(store.overview('alice').queuedTopicIds).toEqual([])
     const run = store.continueTopic('alice', second.id, store.topics.get('alice', second.id).revision, 'Resume', '')
-    expect(JSON.parse(store.getRun(run)!.input).assignment).toBe(true)
+    expect(JSON.parse(store.getRun(run!)!.input).assignment).toBe(true)
     store.pause('alice')
     expect(store.nextScheduledTopic('alice')).toBeUndefined()
     expect(store.overview('alice').runs.every(run => run.status === 'cancelled')).toBe(true)

@@ -2,6 +2,7 @@ import { type AgentOverview, type AgentTopic } from '../../../../shared/agents'
 import { taskState } from '../../../../shared/task-state'
 import type { AssistantRoutine } from '../../../../shared/assistant-routines'
 import type { AssistantTaskEntry } from './useAssistantTasks'
+import { calendarScheduleLabel } from '../../../../shared/calendar-schedule'
 
 /** View data only. Execution/storage adapters do not own task UI. */
 export interface ContactTaskItem {
@@ -10,12 +11,9 @@ export interface ContactTaskItem {
   summary?: string; template?: boolean
   work?: AgentTopic; scheduled?: AssistantTaskEntry
 }
-export function routineTimesLabel(routine: Pick<AssistantRoutine, 'finishedAt' | 'cadence' | 'weekday' | 'date' | 'times'>): string {
+export function routineTimesLabel(routine: Pick<AssistantRoutine, 'finishedAt' | 'cadence' | 'weekday' | 'date' | 'times' | 'monthDay' | 'intervalDays' | 'anchorDate'>): string {
   if (routine.finishedAt) return '已完成'
-  const times = routine.times.join('、')
-  if (routine.cadence === 'once') return `${routine.date} ${times}（一次性）`
-  const cadence = routine.cadence === 'daily' ? '每天' : routine.cadence === 'weekdays' ? '工作日' : `每周${'日一二三四五六'[routine.weekday ?? 0]}`
-  return `${cadence} ${times}`
+  return calendarScheduleLabel(routine)
 }
 export function contactTaskItems(data: AgentOverview, scheduled: AssistantTaskEntry[]): ContactTaskItem[] {
   return [
@@ -30,7 +28,7 @@ export function contactTaskItems(data: AgentOverview, scheduled: AssistantTaskEn
       const run = data.runs.find(run => run.topicId === work.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status))
       const state = taskState(data, work)
       return { id: work.id, title: work.title, status: state.label,
-        enabled: !['paused', 'completed', 'abandoned'].includes(work.status) && data.settings.enabled && Boolean(data.taskSchedule?.[work.id] || data.focusTopicId === work.id),
+        enabled: !['paused', 'completed', 'abandoned'].includes(work.status) && !data.taskSchedule?.[work.id]?.finishedAt && data.settings.enabled && Boolean(data.taskSchedule?.[work.id] || data.focusTopicId === work.id),
         focused: work.id === data.focusTopicId, running: !!run && !['paused', 'completed', 'abandoned'].includes(work.status), createdAt: work.createdAt, updatedAt: work.updatedAt, canDelete: true, work,
         summary: state.code === 'waiting' ? `待回复：${run?.question}` : state.code === 'running' ? work.nextStep || work.judgement || work.goal : state.description }
     })

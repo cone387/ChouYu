@@ -1,5 +1,6 @@
 import { agentUsesPlanner, TOPIC_STATUS, type AgentOverview, type AgentTopic } from './agents'
 import { withinWorkHours } from './work-settings'
+import { calendarScheduleLabel } from './calendar-schedule'
 
 export interface TaskState { code: string; label: string; description: string }
 /** Shared projection of lifecycle, actual round and scheduling; never infer completion from a round. */
@@ -10,6 +11,8 @@ export function taskState(data: AgentOverview, topic: AgentTopic, now = Date.now
   const status = run?.status ?? data.topicMetrics?.[topic.id]?.latestRun?.status
   if (status === 'running') return state('running', '正在推进', '正在执行本轮工作；本轮交付不代表整个任务结束。')
   if (status === 'waiting') return state('waiting', '等你回复', run?.question || '需要你的回复才能继续。')
+  const schedule = data.taskSchedule?.[topic.id]
+  if (schedule?.finishedAt) return state('calendar-finished', '本次安排已执行', `实际完成本轮时间：${new Date(schedule.finishedAt).toLocaleString()}；不会重复执行。这不代表成果已验收。`)
   const settings = data.settings
   const needed = data.taskResources?.[topic.id]?.callsNeeded ?? (agentUsesPlanner(settings) ? 2 : 1) + (data.queuedTopicIds?.includes(topic.id) ? 1 : 0)
   const tokensNeeded = data.taskResources?.[topic.id]?.tokensNeeded ?? 1
@@ -25,11 +28,11 @@ export function taskState(data: AgentOverview, topic: AgentTopic, now = Date.now
   if (status === 'interrupted') return state('interrupted', '等待恢复', run?.error || '上轮工作被中断，等待恢复。')
   if (status === 'queued' || data.queuedTopicIds?.includes(topic.id)) return state('queued', '排队中', '等待可用执行名额；排队不代表整个任务已停止。')
   if (!settings.enabled) return state('manual', '按需推进', '自动工作未开启，手动启动后执行一轮。')
-  const schedule = data.taskSchedule?.[topic.id]
   if (!schedule && data.focusTopicId !== topic.id) return state('unscheduled', '待安排推进', '此任务当前未安排自动推进，已有成果保留。')
   if (!withinWorkHours(settings, now)) return state('outside-hours', '等待工作时段', `将在工作时段 ${settings.workHours!.start}–${settings.workHours!.end} 内按设置推进。`)
   if (schedule?.waitingForUpdates) return state('updates', '等待新内容', '持续任务保持启用；有新资料或新成果时再推进，不重复生产或评审。')
   const nextAt = schedule?.nextAt ?? data.nextAt
+  if (schedule?.calendar) return state(nextAt > now ? 'scheduled' : 'ready', nextAt > now ? '等待计划时间' : '等待调度', `${calendarScheduleLabel(schedule.calendar)}；${nextAt > now ? '下次计划' : '已到期，等待可用名额'}：${new Date(nextAt).toLocaleString()}。仍受工作时间和额度限制。`)
   if (nextAt > now) return state('scheduled', '等待下一轮', `下次检查不早于 ${new Date(nextAt).toLocaleString()}；仍受额度和可用名额限制。`)
   return state('ready', '等待调度', '自动推进已安排，等待调度和可用名额；上轮交付不代表任务结束。')
 }
