@@ -44,3 +44,39 @@ it.skipIf(!process.env.CHOUYU_BRIEFING_ACCEPTANCE)('live briefing does not certi
     writeFileSync('artifacts/contact-next/live-briefing-evidence.json', JSON.stringify({ model: config.model, metadata, evidence, rounds, reads, output, usage }, null, 2))
   }
 }, 115000)
+
+it.skipIf(!process.env.CHOUYU_BRIEFING_ACCEPTANCE)('live midnight briefing distinguishes same-day and next-day retries in the check time zone', async () => {
+  const data = JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG!), resolved = resolveCharacterConfig(data.characters[0], data.config)
+  if (!resolved.ok) throw Error('验收模型不可用')
+  const config = { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }
+  const evidence = { checkedAt: '2026-10-13T16:56:00Z', timeZone: 'Asia/Shanghai', contacts: [
+    { name: '验收作者', topics: [{ title: '灯塔故事', status: 'researching', workState: { code: 'retry', label: '等待重试', description: '最早 2026/10/14 01:06:52 自动尝试；仍受工作时间和额度限制。' } }],
+      runs: [{ status: 'failed', error: '正文篇幅修订未通过校验。' }], savedDelivery: savedDeliveryEvidence({ version: null, savedSectionCount: 0 }) },
+    { name: '验收评审', topics: [{ title: '独立评审', status: 'researching', workState: { code: 'retry', label: '等待重试', description: '最早 2026/10/15 01:08:00 自动尝试；仍受工作时间和额度限制。' } }],
+      runs: [{ status: 'failed', error: '模型服务暂时不可用。' }], savedDelivery: savedDeliveryEvidence({ version: null, savedSectionCount: 0 }) }
+  ] }
+  const input = routineSummaryInput('请按联系人各用一小段汇报当前阻塞、正式交付情况与最早重试时间，时间带上日期或今天/明天，保留工作时段和额度条件。', Date.parse('2026-10-13T15:56:00Z'), undefined, evidence)
+  let output = ''
+  const usage: AIResponseMetadata[] = []
+  try {
+    await streamAIChat([{ role: 'user', content: JSON.stringify(input) }], routineSummaryInstruction('你是用户的专属助手 ChouYu。'), config,
+      chunk => { output += chunk }, AbortSignal.timeout(100000), undefined,
+      { timeoutMs: 90000, maxOutputTokens: 1000, onMetadata: value => { if (value.usage || value.finishReason) usage.push(value) } })
+    const authorStart = output.indexOf('验收作者'), reviewerStart = output.indexOf('验收评审')
+    expect(authorStart).toBeGreaterThanOrEqual(0)
+    expect(reviewerStart).toBeGreaterThan(authorStart)
+    const author = output.slice(authorStart, reviewerStart), reviewer = output.slice(reviewerStart)
+    expect(author).toMatch(/今天|今日|10月14日|10[/-]14/)
+    expect(author).not.toMatch(/明天|明日|10月15日|10[/-]15/)
+    expect(author).toMatch(/0?1[:：]06|1点0?6/)
+    expect(reviewer).toMatch(/明天|明日|10月15日|10[/-]15/)
+    expect(reviewer).toMatch(/0?1[:：]08|1点0?8/)
+    expect(output).toMatch(/工作(?:时间|时段)/)
+    expect(output).toMatch(/额度/)
+    expect(output).not.toMatch(/UTC|workState|researching|retry|failed/)
+    expect(output).not.toMatch(/到时间后会自动再试|我再跟进/)
+  } finally {
+    mkdirSync('artifacts/contact-next', { recursive: true })
+    writeFileSync('artifacts/contact-next/live-briefing-clock.json', JSON.stringify({ model: config.model, input, output, usage }, null, 2))
+  }
+}, 115000)

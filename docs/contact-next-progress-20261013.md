@@ -267,3 +267,11 @@ Final: Ruling: 第6项由Minor调整为Important并纳入修复 — 隐藏页面
 - `correction-parser-red.log`复现篇幅和字数说明两条校正分支拒绝“说明文字+唯一完整JSON”；新实现复用researchPlanValue，仍拒绝多个对象、残缺对象和越权字段，不从多个候选中猜选，也不为解析再调用模型。解析错误转为对应校正阶段的中文原因，不让原生解析器“token”字样触发笼统凭据保护。
 - 真实v8输出还使用“原正文633字”，补充其与“本轮正文/修订后”及“作者原正文”的对象区分；`counts-original-red.log`复现后补正。`correction-parser-green.log`60项相关测试通过。最终`correction-final-suite.log`1603通过/32按需跳过，`correction-final-types.log`、`correction-final-build.log`通过（既有500KB提示）；解析修复后的`correction-parser-agents.log`联系人综合Electron回归通过，随后原正文范围补正重新运行了全套程序测试和构建。
 - 当前无有效24小时实跑。下一步核对并修复本地重试时间汇报，再启动新一轮固定构建；原生验收与主目录整合仍未完成。
+
+### 工作检查的本地日期依据（2026-10-14）
+
+- v8 的重试调度和公共任务状态顺序正确：失败重试优先于下一日历期次，实际重试也发生在当天。错误出现在自然语言汇报；输入同时包含 UTC 检查/计划日期和本地重试时间。不能证明模型内部推理，但可直接复现缺少明确本地检查日期的输入缺口。`routineSummaryInput` 现在依据检查证据的实际时间与时区换算，并将计划/上次汇报时间统一为该时区；延迟执行不拿原计划日期代替当前日期。问候与回来共用同一本地时钟表示，不修改调度、系统时钟或追加模型调用。
+- `briefing-clock-red.log` 三项失败复现 UTC/本地跨日、延迟执行与问候输入缺少本地时钟；修复后 `briefing-clock-green.log` 24 项通过。手算样本同时覆盖上海 UTC+8 和洛杉矶 UTC−7，避免硬编码中国偏移。
+- `node scripts/test-contact-model.cjs --briefing` 使用生产提示/输入和真实模型，合成检查时刻本地10月14日00:56，作者当天01:06、评审次日01:08。首轮正确区分日期，但全文人工检查发现结尾无条件重试/跟进承诺，虽原正则通过仍不算语义通过；保留 `live-briefing-clock-first.json/log`。补明各段和结尾均需保留限制、未创建安排不得承诺跟进后再次抽测，`live-briefing-clock.json/log` 两项通过且全文人工检查通过：日期正确、零正式交付、重试受工作时段与额度限制，无追加跟进承诺。本地时间样本单次调用1489 Token；同跑的保存证据样本仍明确篇幅质量未核对。样本通过不代表任意模型长期语义保证。
+- 最终 `clock-final-suite.log` 1606通过/33按需跳过，`clock-final-types.log`、`clock-final-build.log` 通过（既有500KB提示）；`clock-final-routines.log`、`clock-final-companion.log` 两项 Electron 测试通过。删除联系人/会话失效场景保留预期错误日志。受影响验收项 MSG-02、RUN-02/05、RES-01；公共 UI、原额度、正文直接交付与未读闪烁约定不变。
+- v8 已停止且没有有效24小时结果；下一轮需从新固定构建开始计时。原生托盘/实际休眠与最终整合仍未完成。
