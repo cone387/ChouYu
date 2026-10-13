@@ -31,7 +31,27 @@ function fixture(dailyCalls = 40) {
 const metadata = JSON.stringify({ title: '第二章下半段', body: '完成一小节', nextStep: '继续第二章', memories: [], question: '',
   progress: { judgement: '交付试音情节', openQuestions: '', nextStep: '继续第二章', reason: '本轮小节已交付', status: 'researching' },
   delivery: { summary: '陆沉参加试音', completionCriteria: '完成整本小说', stages: [{ id: 'ch02', title: '第二章', status: 'active' }], section: { id: 'ch02b', title: '第二章下半段', body: '__SAVED_BODY__' } } })
-const generate = (f: ReturnType<typeof fixture>, model: AgentModel) => f.recovery().generate(model, new AbortController().signal, {}, '生成进度', parseDraft, () => {})
+const generate = (f: ReturnType<typeof fixture>, model: AgentModel) => f.recovery().generate(model, new AbortController().signal, {}, parseDraft, () => {})
+
+it('extracts metadata for the same unpublished candidate instead of issuing the creation instruction again', async () => {
+  const f = fixture(), body = '沈青第一次看见雾港的蓝灯。她记下这件事，决定下周四再去。'
+  const model = vi.fn<AgentModel>(async (prompt, _signal, options) => {
+    if (options?.plainText) return body + '[[SECTION_END]]'
+    expect(prompt).not.toContain('生成进度')
+    const data = JSON.parse(prompt.split('\n').at(-1)!)
+    expect(data.candidate).toEqual({ published: false, body })
+    expect(prompt).toContain('不得推进到下一节')
+    const value = JSON.parse(metadata)
+    value.title = value.delivery.section.title = '第一章·蓝灯'
+    value.delivery.summary = '沈青初见蓝灯，决定下周四再去。'
+    value.progress.judgement = '本轮候选正文写到沈青记下蓝灯。'
+    return JSON.stringify(value)
+  })
+  const result = parseDraft(await generate(f, model))
+  expect(result.delivery?.section).toMatchObject({ title: '第一章·蓝灯', body })
+  expect(result.delivery?.summary).not.toContain('第二章')
+  expect(f.store.callCount('writer')).toBe(2)
+})
 
 it('starts the whole current section when the rejected structured response has no saved prose prefix', async () => {
   const f = fixture()

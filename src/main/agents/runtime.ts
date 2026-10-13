@@ -368,7 +368,7 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
         const recovery = writing && !plan?.evaluation && input.deliveryVersion === 1 && input.topic
           ? new WritingRecovery(this.store, runId, { title: input.topic.title, goal: input.topic.goal, constraints: input.topic.constraints, nextStep: input.topic.nextStep, deliveryVersion: input.delivery?.version, selectedId, feedback: input.feedback || undefined, chapter }) : undefined
         const withMemories: AgentModel = (prompt, signal, options) => model(prompt, signal, { ...options, suppliesMemories: true })
-        const recover = () => recovery!.generate(withMemories, signal, { soul: soul.slice(0, 4000), topic: input.topic, delivery: input.delivery, selectedSection, feedback: input.feedback, memories: input.memories, chapter, chapterInstruction: chapterContinuationPrompt(chapter) }, generationPrompt, validate, changed)
+        const recover = () => recovery!.generate(withMemories, signal, { soul: soul.slice(0, 4000), topic: input.topic, delivery: input.delivery, selectedSection, feedback: input.feedback, memories: input.memories, chapter, chapterInstruction: chapterContinuationPrompt(chapter) }, validate, changed)
         if (recovery?.read()) output = await recover()
         else {
           this.store.charge(runId)
