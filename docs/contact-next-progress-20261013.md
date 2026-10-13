@@ -173,3 +173,10 @@ Final: Ruling: 第6项由Minor调整为Important并纳入修复 — 隐藏页面
 `discovery-context-red.log`复现有公开正文但空上传资料导致无评审；`discovery-context-green.log`31项通过，包括无读取权限不获取目录、私人正文不泄露、实际读取后评审。全量`discovery-suite.log`1541通过/28按需跳过，类型与构建通过。新增`node scripts/test-contact-model.cjs --discovery`使用真实AgentService、启用原生资料工具与空资料库，`live-discovery.log`1项通过：模型选择read_contacts，读取作者固定版本并保存评审，原稿保持；5次实际调用、26012 Token，包括现有格式纠正，未增加初始12次/10万Token限额。`live-discovery.json`保留实际来源全文、分项依据与状态。人工核对分项评审引用铁门无声、蓝灯、铜铃和信，均来自真实正文；不是仅标题或自己的旧评审。
 
 `discovery-agents.log`和`discovery-experience.log`通过综合联系人与跨联系人资料/成果/引用/重启/独立评审Electron场景。此补正由实际运行失败驱动，沿用原发现、选择、读取和交付引擎，不创建另一套原生读成果工具，不额外逐消息调用模型。新的完整24小时仍须重新开始。
+
+### v6 完整实跑（运行中，尚未通过）
+
+- 北京时间2026-10-13 **20:42:08**开始；最早满24小时为2026-10-14 **20:42:08**。只计算本轮，不累计已停止的v1–v5。
+- 目录`artifacts/contact-next/soak-20261013-v6`，固定构建提交`77c1bec`，SHA256 `f807eebf4ac7c29a6dbc00089b6062d0992a7515727061b9f7889b20fff80492`；启动器PID52100、初始应用PID36264，已用Get-Process确认存活，约20秒心跳5次、观察错误0次。
+- 判定补强：至少两份作者实际保存报告，至少两份含真实作者来源的评审报告；不以完成了等待检查替代交付。原有满24小时/跨午夜、worker与应用重启、ChouYu回执、未读和去重条件保留；`discovery-final-types.log`与`discovery-final-build.log`通过。
+- 原生Windows通道本轮再次实际调用仍报native pipe unavailable/os error2。已向用户请求恢复通道或提供可操作的隔离Windows测试环境；尚无答复，不擅自休眠宿主，不把这项改成已批准例外。原生托盘/真实休眠及最终整合继续保留未完成。
