@@ -155,3 +155,10 @@ Final: Ruling: 第6项由Minor调整为Important并纳入修复 — 隐藏页面
 - 隐藏首页：待回应卡片收到active，停止订阅与定时查询，保留回答草稿。`review-home-red.log`准确捕获隐藏首页多余getInteraction；`review-home-green.log`通过隐藏零读取、返回原草稿，以及原有读取失败恢复/固定版本/滚动验证。夹具补齐真实焦点与返回可见性断言，避免误返回更早阅读器。
 
 整体：`review-suite-green.log`1539通过/27按需跳过；`review-types.log`类型检查通过；`review-build-green.log`构建通过（既有500KB提示）；`review-agents.log`综合联系人Electron通过。首次总回归发现schema写入16但最高版本守卫仍为15，已同步修正并重跑；失败日志`review-suite.log`保留。六项修复均在同轮完成，未再次派发审查。Task6仍待新的完整24小时、原生托盘/休眠与原项目整合。
+
+### 新的24小时实跑 v5（运行中，不是通过）
+
+- 目录`artifacts/contact-next/soak-20261013-v5`，代码提交`1e0afd6`，固定构建SHA256 `e23cd8dc2f90ebd8d57a57e9326a0e924eebc876f7f5b1dbf667c1bb88859ce5`。
+- 北京时间2026-10-13 **20:08:54**开始，若无中断或失败，满24小时在2026-10-14 **20:08:54**。不累计前面四次短跑时长。
+- 启动器PID52188，初始应用PID17240；最新PID以目录process.json为准。最初81秒心跳17次、观察错误0次，已记录作者运行中worker中断及重启，尚无首轮正式正文；应用15分钟重启、午夜后运行及满24小时均待观察。
+- 原项目`D:\codespace\ChouYu`仍在干净的`d2cff72`；验证分支保留在独立worktree，待所有必需验收完成后再整合，不把启动实跑当作交付完成。

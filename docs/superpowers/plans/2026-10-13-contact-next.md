@@ -75,5 +75,5 @@ Interfaces: 复用真实执行/通知持久化；夹具、在线模型、实时�
 - [ ] 实现并执行故障矩阵与完整三联系人链路；用当前实际结果驱动修复。
 - [ ] 真实模型自然语言/长篇抽测；实际24小时跨夜；原生托盘与休眠恢复验收（无环境则明确保留未完成）。
 - [ ] `npm test`、`npm run typecheck`、`npm run build`，运行 agents/assistant-routines/companion/contact-experience/toolbar/settings 相关场景。
-- [ ] 一次独立完整代码审查；修复 Important/Critical，并做对应失败→通过及总回归。
+- [x] 一次独立完整代码审查；修复 Important/Critical，并做对应失败→通过及总回归。六项同轮修复提交1e0afd6；1539项通过/27项按需跳过，详见执行记录。
 - [ ] 逐项完成审计、同步规范、保留证据、将验证后的完整结果交付当前项目；不推送远端。
