@@ -3,6 +3,7 @@ function classifyFailure(error: string): NonNullable<ContactInteraction['failure
   // The repair wrapper describes the attempt, not the underlying cause or remedy.
   error = error.replace(/^工作计划自动修复后仍未通过校验：/, '').trim()
   if (/正文篇幅/.test(error)) return { kind: 'output', title: '正文篇幅未符合要求', message: '本轮正文没有通过用户明确的篇幅要求检查，尚未作为正式成果交付。再次尝试会沿用原要求和原额度。', action: '重新尝试', settings: false }
+  if (/交付字数说明/.test(error)) return { kind: 'format', title: '交付字数说明未核实', message: '摘要中的字数说明与实际正文统计不一致，校正未能完成，本轮尚未正式交付。再次尝试仍使用原任务额度。', action: '重新尝试', settings: false }
   if (/无法可靠核对任务结束条件/.test(error)) return { kind: 'format', title: '任务结束条件尚未确认', message: '未能确认原要求是否已经完成，因此没有把任务标为结束。需要重新核对已交付内容后再继续。', action: '重新核对并继续', settings: false }
   if (/资料不在本轮目录快照/.test(error)) return { kind: 'material', title: '资料引用需要纠正', message: '读取参考资料时中断：请求的资料或版本不在本次可用目录中。需要按目录重新选择资料后继续。', action: '重新尝试', settings: false }
   if (/资料.*(?:撤回|移除|版本不存在|不在本次任务范围|不属于)|参考资料.*(?:变化|删除)/.test(error)) return { kind: 'material', title: '参考资料已不可用', message: '这次需要的资料已撤回、移除或不在当前任务范围内。请在任务的资料页核对可用资料后继续。', action: '已检查资料，重试', settings: false }

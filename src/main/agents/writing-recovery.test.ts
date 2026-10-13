@@ -39,7 +39,7 @@ it('extracts metadata for the same unpublished candidate instead of issuing the 
     if (options?.plainText) return body + '[[SECTION_END]]'
     expect(prompt).not.toContain('生成进度')
     const data = JSON.parse(prompt.split('\n').at(-1)!)
-    expect(data.candidate).toEqual({ published: false, body })
+    expect(data.candidate).toEqual({ published: false, body, counts: { 字: 25, 汉字: 25, 字符: 28 } })
     expect(prompt).toContain('不得推进到下一节')
     const value = JSON.parse(metadata)
     value.title = value.delivery.section.title = '第一章·蓝灯'

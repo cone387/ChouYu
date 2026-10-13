@@ -26,7 +26,8 @@ export class ContactInteractions {
     const row = s.db.prepare("SELECT value FROM delivery_versions WHERE topic_id=? AND json_extract(value,'$.createdAt')<=? ORDER BY version DESC LIMIT 1").get(run.topic_id, run.updated_at) as { value: string } | undefined
     const saved = row && JSON.parse(row.value).sections?.some((section: { body: string }) => section.body?.trim())
     const presentation = JSON.parse(run.input).revisionScope === 'presentation'
-    const lengthDraft = JSON.parse(run.input).deliveryLengthRepair?.original?.delivery?.section?.body
+    const input = JSON.parse(run.input)
+    const lengthDraft = input.deliveryLengthRepair?.original?.delivery?.section?.body || input.deliveryCountRepair?.original?.delivery?.section?.body
     const hasDraftTable = s.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='writing_drafts'").get()
     const draft = hasDraftTable && s.db.prepare("SELECT 1 FROM writing_drafts WHERE topic_id=? AND json_extract(value,'$.sourceRunId')=? AND updated_at<=? AND length(json_extract(value,'$.body'))>0 LIMIT 1").get(run.topic_id, run.id, run.updated_at)
     return (presentation ? '本次只修改阅读样式，未改动正文。' : '这次尝试没有保存新的正式正文。')
