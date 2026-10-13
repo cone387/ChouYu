@@ -50,6 +50,10 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
         const payload = JSON.parse(body || '{}')
         chatBody = payload
         response.setHeader('Content-Type', 'text/event-stream')
+        if (JSON.stringify(payload.messages).includes('你只负责路由')) {
+          response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '{"kind":"none"}' } }] })}\n\n`)
+          response.write('data: [DONE]\n\n'); response.end(); return
+        }
         if (handoffMode) {
           if (payload.model === 'review-model') reviewRequests.push(JSON.stringify(payload.messages))
           response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: handoffSmokeResponse(payload) } }] })}\n\n`)

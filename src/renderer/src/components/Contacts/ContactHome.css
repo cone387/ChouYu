@@ -7,5 +7,12 @@
 .contact-home-tasks { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(230px,100%),1fr)); gap: 10px; }
 .contact-home details > summary { cursor: pointer; color: var(--text-secondary); }
 .contacts-card-highlights { display: grid; gap: 6px; min-width: 0; font-size: 12px; line-height: 1.6; }
-.contacts-card-highlights > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.contacts-card-highlights > :is(span, button) { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .contacts-card-highlights strong { margin-right: 5px; font-weight: 600; }
+.contacts-card-highlights > button { width: 100%; min-height: 36px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-primary); text-align: left; font: inherit; cursor: pointer; }
+.contacts-card-highlights > button:hover { background: var(--bg-secondary); }
+.contacts-card-highlights > button:focus-visible { outline: 2px solid var(--text-secondary); outline-offset: 2px; }
+.contacts-card-source-error { margin: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
+.contacts-card-container:has(> .contacts-card-highlights) { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-primary); }
+.contacts-card-container:has(> .contacts-card-highlights) > .contacts-card { height: auto; flex: 1; border: 0; background: transparent; }
+.contacts-card-container > .contacts-card-highlights { padding: 0 14px 14px; }

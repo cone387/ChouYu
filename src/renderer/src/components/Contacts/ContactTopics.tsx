@@ -1,4 +1,5 @@
 import { contactQueries } from './contactQueries'
+import ContactInteractionCard from '../ChatPanel/ContactInteractionCard'
 import { calendarScheduleLabel } from '../../../../shared/calendar-schedule'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import ContactTaskRunButton from './ContactTaskRunButton'
@@ -231,7 +232,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         onClose={closeSettings} onAction={onAction} onDone={() => { void load() }} onRoutineDone={() => { void assistant.refresh() }} onDutyDone={() => { void assistant.refresh() }} />}
       <div>
       <section role="tabpanel" id={`${tabId}-overview-panel`} aria-labelledby={`${tabId}-overview`} hidden={tab !== 'overview'} tabIndex={0}>
-        {topic ? <ContactTaskOverview topic={topic} data={data} visible={active && tab === 'overview' && !showSettings} onWorkSettings={onWorkSettings} attention={topicRun ? renderActivity?.(topic.id) : undefined}>
+        {topic ? <ContactTaskOverview topic={topic} data={data} visible={active && tab === 'overview' && !showSettings} onWorkSettings={onWorkSettings} attention={focusRequest?.topicId === topic.id && focusRequest.interactionId ? <ContactInteractionCard characterId={characterId} interactionId={focusRequest.interactionId} active={active && tab === 'overview' && !showSettings} fallback="这条待处理事项暂时无法读取。" /> : topicRun ? renderActivity?.(topic.id) : undefined}>
           <button type="button" onClick={() => setTab('delivery')}>查看任务成果</button>
           <details className="topic-secondary"><summary>任务资源预算</summary><ContactTaskResources topic={topic} data={data} /></details>
         </ContactTaskOverview> : <ContactTaskOverviewBody status={selectedItem.status}

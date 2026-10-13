@@ -1,36 +1,40 @@
 import { navigateContact } from '../Contacts/contactNavigation'
+import { useContactVisible } from '../Contacts/useContactVisible'
 import { useEffect, useRef, useState } from 'react'
 import type { ContactBudgetKey, ContactInteraction } from '../../../../shared/contact-interactions'
 import './ContactInteractionCard.css'
 
-export default function ContactInteractionCard({ characterId, interactionId, fallback, onOpen, showOwner = false }: {
-  characterId: string; interactionId: string; fallback: string; showOwner?: boolean; onOpen?: () => void
+export default function ContactInteractionCard({ characterId, interactionId, fallback, onOpen, showOwner = false, active = true }: {
+  characterId: string; interactionId: string; fallback: string; showOwner?: boolean; onOpen?: () => void; active?: boolean
 }) {
+  const visible = useContactVisible(active)
   const [view, setView] = useState<ContactInteraction | null>(null)
   const [answer, setAnswer] = useState('')
   const [limits, setLimits] = useState<Partial<Record<ContactBudgetKey, string>>>({})
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
+  const [readError, setReadError] = useState('')
   const refreshRef = useRef<() => Promise<void>>(async () => {})
   const submitting = useRef(false)
   const generation = useRef(0)
+  useEffect(() => { setView(null); setAnswer(''); setLimits({}); setError(''); setReadError('') }, [characterId, interactionId])
   useEffect(() => {
+    if (!visible) return
     let disposed = false
-    setView(null); setAnswer(''); setLimits({}); setError('')
     const refresh = async () => {
       const ticket = ++generation.current
       try {
         const next = await window.electronAPI.agents.getInteraction(characterId, interactionId)
         if (disposed || ticket !== generation.current) return
-        setView(next)
+        setView(next); setReadError('')
         setLimits(previous => Object.fromEntries(next.budgets.map(field => [field.key, previous[field.key] ?? String(field.limit)])))
-      } catch (e) { if (!disposed && ticket === generation.current) setError(e instanceof Error ? e.message : '暂时无法读取处理状态') }
+      } catch (e) { if (!disposed && ticket === generation.current) setReadError(e instanceof Error ? e.message : '暂时无法读取处理状态') }
     }
     refreshRef.current = refresh
     void refresh()
     const off = window.electronAPI.agents.onChanged(id => { if (id === characterId && !submitting.current) void refresh() })
     const timer = window.setInterval(() => { if (!submitting.current && document.visibilityState === 'visible') void refresh() }, 30000)
     return () => { disposed = true; off(); window.clearInterval(timer) }
-  }, [characterId, interactionId])
+  }, [characterId, interactionId, visible])
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!view || submitting.current || view.status !== 'pending') return
@@ -79,7 +83,7 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
           {openTask && <button type="button" onClick={openTask} disabled={busy}>查看任务</button>}
         </div>
       </form> : <div className="contact-interaction-result" role="status">{view.result || '此事项已处理'}{openTask && <div className="contact-interaction-actions"><button type="button" onClick={openTask}>查看任务</button></div>}</div>}
-    </> : <><p>{fallback}</p><span role="status">{error ? '处理状态暂不可用' : '正在读取处理状态…'}</span>{openTask && <button type="button" onClick={openTask}>查看任务</button>}</>}
-    {error && <div className="contact-interaction-error" role="alert">{error}<button type="button" disabled={busy} onClick={() => { setError(''); void refreshRef.current() }}>重新读取</button></div>}
+    </> : <><p>{fallback}</p><span role="status">{error || readError ? '处理状态暂不可用' : '正在读取处理状态…'}</span>{openTask && <button type="button" onClick={openTask}>查看任务</button>}</>}
+    {(error || readError) && <div className="contact-interaction-error" role="alert">{error || readError}<button type="button" disabled={busy} onClick={() => { setError(''); void refreshRef.current() }}>重新读取</button></div>}
   </section>
 }

@@ -754,6 +754,16 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           if (!artifact || (target.ref.sectionId && !artifact.sections.some(s => s.id === target.ref.sectionId))) throw new Error('找不到引用的成果分节。')
           window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
           setLinkedTask({ characterId: contact.id, name: contact.name, initialTab: 'portfolio', deliveryFocus: target, nonce: Date.now() })
+        } else if (target.kind === 'interaction') {
+          const contacts = await window.electronAPI.characters.list()
+          const contact = contacts.find(c => c.id === target.characterId)
+          if (!contact) throw new Error('联系人已删除，无法打开这条待处理事项。')
+          const interaction = await window.electronAPI.agents.getInteraction(target.characterId, target.interactionId)
+          const work = await window.electronAPI.agents.get(target.characterId)
+          current()
+          if (interaction.characterId !== target.characterId || interaction.topicId !== target.topicId || !work.topics.some(topic => topic.id === target.topicId)) throw new Error('这条待处理事项的来源已失效，请重新读取联系人近况。')
+          window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
+          setLinkedTask({ characterId: contact.id, name: contact.name, focus: { topicId: interaction.topicId, runId: interaction.runId, interactionId: interaction.id, kind: 'question', tab: 'work', nonce: Date.now() } })
         } else if (target.kind === 'task') {
           const contacts = await window.electronAPI.characters.list()
           const contact = contacts.find(c => c.id === target.characterId)

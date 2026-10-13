@@ -24,6 +24,11 @@ it('projects real pending decisions independently of read notices and pins the l
   expect(contactHome(store, 'alice').pending).toHaveLength(1)
   expect(home.tasks.some(task => task.running)).toBe(false)
   expect(cardHighlights(home).pending).toContain('Which ending')
+  expect(cardHighlights(home).sources?.pending).toEqual({ characterId: 'alice', interactionId: home.pending[0].id, topicId: topic.id })
+  expect(cardHighlights(home).sources?.delivery).toEqual(home.recentDeliveries[0].ref)
+  const snapshot = cardHighlights(home)
+  home.recentDeliveries[0].ref.version = 99
+  expect(snapshot.sources?.delivery?.version).toBe(2)
 })
 it('does not manufacture statistics or busy status for empty contact data', () => {
   expect(cardHighlights({ pending: [], recentDeliveries: [], tasks: [], measuredAt: 1 })).toEqual({})

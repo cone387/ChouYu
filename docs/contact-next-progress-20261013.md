@@ -11,7 +11,7 @@
 - Task 2 聊天调整：实现、模块与 Electron 验证完成；真实模型抽测归 Task 6。
 - Task 3 日历与联系人定时：实现、模块、定时/工具栏/agents Electron 验证完成；成果页重启读取竞态登记到 Task 4。
 - Task 4 性能：共享在途读取、隐藏停读与返回恢复完成；模块、完整agents及隔离容量测量通过。
-- Task 5 卡片直达：待实施。
+- Task 5 卡片直达：来源快照、独立按钮和原问题导航完成，单元及卡片/agents/整体验收Electron通过。
 - Task 6 长期验证与整合：待执行。
 
 ## 实施决定
@@ -78,3 +78,11 @@
 
 - 查询量与打开路径改善；返回补读取是必要新增。未观察到内存下降，因此不声称内存优化或无泄漏，也没有据此加入虚拟化。后台重启、隐藏停读及草稿/版本/滚动已有独立行为断言。
 - 复测：`$env:CHOUYU_SMOKE_CONTACT_PERFORMANCE_ONLY='1'; $env:CHOUYU_CONTACT_QUERY_REGRESSION='1'; $env:CHOUYU_CONTACT_PERFORMANCE_LABEL='after'; node scripts/smoke-electron.js`（先构建）。故障读取会输出预期错误，成功标记为`CHOUYU_CONTACT_QUERY_RECOVERY_PASSED`。
+
+## Task 5 验证
+
+- 摘要同批返回原问题ID、任务归属和成果版本/分节；复制来源快照，后续版本变化不会改写引用。旧摘要缺来源时只读。独立语义按钮无嵌套，不冒泡打开聊天；卡片主体原聊天入口保留。
+- 问题导航再次验证联系人、任务与原interactionId，复用公共任务概览中的实际互动卡片。原问题结束后保留原处理状态，不能展示另一项新问题。互动卡片隐藏时暂停读取，保留未提交输入。
+- `card-links-red.log`先失败，`card-links-green.log`通过。`task5-card-smoke.log`通过实际鼠标问题入口、键盘Return完整事件序列打开固定版本、问题失效不切换、新版不漂移、删除来源提示、原筛选返回和主体聊天。主卡聊天使用DOM按钮调用；专项截图测量375/1024深浅色无横向溢出，`card-links-ui/`四图均已实际查看。
+- 全量1521通过/23跳过，类型检查、构建通过（`task5-suite.log`、`task5-final-types.log`、`task5-build.log`）。综合agents回归发现提交失败提示被读取成功清掉；已拆分读取错误和提交错误，保留输入并重跑通过。失败证据`task5-interaction-error-red.log`，通过`task5-agents-smoke.log`。
+- 整体联系人成果回归最初因旧模型夹具对路由也回复“喵”失败（`task5-fixture-routing-red.log`）；按现行路由协议对普通聊天返回none，未放宽产品路由或记忆断言。`task5-experience-smoke.log`通过资料/记忆、真实任务工具、正文与文件、重启、固定引用、独立评审、意见交回及陈旧版本拒绝。此处“真实任务”仍使用隔离模型夹具，不冒充在线模型质量验收。

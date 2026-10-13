@@ -9,6 +9,7 @@ import { waitForRenderer } from './storage-smoke'
 
 export function handoffSmokeResponse(payload: { model?: string; messages?: unknown[] }): string {
   const prompt = JSON.stringify(payload.messages)
+  if (prompt.includes('你只负责路由')) return JSON.stringify({ kind: 'none' })
   if (prompt.includes('任务结束核对。')) return JSON.stringify({ mode: 'finite', satisfied: true, endsAt: null, reason: '已读取指定原文并保存评审意见。', nextStep: '', completionCriteria: '评审指定原文并提出修改意见' })
   if (prompt.includes('统一解析用户对联系人任务')) return JSON.stringify({ kind: 'work', description: '评审指定原文这一版，给结论、依据与具体修改建议。', continuousReview: false })
   if (prompt.includes('刚收到用户交付的任务')) return JSON.stringify({ title: '稿件评审', nextStep: '读取原文并交付评审', question: '', plan: { completionCriteria: '评审指定原文并提出修改意见', stages: [{ id: 'review', title: '评审原文', status: 'pending' }] } })

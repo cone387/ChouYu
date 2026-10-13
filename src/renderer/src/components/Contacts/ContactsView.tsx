@@ -1,3 +1,4 @@
+import ContactCardHighlights from './ContactCardHighlights'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABELS, type CharacterStats } from '../../../../shared/characters'
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
@@ -486,8 +487,8 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           </span>
           <span className="contacts-card-tags"><span className="contacts-card-tag" data-contact-work-mode={DEFAULT_CHARACTER_ID}>{dashboard?.contacts[DEFAULT_CHARACTER_ID] ? dashboard.contacts[DEFAULT_CHARACTER_ID].settings.enabled ? '自动推进' : '按需推进' : '工作方式加载中'}</span></span>
           <span className="contacts-card-desc">我会记住你的安排，到点提醒你，也能检查各联系人的进展后向你汇报。</span>
-          {dashboard?.contacts[DEFAULT_CHARACTER_ID]?.highlights?.pending && <span className="contacts-card-highlights"><span><strong>等你回应</strong>{dashboard.contacts[DEFAULT_CHARACTER_ID].highlights!.pending}</span></span>}
         </button>
+        <ContactCardHighlights characterId={DEFAULT_CHARACTER_ID} highlights={dashboard?.contacts[DEFAULT_CHARACTER_ID]?.highlights} />
         {assistant && <button type="button" className="contacts-card-detail" data-contacts-card-detail={assistant.id} onClick={() => setDetail(assistant)}>详情</button>}
         </div>
         {filtered.map((character) => {
@@ -503,7 +504,6 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
               </span>
             </span>
             <span className="contacts-card-desc">{soulSummary || '尚未设置人设'}</span>
-            {dashboard?.contacts[character.id]?.highlights && <span className="contacts-card-highlights">{Object.entries(dashboard.contacts[character.id].highlights!).map(([kind, text]) => <span key={kind}><strong>{{ pending: '等你回应', delivery: '最近交付', task: '正在推进' }[kind]}</strong>{text}</span>)}</span>}
             <span className="contacts-card-subtitle">{model}</span>
             <ContactCardStats data={dashboard?.contacts[character.id]?.summary} error={dashboardError} lastWorkedAt={dashboard?.contacts[character.id]?.lastWorkedAt} />
             <span className="contacts-card-tags">
@@ -513,6 +513,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
               <span className="contacts-card-tag">{character.sessionCount} 个会话</span>
             </span>
           </button>
+          <ContactCardHighlights characterId={character.id} highlights={dashboard?.contacts[character.id]?.highlights} />
           <button type="button" className="contacts-card-detail" data-contacts-card-detail={character.id} aria-label={`查看${character.name}的详情`} onClick={() => setDetail(character)}>详情</button>
           <ContactMenu character={character} active={active}
             onEdit={() => openForm(character)}
