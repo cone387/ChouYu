@@ -47,7 +47,10 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
   saveConfig({ aiToolsEnabled: true, provider: 'openai', baseUrl: `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/v1`, apiKey: 'smoke-key', model: 'smoke-natural', proactiveGreeting: false, proactiveRestReminder: false, proactiveReturn: false })
   window.webContents.send('config:changed', getConfig())
   const fill = (value: string) => run(`(() => { const input = document.querySelector('[data-task-description]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`)
-  const submit = () => run("document.querySelector('[data-task-dialog-submit]').click()")
+  const submit = async () => {
+    await waitForRenderer(window, "document.querySelector('[data-task-dialog-submit]')?.disabled === false", 20000)
+    await run("document.querySelector('[data-task-dialog-submit]').click()")
+  }
   const uiSignature = () => run(`(() => {
     const root = document.querySelector('.contact-work-sheet[open]');
     const card = root.querySelector('.topic-list-card[aria-current=true]');
@@ -64,7 +67,7 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-task-dialog:modal'))")
   }
   // Gateway submits keep the panel busy until its agents refresh lands; wait for controls to re-enable before clicking.
-  const enabled = (selector: string) => waitForRenderer(window, `!document.querySelector('${selector}')?.disabled`, 20000)
+  const enabled = (selector: string) => waitForRenderer(window, `document.querySelector('${selector}')?.disabled === false`, 20000)
 
   try {
     window.webContents.send('open-assistant-chat')
@@ -89,6 +92,8 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     fail = true
     await submit()
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-task-dialog [role=alert]'))")
+    const parseError = await run("document.querySelector('.contact-task-dialog [role=alert]').textContent")
+    if (!parseError.includes('尚未保存') || /Error invoking remote method|contact-task:request|^Error:/.test(parseError)) throw new Error('Task parse error must explain the failure without IPC internals')
     if ((await run('window.electronAPI.assistantRoutines.list()')).length) throw new Error('Failed parse created schedule')
     if (!(await run("document.querySelector('[data-task-description]').value"))) throw new Error('Failure cleared user input')
     fail = false
@@ -114,6 +119,7 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet .topic-detail-pane')?.textContent.includes('已暂停')")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet [data-topic-run]')?.textContent.includes('启用定时')", 10000)
     await openEditor('.contact-work-sheet')
+    if (await run("document.querySelector('.contact-task-dialog [data-task-dialog-submit]').textContent") !== '保存') throw new Error('Editing a scheduled task must offer Save')
     await fill('改成九点')
     await submit()
     await waitForRenderer(window, "!document.querySelector('.contact-task-dialog') && document.querySelector('.contact-work-sheet .topic-detail-pane')?.textContent.includes('09:00')")

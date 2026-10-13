@@ -829,6 +829,13 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       window.webContents.disableDeviceEmulation()
     }
     await run("document.querySelector('[data-contact-dialog-tab=\"work\"]').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open]')?.getAttribute('data-view') === 'work'")
+    // Background research must not switch the task the user is reading. Select
+    // the researched task explicitly before checking its saved delivery.
+    const researchedCard = `.contact-work-sheet[open] [data-topic-id="${target.id}"]`
+    await waitForRenderer(window, `document.querySelector(${JSON.stringify(researchedCard)})?.disabled === false`)
+    await run(`document.querySelector(${JSON.stringify(researchedCard)}).click()`)
+    await waitForRenderer(window, `document.querySelector('.contact-work-sheet[open] [data-topic-current]')?.dataset.topicCurrent === ${JSON.stringify(target.id)}`)
     await run("document.querySelector('.contact-work-sheet[open] .topic-content-tabs [id$=delivery]').click()")
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .contact-delivery')?.clientWidth > 0 && Boolean(document.querySelector('.contact-work-sheet[open] [data-delivery-revise]'))")
     const beforeRevision = await run(`window.electronAPI.agents.delivery(${id}, ${JSON.stringify(target.id)})`)
@@ -919,6 +926,12 @@ export async function runAgentsSmoke(window: BrowserWindow) {
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)
     console.error('CHOUYU_AGENT_UI', await run("(document.querySelector('.contact-work-sheet') || document.querySelector('.contacts-detail'))?.textContent.slice(0, 5000)"))
+    console.error('CHOUYU_AGENT_SURFACES', JSON.stringify(await run(`Array.from(document.querySelectorAll('.contact-work-sheet')).map(sheet => ({
+      open: sheet.open, view: sheet.dataset.view,
+      tasks: Array.from(sheet.querySelectorAll('.topic-content-tabs [role=tab]')).map(tab => ({ id: tab.id, selected: tab.getAttribute('aria-selected') })),
+      current: sheet.querySelector('[data-topic-current]')?.dataset.topicCurrent,
+      deliveries: Array.from(sheet.querySelectorAll('.contact-delivery')).map(el => ({ width: el.clientWidth, text: el.innerText.slice(0, 500), ancestors: Array.from((function*(node) { while(node && node !== sheet) { yield node; node=node.parentElement; } })(el)).map(node => ({tag:node.tagName,hidden:node.hidden,display:getComputedStyle(node).display,width:node.clientWidth})) }))
+    }))`)))
     throw error
   } finally {
     if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach()

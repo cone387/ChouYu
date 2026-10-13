@@ -65,7 +65,12 @@ export async function runContactTaskToolbarSmoke(window: BrowserWindow) {
   await click(`${root} [data-current-task-action=continue]`)
   await waitForRenderer(window, `document.querySelector(${JSON.stringify(root)})?.textContent.includes('任务状态已变化') && document.querySelector(${JSON.stringify(root)})?.getAttribute('aria-busy')==='false'`)
   await click(`${root} [data-current-task-action=continue]`)
-  await waitForRenderer(window, `document.querySelector(${JSON.stringify(root)})?.getAttribute('aria-busy')==='false'`)
+  await waitForRenderer(window, `(async () => {
+    const data = await window.electronAPI.agents.get(${JSON.stringify(character.id)});
+    return data.topics.find(t => t.id === ${JSON.stringify(first)})?.status !== 'paused'
+      && data.runs.filter(r => r.topicId === ${JSON.stringify(first)}).length === 2
+      && document.querySelector(${JSON.stringify(root)})?.getAttribute('aria-busy') === 'false';
+  })()`)
   overview = await run(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
   if (overview.topics.find((t: { id: string }) => t.id === first).status === 'paused' || overview.runs.filter((r: { topicId: string }) => r.topicId === first).length !== 2) throw new Error('Continue did not queue exactly one round')
   await run(`(()=>{const el=document.querySelector(${JSON.stringify(root + ' select')});el.value=${JSON.stringify(second)};el.dispatchEvent(new Event('change',{bubbles:true}));})()`)
@@ -73,6 +78,23 @@ export async function runContactTaskToolbarSmoke(window: BrowserWindow) {
   if (!await run(`Boolean(document.querySelector(${JSON.stringify(root + ' [data-task-status=waiting]')})) && !document.querySelector(${JSON.stringify(root + ' .contact-task-running-arc')})`)) throw new Error('Waiting question still appears to run')
   await run(`Array.from(document.querySelector(${JSON.stringify(root)}).querySelectorAll('button')).find(b=>b.textContent==='回复问题').click()`)
   await waitForRenderer(window, `document.querySelector('.contact-work-sheet .agent-question')?.textContent.includes('第二项面向哪些读者？')`)
+  // Pin keyboard focus-visible on the actual portal input; headless Chromium's
+  // modality otherwise depends on the preceding native mouse events.
+  await window.webContents.debugger.sendCommand('DOM.enable')
+  await window.webContents.debugger.sendCommand('CSS.enable')
+  const documentNode = await window.webContents.debugger.sendCommand('DOM.getDocument')
+  const replyNode = await window.webContents.debugger.sendCommand('DOM.querySelector', { nodeId: documentNode.root.nodeId, selector: '.contact-work-sheet .agent-question textarea' })
+  const replyBorder = await run("(() => { const input = document.querySelector('.contact-work-sheet .agent-question textarea'); input.blur(); return getComputedStyle(input).borderColor; })()")
+  await window.webContents.debugger.sendCommand('CSS.forcePseudoState', { nodeId: replyNode.nodeId, forcedPseudoClasses: ['focus', 'focus-visible'] })
+  const replyFocus = await run(`(() => {
+    const input = document.querySelector('.contact-work-sheet .agent-question textarea');
+    input.focus();
+    const style = getComputedStyle(input);
+    return { outsideRoot: !input.closest('#root'), focused: document.activeElement === input, outline: style.outlineStyle, shadow: style.boxShadow, sameBorder: ${JSON.stringify(replyBorder)} === style.borderColor };
+  })()`)
+  if (!replyFocus.outsideRoot || !replyFocus.focused || replyFocus.outline !== 'none' || replyFocus.shadow !== 'none' || !replyFocus.sameBorder) throw new Error('Portal task reply must keep its default border without focus decoration: ' + JSON.stringify(replyFocus))
+  if (process.env.CHOUYU_SMOKE_ARTIFACTS) writeFileSync(join(process.env.CHOUYU_SMOKE_ARTIFACTS, 'task-reply-neutral-focus.png'), (await window.webContents.capturePage()).toPNG())
+  await window.webContents.debugger.sendCommand('CSS.forcePseudoState', { nodeId: replyNode.nodeId, forcedPseudoClasses: [] })
   if (await run("document.querySelector('.contact-work-sheet [data-topic-current]').dataset.topicCurrent") !== second) throw new Error('Reply opened the wrong task')
   await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
   // A portal dialog must participate in native click-through routing, not just DOM clicks.

@@ -39,8 +39,9 @@ export async function runCompanionSmoke(window: BrowserWindow) {
     window.webContents.send('sessions:changed')
     window.webContents.send('open-assistant-chat')
     await waitForRenderer(window, "Boolean(document.querySelector('[data-character-bar=chouyu]'))")
-    await run(`[...document.querySelectorAll('.conversation-item-main')].find(b => b.textContent.includes('主动工作检查验收'))?.click()`)
-    await waitForRenderer(window, "document.querySelector('.conversation-item.active .conversation-item-title')?.textContent === '主动工作检查验收'")
+    await waitForRenderer(window, "Boolean(document.querySelector('.conversation-item-main[title=\"主动工作检查验收\"]'))")
+    await run(`document.querySelector('.conversation-item-main[title="主动工作检查验收"]').click()`)
+    await waitForRenderer(window, "document.querySelector('.conversation-item-main[aria-selected=true]')?.getAttribute('title') === '主动工作检查验收'")
     const before = getActiveSession().id
     saveConfig({ proactiveGreeting: true, proactiveReturn: true })
     await run("window.electronAPI.proactiveAppend('早上好',undefined,'greeting','companion-smoke-day')")

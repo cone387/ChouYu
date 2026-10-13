@@ -7,6 +7,7 @@ import { AgentStore } from '../agents/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { appendAssistantMessage, getSessions, appendAgentNotice, createCharacter, createChatSession, getConfig, getSession, listCharacters, saveConfig, selectChatSession } from '../database'
 import { waitForRenderer } from './storage-smoke'
+import { contactAgentsCall } from '../agents'
 
 export async function runContactInteractionsSmoke(window: BrowserWindow) {
   if (process.env.CHOUYU_SMOKE_TEST !== '1') throw new Error('Isolated smoke only')
@@ -18,6 +19,9 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
     const character = createCharacter({ ...template, name: `交互验收-${kind}`, model: 'agent-smoke' })
     window.webContents.send('characters:changed')
     const session = createChatSession(`交互验收-${kind}`, character.id).activeSession.id
+    // Drain older identity snapshots before writing fixtures outside the worker.
+    // Otherwise an in-flight sync without the new character can remove its rows.
+    await contactAgentsCall(character.id, 'get')
     const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
     let cardId: string, topicId: string, runId: string
     try {
@@ -108,8 +112,9 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
       await run(`document.querySelector(${JSON.stringify(selector)}).querySelector('form')?.requestSubmit()`)
       await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(selector)})?.querySelector('.contact-interaction-result'))`)
     } else if (kind === 'billing') {
-      const text = await run(`document.querySelector(${JSON.stringify(selector)}).innerText`)
-      if (!text.includes('模型服务商') || !text.includes('自动尝试继续') || text.includes('API error')) throw new Error('Billing card exposes raw error instead of useful guidance')
+      const text = await run(`Array.from(document.querySelector(${JSON.stringify(selector)}).querySelectorAll(':scope > p')).map(p => p.textContent).join(' ')`)
+      const recovery = await run(`window.electronAPI.agents.getInteraction(${JSON.stringify(character.id)},${JSON.stringify(cardId!)})`)
+      if (!text.includes('模型服务商') || !text.includes('自动重试') || text.includes('API error') || !(recovery.automaticRetryAt > Date.now())) throw new Error('Billing card must show useful guidance and its real automatic retry schedule: ' + text)
       if (process.env.CHOUYU_SMOKE_ARTIFACTS) writeFileSync(join(process.env.CHOUYU_SMOKE_ARTIFACTS, 'contact-billing-auto.png'), (await window.webContents.capturePage()).toPNG())
       await run(`Array.from(document.querySelector(${JSON.stringify(selector)}).querySelectorAll('button')).find(b=>b.textContent==='模型服务设置').click()`)
       await waitForRenderer(window, `!document.querySelector('.workspace-settings').hidden`)
@@ -119,16 +124,18 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
     } else {
       if (kind === 'question') await fill('textarea', '主要写给刚开始学习的人')
       await run(`(() => {const b=document.querySelector(${JSON.stringify(selector)}).querySelector('button[type=submit]');b.click();b.click()})()`)
-      await waitForRenderer(window, `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('已排队')`, 10000)
+      await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(selector)})?.querySelector('.contact-interaction-result'))`, 10000)
+      const resolved = await run(`window.electronAPI.agents.getInteraction(${JSON.stringify(character.id)},${JSON.stringify(cardId!)})`)
+      if (resolved.status !== 'resolved') throw new Error('Submit did not resolve the original interaction')
       const overview = await run(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
-      if (kind === 'retry' && overview.runs.length !== 2) throw new Error('Repeated click created duplicate retries')
+      if (kind === 'retry' && (overview.runs.length !== 2 || overview.runs.filter((r: { id: string; topicId: string }) => r.id !== runId && r.topicId === topicId).length !== 1)) throw new Error('Repeated click must create exactly one retry for the original task')
       if (kind === 'question' && !overview.runs.some((r: { id: string; answer: string }) => r.id === runId && r.answer === '主要写给刚开始学习的人')) throw new Error('Reply did not bind to original round')
     }
     if (kind === 'question') {
       await run(`document.querySelector('[aria-label="关闭待处理事项"]').click()`)
       selectChatSession(session); window.webContents.send('sessions:changed')
       const original = `[data-contact-interaction="${cardId!}"]`
-      await waitForRenderer(window, `document.querySelector(${JSON.stringify(original)})?.textContent.includes('已排队')`)
+      await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(original)})?.querySelector('.contact-interaction-result'))`)
       const pending = await run(`window.electronAPI.agents.pendingInteractions(${JSON.stringify(character.id)})`)
       if (pending.some((item: { id: string }) => item.id === cardId)) throw new Error('Answered item remains pending')
     }

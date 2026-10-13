@@ -69,7 +69,7 @@ export default function ContactTaskDialog({ characterId, editTask, deletion, rou
             return
           }
           onDone(result.overview); onClose()
-        } catch (error) { setError(error instanceof Error ? error.message : '操作失败，请重试。'); throw error }
+        } catch (error) { setError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '') : '操作失败，请重试。'); throw error }
       }).finally(() => setPending(false))
     }}>
       <h3 id={titleId}>{deleting ? '删除任务' : editTask || routine || duty ? '修改任务' : '新建任务'}</h3>
@@ -82,7 +82,7 @@ export default function ContactTaskDialog({ characterId, editTask, deletion, rou
       {error && <p role="alert" className="agent-error">{error}</p>}
       <footer>{savedNotice ? <button type="button" data-task-dialog-submit className="primary" onClick={() => { onDone(pendingOverview!); onClose() }}>完成</button> : <>
         <button type="button" autoFocus={deleting} disabled={pending} onClick={onClose}>取消</button>
-        <button data-task-dialog-submit type="submit" className={deleting ? 'danger' : 'primary'} disabled={pending || (!deleting && !description.trim())}>{pending ? '处理中…' : deleting ? '删除任务' : editTask || duty ? '保存' : '交给 AI'}</button>
+        <button data-task-dialog-submit type="submit" className={deleting ? 'danger' : 'primary'} disabled={pending || (!deleting && !description.trim())}>{pending ? '处理中…' : deleting ? '删除任务' : editTask || routine || duty ? '保存' : '交给 AI'}</button>
       </>}</footer>
     </form>
   </dialog>, document.body)
