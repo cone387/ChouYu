@@ -190,3 +190,38 @@ Final: Ruling: 第6项由Minor调整为Important并纳入修复 — 隐藏页面
 - `recovery-metadata-red.log`保留旧实现失败，新实现相关29项通过（`recovery-metadata-green.log`）。新增按需真实模型测试`node scripts/test-contact-model.cjs --recovery`，以v6合成开篇作为已完整临时正文，真实恢复、解析与SQLite成果保存，固定最多2次调用/6万Token，无真实用户内容。
 - 首次在线抽测1项通过，1次调用/1788 Token（`live-recovery.log`、`live-recovery-first.json`）；人工逐字检查标题、摘要、进度和三条候选记忆均来自开篇，未生成第二章既成事实。补充记忆库保存状态断言后再次1项通过，1次调用/1602 Token（`live-recovery-persistence.log`、`live-recovery.json`）；本次模型选择空记忆，符合可不新增的规则，不据此声称验证了非空记忆落盘。两次下一步都明确是未来再次探访，正文保持输入原样。
 - 全量`recovery-final-suite.log`1542通过/29按需跳过；类型`recovery-final-types.log`、构建`recovery-final-build.log`通过（既有500KB提示）；`recovery-final-agents.log`通过实际Electron联系人执行、重启、成果版本、聊天修改和任务通知回归。此补正仅证明抽测范围，新的完整持续运行及原生验收仍待完成。
+
+### v7 完整实跑（运行中，尚未通过）
+
+- 北京时间2026-10-13 **21:14:13**开始，最早满24小时为2026-10-14 **21:14:13**。目录`artifacts/contact-next/soak-20261013-v7`，固定提交`7cb2825`，构建SHA256 `2921117d65f6b83c724dff7a95a982e1d8e9ea06f0c8cae2f1d10c7c2c96c093`。
+- 启动器PID9572、初始应用PID54372，启动后实际Get-Process核对存活；最初237秒心跳48次、观察错误0。作者21:16开始，已记录运行中worker中断与恢复，首轮交付仍待检查；评审首轮21:19、ChouYu21:22，15分钟应用重启和午夜后轮次均待实际发生。
+- 原额度与故障矩阵不变；只有本轮完整墙钟时间计数。当前未通过，不能把在运行或worker恢复当作所有任务达标。
+- 本轮再次通过Computer Use的`sky.list_apps()`验证，仍为native pipe unavailable/os error2；此前恢复通道或隔离Windows环境的询问尚无答复，原生托盘及真实休眠验收保留未完成。
+
+### 交付审计中间记录（2026-10-13，非完成声明）
+
+按设计六节、实施计划与唯一规范核对。下面的「已验证」仅指列明范围；不是任意模型长期正确的保证。当前主目录仍在干净的`d2cff72`，本分支尚未整合。
+
+| 要求 | 实现与当前可核对证据 | 结论/剩余范围 |
+| --- | --- | --- |
+| 聊天修改工作方式、时段、每日调用/Token、并发；无任务不创建任务 | `chat-changes`/`tools`/`savePreferences`；`chat-controls.test.ts`真实SQLite保存与重开、`chat-change-model.acceptance.test.ts`在线路由17项；`recovery-final-agents.log`实际界面保存回执 | 已验证结构化执行与有限自然语言样本；不是所有表达都已覆盖 |
+| 白名单、版本、归属、未提字段保留、事务失败回滚 | `chat-controls.test.ts`坏字段拒绝、确认期间版本/会话改变拒绝、保存审计触发器失败全回滚；本轮全量通过 | 已验证；原工具开关和确认策略保留 |
+| 明确解除Token、保留调用保护；结束/放弃取消旧轮保留成果；单任务删除强制确认 | 同测试及`contact-chat-change-smoke.ts`；保留暂停/结束状态、旧轮不能提交、真实删除范围/确认和拒绝均有断言 | 已验证；没有新增多字段任务设置 |
+| 长文包含保存正文与本轮替换节、顺序不乱、UTF-16边界不拆代理对 | `task-completion.test.ts`、`completion-batches.test.ts`真实拼接与中间章节替换；在线七节超过6万字符核对 | 已验证；每批回执不等于全任务通过 |
+| 严格回执、最终综合及跨节问题、缺口不因摘要压缩消失 | 回执key/完整性拒绝、1080个问题保留总数、最终问题阻止完成；在线末节红灯矛盾被发现 | 已验证这些场景，模型语义仍受抽测范围限制 |
+| 持久增量核对、预算/取消/删除保护 | 重开数据库、末节单独重查、要求/证据变化失效、仅抓取时间变化复用；原额度耗尽中断、迟到回执不保存；在线7批+最终8次、修订1批+最终2次 | 已验证；未放宽原额度 |
+| 每月日期/月末、闰年、锚定N天、最多5时刻、本地DST/时区 | `assistant-routines.test.ts`与双引擎日历测试；在线每月31日/月末/每隔3天真实保存 | 已验证规则与解析；真实睡眠跨期仍未验收 |
+| 漏期补最近一次、重试原期次、独立联系人引擎、工作/预算/暂停/待回复约束 | `calendar.test.ts`/安排service测试；历史重试修复；v5实际503后重试保留原dueAt | 程序边界已验证；新一轮完整跨夜链待v7 |
+| 单描述公共UI、原任务ID、保存失败保留输入、真实状态 | `assistant-routines-smoke.ts`、`task6-routines.log`与最新agents；UI采用公共卡片/详情/弹窗及适配 | 已验证本地模型交互；未增加快速/批量操作、表单彩色描边或独立安排面板 |
+| 共享读取/事件合并、旧响应不覆盖、隐藏停读、返回补读 | `contactQueries.test.ts`及`contact-performance-smoke.ts`；`review-home-green.log`隐藏Home与待处理卡零读取 | 已验证；后台任务继续运行 |
+| 阅读版本/位置/草稿/焦点及ChouYu编辑内容保留 | 实际Electron读取失败恢复版本8、后台保存9仍不替换、滚动及草稿断言；`review-draft-green.log` | 已验证；document.visibilitychange是合成事件，不冒充原生最小化/休眠 |
+| 容量测量并记录IPC、延迟、内存 | `performance-before.json`/`performance-after.json`：24联系人×20任务，每人7.84万字符成果及50条长消息；前后表见Task4 | 查询及打开耗时有改善；内存未下降，不宣称内存优化或据此加虚拟化 |
+| 主卡聊天、原问题直达、固定版本/失效/返回筛选、键鼠及375/1024深浅色 | `contact-card-links-smoke.ts`实际鼠标/键盘、来源删除/新版断言；`task5-card-smoke.log`、`task6-card-capture.log`及4张截图；摘要引用由同次读取返回 | 已验证所列操作，主体聊天为DOM按钮调用；截图此前已查看，本轮后端提示修改未重拍 |
+| 保存正文直接交付、独立身份、无逐消息润色 | `runtime`/`notices`保存分节与来源事务；agents/experience夹具及真实v5开篇；本轮恢复提示在线抽测 | 修复恢复元数据偏移；v7持续真实质量待观察，不能以保存version>0替代正文检查 |
+| 资料撤回、取消、修改、并发和来源/回执去重 | 模块测试及agents/contact-experience Electron；`discovery-experience.log`跨联系人实际固定引用、修改与重启 | 夹具边界通过，完整长期环境由v7补证据 |
+| 真实24小时、跨本地午夜、writer→reviewer→ChouYu、worker/app恢复、服务失败 | 固定bundle真实模型v7进程已验证存活；之前短跑均停止且不相加，成功判定要求实际成果与来源 | **未完成**；v7尚未满时长/跨午夜/完整链路 |
+| 原生逐类托盘闪烁/点击/已读停止与实际休眠唤醒 | 当前`sky.list_apps()`实测native pipe unavailable/os error2；隐藏soak不创建原生托盘、不主动休眠 | **未完成，环境缺口**；不擅自休眠宿主、不降低未读提示强度 |
+| 测试/类型/构建/相关Electron、一次独立审查及修复 | 本轮1542通过/29按需跳过、类型/build/agents通过；安排/companion/experience/toolbar/settings日志分别保留；独立审查六项同轮修复 | 代码验证已有证据；按需跳过不计作在线通过，其他专项按各次实际修改范围复用，不称全部本轮重跑 |
+| 同步规范/使用说明/证据并整合原项目 | 本轮更新唯一规范与使用说明，纠正旧6万字上限、需求记录入口/schema及停止状态；分支提交7cb2825 | **未完成**：持续状态仍需跟进，最终整合需剩余验收通过 |
+
+当前审计明确否定「全部完成」；不是只依据测试总数或计划勾选作出结论。后续以v7实际成果/恢复/时长和可操作原生环境补足，再核对整合后的最终状态。
