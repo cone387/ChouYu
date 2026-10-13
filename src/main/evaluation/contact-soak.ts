@@ -82,11 +82,12 @@ export async function runContactSoak(window: BrowserWindow) {
       await new Promise(resolve => setTimeout(resolve, 5000))
     }
     save()
-    const observed = report.observations as { writer: { runs: { status: string }[] }; reviewer: { runs: { status: string }[]; reports: { evidence: { url: string }[] }[] }; deliveries: (AgentDelivery | null)[]; assistantHistory: { status: string }[]; unread: number }
+    const observed = report.observations as { writer: { runs: { status: string }[]; reports: unknown[] }; reviewer: { runs: { status: string }[]; reports: { evidence: { url: string }[] }[] }; deliveries: (AgentDelivery | null)[]; assistantHistory: { status: string }[]; unread: number }
+    const actualReviews = observed.reviewer.reports.filter(item => item.evidence.some(source => source.url.startsWith('contact-delivery://soak-writer/')))
     report.complete = options.durationMs >= 86400000 && report.elapsedMs >= 86400000 && report.dates.length >= 2 && report.workerRestarted && report.appRestarted
       && observed.writer.runs.filter(r => r.status === 'completed').length >= 2 && observed.deliveries.every(value => !!value?.sections.length)
       && observed.reviewer.runs.filter(r => r.status === 'completed').length >= 2
-      && observed.reviewer.reports.some(item => item.evidence.some(source => source.url.startsWith('contact-delivery://soak-writer/')))
+      && observed.writer.reports.length >= 2 && actualReviews.length >= 2
       && observed.assistantHistory.filter(item => item.status === 'completed').length >= 2 && observed.unread > 0 && report.errors.length === 0
     report.status = report.complete ? 'passed-24-hours' : options.durationMs < 86400000 ? 'short-sample-only' : 'failed'; save()
     event('finished', { complete: report.complete, elapsedMs: report.elapsedMs, dates: report.dates })
