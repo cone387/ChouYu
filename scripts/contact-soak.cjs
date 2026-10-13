@@ -46,7 +46,7 @@ async function main() {
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
   await new Promise((resolve, reject) => {
     const prepare = spawn(require('electron'), [__filename, output], { cwd: root, env, windowsHide: true, stdio: 'inherit' })
-    prepare.once('error', reject); prepare.once('exit', code => code === 0 ? resolve() : reject(Error('Provider preparation failed')))
+    prepare.once('error', reject); prepare.once('exit', (code, signal) => code === 0 ? resolve() : reject(Error(`Provider preparation failed (exit=${code}, signal=${signal || 'none'})`)))
   })
   const filename = path.join(userData, 'chouyu-data.json'), data = JSON.parse(fs.readFileSync(filename, 'utf8'))
   const upstream = new URL(data.config.baseUrl), proxyEvents = path.join(output, 'provider-events.jsonl')
