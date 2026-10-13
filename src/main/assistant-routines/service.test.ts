@@ -11,6 +11,24 @@ function fixture() {
   return { deps, messages, service: new AssistantRoutineService(deps) }
 }
 describe('assistant routine execution', () => {
+  it('rebases unclaimed local times after timezone travel and keeps failed receipts frozen', async () => {
+    const original = process.env.TZ
+    try {
+      process.env.TZ = 'Asia/Shanghai'
+      const f = fixture(), [item] = f.service.save(input, undefined, undefined, Date.parse('2026-10-13T00:00:00Z'))
+      process.env.TZ = 'America/New_York'
+      await f.service.tick(Date.parse('2026-10-13T01:00:00Z'))
+      expect(f.deps.generate).not.toHaveBeenCalled()
+      expect(f.service.list()[0].nextAt).toBe(Date.parse('2026-10-13T13:00:00Z'))
+      f.deps.generate.mockRejectedValueOnce(new Error('offline'))
+      await f.service.tick(Date.parse('2026-10-13T14:00:00Z'))
+      const failed = f.service.history(item.id).items[0]
+      process.env.TZ = 'Asia/Shanghai'
+      await new AssistantRoutineService(f.deps).tick(Date.parse('2026-10-14T02:00:00Z'))
+      expect(f.service.history(item.id).items[0].receipt).toBe(failed.receipt)
+      expect(f.service.list()[0].nextAt).toBe(Date.parse('2026-10-15T01:00:00Z'))
+    } finally { if (original === undefined) delete process.env.TZ; else process.env.TZ = original }
+  })
   it('keeps each failed attempt and its later result across edits and restart', async () => {
     const f = fixture(), [item] = f.service.save(input, undefined, undefined, at(25, 8))
     f.deps.generate.mockRejectedValueOnce(new Error('model unavailable'))

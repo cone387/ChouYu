@@ -5,8 +5,8 @@ import type { AppConfig } from '../../../../shared/config'
 import type { AssistantRoutine } from '../../../../shared/assistant-routines'
 
 export type AssistantTaskEntry = { id: string; title: string; status: string; description: string; duty?: AssistantDutyKey; routine?: AssistantRoutine }
-export function useAssistantTasks(surfaceActive: boolean) {
-  const active = useContactVisible(surfaceActive)
+export function useAssistantTasks(isAssistant: boolean, surfaceActive: boolean) {
+  const active = useContactVisible(isAssistant && surfaceActive)
   const [routines, setRoutines] = useState<AssistantRoutine[]>([])
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [error, setError] = useState('')
@@ -29,7 +29,7 @@ export function useAssistantTasks(surfaceActive: boolean) {
     const timer = setInterval(() => { void refresh() }, 15000)
     return () => { alive.current = false; epoch.current++; off(); offConfig(); clearInterval(timer) }
   }, [active])
-  const entries: AssistantTaskEntry[] = !active ? [] : [
+  const entries: AssistantTaskEntry[] = !isAssistant ? [] : [
     ...(config ? ASSISTANT_DUTIES.map(duty => ({ id: `duty:${duty.key}`, title: duty.title, status: config[duty.key] ? '已启用' : '已暂停', description: `${duty.rule}${duty.key !== 'proactiveGreeting' && config ? ` 当前：离开 ${config.proactiveReturnAwayMinutes} 分钟、连续使用 ${config.proactiveRestMinutes} 分钟、冷却 ${config.proactiveCooldownMinutes} 分钟。` : ''}`, duty: duty.key })) : []),
     ...routines.map(routine => ({ id: `routine:${routine.id}`, title: routine.title, status: routine.enabled ? '已启用' : '已暂停', description: routine.instruction, routine })),
     ...(loaded && !routines.some(item => item.kind === 'contact-summary') ? [{ id: 'morning-summary', title: '联系人晨间总结', status: '未配置', description: '告诉我希望几点检查各联系人的进展，我会按时汇总需要你关注的事情。' }] : [])

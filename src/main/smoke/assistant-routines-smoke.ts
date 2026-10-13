@@ -120,6 +120,15 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
     await openEditor('.contact-work-sheet')
     if (await run("document.querySelector('.contact-task-dialog [data-task-dialog-submit]').textContent") !== '保存') throw new Error('Editing a scheduled task must offer Save')
     await fill('改成九点')
+    // Synthetic document visibility transition; this does not claim a native minimize/sleep test.
+    try {
+      await run("Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' }); document.dispatchEvent(new Event('visibilitychange'))")
+      await run('new Promise(resolve=>setTimeout(resolve,100))')
+      if (!await run("document.querySelector('.contact-task-dialog [data-task-description]')?.value === '改成九点'")) throw new Error('Hiding the document discarded the assistant task editor draft')
+    } finally {
+      await run("delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))")
+    }
+    await waitForRenderer(window, "document.querySelector('.contact-task-dialog [data-task-description]')?.value === '改成九点'")
     await submit()
     await waitForRenderer(window, "!document.querySelector('.contact-task-dialog') && document.querySelector('.contact-work-sheet .topic-detail-pane')?.textContent.includes('09:00')")
     const updated = await run('window.electronAPI.assistantRoutines.list()')

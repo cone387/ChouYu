@@ -49,7 +49,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     if (container.current) observer.observe(container.current)
     return () => observer.disconnect()
   }, [])
-  const assistant = useAssistantTasks(characterId === DEFAULT_CHARACTER_ID && active)
+  const assistant = useAssistantTasks(characterId === DEFAULT_CHARACTER_ID, active)
   const [listCollapsed, setListCollapsed] = useState(false)
   const [stagesCollapsed, setStagesCollapsed] = useState(false)
   const [taskDialog, setTaskDialog] = useState<'create' | AgentTopic | null>(null)

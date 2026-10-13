@@ -33,6 +33,52 @@ const metadata = JSON.stringify({ title: '第二章下半段', body: '完成一�
   delivery: { summary: '陆沉参加试音', completionCriteria: '完成整本小说', stages: [{ id: 'ch02', title: '第二章', status: 'active' }], section: { id: 'ch02b', title: '第二章下半段', body: '__SAVED_BODY__' } } })
 const generate = (f: ReturnType<typeof fixture>, model: AgentModel) => f.recovery().generate(model, new AbortController().signal, {}, '生成进度', parseDraft, () => {})
 
+it('starts the whole current section when the rejected structured response has no saved prose prefix', async () => {
+  const f = fixture()
+  f.recovery().retain('UNPUBLISHED_FIRST_SECTION：第一章已经完成，请从第二章开始。')
+  const model = vi.fn<AgentModel>(async (prompt, _signal, options) => {
+    if (!options?.plainText) return metadata
+    // A failed structured output is diagnostic data, never the story's saved opening.
+    expect(prompt).not.toContain('UNPUBLISHED_FIRST_SECTION')
+    expect(prompt).not.toContain('previousAttempt')
+    expect(prompt).toContain('从本小节开头')
+    expect(prompt).toContain('"savedPrefix":""')
+    return '沈青第一次抵达雾港。[[SECTION_END]]'
+  })
+  expect(parseDraft(await generate(f, model)).delivery?.section?.body).toBe('沈青第一次抵达雾港。')
+})
+
+it('isolates leaked recovery commentary and regenerates without publishing or continuing it', async () => {
+  const f = fixture(), leaked = '目录为空，但 previousAttempt 中已有第一段完整正文。按指令“分段创作恢复”，从其结尾续写。'
+  let attempts = 0
+  const model = vi.fn<AgentModel>(async (prompt, _signal, options) => {
+    if (!options?.plainText) return metadata
+    if (++attempts === 1) return leaked + '\n第二天的正文。[[SECTION_END]]'
+    expect(prompt).not.toContain(leaked)
+    expect(prompt).toContain('"savedPrefix":""')
+    return '沈青第一次抵达雾港。[[SECTION_END]]'
+  })
+  const output = parseDraft(await generate(f, model))
+  expect(output.delivery?.section?.body).toBe('沈青第一次抵达雾港。')
+  expect(model).toHaveBeenCalledTimes(3)
+  expect(f.store.callCount('writer')).toBe(3)
+  expect(f.store.overview('writer').reports).toEqual([])
+})
+
+it('never promotes a complete legacy scratch containing protocol commentary after restart', async () => {
+  const f = fixture(), leaked = '目录为空，但 previousAttempt 中已有第一段完整正文。'
+  // Seed the previously accepted on-disk shape, not the new generator's validation path.
+  f.recovery().retain('old diagnostics')
+  f.store.db.prepare("UPDATE writing_drafts SET value=json_set(value,'$.body',?,'$.complete',json('true'))").run(leaked)
+  f.reopen()
+  const model = vi.fn<AgentModel>(async (_prompt, _signal, options) => options?.plainText ? leaked + '[[SECTION_END]]' : metadata)
+  await expect(generate(f, model)).rejects.toThrow('恢复次数')
+  expect(model).toHaveBeenCalledTimes(3)
+  expect(f.recovery().read()?.complete).toBe(false)
+  expect(f.recovery().read()?.body).toBe('')
+  expect(f.store.overview('writer').reports).toEqual([])
+})
+
 it('reports only the failed attempt’s saved draft, not old scratch from another attempt', async () => {
   const f = fixture()
   await expect(generate(f, async (_prompt, _signal, options) => {

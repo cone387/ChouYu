@@ -10,6 +10,14 @@ export interface CalendarSchedule {
 }
 export interface CalendarOccurrence { revision: number; dueAt: number; rule: CalendarSchedule }
 
+export const calendarTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+/** Preserve the scheduled wall date/time when a floating appointment moves zones. */
+export function rebaseCalendarAt(instant: number, previousZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: previousZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(instant)
+  const value = (name: string) => Number(parts.find(part => part.type === name)!.value)
+  return new Date(value('year'), value('month') - 1, value('day'), value('hour'), value('minute')).getTime()
+}
+
 function parseDate(value: unknown, label: string): Date {
   const parts = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').map(Number) : []
   const [year, month, day] = parts

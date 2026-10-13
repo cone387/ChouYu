@@ -67,7 +67,7 @@ export class AgentStore {
     this.db.pragma('foreign_keys = ON')
     this.db.pragma('busy_timeout = 5000')
     const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 15) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
+    if (version > 16) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -154,7 +154,7 @@ export class AgentStore {
       conversation TEXT NOT NULL DEFAULT '', pending INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0);`)
     this.taskFailures = new AgentTaskFailures(this.db)
     this.calendars = new ContactCalendars(this.db)
-    if (version < 15) this.db.pragma('user_version = 15')
+    if (version < 16) this.db.pragma('user_version = 16')
     this.restoreFailureSchedules()
   }
   private restoreFailureSchedules() {

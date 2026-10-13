@@ -17,6 +17,25 @@ beforeEach(() => {
 })
 afterEach(() => { store.close(); rmSync(directory, { force: true, recursive: true }); vi.useRealTimers() })
 
+it('rebases unclaimed local appointments after timezone travel while preserving pinned attempts', () => {
+  const original = process.env.TZ
+  try {
+    process.env.TZ = 'Asia/Shanghai'; vi.setSystemTime(Date.parse('2026-10-13T00:00:00Z'))
+    const topic = store.assignCalendarTopic('alice', input, '', '每天九点')
+    process.env.TZ = 'America/New_York'; vi.setSystemTime(Date.parse('2026-10-13T01:00:00Z'))
+    expect(store.nextScheduledTopic('alice')).toBeUndefined()
+    expect(store.overview('alice').taskSchedule?.[topic.id].nextAt).toBe(Date.parse('2026-10-13T13:00:00Z'))
+    vi.setSystemTime(Date.parse('2026-10-13T14:00:00Z'))
+    const first = store.startScheduledTopic('alice', topic.id, ''), occurrence = JSON.parse(store.getRun(first)!.input).calendar
+    store.fail(first, 'offline')
+    process.env.TZ = 'Asia/Shanghai'; vi.setSystemTime(Date.parse('2026-10-14T02:00:00Z'))
+    const retry = store.startScheduledTopic('alice', topic.id, '')
+    expect(JSON.parse(store.getRun(retry)!.input).calendar).toEqual(occurrence)
+    store.defer(retry, '已完成')
+    expect(store.calendars.get(topic.id)?.next_at).toBe(Date.parse('2026-10-15T01:00:00Z'))
+  } finally { if (original === undefined) delete process.env.TZ; else process.env.TZ = original }
+})
+
 it('saves a real calendar without starting early, catches up the latest occurrence and resumes the anchor', () => {
   const topic = store.assignCalendarTopic('alice', input, '', '用户：每天九点')
   expect(store.overview('alice').runs).toEqual([])
@@ -83,6 +102,26 @@ it('preserves failed period receipts across restart and does not overlap a waiti
   store.setStatus(retry, 'waiting')
   expect(store.nextScheduledTopic('alice', at(16, 10))).toBeUndefined()
   expect(store.startScheduledTopic('alice', topic.id, '')).toBe(retry)
+})
+
+it('settles the pinned period when retrying a failed calendar from work history', async () => {
+  const service = new AgentService(join(directory, 'manual-retry'), () => {})
+  try {
+    await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'fixture', thinkingDisabledModels: [] } }])
+    vi.spyOn(service, 'tick').mockImplementation(() => {})
+    const topic = service.store.assignCalendarTopic('alice', input, '', '每天九点')
+    vi.setSystemTime(at(13, 10))
+    const first = service.store.startScheduledTopic('alice', topic.id, '')
+    const occurrence = JSON.parse(service.store.getRun(first)!.input).calendar
+    service.store.fail(first, 'offline')
+    await service.request('run', 'alice', [topic.id])
+    const retry = service.store.overview('alice').runs.find(run => run.id !== first)!
+    expect(JSON.parse(service.store.getRun(retry.id)!.input).calendar).toEqual(occurrence)
+    service.store.defer(retry.id, '本期已检查')
+    expect(service.store.calendars.get(topic.id)?.attempt_at).toBeNull()
+    expect(service.store.nextScheduledTopic('alice', at(13, 12))).toBeUndefined()
+    expect(service.store.calendars.get(topic.id)?.next_at).toBe(at(14, 9))
+  } finally { await service.close() }
 })
 
 it('keeps calendar execution behind work hours, daily budgets, explicit pause and automatic enablement', () => {

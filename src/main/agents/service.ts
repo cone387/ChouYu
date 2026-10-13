@@ -252,6 +252,11 @@ export class AgentService {
           break
         }
         this.checkSearch(id)
+        const calendar = topicId && this.store.calendars.get(topicId)
+        if (topicId && input?.calendar && calendar && calendar.revision === input.calendar.revision && calendar.attempt_at === input.calendar.dueAt) {
+          this.store.startScheduledTopic(id, topicId, this.identity(id).conversation)
+          break
+        }
         this.store.createRun(id, this.identity(id).conversation, Date.now(), args[0] === undefined ? undefined : String(args[0])); break
       }
       case 'answer': this.store.answer(id, String(args[0]), args[1] as string, args[2]); break

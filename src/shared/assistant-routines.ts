@@ -11,6 +11,7 @@ export interface AssistantRoutine extends AssistantRoutineInput {
   createdAt?: number
   updatedAt?: number
   nextAt: number
+  timeZone?: string
   lastAt?: number
   lastError?: string
   lastResult?: string

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { calendarTimeZone, rebaseCalendarAt } from '../../shared/calendar-schedule'
 import { nextRoutineAt, latestRoutineAt, validateRoutine, type AssistantRoutine, type AssistantRoutineExecution, type AssistantRoutineHistoryPage } from '../../shared/assistant-routines'
 
 interface Dependencies {
@@ -50,6 +51,14 @@ export class AssistantRoutineService {
       if (item.requestLog !== undefined && (typeof item.requestLog !== 'string' || item.requestLog.length > 8000)) throw new Error('助手安排无法读取，请恢复数据后重试。')
     })
     normalized.forEach(item => validateRoutine(item))
+    const zone = calendarTimeZone()
+    let changed = false
+    for (const item of normalized) {
+      if (item.finishedAt || item.pending || item.attemptAt !== undefined || item.timeZone === zone) continue
+      item.nextAt = item.timeZone ? rebaseCalendarAt(item.nextAt, item.timeZone) : item.nextAt
+      item.timeZone = zone; changed = true
+    }
+    if (changed) this.deps.write(JSON.stringify(normalized))
     return normalized
   }
   save(raw: unknown, id?: string, revision?: number, now = Date.now(), requestLog?: string) {
@@ -59,6 +68,7 @@ export class AssistantRoutineService {
     if (!id && items.length >= 50) throw new Error('最多保存 50 项助手安排。')
     if (requestLog !== undefined && (typeof requestLog !== 'string' || requestLog.length > 8000)) throw new Error('任务沟通记录最多 8000 字。')
     const item: AssistantRoutine = { ...input, ...(requestLog !== undefined ? { requestLog } : previous?.requestLog !== undefined ? { requestLog: previous.requestLog } : {}), id: previous?.id ?? randomUUID(), revision: (previous?.revision ?? 0) + 1, createdAt: previous?.createdAt ?? (previous ? undefined : now), updatedAt: now, nextAt: nextRoutineAt(input, now), lastAt: previous?.lastAt, lastResult: previous?.lastResult }
+    item.timeZone = calendarTimeZone()
     const next = previous ? items.map(i => i.id === id ? item : i) : [...items, item]
     this.deps.write(JSON.stringify(next))
     return next
@@ -106,6 +116,7 @@ export class AssistantRoutineService {
           this.record(item.id, { ...entry, status: 'completed', finishedAt: completedAt, content })
           if (current.cadence === 'once') current.finishedAt = completedAt
           else current.nextAt = nextRoutineAt(current, completedAt)
+          current.timeZone = calendarTimeZone()
           current.retryAt = undefined; current.failures = 0
           this.deps.write(JSON.stringify(items))
         } catch (error) {

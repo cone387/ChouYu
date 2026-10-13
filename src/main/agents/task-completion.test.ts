@@ -164,6 +164,26 @@ it('invalidates only changed text batches but rechecks the global conclusion', a
   expect(reviewed.filter(id => id === 'idea1')).toHaveLength(2)
   expect(f.store.callCount('alice')).toBe(11)
 })
+it('reuses long-review facts after recapture or unrelated chat, but invalidates changed source text and task feedback', async () => {
+  const { f, run, topic, candidate } = longFixture()
+  let active = run, reviewed = 0, finals = 0
+  const model = async (prompt: string) => {
+    if (prompt.startsWith('正文分批核对')) { reviewed++; return batchReply(prompt) }
+    finals++
+    if (finals === 2) expect(prompt).toContain('新闲聊')
+    return JSON.stringify({ ...decision, mode: 'finite' })
+  }
+  const context = { userFeedback: '按原要求核对', userAnswer: '', conversation: '旧闲聊', evidence: [{ url: 'https://example.com/source', title: '资料', text: '相同资料正文', hash: 'same', capturedAt: 1 }] }
+  const check = (value: unknown) => reviewTaskCompletion(f.store, active, topic, candidate, model, new AbortController().signal, () => f.store.assertLive(active), value)
+  await check(context); expect(reviewed).toBe(8)
+  f.store.setStatus(active, 'completed'); f.reopen(); active = f.store.createRun('alice', '')
+  const recaptured = { ...context, conversation: '新闲聊', evidence: [{ ...context.evidence[0], capturedAt: 2 }] }
+  await check(recaptured); expect(reviewed).toBe(8); expect(finals).toBe(2)
+  const changed = { ...recaptured, evidence: [{ ...recaptured.evidence[0], text: '新证据否定原有结论', hash: 'changed' }] }
+  await check(changed); expect(reviewed).toBe(16)
+  await check({ ...changed, userFeedback: '改用新的核对标准' }); expect(reviewed).toBe(24)
+})
+
 it('never accepts completion when a reviewed batch reports a missing requirement', async () => {
   const { f, run, topic, candidate } = longFixture()
   const model = vi.fn(async (prompt: string) => prompt.startsWith('正文分批核对')

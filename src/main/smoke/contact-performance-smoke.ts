@@ -34,6 +34,9 @@ export async function runContactPerformanceSmoke(window: BrowserWindow) {
     }
     targets.push({ characterId: owner, topicId })
   }
+  const waitingOwner = targets[4].characterId
+  const question = store.topics.create(waitingOwner, { title: 'Hidden home question', goal: 'Ask', constraints: '' })
+  store.wait(store.createRun(waitingOwner, '', Date.now(), question.id), 'Keep this pending question and its draft.')
   store.close()
   window.webContents.send('open-chat-panel')
   await waitForRenderer(window, "Boolean(document.querySelector('.chat-panel[data-ready=true]'))")
@@ -81,6 +84,20 @@ export async function runContactPerformanceSmoke(window: BrowserWindow) {
       await run(`document.querySelector('${panel}').closest('dialog').querySelector('[data-contact-dialog-tab="${name}"]').click()`)
       await waitForRenderer(window, `document.querySelector('${panel}')?.dataset.selectedTab === '${name}'`)
     }
+    await tab('overview')
+    await waitForRenderer(window, `Boolean(document.querySelector('${panel} [data-home-pending] textarea'))`)
+    await run(`(()=>{const e=document.querySelector('${panel} [data-home-pending] textarea');e.focus();Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'Unsaved answer');e.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+    await navigate({ kind: 'contact-settings', characterId: targets[5].characterId, tab: 'settings' })
+    await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-agent="${targets[5].characterId}"]'))`)
+    await new Promise(resolve => setTimeout(resolve, 500))
+    beginContactQueryMeasurement()
+    window.webContents.send('agents:changed', target.characterId)
+    await new Promise(resolve => setTimeout(resolve, 750))
+    const hiddenHomeReads = endContactQueryMeasurement()
+    if (hiddenHomeReads.some(sample => sample.channel === 'agents:getInteraction' && sample.owner === target.characterId)) throw Error('Hidden contact home still refreshed its pending interaction')
+    await run(`Array.from(document.querySelectorAll('[data-contact-return]')).find(e=>e.getClientRects().length).click()`)
+    await waitForRenderer(window, `document.querySelector('${panel} [data-home-pending] textarea')?.getClientRects().length > 0`)
+    await waitForRenderer(window, `document.querySelector('${panel} [data-home-pending] textarea')?.value === 'Unsaved answer'`)
     await tab('portfolio')
     await waitForRenderer(window, `Boolean(document.querySelector('${panel} .portfolio-open'))`)
     failContactReadForSmoke(target.characterId)

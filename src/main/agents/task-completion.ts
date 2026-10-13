@@ -9,6 +9,18 @@ export const taskCompletionInstruction = `任务生命周期与本轮执行分�
 type Candidate = { nextStep: string; progress?: AgentTopicProgress; delivery?: DeliveryUpdate }
 interface Decision { mode: 'ongoing' | 'finite' | 'until'; satisfied: boolean; endsAt: string | null; reason: string; nextStep: string; completionCriteria: string }
 
+function batchContext(context: unknown): unknown {
+  if (!context || typeof context !== 'object' || Array.isArray(context)) return context
+  const { conversation: _conversation, evidence, ...requirements } = context as Record<string, unknown>
+  // Rolling chat is checked by the final synthesis; capture time does not change source facts.
+  return { ...requirements, ...(evidence === undefined ? {} : { evidence: Array.isArray(evidence)
+    ? evidence.map(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item
+      const { capturedAt: _capturedAt, ...source } = item as Record<string, unknown>
+      return source
+    }) : evidence }) }
+}
+
 /** Extra semantic check only when the model proposes to terminate a task, including old tasks. */
 export async function reviewTaskCompletion<T extends Candidate>(store: AgentStore, runId: string, topic: AgentTopic, draft: T,
   model: AgentModel, signal: AbortSignal, live: () => void, context?: unknown): Promise<T> {
@@ -35,7 +47,7 @@ export async function reviewTaskCompletion<T extends Candidate>(store: AgentStor
     .map(row => { const value = JSON.parse(row.after_value) as AgentTopic; return { at: new Date(row.created_at).toISOString(), goal: value.goal, constraints: value.constraints } })
   const batches = sections.reduce((sum, section) => sum + section.body.length, 0) > 60000
     ? await reviewCompletionBatches(store, runId, topic.id, sections,
-      { goal: topic.goal, constraints: topic.constraints, requestLog: topic.requestLog, context }, model, signal, live) : undefined
+      { goal: topic.goal, constraints: topic.constraints, requestLog: topic.requestLog, context: batchContext(context) }, model, signal, live) : undefined
   const evidence = { readComplete: true, omittedSectionIds: [], ...(batches ? { batches } : { sections }),
     completionCriteria: saved?.completionCriteria, stages: saved?.stages }
   const key = createHash('sha256').update(JSON.stringify({ topic, draft, context, evidence, userChanges, userChangesComplete })).digest('hex')
