@@ -1,3 +1,4 @@
+import { contactQueries } from './contactQueries'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AGENT_STATUS, type AgentEvent, type AgentOverview, type AgentRun, type AgentRunDetail } from '../../../../shared/agents'
 import { workLogActivity } from './workLogActivity'
@@ -16,7 +17,8 @@ const labels: Record<string, string> = {
 }
 const summary = (event: AgentEvent) => labels[event.kind] || event.text.split('\n')[0].slice(0, 70)
 
-export default function ContactWorkLog({ characterId, run, data, busy, canRetry, onReport, onRetry, onReply }: {
+export default function ContactWorkLog({ characterId, run, data, busy, canRetry, onReport, onRetry, onReply, active = true }: {
+  active?: boolean
   characterId: string; run: AgentRun; data: AgentOverview; busy: boolean; canRetry: boolean
   onReport(): void; onRetry(): void; onReply(): void
 }) {
@@ -27,19 +29,18 @@ export default function ContactWorkLog({ characterId, run, data, busy, canRetry,
   const autoScrolling = useRef(false)
   const viewport = useRef<HTMLDivElement>(null), following = useRef(true), seen = useRef(0)
   useEffect(() => {
+    if (!active) return
     let alive = true, request = 0
     const refresh = async () => {
       const current = ++request
       try {
-        const next = await window.electronAPI.agents.detail(characterId, run.id)
+        const next = await contactQueries.read(characterId, 'detail', [run.id], () => window.electronAPI.agents.detail(characterId, run.id))
         if (alive && current === request) { setDetail(next); setError('') }
       } catch { if (alive && current === request) setError('日志读取失败，正在重新连接。') }
     }
-    void refresh()
-    const dispose = window.electronAPI.agents.onChanged(id => { if (id === characterId) void refresh() })
-    const timer = window.setInterval(() => { void refresh() }, 5000)
-    return () => { alive = false; dispose(); window.clearInterval(timer) }
-  }, [characterId, run.id])
+    const dispose = contactQueries.watch(characterId, refresh, 5000)
+    return () => { alive = false; dispose() }
+  }, [characterId, run.id, active])
   const events = detail?.events ?? []
   const lastId = events.at(-1)?.id ?? 0
   const pauseFollowing = () => {
@@ -73,10 +74,11 @@ export default function ContactWorkLog({ characterId, run, data, busy, canRetry,
   // Use the newer snapshot so a late detail response cannot revive a finished run.
   const current = detail && detail.run.updatedAt > run.updatedAt ? detail.run : run
   useEffect(() => {
+    if (!active) return
     setNow(Date.now())
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [current.status])
+  }, [current.status, active])
   const last = events.at(-1)
   const activity = workLogActivity(current, data, last, now, error)
   const rows = [

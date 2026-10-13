@@ -1,3 +1,4 @@
+import { contactQueries } from './contactQueries'
 import ContactMaterialLink from './ContactMaterialLink'
 import ContactPresentation from './ContactPresentation'
 import './ContactPortfolio.css'
@@ -31,6 +32,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   const [artifact, setArtifact] = useState<AgentDelivery | null>(null)
   const [previous, setPrevious] = useState<AgentDelivery | null>(null)
   const [latest, setLatest] = useState(0), [loading, setLoading] = useState(true)
+  const [latestReadError, setLatestReadError] = useState('')
   const [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [readingId, setReadingId] = useState('')
   const [revisionDialog, setRevisionDialog] = useState<{ citation: ContentCitation; scope: 'content' | 'presentation' } | null>(null)
@@ -72,13 +74,15 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   }
   const inputs = artifact?.inputs ?? topic.initialPlan?.inputs
   const epoch = useRef(0)
+  const pendingLoad = useRef<{ version?: number; position?: ReadingPosition | null }>()
   const load = async (version?: number, position?: ReadingPosition | null) => {
     flushReading()
+    pendingLoad.current = { version, position }
     const request = ++epoch.current
     setLoading(true); setError(''); setNotice('')
     try {
-      const value = await window.electronAPI.agents.delivery(characterId, topic.id, version)
-      const before = value && value.version > 1 ? await window.electronAPI.agents.delivery(characterId, topic.id, value.version - 1) : null
+      const value = await contactQueries.read(characterId, 'delivery', [topic.id, version], () => window.electronAPI.agents.delivery(characterId, topic.id, version))
+      const before = value && value.version > 1 ? await contactQueries.read(characterId, 'delivery', [topic.id, value.version - 1], () => window.electronAPI.agents.delivery(characterId, topic.id, value.version - 1)) : null
       if (request !== epoch.current) return
       const restored = position && value ? restoreReading(position, value.sections) : null
       if (restored?.changed && !value?.sections.some(s => s.id === restored.sectionId)) {
@@ -91,30 +95,46 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       if (position && !restored?.changed) setResume(position)
       if (version === undefined) setLatest(value?.version ?? 0)
     } catch (e) { if (request === epoch.current) setError(e instanceof Error ? e.message : '成果读取失败。') }
-    finally { if (request === epoch.current) setLoading(false) }
+    finally { if (request === epoch.current) { pendingLoad.current = undefined; setLoading(false) } }
   }
   useEffect(() => {
-    alive.current = true; setArtifact(null); setPrevious(null); setResume(null); setPlain(Boolean(initialAnchor))
-    void load(initialRef?.version)
-    void window.electronAPI.agents.deliveryReading(characterId, topic.id).then(position => { if (alive.current) setResume(position) }).catch(e => { if (alive.current) setReadingError(String(e)) })
-    void window.electronAPI.agents.portfolio(characterId, { topicId: topic.id }).then(page => { if (alive.current) setReadHashes(Object.fromEntries((page.items[0]?.sections ?? []).filter(s => s.readHash).map(s => [s.id, s.readHash!]))) }).catch(() => {})
+    if (!active) return
+    alive.current = true
+    if (pendingLoad.current) void load(pendingLoad.current.version, pendingLoad.current.position)
+    else if (!artifact) { setPlain(Boolean(initialAnchor)); void load(initialRef?.version) }
+    let current = true
+    void contactQueries.read(characterId, 'deliveryReading', [topic.id], () => window.electronAPI.agents.deliveryReading(characterId, topic.id)).then(position => { if (current) setResume(position) }).catch(e => { if (current) setReadingError(String(e)) })
+    void contactQueries.read(characterId, 'portfolio', [{ topicId: topic.id }], () => window.electronAPI.agents.portfolio(characterId, { topicId: topic.id })).then(page => { if (current) setReadHashes(Object.fromEntries((page.items[0]?.sections ?? []).filter(s => s.readHash).map(s => [s.id, s.readHash!]))) }).catch(() => {})
     const closing = () => flushReading()
     window.addEventListener('beforeunload', closing)
     window.addEventListener('chouyu:contact-reader-flush', closing)
-    return () => { flushReading(); alive.current = false; epoch.current++; window.removeEventListener('beforeunload', closing); window.removeEventListener('chouyu:contact-reader-flush', closing) }
-  }, [characterId, topic.id, initialRef?.version, initialRef?.sectionId])
+    return () => { current = false; flushReading(); alive.current = false; epoch.current++; window.removeEventListener('beforeunload', closing); window.removeEventListener('chouyu:contact-reader-flush', closing) }
+  }, [characterId, topic.id, initialRef?.version, initialRef?.sectionId, active])
   useEffect(() => {
+    if (initialRef?.sectionId && artifact?.version === initialRef.version && artifact.sections.some(section => section.id === initialRef.sectionId)) {
+      flushReading(); scrollToPosition.current = null; setReadingId(initialRef.sectionId); setPlain(Boolean(initialAnchor))
+    }
+  }, [initialRef?.sectionId, initialAnchor])
+  useEffect(() => {
+    if (!active) return
     let current = true
-    void window.electronAPI.agents.delivery(characterId, topic.id).then(value => { if (current) setLatest(value?.version ?? 0) }).catch(() => {})
-    return () => { current = false }
-  }, [characterId, topic.id, topic.revision])
-  useEffect(() => { if (!artifact && latest && !loading && !error) void load(latest) }, [latest, artifact, loading, error])
+    const refresh = async () => {
+      try {
+        const value = await contactQueries.read(characterId, 'delivery', [topic.id, undefined], () => window.electronAPI.agents.delivery(characterId, topic.id))
+        if (current) { setLatest(value?.version ?? 0); setLatestReadError('') }
+      } catch (e) { if (current) setLatestReadError(e instanceof Error ? e.message : String(e)) }
+    }
+    const dispose = contactQueries.watch(characterId, refresh, 5000)
+    return () => { current = false; dispose() }
+  }, [characterId, topic.id, topic.revision, active])
+  useEffect(() => { if (active && !artifact && latest && !loading && !error) void load(initialRef?.version ?? latest) }, [latest, artifact, loading, error, active])
   useEffect(() => {
+    if (!active) return
     let current = true; setContextRecord(undefined)
     const runId = artifact?.sections.find(section => section.id === readingId)?.runId ?? artifact?.runId
     if (runId) void window.electronAPI.agents.detail(characterId, runId).then(detail => { if (current) setContextRecord(detail.run.contactContext) }).catch(() => {})
     return () => { current = false }
-  }, [characterId, artifact?.version, artifact?.runId, readingId])
+  }, [characterId, artifact?.version, artifact?.runId, readingId, active])
   useEffect(() => { if (!active || view !== 'delivery') flushReading() }, [active, view])
   useLayoutEffect(() => {
     const el = bodyRef.current
@@ -134,6 +154,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
     window.addEventListener('chouyu:contact-return', restore); return () => window.removeEventListener('chouyu:contact-return', restore)
   }, [characterId, topic.id, artifact?.version])
   return <section ref={readerRoot} className="contact-delivery" aria-label="阶段计划与成果" data-delivery-version={artifact?.version} data-reading-reference={artifact ? JSON.stringify({ characterId, topicId: topic.id, version: artifact.version, ...(readingId ? { sectionId: readingId } : {}) }) : undefined}>
+    {latestReadError && <p role="alert">{latestReadError}</p>}
     <div hidden={view !== 'stages'}>
       {inputs?.length ? <details className="delivery-inputs" open><summary>任务需求</summary><ContactTaskInputForm key={`${topic.id}:${artifact?.version ?? 0}:${topic.revision}`} fields={inputs} busy={busy} label="更新需求并继续" onSubmit={async reply => { await onAction(async () => { await window.electronAPI.agents.reviseTopic(characterId, topic.id, topic.revision, reply); setNotice('需求已提交，联系人会据此继续工作。') }) }} />{busy && <p className="agent-caption">有待回复的问题时，请在任务概览中补充；其他调整可在本轮结束或暂停后提交。</p>}</details> : null}
       <div className="topic-heading"><h4>阶段计划</h4>{artifact && <span className="agent-caption">版本 {artifact.version} / {latest}</span>}</div>
@@ -186,10 +207,10 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
     </div>}
     {citationError && <p role="alert">{citationError}</p>}
     {contextRecord && <ContactContextReferences key={contextRecord.requestId} record={contextRecord} />}
-    {!!artifact?.fileIds?.length && <ContactFiles owner={characterId} topicId={topic.id} fileIds={artifact.fileIds} />}
+    {!!artifact?.fileIds?.length && <ContactFiles active={active} owner={characterId} topicId={topic.id} fileIds={artifact.fileIds} />}
     {revisionDialog && <ContactRevisionDialog characterId={characterId} topic={topic} citation={revisionDialog.citation} scope={revisionDialog.scope} onClose={() => setRevisionDialog(null)} onSaved={() => setNotice('修改意见已保存，将沿用任务额度修订一轮。')} />}
     {artifact && handoff && <ContactHandoffDialog source={{ characterId, topicId: topic.id, version: artifact.version, ...(readingId ? { sectionId: readingId } : {}) }} title={topic.title} onClose={() => setHandoff(false)} onSaved={() => setNotice('评审任务已保存，接收者会按原权限和额度执行。')} />}
-    {artifact && <ContactHandoffs owner={characterId} topicId={topic.id} getCitation={async () => {
+    {artifact && <ContactHandoffs active={active} owner={characterId} topicId={topic.id} getCitation={async () => {
       if (artifact.presentation && !plain) {
         if (frameSelectionError) { setPlain(true); throw new Error(frameSelectionError) }
         return window.electronAPI.agents.validateCitation(characterId, frameSourceMatches && frameCitation ? frameCitation : { ref: { characterId, topicId: topic.id, version: artifact.version, sectionId: readingId } })

@@ -1,3 +1,4 @@
+import { contactQueries } from './contactQueries'
 import WorkTimelineChart from './WorkTimelineChart'
 import { useEffect, useRef, useState } from 'react'
 import type { AgentAnalytics, AnalyticsQuery, UsageBucket, UsageTotals } from '../../../../shared/agent-analytics'
@@ -68,16 +69,14 @@ export default function ContactAnalytics({ characterId, name, topics, initialTop
   useEffect(() => {
     if (!active) return
     let alive = true, sequence = 0
-    setData(null); setError('')
+    setError('')
     const refresh = async () => {
       const current = ++sequence
-      try { const result = await window.electronAPI.agents.analytics(characterId, { ...query, timeline: query.days === 1 }); if (alive && current === sequence) { setData(result); setError('') } }
+      try { const result = await contactQueries.read(characterId, 'analytics', [{ ...query, timeline: query.days === 1 }], () => window.electronAPI.agents.analytics(characterId, { ...query, timeline: query.days === 1 })); if (alive && current === sequence) { setData(result); setError('') } }
       catch (e) { if (alive && current === sequence) setError(e instanceof Error ? e.message : '统计读取失败') }
     }
-    void refresh()
-    const timer = window.setInterval(() => { void refresh() }, 10000)
-    const dispose = window.electronAPI.agents.onChanged(id => { if (id === characterId) void refresh() })
-    return () => { alive = false; clearInterval(timer); dispose() }
+    const dispose = contactQueries.watch(characterId, refresh, 10000)
+    return () => { alive = false; dispose() }
   }, [characterId, query.date, query.days, query.topicId, retry, active])
   const day = (date: string) => setQuery(q => ({ ...q, date, days: 1 }))
   const move = (offset: number) => { const date = new Date(`${query.date}T00:00:00`); date.setDate(date.getDate() + offset); setQuery(q => ({ ...q, date: localDate(date) })) }

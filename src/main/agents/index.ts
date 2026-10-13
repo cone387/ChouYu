@@ -1,3 +1,4 @@
+import { contactHandle } from './query-metrics'
 import { AgentWorkerRPC } from './worker-rpc'
 import { getContactSkills } from '../skills'
 import { SKILL_TOOLS } from '../skills/tools'
@@ -6,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { registerPresentationProtocol } from './presentation-protocol'
 import { deliveryHtmlExport } from '../../shared/delivery-presentation'
 import { notifyReminderChanges } from '../reminder-events'
-import { app, BrowserWindow, dialog, ipcMain, utilityProcess, type UtilityProcess } from 'electron'
+import { app, BrowserWindow, dialog, utilityProcess, type UtilityProcess } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
 import { join } from 'node:path'
@@ -160,7 +161,7 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
-  ipcMain.handle('agents:exportContactFile', async (event, owner: string, id: string) => {
+  contactHandle('agents:exportContactFile', async (event, owner: string, id: string) => {
     const result = await contactAgentsCall<{ file: import('../../shared/contact-files').ContactFile; bytes: Uint8Array }>(owner, 'readContactFile', [id])
     const parent = BrowserWindow.fromWebContents(event.sender), options = { title: '导出归档文件', defaultPath: result.file.name.split('/').at(-1) }
     const selected = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
@@ -171,8 +172,8 @@ export function initializeAgents() {
     return true
   })
   const imports = new Map<string, AbortController>()
-  ipcMain.handle('agents:cancelMaterialImport', (event, owner: string, requestId: string) => { imports.get(`${event.sender.id}:${owner}:${requestId}`)?.abort() })
-  ipcMain.handle('agents:importMaterial', async (event, owner: string, input: import('../../shared/contact-materials').MaterialImport) => {
+  contactHandle('agents:cancelMaterialImport', (event, owner: string, requestId: string) => { imports.get(`${event.sender.id}:${owner}:${requestId}`)?.abort() })
+  contactHandle('agents:importMaterial', async (event, owner: string, input: import('../../shared/contact-materials').MaterialImport) => {
     if (!getCharacter(owner)) throw new Error('联系人不存在。')
     const key = `${event.sender.id}:${owner}:${input.requestId}`, controller = new AbortController()
     imports.get(key)?.abort(); imports.set(key, controller)
@@ -203,7 +204,7 @@ export function initializeAgents() {
     const detail = await rpc('topicDetail', id, [topicId])
     return { title: detail.topic.title, artifact }
   })
-  ipcMain.handle('agents:pendingInteractions', async (_event, owner: string) => {
+  contactHandle('agents:pendingInteractions', async (_event, owner: string) => {
     if (!getCharacter(owner)) throw new Error('联系人不存在。')
     await ensure()
     const contacts = listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID && c.id !== DEFAULT_CHARACTER_ID && (owner === DEFAULT_CHARACTER_ID || c.id === owner))
@@ -214,11 +215,11 @@ export function initializeAgents() {
     }
     return result
   })
-  ipcMain.handle('agents:dashboard', async () => {
+  contactHandle('agents:dashboard', async () => {
     await ensure()
     return rpc('dashboard', '', [listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id)])
   })
-  ipcMain.handle('agents:exportDelivery', async (event, id: string, topicId: string, version: number, format: 'markdown' | 'html' = 'markdown') => {
+  contactHandle('agents:exportDelivery', async (event, id: string, topicId: string, version: number, format: 'markdown' | 'html' = 'markdown') => {
     if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     await ensure()
     const artifact = await rpc('delivery', id, [topicId, version]) as AgentDelivery | null
@@ -232,7 +233,7 @@ export function initializeAgents() {
     await writeFile(result.filePath, format === 'html' ? deliveryHtmlExport(detail.topic.title, artifact, randomUUID()) : deliveryMarkdown(detail.topic.title, artifact), 'utf8')
     return true
   })
-  ipcMain.handle('agents:searchCredential', async (_event, id: string, key?: string) => {
+  contactHandle('agents:searchCredential', async (_event, id: string, key?: string) => {
     if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     if (key !== undefined) {
       if (typeof key !== 'string' || key.length > 8192 || /[\r\n]/.test(key)) throw new Error('搜索密钥无效。')
@@ -249,7 +250,7 @@ export function initializeAgents() {
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   for (const method of ['getInteraction', 'submitInteraction', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
-    ipcMain.handle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
+    contactHandle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       validateMemoryBoundary(id, method, args)
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)

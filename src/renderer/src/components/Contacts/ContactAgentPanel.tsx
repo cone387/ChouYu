@@ -1,3 +1,5 @@
+import { contactQueries } from './contactQueries'
+import { useContactVisible } from './useContactVisible'
 import ContactContextReferences from './ContactContextReferences'
 import ContactMaterialLink from './ContactMaterialLink'
 import ContactWorkSettings from './ContactWorkSettings'
@@ -27,7 +29,8 @@ export const CONTACT_TAB_GROUPS: { label: string; tabs: [ContactAgentTab, string
   { label: '个人内容', tabs: [['memory', '独立记忆'], ['materials', '资料']] },
   { label: '工具', tabs: [['skills', '技能'], ['profile', '人设'], ['settings', '工作设置'], ['history', '工作记录'], ['analytics', '活动与消耗']] }
 ]
-export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset, onExpand, profile, deliveryFocus }: {
+export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset, onExpand, profile, deliveryFocus, visible: surfaceVisible = true }: {
+  visible?: boolean
   deliveryFocus?: { ref: DeliveryRef; anchor?: TextAnchor }
   characterId: string; name: string; selectedTab?: ContactAgentTab
   onTabChange?: (tab: ContactAgentTab) => void; compact?: boolean
@@ -38,6 +41,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   onExpand?: (tab: ContactAgentTab) => void
   profile?: ReactNode
 }) {
+  const visible = useContactVisible(surfaceVisible)
   const [data, setData] = useState<AgentOverview | null>(null)
   const [draft, setDraft] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS })
   const [sources, setSources] = useState('')
@@ -87,20 +91,19 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     if (historyTopic && !data.topics.some(topic => topic.id === historyTopic)) setHistoryTopic('')
   }, [data?.topics, detail?.run.topicId, historyTopic])
   useEffect(() => {
-    if (!detail) return
+    if (!detail || !visible || tab !== 'history') return
     const runId = detail.run.id
     let alive = true, request = 0
     const update = async () => {
       const current = ++request
       try {
-        const next = await window.electronAPI.agents.detail(characterId, runId)
+        const next = await contactQueries.read(characterId, 'detail', [runId], () => window.electronAPI.agents.detail(characterId, runId))
         if (alive && current === request) setDetail(next)
       } catch { /* Overview refresh exposes connection failures. */ }
     }
-    const dispose = window.electronAPI.agents.onChanged(id => { if (id === characterId) void update() })
-    const timer = window.setInterval(() => { void update() }, 5000)
-    return () => { alive = false; dispose(); window.clearInterval(timer) }
-  }, [characterId, detail?.run.id])
+    const dispose = contactQueries.watch(characterId, update, 5000)
+    return () => { alive = false; dispose() }
+  }, [characterId, detail?.run.id, visible, tab])
   const historyList = useRef<HTMLOListElement>(null)
   const record = useRef<HTMLElement>(null)
   const returnToRun = useRef<string | null>(null)
@@ -132,7 +135,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const refresh = async () => {
     const request = ++epoch.current
     try {
-      const [next, credential] = await Promise.all([window.electronAPI.agents.get(characterId), window.electronAPI.agents.searchCredential(characterId)])
+      const [next, credential] = await Promise.all([contactQueries.read(characterId, 'get', [], () => window.electronAPI.agents.get(characterId)), contactQueries.read(characterId, 'searchCredential', [], () => window.electronAPI.agents.searchCredential(characterId))])
       if (!mounted.current || request !== epoch.current) return
       setData(next)
       setKeyConfigured(credential.configured)
@@ -142,14 +145,14 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     } catch (error) { if (mounted.current && request === epoch.current) setReadError(String(error instanceof Error ? error.message : error)) }
   }
   useEffect(() => {
-    mounted.current = true; void refresh()
-    const dispose = window.electronAPI.agents.onChanged(id => { if (id === characterId) void refresh() })
-    const timer = window.setInterval(() => { void refresh() }, 5000)
-    return () => { mounted.current = false; epoch.current++; dispose(); window.clearInterval(timer) }
-  }, [characterId])
+    if (!visible) return
+    const dispose = contactQueries.watch(characterId, refresh, 5000)
+    return () => { epoch.current++; dispose() }
+  }, [characterId, visible])
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; epoch.current++ } }, [characterId])
   const perform = async (action: () => Promise<unknown>) => {
     setBusy(true); setError('')
-    try { await action(); await refresh() } catch (error) { if (mounted.current) setError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '') : '操作失败，请重试。') }
+    try { await action(); contactQueries.invalidate(characterId); await refresh() } catch (error) { if (mounted.current) setError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '') : '操作失败，请重试。') }
     finally { if (mounted.current) setBusy(false) }
   }
   const settings = { ...draft, sources: sources.split('\n').map(s => s.trim()).filter(Boolean) }
@@ -177,10 +180,10 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     {!data && !error && !readError && tab !== 'profile' && tab !== 'skills' && <p role="status">正在读取工作状态…</p>}
     {tab === 'profile' && profile}
     {tab === 'skills' && <ContactSkills key={characterId} characterId={characterId} name={name} />}
-    {tab === 'overview' && <ContactHome key={characterId} characterId={characterId} overview={data} onTask={topicId => { setHomeFocus({ topicId, runId: data?.runs.find(run => run.topicId === topicId)?.id || '', kind: 'progress', tab: 'work', nonce: Date.now() }); setTab('work') }} />}
-    {(tab === 'portfolio' || portfolioVisited) && <div hidden={tab !== 'portfolio'}><ContactPortfolio key={characterId} characterId={characterId} initialRef={deliveryFocus?.ref} initialAnchor={deliveryFocus?.anchor} /></div>}
+    {tab === 'overview' && <ContactHome active={visible} key={characterId} characterId={characterId} overview={data} onTask={topicId => { setHomeFocus({ topicId, runId: data?.runs.find(run => run.topicId === topicId)?.id || '', kind: 'progress', tab: 'work', nonce: Date.now() }); setTab('work') }} />}
+    {(tab === 'portfolio' || portfolioVisited) && <div hidden={tab !== 'portfolio'}><ContactPortfolio active={visible && tab === 'portfolio'} key={characterId} characterId={characterId} initialRef={deliveryFocus?.ref} initialAnchor={deliveryFocus?.anchor} /></div>}
     {data && <div className="agent-task-view" hidden={tab !== 'work'}>
-      <ContactTopics onWorkSettings={() => setTab('settings')} active={tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={homeFocus ?? focusRequest}
+      <ContactTopics onWorkSettings={() => setTab('settings')} active={visible && tab === 'work'} onAnalytics={topicId => { setAnalyticsTopic(topicId); resetAnalyticsFilter(n => n + 1); setTab('analytics') }} characterId={characterId} data={data} busy={busy} settingsDirty={Boolean(dirty)} onAction={perform} focusRequest={homeFocus ?? focusRequest}
         renderActivity={topicId => {
           const logRun = data.runs.find(run => run.topicId === topicId)
           const draftKey = `${characterId}:${logRun?.id}:${logRun?.question}`
@@ -195,14 +198,14 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       </form>
       {logRun.inputFields?.length ? <details open><summary>按任务需求填写</summary><ContactTaskInputForm key={`${logRun.id}:${logRun.question}`} fields={logRun.inputFields} busy={busy} onSubmit={async (reply, values) => { await perform(async () => { await window.electronAPI.agents.answer(characterId, logRun.id, reply, values); setAnswer('') }) }} /></details> : null}
       </section>}
-        {tab === 'work' && logRun && logRun.topicId === topicId && <details className="topic-secondary"><summary>本轮工作日志</summary><ContactWorkLog key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} data={data} busy={busy} canRetry={logRun.revisionScope === 'presentation' ? !dirty && !active && data.callsToday < data.settings.dailyCalls : !blocked}
+        {tab === 'work' && logRun && logRun.topicId === topicId && <details className="topic-secondary"><summary>本轮工作日志</summary><ContactWorkLog active={visible} key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} data={data} busy={busy} canRetry={logRun.revisionScope === 'presentation' ? !dirty && !active && data.callsToday < data.settings.dailyCalls : !blocked}
           onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
           onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!))}
           onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} /></details>}
         </>}}
         onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />
     </div>}
-    {data && (analyticsVisited || tab === 'analytics') && <div hidden={tab !== 'analytics'}><ContactAnalytics resetKey={analyticsFilterReset} active={tab === 'analytics'} characterId={characterId} name={name} topics={data.topics} initialTopic={analyticsTopic} onBack={() => setTab('work')}
+    {data && (analyticsVisited || tab === 'analytics') && <div hidden={tab !== 'analytics'}><ContactAnalytics resetKey={analyticsFilterReset} active={visible && tab === 'analytics'} characterId={characterId} name={name} topics={data.topics} initialTopic={analyticsTopic} onBack={() => setTab('work')}
       onReport={runId => { setAnalyticsRecord(true); setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} /></div>}
     {tab === 'history' && analyticsRecord && <button type="button" onClick={() => { setAnalyticsRecord(false); setTab('analytics') }}>← 返回活动与消耗</button>}
     {data && <div hidden={tab !== 'settings'}><ContactWorkSettings key={characterId} characterId={characterId} name={name} data={data} keyConfigured={keyConfigured} busy={busy}

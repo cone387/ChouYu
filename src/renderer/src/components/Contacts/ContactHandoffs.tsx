@@ -5,10 +5,11 @@ import type { ContentCitation } from '../../../../shared/contact-content'
 import type { HandoffState } from '../../../../shared/contact-handoffs'
 import ContactRevisionDialog from './ContactRevisionDialog'
 import { navigateContact } from './contactNavigation'
-export default function ContactHandoffs({ owner, topicId, getCitation }: { owner: string; topicId: string; getCitation(): Promise<ContentCitation> }) {
+export default function ContactHandoffs({ owner, topicId, getCitation, active = true }: { active?: boolean; owner: string; topicId: string; getCitation(): Promise<ContentCitation> }) {
   const [states, setStates] = useState<HandoffState[]>([]), [names, setNames] = useState<Record<string, string>>({}), [error, setError] = useState('')
   const [revision, setRevision] = useState<{ topic: AgentTopic; source: ContentCitation; review: ContentCitation; handoffId: string } | null>(null), alive = useRef(true)
   useEffect(() => {
+    if (!active) return
     alive.current = true; let epoch = 0
     const refresh = async () => {
       const current = ++epoch
@@ -17,8 +18,8 @@ export default function ContactHandoffs({ owner, topicId, getCitation }: { owner
     }
     void refresh(); void window.electronAPI.characters.list().then(items => { if (alive.current) setNames(Object.fromEntries(items.map(c => [c.id, c.name]))) })
     const off = window.electronAPI.agents.onChanged(() => void refresh())
-    return () => { alive.current = false; off() }
-  }, [owner, topicId])
+    return () => { alive.current = false; epoch++; off() }
+  }, [owner, topicId, active])
   const returnReview = async (state: HandoffState) => {
     try {
       const review = await getCitation(), overview = await window.electronAPI.agents.get(state.handoff.source.characterId), topic = overview.topics.find(t => t.id === state.handoff.source.topicId)

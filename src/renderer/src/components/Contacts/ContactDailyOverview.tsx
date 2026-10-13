@@ -1,3 +1,4 @@
+import { contactQueries } from './contactQueries'
 import { useEffect, useMemo, useState } from 'react'
 import type { AgentAnalytics } from '../../../../shared/agent-analytics'
 import { Trend } from './ContactAnalytics'
@@ -17,18 +18,16 @@ export default function ContactDailyOverview({ characterId, topicId, active = tr
   useEffect(() => {
     if (!active) return
     let alive = true, request = 0
-    setData(null); setError('')
+    setError('')
     const refresh = async () => {
       const current = ++request
       try {
-        const next = await window.electronAPI.agents.analytics(characterId, { date: day(), days: 1, topicId, timeline: true })
+        const next = await contactQueries.read(characterId, 'analytics', [{ date: day(), days: 1, topicId, timeline: true }], () => window.electronAPI.agents.analytics(characterId, { date: day(), days: 1, topicId, timeline: true }))
         if (alive && current === request) { setData(next); setError('') }
       } catch (reason) { if (alive && current === request) setError(reason instanceof Error ? reason.message : '读取工作记录失败') }
     }
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 5000)
-    const dispose = window.electronAPI.agents.onChanged(id => { if (id === characterId) void refresh() })
-    return () => { alive = false; window.clearInterval(timer); dispose() }
+    const dispose = contactQueries.watch(characterId, refresh, 5000)
+    return () => { alive = false; dispose() }
   }, [characterId, topicId, active])
   const segments = useMemo(() => data ? workSegments(data) : [], [data])
   if (!active) return null

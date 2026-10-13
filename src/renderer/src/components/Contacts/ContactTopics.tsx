@@ -1,3 +1,4 @@
+import { contactQueries } from './contactQueries'
 import { calendarScheduleLabel } from '../../../../shared/calendar-schedule'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import ContactTaskRunButton from './ContactTaskRunButton'
@@ -116,10 +117,10 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     setNow(Date.now())
-    if (activeRun?.status !== 'running') return
+    if (!active || activeRun?.status !== 'running') return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [activeRun?.id, activeRun?.status])
+  }, [activeRun?.id, activeRun?.status, active])
   const executionLabel = activeRun?.status === 'running' ? `运行中 · 本轮 ${elapsedTime(now - activeRun.createdAt)}`
     : activeRun?.status === 'waiting' ? '待回复 · 暂停'
     : activeRun?.status === 'queued' ? '排队中 · 暂停'
@@ -137,17 +138,18 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
     const request = ++epoch.current
     setLoading(true); setError('')
     try {
-      const result = await window.electronAPI.agents.topicDetail(characterId, selected, cursor)
+      const result = await contactQueries.read(characterId, 'topicDetail', [selected, cursor], () => window.electronAPI.agents.topicDetail(characterId, selected, cursor))
       if (request !== epoch.current) return
       setDetail(previous => cursor && previous?.topic.id === result.topic.id ? { ...result, changes: [...previous.changes, ...result.changes] } : result)
     } catch (error) { if (request === epoch.current) setError(error instanceof Error ? error.message : '事项记录读取失败。') }
     finally { if (request === epoch.current) setLoading(false) }
   }
   useEffect(() => {
+    if (!active) return
     setDetail(null)
     if (topic) void load()
     return () => { epoch.current++ }
-  }, [characterId, selected, topic?.revision])
+  }, [characterId, selected, topic?.revision, active])
   const stageToggle = <button type="button" className="topic-stage-toggle" aria-label={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} title={stagesCollapsed ? '展开任务阶段' : '折叠任务阶段'} aria-expanded={!stagesCollapsed} aria-controls={`${tabId}-stages-nav`} onClick={() => setStagesCollapsed(value => !value)}><TaskIcon name="sidebar" /></button>
   const closeSettings = () => { setShowSettings(false) }
   return <section ref={container} className="contact-topics" aria-label="持续推进的事项" data-selected-topic={selected}>
@@ -244,7 +246,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       </section>
       <section role="tabpanel" id={`${tabId}-${tab === 'stages' ? 'stages' : 'delivery'}-panel`} aria-labelledby={`${tabId}-${tab === 'stages' ? 'stages' : 'delivery'}`} hidden={tab !== 'stages' && tab !== 'delivery'} tabIndex={0}>
       {topic ? <>{tab === 'stages' && <details className="topic-secondary"><summary>任务资源预算</summary><ContactTaskResources topic={topic} data={data} /></details>}
-      <ContactDelivery key={`${characterId}:${topic.id}`} active={active && tab === 'delivery' && !showSettings} view={tab === 'stages' ? 'stages' : 'delivery'} characterId={characterId} topic={topic} busy={busy || Boolean(currentRun) || settingsDirty} onAction={onAction} onReport={topicRun ? () => onReport(topicRun.id, topic.id) : undefined} />
+      <ContactDelivery key={`${characterId}:${topic.id}`} active={active && (tab === 'delivery' || tab === 'stages') && !showSettings} view={tab === 'stages' ? 'stages' : 'delivery'} characterId={characterId} topic={topic} busy={busy || Boolean(currentRun) || settingsDirty} onAction={onAction} onReport={topicRun ? () => onReport(topicRun.id, topic.id) : undefined} />
       <div hidden={tab !== 'stages'}>
       <article className="topic-current">
         <p className="agent-caption">本轮执行：{currentRun?.topicId === topic.id ? AGENT_STATUS[currentRun.status] : topicRun?.status === 'failed' ? '最近一轮失败，当前未执行' : topicRun?.status === 'completed' ? '最近一轮已完成，当前未执行' : '当前未执行'}</p>

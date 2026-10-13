@@ -1,19 +1,21 @@
+import { contactQueries } from './contactQueries'
+import { useContactVisible } from './useContactVisible'
 import { useEffect, useState } from 'react'
 import type { AgentSummary } from '../../../../shared/agents'
 import { DEFAULT_CHARACTER_ID } from '../../../../shared/characters'
 import { ASSISTANT_DUTIES, enabledAssistantDuties } from '../../../../shared/assistant-duties'
 
-export function useAgentSummary(characterId: string, active = true) {
+export function useAgentSummary(characterId: string, surfaceActive = true) {
+  const active = useContactVisible(surfaceActive)
   const [state, setState] = useState<{ id: string; data?: AgentSummary; error?: string }>({ id: characterId })
   useEffect(() => {
     if (!active) return
     let alive = true, sequence = 0
-    let pending: ReturnType<typeof setTimeout> | undefined
     const refresh = async () => {
       const current = ++sequence
       try {
         const [work, routines, config] = await Promise.all([
-          window.electronAPI.agents.summary(characterId),
+          contactQueries.read(characterId, 'summary', [], () => window.electronAPI.agents.summary(characterId)),
           characterId === DEFAULT_CHARACTER_ID ? window.electronAPI.assistantRoutines.list() : Promise.resolve([]),
           characterId === DEFAULT_CHARACTER_ID ? window.electronAPI.db.getConfig() : Promise.resolve(null)
         ])
@@ -23,15 +25,10 @@ export function useAgentSummary(characterId: string, active = true) {
         if (alive && current === sequence) setState({ id: characterId, error: '统计暂时不可用' })
       }
     }
-    void refresh()
-    const dispose = window.electronAPI.agents.onChanged(id => {
-      if (id !== characterId) return
-      clearTimeout(pending); pending = setTimeout(() => { void refresh() }, 150)
-    })
-    const timer = setInterval(() => { void refresh() }, 30000)
+    const dispose = contactQueries.watch(characterId, refresh, 30000)
     const disposeRoutines = characterId === DEFAULT_CHARACTER_ID ? window.electronAPI.assistantRoutines.onChanged(() => { void refresh() }) : () => {}
     const disposeConfig = characterId === DEFAULT_CHARACTER_ID ? window.electronAPI.onConfigChanged(() => { void refresh() }) : () => {}
-    return () => { alive = false; clearTimeout(pending); clearInterval(timer); dispose(); disposeRoutines(); disposeConfig() }
+    return () => { alive = false; dispose(); disposeRoutines(); disposeConfig() }
   }, [characterId, active])
   return state.id === characterId ? state : { id: characterId }
 }

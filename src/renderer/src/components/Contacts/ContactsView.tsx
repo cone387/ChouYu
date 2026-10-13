@@ -563,7 +563,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           <div className="agent-tabs"><button type="button" data-agent-tab="profile" aria-pressed="true">人设</button></div>
           {detailProfile}
         </section>}
-        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel key={detail.id} characterId={detail.id} name={detail.name} profile={detailProfile} selectedTab={detailTab} onTabChange={setDetailTab} onExpand={setExpandedTab} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
+        {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel visible={active} key={detail.id} characterId={detail.id} name={detail.name} profile={detailProfile} selectedTab={detailTab} onTabChange={setDetailTab} onExpand={setExpandedTab} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
       </div>
     </ResizableModal>}
     {detail && expandedTab && <ContactWorkToolbar key={detail.id} characterId={detail.id} name={detail.name} standalone profile={detailProfile} initialTab={expandedTab} onClose={() => setExpandedTab(null)} />}

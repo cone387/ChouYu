@@ -1,3 +1,4 @@
+import { runContactPerformanceSmoke } from './smoke/contact-performance-smoke'
 import { runDeliveryPresentationSmoke } from './smoke/delivery-presentation-smoke'
 import { runRemindersSmoke } from './smoke/reminders-smoke'
 import { runAssistantRoutinesSmoke } from './smoke/assistant-routines-smoke'
@@ -127,7 +128,9 @@ function createWindow(): void {
         console.log(`CHOUYU_SMOKE_STAGE_PASSED name=${name} durationMs=${Date.now() - started}`)
       }
       try {
-        if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
+        if (process.env.CHOUYU_SMOKE_CONTACT_PERFORMANCE_ONLY === '1') {
+          await runContactPerformanceSmoke(mainWindow!)
+        } else if (process.env.CHOUYU_SMOKE_CAPTURE_ONLY === '1') {
           await runNativeCaptureSmoke()
         } else if (process.env.CHOUYU_SMOKE_COMPANION_ONLY === '1') {
           await stage('companion', () => runCompanionSmoke(mainWindow!))
