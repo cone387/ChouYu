@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { streamAIChat } from '../ai'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { routeContactChange } from './chat-changes'
+import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 // Explicit opt-in: live model, synthetic tasks only. Never modifies real chats/tasks.
 const enabled = Boolean(process.env.CHOUYU_CHAT_CHANGE_ACCEPTANCE)
@@ -15,7 +16,10 @@ const cases = [
   ['discussion', '你觉得这个评价标准合理吗？先讨论，不要改。', undefined],
   ['quote', '朋友说“一次汇报一个”，我还没决定，你觉得呢？先不改。', undefined],
   ['unsupported', '从明天起每天上午九点准时评价。', 'question'],
-  ['daily-budget', '你的每日Token上限改为30万。', 'question'],
+  ['daily-budget', '你的每日Token上限改为30万。', 'edit_contact_work_settings'],
+  ['work-hours', '以后只在晚上八点到十一点工作，其他不变。', 'edit_contact_work_settings'],
+  ['clear-token', '取消这个任务的Token上限，保留调用上限。', 'edit_contact_task'],
+  ['end', '这项任务到这里结束，保留已有成果。', 'update_contact_topic'],
   ['ambiguous', '把那个任务改成中文。', 'question'],
   ['wrong-book', '我说的是继续写吞噬星空续', 'question'],
   ['continue-running', '继续产品评价', 'question'],
@@ -36,14 +40,14 @@ it.skipIf(!enabled).each(cases)('live model routes %s without a verbal-only prom
   const runs = key === 'continue-waiting' ? [{ id: 'run', topicId: 'review', status: 'waiting', question: '请确定这次评价面向哪个行业？' }]
     : key === 'continue-running' || key === 'wrong-book' ? [{ id: 'run', topicId: 'review', status: 'running', question: '' }] : []
   const output = await routeContactChange([{ role: 'user', content: message }], {
-    read: async () => ({ topics: tasks, runs, focusTopicId: 'review' }),
+    read: async () => ({ revision: 4, settings: { ...DEFAULT_AGENT_SETTINGS, goal: '评价产品' }, topics: tasks, runs, focusTopicId: 'review' }),
     model: async (prompt, content) => {
       let result = ''
       await streamAIChat([{ role: 'user', content }], prompt, { ...data.config, ...resolved.config }, chunk => { result += chunk }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
       decisions.push(result)
       return result
     },
-    execute: async call => { calls.push({ name: call.name, args: JSON.parse(call.arguments) }); return JSON.stringify({ saved: true, workCompleted: false, message: '验收夹具保存成功' }) }
+    execute: async call => { const args = JSON.parse(call.arguments); calls.push({ name: call.name, args }); return JSON.stringify({ saved: true, revision: 5, ...(args.action === 'end' ? { status: 'completed' } : {}), workCompleted: false, message: '验收夹具保存成功' }) }
   })
   mkdirSync('temp/chat-change-model', { recursive: true })
   writeFileSync(`temp/chat-change-model/${key}.json`, JSON.stringify({ message, decisions, calls, output }, null, 2))
@@ -51,7 +55,11 @@ it.skipIf(!enabled).each(cases)('live model routes %s without a verbal-only prom
   else if (!expected) { expect(calls).toHaveLength(0); expect(output).toBeUndefined() }
   else {
     expect(calls).toHaveLength(1); expect(calls[0].name).toBe(expected)
-    expect(calls[0].args).toMatchObject({ topicId: 'review', revision: 3, reason: message })
+    expect(calls[0].args).toMatchObject(expected === 'edit_contact_work_settings' ? { revision: 4, reason: message } : { topicId: 'review', revision: 3, reason: message })
+    if (key === 'daily-budget') expect(calls[0].args.dailyTokenLimit).toBe(300000)
+    if (key === 'work-hours') expect(calls[0].args).toMatchObject({ workStart: '20:00', workEnd: '23:00' })
+    if (key === 'clear-token') expect(calls[0].args.clearTokenLimit).toBe(true)
+    if (key === 'end') expect(calls[0].args.action).toBe('end')
     if (key === 'budget') { expect(calls[0].args.tokens).toBe(300000); expect(calls[0].args.modelCalls).toBeUndefined() }
     if (key === 'pause') expect(calls[0].args.action).toBe('pause')
     if (key === 'report-unit') { expect(calls[0].args.goal).toBeUndefined(); expect(calls[0].args.separateEvaluations).toBe(true) }

@@ -15,7 +15,7 @@ export async function runContactChatChangeSmoke(window: BrowserWindow) {
   const store = new AgentStore(join(directory, 'agents.db'))
   let topicId: string
   try {
-    store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '评价产品idea', enabled: false })
+    store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '评价产品idea', enabled: false, defaultTaskTokenLimit: 5000 })
     const topic = store.overview(character.id).topics[0]; topicId = topic.id
     store.changeTopic(character.id, topic.id, topic.revision, { status: 'paused', reason: '验收暂停状态保持' })
   } finally { store.close() }
@@ -46,5 +46,33 @@ export async function runContactChatChangeSmoke(window: BrowserWindow) {
   const after = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
   if (after.runs.length !== 1 || after.runs[0].id !== runId || after.runs[0].status !== 'waiting' || after.runs[0].answer) throw new Error('Continuation duplicated or answered the pending round')
   console.log('CHOUYU_SMOKE_CONTINUE_EXISTING_PASSED question=true noApproval=true noFailure=true sameRun=true')
+  const invoke = async (content: string, approved = true) => {
+    const next = { ...request, requestId: `chat-control-${Date.now()}`, messages: [{ role: 'user', content }] }
+    return window.webContents.executeJavaScript(`(async()=>{const approvals=[];const off=window.electronAPI.ai.onToolApprovalRequest(r=>{if(r.requestId===${JSON.stringify(next.requestId)}){approvals.push(r);window.electronAPI.ai.resolveToolRequest(r.approvalId,${approved})}});try{return {response:await window.electronAPI.ai.startStream(${JSON.stringify(next)}),approvals}}finally{off()}})()`)
+  }
+  const hours = await invoke('验收工作时间：以后只在20:00到23:00工作')
+  if (!hours.response.ok || !hours.response.reply?.includes('已保存')) throw new Error(`Working hours receipt failed: ${JSON.stringify(hours)}`)
+  let current = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
+  if (current.settings.workHours?.start !== '20:00' || current.settings.workHours?.end !== '23:00' || current.settings.enabled) throw new Error('Chat work settings were not saved or enabled work without permission')
+  const ended = await invoke('验收结束任务：这项任务到这里结束，保留成果')
+  if (!ended.response.ok || !ended.response.reply?.includes('已结束')) throw new Error(`End receipt failed: ${JSON.stringify(ended)}`)
+  current = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
+  if (current.topics[0].status !== 'completed' || current.runs.find((r: { id: string }) => r.id === runId)?.status !== 'cancelled') throw new Error('End did not stop the original round')
+  if (current.topics[0].tokenLimit !== 5000) throw new Error('The existing Token cap was lost before its explicit removal')
+  const unlimited = await invoke('验收解除上限：取消这个任务的Token上限')
+  if (!unlimited.response.ok || !unlimited.response.reply?.includes('已保存')) throw new Error('Token removal did not save')
+  current = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
+  if (current.topics[0].status !== 'completed' || current.topics[0].tokenLimit !== undefined) throw new Error('Token removal resumed ended task')
+  // Even fully automatic contact tools must preserve the single-task deletion scope confirmation.
+  await window.webContents.executeJavaScript(`window.electronAPI.agents.savePreferences(${JSON.stringify(character.id)},${JSON.stringify({ ...current.settings, toolPermissionMode: 'full' })},${current.revision})`)
+  const denied = await invoke('验收删除任务：删除这项任务及其成果和历史', false)
+  if (denied.approvals.length !== 1 || !denied.approvals[0].preview?.includes('成果')) throw new Error('Deletion bypassed the scope confirmation')
+  current = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
+  if (!current.topics.some((t: { id: string }) => t.id === topicId)) throw new Error('Rejected deletion removed the task')
+  const deleted = await invoke('验收删除任务：删除这项任务及其成果和历史')
+  if (deleted.approvals.length !== 1 || !deleted.response.reply?.includes('已删除')) throw new Error('Confirmed deletion did not return its real receipt')
+  current = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
+  if (current.topics.length) throw new Error('Deleted task still exists')
+  console.log('CHOUYU_SMOKE_CHAT_CONTROLS_PASSED settings=true end=true tokenRemoval=true deletionConfirmation=true')
   console.log('CHOUYU_SMOKE_CHAT_CHANGE_PASSED routed=true persisted=true receipt=true pausedPreserved=true')
 }

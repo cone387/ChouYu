@@ -38,10 +38,10 @@ Interfaces: `reviewTaskCompletion` 保持签名；新增模块承接分片、缓
 
 Files: `src/main/agents/chat-changes.ts`、`tools.ts`、`service.ts`、`store.ts`、`topics.ts`、`src/shared/contact-task-edit.ts` 及对应测试。
 Interfaces: 新工作设置补丁工具使用 `savePreferences` 的校验和 revision；结束/放弃/删除复用实际任务方法；Token 解除明确表示，不用缺字段隐式解除。
-- [ ] 测试无任务设置、字段白名单、跨联系人/过期拒绝、失败回滚、解除 Token 保留其他额度、结束保留成果、删除确认和取消。
-- [ ] 运行 chat-changes/tools/work-settings 专项确认失败。
-- [ ] 打通路由→工具准备/确认→事务→实际回执，同步协议及能力说明。
-- [ ] 测试及真实 Electron 聊天操作，记录保存前后状态并提交。
+- [x] 测试无任务设置、字段白名单、跨联系人/过期拒绝、失败回滚、解除 Token 保留其他额度、结束保留成果、删除确认和取消。
+- [x] 运行 chat-changes/tools/work-settings 专项确认失败。
+- [x] 打通路由→工具准备/确认→事务→实际回执，同步协议及能力说明。
+- [x] 测试及真实 Electron 聊天操作，记录保存前后状态并提交。
 
 ### Task 3: 共享日历与联系人定时
 

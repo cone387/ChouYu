@@ -4,6 +4,7 @@ import { ASSISTANT_CHARACTER_ID } from '../../shared/characters'
 import { containsSecret } from '../../shared/memory'
 import type { PreparedTool, RegisteredTool, ToolExecutionContext } from '../tools/registry'
 import { pendingContinuation } from './continuation'
+import { contactWorkSettingProperties, validateContactWorkSettingsPatch, applyContactWorkSettingsPatch, describeContactWorkSettingsPatch } from '../../shared/contact-work-settings'
 
 interface Access {
   owner(sessionId?: string): string | undefined
@@ -35,6 +36,13 @@ export function createContactTools(access: Access): RegisteredTool[] {
       if (args.action === 'pause') {
         method = 'topicStatus'; values = [topicId, revision, 'paused', reason]
         preview = `事项：${topic.title}\n状态：${TOPIC_STATUS[topic.status]} → 已暂停\n停止此事项未完成的工作。\n原因：${reason}`
+      } else if (args.action === 'end' || args.action === 'abandon') {
+        const status = args.action === 'end' ? 'completed' : 'abandoned'
+        method = 'topicStatus'; values = [topicId, revision, status, reason]
+        preview = `事项：${topic.title}\n状态：${TOPIC_STATUS[topic.status]} → ${TOPIC_STATUS[status]}\n停止此任务，保留全部已保存成果与历史；这不代表成果已通过验收。\n要求：${reason}`
+      } else if (args.action === 'delete') {
+        method = 'deleteTopic'; values = [topicId, revision]
+        preview = `删除任务：${topic.title}\n将删除此任务及其成果、执行历史和任务关联记录，停止后续执行；聊天中已发送的消息保留，其来源可能失效。不能撤销。\n要求：${reason}`
       } else if (args.action === 'continue') {
         const pending = pendingContinuation(overview, topicId)
         if (pending) {
@@ -54,15 +62,25 @@ export function createContactTools(access: Access): RegisteredTool[] {
         if (typeof args.constraints !== 'string' || containsSecret(args.constraints)) throw new Error('请提供完整的新约束，不要包含密钥。')
         method = 'editTopic'; values = [topicId, revision, { title: topic.title, goal: topic.goal, constraints: args.constraints }, reason]
         preview = `事项：${topic.title}\n原约束：${topic.constraints || '无'}\n新约束：${args.constraints || '无'}\n本事项未完成的轮次会停止，后续按新约束工作。\n原因：${reason}`
-      } else throw new Error('操作应为 continue、pause、constraints 或 revise。')
+      } else throw new Error('任务操作无效。')
     }
     let consumed = false
-    return { preview, execute: async () => {
+    return { preview, ...(args.action === 'delete' ? { confirmationRequired: true } : {}), execute: async () => {
       if (consumed) throw new Error('此操作已执行，请重新发起。')
       consumed = true
       if (owner(context) !== id) throw new Error('聊天归属已变化，请重新确认。')
       // The worker checks the captured revision atomically with the mutation.
       const result = await access.request('feedback', id, [overview.revision, method, values]) as AgentOverview
+      if (args.action === 'delete') {
+        if (result.topics.some(topic => topic.id === topicId)) throw new Error('未能确认任务已删除。')
+        return { content: JSON.stringify({ saved: true, deleted: true, message: '已删除这项任务及其成果和执行历史。', workCompleted: false }), summary: '已删除任务' }
+      }
+      if (args.action === 'end' || args.action === 'abandon') {
+        const status = args.action === 'end' ? 'completed' : 'abandoned'
+        if (result.topics.find(topic => topic.id === topicId)?.status !== status) throw new Error('未能确认任务状态已保存。')
+        const message = `${TOPIC_STATUS[status]}这项任务，已有成果与历史保留。`
+        return { content: JSON.stringify({ saved: true, status, message, workCompleted: false }), summary: message }
+      }
       return { content: JSON.stringify({ message: `请求已受理。${preview}`, workCompleted: false, run: result.runs?.find(r => r.topicId === topicId), instruction: '继续或修订仅代表已排入执行，成果是否完成须重新读取实际保存版本。' }), summary: answer ? '已回复，继续本轮工作' : '已提交事项调整' }
     } }
   }
@@ -76,12 +94,12 @@ export function createContactTools(access: Access): RegisteredTool[] {
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       async execute(_args, context) {
         const data = await access.request('get', owner(context)) as AgentOverview
-        return { content: JSON.stringify({ topics: data.topics, focusTopicId: data.focusTopicId, pending: data.runs.filter(r => ['waiting', 'queued', 'running', 'interrupted'].includes(r.status)), settings: data.settings }), summary: `已读取 ${data.topics.length} 个事项` }
+        return { content: JSON.stringify({ revision: data.revision, topics: data.topics, focusTopicId: data.focusTopicId, pending: data.runs.filter(r => ['waiting', 'queued', 'running', 'interrupted'].includes(r.status)), settings: data.settings }), summary: `已读取 ${data.topics.length} 个事项与工作设置` }
       } },
     { ...common, name: 'update_contact_topic', displayName: '调整联系人事项',
-      description: '用户明确要求时继续、暂停、修改事项约束，或按修改意见修订成果。修订使用 revise，reason 完整保留用户修改意见。先读取事项，展示变更并确认后执行。不修改个人任务。',
+      description: '用户明确要求时继续、暂停、结束、放弃、删除、修改事项约束，或修订成果。结束/放弃保留成果与历史，删除移除该任务成果与历史。reason保留用户原话，先读取版本，展示范围并确认后执行。不修改个人待办。',
       inputSchema: { type: 'object', properties: { ...topicProperties,
-        action: { type: 'string', description: 'continue（继续）、pause（暂停）、constraints（替换约束）、revise（按 reason 中的意见修订成果）', maxLength: 20 },
+        action: { type: 'string', description: 'continue（继续）、pause（暂停）、end（结束保留成果）、abandon（放弃保留成果）、delete（删除任务及成果历史）、constraints（替换约束）、revise（修订成果）', maxLength: 20 },
         constraints: { type: 'string', description: 'constraints 操作时必填，完整新约束；空串表示移除约束', maxLength: 2000 },
         reason: { type: 'string', description: '用户要求的调整原因', maxLength: 2000 }
       }, required: ['topicId', 'revision', 'action', 'reason'], additionalProperties: false },
@@ -115,7 +133,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
     },
     { source: 'builtin', risk: 'write', requiresConfirmation: false, alwaysConfirm: false,
       name: 'edit_contact_task', displayName: '保存任务新要求',
-      description: '用户明确调整现有任务的目标、范围、长期要求、汇报方式、标题或任务额度时使用。先读取真实任务。仅传用户要求修改的字段，goal/constraints 是该字段的完整新内容，保留未撤销的要求。汇报数量不是研究数量，不能擅自改工作批次。不用于一次性正文或样式修订；不支持的定点时间、联系人级工作设置应如实说明。保存成功才可答应以后照做。',
+      description: '用户明确调整现有任务的目标、范围、长期要求、汇报方式、标题或任务额度时使用。先读取真实任务。仅传用户要求修改的字段，goal/constraints 是该字段的完整新内容，保留未撤销的要求。汇报数量不是研究数量，不能擅自改工作批次。不用于一次性正文或样式修订；联系人级设置使用edit_contact_work_settings，定点时间不能冒充普通约束。保存成功才可答应以后照做。',
       inputSchema: { type: 'object', properties: { ...topicProperties,
         reason: { type: 'string', description: '用户本次修改的原话', maxLength: 2000 },
         separateEvaluations: { type: 'boolean', description: '用户要求每条只汇报一个评价时为true，明确恢复合并汇报时false；不改变研究批次' },
@@ -123,14 +141,15 @@ export function createContactTools(access: Access): RegisteredTool[] {
         constraints: { type: 'string', description: '需要修改时提供完整新约束，保留已有未撤销要求；空串仅用于明确清除', maxLength: 2000 },
         title: { type: 'string', description: '仅明确改名时填写', maxLength: 100 },
         modelCalls: { type: 'number', description: '仅用户明确指定的任务累计调用上限，不是每日额度' },
-        tokens: { type: 'number', description: '仅用户明确指定的任务累计 Token 上限，不是每日额度' }
+        tokens: { type: 'number', description: '仅用户明确指定的任务累计 Token 上限，不是每日额度' },
+        clearTokenLimit: { type: 'boolean', description: '用户明确取消本任务Token上限时为true，不能同时填写tokens；不清除调用次数保护' }
       }, required: ['topicId', 'revision', 'reason'], additionalProperties: false },
       async prepareAsync(args, context) {
         const id = owner(context), data = await access.request('get', id) as AgentOverview
         const topic = data.topics.find(t => t.id === args.topicId)
         if (!topic || topic.revision !== args.revision) throw new Error('任务已变化，请重新读取。')
         if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('修改要求无效。')
-        const patch = Object.fromEntries(['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations'].filter(k => args[k] !== undefined).map(k => [k, args[k]]))
+        const patch = Object.fromEntries(['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations', 'clearTokenLimit'].filter(k => args[k] !== undefined).map(k => [k, args[k]]))
         if (!Object.keys(patch).length || containsSecret(JSON.stringify(patch))) throw new Error('没有有效修改。')
         let consumed = false
         return { preview: `任务：${topic.title}\n修改要求：${args.reason}\n旧轮次会停止；已保存成果保留，暂停状态不会自动恢复。`, execute: async () => {
@@ -140,7 +159,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
           const result = await access.request('feedback', id, [data.revision, 'editTaskFromChat', [topic.id, topic.revision, patch, args.reason]]) as AgentOverview
           const saved = result.topics.find(t => t.id === topic.id)
           if (!saved) throw new Error('没有读取到保存后的任务。')
-          return { content: JSON.stringify({ saved: true, workCompleted: false, topic: saved, message: `已保存「${saved.title}」的新要求。${saved.status === 'paused' ? '任务仍保持暂停。' : '后续按新要求执行。'}已有成果保留。` }), summary: '任务新要求已保存' }
+          return { content: JSON.stringify({ saved: true, workCompleted: false, topic: saved, message: `已保存「${saved.title}」的新要求。${['paused', 'completed', 'abandoned'].includes(saved.status) ? `任务仍为${TOPIC_STATUS[saved.status]}。` : '后续按新要求执行。'}已有成果保留。` }), summary: '任务新要求已保存' }
         } }
       }, execute: () => { throw new Error('请先准备任务修改。') }
     },
@@ -156,6 +175,29 @@ export function createContactTools(access: Access): RegisteredTool[] {
         const value = await access.request('inspectDelivery', id, [args.topicId, args.version, args.sectionId])
         return { content: JSON.stringify(value), summary: '已读取正式成果与展示样式' }
       } },
+    { ...common, name: 'edit_contact_work_settings', displayName: '修改联系人工作设置',
+      description: '保存当前联系人的工作方式、每日工作时间、运行节奏、并发数或额度。只传用户明确修改的字段，不修改权限和其他联系人；保存成功才回复已生效。新任务默认Token上限不影响已有任务。',
+      inputSchema: { type: 'object', properties: { ...contactWorkSettingProperties,
+        revision: { type: 'number', description: '当前联系人工作设置的revision，先读取不能猜测' },
+        reason: { type: 'string', description: '用户本次修改原话', maxLength: 2000 }
+      }, required: ['revision', 'reason'], additionalProperties: false },
+      async prepareAsync(args, context) {
+        const id = owner(context), data = await access.request('get', id) as AgentOverview
+        if (!Number.isSafeInteger(args.revision) || args.revision !== data.revision) throw new Error('工作设置已变化，请重新读取。')
+        if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('工作设置修改要求无效。')
+        const { revision: _revision, reason, ...fields } = args
+        const patch = validateContactWorkSettingsPatch(fields)
+        applyContactWorkSettingsPatch(data.settings, patch)
+        const description = describeContactWorkSettingsPatch(patch)
+        let consumed = false
+        return { preview: `${description}\n未提及设置保持不变；不会恢复已暂停或结束的任务。\n你的要求：${reason}`, execute: async () => {
+          if (consumed) throw new Error('此修改已执行，请重新发起。')
+          consumed = true
+          if (owner(context) !== id) throw new Error('聊天归属已变化，请重新确认。')
+          const saved = await access.request('editWorkSettingsFromChat', id, [data.revision, patch, reason]) as AgentOverview
+          return { content: JSON.stringify({ saved: true, revision: saved.revision, message: `已保存工作设置：${description}。`, workCompleted: false }), summary: `已保存：${description}` }
+        } }
+      }, execute: () => { throw new Error('请先预览工作设置修改。') } },
     { ...common, name: 'revise_contact_presentation', displayName: '修改成果展示样式',
       description: '你能修改自己的成果排版。用户要求改阅读样式、字体、目录布局或跟随系统亮色时使用。先读取 get_contact_topics 和 get_contact_delivery；仅修改展示代码，程序保证正文、需求与任务进度不变。返回只代表开始修订，不能说已经改好。',
       inputSchema: { type: 'object', properties: { ...topicProperties,

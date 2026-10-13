@@ -686,7 +686,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             const arguments_ = parseToolArguments(call.arguments)
             try {
               await assertContext()
-              const taskMutation = ['edit_contact_task', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
+              const taskMutation = ['edit_contact_task', 'edit_contact_work_settings', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
               if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
               const prepared: PreparedTool = SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
@@ -703,7 +703,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               if (taskMutation) taskMutationRequested = true
               const contactPolicy = owner ? (await contactAgentsCall(owner, 'get') as import('../shared/agents').AgentOverview).settings.toolPermissionMode : undefined
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              const needsApproval = shouldConfirmTool(definition, getConfig().toolPermissionMode, contactPolicy)
+              const needsApproval = prepared.confirmationRequired === true || shouldConfirmTool(definition, getConfig().toolPermissionMode, contactPolicy)
               sendToolEvent(event.sender, {
                 requestId: request.requestId,
                 callId: call.id,

@@ -12,6 +12,8 @@ export interface ToolExecutionContext {
 
 export interface PreparedTool {
   preview?: string
+  /** Destructive scope must be confirmed even under the contact's automatic tool policy. */
+  confirmationRequired?: boolean
   /** Already satisfied by existing state; no mutation or approval is needed. */
   noOpResult?: ToolResult
   execute: () => Promise<ToolResult> | ToolResult

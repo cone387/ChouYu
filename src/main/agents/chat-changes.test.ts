@@ -144,12 +144,12 @@ describe('contact chat routing and receipts', () => {
     expect(await f.run('把那个任务改成中文')).toContain('任务名称'); expect(f.execute).not.toHaveBeenCalled()
     expect(await f.run('把评审改成中文')).toBe('新要求已保存')
   })
-  it.each(['contact-settings', 'schedule', 'remove-limit', 'delete', 'end'])('explains unsupported %s without inventing an operation', async capability => {
+  it.each(['schedule'])('explains unsupported %s without inventing an operation', async capability => {
     const f = fixture({ kind: 'unsupported', capability }); expect(await f.run()).toBeTruthy(); expect(f.execute).not.toHaveBeenCalled()
   })
   it.each([
     { kind: 'action', topicId: 'foreign', action: 'pause' },
-    { kind: 'action', topicId: 't', action: 'delete' },
+    { kind: 'action', topicId: 't', action: 'invented-action' },
     { kind: 'action', topicId: 't', action: 'answer', runId: 'wrong' },
     { kind: 'action', topicId: 't', action: 'edit', patch: { dailyCalls: 500 } },
     { kind: 'action', topicId: 't', action: 'edit', patch: { topicId: 'foreign' } },

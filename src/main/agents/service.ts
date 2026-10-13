@@ -19,6 +19,7 @@ import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { streamAIChat } from '../ai'
 import { AgentStore } from './store'
 import { AgentRuntime, type AgentModel } from './runtime'
+import { applyContactWorkSettingsPatch, validateContactWorkSettingsPatch } from '../../shared/contact-work-settings'
 import type { AgentSettings, AgentTopicStatus } from '../../shared/agents'
 import type { AgentSearcher } from './research'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
@@ -98,7 +99,7 @@ export class AgentService {
       }
       case 'feedback': {
         if (this.store.overview(id).revision !== args[0]) throw new Error('工作设置已变化，请重新读取并确认。')
-        if (!['editTaskFromChat', 'topicStatus', 'editTopic', 'continueTopic', 'answerChecked', 'assignTopic', 'reviseTopic'].includes(String(args[1]))) throw new Error('反馈操作无效。')
+        if (!['editTaskFromChat', 'topicStatus', 'deleteTopic', 'editTopic', 'continueTopic', 'answerChecked', 'assignTopic', 'reviseTopic'].includes(String(args[1]))) throw new Error('反馈操作无效。')
         return this.request(String(args[1]), id, args[2] as unknown[])
       }
       case 'notices': return this.store.notices.pending(id)
@@ -128,6 +129,7 @@ export class AgentService {
       case 'setTaskTokenLimit': {
         this.store.topics.check(id, String(args[0]), args[1] as number)
         const limit = args[2] as number
+        if (typeof limit !== 'number') throw new Error('请提供有效的任务Token上限；解除上限请明确提出。')
         if (limit < (this.store.tokens.usage(id).tasks[String(args[0])] ?? 0)) throw new Error('上限不能低于本任务已占用的 Token 额度。')
         if (this.store.overview(id).runs.some(r => r.topicId === args[0] && ['queued', 'running', 'waiting', 'interrupted'].includes(r.status))) throw new Error('请先暂停本任务，再调整上限。')
         this.store.topics.tokenBudget(id, String(args[0]), args[1] as number, limit); break
@@ -199,6 +201,17 @@ export class AgentService {
         break
       }
       case 'focusTopic': this.store.focusTopic(id, String(args[0])); break
+      case 'editWorkSettingsFromChat': {
+        const current = this.store.overview(id)
+        if (!Number.isSafeInteger(args[0]) || current.revision !== args[0]) throw new Error('工作设置已变化，请重新读取。')
+        const next = applyContactWorkSettingsPatch(current.settings, validateContactWorkSettingsPatch(args[1]))
+        if (next.enabled && !this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
+        if (next.searchEnabled && !this.identity(id).searchKey) throw new Error('请先保存此联系人的搜索密钥。')
+        if (typeof args[2] !== 'string') throw new Error('请保留原始工作设置修改要求。')
+        this.store.save(id, next, Date.now(), false, current.revision, args[2])
+        if (workSettingsRequireRestart(current.settings, next)) this.abort(id)
+        break
+      }
       case 'savePreferences':
       case 'save': {
         if ((args[0] as AgentSettings)?.enabled && !this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')

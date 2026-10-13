@@ -5,4 +5,5 @@ export interface ContactTaskEdit {
   title?: string
   modelCalls?: number
   tokens?: number
+  clearTokenLimit?: true
 }

@@ -139,6 +139,9 @@ export class AgentStore {
     this.files = new AgentFiles(this.db)
     if (version < 13) this.db.pragma('user_version = 13')
     initializeCompletionReviews(this.db)
+    this.db.exec(`CREATE TABLE IF NOT EXISTS work_settings_changes (
+      id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL, before_value TEXT NOT NULL, after_value TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL);`)
     if (version < 14) this.db.pragma('user_version = 14')
     this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)
@@ -228,7 +231,7 @@ export class AgentStore {
   profile(id: string) { return this.db.prepare('SELECT * FROM profiles WHERE character_id=?').get(id) as Profile | undefined }
   profiles() { return this.db.prepare('SELECT * FROM profiles ORDER BY next_at').all() as Profile[] }
   ensure(id: string) { this.db.prepare('INSERT OR IGNORE INTO profiles(character_id,settings,revision,next_at) VALUES(?,?,1,0)').run(id, JSON.stringify(DEFAULT_AGENT_SETTINGS)) }
-  save(id: string, raw: unknown, now = Date.now(), createDefaultTopic = true, expectedRevision?: number) {
+  save(id: string, raw: unknown, now = Date.now(), createDefaultTopic = true, expectedRevision?: number, requestReason?: string) {
     const settings = validateAgentSettings(raw)
     this.heartbeatRows.delete(id)
     const wasMissing = !this.profile(id)
@@ -237,11 +240,14 @@ export class AgentStore {
       const profile = this.profile(id)!
       if (expectedRevision !== undefined && profile.revision !== expectedRevision && !(wasMissing && expectedRevision === 0)) throw new Error('工作设置已变化，请重试以应用到最新设置。')
       const previous = JSON.parse(profile.settings) as AgentSettings
+      if (requestReason !== undefined && (!requestReason.trim() || requestReason.length > 2000 || containsSecret(requestReason))) throw new Error('工作设置修改要求无效。')
       if (settings.dailyTokenLimit !== previous.dailyTokenLimit && settings.dailyTokenLimit !== undefined && settings.dailyTokenLimit < this.tokens.usage(id, now).today) throw new Error('每日上限不能低于今日已消耗或预留的 Token 额度。')
       const restart = createDefaultTopic || workSettingsRequireRestart(previous, settings)
       if (restart) this.cancel(id, '工作权限或运行方式已更改，本轮停止，已有成果保留。', now)
       const nextAt = !previous.enabled && settings.enabled ? now : restart ? now : profile.next_at
       this.db.prepare('UPDATE profiles SET settings=?,revision=revision+1,next_at=? WHERE character_id=?').run(JSON.stringify(settings), nextAt, id)
+      if (requestReason !== undefined) this.db.prepare('INSERT INTO work_settings_changes(character_id,revision,before_value,after_value,reason,created_at) VALUES(?,?,?,?,?,?)')
+        .run(id, profile.revision + 1, JSON.stringify(previous), JSON.stringify(settings), requestReason, now)
       // Keep checkpointed rounds live while invalidating stale settings confirmations.
       if (!restart) this.db.prepare("UPDATE runs SET revision=? WHERE character_id=? AND revision=? AND status IN ('queued','running','waiting','interrupted')").run(profile.revision + 1, id, profile.revision)
       if ((settings.maxConcurrentTasks ?? 1) > 1 && (previous.maxConcurrentTasks ?? 1) === 1) {
@@ -994,7 +1000,8 @@ export class AgentStore {
   editTaskFromChat(id: string, topicId: string, revision: number, patch: import('../../shared/contact-task-edit').ContactTaskEdit, reason: string) {
     return this.db.transaction(() => {
       const before = this.topics.check(id, topicId, revision)
-      if (!patch || !Object.keys(patch).length || Object.keys(patch).some(k => !['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations'].includes(k))) throw new Error('任务修改字段无效。')
+      if (!patch || !Object.keys(patch).length || Object.keys(patch).some(k => !['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations', 'clearTokenLimit'].includes(k))) throw new Error('任务修改字段无效。')
+      if (patch.clearTokenLimit !== undefined && (patch.clearTokenLimit !== true || patch.tokens !== undefined)) throw new Error('解除任务Token上限不能同时设置新上限。')
       if (!reason?.trim() || reason.length > 2000) throw new Error('请保留有效的用户修改要求。')
       const requestLog = appendTaskRequestLog(before.requestLog, `用户：${reason.trim()}`)
       this.changeTopic(id, topicId, revision, { input: { title: patch.title ?? before.title, goal: patch.goal ?? before.goal, constraints: patch.constraints ?? before.constraints }, reason, requestLog })
@@ -1005,6 +1012,7 @@ export class AgentStore {
         if (patch.tokens < (this.tokens.usage(id).tasks[topicId] ?? 0)) throw new Error('上限不能低于本任务已占用的 Token 额度。')
         this.topics.tokenBudget(id, topicId, topic.revision, patch.tokens)
       }
+      if (patch.clearTokenLimit) this.topics.tokenBudget(id, topicId, topic.revision, undefined)
       return this.overview(id)
     })()
   }

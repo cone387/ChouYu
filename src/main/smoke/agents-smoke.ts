@@ -49,6 +49,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('判断用户最新一句是否在调整'))) {
         const context = JSON.parse(payload.messages.at(-1).content)
         const result = context.latest?.startsWith('验收联系人权限') ? { kind: 'action', topicId: context.topics[0].id, action: 'pause' }
+          : context.latest?.startsWith('验收工作时间') ? { kind: 'settings', patch: { workStart: '20:00', workEnd: '23:00' } }
+          : context.latest?.startsWith('验收解除上限') ? { kind: 'action', topicId: context.topics[0].id, action: 'edit', patch: { clearTokenLimit: true } }
+          : context.latest?.startsWith('验收结束任务') ? { kind: 'action', topicId: context.topics[0].id, action: 'end' }
+          : context.latest?.startsWith('验收删除任务') ? { kind: 'action', topicId: context.topics[0].id, action: 'delete' }
           : context.latest?.startsWith('验收聊天修改') ? { kind: 'action', topicId: context.topics[0].id, action: 'edit', patch: { constraints: '每条只汇报一个idea', separateEvaluations: true } } : { kind: 'none' }
         response.writeHead(200, { 'Content-Type': 'text/event-stream' })
         response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(result) } }] })}\n\ndata: [DONE]\n\n`)
