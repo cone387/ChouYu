@@ -71,6 +71,8 @@ export async function runContactCardLinksSmoke(window: BrowserWindow) {
         await waitForRenderer(window, `innerWidth === ${width}`)
         await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
         await run(`document.querySelector('[data-contact-card-delivery="${owner}"]').scrollIntoView({block:'center'})`)
+        await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+        await waitForRenderer(window, `(()=>{const r=document.querySelector('[data-contact-card-delivery="${owner}"]').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})()`)
         if (!await run(`(()=>{const card=document.querySelector('[data-contacts-item="${owner}"]').parentElement;const r=card.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&card.scrollWidth<=card.clientWidth+1})()`)) throw Error('Contact card overflows viewport')
         writeFileSync(join(directory, `${theme}-${width}.png`), (await window.webContents.capturePage({ x: 0, y: 0, width, height: 768 })).toPNG())
       }

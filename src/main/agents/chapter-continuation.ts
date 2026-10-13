@@ -58,7 +58,8 @@ export async function planChapterContinuation(store: AgentStore, runId: string, 
   const run = store.getRun(runId)!
   const input = JSON.parse(run.input)
   if (input.revisionSectionId || store.research(runId)?.plan.sectionId || !/(小说|故事|续写|fiction|novel)/i.test(`${topic.title} ${topic.goal}`)) return undefined
-  const saved = input.delivery ? store.deliveries.get(topic.id, input.delivery.version) : null
+  // Version zero is the accepted task plan; it contains no saved manuscript yet.
+  const saved = input.delivery && input.delivery.version !== 0 ? store.deliveries.get(topic.id, input.delivery.version) : null
   const tail = saved && chapterTail(saved.sections)
   if (!tail) return undefined
   const last = tail.sections.at(-1)!

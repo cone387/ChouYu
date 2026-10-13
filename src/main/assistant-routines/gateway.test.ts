@@ -21,6 +21,23 @@ function fixture(agentsImpl?: (id: string, method: string, args: unknown[]) => P
 const createTarget = { kind: 'create' as const, characterId: 'chouyu' }
 
 describe('contact task gateway', () => {
+  it('asks the model once for a missing schedule kind before saving, preserving the other fields', async () => {
+    const { deps, routineService } = fixture()
+    const { kind: _kind, ...input } = routineInput
+    const model = vi.fn().mockResolvedValueOnce(JSON.stringify({ kind: 'routine', input }))
+      .mockResolvedValueOnce(JSON.stringify({ kind: 'contact-summary' }))
+    await requestContactTask(createTarget, '每个工作日八点半检查联系人', deps, model)
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(routineService.list()[0]).toMatchObject(routineInput)
+  })
+  it('does not guess a schedule kind when its single correction fails', async () => {
+    const { deps, routineService } = fixture()
+    const { kind: _kind, ...input } = routineInput
+    const model = vi.fn().mockResolvedValueOnce(JSON.stringify({ kind: 'routine', input })).mockResolvedValueOnce('{}')
+    await expect(requestContactTask(createTarget, '每个工作日八点半检查联系人', deps, model)).rejects.toThrow()
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(routineService.list()).toEqual([])
+  })
   it('prepares handoff work with the same parser without saving a task or routine', async () => {
     const { deps, agents, routineService } = fixture()
     const result = await prepareHandoffWork('alice', '只评审本版，最多 5 万 Token', deps, async (prompt) => {

@@ -36,6 +36,16 @@ function fixture() {
 afterEach(() => { vi.unstubAllGlobals(); for (const close of closers.splice(0).reverse()) close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 describe('autonomous evidence research', () => {
+  it.each([undefined, null, 0, 10081, '15'])('repairs invalid check interval %j once without guessing it', async checkAfterMinutes => {
+    const { store, runtime, reader, searcher } = fixture(), id = store.createRun('alice', '')
+    const model = vi.fn().mockResolvedValueOnce(JSON.stringify({ ...plan, action: 'wait', query: '', checkAfterMinutes }))
+      .mockResolvedValueOnce(JSON.stringify({ ...plan, action: 'wait', query: '' }))
+    await runtime.execute(id, '', model, new AbortController().signal)
+    expect(store.getRun(id)?.status).toBe('completed')
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(store.callCount('alice')).toBe(2)
+    expect(reader).not.toHaveBeenCalled(); expect(searcher).not.toHaveBeenCalled()
+  })
   it('repairs missing URL arrays as planning format errors without reading or granting access', async () => {
     const { store, runtime, reader, searcher } = fixture(), id = store.createRun('alice', '')
     const model = vi.fn().mockResolvedValueOnce(JSON.stringify({ action: 'wait', reason: '等待新内容', query: '', checkAfterMinutes: 180 }))

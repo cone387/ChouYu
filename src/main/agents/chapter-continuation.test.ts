@@ -30,6 +30,18 @@ function fixture() {
 }
 const decision = { action: 'close', reason: '本章情节已充分展开，先完成脱险', beat: '离开塔内险地，以远方来信留下悬念', userLengthQuote: '', nextChapterAllowed: true, nextChapter: 2, nextVolume: null }
 
+it('does not treat the initial version-zero task plan as saved prose', async () => {
+  const f = fixture()
+  f.store.db.prepare('DELETE FROM delivery_versions WHERE topic_id=?').run(f.topicId)
+  const run = f.store.createRun('writer', '')
+  f.store.saveBrief(run, { title: '新的灯塔故事', nextStep: '开始写作', question: '', plan: { completionCriteria: '持续写作故事', stages: [{ id: 'draft', title: '创作正文', status: 'pending' }] } })
+  const input = JSON.parse(f.store.getRun(run)!.input)
+  expect(input.delivery.version).toBe(0)
+  const model = vi.fn()
+  expect(await planChapterContinuation(f.store, run, f.topic(), model, new AbortController().signal, () => f.store.assertLive(run))).toBeUndefined()
+  expect(model).not.toHaveBeenCalled()
+})
+
 it('counts saved bodies by chapter and volume, not summary claims', () => {
   const section = (title: string, body: string) => ({ id: title, title, body, runId: 'run' })
   expect(chapterTail([section('第一卷 第一章·开始', '一'.repeat(9000)), section('第二卷 第一章·归来', '正文 \n'), section('第二卷 第1章·后续', '新正文')])).toMatchObject({ number: 1, volume: 2, characters: 5, sectionIds: ['第二卷 第一章·归来', '第二卷 第1章·后续'] })

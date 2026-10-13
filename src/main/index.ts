@@ -1,3 +1,4 @@
+import { runContactSoak } from './evaluation/contact-soak'
 import { runContactCardLinksSmoke } from './smoke/contact-card-links-smoke'
 import { runContactPerformanceSmoke } from './smoke/contact-performance-smoke'
 import { runDeliveryPresentationSmoke } from './smoke/delivery-presentation-smoke'
@@ -48,6 +49,7 @@ import { runJournalSmoke } from './smoke/journal-smoke'
 
 let mainWindow: BrowserWindow | null = null
 const isSmokeTest = process.env['CHOUYU_SMOKE_TEST'] === '1'
+const isContactSoak = isSmokeTest && Boolean(process.env.CHOUYU_CONTACT_SOAK_OPTIONS)
 const smokeUserDataDir = process.env['CHOUYU_SMOKE_USER_DATA']
 
 if (isSmokeTest) {
@@ -121,7 +123,7 @@ function createWindow(): void {
         catch (error) { if (painting) console.error('CHOUYU_SMOKE_PAINT_ERROR', error) }
         if (painting) paintTimer = setTimeout(() => { void paint() }, 50)
       }
-      void paint()
+      if (!isContactSoak) void paint()
       const stage = async (name: string, run: () => Promise<void>) => {
         const started = Date.now()
         console.log(`CHOUYU_SMOKE_STAGE_START name=${name}`)
@@ -129,7 +131,9 @@ function createWindow(): void {
         console.log(`CHOUYU_SMOKE_STAGE_PASSED name=${name} durationMs=${Date.now() - started}`)
       }
       try {
-        if (process.env.CHOUYU_SMOKE_CONTACT_CARD_LINKS_ONLY === '1') {
+        if (isContactSoak) {
+          await runContactSoak(mainWindow!)
+        } else if (process.env.CHOUYU_SMOKE_CONTACT_CARD_LINKS_ONLY === '1') {
           await runContactCardLinksSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_CONTACT_PERFORMANCE_ONLY === '1') {
           await runContactPerformanceSmoke(mainWindow!)
@@ -227,7 +231,7 @@ app.whenReady().then(async () => {
   initDatabase()
   registerBuiltInCapabilities()
   initializeMemory()
-  if (isSmokeTest && process.env.CHOUYU_SMOKE_CAPTURE_ONLY !== '1') {
+  if (isSmokeTest && !isContactSoak && process.env.CHOUYU_SMOKE_CAPTURE_ONLY !== '1') {
     try {
       const capabilityCatalog = capabilityRegistry.list(getConfig())
       const activeMemoryEngines = capabilityCatalog.filter((item) => item.kind === 'memory-engine' && item.active)

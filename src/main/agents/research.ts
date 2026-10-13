@@ -66,7 +66,7 @@ export function parseResearchPlan(raw: string, allowed: string[], minimum: numbe
   if (permission === 'sources' && value.urls.some((url: unknown) => !allowed.includes(researchUrl(url)!))) throw new Error('网页访问权限不足：计划地址不在允许访问的网页范围内。')
   if (value.action === 'read' && !value.urls.length) throw new Error('读取计划缺少网页。')
   if (value.action === 'write' && (value.urls.length || query)) throw new Error('直接写作计划不能声称搜索或读取网页。')
-  if (!Number.isInteger(value.checkAfterMinutes) || value.checkAfterMinutes < 15 || value.checkAfterMinutes > 10080) throw new Error('下次检查间隔无效。')
+  if (!Number.isInteger(value.checkAfterMinutes) || value.checkAfterMinutes < 15 || value.checkAfterMinutes > 10080) throw new ResearchPlanFormatError('下次检查间隔无效：checkAfterMinutes 必须是15–10080的整数。')
   const sectionId = typeof value.sectionId === 'string' ? value.sectionId.trim() : value.sectionId
   if (sectionId != null && sectionId !== '' && (typeof sectionId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(sectionId))) throw new InvalidSectionReferenceError('规划中的待修订分节 ID 格式无效。')
   return { ...(value.evaluation !== undefined ? { evaluation: value.evaluation } : {}), action: value.action, reason: value.reason.trim(), query: ['search', 'discover_contacts'].includes(value.action) ? query : '', ...(value.action === 'read_contacts' ? { contactRefs: value.contactRefs.map((ref: any) => ({ characterId: ref.characterId, topicId: ref.topicId, version: ref.version, sectionId: ref.sectionId })) } : {}), urls: [...new Set(value.urls.map(researchUrl))] as string[], checkAfterMinutes: Math.max(minimum, value.checkAfterMinutes), ...(sectionId ? { sectionId } : {}), ...(!budgetAllocated && value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }

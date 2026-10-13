@@ -21,6 +21,30 @@ const draft = { title: '初步研究', body: '资料 [1] 仅提供线索，需�
 const reader = () => evidenceFromText(settings.sources[0], '公开网页提供了线索，仍需验证。'.repeat(20))
 
 describe('description-only task assignment', () => {
+  it('corrects premature prose and completed stages once before accepting a brief', async () => {
+    const dir = directory(), store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+    cleanups.push(() => { runtime.close(); store.close() })
+    const topic = store.assignTopic('writer', '写灯塔故事', ''), run = store.overview('writer').runs[0].id
+    const model = vi.fn().mockResolvedValueOnce('已经交付正文。\n' + JSON.stringify({ ...brief, plan: { ...brief.plan, stages: [{ id: 'research', title: '写作', status: 'done' }] } }))
+      .mockResolvedValueOnce(JSON.stringify(brief))
+    await runtime.execute(run, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(store.callCount('writer')).toBe(2)
+    expect(store.getRun(run)?.status).toBe('waiting')
+    expect(store.deliveries.get(topic.id)).toBeNull()
+    expect(store.topics.get('writer', topic.id).initialPlan?.stages.every(s => s.status === 'pending')).toBe(true)
+  })
+  it.each(['failed', 'interrupted'])('bounds brief correction after a %s correction without saving premature results', async mode => {
+    const dir = directory(), store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+    cleanups.push(() => { runtime.close(); store.close() })
+    const topic = store.assignTopic('writer', '写灯塔故事', ''), run = store.overview('writer').runs[0].id
+    if (mode === 'interrupted') store.event(run, 'brief-format-repair', '之前的纠正已发起')
+    const model = vi.fn(async () => '直接正文，不是计划')
+    await expect(runtime.execute(run, '', model, new AbortController().signal)).rejects.toThrow('接单')
+    expect(model).toHaveBeenCalledTimes(mode === 'failed' ? 2 : 1)
+    expect(store.topics.get('writer', topic.id).initialPlan).toBeUndefined()
+    expect(store.deliveries.get(topic.id)).toBeNull()
+  })
   it('organizes known inputs and persists a missing required input as a question across restart', async () => {
     const dir = directory()
     let store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
