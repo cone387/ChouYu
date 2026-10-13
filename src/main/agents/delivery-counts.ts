@@ -4,6 +4,7 @@ import type { DeliveryUpdate } from '../../shared/agent-delivery'
 import type { AgentModel } from './runtime'
 import type { AgentStore } from './store'
 import { deliveryTextLength } from './delivery-length'
+import { researchPlanValue } from './research'
 
 type Counts = Record<'字' | '汉字' | '字符', number>
 type Candidate = { body: string; progress?: AgentTopicProgress; delivery?: DeliveryUpdate; evaluations?: unknown[] }
@@ -31,8 +32,9 @@ export function invalidCountClaims(text: string, facts: Facts): InvalidCount[] {
     if (/^(?:的)?(?:信|遗书|标题|名字|留言|标语|句子|纸条|碑文)/.test(after)
       || /(?:信上|信里|纸条|标题|名字)[^，,]{0,12}$/.test(before)) continue
     if (!/^(?:约|大约|总计)$/.test(match[1] || '') && !/(?:正文|原文|原稿|候选|交付|写出|读取|字数|长度|全文|全稿|累计)/.test(before + (match[1] || '')) && !/^正文/.test(after)) continue
-    const scopeMarker = [...(before + (match[1] || '')).matchAll(/原候选|原草稿|修订前|修改前|累计|总计|全文|全稿|读取|阅读|原文|原稿|作者|来源|来稿|本轮正文|本次正文|评审正文|评论正文|修订后|修改后|本轮交付|本次交付/g)].at(-1)?.[0] || ''
-    const scope = /原候选|原草稿|修订前|修改前/.test(scopeMarker) ? 'original'
+    let scopeMarker = [...(before + (match[1] || '')).matchAll(/原候选|原草稿|原正文|修订前|修改前|累计|总计|全文|全稿|读取|阅读|原文|原稿|作者|来源|来稿|本轮正文|本次正文|评审正文|评论正文|修订后|修改后|本轮交付|本次交付/g)].at(-1)?.[0] || ''
+    if (scopeMarker === '原正文' && /(?:读取|阅读|作者|来源|来稿)[^，,。]*原正文/.test(before)) scopeMarker = '来源'
+    const scope = /原候选|原草稿|原正文|修订前|修改前/.test(scopeMarker) ? 'original'
       : /累计|总计|全文|全稿/.test(scopeMarker) ? 'total'
         : /读取|阅读|原文|原稿|作者|来源|来稿/.test(scopeMarker) ? 'source' : 'current'
     const unit = match[3] as keyof Counts
@@ -86,7 +88,8 @@ ${JSON.stringify({ fields: invalid, statistics: facts })}`, signal)
   live()
   let corrected: T
   try {
-    const value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
+    let value: any
+    try { value = researchPlanValue(raw) } catch { throw Error('校正未返回完整、唯一的 JSON 对象') }
     if (!value || Object.keys(value).some(k => k !== 'replacements') || !Array.isArray(value.replacements) || value.replacements.length !== invalid.length) throw Error('返回字段无效')
     const remaining = new Set(invalid.map(item => item.field))
     const next = { ...draft, delivery: { ...draft.delivery! }, ...(draft.progress ? { progress: { ...draft.progress } } : {}) }

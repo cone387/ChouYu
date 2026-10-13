@@ -3,6 +3,7 @@ import type { AgentTopic, AgentTopicProgress } from '../../shared/agents'
 import type { DeliveryUpdate } from '../../shared/agent-delivery'
 import type { AgentStore } from './store'
 import type { AgentModel } from './runtime'
+import { researchPlanValue } from './research'
 
 export interface DeliveryLengthRule { quote: string; minimum: number; maximum: number; unit: '字' | '汉字' | '字符' }
 const numberPattern = '(?:[0-9]+(?:\\.[0-9]+)?[千万]?|[零〇一二两三四五六七八九十百千万]+)'
@@ -91,7 +92,8 @@ ${JSON.stringify({ task: { goal: topic.goal, constraints: topic.constraints }, f
   live()
   let corrected: T
   try {
-    const value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
+    let value: any
+    try { value = researchPlanValue(raw) } catch { throw Error('修订未返回完整、唯一的 JSON 对象') }
     const keys = ['sectionBody', 'reportBody', 'summary', 'judgement', 'reason', 'memories']
     if (!value || Object.keys(value).some(k => !keys.includes(k)) || keys.slice(0, -1).some(k => typeof value[k] !== 'string' || !value[k].trim())
       || !Array.isArray(value.memories) || value.memories.length > 3 || value.memories.some((s: unknown) => typeof s !== 'string' || !s.trim() || s.length > 2000)) throw Error('修订字段无效')

@@ -149,3 +149,18 @@ it('rejects a late repair after the task has been paused', async () => {
   expect(f.store.getRun(f.run)?.status).toBe('cancelled')
   expect(f.store.overview('writer').reports).toEqual([])
 })
+
+it('accepts the single complete repair object with surrounding model commentary, as in the live v8 failure', async () => {
+  const f = fixture()
+  await f.runtime.execute(f.run, '', modelFor(oversized, async () => `目录为空，下面修订同一候选。\n\n\`\`\`json\n${correction(valid)}\n\`\`\``), new AbortController().signal)
+  expect(f.store.getRun(f.run)?.status).toBe('completed')
+  expect(f.store.deliveries.get(f.topicId)?.sections[0].body).toBe(valid)
+  expect(f.store.callCount('writer')).toBe(3)
+})
+
+it('rejects multiple complete repair candidates rather than choosing one', async () => {
+  const f = fixture()
+  await f.runtime.execute(f.run, '', modelFor(oversized, async () => `${correction(oversized)}\n${correction(valid)}`), new AbortController().signal)
+  expect(f.store.getRun(f.run)?.status).toBe('failed')
+  expect(f.store.overview('writer').reports).toEqual([])
+})

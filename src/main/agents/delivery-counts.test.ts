@@ -56,6 +56,8 @@ it('does not pick a convenient source when multiple sources have different count
 
 it('uses the nearest explicit text scope and preserves a counted object within the story', () => {
   expect(invalidCountClaims('原候选正文512字，本轮正文400字。', facts)).toEqual([])
+  expect(invalidCountClaims('原正文512字，修订后400字。', facts)).toEqual([])
+  expect(invalidCountClaims('已读取作者原正文512字。', { ...facts, original: counts(600) })).toEqual([])
   expect(invalidCountClaims('原文512字，评审正文400字。', facts)).toEqual([])
   expect(invalidCountClaims('札记共8字。', facts)).toEqual([])
 })
@@ -138,4 +140,14 @@ it('does not accept a late metadata result after cancellation', async () => {
   expect(f.store.getRun(f.run)?.status).toBe('cancelled')
   expect(JSON.parse(f.store.getRun(f.run)!.input).deliveryCountRepair.corrected).toBeUndefined()
   expect(f.store.overview('writer').reports).toEqual([])
+})
+
+it('accepts a unique metadata object after commentary without accepting multiple objects', async () => {
+  const f = fixture(), draft = parseDraft(JSON.stringify(candidate))
+  const response = JSON.stringify({ replacements: [{ field: 'body', text: '沈青抵达雾港。' }] })
+  const result = await correctDeliveryCounts(f.store, f.run, f.store.topics.get('writer', f.topicId), draft, [], async () => `下面核对字数。\n\`\`\`json\n${response}\n\`\`\``, new AbortController().signal, () => f.store.assertLive(f.run), parseDraft)
+  expect(result.body).toBe('沈青抵达雾港。')
+  expect(result.delivery!.section!.body).toBe(body)
+  const other = fixture()
+  await expect(correctDeliveryCounts(other.store, other.run, other.store.topics.get('writer', other.topicId), draft, [], async () => response + response, new AbortController().signal, () => other.store.assertLive(other.run), parseDraft)).rejects.toThrow('未通过')
 })
