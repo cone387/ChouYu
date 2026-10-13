@@ -114,4 +114,4 @@ Evidence: A2 token/validation tests (4); full suite 1444 passed/20 opt-in skippe
 
 收尾验证：`REVIEW-suite.log` 为 1453 通过、20 默认跳过；类型检查、构建、五组 Electron、单独资料清理故障注入、真实 Docker 2/2 和模型 1/1 均通过。新增清理弹窗在浅色 375 与深色 1024 已人工检查，边界断言覆盖两种主题与两种宽度。旧桌面脚本同步改为选择可见窗口中的控件，并等待暂停状态刷新后编辑，以避免操作隐藏的保留界面或持有过期任务版本。构建只保留既有大 chunk 提示。
 
-交付分支为 `feat/contact-experience`，位于隔离工作树 `C:/Users/Administrator/.codex/worktrees/1376/ChouYu`。实现、审查修复与文档均已完成；合并回 master、推送 PR 或保留分支的最终方式等待用户选择，不擅自发布。
+用户于 2026-10-13 批准合回 `master`。主仓库 `D:/codespace/ChouYu` 已从 `dcc0f7a` 快进合并至实现提交 `7bf9682`，无冲突；合并后的完整测试 1453 通过 / 20 默认跳过，类型检查与构建通过，构建保留既有大 chunk 提示。日志为主仓库 `artifacts/contact-experience/verification/MERGE-suite.log`、`MERGE-types.log`、`MERGE-build.log`。此前联系人验收截图和日志亦已复制到主仓库 `artifacts/`。本次为本地合并，未推送远端。平台管理的隔离工作树保留。
