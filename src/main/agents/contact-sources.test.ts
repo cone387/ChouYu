@@ -29,6 +29,40 @@ function fixture() {
   return { store, runtime, topic, publish }
 }
 describe('agent-planned contact deliverable tools', () => {
+  it('shows authorized shared work before planning even when the reader has no uploaded materials', async () => {
+    const f = fixture(); f.publish(); f.publish('private', '私有正文')
+    expect(f.store.materials.list({ characterId: 'reviewer', query: '' })).toEqual([])
+    const run = f.store.createRun('reviewer', '')
+    let calls = 0
+    await f.runtime.execute(run, '', async prompt => {
+      calls++
+      expect(prompt).not.toContain('私有正文')
+      if (calls === 1) {
+        const context = JSON.parse(prompt.split('\n').at(-1)!)
+        const source = context.sharedContactDeliveries?.items.find((item: { processed: boolean }) => !item.processed)
+        // The prior planner saw only its empty material directory and incorrectly waited.
+        return JSON.stringify(source ? { ...plan, action: 'read_contacts', contactRefs: [source.ref] }
+          : { ...plan, action: 'wait', reason: '当前资料目录为空，没有作者正文。' })
+      }
+      expect(prompt).toContain('帮助小团队')
+      return JSON.stringify({ title: '独立评审', body: '已读取实际正文后评价 [1]', nextStep: '继续', memories: [], question: '', progress })
+    }, new AbortController().signal)
+    const report = f.store.detail('reviewer', run).report
+    expect(report?.evidence[0].text).toBe('帮助小团队整理需求的 AI 工具')
+    expect(report?.evidence[0].url).toContain('contact-delivery://writer/')
+    expect(calls).toBe(2)
+  })
+  it('does not disclose the shared catalog to a planner without read permission', async () => {
+    const f = fixture(); f.publish()
+    const discover = vi.spyOn(f.runtime.contactSources, 'discover')
+    const run = f.store.createRun('private', '')
+    await f.runtime.execute(run, '', async prompt => {
+      const context = JSON.parse(prompt.split('\n').at(-1)!)
+      expect(context.sharedContactDeliveries).toBeUndefined()
+      return JSON.stringify({ ...plan, action: 'wait' })
+    }, new AbortController().signal)
+    expect(discover).not.toHaveBeenCalled()
+  })
   it('requires both permissions and exposes only shared deliverables', () => {
     const f = fixture(); f.publish(); f.publish('private', '私人成果')
     f.store.remember('writer', '私有记忆')
