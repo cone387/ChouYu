@@ -1,4 +1,5 @@
 import { TokenBudgetError } from './token-budget'
+import { safeAgentFailure } from './failure'
 import { contactHome } from './home'
 import { citationContext, validateCitation } from './citations'
 import { buildContactContext } from './context'
@@ -434,9 +435,9 @@ export class AgentService {
     }
     // Claim the slot synchronously, including cancelled requests that have not exited yet.
     const promise = Promise.resolve().then(() => this.runtime.execute(run.id, identity.soul, model, controller.signal, () => this.changed(run.character_id), identity.searchKey))
-      .catch(() => {
+      .catch(error => {
         if (this.closed) { if (this.store.getRun(run.id)?.status === 'running') this.store.setStatus(run.id, 'interrupted') }
-        else this.store.fail(run.id, controller.signal.aborted ? '本轮已停止，可检查设置后重新运行。' : '执行进程发生错误，请检查配置后重试。')
+        else this.store.fail(run.id, controller.signal.aborted ? '本轮已停止，可检查设置后重新运行。' : safeAgentFailure(error))
       })
       .finally(() => { this.active.delete(run.id); this.store.releaseRunCalls(run.id); this.changed(run.character_id); if (!this.closed) setTimeout(() => this.tick(), 0) })
     this.active.set(run.id, { id: run.id, characterId: run.character_id, topicId: run.topic_id, controller, promise })

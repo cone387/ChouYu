@@ -2,6 +2,7 @@ import type { ContactInteraction } from './contact-interactions'
 function classifyFailure(error: string): NonNullable<ContactInteraction['failure']> {
   // The repair wrapper describes the attempt, not the underlying cause or remedy.
   error = error.replace(/^工作计划自动修复后仍未通过校验：/, '').trim()
+  if (/接单计划纠正后仍无效/.test(error)) return { kind: 'format', title: '初始任务计划未能生成', message: '模型未能按格式整理出有效的初始任务计划，本轮没有正式交付新成果。可以重新尝试理解原任务描述。', action: '重新生成初始计划', settings: false }
   if (/正文篇幅/.test(error)) return { kind: 'output', title: '正文篇幅未符合要求', message: '本轮正文没有通过用户明确的篇幅要求检查，尚未作为正式成果交付。再次尝试会沿用原要求和原额度。', action: '重新尝试', settings: false }
   if (/交付字数说明/.test(error)) return { kind: 'format', title: '交付字数说明未核实', message: '摘要中的字数说明与实际正文统计不一致，校正未能完成，本轮尚未正式交付。再次尝试仍使用原任务额度。', action: '重新尝试', settings: false }
   if (/无法可靠核对任务结束条件/.test(error)) return { kind: 'format', title: '任务结束条件尚未确认', message: '未能确认原要求是否已经完成，因此没有把任务标为结束。需要重新核对已交付内容后再继续。', action: '重新核对并继续', settings: false }

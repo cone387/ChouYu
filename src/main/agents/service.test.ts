@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AgentService } from './service'
+import { AgentStore } from './store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { evidenceFromText } from './sources'
 
@@ -116,6 +117,59 @@ it('automatically starts all due contacts and isolates a failed model request', 
   await vi.waitFor(() => expect(f.service.store.overview('bob').reports).toHaveLength(1))
   expect(f.service.store.overview('alice').reports).toHaveLength(0)
   expect(f.calls.has('charlie')).toBe(false)
+})
+
+it.each([
+  ['API error 503: Controlled contact endurance HTTP 503', 'network'],
+  ['API error 429: 余额不足，authorization=fixture-secret', 'billing'],
+  ['API error 401: invalid api key fixture-secret', 'configuration'],
+  ['API error 503: https://fixture-secret.invalid/?token=fixture-secret', 'network'],
+  ['unexpected failure token=fixture-secret', 'unknown'],
+  ['接单计划纠正后仍无效，尚未保存或交付正文。', 'format']
+])('preserves the actionable cause of an assignment failure: %s', async (message, kind) => {
+  const f = await fixture()
+  await f.service.request('assignTopic', 'alice', ['写一段正文'])
+  await vi.waitFor(() => expect(f.calls.get('alice')).toHaveLength(1))
+  const run = f.service.store.overview('alice').runs[0].id
+  f.pending('alice').reject(new Error(message))
+  await vi.waitFor(() => expect(f.service.store.getRun(run)?.status).toBe('failed'))
+  const card = f.service.store.decisions.pending('alice').find(c => c.runId === run)!
+  expect(card.failure?.kind).toBe(kind)
+  expect(f.service.store.getRun(run)?.error).not.toContain('fixture-secret')
+  expect(card.failureDetail).not.toContain('fixture-secret')
+  expect(f.service.store.overview('alice').reports).toHaveLength(0)
+  expect(f.service.store.callCount('alice')).toBe(1)
+})
+
+it('keeps a redacted provider outage recognizable after planning too', async () => {
+  const f = await fixture(), run = await f.start('alice')
+  f.pending('alice').reject(new Error('API error 503: https://fixture-secret.invalid/?token=fixture-secret'))
+  await vi.waitFor(() => expect(f.service.store.getRun(run)?.status).toBe('failed'))
+  expect(f.service.store.decisions.pending('alice').find(c => c.runId === run)?.failure?.kind, f.service.store.getRun(run)?.error).toBe('network')
+  expect(f.service.store.getRun(run)?.error).not.toContain('fixture-secret')
+})
+
+it('retains low-frequency provider recovery after three failed assignment requests and database reopen', async () => {
+  const f = await fixture()
+  await f.service.request('assignTopic', 'alice', ['写一段正文'])
+  let topicId = '', runId = ''
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (attempt > 1) await f.service.request('run', 'alice', [topicId])
+    await vi.waitFor(() => expect(f.calls.get('alice')).toHaveLength(attempt))
+    const run = f.service.store.overview('alice').runs[0]
+    topicId = run.topicId!; runId = run.id
+    f.pending('alice').reject(new Error('API error 503: authorization=fixture-secret'))
+    await vi.waitFor(() => expect(f.service.store.getRun(run.id)?.status).toBe('failed'))
+  }
+  f.service.store.save('alice', { ...f.service.store.overview('alice').settings, enabled: true }, Date.now(), false)
+  const reopened = new AgentStore(f.service.store.db.name)
+  cleanups.push(async () => reopened.close())
+  const due = reopened.providerRecovery('alice')!.at
+  expect(due).toBe(reopened.getRun(runId)!.updated_at + 15 * 60000)
+  expect(reopened.taskFailures.get(topicId)?.failures).toBe(3)
+  expect(reopened.decisions.pending('alice').find(c => c.runId === runId)).toMatchObject({ failure: { kind: 'network' }, automaticRetryAt: due })
+  expect(reopened.overview('alice').reports).toHaveLength(0)
+  expect(reopened.callCount('alice')).toBe(3)
 })
 
 it('pauses only the selected contact and keeps its replacement queued until the old execution exits', async () => {

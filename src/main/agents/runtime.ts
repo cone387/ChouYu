@@ -17,6 +17,7 @@ import type { AgentResearchPlan, AgentResearch } from '../../shared/agents'
 import { ContactSources } from './contact-sources'
 import { AgentOutputFormatError, AgentOutputTruncatedError } from './model-output'
 import { WritingRecovery } from './writing-recovery'
+import { safeAgentFailure } from './failure'
 import { deliveryLengthInstruction, enforceDeliveryLength } from './delivery-length'
 import { correctDeliveryCounts, textCountFacts, textCountInstruction } from './delivery-counts'
 import { ChapterContinuationError, chapterContinuationPrompt, chapterInstruction, planChapterContinuation, validateChapterContinuation } from './chapter-continuation'
@@ -383,7 +384,7 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
               recovery.retain(error.partial)
               output = await recover()
             } else if (error instanceof TokenBudgetError) throw error
-            else throw new Error('模型调用失败，请检查供应商配置或稍后重试。')
+            else throw new Error(safeAgentFailure(error))
           }
         }
         let draft: Draft
@@ -501,7 +502,7 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
         changed()
         return
       }
-      this.store.fail(runId, error instanceof Error && !/https?:|key|token|authorization/i.test(error.message) ? error.message : '执行失败，请检查模型配置和资料来源后重试。')
+      this.store.fail(runId, safeAgentFailure(error))
       changed()
     }
   }

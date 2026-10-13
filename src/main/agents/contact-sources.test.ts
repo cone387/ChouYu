@@ -29,6 +29,27 @@ function fixture() {
   return { store, runtime, topic, publish }
 }
 describe('agent-planned contact deliverable tools', () => {
+  it.each([true, false])('repairs missing URL arrays in contact plans once, successful correction=%s', async corrected => {
+    const f = fixture(); f.publish()
+    const ref = f.runtime.contactSources.discover('reviewer', f.topic('reviewer'), '').items[0].ref
+    const missing = { action: 'read_contacts', reason: '读取真实正文再评审', contactRefs: [ref], evaluation: false }
+    const run = f.store.createRun('reviewer', '')
+    const model = vi.fn(async (prompt: string) => {
+      if (prompt.startsWith('为联系人')) return JSON.stringify(missing)
+      if (prompt.startsWith('仅修复工作计划')) return JSON.stringify(corrected ? { ...missing, urls: [], query: '', checkAfterMinutes: 15 } : missing)
+      return JSON.stringify({ title: '独立评审', body: '根据真实正文给出结论 [1]', nextStep: '继续', memories: [], question: '', progress })
+    })
+    await f.runtime.execute(run, '', model, new AbortController().signal)
+    const detail = f.store.detail('reviewer', run)
+    expect(detail.run.status).toBe(corrected ? 'completed' : 'failed')
+    expect(detail.events.filter(e => e.kind === 'plan-format-repair')).toHaveLength(1)
+    expect(f.store.callCount('reviewer')).toBe(corrected ? 3 : 2)
+    if (corrected) {
+      expect(detail.report?.evidence[0].text).toBe('帮助小团队整理需求的 AI 工具')
+      expect(detail.report?.evidence[0].url).toContain('contact-delivery://writer/')
+      expect(f.store.research(run)?.plan).toMatchObject({ contactRefs: [ref], evaluation: false })
+    } else expect(detail.report).toBeNull()
+  })
   it('shows authorized shared work before planning even when the reader has no uploaded materials', async () => {
     const f = fixture(); f.publish(); f.publish('private', '私有正文')
     expect(f.store.materials.list({ characterId: 'reviewer', query: '' })).toEqual([])

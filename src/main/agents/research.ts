@@ -46,7 +46,8 @@ export function parseResearchPlan(raw: string, allowed: string[], minimum: numbe
   if (value.evaluation !== undefined && typeof value.evaluation !== 'boolean') throw new Error('评分计划标记必须为布尔值。')
   const contactAction = ['discover_contacts', 'read_contacts'].includes(value.action)
   if (contactAction && !contactAccess) throw new Error('未授权读取联系人的共享成果。')
-  if (contactAction && (!Array.isArray(value.urls) || value.urls.length)) throw new Error('联系人成果读取不能混用网页地址。')
+  if (!Array.isArray(value.urls)) throw new ResearchPlanFormatError('工作计划 urls 必须为数组；不读取网页时应填写空数组。')
+  if (contactAction && value.urls.length) throw new Error('联系人成果读取不能混用网页地址。')
   if (value.action === 'read_contacts') {
     if (!Array.isArray(value.contactRefs) || !value.contactRefs.length || value.contactRefs.length > 3) throw new InvalidContactReferenceError('contactRefs 必须是包含 1–3 个有效成果引用的数组。')
     for (const [index, ref] of value.contactRefs.entries()) {
@@ -59,7 +60,6 @@ export function parseResearchPlan(raw: string, allowed: string[], minimum: numbe
   const query = typeof value.query === 'string' ? value.query.trim() : ''
   if (query.length > 300 || containsSecret(query) || value.action === 'search' && !query) throw new Error('搜索词无效或包含敏感凭据。')
   if (value.action === 'search' && (!searchEnabled || permission === 'sources')) throw new Error('当前权限或配置不允许自主搜索。')
-  if (!Array.isArray(value.urls)) throw new ResearchPlanFormatError('工作计划 urls 必须为数组；不读取网页时应填写空数组。')
   if (value.urls.length > 5) throw new ResearchPlanFormatError('工作计划 urls 超过单次最多 5 个网页的数量限制。')
   const invalidUrl = value.urls.findIndex((url: unknown) => !researchUrl(url))
   if (invalidUrl >= 0) throw new ResearchPlanFormatError(`工作计划 urls[${invalidUrl}] 不是有效的公开 HTTPS 地址；不允许登录凭据、密钥或非标准端口。`)
