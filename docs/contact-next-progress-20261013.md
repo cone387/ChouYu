@@ -291,3 +291,4 @@ Final: Ruling: 第6项由Minor调整为Important并纳入修复 — 隐藏页面
 - v9 `response-13.sse`实际返回read_contacts和有效来源ref，但缺少urls与间隔；parseResearchPlan提前以通用Error报“混用网页”，跳过了已有格式恢复。现将数组类型校验移到混用检查前，未授权检查仍优先。`contact-url-red.log`两项失败→最终`contact-url-green.log`95项通过，验证仅一次有界修复、仍缺字段则失败无报告、修正成功才读实际保存正文，原来源/evaluation与调用额度不变。测试曾将无报告误断言为undefined，按实际接口null修正，未放宽无交付条件。
 - 最新全量`recovery-final-suite.log`1616通过/33按需跳过，类型检查与构建通过；`recovery-final-agents.log`真实Electron综合联系人回归通过。随后仅收窄初始计划失败文案，避免声称接单期间没有任何资料读取，再运行全量测试与构建；类型及综合冒烟复用前述同逻辑版本证据。已有500KB构建提示保留。受影响条款RUN-02/03、RES-01、MSG-01/02，不能将合成故障测试称为真实服务商全天质量验收。
 - v9已停止，不计为全天通过；需启动含这些修复的新固定构建。原生逐类托盘/真实休眠与最终整合仍未完成。
+- 最后一遍全量发现新恢复测试把两次Date.now结果假定为完全相同，偶发相差1ms（`recovery-clock-flake.log`）；首次改用假Date又被vi.waitFor推进150ms。最终只固定Date.now、保留真实异步计时器，按第三次失败的固定时刻严格断言15分钟后可恢复；`recovery-clock-green.log`19项、最新`recovery-final-suite.log`1616项通过。生产退避算法未改，测试不放宽时间容差。此前在读取失败结果的同一工具编排中提前提交了代码，现已补正验证和记录；没有据此启动未通过检查的新运行。

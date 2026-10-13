@@ -150,10 +150,14 @@ it('keeps a redacted provider outage recognizable after planning too', async () 
 })
 
 it('retains low-frequency provider recovery after three failed assignment requests and database reopen', async () => {
+  const began = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(began)
+  cleanups.push(async () => { clock.mockRestore() })
   const f = await fixture()
   await f.service.request('assignTopic', 'alice', ['写一段正文'])
   let topicId = '', runId = ''
   for (let attempt = 1; attempt <= 3; attempt++) {
+    clock.mockReturnValue(began + attempt * 1000)
     if (attempt > 1) await f.service.request('run', 'alice', [topicId])
     await vi.waitFor(() => expect(f.calls.get('alice')).toHaveLength(attempt))
     const run = f.service.store.overview('alice').runs[0]
@@ -165,7 +169,7 @@ it('retains low-frequency provider recovery after three failed assignment reques
   const reopened = new AgentStore(f.service.store.db.name)
   cleanups.push(async () => reopened.close())
   const due = reopened.providerRecovery('alice')!.at
-  expect(due).toBe(reopened.getRun(runId)!.updated_at + 15 * 60000)
+  expect(due).toBe(began + 903000)
   expect(reopened.taskFailures.get(topicId)?.failures).toBe(3)
   expect(reopened.decisions.pending('alice').find(c => c.runId === runId)).toMatchObject({ failure: { kind: 'network' }, automaticRetryAt: due })
   expect(reopened.overview('alice').reports).toHaveLength(0)
