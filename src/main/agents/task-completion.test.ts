@@ -95,22 +95,112 @@ it('keeps a durable decision across restart and includes the stable user-edit ti
   expect(model).toHaveBeenCalledTimes(1)
   expect(f.store.callCount('alice')).toBe(1)
 })
-it('cannot accept a finite-completion claim when the review omits long saved text', async () => {
+function longFixture() {
   const f = fixture('完成一份长文')
   for (let n = 1; n <= 7; n++) {
     const run = f.store.createRun('alice', '')
     f.store.finish(run, { runId: run, title: '正文', body: '正文', nextStep: '继续', evidence: [], createdAt: Date.now() }, [],
-      { ...draft.progress, status: 'researching', nextStep: '继续' }, { ...draft.delivery, section: { id: `part${n}`, title: '正文', body: '文'.repeat(10000) } } as DeliveryUpdate)
+      { ...draft.progress, status: 'researching', nextStep: '继续' }, { ...draft.delivery, section: { id: `part${n}`, title: `第${n}部分`, body: `${n}`.repeat(10000) } } as DeliveryUpdate)
   }
   const run = f.store.createRun('alice', ''), topic = f.store.topics.list('alice')[0]
   const candidate = { ...draft, nextStep: '', progress: { ...draft.progress, status: 'completed' as const }, delivery: draft.delivery as DeliveryUpdate }
+  return { f, run, topic, candidate }
+}
+function batchReply(prompt: string, issues: string[] = []) {
+  const input = JSON.parse(prompt.split('\n核对数据：\n')[1])
+  return JSON.stringify({ key: input.key, readComplete: true, summary: '已核对该范围的实际正文与用户要求', issues, opening: '开始', closing: '结尾' })
+}
+it('reviews every long section before accepting finite completion and persists charged receipts', async () => {
+  const { f, run, topic, candidate } = longFixture()
+  const bodies: string[] = []
   const model = vi.fn(async (prompt: string) => {
-    expect(prompt).toContain('"readComplete":false')
+    if (prompt.startsWith('正文分批核对')) {
+      bodies.push(JSON.parse(prompt.split('\n核对数据：\n')[1]).part.body)
+      return batchReply(prompt)
+    }
+    expect(bodies).toHaveLength(8)
+    expect(prompt).toContain('"readComplete":true')
     return JSON.stringify({ ...decision, mode: 'finite', nextStep: '' })
   })
-  const checked = await reviewTaskCompletion(f.store, run, topic, candidate, model, new AbortController().signal, () => { f.store.assertLive(run) })
-  expect(checked.progress?.status).toBe('researching')
-  expect(checked.progress?.reason).toContain('未读完全部正文')
+  expect((await reviewTaskCompletion(f.store, run, topic, candidate, model, new AbortController().signal, () => { f.store.assertLive(run) })).progress?.status).toBe('completed')
+  for (let n = 1; n <= 7; n++) expect(bodies).toContain(`${n}`.repeat(10000))
+  expect(f.store.callCount('alice')).toBe(9)
+  f.reopen()
+  await reviewTaskCompletion(f.store, run, topic, candidate, model, new AbortController().signal, () => { f.store.assertLive(run) })
+  expect(f.store.callCount('alice')).toBe(9)
+})
+it('retains successful long-review batches after failure and restart without charging them again', async () => {
+  const { f, run, topic, candidate } = longFixture()
+  let fail = true
+  const seen: string[] = []
+  const model = vi.fn(async (prompt: string) => {
+    if (!prompt.startsWith('正文分批核对')) return JSON.stringify({ ...decision, mode: 'finite' })
+    const part = JSON.parse(prompt.split('\n核对数据：\n')[1]).part
+    seen.push(part.sectionId)
+    if (part.sectionId === 'part3' && fail) throw new Error('网络中断')
+    return batchReply(prompt)
+  })
+  const check = () => reviewTaskCompletion(f.store, run, topic, candidate, model, new AbortController().signal, () => { f.store.assertLive(run) })
+  await expect(check()).rejects.toThrow('网络中断')
+  f.reopen(); fail = false
+  expect((await check()).progress?.status).toBe('completed')
+  expect(seen.filter(id => id === 'part1')).toHaveLength(1)
+  expect(seen.filter(id => id === 'part2')).toHaveLength(1)
+  expect(seen.filter(id => id === 'part3')).toHaveLength(2)
+  expect(f.store.callCount('alice')).toBe(10)
+})
+it('invalidates only changed text batches but rechecks the global conclusion', async () => {
+  const { f, run, topic, candidate } = longFixture()
+  const reviewed: string[] = []
+  const model = vi.fn(async (prompt: string) => {
+    if (!prompt.startsWith('正文分批核对')) return JSON.stringify({ ...decision, mode: 'finite' })
+    reviewed.push(JSON.parse(prompt.split('\n核对数据：\n')[1]).part.sectionId)
+    return batchReply(prompt)
+  })
+  const check = (value = candidate) => reviewTaskCompletion(f.store, run, topic, value, model, new AbortController().signal, () => { f.store.assertLive(run) })
+  await check()
+  await check({ ...candidate, delivery: { ...candidate.delivery, section: { ...candidate.delivery.section!, body: '修改后的结尾' } } })
+  expect(reviewed.filter(id => id === 'part1')).toHaveLength(1)
+  expect(reviewed.filter(id => id === 'idea1')).toHaveLength(2)
+  expect(f.store.callCount('alice')).toBe(11)
+})
+it('never accepts completion when a reviewed batch reports a missing requirement', async () => {
+  const { f, run, topic, candidate } = longFixture()
+  const model = vi.fn(async (prompt: string) => prompt.startsWith('正文分批核对')
+    ? batchReply(prompt, ['正文缺少用户要求的结论依据']) : JSON.stringify({ ...decision, mode: 'finite', nextStep: '' }))
+  const result = await reviewTaskCompletion(f.store, run, topic, candidate, model, new AbortController().signal, () => { f.store.assertLive(run) })
+  expect(result.progress?.status).toBe('researching')
+  expect(result.progress?.reason).toContain('结论依据')
+  expect(result.delivery?.section?.body).toBe(candidate.delivery.section?.body)
+})
+it('preserves the saved chapter order when reviewing a replacement in the middle', async () => {
+  const { f, run, topic, candidate } = longFixture()
+  const replacement = { ...candidate, delivery: { ...candidate.delivery, section: { id: 'part3', title: '第三部分修改', body: '新的第三部分' } } }
+  const model = async (prompt: string) => {
+    if (prompt.startsWith('正文分批核对')) return batchReply(prompt)
+    const data = JSON.parse(prompt.split('\n').at(-1)!)
+    expect(data.evidence.batches.directory.map((s: { id: string }) => s.id)).toEqual(['part1', 'part2', 'part3', 'part4', 'part5', 'part6', 'part7'])
+    return JSON.stringify({ ...decision, mode: 'finite' })
+  }
+  expect((await reviewTaskCompletion(f.store, run, topic, replacement, model, new AbortController().signal, () => { f.store.assertLive(run) })).progress?.status).toBe('completed')
+})
+it('rejects forged or incomplete batch receipts without caching them as reviewed', async () => {
+  const { f, run, topic, candidate } = longFixture()
+  const model = vi.fn(async (prompt: string) => prompt.startsWith('正文分批核对')
+    ? JSON.stringify({ ...JSON.parse(batchReply(prompt)), key: 'different-text', readComplete: false }) : JSON.stringify({ ...decision, mode: 'finite' }))
+  await expect(reviewTaskCompletion(f.store, run, topic, candidate, model, new AbortController().signal, () => { f.store.assertLive(run) })).rejects.toThrow('分批核对')
+  expect(f.store.topics.get('alice', topic.id).status).not.toBe('completed')
+})
+it('enforces the existing call budget between long-review batches and resumes saved ranges after replenishment', async () => {
+  const { f, run, topic, candidate } = longFixture()
+  f.store.db.prepare("UPDATE profiles SET settings=json_set(settings,'$.dailyCalls',2) WHERE character_id='alice'").run()
+  const model = vi.fn(async (prompt: string) => prompt.startsWith('正文分批核对') ? batchReply(prompt) : JSON.stringify({ ...decision, mode: 'finite' }))
+  const check = () => reviewTaskCompletion(f.store, run, topic, candidate, model, new AbortController().signal, () => { f.store.assertLive(run) })
+  await expect(check()).rejects.toThrow('上限')
+  expect(f.store.callCount('alice')).toBe(2)
+  f.store.db.prepare("UPDATE profiles SET settings=json_set(settings,'$.dailyCalls',100) WHERE character_id='alice'").run()
+  expect((await check()).progress?.status).toBe('completed')
+  expect(f.store.callCount('alice')).toBe(9)
 })
 it('charges the check to existing budgets and cannot accept a late decision after pause', async () => {
   const f = fixture(), run = f.store.createRun('alice', '')

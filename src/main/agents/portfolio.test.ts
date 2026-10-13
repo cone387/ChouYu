@@ -86,7 +86,7 @@ describe('formal portfolio and reading', () => {
     const f = fixture(), topic = f.topic(); f.write(topic.id)
     f.store.db.exec('DROP TABLE portfolio_read_sections; DROP TABLE portfolio_reading; DROP TABLE portfolio_favorites; DROP TABLE portfolio_versions; PRAGMA user_version=8')
     f.reopen()
-    expect(f.store.db.pragma('user_version', { simple: true })).toBe(13)
+    expect(f.store.db.pragma('user_version', { simple: true })).toBe(14)
     expect(f.store.portfolio.list('alice', {}).items).toHaveLength(1)
     expect(f.store.portfolio.reading('alice', topic.id)).toBeNull()
     expect(f.store.portfolio.list('alice', {}).items[0].sections[0].readHash).toBeNull()

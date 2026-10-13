@@ -29,10 +29,10 @@
 
 Files: `src/main/agents/task-completion.ts`、新增 `completion-batches.ts` 与测试；`task-completion.test.ts`。
 Interfaces: `reviewTaskCompletion` 保持签名；新增模块承接分片、缓存与严格回执校验，持久数据由 AgentStore 的 SQLite 持有。
-- [ ] 写真实 AgentStore 测试：七节合计超 60000 字仍全部核对；末节变化复用前节；单节分片；格式无效/预算不足/取消不结束；重开数据库续查。
-- [ ] 运行 `npm test -- src/main/agents/task-completion.test.ts`，确认新行为失败。
-- [ ] 实现分批快照及缓存，最终综合判定不再静默遗漏，调用仍计费。
-- [ ] 运行该模块及 runtime 相关测试、类型检查；记录证据并提交。
+- [x] 写真实 AgentStore 测试：七节合计超 60000 字仍全部核对；末节变化复用前节；单节分片；格式无效/预算不足/取消不结束；重开数据库续查。
+- [x] 运行 `npm test -- src/main/agents/task-completion.test.ts`，确认新行为失败。
+- [x] 实现分批快照及缓存，最终综合判定不再静默遗漏，调用仍计费。
+- [x] 运行该模块及 runtime 相关测试、类型检查；记录证据并提交。
 
 ### Task 2: 聊天调整能力
 
