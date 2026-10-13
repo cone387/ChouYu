@@ -96,7 +96,11 @@ export class AgentStore {
       }
       this.db.pragma('user_version = 2')
     })()
-    this.notices = new AgentNotices(this.db, notice => this.decisions.offer(notice))
+    this.notices = new AgentNotices(this.db, notice => this.decisions.offer(notice), (owner, id) => {
+      const view = this.decisions.get(owner, id)
+      if (view.kind !== 'retry') return undefined
+      return [`关于「${view.topicTitle}」：${view.failure?.message}`, view.impact, view.recoveryMessage].filter(Boolean).join('\n\n')
+    })
     this.db.exec(`CREATE TABLE IF NOT EXISTS search_calls (id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS search_calls_character ON search_calls(character_id,at);
       CREATE TABLE IF NOT EXISTS research (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,value TEXT NOT NULL);

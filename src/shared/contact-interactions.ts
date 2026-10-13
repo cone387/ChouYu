@@ -5,12 +5,15 @@ export interface ContactBudgetField {
   key: ContactBudgetKey; label: string; unit: string; used: number; limit: number; needed: number; max: number
 }
 export interface ContactInteraction {
+  impact?: string
+  recoveryMessage?: string
+  currentState?: 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'paused' | 'abandoned' | 'deleted' | 'changed' | 'interrupted'
   automaticRetryAt?: number
   characterName?: string
   id: string; version: string; characterId: string; topicId: string; runId: string; topicTitle: string
   kind: ContactInteractionKind; status: ContactInteractionStatus; question?: string
   failureDetail?: string
-  failure?: { kind: 'billing' | 'configuration' | 'network' | 'format' | 'permission' | 'skill' | 'source' | 'tool-limit' | 'unknown'; message: string; action: string; settings: boolean; settingsTarget?: 'work' | 'skills' }
+  failure?: { title?: string; kind: 'billing' | 'configuration' | 'network' | 'format' | 'permission' | 'skill' | 'source' | 'tool-limit' | 'material' | 'chapter' | 'output' | 'storage' | 'context' | 'unknown'; message: string; action: string; settings: boolean; settingsTarget?: 'work' | 'skills' }
   budgets: ContactBudgetField[]; result?: string; createdAt: number
 }
 export interface ContactInteractionSubmission {

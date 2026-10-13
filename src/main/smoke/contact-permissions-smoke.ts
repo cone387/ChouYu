@@ -20,8 +20,9 @@ export async function runContactPermissionsSmoke(window: BrowserWindow) {
   finally { store.close() }
   selectChatSession(session); window.webContents.send('characters:changed'); window.webContents.send('sessions:changed'); window.webContents.send('open-chat-panel')
   await waitForRenderer(window, "Boolean(document.querySelector('.chat-panel[data-ready=true]'))")
+  await run(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
   await run(`new Promise((resolve,reject)=>{const detail={target:{kind:'contact-settings',characterId:${JSON.stringify(character.id)},tab:'settings'},handled:false,resolve,reject};window.dispatchEvent(new CustomEvent('chouyu:contact-navigation',{detail}));})`)
-  await waitForRenderer(window, "Boolean(document.querySelector('[data-contact-tool-policy] select'))")
+  await waitForRenderer(window, "Boolean(document.querySelector('[data-contact-tool-policy] select'))", 15000)
   const choose = async (mode: string) => {
     await run(`(()=>{const el=document.querySelector('[data-contact-tool-policy] select');el.value=${JSON.stringify(mode)};el.dispatchEvent(new Event('change',{bubbles:true}));})()`)
     await waitForRenderer(window, "document.querySelector('.work-settings-flat')?.getAttribute('aria-busy')==='false'")
@@ -102,8 +103,31 @@ export async function runContactPermissionsSmoke(window: BrowserWindow) {
   if (settings.settings.permissionLevel !== 'public') throw new Error('Remedy permission did not persist')
   await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
   await click(`document.querySelector(${JSON.stringify(selector)}).querySelector('button[type=submit]')`)
-  await waitForRenderer(window, `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('已重试，任务已排队')`)
+  await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(selector)})?.querySelector('.contact-interaction-result')) && !document.querySelector(${JSON.stringify(selector)})?.querySelector('button[type=submit]')`)
   const resolved = await run(`window.electronAPI.agents.getInteraction(${JSON.stringify(character.id)},${JSON.stringify(cardId)})`)
   if (resolved.status !== 'resolved') throw new Error('Failure remedy was not resolved')
+  // The same persisted interaction must follow real newer states, without rewriting the sent notice.
+  const stateStore = new AgentStore(join(directory, 'agents.db'))
+  try {
+    // Do not race the real worker executing the permission-retry task above.
+    const scene = stateStore.topics.create(character.id, { title: '资料失败与恢复验收', goal: '读取指定资料后写作', constraints: '' }, 'isolated fixture')
+    const failed = stateStore.createRun(character.id, '', Date.now(), scene.id)
+    stateStore.fail(failed, '资料不在本轮目录快照内，请按本轮提供的版本读取。')
+    const notice = stateStore.notices.pending(character.id).find(n => n.runId === failed)!
+    appendAgentNotice(notice); stateStore.notices.ack(character.id, notice.id)
+    window.webContents.send('sessions:changed'); window.webContents.send('agents:changed', character.id)
+    const materialSelector = `[data-contact-interaction="${notice.interactionId}"]`
+    await waitForRenderer(window, `document.querySelector(${JSON.stringify(materialSelector)})?.querySelector('.contact-interaction-title')?.textContent==='资料引用需要纠正'`)
+    const text = await run(`document.querySelector(${JSON.stringify(materialSelector)}).textContent`)
+    if (!text.includes('请求的资料或版本不在本次可用目录中') || text.includes('仍受工作时间和额度限制')) throw Error('Material failure still hides its actual cause')
+    await capture('contact-material-failure', materialSelector)
+    const newer = stateStore.createRun(character.id, '', Date.now(), scene.id)
+    stateStore.setStatus(newer, 'running')
+    window.webContents.send('agents:changed', character.id)
+    await waitForRenderer(window, `document.querySelector(${JSON.stringify(materialSelector)})?.querySelector('.contact-interaction-title')?.textContent==='正在重新尝试'`)
+    if (await run(`Boolean(document.querySelector(${JSON.stringify(materialSelector)})?.querySelector('button[type=submit]'))`)) throw Error('Old failure still offers a retry during newer work')
+    await capture('contact-retry-running', materialSelector)
+    stateStore.setStatus(newer, 'cancelled')
+  } finally { stateStore.close() }
   console.log('CHOUYU_SMOKE_CONTACT_PERMISSIONS_PASSED persisted=true isolated=true forcedConfirmation=true disabledTool=true firstFailure=true remedyNavigation=true settingsThenRetry=true realClicks=true')
 }

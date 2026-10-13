@@ -47,8 +47,15 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
         else if (payload.messages.some((message: { role: string; content?: unknown }) => message.role === 'user' && typeof message.content === 'string' && message.content.startsWith('EXPERIENCE_DISCUSSION'))) delta = { content: '蓝色灯光与来信形成了悬念，节奏可以在结尾收紧。' }
         else if (payload.model !== 'review-model' && initial && prompt.includes('正在执行用户交付的写作任务')) {
           const toolMessages = payload.messages.filter((m: { role: string }) => m.role === 'tool')
-          if (!toolMessages.length) delta = call('read_contact_material', { ...material, topicId })
-          else if (toolMessages.length === 1) delta = call('write_skill_file', { skillId: 'experience-output', path: 'story.md', content: prose })
+          if (!toolMessages.length) delta = call('read_contact_material', { id: 'invalid-reference-fixture', version: 999, topicId })
+          else if (toolMessages.length === 1) {
+            if (JSON.parse(toolMessages[0].content).error?.code !== 'material-reference') throw Error('Invalid reference did not return a bounded repair result')
+            delta = call('read_contact_material', { ...material, topicId })
+          }
+          else if (toolMessages.length === 2) {
+            if (JSON.parse(toolMessages[1].content).materialRead?.id !== material.id) throw Error('Corrected reference did not read the actual material')
+            delta = call('write_skill_file', { skillId: 'experience-output', path: 'story.md', content: prose })
+          }
           else {
             const files = JSON.parse(toolMessages.at(-1).content).files
             const draft = JSON.parse(handoffSmokeResponse(payload)); draft.delivery.section.body = prose; draft.delivery.fileIds = files.map((file: { id: string }) => file.id); draft.body = prose

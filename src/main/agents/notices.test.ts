@@ -151,7 +151,10 @@ it('retries continuous work promptly, reports failures once, and restores old lo
   expect(store.nextScheduledTopic('alice', before)).toBeUndefined()
   expect(store.nextScheduledTopic('alice', Date.now() + 61000)).toBe(topic.id)
   expect(store.notices.pending('alice')).toHaveLength(1)
-  expect(store.notices.pending('alice')[0].content).toContain('1 分钟')
+  const notice = store.notices.pending('alice')[0]
+  const retryAt = store.decisions.get('alice', notice.interactionId!).automaticRetryAt!
+  expect(notice.content).toContain(new Date(retryAt).toLocaleString())
+  expect(notice.content).toContain('自动重试')
   const second = store.createRun('alice', ''); store.fail(second, '再次失败')
   store.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(Date.now() + 10800000, 'alice')
   store.close(); stores.splice(stores.indexOf(store), 1)
@@ -160,7 +163,7 @@ it('retries continuous work promptly, reports failures once, and restores old lo
   expect(reopened.overview('alice').nextAt).toBeLessThanOrEqual(Date.now() + 180000)
   const third = reopened.createRun('alice', ''); reopened.fail(third, '仍然失败')
   expect(reopened.nextScheduledTopic('alice', Date.now() + 86400000)).toBeUndefined()
-  expect(reopened.notices.pending('alice').find(n => n.runId === third)?.content).toContain('自动推进已停止')
+  expect(reopened.notices.pending('alice').find(n => n.runId === third)?.content).toContain('自动重试已停止')
 })
 
 it('preserves interval mode and work-hour limits during failure retry', () => {

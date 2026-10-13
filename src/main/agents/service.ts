@@ -3,6 +3,7 @@ import { contactHome } from './home'
 import { citationContext, validateCitation } from './citations'
 import { buildContactContext } from './context'
 import { createMaterialTools } from './material-tools'
+import { MaterialReferenceError, withMaterialReferenceRepair } from './material-reference-repair'
 import type { ToolExecutionContext } from '../tools/registry'
 import type { ContactReadContext } from '../../shared/contact-content'
 import type { MemoryInput } from '../../shared/contact-memories'
@@ -369,16 +370,17 @@ export class AgentService {
         this.store.assertLive(run.id)
         if (method === 'materialList') return input.materialDirectory
         const reference = args[1] as import('../../shared/contact-materials').MaterialRef
-        if (!input.materialDirectory.some((m: import('../../shared/contact-materials').MaterialRef) => m.id === reference.id && m.version === reference.version)) throw new Error('资料不在本轮目录快照内，请按本轮提供的版本读取。')
+        if (!reference || !input.materialDirectory.some((m: import('../../shared/contact-materials').MaterialRef) => m.id === reference.id && m.version === reference.version)) throw new MaterialReferenceError()
         return this.request(method, owner, [{ query: '', topicId: run.topic_id || undefined }, ...args.slice(1)])
       } })
-      const tools = identity.skillToolsEnabled ? { definitions: [...skillRuntime.definitions, ...materialTools], execute: async (call: import('../../shared/tools').AIToolCall) => {
+      const tools = identity.skillToolsEnabled ? { definitions: [...skillRuntime.definitions, ...materialTools], execute: withMaterialReferenceRepair(async (call: import('../../shared/tools').AIToolCall) => {
+        signal.throwIfAborted(); this.store.assertLive(run.id)
         const material = materialTools.find(t => t.name === call.name)
         if (!material) return skillRuntime.execute(call)
         const result = await material.execute({ ...JSON.parse(call.arguments), topicId: run.topic_id || undefined }, {} as ToolExecutionContext)
         if (call.name === 'read_contact_material') this.store.recordMaterialRead(run.id, JSON.parse(result.content).materialRead)
         return result.content
-      } } : undefined
+      }) } : undefined
       if (tools) {
         tools.definitions = tools.definitions.filter(tool => !identity.disabledSkillTools?.includes(tool.name))
         const execute = tools.execute

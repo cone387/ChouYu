@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { agentUsesPlanner, type AgentNotice, type AgentSettings } from '../../shared/agents'
 import type { ContactBudgetField, ContactInteraction, ContactInteractionSubmission } from '../../shared/contact-interactions'
 import type { AgentStore } from './store'
+import { withinWorkHours } from '../../shared/work-settings'
 
 type RecordValue = ContactInteraction & { topicRevision: number; settingsGuard: string; questionEventId?: number }
 const settingsGuard = (s: AgentSettings) => JSON.stringify([s.enabled, s.paceWriting, s.workHours, s.permissionLevel, s.sources, s.readContactDeliveries, s.shareDeliveries, s.searchEnabled])
@@ -19,6 +20,18 @@ export class ContactInteractions {
   private save(value: RecordValue) {
     this.store.db.prepare('INSERT INTO contact_interactions VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(value.id, value.characterId, JSON.stringify(value))
   }
+  failureImpact(runId: string): string {
+    const s = this.store, run = s.getRun(runId)
+    if (!run?.topic_id) return '这次尝试的保存情况无法核实。'
+    const row = s.db.prepare("SELECT value FROM delivery_versions WHERE topic_id=? AND json_extract(value,'$.createdAt')<=? ORDER BY version DESC LIMIT 1").get(run.topic_id, run.updated_at) as { value: string } | undefined
+    const saved = row && JSON.parse(row.value).sections?.some((section: { body: string }) => section.body?.trim())
+    const presentation = JSON.parse(run.input).revisionScope === 'presentation'
+    const hasDraftTable = s.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='writing_drafts'").get()
+    const draft = hasDraftTable && s.db.prepare("SELECT 1 FROM writing_drafts WHERE topic_id=? AND json_extract(value,'$.sourceRunId')=? AND updated_at<=? AND length(json_extract(value,'$.body'))>0 LIMIT 1").get(run.topic_id, run.id, run.updated_at)
+    return (presentation ? '本次只修改阅读样式，未改动正文。' : '这次尝试没有保存新的正式正文。')
+      + (saved ? '之前已保存的正文仍可在任务中查看。' : '截至这次中断，还没有已保存的正文。')
+      + (draft ? '任务中另有未交付草稿；相同任务范围下继续时会尝试恢复。' : '')
+  }
   offer(notice: AgentNotice): string | undefined {
     const profile = this.store.profile(notice.characterId)
     if (!profile) return
@@ -33,6 +46,7 @@ export class ContactInteractions {
     if (!run || run.character_id !== notice.characterId || run.topic_id !== topic.id) throw new Error('交互事项来源不匹配。')
     this.save({ id: notice.id, version: '', characterId: notice.characterId, topicId: topic.id, runId: run.id,
       topicTitle: topic.title, kind, status: 'pending', budgets: [], createdAt: notice.createdAt,
+      ...(kind === 'retry' ? { impact: this.failureImpact(run.id) } : {}),
       ...(kind === 'question' ? { question: run.question, questionEventId: (this.store.db.prepare("SELECT MAX(id) AS id FROM events WHERE run_id=? AND kind='waiting'").get(run.id) as { id: number }).id } : {}), topicRevision: topic.revision, settingsGuard: settingsGuard(settings) })
     return notice.id
   }
@@ -109,9 +123,12 @@ export class ContactInteractions {
     if (v.kind === 'retry') {
       const error = s.getRun(v.runId)?.error ?? ''
       v.failure = contactFailure(error)
-      if (presentation) v.failure = { ...v.failure, action: '重试本次样式修改' }
+      if (presentation) v.failure = { ...v.failure, title: '阅读样式修改中断', message: `这次阅读样式修改未完成。${v.failure.message}`, action: '重试本次样式修改' }
       v.failureDetail = containsSecret(error) || /Bearer\s+\S+|https?:\/\/[^\s]+[?@]/i.test(error)
         ? '原始诊断含有凭据或带参数的地址，已隐藏。请核对对应设置。' : error.slice(0, 600)
+      if (sourceRun) v.impact ??= this.failureImpact(sourceRun.id)
+      // These are a live projection, never a persisted promise from an older render.
+      delete v.automaticRetryAt; delete v.recoveryMessage; delete v.currentState
     }
     if (v.status === 'pending') {
       const run = s.getRun(v.runId)
@@ -145,6 +162,39 @@ export class ContactInteractions {
       const failure = s.taskFailures.get(v.topicId)
       v.automaticRetryAt = recovery?.runId === v.runId ? recovery.at
         : settings.enabled && failure?.run_id === v.runId && failure.failures < 3 ? failure.next_at : undefined
+      if (v.budgets.length) {
+        delete v.automaticRetryAt
+        v.recoveryMessage = `当前${v.budgets.map(f => f.label).join('、')}不足以继续。请核对下方用量后调整；任务累计上限不会在明天重置。`
+      } else if (!settings.enabled) v.recoveryMessage = '当前为按需工作，不会自动重试。准备好后可点“重新尝试”。'
+      else if (!v.automaticRetryAt) v.recoveryMessage = failure && failure.failures >= 3
+        ? `这项任务已连续失败 ${failure.failures} 次，自动重试已停止。请先处理上述原因，再手动重试。`
+        : '当前没有自动重试安排，可手动重新尝试。'
+      else {
+        const at = v.automaticRetryAt
+        const scheduled = at > Date.now() ? `已安排 ${new Date(at).toLocaleString()} 起自动重试。` : '已到自动重试时间，正在等待执行名额。'
+        const hours = !withinWorkHours(settings) || !withinWorkHours(settings, at)
+          ? `自动执行还需等到工作时段 ${settings.workHours!.start}–${settings.workHours!.end}。` : ''
+        const action = v.failure?.settings || v.failure?.kind === 'storage'
+          ? '请先按上述原因处理；重试安排不代表故障已解决。' : '你暂时不需要操作，也可以手动提前重试。'
+        v.recoveryMessage = scheduled + hours + action
+      }
+    }
+    if (v.kind === 'retry' && v.status === 'pending' && presentation) v.recoveryMessage = '这次样式修改不会自动重试。可按原修改要求重试，正文保持不变。'
+    if (v.kind === 'retry' && v.status !== 'pending') {
+      const topicRow = s.db.prepare('SELECT value FROM topics WHERE id=? AND character_id=?').get(v.topicId, owner) as { value: string } | undefined
+      const topic = topicRow && JSON.parse(topicRow.value)
+      const newer = s.db.prepare('SELECT id,status,error,input FROM runs WHERE topic_id=? AND character_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(v.topicId, owner) as { id: string; status: string; error: string; input: string } | undefined
+      const newerPresentation = presentation && newer && newer.id !== v.runId && JSON.parse(newer.input).revisionScope === 'presentation'
+      if (!topic) { v.currentState = 'deleted'; v.result = '任务已删除，此前的重试操作已失效。' }
+      else if (['paused', 'completed', 'abandoned'].includes(topic.status) && !newerPresentation) {
+        v.currentState = topic.status
+        v.result = topic.status === 'paused' ? '任务已暂停，不会自动重试；需要时可在任务中继续。'
+          : topic.status === 'completed' ? '任务现已完成，无需重试此前的失败。' : '任务已结束，不会再重试。'
+      } else if (newer && newer.id !== v.runId) {
+        const states: Record<string, string> = { queued: '已重新排队，无需重复点击重试。', running: '正在重新尝试，尚未完成；无需重复点击重试。', waiting: '后续尝试正在等待你的回复，请打开任务查看原问题。', completed: '后续尝试已完成；这不代表整个任务已经结束。', interrupted: '后续尝试已中断，等待恢复；请查看任务的当前状态。', cancelled: '后续尝试已取消；此前的重试操作已失效。' }
+        v.currentState = newer.status === 'cancelled' ? 'changed' : newer.status as ContactInteraction['currentState']
+        v.result = newer.status === 'failed' ? `后续尝试仍受阻：${contactFailure(newer.error).message} 请查看最新的处理事项。` : states[newer.status]
+      } else { v.currentState = 'changed'; v.result ??= '任务已变化，此前的操作已失效，请查看当前任务。' }
     }
     const { topicRevision: _revision, settingsGuard: _settings, questionEventId: _event, ...view } = v
     view.version = createHash('sha256').update(JSON.stringify([v.id, v.topicRevision, v.settingsGuard, v.budgets.map(f => [f.key, f.limit])])).digest('hex')

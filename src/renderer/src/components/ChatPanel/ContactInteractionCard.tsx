@@ -28,7 +28,8 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
     refreshRef.current = refresh
     void refresh()
     const off = window.electronAPI.agents.onChanged(id => { if (id === characterId && !submitting.current) void refresh() })
-    return () => { disposed = true; off() }
+    const timer = window.setInterval(() => { if (!submitting.current && document.visibilityState === 'visible') void refresh() }, 30000)
+    return () => { disposed = true; off(); window.clearInterval(timer) }
   }, [characterId, interactionId])
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -47,15 +48,18 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
     } finally { submitting.current = false; setBusy(false) }
   }
   const openTask = onOpen ?? (view ? () => { void navigateContact({ kind: 'task', characterId, topicId: view.topicId }).catch(e => setError(e.message)) } : undefined)
-  const title = view?.kind === 'question' ? '需要你的回复' : view?.kind === 'budget' ? '需要补充额度' : '本次工作未完成'
+  const currentTitles: Partial<Record<NonNullable<ContactInteraction['currentState']>, string>> = { queued: '已重新排队', running: '正在重新尝试', completed: '后续工作已完成', waiting: '现在需要你的回复', paused: '任务已暂停', deleted: '任务已删除', failed: '后续尝试仍受阻' }
+  const title = view && view.status !== 'pending' ? (view.currentState && currentTitles[view.currentState]) || (view.status === 'resolved' ? '已处理' : '处理状态已更新')
+    : view?.kind === 'question' ? '需要你的回复' : view?.kind === 'budget' ? '当前额度不足以继续' : view?.failure?.title || '这次尝试中断'
   return <section className="contact-interaction" data-contact-interaction={interactionId} data-contact-owner={characterId} data-interaction-topic={view?.topicId} aria-busy={busy}>
     {view ? <>
       {showOwner && view.characterName && <div className="contact-interaction-task">{view.characterName}</div>}
       <strong className="contact-interaction-title">{title}</strong>
       <div className="contact-interaction-task">{view.topicTitle}</div>
-      {view.kind === 'question' ? <p className="contact-interaction-question">{view.question}</p> : <p>{view.kind === 'budget' ? '已有成果保留，当前额度不足以继续。' : view.failure?.message || fallback}</p>}
-      {view.failureDetail && <details className="contact-interaction-diagnostic"><summary>具体原因</summary><p>{view.failureDetail}</p></details>}
-      {view.status === 'pending' && view.automaticRetryAt && <p className="contact-interaction-usage">最早 {new Date(view.automaticRetryAt).toLocaleString()} 自动尝试继续，仍受工作时间和额度限制。也可以现在重试。</p>}
+      {view.kind === 'question' ? <p className="contact-interaction-question">{view.status === 'pending' ? '' : '此前的问题：'}{view.question}</p> : <p>{view.kind === 'budget' ? (view.status === 'pending' ? '下方列出实际不足的额度和继续所需用量。调整后才会继续，不会自动提高上限。' : '此前因额度不足暂停了推进。当前处理结果见下方。') : `${view.status === 'pending' ? '' : '此前中断的原因：'}${view.failure?.message || fallback}`}</p>}
+      {view.impact && <p className="contact-interaction-usage">{view.impact}</p>}
+      {view.failureDetail && <details className="contact-interaction-diagnostic"><summary>技术诊断</summary><p>{view.failureDetail}</p></details>}
+      {view.status === 'pending' && view.recoveryMessage && <p className="contact-interaction-recovery" role="status">{view.recoveryMessage}</p>}
       {view.status === 'pending' ? <form onSubmit={submit} noValidate>
         {view.budgets.map(field => <label className="contact-interaction-field" key={field.key}>
           <span>{field.label}</span>

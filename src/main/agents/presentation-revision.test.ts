@@ -27,6 +27,18 @@ function fixture() {
 }
 
 describe('presentation-only execution', () => {
+  it.each(['paused', 'completed', 'abandoned'] as const)('shows a newer style retry on a %s task as queued and running', status => {
+    const f = fixture(), t = f.store.topics.get('writer', f.topicId)
+    f.store.topics.status('writer', t.id, t.revision, status, '保留原状态')
+    const run = f.start(); f.store.fail(run, '样式格式无效')
+    const card = f.store.decisions.pending('writer')[0]
+    f.store.decisions.submit('writer', card.id, { version: card.version }, '')
+    expect(f.store.decisions.get('writer', card.id).currentState).toBe('queued')
+    const newer = f.store.overview('writer').runs.find(r => r.id !== run && r.status === 'queued')!
+    f.store.setStatus(newer.id, 'running')
+    expect(f.store.decisions.get('writer', card.id).currentState).toBe('running')
+    expect(f.store.topics.get('writer', t.id).status).toBe(status)
+  })
   it.each(['researching', 'paused', 'completed', 'abandoned'] as const)('preserves %s task state, all prose and plans with one model call and no research', async status => {
     const f = fixture()
     if (status !== 'researching') { const t = f.store.topics.get('writer', f.topicId); f.store.topics.status('writer', t.id, t.revision, status, '用户原有状态') }
@@ -48,7 +60,10 @@ describe('presentation-only execution', () => {
     expect(f.store.detail('writer', run).run.status).toBe('failed')
     expect(model).toHaveBeenCalledTimes(2); expect(f.store.deliveries.get(f.topicId)).toEqual(before)
     expect(f.store.overview('writer').reports).toHaveLength(1)
-    expect(f.store.notices.pending('writer').some(n => n.content.includes('修改未完成，原成果与正文已保留'))).toBe(true)
+    const failure = f.store.notices.pending('writer').find(n => n.runId === run)!
+    expect(failure.content).toContain('阅读样式修改未完成')
+    expect(failure.content).toContain('之前已保存的正文仍可在任务中查看')
+    expect(failure.content).toContain('不会自动重试')
     const second = f.start()
     await f.runtime.execute(second, '', async () => JSON.stringify({ presentation: { ...presentation, script: 'function (' } }), new AbortController().signal)
     expect(f.store.detail('writer', second).run.status).toBe('failed'); expect(f.store.deliveries.get(f.topicId)).toEqual(before)

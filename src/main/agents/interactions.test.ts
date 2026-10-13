@@ -22,6 +22,55 @@ function budgetCard(store: AgentStore) {
   const id = store.notices.pending('alice').find(n => n.purpose === 'resources')!.interactionId!
   return store.decisions.get('alice', id)
 }
+it('states the failure impact and recovery separately and follows newer work without stale retry time', () => {
+  const { store } = fixture(), run = store.createRun('alice', '')
+  store.fail(run, '资料不在本轮目录快照内，请按本轮提供的版本读取。')
+  const card = store.decisions.pending('alice')[0]
+  expect(card.impact).toContain('还没有已保存的正文')
+  expect(card.recoveryMessage).toContain('自动重试')
+  expect(card.recoveryMessage).not.toContain('仍受工作时间和额度限制')
+  const notice = store.notices.pending('alice').find(n => n.runId === run)!
+  expect(notice.content).toContain(card.failure!.message)
+  expect(notice.content).toContain(card.recoveryMessage!)
+  expect(notice.content).not.toContain('已有成果保留')
+  const newer = store.createRun('alice', '')
+  expect(store.decisions.get('alice', card.id)).toMatchObject({ status: 'obsolete', currentState: 'queued' })
+  store.setStatus(newer, 'running')
+  const running = store.decisions.get('alice', card.id)
+  expect(running.currentState).toBe('running')
+  expect(running.result).toContain('正在重新尝试')
+  expect(running.automaticRetryAt).toBeUndefined()
+  store.fail(newer, 'API error 401')
+  expect(store.decisions.get('alice', card.id)).toMatchObject({ currentState: 'failed' })
+  expect(store.decisions.get('alice', card.id).result).toContain('模型服务')
+})
+it('keeps failed-attempt impact and original notification immutable when a later delivery succeeds', () => {
+  const { store } = fixture(), run = store.createRun('alice', '')
+  store.fail(run, '本轮分段恢复次数已用完')
+  const card = store.decisions.pending('alice')[0], notice = store.notices.pending('alice').find(n => n.runId === run)!
+  const next = store.createRun('alice', '')
+  store.finish(next, { runId: next, title: '已恢复', body: '实际正文', nextStep: '继续', evidence: [], createdAt: Date.now() }, [], { judgement: '实际交付', reason: '有正文', nextStep: '继续', openQuestions: '', status: 'researching' })
+  const recovered = store.decisions.get('alice', card.id)
+  expect(recovered.currentState).toBe('completed')
+  expect(recovered.result).toContain('不代表整个任务已经结束')
+  expect(recovered.impact).toBe(card.impact)
+  expect(store.notices.pending('alice').find(n => n.id === notice.id)?.content).toBe(notice.content)
+})
+it('explains disabled automatic work, a real work-hours gate, and three failed attempts', () => {
+  const { store } = fixture()
+  store.save('alice', { ...store.overview('alice').settings, enabled: false })
+  const run = store.createRun('alice', '')
+  store.fail(run, 'unknown failure')
+  const card = store.decisions.pending('alice')[0]
+  expect(card.recoveryMessage).toContain('按需')
+  expect(card.automaticRetryAt).toBeUndefined()
+  store.save('alice', { ...store.overview('alice').settings, enabled: true, workHours: { start: '00:00', end: '00:01' } })
+  expect(store.decisions.get('alice', card.id).recoveryMessage).toContain('00:00–00:01')
+  for (let i = 0; i < 2; i++) { const next = store.createRun('alice', ''); store.fail(next, 'unknown failure') }
+  const stopped = store.decisions.pending('alice')[0]
+  expect(stopped.recoveryMessage).toContain('连续失败 3 次')
+  expect(stopped.automaticRetryAt).toBeUndefined()
+})
 it('persists an actionable budget request, then atomically adjusts and queues exactly once across restart', () => {
   const { store, path } = fixture(), card = budgetCard(store)
   expect(card.budgets).toMatchObject([{ key: 'taskCalls', used: 2, limit: 3, needed: 2 }])

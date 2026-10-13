@@ -33,6 +33,19 @@ const metadata = JSON.stringify({ title: '第二章下半段', body: '完成一�
   delivery: { summary: '陆沉参加试音', completionCriteria: '完成整本小说', stages: [{ id: 'ch02', title: '第二章', status: 'active' }], section: { id: 'ch02b', title: '第二章下半段', body: '__SAVED_BODY__' } } })
 const generate = (f: ReturnType<typeof fixture>, model: AgentModel) => f.recovery().generate(model, new AbortController().signal, {}, '生成进度', parseDraft, () => {})
 
+it('reports only the failed attempt’s saved draft, not old scratch from another attempt', async () => {
+  const f = fixture()
+  await expect(generate(f, async (_prompt, _signal, options) => {
+    options?.onPartial?.('这次中断前已保存的草稿')
+    throw new Error('network failure')
+  })).rejects.toThrow('network failure')
+  f.store.fail(f.run, 'network failure')
+  expect(f.store.decisions.pending('writer')[0].impact).toContain('未交付草稿')
+  const later = f.store.createRun('writer', '')
+  f.store.fail(later, '资料不在本轮目录快照内')
+  expect(f.store.decisions.pending('writer')[0].impact).not.toContain('未交付草稿')
+})
+
 it('continues truncated prose and assembles metadata without regenerating the body', async () => {
   const f = fixture()
   let proseCalls = 0

@@ -25,7 +25,7 @@ export class WritingRecovery {
   private save(value: Scratch) {
     this.store.assertLive(this.runId)
     this.store.db.prepare('INSERT INTO writing_drafts VALUES(?,?,?,?) ON CONFLICT(topic_id,context_key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at')
-      .run(this.topicId, this.key, JSON.stringify(value), Date.now())
+      .run(this.topicId, this.key, JSON.stringify({ ...value, sourceRunId: this.runId }), Date.now())
   }
   retain(raw: string) {
     if (!this.read()) this.save({ body: '', complete: false, metadata: raw.slice(0, 24000) })
