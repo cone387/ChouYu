@@ -35,6 +35,9 @@ it.skipIf(!process.env.CHOUYU_DISCOVERY_ACCEPTANCE)('real reviewer finds publish
     const detail = service.store.detail('reviewer', runId)
     expect(detail.run.status, detail.run.error).toBe('completed')
     expect(detail.report?.evidence.some(item => item.url.startsWith(`contact-delivery://writer/${writerTopic}/opening?version=1`) && item.text === body)).toBe(true)
+    const reviewBody = service.store.deliveries.get(topic.id)?.sections.at(-1)?.body ?? ''
+    expect(reviewBody).toMatch(/沈青|铜铃|陈伯/)
+    if (detail.report?.evaluations?.length) expect(detail.report.evaluations.some(item => item.sourceNumbers.includes(1))).toBe(true)
     expect(service.store.deliveries.get(topic.id)?.sections.at(-1)?.body.length).toBeGreaterThan(50)
     expect(service.store.deliveries.get(writerTopic)?.sections[0].body).toBe(body)
   } finally {

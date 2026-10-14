@@ -424,7 +424,14 @@ export class AgentService {
       if (tools) {
         tools.definitions = tools.definitions.filter(tool => !identity.disabledSkillTools?.includes(tool.name))
         const execute = tools.execute
-        tools.execute = call => tools.definitions.some(tool => tool.name === call.name) ? execute(call) : Promise.resolve('工具已被用户禁用。')
+        tools.execute = call => {
+          if (tools.definitions.some(tool => tool.name === call.name)) return execute(call)
+          if (identity.disabledSkillTools?.includes(call.name)) return Promise.resolve('工具已被用户禁用。')
+          if (['read_contacts', 'discover_contacts'].includes(call.name)) return Promise.resolve(input.settings.readContactDeliveries
+            ? '这不是可调用工具，而是工作计划 JSON 的 action 值。尚未读取正文。请结束工具调用，按当前工作指令返回完整计划 JSON；read_contacts 的 contactRefs 必须逐字使用 sharedContactDeliveries 目录中的 ref，urls 填 []。系统校验计划后执行读取，再提供实际正文。不要用 read_contact_material 读取共享成果；当前任务具有共享成果读取权限。'
+            : '这不是可调用工具；当前任务未授权读取联系人的共享成果，尚未读取正文。')
+          return Promise.resolve('当前工具列表中不存在这个工具，未执行任何操作。请仅使用实际提供的工具或按工作指令返回结果。')
+        }
       }
       try {
         if (testModel) { beforeRound(0, prompt); const result = await testModel(prompt, signal, options); if (options?.suppliesMemories) recordMemoryContext(); return result }
