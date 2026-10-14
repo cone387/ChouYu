@@ -569,7 +569,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         {detail.id !== ASSISTANT_CHARACTER_ID && <ContactAgentPanel visible={active} key={detail.id} characterId={detail.id} name={detail.name} profile={detailProfile} selectedTab={detailTab} onTabChange={setDetailTab} onExpand={setExpandedTab} onChat={() => { onOpenChat(detail.id); setDetail(null) }} />}
       </div>
     </ResizableModal>}
-    {detail && expandedTab && <ContactWorkToolbar key={detail.id} characterId={detail.id} name={detail.name} standalone profile={detailProfile} initialTab={expandedTab} onClose={() => setExpandedTab(null)} />}
+    {detail && expandedTab && <ContactWorkToolbar key={detail.id} characterId={detail.id} name={detail.name} standalone suspended={!active} profile={detailProfile} initialTab={expandedTab} onClose={() => setExpandedTab(null)} />}
     {confirmDelete && <div className="contacts-scrim" role="presentation">
       <div className="contacts-confirm" role="alertdialog" aria-modal="true" aria-label="删除角色确认">
         <p className="contacts-confirm-title">删除角色</p>

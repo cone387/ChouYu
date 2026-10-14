@@ -123,6 +123,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
   const originalSession = getActiveSession().id
   const originalConfig = getConfig()
   let stream: ServerResponse | undefined
+  let holdFirstToken = false
   let providerRequests = 0
   const resolutions: boolean[] = []
   const onResolution = (_event: unknown, id: string, approved: boolean) => { if (id.startsWith('ui-smoke-')) resolutions.push(approved) }
@@ -139,7 +140,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     request.on('end', () => {
       stream = response
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-      response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '开始流式回复。' } }] })}\n\n`)
+      if (!holdFirstToken) response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '开始流式回复。' } }] })}\n\n`)
     })
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -177,6 +178,10 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     window.webContents.send('open-chat-panel')
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true]') && document.querySelector('.input-textarea') && document.querySelector('table') && document.querySelector('del')")
     console.log('CHOUYU_CHAT_STAGE panel-ready')
+    if (process.env.CHOUYU_SMOKE_CHAT_CLOSE_ONLY === '1') {
+      await checkClosingDuringReply()
+      return
+    }
     await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     console.log('CHOUYU_CHAT_STAGE opening-frames-complete')
     const openingFrames = await window.webContents.executeJavaScript('window.__watchChatOpening = false; window.__chatOpeningFrames')
@@ -313,9 +318,12 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: grip.x, y: grip.y, button: 'left', clickCount: 1 })
     await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: grip.x, y: grip.y - 64, button: 'left', buttons: 1 })
     await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: grip.x, y: grip.y - 64, button: 'left', clickCount: 1 })
-    await waitForRenderer(window, `document.querySelector('.input-textarea').getBoundingClientRect().height >= ${grip.height + 60}`)
+    // Wrapped contact tools can lower the available maximum after resizing.
+    // Require real growth, allowing the composer to stop at its visible limit.
+    const composerGrew = `(() => { const height = document.querySelector('.input-textarea').getBoundingClientRect().height; return height > ${grip.height} && height >= Math.min(${grip.height + 60}, Number(document.querySelector('.composer-resize-handle').getAttribute('aria-valuemax'))) })()`
+    await waitForRenderer(window, composerGrew)
     await input(window, '.input-textarea', '调整大小后仍保留草稿')
-    await waitForRenderer(window, `document.querySelector('.input-textarea').getBoundingClientRect().height >= ${grip.height + 60}`)
+    await waitForRenderer(window, composerGrew)
     await snapshots(window, 'composer-resized')
     await window.webContents.executeJavaScript("document.querySelector('.composer-resize-handle').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))")
     await input(window, '.input-textarea', '')
@@ -443,6 +451,88 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await input(window, '.input-textarea', '')
     console.log('CHOUYU_WORKSPACE_NAV_SMOKE_PASSED icon-only navigation, stable bounds, drafts, memory filters, activity date/search, background streaming and reading position')
 
+    async function checkClosingDuringReply(): Promise<void> {
+      // Closing the workspace must not cancel a reply, even before its first token.
+      for (const beforeFirstToken of [true, false]) {
+        holdFirstToken = beforeFirstToken
+        stream = undefined
+        const requestsBefore = providerRequests
+        const ending = beforeFirstToken ? '关闭后生成的完整回复。' : '关闭后仍保留完整结尾。'
+        const expected = (beforeFirstToken ? '' : '开始流式回复。') + ending
+        await input(window, '.input-textarea', `验证关闭窗口后继续回复：${beforeFirstToken ? '首字前' : '生成中'}`)
+        await click(window, '[aria-label="发送消息"]')
+        await waitForRenderer(window, "document.querySelector('[aria-label=\"停止生成\"]')")
+        // Wait for the actual provider request, without releasing the first token.
+        const deadline = Date.now() + 10_000
+        while (!stream && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25))
+        if (!stream) throw new Error('Close regression did not reach the provider')
+        if (!beforeFirstToken) await waitForRenderer(window, "[...document.querySelectorAll('.message-bubble')].at(-1)?.textContent.includes('开始流式回复')")
+        await click(window, '[aria-label="关闭面板"]')
+        await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
+        const response = stream as ServerResponse
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: ending } }] })}\n\ndata: [DONE]\n\n`)
+        await waitForRenderer(window, `(async () => {
+          const { activeSession: session } = await window.electronAPI.db.getSessionWorkspace();
+          return session.messages.some(message => message.role === 'assistant' && message.content === ${JSON.stringify(expected)} && message.replyCompletedAt);
+        })()`)
+        const unread = getSessions().find(session => session.id === fixture)?.unreadCount
+        if (!unread) throw new Error('Reply completed while closed was incorrectly marked read')
+        window.webContents.send('open-chat-panel')
+        await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true]') && getComputedStyle(document.querySelector('.chat-panel')).display !== 'none'")
+        await waitForRenderer(window, `document.querySelector('.message-area')?.textContent.includes(${JSON.stringify(ending)}) && !document.querySelector('[aria-label="停止生成"]')`)
+        const saved = await window.webContents.executeJavaScript('(async () => (await window.electronAPI.db.getSessionWorkspace()).activeSession)()')
+        if (saved.messages.filter((message: Message) => message.role === 'assistant' && message.content === expected).length !== 1 || providerRequests !== requestsBefore + 1) {
+          throw new Error('Reopening duplicated the request or reply')
+        }
+      }
+      holdFirstToken = false
+      // Retaining the workspace must not turn an explicit stop into background work.
+      stream = undefined
+      await input(window, '.input-textarea', '验证明确停止仍取消回复')
+      await click(window, '[aria-label="发送消息"]')
+      await waitForRenderer(window, "[...document.querySelectorAll('.message-bubble')].at(-1)?.textContent.includes('开始流式回复')")
+      await click(window, '[aria-label="停止生成"]')
+      await waitForRenderer(window, "!document.querySelector('[aria-label=\"停止生成\"]')")
+      const stopped = await window.webContents.executeJavaScript('(async () => (await window.electronAPI.db.getSessionWorkspace()).activeSession.messages.at(-1))()')
+      if (stopped?.responseStatus !== 'stopped' || stopped.replyCompletedAt) throw new Error('Explicit stop did not persist cancellation')
+      await click(window, '[data-workspace-nav="contacts"]')
+      await waitForRenderer(window, "document.querySelector('[data-contacts-card-detail=\"preset-copywriter-bi\"]')")
+      await click(window, '[data-contacts-card-detail="preset-copywriter-bi"]')
+      await waitForRenderer(window, "document.querySelector('[data-agent-expand]')")
+      await click(window, '[data-agent-expand]')
+      await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open]')")
+      await click(window, '[aria-label="关闭面板"]')
+      await waitForRenderer(window, "!document.querySelector('.contact-work-sheet[open]')")
+      window.webContents.send('open-chat-panel')
+      await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open]')")
+      await click(window, '[aria-label="关闭联系人工作弹窗"]')
+      await click(window, '[data-contacts-close]')
+
+      for (const title of ['关闭后打开任务甲', '关闭后打开任务乙']) {
+        const task = await window.webContents.executeJavaScript(`window.electronAPI.tasks.create({ title: ${JSON.stringify(title)} })`)
+        try {
+          window.webContents.send('open-tasks-panel', task.id)
+          await waitForRenderer(window, `document.querySelector('[aria-label="任务标题"]')?.value === ${JSON.stringify(title)}`)
+          await click(window, '[aria-label="关闭任务弹窗"]')
+          await click(window, '[aria-label="关闭面板"]')
+        } finally {
+          await window.webContents.executeJavaScript(`window.electronAPI.tasks.remove(${JSON.stringify(task.id)})`)
+        }
+      }
+      window.webContents.send('open-chat-panel')
+      await waitForRenderer(window, "getComputedStyle(document.querySelector('.chat-panel')).display !== 'none'")
+      // Each tray entry after closing must be consumed, not mistaken for an old request.
+      for (let index = 0; index < 2; index++) {
+        await click(window, '[data-workspace-nav="contacts"]')
+        await click(window, '[aria-label="关闭面板"]')
+        window.webContents.send('open-assistant-chat')
+        await waitForRenderer(window, "document.querySelector('.chat-panel[data-workspace-page=chat]') && getComputedStyle(document.querySelector('.chat-panel')).display !== 'none'")
+      }
+      await click(window, '[data-workspace-nav="chat"]')
+      console.log('CHOUYU_CHAT_CLOSE_SMOKE_PASSED close before first token and during streaming, background persistence/unread, explicit stop, portal visibility, repeated task/tray entry and no duplicate requests')
+    }
+    await checkClosingDuringReply()
+
     const ocrFixture = process.env['CHOUYU_SMOKE_OCR_FIXTURE']
     if (ocrFixture) {
       const beforeOcrRequests = providerRequests
@@ -538,6 +628,12 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "!document.querySelector('.tool-approval-dialog') && document.activeElement?.classList.contains('input-textarea')")
     window.webContents.send('ai:tool-approval-request', { ...approval, approvalId: 'ui-smoke-allow' })
     await waitForRenderer(window, "document.querySelector('.tool-approval-dialog')")
+    await click(window, '[aria-label="关闭面板"]')
+    await waitForRenderer(window, "!document.querySelector('.tool-approval-dialog')")
+    await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
+    if (JSON.stringify(resolutions) !== '[false]') throw new Error('Closing the panel resolved a pending approval')
+    window.webContents.send('open-chat-panel')
+    await waitForRenderer(window, "document.querySelector('.tool-approval-dialog')")
     await click(window, '.tool-approval-actions .primary')
     await waitForRenderer(window, "!document.querySelector('.tool-approval-dialog')")
     if (JSON.stringify(resolutions) !== '[false,true]') throw new Error('Tool approval choices were not delivered correctly')
@@ -559,7 +655,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
       const saved = await window.webContents.executeJavaScript("window.electronAPI.db.getState('workspace-active-page')")
       if (saved !== page) throw new Error(`Workspace page was not persisted: ${page}`)
       await click(window, '[aria-label="关闭面板"]')
-      await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+      await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
       window.webContents.send('open-chat-panel')
       await waitForRenderer(window, `document.querySelector('.chat-panel[data-ready=true][data-workspace-page=${page}]')`)
     }
@@ -572,7 +668,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-workspace-page=journal]')")
     await click(window, '[data-workspace-nav="tasks"]')
     await click(window, '[aria-label="关闭面板"]')
-    await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+    await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     window.webContents.send('open-chat-panel')
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true][data-workspace-page=tasks]')")
     await window.webContents.executeJavaScript(`(async () => {

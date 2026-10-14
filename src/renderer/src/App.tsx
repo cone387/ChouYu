@@ -299,9 +299,9 @@ function App() {
 
   const closePanel = useCallback(() => {
     setPanelVisible(false)
-    setPanelInitialized(false)
-    setWorkspaceRequest(undefined)
-    setAssistantFocusRequest(0)
+    // The workspace owns live replies and pending confirmations. Closing its
+    // window must retain that owner, just as hiding the window does.
+    // Keep navigation request counters monotonic for the retained consumers.
     setShowSettings(false)
     restoreClickThrough()
   }, [restoreClickThrough])
