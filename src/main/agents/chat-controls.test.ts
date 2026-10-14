@@ -7,7 +7,7 @@ import { AgentStore } from './store'
 import { createContactTools } from './tools'
 import { routeContactChange } from './chat-changes'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-import { shouldConfirmTool } from '../../shared/tools'
+import { shouldConfirmTool, validateToolArguments } from '../../shared/tools'
 import type { ToolExecutionContext } from '../tools/registry'
 
 const cleanup: (() => Promise<void>)[] = []
@@ -23,7 +23,7 @@ async function fixture(config: import('./service').AgentIdentity['config'] = nul
   const prepare = (name: string, args: Record<string, unknown>) => {
     const tool = tools.find(t => t.name === name)
     if (!tool) throw new Error('所需工作工具未接入')
-    return tool.prepareAsync!(args, context)
+    return tool.prepareAsync!(validateToolArguments(tool.inputSchema, args), context)
   }
   const route = (message: string, plan: unknown) => routeContactChange([{ role: 'user', content: message }], {
     read: (method, args) => service.request(method, owner, args), model: async () => JSON.stringify(plan),
@@ -45,6 +45,55 @@ it('saves working hours through chat for a contact without tasks and retains a d
     expect(reopened.overview('alice').settings.workHours).toEqual({ start: '20:00', end: '23:00' })
     expect(reopened.db.prepare('SELECT reason FROM work_settings_changes WHERE character_id=?').get('alice')).toEqual({ reason: '以后只在晚上八点到十一点工作' })
   } finally { reopened.close() }
+})
+it('persists permissions, notifications and sharing through the same chat settings transaction without a task', async () => {
+  const f = await fixture(), bob = f.store.overview('bob')
+  const patch = { permissionLevel: 'sources', sources: ['https://example.com/'], searchEnabled: false, notifyProgress: false, shareDeliveries: true, readContactDeliveries: true, toolPermissionMode: 'auto', dailySearches: 10 }
+  const reply = await f.route('仅访问指定网页，关闭进展通知，共享并读取共享成果，修改操作需要确认', { kind: 'settings', patch })
+  expect(reply).toContain('已保存')
+  expect(reply).toContain('仅指定网页')
+  expect(f.store.overview('alice')).toMatchObject({ settings: patch, topics: [] })
+  expect(f.store.overview('bob')).toEqual(bob)
+  const reopened = new AgentStore(join(f.dir, 'agents.db'))
+  try { expect(reopened.overview('alice').settings).toMatchObject(patch) } finally { reopened.close() }
+})
+it('does not partially save a combined patch when the required search credential is missing', async () => {
+  const f = await fixture(), before = f.store.overview('alice')
+  await expect(f.route('打开搜索，同时关闭进展通知', { kind: 'settings', patch: { searchEnabled: true, notifyProgress: false } })).rejects.toThrow('搜索密钥')
+  expect(f.store.overview('alice').settings).toEqual(before.settings)
+  expect(f.store.overview('alice').revision).toBe(before.revision)
+  expect(f.store.db.prepare('SELECT COUNT(*) AS count FROM work_settings_changes').get()).toEqual({ count: 0 })
+})
+it('keeps an unanswered round when changing confirmation policy, but invalidates old work after source permission changes', async () => {
+  const f = await fixture()
+  f.store.assignTopic('alice', '研究公开资料', '')
+  const run = f.store.overview('alice').runs[0]
+  f.store.wait(run.id, '具体研究什么主题？')
+  const saved = f.store.overview('alice')
+  f.store.save('alice', { ...saved.settings, enabled: false }, Date.now(), false, saved.revision)
+  await f.route('已授权工具自动执行', { kind: 'settings', patch: { toolPermissionMode: 'full' } })
+  expect(f.store.getRun(run.id)?.status).toBe('waiting')
+  expect(f.store.getRun(run.id)?.question).toBe('具体研究什么主题？')
+  await f.route('只读这个网页', { kind: 'settings', patch: { permissionLevel: 'sources', sources: ['https://example.com/'], searchEnabled: false } })
+  expect(f.store.getRun(run.id)?.status).toBe('cancelled')
+  expect(() => f.store.assertLive(run.id)).toThrow()
+  expect(f.store.overview('alice').settings.enabled).toBe(false)
+})
+it('rejects stale or foreign permission operations and rolls back permission updates when receipts cannot persist', async () => {
+  const f = await fixture(), before = f.store.overview('alice')
+  const args = { revision: before.revision, shareDeliveries: true, reason: '共享我的成果' }
+  const foreign = await f.prepare('edit_contact_work_settings', args)
+  f.setOwner('bob')
+  await expect(foreign.execute()).rejects.toThrow('归属')
+  f.setOwner('alice')
+  const stale = await f.prepare('edit_contact_work_settings', args)
+  f.store.save('alice', { ...before.settings, goal: '原方向', dailyCalls: 20 }, Date.now(), false, before.revision)
+  await expect(stale.execute()).rejects.toThrow('变化')
+  const saved = f.store.overview('alice')
+  f.store.db.exec("CREATE TRIGGER fail_permission_receipt BEFORE INSERT ON work_settings_changes BEGIN SELECT RAISE(ABORT,'disk write failed'); END")
+  await expect(f.route('共享我的成果', { kind: 'settings', patch: { shareDeliveries: true } })).rejects.toThrow('disk write failed')
+  expect(f.store.overview('alice').settings).toEqual(saved.settings)
+  expect(f.store.overview('alice').revision).toBe(saved.revision)
 })
 it('reschedules an existing paused task through chat without changing its identity or automatically resuming it', async () => {
   const f = await fixture()
@@ -116,7 +165,7 @@ it('applies only requested settings and rejects stale versions or changed chat o
 })
 it.each([
   { workStart: '20:00' }, { workStart: '25:00', workEnd: '06:00' }, { dailyCalls: null },
-  { toolPermissionMode: 'full' }, { dailyTokenLimit: 100, clearDailyTokenLimit: true }, { maxConcurrentTasks: 0 }
+  { toolPermissionMode: 'invalid' }, { dailyTokenLimit: 100, clearDailyTokenLimit: true }, { maxConcurrentTasks: 0 }
 ])('rejects an invalid or unauthorized settings patch atomically: %j', async patch => {
   const f = await fixture(), before = f.store.overview('alice')
   await expect(f.route('修改工作设置', { kind: 'settings', patch })).rejects.toThrow()

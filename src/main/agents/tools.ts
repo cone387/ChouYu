@@ -216,7 +216,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
         return { content: JSON.stringify(value), summary: '已读取正式成果与展示样式' }
       } },
     { ...common, name: 'edit_contact_work_settings', displayName: '修改联系人工作设置',
-      description: '保存当前联系人的工作方式、每日工作时间、运行节奏、并发数或额度。只传用户明确修改的字段，不修改权限和其他联系人；保存成功才回复已生效。新任务默认Token上限不影响已有任务。',
+      description: '保存当前联系人的工作方向、工作方式、每日时间、节奏、并发、额度、进展通知、网页范围、搜索、成果共享及工具确认策略。只传用户明确修改的字段，权限变更须有明确要求，不修改其他联系人；保存成功才回复已生效。新任务默认Token上限不影响已有任务。网页范围变更会停止旧权限下未完成轮次；确认策略不批准已等待的请求。',
       inputSchema: { type: 'object', properties: { ...contactWorkSettingProperties,
         revision: { type: 'number', description: '当前联系人工作设置的revision，先读取不能猜测' },
         reason: { type: 'string', description: '用户本次修改原话', maxLength: 2000 }

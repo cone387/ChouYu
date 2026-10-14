@@ -5,7 +5,7 @@ import { pendingContinuation } from './continuation'
 import { validateCalendarSchedule } from '../../shared/calendar-schedule'
 import { validateContactWorkSettingsPatch } from '../../shared/contact-work-settings'
 
-export const CONTACT_CHANGE_PROMPT = `判断用户最新一句是否在调整当前联系人的已有任务或联系人本身的工作设置。你只负责路由，不直接回复“已改好”。只返回一个 JSON 对象。明确要求调整每日额度、工作时间、工作方式时返回 settings，不能当作 none 普通聊天，即使还没有任务。
+export const CONTACT_CHANGE_PROMPT = `判断用户最新一句是否在调整当前联系人的已有任务或联系人本身的工作设置。你只负责路由，不直接回复“已改好”。只返回一个 JSON 对象。明确要求调整工作设置（含权限、通知、搜索和成果共享）时返回 settings，不能当作 none 普通聊天，即使还没有任务。
 普通闲聊、进度询问、讨论方案、否定修改、引用他人指令、新任务：{"kind":"none"}。
 对象不明确、缺少必要信息、不支持的能力：{"kind":"question","message":"具体的简短追问或能力限制；说明未修改"}。
 明确修改：{"kind":"action","topicId":"现有任务ID","action":"edit|pause|continue|answer|revise|presentation|end|abandon|delete|schedule","patch":{},"reason":"用户最新原话"}。
@@ -15,7 +15,7 @@ goal/constraints 返回完整字段，保留未撤销的要求，消除被新要
 仅修改现有一段正文用 revise；只改正式成果阅读排版用 presentation；用户明确暂停/继续用 pause/continue。回答当前实际待回复问题用 answer，需额外返回 runId 和 answer。
 continue 必须额外返回 targetText：逐字摘录最新用户消息中明确指定的任务名称、书名或主题；确实没有指定对象（如“继续吧”）才填空字符串。不能用已有任务标题替换用户说的对象。仅有一个任务也必须匹配目标；例如用户说“继续写吞噬星空续”，唯一任务却是音乐修炼小说，必须追问，不得选中该小说。仅说“继续”不是对待回复问题的实际答案；此时用 continue 展示真实状态或原问题，不编造 answer。
 数字额度严格区分调用次数和 Token、任务累计和联系人每日；只填写用户明确指定的数字，不推算，不自行放宽，不清除未提及额度。patch.tokens 和 patch.modelCalls 必须是 JSON 整数，绝不是文字。例如“累计Token上限30万”返回 "patch":{"tokens":300000}，不能返回 "tokens":"累计Token上限30万"。tokens 范围1–1000000000，modelCalls 范围1–10000。
-联系人级设置：{"kind":"settings","patch":{}}，不需要topicId。patch白名单：enabled（自动true/按需false）、paceWriting（间隔true/连续false）、intervalMinutes（15–10080整数）、dailyCalls（每日调用，整数≥2）、dailyTokenLimit（每日Token，1–10亿）、clearDailyTokenLimit（明确取消每日Token上限true）、defaultTaskTokenLimit（新任务默认Token）、clearDefaultTaskTokenLimit（明确取消该默认上限true）、maxConcurrentTasks（并发正整数）、workStart/workEnd（完整HH:mm时段，允许跨夜；全天均00:00）。只填明确要求修改的字段，保留其他值；只调时间不自动开启推进；只改一个端点时从settings保留另一端，未知则追问。取消和设置同一上限不能同时填写。调用次数保护不能解除；笼统要求所有额度不限或修改权限应追问说明，不能部分修改后称全部完成。以后/今后表示即刻保存长期要求；明确从未来日期生效尚不支持，追问不能擅自立即生效。
+联系人级设置：{"kind":"settings","patch":{}}，不需要topicId。patch白名单：enabled（自动true/按需false）、paceWriting（间隔true/连续false）、intervalMinutes（15–10080整数）、dailyCalls（每日调用，整数≥2）、dailyTokenLimit（每日Token，1–10亿）、clearDailyTokenLimit（明确取消每日Token上限true）、defaultTaskTokenLimit（新任务默认Token）、clearDefaultTaskTokenLimit（明确取消该默认上限true）、maxConcurrentTasks（并发正整数）、goal（完整长期工作方向，不是角色人设）、notifyProgress（进展消息开关）、toolPermissionMode（inherit沿用系统/confirm逐次确认/auto读取自动修改前确认/full已授权工具自动）、permissionLevel（public公开网页/sources仅指定网页）、sources（完整无凭据HTTPS网页列表，最多5个）、searchEnabled（搜索新网页）、dailySearches（每日搜索1–24次）、shareDeliveries（共享自己的成果）、readContactDeliveries（读取其他联系人共享成果）、workStart/workEnd（完整HH:mm时段，允许跨夜；全天均00:00）。只填明确要求修改的字段，保留其他值；只调时间不自动开启推进；只改一个端点时从settings保留另一端，未知则追问。取消和设置同一上限不能同时填写。调用次数保护不能解除；笼统要求所有额度不限应说明调用保护，不能部分修改后称全部完成。用户明确修改权限可以使用上述字段，不能只写进goal冒充权限设置；仅指定网页需有网页列表并同时关闭搜索，未撤销的网页保留。没有搜索密钥不能声称开启搜索。工具策略不打开关闭的工具，也不暗中批准待确认请求。用户没有明确变更的权限不得扩大。以后/今后表示即刻保存长期要求；明确从未来日期生效尚不支持，追问不能擅自立即生效。
 结束保留成果用end，放弃用abandon；仅用户明确删除任务及其内容时用delete，程序会展示删除范围并确认，不能将“到这里就行”理解成删除。
 修改定点/周期用action=schedule并返回schedule完整对象：{"cadence":"daily|weekdays|weekly|once|monthly|interval","times":["HH:mm"]}，weekly加weekday(0周日–6周六)，once加未来date(YYYY-MM-DD)，monthly加monthDay(1–31或"last")，interval加intervalDays(1–36500)和anchorDate(YYYY-MM-DD)。保持原任务内容和未更改的日历字段。每月指定日不存在则跳过该月，不能擅自改月末；间隔起点未给需追问，“今天起”使用请求当地日期；从明天起每天可用intervalDays=1、anchorDate=明天日期。最多5个时刻，一次性只允许1个。不得仅写入约束冒充调度。指定结束日期或次数的周期当前不能完整表达，应必要追问说明，不能忽略结束条件。
 多任务且指代不清时追问，不能仅凭 focusTopicId 猜测。只有一个匹配任务或最近交流明确指向一个时才操作。跨联系人、批量请求不操作。

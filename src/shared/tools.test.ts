@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { getToolRiskLabel, parseToolArguments, shouldConfirmTool, validateToolArguments } from './tools'
 
 describe('tool protocol helpers', () => {
+  it('validates bounded string arrays without truncating URLs or retaining caller-owned arrays', () => {
+    const schema = { type: 'object' as const, properties: { sources: { type: 'array' as const, items: { type: 'string' as const, maxLength: 30 }, maxItems: 5 } }, additionalProperties: false }
+    const sources = ['https://example.com/']
+    const saved = validateToolArguments(schema, { sources })
+    sources.push('https://other.example/')
+    expect(saved.sources).toEqual(['https://example.com/'])
+    for (const value of ['https://example.com', [1], [null], [['nested']], Array(6).fill('url'), ['x'.repeat(31)]]) expect(() => validateToolArguments(schema, { sources: value })).toThrow('sources')
+  })
   it('uses an explicit contact policy without weakening inherited forced confirmation', () => {
     const forced = { risk: 'write' as const, requiresConfirmation: true, alwaysConfirm: true }
     expect(shouldConfirmTool(forced, 'full', 'inherit')).toBe(true)

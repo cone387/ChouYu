@@ -6,13 +6,21 @@ export type ToolExecutionStatus = 'requested' | 'running' | 'completed' | 'denie
 
 export interface ToolTaskReference { id: string; title: string; detail?: string }
 
+type ToolPropertySchema = {
+  type: 'string' | 'number' | 'boolean'
+  description?: string
+  maxLength?: number
+  enum?: string[]
+} | {
+  type: 'array'
+  description?: string
+  items: { type: 'string'; maxLength?: number }
+  maxItems: number
+}
+
 export interface ToolJsonSchema {
   type: 'object'
-  properties: Record<string, {
-    type: 'string' | 'number' | 'boolean'
-    description?: string
-    maxLength?: number
-  }>
+  properties: Record<string, ToolPropertySchema>
   required?: string[]
   additionalProperties?: boolean
 }
@@ -121,6 +129,11 @@ export function validateToolArguments(
     if (!property) {
       if (schema.additionalProperties === false) continue
       result[key] = value
+      continue
+    }
+    if (property.type === 'array') {
+      if (!Array.isArray(value) || value.length > property.maxItems || value.some(item => typeof item !== 'string' || property.items.maxLength !== undefined && item.length > property.items.maxLength)) throw new Error(`工具参数 ${key} 类型或长度无效`)
+      result[key] = [...value]
       continue
     }
     if (typeof value !== property.type) throw new Error(`工具参数 ${key} 类型无效`)
