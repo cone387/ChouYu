@@ -4,6 +4,7 @@ import { contactConversation } from './conversation'
 import { waitForToolApproval } from '../tool-approval'
 import { createContactTools } from './tools'
 import type { ToolExecutionContext } from '../tools/registry'
+import { INDUSTRY_LABELS } from '../../shared/characters'
 
 function fixture(plan: unknown) {
   const data = { topics: [{ id: 't', revision: 4, title: '评审', goal: '可以一次评价1–3个 idea', constraints: '' }], runs: [{ id: 'r', topicId: 't', status: 'waiting' }], focusTopicId: 't' }
@@ -14,6 +15,12 @@ function fixture(plan: unknown) {
   return { data, read, model, execute, run }
 }
 describe('contact chat routing and receipts', () => {
+  it('supplies real category identifiers and labels to natural-language profile interpretation', async () => {
+    await routeContactChange([{ role: 'user', content: '把分类改成技术' }], {
+      read: async () => ({ topics: [], runs: [], settings: {} }), execute: vi.fn(),
+      model: async (_prompt, content) => { expect(JSON.parse(content).profileCategories).toEqual(INDUSTRY_LABELS); return '{"kind":"none"}' }
+    })
+  })
   it('keeps the interpretation snapshot revision for every combined setting step', async () => {
     let changed = false
     const configuration = vi.fn(async () => ({ profile: { revision: changed ? 'new' : 'old' }, skills: { revision: 1, skills: [] } }) as any)

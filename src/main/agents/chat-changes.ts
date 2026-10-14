@@ -10,6 +10,7 @@ import { skillActions } from './profile-tools'
 import { CONTACT_INTERACTION_PROMPT, routeInteraction } from './interaction-routing'
 import type { ContactInteraction, ContactInteractionSubmission } from '../../shared/contact-interactions'
 import { validateOutputPreference, type ContactOutputPreferenceRecord } from '../../shared/contact-output'
+import { INDUSTRY_LABELS } from '../../shared/characters'
 
 export const CONTACT_CHANGE_PROMPT = `判断用户最新一句是否在调整当前联系人的已有任务或联系人本身的工作设置。你只负责路由，不直接回复“已改好”。只返回一个 JSON 对象。明确要求调整工作设置（含权限、通知、搜索和成果共享）时返回 settings，不能当作 none 普通聊天，即使还没有任务。
 同一联系人一次明确调整多个配置领域时返回{"kind":"configuration","changes":[各自的profile/settings/skill/credential/output对象]}，每个领域最多一项，output仅contact范围，同域字段合并在一个patch。程序分别保存待确认步骤及各自回执，可从原卡片继续处理；不是批量任务。不能遗漏其中一项、不能把多个任务操作混入组合。普通闲聊、进度询问、讨论方案、否定修改、引用他人指令、新任务：{"kind":"none"}。
@@ -94,7 +95,7 @@ export async function routeContactChange(messages: AIChatMessage[], deps: Deps):
   const outputPreferences = await deps.outputPreferences?.() ?? []
   const prompt = CONTACT_CHANGE_PROMPT + (deps.assistant ? '\n当前为ChouYu：资料、工作设置和技能按上述协议修改；日常职责、问候、休息、晨报与定时安排返回none，由原助手安排工具保存。' : '')
   const content = JSON.stringify({
-    configuration, pendingInteractions, outputPreferences,
+    configuration, pendingInteractions, outputPreferences, profileCategories: INDUSTRY_LABELS,
     now: new Date().toString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, latest: latest.content, conversation: messages.slice(-6, -1).map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(-1200) : '' })),
     settings: data.settings, topics: data.topics, pending: data.runs.filter(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status)), focusTopicId: data.focusTopicId
   })
