@@ -3,6 +3,7 @@ import type { AgentOverview, AgentSettings } from '../../../../shared/agents'
 import { contactWorkStatus } from '../../../../shared/work-settings'
 import './ContactWorkSettings.css'
 import WorkTimePicker from './WorkTimePicker'
+import ContactOutputDialog from './ContactOutputDialog'
 
 const amount = (n?: number) => n === undefined ? '' : String(n / 10000)
 type Feedback = { error?: string; message?: string }
@@ -55,9 +56,10 @@ function WorkHours({ value, disabled, feedback, onApply }: {
   </form>
 }
 
-export default function ContactWorkSettings({ characterId, data, keyConfigured, busy, onSaved, onCredentialChanged }: {
+export default function ContactWorkSettings({ characterId, data, keyConfigured, busy, onSaved, onCredentialChanged, permissionsOnly = false }: {
   characterId: string; name?: string; data: AgentOverview; keyConfigured: boolean; busy: boolean
   onSaved: (data: AgentOverview) => void; onCredentialChanged: () => Promise<void>
+  permissionsOnly?: boolean
 }) {
   const latest = useRef(data); latest.current = data
   const lock = useRef(false), keyId = useId(), modeId = useId(), cadenceId = useId()
@@ -65,6 +67,13 @@ export default function ContactWorkSettings({ characterId, data, keyConfigured, 
   const [feedback, setFeedback] = useState<Record<string, Feedback>>({})
   const [restrictedSelected, setRestrictedSelected] = useState(false)
   const [key, setKey] = useState('')
+  const [keyRevision, setKeyRevision] = useState<number>()
+  useEffect(() => {
+    let current = true; setKeyRevision(undefined); setKey('')
+    void window.electronAPI.agents.searchCredential(characterId).then(value => { if (current) setKeyRevision(value.revision) }).catch(error => { if (current) setFeedback(value => ({ ...value, key: { error: String(error) } })) })
+    return () => { current = false }
+  }, [characterId])
+  const [outputDialog, setOutputDialog] = useState(false)
   useEffect(() => {
     const timer = setTimeout(() => setFeedback(current => Object.fromEntries(Object.entries(current).filter(([, value]) => value.error || value.message === '保存中…'))), 2500)
     return () => clearTimeout(timer)
@@ -103,7 +112,7 @@ export default function ContactWorkSettings({ characterId, data, keyConfigured, 
   const restricted = settings.permissionLevel === 'sources' || restrictedSelected
   const tokens = data.tokenUsage
   return <div className="work-settings-flat" aria-label="工作设置" aria-busy={saving !== null}>
-    <section className="work-setting-section" aria-label="工作方式">
+    {!permissionsOnly && <><section className="work-setting-section" aria-label="工作方式">
       <h3>工作方式</h3>
       <div className="work-setting-choices" role="radiogroup" aria-label="工作方式">
         <label><input type="radio" name={modeId} data-work-mode="manual" checked={!settings.enabled} disabled={disabled} onChange={() => void save('mode', { enabled: false })} />按需推进</label>
@@ -137,6 +146,7 @@ export default function ContactWorkSettings({ characterId, data, keyConfigured, 
     <section className="work-setting-section" aria-label="进展通知">
       <h3>进展通知</h3>{toggle('notifyProgress', '将工作进展发送到聊天', settings.notifyProgress !== false)}
     </section>
+    </>}
     <section className="work-setting-section" aria-label="资料与协作权限">
       <h3>资料与协作权限</h3>
       <div className="work-setting-row" data-contact-tool-policy><label htmlFor={`${modeId}-tools`}>工具执行确认</label>
@@ -160,10 +170,11 @@ export default function ContactWorkSettings({ characterId, data, keyConfigured, 
         onApply={value => save('sources', { sources: value.split('\n').map(v => v.trim()).filter(Boolean), ...(restricted ? { permissionLevel: 'sources', searchEnabled: false } : {}) }).then(ok => { if (ok) setRestrictedSelected(false); return ok })} />
       {toggle('searchEnabled', '搜索新网页', settings.searchEnabled === true, restricted || !keyConfigured)}
       {!restricted && <>
-        <form className="work-setting-row" onSubmit={e => { e.preventDefault(); void execute('key', async () => { await window.electronAPI.agents.searchCredential(characterId, key); setKey(''); await onCredentialChanged() }, '密钥已保存') }}>
+        <form className="work-setting-row" onSubmit={e => { e.preventDefault(); void execute('key', async () => { const saved = await window.electronAPI.agents.searchCredential(characterId, key, keyRevision); setKeyRevision(saved.revision); setKey(''); await onCredentialChanged() }, '密钥已保存') }}>
           <label htmlFor={keyId}>搜索密钥</label><div className="work-setting-editor"><input id={keyId} data-agent-search-key type="password" autoComplete="new-password" value={key} onChange={e => setKey(e.target.value)} placeholder={keyConfigured ? '已配置，输入可替换' : 'Brave Search API Key'} />
           {key.trim() && <button data-agent-search-key-save type="submit" disabled={disabled}>应用</button>}
-          {keyConfigured && <button type="button" disabled={disabled} onClick={() => void execute('key', async () => { await window.electronAPI.agents.searchCredential(characterId, ''); await onCredentialChanged() }, '密钥已移除')}>移除</button>}</div>
+          {keyConfigured && <button type="button" disabled={disabled || keyRevision === undefined} onClick={() => void execute('key', async () => { const saved = await window.electronAPI.agents.searchCredential(characterId, '', keyRevision); setKeyRevision(saved.revision); await onCredentialChanged() }, '密钥已移除')}>移除</button>}</div>
+          {feedback.key?.error && <button type="button" disabled={disabled} onClick={() => void execute('key', async () => { const current = await window.electronAPI.agents.searchCredential(characterId); setKeyRevision(current.revision); await onCredentialChanged() }, '已读取最新配置，输入已保留；核对后可再次保存')}>重新读取配置</button>}
           <p className="work-setting-hint">密钥修改会停止未完成的本轮。<a href="https://api-dashboard.search.brave.com/" target="_blank" rel="noopener noreferrer">获取密钥</a></p><Result feedback={feedback.key} />
         </form>
         {settings.searchEnabled && <Field label="每日搜索上限" value={String(settings.dailySearches ?? 8)} min={1} max={24} step="1" unit="次" disabled={disabled} feedback={feedback.dailySearches} onApply={value => numeric('dailySearches', value)} />}
@@ -171,7 +182,9 @@ export default function ContactWorkSettings({ characterId, data, keyConfigured, 
       {toggle('shareDeliveries', '共享自己的任务成果', settings.shareDeliveries === true)}
       {toggle('readContactDeliveries', '读取其他联系人共享的成果', settings.readContactDeliveries === true)}
       <p className="work-setting-hint">不共享私聊和独立记忆，不允许修改其他联系人的任务。</p>
+      <div className="work-setting-row"><span>成果阅读</span><button type="button" disabled={disabled} onClick={() => setOutputDialog(true)}>阅读偏好</button></div>
     </section>
 
+    {outputDialog && <ContactOutputDialog characterId={characterId} onClose={() => setOutputDialog(false)} />}
   </div>
 }

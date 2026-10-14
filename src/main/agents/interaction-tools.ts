@@ -8,7 +8,7 @@ export function createInteractionTools(access: {
   offer(owner: string, sourceKey: string, request: ContactActionRequest): Promise<{ id: string }>
 }): RegisteredTool[] {
   return [{ name: 'request_contact_action', displayName: '发送处理卡片', source: 'builtin', risk: 'safe', requiresConfirmation: false,
-    description: '需要用户选择方案、补充回复、确认配置或反馈成果时，发送可直接操作的持久卡片。只发卡片，不执行其中操作。request是JSON：purpose(permission/configuration/choice/material/feedback/confirmation)、title、body、subject({kind:contact}或{kind:task,topicId,revision}或{kind:delivery,topicId,revision,version})、actions(1–8项{id,label,tool,arguments})、可选input({label,argument:answer或reason,maxLength<=2000,required})。只使用已读取的真实工具和版本，操作来自当前联系人；来源与会话由系统绑定。选择不得包含批量操作；用户选一个方案只执行一个操作。需要正文反馈时绑定成果固定版本，用revise_contact_presentation或update_contact_topic；不得用进度卡代替正文。',
+    description: '需要用户选择方案、补充回复、确认配置或反馈成果时，发送可直接操作的持久卡片。只发卡片，不执行其中操作。request是JSON：purpose(permission/configuration/choice/material/feedback/confirmation)、title、body、subject({kind:contact}或{kind:task,topicId,revision}或{kind:delivery,topicId,revision,version})、actions(1–8项{id,label,tool,arguments})、可选input({label,argument:answer或reason,maxLength<=2000,required})。只使用已读取的真实工具和版本，操作来自当前联系人；来源与会话由系统绑定。选择不得包含批量操作；用户选一个方案只执行一个操作。需要正文反馈时绑定成果固定版本，正文认可/修订用submit_contact_delivery_feedback，排版修订用revise_contact_presentation；不得用进度卡代替正文。',
     inputSchema: { type: 'object', properties: { request: { type: 'string', description: '最多100000字符的交互请求JSON。不得含凭据。' } }, required: ['request'], additionalProperties: false },
     async execute(args, context) {
       const owner = access.owner(context.sessionId)

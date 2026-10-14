@@ -3,6 +3,7 @@ import { useContactVisible } from '../Contacts/useContactVisible'
 import { useEffect, useRef, useState } from 'react'
 import type { ContactBudgetKey, ContactInteraction } from '../../../../shared/contact-interactions'
 import './ContactInteractionCard.css'
+import ContactFailureRemedy from './ContactFailureRemedy'
 
 export default function ContactInteractionCard({ characterId, interactionId, fallback, onOpen, showOwner = false, active = true }: {
   characterId: string; interactionId: string; fallback: string; showOwner?: boolean; onOpen?: () => void; active?: boolean
@@ -16,6 +17,7 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
   const refreshRef = useRef<() => Promise<void>>(async () => {})
   const submitting = useRef(false)
   const generation = useRef(0)
+  const hydrated = useRef('')
   useEffect(() => { setView(null); setAnswer(''); setLimits({}); setError(''); setReadError('') }, [characterId, interactionId])
   useEffect(() => {
     if (!visible) return
@@ -26,6 +28,10 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
         const next = await window.electronAPI.agents.getInteraction(characterId, interactionId)
         if (disposed || ticket !== generation.current) return
         setView(next); setReadError('')
+        if (hydrated.current !== interactionId) {
+          hydrated.current = interactionId
+          if (next.kind === 'action' && next.status === 'failed' && next.request.input?.argument !== 'credential' && next.response?.text) setAnswer(next.response.text)
+        }
         setLimits(previous => Object.fromEntries(next.budgets.map(field => [field.key, previous[field.key] ?? String(field.limit)])))
       } catch (e) { if (!disposed && ticket === generation.current) setReadError(e instanceof Error ? e.message : '暂时无法读取处理状态') }
     }
@@ -51,12 +57,12 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       await refreshRef.current()
     } finally { submitting.current = false; setBusy(false) }
   }
-  const submitAction = async (actionId?: string) => {
+  const submitAction = async (actionId?: string, acknowledge = false) => {
     if (!view || view.kind !== 'action' || submitting.current || !['pending', 'failed'].includes(view.status)) return
     submitting.current = true; setBusy(true); setError(''); generation.current++
     try {
       const result = await window.electronAPI.agents.submitInteraction(characterId, interactionId, { version: view.version,
-        ...(actionId ? { actionId, ...(view.request.input ? (view.request.input.argument === 'credential' ? { credential: answer } : { text: answer }) : {}) } : { reject: true }) })
+        ...(acknowledge ? { acknowledge: true } : actionId ? { actionId, ...(view.request.input ? (view.request.input.argument === 'credential' ? { credential: answer } : { text: answer }) : {}) } : { reject: true }) })
       setView(result)
       if (result.status === 'resolved') setAnswer('')
     } catch (e) { setError(e instanceof Error ? e.message : '提交失败，请重试'); await refreshRef.current() }
@@ -72,13 +78,14 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       <strong className="contact-interaction-title">{view.request.title}</strong>
       <p className="contact-interaction-question">{view.request.body}</p>
       {view.result && <p role="status" className="contact-interaction-result">{view.result}</p>}
-      {['pending', 'failed'].includes(view.status) && view.retryable !== false && <>
+      {view.status === 'failed' && view.retryable === false && <button type="button" disabled={busy} onClick={() => void submitAction(undefined, true)}>我已核对当前状态，关闭此事项</button>}
+      {['pending', 'failed'].includes(view.status) && <>
         {view.request.input && <label className="contact-interaction-field"><span>{view.request.input.label}</span>{view.request.input.argument === 'credential'
           ? <><input type="password" autoComplete="off" value={answer} onChange={e => setAnswer(e.target.value)} maxLength={view.request.input.maxLength} required disabled={busy} /><span className="contact-interaction-usage">仅保存到此联系人的凭据设置，不发送给模型。</span></>
-          : <textarea value={answer} onChange={e => setAnswer(e.target.value)} maxLength={view.request.input.maxLength} required={view.request.input.required} rows={3} disabled={busy} />}</label>}
-        <div className="contact-interaction-actions">{view.request.actions.map(action => <button key={action.id} type="button" className="primary" disabled={busy || Boolean(view.request.input?.required && !answer.trim())} onClick={() => void submitAction(action.id)}>{busy ? '正在处理…' : action.label}</button>)}
+          : <textarea value={answer} onChange={e => setAnswer(e.target.value)} maxLength={view.request.input.maxLength} required={view.request.input.required} rows={3} disabled={busy} readOnly={view.retryable === false} />}</label>}
+        {view.retryable !== false && <div className="contact-interaction-actions">{view.request.actions.map(action => <button key={action.id} type="button" className="primary" disabled={busy || Boolean(view.request.input?.required && !answer.trim())} onClick={() => void submitAction(action.id)}>{busy ? '正在处理…' : action.label}</button>)}
           <button type="button" disabled={busy} onClick={() => void submitAction()}>拒绝</button>
-        </div>
+        </div>}
       </>}
     </> : view ? <>
       {showOwner && view.characterName && <div className="contact-interaction-task">{view.characterName}</div>}
@@ -88,6 +95,7 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       {view.impact && <p className="contact-interaction-usage">{view.impact}</p>}
       {view.failureDetail && <details className="contact-interaction-diagnostic"><summary>技术诊断</summary><p>{view.failureDetail}</p></details>}
       {view.status === 'pending' && view.recoveryMessage && <p className="contact-interaction-recovery" role="status">{view.recoveryMessage}</p>}
+      {view.status === 'pending' && view.kind === 'retry' && <ContactFailureRemedy view={view} />}
       {view.status === 'pending' ? <form onSubmit={submit} noValidate>
         {view.budgets.map(field => <label className="contact-interaction-field" key={field.key}>
           <span>{field.label}</span>

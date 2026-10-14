@@ -41,7 +41,15 @@ export class ContactActions {
   }
   get(owner: string, id: string): ContactActionInteraction {
     const value = this.read(owner, id), subject = value.request.subject
-    if (['pending', 'failed'].includes(value.status) && subject.kind !== 'contact') {
+    if (['pending', 'failed'].includes(value.status) && value.retryable !== false && value.request.actions.some(option => {
+      if (option.tool !== 'set_contact_output_preference') return false
+      const args = option.arguments
+      try {
+        const scope = args.scope === 'contact' ? { kind: 'contact' as const } : args.scope === 'task' ? { kind: 'task' as const, topicId: String(args.topicId) } : { kind: 'delivery' as const, topicId: String(args.topicId), version: Number(args.deliveryVersion) }
+        return this.store.outputs.get(owner, scope).revision !== args.revision
+      } catch { return true }
+    })) { value.status = 'obsolete'; value.result = '阅读偏好或目标已变化，此操作已失效。'; value.sequence++; this.save(value) }
+    if (['pending', 'failed'].includes(value.status) && value.retryable !== false && subject.kind !== 'contact') {
       const row = this.store.db.prepare('SELECT value FROM topics WHERE id=? AND character_id=?').get(subject.topicId, owner) as { value: string } | undefined
       const topic = row && JSON.parse(row.value)
       if (!topic || topic.revision !== subject.revision || subject.kind === 'delivery' && this.store.deliveries.get(subject.topicId)?.version !== subject.version) {
@@ -102,6 +110,15 @@ export class ContactActions {
       value.status = 'resolved'; value.result = '已拒绝，此操作未执行。'; value.sequence++
       this.save(value)
       return this.view(value)
+    }).immediate()
+  }
+  acknowledge(owner: string, id: string, version: string) {
+    return this.store.db.transaction(() => {
+      const value = this.read(owner, id)
+      if (value.status === 'resolved') return this.view(value)
+      if (value.status !== 'failed' || value.retryable !== false || value.version !== version) throw new Error('仅能关闭已明确核对过的执行结果不确定事项，请重新读取。')
+      value.status = 'resolved'; value.result = '你已确认核对当前状态并关闭此事项。系统未补执行，也未将原操作标为成功。'; value.sequence++
+      this.save(value); return this.view(value)
     }).immediate()
   }
   recoverInterrupted() {

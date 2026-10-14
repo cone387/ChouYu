@@ -19,6 +19,7 @@ import type { AppConfig } from '../../shared/config'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { streamAIChat } from '../ai'
 import { AgentStore } from './store'
+import { saveDeliveryFeedback } from './delivery-feedback'
 import { AgentRuntime, type AgentModel } from './runtime'
 import { applyContactWorkSettingsPatch, validateContactWorkSettingsPatch } from '../../shared/contact-work-settings'
 import type { AgentSettings, AgentTopicStatus } from '../../shared/agents'
@@ -97,6 +98,7 @@ export class AgentService {
       case 'finishAction': { const result = this.store.actions.finish(id, String(args[0]), String(args[1]), args[2] as import('../../shared/contact-actions').ContactActionOutcome); this.changed(id); return result }
       case 'failAction': { const result = this.store.actions.fail(id, String(args[0]), String(args[1]), String(args[2])); this.changed(id); return result }
       case 'rejectAction': { const result = this.store.actions.reject(id, String(args[0]), String(args[1])); this.changed(id); return result }
+      case 'acknowledgeAction': { const result = this.store.actions.acknowledge(id, String(args[0]), String(args[1])); this.changed(id); return result }
       case 'submitInteraction': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         this.checkSearch(id)
@@ -158,7 +160,21 @@ export class AgentService {
         this.store.reviseCitation(id, args[0] as number, args[1] as import('../../shared/contact-content').ContentCitation, args[2] as string, this.identity(id).conversation)
         break
       }
+      case 'deliveryFeedback': {
+        if (args[3] === 'revise') {
+          if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
+          this.checkSearch(id)
+        }
+        const result = saveDeliveryFeedback(this.store, id, args[0] as string, args[1] as number, args[2] as number, args[3] as string, args[4] as string, this.identity(id).conversation)
+        this.changed(id); if (args[3] === 'revise') this.tick(); return result
+      }
       case 'setDeliveryFavorite': return this.store.portfolio.favorite(id, args[0] as string, args[1] as boolean)
+      case 'outputPreferences': return this.store.outputs.list(id, args[0] as string | undefined, args[1] as number | undefined)
+      case 'outputPreferenceCatalogue': return this.store.outputs.catalogue(id)
+      case 'setOutputPreference': {
+        const result = this.store.outputs.save(id, args[0] as import('../../shared/contact-output').ContactOutputScope, args[1] as number, args[2], args[3] as string)
+        this.changed(id); return result
+      }
       case 'saveDeliveryReading': return this.store.portfolio.saveReading(id, args[0] as import('../../shared/contact-content').ReadingPosition)
       case 'deliveryReading': return this.store.portfolio.reading(id, args[0] as string)
       case 'reviseTopic': {

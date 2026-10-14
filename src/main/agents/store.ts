@@ -15,6 +15,7 @@ import { validateChapterContinuation } from './chapter-continuation'
 import { AgentTaskFailures } from './task-failures'
 import { ContactInteractions } from './interactions'
 import { ContactActions } from './action-interactions'
+import { ContactOutputPreferences } from './output-preferences'
 import { AgentTokenBudget } from './token-budget'
 import Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
@@ -54,6 +55,7 @@ export class AgentStore {
   readonly topics: AgentTopics
   readonly decisions: ContactInteractions
   readonly actions: ContactActions
+  readonly outputs: ContactOutputPreferences
   readonly notices: AgentNotices
   readonly tokens: AgentTokenBudget
   readonly deliveries: AgentDeliveries
@@ -126,6 +128,7 @@ export class AgentStore {
     this.tokens = new AgentTokenBudget(this.db)
     this.decisions = new ContactInteractions(this)
     this.actions = new ContactActions(this)
+    this.outputs = new ContactOutputPreferences(this)
     if (version < 8) this.db.transaction(() => { this.tokens.importHistory(); this.db.pragma('user_version = 8') })()
     if (version < 9) this.db.transaction(() => { this.portfolio.backfill(); this.db.pragma('user_version = 9') })()
     this.materials = new AgentMaterials(this.db)

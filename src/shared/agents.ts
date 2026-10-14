@@ -127,6 +127,9 @@ export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, Contact
   contactHome(characterId: string): Promise<import('./contact-home').ContactHomeData>
   pendingInteractions(characterId: string): Promise<(import('./contact-interactions').ContactInteraction & { characterName: string })[]>
   getInteraction(characterId: string, interactionId: string): Promise<import('./contact-interactions').ContactInteraction>
+  outputPreferences(characterId: string, topicId?: string, version?: number): Promise<import('./contact-output').ContactOutputPreferenceRecord[]>
+  profile(characterId: string): Promise<import('./contact-profile-settings').ContactProfileSnapshot>
+  setOutputPreference(characterId: string, scope: import('./contact-output').ContactOutputScope, revision: number, patch: import('./contact-output').ContactOutputPreference): Promise<import('./contact-output').ContactOutputPreferenceRecord>
   submitInteraction(characterId: string, interactionId: string, submission: import('./contact-interactions').ContactInteractionSubmission): Promise<import('./contact-interactions').ContactInteraction>
   dashboard(): Promise<AgentDashboard>
   summary(characterId: string): Promise<AgentSummary>
@@ -136,7 +139,7 @@ export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, Contact
   exportDelivery(characterId: string, topicId: string, version: number, format?: 'markdown' | 'html'): Promise<boolean>
   reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string, scope?: 'content' | 'presentation', deliveryVersion?: number): Promise<AgentOverview>
   savePreferences(characterId: string, settings: AgentSettings, expectedRevision?: number): Promise<AgentOverview>
-  searchCredential(characterId: string, key?: string): Promise<{ configured: boolean }>
+  searchCredential(characterId: string, key?: string, revision?: number): Promise<{ configured: boolean; revision: number }>
   get(characterId: string): Promise<AgentOverview>
   save(characterId: string, settings: AgentSettings): Promise<AgentOverview>
   run(characterId: string, topicId?: string): Promise<AgentOverview>

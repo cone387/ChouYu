@@ -1,10 +1,21 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { streamAIChat } from '../ai'
-import { routineSummaryInput, summarizeCompanionWork } from './companion-summary'
+import { routineSummaryInput, routineSummaryInstruction, summarizeCompanionWork } from './companion-summary'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { contactCommunicationRules } from '../../shared/contact-communication'
 vi.mock('../ai', () => ({ streamAIChat: vi.fn() }))
 afterEach(() => vi.useRealTimers())
+
+it('applies saved expression preferences to the original routine and companion requests', async () => {
+  const preferences = [{ kind: 'briefing' as const, instruction: '先给待处理事项，再说明依据' }]
+  expect(routineSummaryInstruction('', '', preferences)).toContain(preferences[0].instruction)
+  vi.mocked(streamAIChat).mockImplementationOnce(async (_messages, system, _config, callback) => {
+    expect(system).toContain(preferences[0].instruction)
+    expect(system).toContain('不改变事实')
+    callback('有一项待回复。', false)
+  })
+  expect(await summarizeCompanionWork([], DEFAULT_APP_CONFIG, '', undefined, '', preferences)).toBe('有一项待回复。')
+})
 
 it('grounds a delayed midnight briefing in the local check date, not the UTC or scheduled date', () => {
   const input = routineSummaryInput('检查重试时间', Date.parse('2026-10-13T15:56:00Z'), Date.parse('2026-10-12T16:56:00Z'), {

@@ -50,7 +50,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('判断用户最新一句是否在调整'))) {
         const context = JSON.parse(payload.messages.at(-1).content)
         const result = context.latest?.startsWith('验收搜索安全输入') ? { kind: 'credential' }
+          : context.latest?.startsWith('验收组合设置') ? { kind: 'configuration', changes: [{ kind: 'profile', patch: { avatar: '🐟' } }, { kind: 'settings', patch: { readContactDeliveries: true } }] }
           : context.latest?.startsWith('验收卡片同意') ? { kind: 'interaction', interactionId: context.pendingInteractions[0].id, actionId: 'apply', evidence: '同意' }
+          : context.latest?.startsWith('验收阅读偏好') ? { kind: 'output', scope: 'contact', patch: { kind: 'review', density: 'compact' } }
+          : context.latest?.startsWith('验收这次阅读') ? { kind: 'output', scope: 'delivery', topicId: context.topics[0].id, patch: { kind: 'writing', density: 'comfortable' } }
           : context.latest?.startsWith('验收对话资料') ? { kind: 'profile', patch: { name: '对话新名字', model: 'agent-smoke-next', soulMd: '独立评审者' } }
           : context.latest?.startsWith('验收对话权限') ? { kind: 'settings', patch: { permissionLevel: 'sources', sources: ['https://example.com/'], searchEnabled: false, notifyProgress: false, shareDeliveries: true } }
           : context.latest?.startsWith('验收对话技能') ? { kind: 'skill', skillId: 'conversation-review', action: 'enable' }

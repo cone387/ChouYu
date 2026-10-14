@@ -19,7 +19,7 @@ import { formatSessionMarkdown } from '../shared/sessions'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig } from '../shared/characters'
 import { agentContext, removeContactAgent, contactAgentsCall, onContactContextChanged } from './agents'
 import { routeContactChange } from './agents/chat-changes'
-import { readContactConfiguration, submitContactInteraction } from './agents'
+import { readContactConfiguration, submitContactInteraction, pendingContactInteractions } from './agents'
 import { CONTACT_ACTION_TOOLS, type ContactActionTool, type ContactActionInteraction } from '../shared/contact-actions'
 import {
   type MemoryCandidateInput,
@@ -644,6 +644,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     activeAIRequests.set(requestKey, controller)
     let taskMutationRequested = false
+    const configurationStepTools = new Set<string>()
     let contactContext: import('../shared/contact-content').ContactContextRecord | undefined
     let contextSent = false
     let ownMemoryMutation = false, memoryMutationReceipt = ''
@@ -681,7 +682,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)
             && (!SKILL_TOOLS.some(skill => skill.name === tool.name) || skillTools.definitions.some(skill => skill.name === tool.name))
             && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
-          execute: async (call: AIToolCall) => {
+          execute: async (call: AIToolCall, configurationStep?: { index: number; total: number }) => {
             const definition = getRegisteredTool(call.name)
             if (!definition) return `工具不存在：${call.name}`
             if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) return `工具已被用户禁用：${call.name}`
@@ -689,7 +690,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             try {
               await assertContext()
               const taskMutation = CONTACT_ACTION_TOOLS.includes(call.name as ContactActionTool) || ['request_contact_action', 'edit_contact_profile', 'configure_contact_skill', 'edit_contact_task', 'edit_contact_work_settings', 'set_contact_schedule', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
-              if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
+              if (configurationStep && (!['edit_contact_profile', 'edit_contact_work_settings', 'configure_contact_skill', 'set_contact_search_credential', 'set_contact_output_preference'].includes(call.name) || configurationStepTools.has(call.name) || configurationStepTools.size >= 5 || call.name === 'set_contact_output_preference' && arguments_.scope !== 'contact')) throw new Error('组合设置步骤不在当前联系人允许范围内。')
+              if (taskMutation && taskMutationRequested && !configurationStep) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
               const prepared: PreparedTool = SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
               if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) throw new Error('工具已被用户禁用。')
@@ -703,9 +705,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                 return result.content.slice(0, 50_000)
               }
               if (taskMutation) taskMutationRequested = true
+              if (configurationStep) configurationStepTools.add(call.name)
               const contactPolicy = owner ? (await contactAgentsCall(owner, 'get') as import('../shared/agents').AgentOverview).settings.toolPermissionMode : undefined
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              const needsApproval = prepared.confirmationRequired === true || shouldConfirmTool(definition, getConfig().toolPermissionMode, contactPolicy)
+              const needsApproval = Boolean(configurationStep) || prepared.confirmationRequired === true || shouldConfirmTool(definition, getConfig().toolPermissionMode, contactPolicy)
               sendToolEvent(event.sender, {
                 requestId: request.requestId,
                 callId: call.id,
@@ -718,9 +721,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               if (needsApproval) {
                 if (owner && request.sessionId && CONTACT_ACTION_TOOLS.includes(call.name as ContactActionTool)) {
                   const card = await contactAgentsCall<ContactActionInteraction>(owner, 'offerAction', [`${request.requestId}:${call.id}`, {
-                    purpose: 'confirmation', title: definition.displayName, body: prepared.preview || definition.description,
+                    purpose: 'confirmation', title: definition.displayName, body: `${configurationStep ? `同次设置调整 ${configurationStep.index}/${configurationStep.total}。此项单独确认并保存。\n` : ''}${prepared.preview || definition.description}`,
                     sessionId: request.sessionId,
-                    subject: typeof arguments_.topicId === 'string' && Number.isSafeInteger(arguments_.revision)
+                    ...(configurationStep ? { configurationGroup: { id: request.requestId, ...configurationStep } } : {}),
+                    subject: call.name !== 'set_contact_output_preference' && typeof arguments_.topicId === 'string' && Number.isSafeInteger(arguments_.revision)
                       ? { kind: typeof arguments_.deliveryVersion === 'number' ? 'delivery' : 'task', topicId: arguments_.topicId, revision: arguments_.revision, ...(typeof arguments_.deliveryVersion === 'number' ? { version: arguments_.deliveryVersion } : {}) }
                       : { kind: 'contact' },
                     actions: [{ id: 'apply', label: '确认执行', tool: call.name, arguments: arguments_ }]
@@ -793,8 +797,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (owner && owner !== ASSISTANT_CHARACTER_ID && chatTools && !currentCitations?.length) {
         const routed = await routeContactChange(request.messages, {
           configuration: async () => readContactConfiguration(owner),
-          interactions: () => contactAgentsCall(owner, 'pendingInteractions'),
-          submitInteraction: (id, submission) => submitContactInteraction(owner, id, submission, mainWindow),
+          outputPreferences: async () => contactAgentsCall(owner, 'outputPreferenceCatalogue'),
+          interactions: () => pendingContactInteractions(owner),
+          submitInteraction: async (id, submission) => {
+            const card = (await pendingContactInteractions(owner)).find(card => card.id === id)
+            if (!card) throw new Error('该事项已处理或不属于可处理的联系人，请重新读取。')
+            return submitContactInteraction(card.characterId, id, submission, mainWindow)
+          },
           assistant: owner === DEFAULT_CHARACTER_ID,
           read: (method, args) => contactAgentsCall(owner, method, args),
           model: async (prompt, content) => {
@@ -805,7 +814,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             }, controller.signal, undefined, { timeoutMs: 60000, maxOutputTokens: 3000 })
             return output
           },
-          execute: chatTools.execute
+          execute: chatTools.execute,
+          executeConfigurationStep: (call, step) => chatTools.execute(call, step)
         })
         if (routed !== undefined) {
           return { ok: true, reply: routed }

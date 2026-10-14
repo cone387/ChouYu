@@ -15,6 +15,7 @@ import ReactMarkdown from 'react-markdown'
 import ContactCitation from '../Contacts/ContactCitation'
 import ContactContextReferences from '../Contacts/ContactContextReferences'
 import ContactDeliveryReceipt from '../Contacts/ContactDeliveryReceipt'
+import ContactMessageOutput from '../Contacts/ContactMessageOutput'
 import { ContactLink } from '../Contacts/contactNavigation'
 import remarkGfm from 'remark-gfm'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../../../../shared/conversation-search'
@@ -288,6 +289,8 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
                 <PluginMessageCard data={msg.pluginData} />
               ) : progressUpdate && !searching ? (
                 <AgentProgressCard update={progressUpdate} />
+              ) : msg.role === 'assistant' && msg.communication?.characterId === character?.id && (msg.communication?.intent === 'delivery' || msg.communication?.source.kind === 'proactive') ? (
+                <><ContactMessageOutput body={linkedInteractions.content} communication={msg.communication} active={active} />{linkedInteractions.refs.map(ref => <ContactInteractionCard key={`${ref.characterId}:${ref.id}`} characterId={ref.characterId} interactionId={ref.id} fallback="待处理事项" showOwner />)}</>
               ) : msg.role === 'assistant' ? (
                 <> <ReactMarkdown
                   remarkPlugins={[remarkGfm]}

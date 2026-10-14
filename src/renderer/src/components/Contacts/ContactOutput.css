@@ -1,0 +1,14 @@
+.contact-output { min-width: 0; overflow-wrap: anywhere; }
+.contact-output > details > summary { cursor: pointer; padding-block: .5rem; }
+.contact-output .contact-markdown { line-height: 1.8; }
+.contact-output[data-contact-output="writing"] .contact-markdown { max-width: 72ch; margin-inline: auto; line-height: 1.95; }
+.contact-output[data-contact-output="writing"] .contact-markdown p { margin-block: 1.1em; }
+.contact-output[data-contact-output="ideas"] .contact-markdown h2,
+.contact-output[data-contact-output="review"] .contact-markdown h2 { padding-top: .65em; border-top: 1px solid var(--border-color, #8884); }
+.contact-output[data-contact-output="research"] .contact-markdown { font-variant-numeric: tabular-nums; }
+.contact-output[data-contact-output="plan"] .contact-markdown ol > li { padding-inline-start: .35em; margin-block: .8em; }
+.contact-output[data-contact-output="briefing"] .contact-markdown li { margin-block: .45em; }
+.contact-output[data-output-density="compact"] .contact-markdown { line-height: 1.6; }
+.contact-output[data-output-density="compact"] .contact-markdown p,
+.contact-output[data-output-density="compact"] .contact-markdown li { margin-block: .4em; }
+@media (max-width: 480px) { .contact-output .contact-markdown { max-width: 100%; } }

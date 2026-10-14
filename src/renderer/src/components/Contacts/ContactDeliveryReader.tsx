@@ -4,6 +4,9 @@ import ContactPresentation from './ContactPresentation'
 import './ContactPortfolio.css'
 import ContactTaskInputForm from './ContactTaskInputForm'
 import ContactMarkdown from './ContactMarkdown'
+import ContactOutput from './ContactOutput'
+import ContactOutputDialog from './ContactOutputDialog'
+import { useContactOutputPreferences } from './useContactOutputPreferences'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ReadingSaveQueue } from './readingSaveQueue'
 import type { AgentDelivery } from '../../../../shared/agent-delivery'
@@ -30,6 +33,8 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   onReport?: () => void
 }) {
   const [artifact, setArtifact] = useState<AgentDelivery | null>(null)
+  const [outputDialog, setOutputDialog] = useState(false)
+  const outputPreferences = useContactOutputPreferences(characterId, topic.id, artifact?.version, active)
   const [previous, setPrevious] = useState<AgentDelivery | null>(null)
   const [latest, setLatest] = useState(0), [loading, setLoading] = useState(true)
   const [latestReadError, setLatestReadError] = useState('')
@@ -184,7 +189,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
         if (restoring.current || !active || view !== 'delivery' || !event.isTrusted) return
         const el = event.currentTarget, ratio = el.scrollHeight > el.clientHeight ? el.scrollTop / (el.scrollHeight - el.clientHeight) : 0
         recordReading(readingAt({ characterId, topicId: topic.id, version: artifact.version }, section, Math.max(0, Math.min(1, ratio))))
-      }}><h5>{section.title}</h5><ContactMarkdown>{section.body}</ContactMarkdown>{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><ContactMaterialLink href={source.url}>[{i + 1}] {source.title}</ContactMaterialLink></li>)}</ol></details> : null}</article>)}
+      }}><h5>{section.title}</h5><ContactOutput body={section.body} descriptor={section.output} preferences={outputPreferences} />{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><ContactMaterialLink href={source.url}>[{i + 1}] {source.title}</ContactMaterialLink></li>)}</ol></details> : null}</article>)}
       </div>
       <details><summary>版本与导出</summary>
       <div className="agent-actions">
@@ -200,12 +205,14 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       </details>
     </>}
       {artifact && <div className="agent-actions" aria-label="正文引用与修订">
+      <button type="button" data-delivery-output-preference onClick={() => setOutputDialog(true)}>阅读偏好</button>
       <button type="button" data-delivery-discuss onMouseDown={e => e.preventDefault()} onClick={() => void cite('discuss')}>引用讨论</button>
       <button type="button" data-delivery-revise disabled={busy} onMouseDown={e => e.preventDefault()} onClick={() => void cite('content')}>提出修改</button>
       <button type="button" data-delivery-style disabled={busy} onClick={() => void cite('presentation')}>修改阅读样式</button>
       <button type="button" data-delivery-handoff disabled={busy} onClick={() => setHandoff(true)}>交给联系人评审</button>
     </div>}
     {citationError && <p role="alert">{citationError}</p>}
+    {artifact && outputDialog && <ContactOutputDialog characterId={characterId} topicId={topic.id} version={artifact.version} onClose={() => setOutputDialog(false)} />}
     {contextRecord && <ContactContextReferences key={contextRecord.requestId} record={contextRecord} />}
     {!!artifact?.fileIds?.length && <ContactFiles active={active} owner={characterId} topicId={topic.id} fileIds={artifact.fileIds} />}
     {revisionDialog && <ContactRevisionDialog characterId={characterId} topic={topic} citation={revisionDialog.citation} scope={revisionDialog.scope} onClose={() => setRevisionDialog(null)} onSaved={() => setNotice('修改意见已保存，将沿用任务额度修订一轮。')} />}

@@ -17,6 +17,12 @@ import { contactTaskHref } from '../../shared/contact-links'
 import { CompanionBriefing, type CompanionKind } from './companion'
 import { summarizeCompanionWork, routineSummaryInstruction, routineSummaryInput, savedDeliveryEvidence } from './companion-summary'
 import { taskState } from '../../shared/task-state'
+import type { ContactOutputPreferenceRecord } from '../../shared/contact-output'
+
+async function assistantOutputPreferences() {
+  const records = await contactAgentsCall(DEFAULT_CHARACTER_ID, 'outputPreferences') as ContactOutputPreferenceRecord[]
+  return records.map(record => record.preference)
+}
 
 let service: AssistantRoutineService | undefined
 let timer: ReturnType<typeof setInterval> | undefined
@@ -33,7 +39,8 @@ export async function readContactsForAssistant(signal?: AbortSignal) {
       results.push({ id: contact.id, name: contact.name, omittedTopics: Math.max(0, data.topics.length - topics.length), topics: topics.map(t => ({ id: t.id, revision: t.revision, title: t.title, status: t.status, ...(data.settings ? { workState: taskState(data, t) } : {}), judgement: t.judgement.slice(0, 600), reason: (t.reason ?? '').slice(0, 600), nextStep: t.nextStep, updatedAt: t.updatedAt })),
         runs: topics.flatMap(topic => { const r = data.runs.find(run => run.topicId === topic.id); return r ? [{ topicId: r.topicId, status: r.status, question: r.question?.slice(0, 600), error: r.error?.slice(0, 600), summary: r.summary.slice(0, 600) }] : [] }),
         queuedTopicIds: data.queuedTopicIds, latestActivity: data.latestActivity,
-        pendingInteractions: (data.pendingInteractions ?? []).map(item => ({ id: item.id, version: item.version, topicId: item.topicId, kind: item.kind, question: item.question, budgets: item.budgets, failure: item.failure, cardLink: interactionHref(contact.id, item.id) })),
+        pendingInteractions: (data.pendingInteractions ?? []).map(item => ({ id: item.id, version: item.version, topicId: item.kind === 'action' ? item.request.subject.kind === 'contact' ? undefined : item.request.subject.topicId : item.topicId, kind: item.kind, question: item.kind === 'action' ? item.request.title : item.question, budgets: item.budgets, failure: item.failure,
+          ...(item.kind === 'action' ? { description: item.request.body, status: item.status, result: item.result, choices: item.request.actions.map(action => ({ id: action.id, label: action.label })) } : {}), cardLink: interactionHref(contact.id, item.id) })),
         reports: data.reports.slice(0, 2).map(r => ({ title: r.title, createdAt: r.createdAt, nextStep: r.nextStep })) })
     } catch { results.push({ id: contact.id, name: contact.name, unavailable: true, error: '状态暂时无法读取，不能判断进展。' }) }
   }
@@ -62,7 +69,7 @@ const companion = new CompanionBriefing({
       } catch { verified.push({ ...fact, evidenceBoundary: '未核实正式成果，不能声称成果已交付。' }) }
     }
     signal.throwIfAborted()
-    return summarizeCompanionWork(verified, { ...config, ...resolved.config }, character.soulMd, signal, contactSkillInstruction(DEFAULT_CHARACTER_ID))
+    return summarizeCompanionWork(verified, { ...config, ...resolved.config }, character.soulMd, signal, contactSkillInstruction(DEFAULT_CHARACTER_ID), await assistantOutputPreferences())
   },
   delivered: receipt => Boolean(getState(`reminder-receipt:${receipt}`)),
   deliver: item => {
@@ -79,6 +86,9 @@ export function summaryTaskLinks(evidence: Awaited<ReturnType<typeof readContact
   const waiting: string[] = [], changed: string[] = []
   for (const contact of evidence.contacts) {
     if (!contact.topics) continue
+    for (const item of contact.pendingInteractions ?? []) {
+      if (!item.topicId || !contact.topics.some(topic => topic.id === item.topicId)) waiting.push(`[${escape(contact.name)} · ${escape(item.question || '待处理')}](${item.cardLink})`)
+    }
     for (const topic of contact.topics) {
       const pending = contact.pendingInteractions?.filter(item => item.topicId === topic.id) ?? []
       if (pending.length) {
@@ -121,7 +131,7 @@ export function initializeAssistantRoutines() {
       let output = ''
       let calls = 0
       await streamAIChat([{ role: 'user', content: JSON.stringify(routineSummaryInput(item.instruction, item.nextAt, item.lastAt, evidence)) }],
-        routineSummaryInstruction(config.soulMd, contactSkillInstruction(DEFAULT_CHARACTER_ID)),
+        routineSummaryInstruction(config.soulMd, contactSkillInstruction(DEFAULT_CHARACTER_ID), await assistantOutputPreferences()),
         config, chunk => { output += chunk; if (output.length > 12000) throw new Error('总结过长。') }, signal, {
           definitions: [{ name: 'read_contact_delivery', displayName: '核实联系人正式成果', source: 'builtin', risk: 'read', requiresConfirmation: false,
             description: '核实某个联系人的正式保存版本、目录与累计字符数。不会读取正文，也不执行篇幅、质量或完成条件验收。使用工作证据中的真实 ID。仅查看，不修改。最多调用八次。',

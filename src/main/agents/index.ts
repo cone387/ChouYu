@@ -15,6 +15,8 @@ import { appendAgentNotice, appendContactAction, getCharacter, getConfig, getSes
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { createContactProfileTools } from './profile-tools'
+import { createOutputTools } from './output-tools'
+import { createDeliveryFeedbackTools } from './delivery-feedback'
 import { notifyJournalConfig } from '../journal'
 import { createMemoryTools } from './memory-tools'
 import { createMaterialTools, MATERIAL_TOOL_NAMES } from './material-tools'
@@ -172,6 +174,7 @@ export async function submitContactInteraction(id: string, interactionId: string
   await executeContactAction({
     read: () => call('getInteraction'), claim: (version, response) => call('claimAction', [version, response]),
     start: version => call('startActionExecution', [version]),
+    acknowledge: version => call('acknowledgeAction', [version]),
     finish: (version, result) => call('finishAction', [version, result]), fail: (version, message) => call('failAction', [version, message]), reject: version => call('rejectAction', [version]),
     prepare: async (option, sessionId, credential) => {
       if (getSession(sessionId)?.characterId !== id) throw new Error('原会话已删除或归属变化，此操作未执行。')
@@ -186,6 +189,17 @@ export async function startIdeaLab() {
   return setupIdeaLab((method, id, args) => rpc(method, id, args), async () => { await rpc('sync', '', [identities()]) })
 }
 export async function removeContactAgent(characterId: string) { setState(`agent-search:${characterId}:api_key`, ''); await ensure(); await rpc('remove', characterId) }
+export async function pendingContactInteractions(owner: string) {
+  if (!getCharacter(owner)) throw new Error('联系人不存在。')
+  await ensure()
+  const contacts = listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID && (owner === DEFAULT_CHARACTER_ID || c.id === owner))
+  const result: import('../../shared/contact-interactions').ContactInteraction[] = []
+  for (const contact of contacts) {
+    const items = await rpc('pendingInteractions', contact.id) as import('../../shared/contact-interactions').ContactInteraction[]
+    for (const item of items) result.push({ ...item, characterName: contact.name })
+  }
+  return result
+}
 export async function restartAgentsForSmoke() {
   if (process.env.CHOUYU_SMOKE_TEST !== '1') throw new Error('Smoke only')
   const previous = child
@@ -193,6 +207,7 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  contactHandle('agents:profile', async (_event, id: string) => getContactProfile(id))
   for (const tool of createContactSupportTools({
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
     credential: contactSearchCredential, saveCredential: (owner, secret, revision) => { const result = saveContactSearchCredential(owner, secret, revision); broadcastChanged(owner); return result },
@@ -263,6 +278,7 @@ export function initializeAgents() {
   })
   for (const tool of createMaterialTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   for (const tool of createMemoryTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
+  for (const tool of [...createOutputTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) }), ...createDeliveryFeedbackTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })]) if (!getRegisteredTool(tool.name)) registerTool(tool)
   for (const tool of createContactProfileTools({
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
     profile: async id => readContactConfiguration(id).profile,
@@ -285,17 +301,7 @@ export function initializeAgents() {
     const detail = await rpc('topicDetail', id, [topicId])
     return { title: detail.topic.title, artifact }
   })
-  contactHandle('agents:pendingInteractions', async (_event, owner: string) => {
-    if (!getCharacter(owner)) throw new Error('联系人不存在。')
-    await ensure()
-    const contacts = listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID && (owner === DEFAULT_CHARACTER_ID || c.id === owner))
-    const result = []
-    for (const contact of contacts) {
-      const items = await rpc('pendingInteractions', contact.id) as import('../../shared/contact-interactions').ContactInteraction[]
-      for (const item of items) result.push({ ...item, characterName: contact.name })
-    }
-    return result
-  })
+  contactHandle('agents:pendingInteractions', async (_event, owner: string) => pendingContactInteractions(owner))
   contactHandle('agents:dashboard', async () => {
     await ensure()
     return rpc('dashboard', '', [listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id)])
@@ -314,11 +320,12 @@ export function initializeAgents() {
     await writeFile(result.filePath, format === 'html' ? deliveryHtmlExport(detail.topic.title, artifact, randomUUID()) : deliveryMarkdown(detail.topic.title, artifact), 'utf8')
     return true
   })
-  contactHandle('agents:searchCredential', async (_event, id: string, key?: string) => {
+  contactHandle('agents:searchCredential', async (_event, id: string, key?: string, revision?: number) => {
     if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     if (key !== undefined) {
       if (typeof key !== 'string' || key.length > 8192 || /[\r\n]/.test(key)) throw new Error('搜索密钥无效。')
-      saveContactSearchCredential(id, key.trim(), contactSearchCredential(id).revision)
+      if (!Number.isSafeInteger(revision)) throw new Error('请先读取搜索密钥配置，再保存。')
+      saveContactSearchCredential(id, key.trim(), revision!)
       await ensure(); await rpc('sync', '', [identities()]); broadcastChanged(id)
     }
     return contactSearchCredential(id)
@@ -330,7 +337,7 @@ export function initializeAgents() {
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const method of ['getInteraction', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
+  for (const method of ['getInteraction', 'outputPreferences', 'setOutputPreference', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
     contactHandle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       validateMemoryBoundary(id, method, args)

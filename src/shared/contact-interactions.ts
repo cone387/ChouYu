@@ -25,6 +25,7 @@ export interface ContactInteractionSubmission {
   actionId?: string
   text?: string
   reject?: boolean
+  acknowledge?: boolean
   /** Transient IPC input; never persisted in the interaction or sent to the model. */
   credential?: string
   answer?: string

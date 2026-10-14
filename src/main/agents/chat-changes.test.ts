@@ -14,6 +14,44 @@ function fixture(plan: unknown) {
   return { data, read, model, execute, run }
 }
 describe('contact chat routing and receipts', () => {
+  it('keeps the interpretation snapshot revision for every combined setting step', async () => {
+    let changed = false
+    const configuration = vi.fn(async () => ({ profile: { revision: changed ? 'new' : 'old' }, skills: { revision: 1, skills: [] } }) as any)
+    const offered: any[] = []
+    await routeContactChange([{ role: 'user', content: '人设加上注重证据，同时修改工作方向' }], {
+      configuration, read: async () => ({ topics: [], runs: [], settings: {}, revision: changed ? 2 : 1 }), execute: vi.fn(),
+      model: async () => { changed = true; return JSON.stringify({ kind: 'configuration', changes: [{ kind: 'profile', patch: { soulMd: '旧人设，注重证据' } }, { kind: 'settings', patch: { goal: '旧方向加新要求' } }] }) },
+      executeConfigurationStep: async call => { offered.push(JSON.parse(call.arguments)); return JSON.stringify({ pendingInteraction: true, interactionId: 'card', message: '待确认' }) }
+    })
+    expect(offered.map(args => args.revision)).toEqual(['old', 1])
+    expect(configuration).toHaveBeenCalledTimes(1)
+  })
+  it('offers independent durable steps for one contact configuration request and reports each actual result', async () => {
+    const model = vi.fn(async () => JSON.stringify({ kind: 'configuration', changes: [{ kind: 'profile', patch: { name: '阿笔' } }, { kind: 'settings', patch: { notifyProgress: false } }] }))
+    const execute = vi.fn(), offer = vi.fn(async (call, step) => {
+      expect(step).toEqual({ index: call.name === 'edit_contact_profile' ? 1 : 2, total: 2 })
+      return JSON.stringify({ pendingInteraction: true, interactionId: `card:${step.index}`, message: '已发送确认卡片，尚未执行' })
+    })
+    const deps = { model, execute, executeConfigurationStep: offer, read: async () => ({ topics: [], runs: [], settings: {}, revision: 1 }), configuration: async () => ({ profile: { revision: 'a'.repeat(64) }, skills: { revision: 1, skills: [] } }) as any }
+    const reply = await routeContactChange([{ role: 'user', content: '改名阿笔，同时关闭进展通知' }], deps)
+    expect(reply).toContain('联系人资料')
+    expect(reply).toContain('工作设置')
+    expect(offer).toHaveBeenCalledTimes(2)
+    expect(execute).not.toHaveBeenCalled()
+    expect(model).toHaveBeenCalledTimes(1)
+    offer.mockImplementation(async (call, step) => { if (step.index === 2) throw new Error('存储暂不可用'); return JSON.stringify({ pendingInteraction: true, interactionId: 'card:1', message: '已发送确认卡片' }) })
+    const partial = await routeContactChange([{ role: 'user', content: '改名阿笔，同时关闭进展通知' }], deps)
+    expect(partial).toContain('已发送确认卡片')
+    expect(partial).toContain('存储暂不可用')
+    expect(partial).not.toContain('全部完成')
+  })
+  it('rejects nested, repeated-domain and task batches before offering any configuration step', async () => {
+    for (const changes of [[{ kind: 'profile', patch: { name: '甲' } }, { kind: 'profile', patch: { name: '乙' } }], [{ kind: 'settings', patch: { notifyProgress: false } }, { kind: 'action', topicId: 't', action: 'delete' }], [{ kind: 'configuration', changes: [] }]]) {
+      const offer = vi.fn()
+      await expect(routeContactChange([{ role: 'user', content: '修改配置' }], { read: async () => ({ topics: [], runs: [] }), model: async () => JSON.stringify({ kind: 'configuration', changes }), execute: vi.fn(), executeConfigurationStep: offer })).rejects.toThrow('没有识别')
+      expect(offer).not.toHaveBeenCalled()
+    }
+  })
   it.each(['running', 'waiting'])('returns an unchanged result if work becomes %s during tool preparation', async status => {
     const f = fixture({ kind: 'action', topicId: 't', action: 'continue', targetText: '评审' })
     f.data.runs = []

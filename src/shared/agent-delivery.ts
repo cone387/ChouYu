@@ -1,3 +1,4 @@
+import { sanitizeContactOutput, type ContactOutputDescriptor } from './contact-output'
 export interface DeliveryStage { id: string; title: string; status: 'pending' | 'active' | 'done' }
 export interface TaskInputField { id: string; label: string; value: string; required: boolean; hint?: string; options?: string[] }
 export interface DeliveryPresentation { title: string; html: string; css: string; script: string }
@@ -26,13 +27,13 @@ export function validateDeliveryPlan(raw: unknown): DeliveryPlan {
   if (!Array.isArray(plan.stages) || !plan.stages.length || plan.stages.length > 30 || plan.stages.some(s => !s || typeof s.id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(s.id) || typeof s.title !== 'string' || !s.title.trim() || s.title.length > 160 || !['pending', 'active', 'done'].includes(s.status)) || new Set(plan.stages.map(s => s.id)).size !== plan.stages.length) throw new Error('阶段计划无效。')
   return { completionCriteria: plan.completionCriteria.trim(), stages: plan.stages.map(s => ({ id: s.id, title: s.title.trim(), status: s.status })), ...(plan.inputs === undefined ? {} : { inputs: validateTaskInputs(plan.inputs) }) }
 }
-export interface DeliverySection { id: string; title: string; body: string; runId: string; sources?: { url: string; title: string; capturedAt: number }[] }
+export interface DeliverySection { id: string; title: string; body: string; output?: ContactOutputDescriptor; runId: string; sources?: { url: string; title: string; capturedAt: number }[] }
 export interface DeliveryUpdate {
   fileIds?: string[]
   completionCriteria: string
   stages: DeliveryStage[]
   summary: string
-  section?: Pick<DeliverySection, 'id' | 'title' | 'body'>
+  section?: Pick<DeliverySection, 'id' | 'title' | 'body' | 'output'>
   inputs?: TaskInputField[]
   presentation?: DeliveryPresentation | null
 }
@@ -55,7 +56,7 @@ export function validateDeliveryUpdate(raw: unknown): DeliveryUpdate {
   if (!Array.isArray(v.stages) || !v.stages.length || v.stages.length > 300 || v.stages.some(s => !s || !id(s.id) || !text(s.title, 160) || !['pending', 'active', 'done'].includes(s.status)) || new Set(v.stages.map(s => s.id)).size !== v.stages.length) throw new Error('阶段计划无效。')
   if (v.section !== undefined && (!v.section || !id(v.section.id) || !text(v.section.title, 160) || !text(v.section.body, 10000))) throw new Error('成果分节无效。')
   if (!v.section && v.presentation === undefined && v.inputs === undefined) throw new Error('缺少成果正文或展示更新。')
-  return { ...(v.fileIds === undefined ? {} : { fileIds: [...v.fileIds] }), completionCriteria: v.completionCriteria.trim(), summary: v.summary.trim(), stages: v.stages.map(s => ({ id: s.id, title: s.title.trim(), status: s.status })), ...(v.section ? { section: { id: v.section.id, title: v.section.title.trim(), body: v.section.body.trim() } } : {}), ...(v.inputs === undefined ? {} : { inputs: validateTaskInputs(v.inputs) }), ...(v.presentation === undefined ? {} : { presentation: v.presentation === null ? null : validatePresentation(v.presentation) }) }
+  return { ...(v.fileIds === undefined ? {} : { fileIds: [...v.fileIds] }), completionCriteria: v.completionCriteria.trim(), summary: v.summary.trim(), stages: v.stages.map(s => ({ id: s.id, title: s.title.trim(), status: s.status })), ...(v.section ? { section: { id: v.section.id, title: v.section.title.trim(), body: v.section.body.trim(), ...(sanitizeContactOutput(v.section.output) ? { output: sanitizeContactOutput(v.section.output) } : {}) } } : {}), ...(v.inputs === undefined ? {} : { inputs: validateTaskInputs(v.inputs) }), ...(v.presentation === undefined ? {} : { presentation: v.presentation === null ? null : validatePresentation(v.presentation) }) }
 }
 export function deliveryMarkdown(title: string, value: AgentDelivery): string {
   return `# ${title}\n\n版本 ${value.version}\n\n## 完成条件\n\n${value.completionCriteria}\n\n## 阶段\n\n${value.stages.map(s => `- [${s.status === 'done' ? 'x' : ' '}] ${s.title}${s.status === 'active' ? '（进行中）' : ''}`).join('\n')}\n\n## 进展摘要\n\n${value.summary}\n\n${value.sections.map(s => `## ${s.title}\n\n${s.body}\n\n${(s.sources || []).map((source, i) => `[${i + 1}] ${source.title}: ${source.url}（读取于 ${new Date(source.capturedAt).toISOString()}）`).join('\n')}\n来源轮次：${s.runId}`).join('\n\n')}\n`

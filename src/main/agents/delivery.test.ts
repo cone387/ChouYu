@@ -39,6 +39,25 @@ async function write(f: ReturnType<typeof fixture>, n: number) {
 }
 
 describe('durable deliverables', () => {
+  it('uses scoped preferences in the original generation and persists optional output metadata without rewriting prose', async () => {
+    const f = fixture(), topic = f.store.topics.create('alice', { title: '正文', goal: '写一篇文章', constraints: '' })
+    f.store.outputs.save('alice', { kind: 'contact' }, 0, { instruction: '先给完整正文' })
+    f.store.outputs.save('alice', { kind: 'task', topicId: topic.id }, 0, { density: 'compact' })
+    f.store.ensure('bob'); f.store.outputs.save('bob', { kind: 'contact' }, 0, { instruction: '不要泄漏给 Alice' })
+    const update = delivery(1, '原始正文不改写。'); update.section!.output = { kind: 'writing', density: 'compact' }
+    const run = f.store.createRun('alice', '', Date.now(), topic.id)
+    const model = vi.fn(async (prompt: string) => {
+      expect(prompt).not.toContain('不要泄漏给 Alice')
+      if (prompt.startsWith('为联系人')) return JSON.stringify(plan)
+      expect(prompt).toContain('先给完整正文'); expect(prompt).toContain('compact')
+      return draft(update)
+    })
+    await f.runtime.execute(run, '', model, new AbortController().signal)
+    expect(f.store.detail('alice', run).run.status).toBe('completed')
+    expect(model).toHaveBeenCalledTimes(2)
+    f.reopen()
+    expect(f.store.deliveries.get(topic.id)!.sections[0]).toMatchObject({ body: update.section!.body, output: { kind: 'writing', density: 'compact' } })
+  })
   it('applies the common policy and verified artifact contract to a new non-preset persona', async () => {
     const f = fixture(), owner = 'custom-map-author'
     f.store.save(owner, { ...DEFAULT_AGENT_SETTINGS, goal: '写一份地图导览', dailyCalls: 20 })

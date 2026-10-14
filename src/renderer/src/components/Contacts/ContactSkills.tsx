@@ -47,9 +47,9 @@ function SkillDialog({ detail, busy, error, onClose, onSubmit, onCancelOperation
   </dialog>, document.body)
 }
 
-export default function ContactSkills({ characterId, name }: { characterId: string; name: string }) {
+export default function ContactSkills({ characterId, name, initialView = 'market' }: { characterId: string; name: string; initialView?: 'library' | 'market' }) {
   const [listing, setListing] = useState<SkillListing>(), [status, setStatus] = useState<SkillHubStatus>()
-  const [view, setView] = useState<'library' | 'market'>('market')
+  const [view, setView] = useState<'library' | 'market'>(initialView)
   const [marketRefresh, setMarketRefresh] = useState(0)
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [detail, setDetail] = useState<Detail>()

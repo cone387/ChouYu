@@ -1,7 +1,7 @@
 import type { ContactInteractionDetails } from './contact-interactions'
 import { containsSecret } from './memory'
 
-export const CONTACT_ACTION_TOOLS = ['edit_contact_work_settings', 'edit_contact_profile', 'configure_contact_skill', 'update_contact_topic', 'answer_contact_question', 'edit_contact_task', 'set_contact_schedule', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine', 'set_contact_search_credential', 'install_contact_skill', 'prepare_contact_skill_environment', 'provide_contact_material', 'remember_contact_memory', 'update_contact_memory', 'forget_contact_memory'] as const
+export const CONTACT_ACTION_TOOLS = ['submit_contact_delivery_feedback', 'set_contact_output_preference', 'edit_contact_work_settings', 'edit_contact_profile', 'configure_contact_skill', 'update_contact_topic', 'answer_contact_question', 'edit_contact_task', 'set_contact_schedule', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine', 'set_contact_search_credential', 'install_contact_skill', 'prepare_contact_skill_environment', 'provide_contact_material', 'remember_contact_memory', 'update_contact_memory', 'forget_contact_memory'] as const
 export type ContactActionTool = typeof CONTACT_ACTION_TOOLS[number]
 export interface ContactActionOption {
   id: string
@@ -14,6 +14,7 @@ export interface ContactActionRequest {
   title: string
   body: string
   sessionId: string
+  configurationGroup?: { id: string; index: number; total: number }
   subject: { kind: 'contact' } | { kind: 'task'; topicId: string; revision: number } | { kind: 'delivery'; topicId: string; revision: number; version: number }
   actions: ContactActionOption[]
   input?: { label: string; argument: 'answer' | 'reason' | 'credential'; maxLength: number; required?: boolean }
@@ -44,6 +45,8 @@ export function validateContactActionRequest(raw: unknown): ContactActionRequest
   const v = raw as ContactActionRequest
   if (!v || typeof v !== 'object' || !['permission', 'configuration', 'choice', 'material', 'feedback', 'confirmation'].includes(v.purpose) || !bounded(v.title, 160) || !bounded(v.body, 12000) || !identifier(v.sessionId)) throw new Error('交互事项内容无效。')
   const s = v.subject
+  const group = v.configurationGroup
+  if (group && (!identifier(group.id) || !Number.isSafeInteger(group.index) || !Number.isSafeInteger(group.total) || group.total < 2 || group.total > 5 || group.index < 1 || group.index > group.total)) throw new Error('组合设置步骤无效。')
   if (!s || !['contact', 'task', 'delivery'].includes(s.kind)) throw new Error('交互事项对象无效。')
   if (s.kind !== 'contact' && (!identifier(s.topicId) || !Number.isSafeInteger(s.revision) || s.revision < 1)) throw new Error('交互事项任务版本无效。')
   if (s.kind === 'delivery' && (!Number.isSafeInteger(s.version) || s.version < 1)) throw new Error('交互事项成果版本无效。')
@@ -61,7 +64,7 @@ export function validateContactActionRequest(raw: unknown): ContactActionRequest
   if (input?.argument === 'answer' && actions.some(a => a.tool !== 'answer_contact_question')) throw new Error('只有原问题回复可以填写答案。')
   const result: ContactActionRequest = { purpose: v.purpose, title: v.title, body: v.body, sessionId: v.sessionId,
     subject: s.kind === 'contact' ? { kind: s.kind } : { kind: s.kind, topicId: s.topicId, revision: s.revision, ...(s.kind === 'delivery' ? { version: s.version } : {}) } as ContactActionRequest['subject'],
-    actions, ...(input ? { input: { ...input } } : {}) }
+    actions, ...(input ? { input: { ...input } } : {}), ...(group ? { configurationGroup: { id: group.id, index: group.index, total: group.total } } : {}) }
   const serialized = JSON.stringify(result)
   if (serialized.length > 100000 || containsSecret(serialized)) throw new Error('交互事项过长或含有凭据，请使用安全输入。')
   return result

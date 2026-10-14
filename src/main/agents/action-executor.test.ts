@@ -29,6 +29,20 @@ it('never executes a stale or disabled prepared operation and retains a failed r
   expect((await executeContactAction(access, { version: 'v1', actionId: 'save' })).result).toContain('变化')
   expect(access.finish).not.toHaveBeenCalled()
 })
+it('records an uncertain outcome when execution succeeded but its receipt could not be saved', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'action-receipt-')), store = new AgentStore(join(dir, 'agents.db'))
+  try {
+    store.ensure('alice')
+    const card = store.actions.offer('alice', 'receipt', { purpose: 'configuration', title: '保存', body: '保存名称', sessionId: 'chat', subject: { kind: 'contact' }, actions: [{ id: 'save', label: '保存', tool: 'edit_contact_profile', arguments: { revision: 'v1', name: 'Alice', reason: '改名' } }] })
+    const run = vi.fn(async () => ({ content: '{"saved":true}', summary: '已保存' }))
+    const access = { read: async () => store.actions.get('alice', card.id), claim: async (v: string, r: any) => store.actions.claim('alice', card.id, v, r), start: async (v: string) => store.actions.startExecution('alice', card.id, v), prepare: async () => ({ execute: run }), finish: async () => { throw new Error('disk full') }, fail: async (v: string, m: string) => store.actions.fail('alice', card.id, v, m), reject: async (v: string) => store.actions.reject('alice', card.id, v) }
+    const failed = await executeContactAction(access, { version: card.version, actionId: 'save' })
+    expect(failed).toMatchObject({ status: 'failed', retryable: false })
+    expect(failed.result).toContain('回执')
+    expect(store.actions.acknowledge('alice', card.id, failed.version).status).toBe('resolved')
+    expect(run).toHaveBeenCalledTimes(1)
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
+})
 it('keeps a secure input out of every durable action field while passing it only to the credential writer', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'action-secret-')), store = new AgentStore(join(dir, 'agents.db'))
   try {

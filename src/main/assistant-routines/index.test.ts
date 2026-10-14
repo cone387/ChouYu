@@ -6,7 +6,7 @@ vi.mock('../database', () => ({
   appendAssistantMessage: state.sent, getConfig: () => ({ aiToolsEnabled: true, soulMd: 'ChouYu' }),
   getSession: () => ({ characterId: 'chouyu' }), listCharacters: () => [{ id: 'chouyu', name: '丑鱼' }, { id: 'alice', name: '阿笔' }, { id: 'bob', name: '老周' }]
 }))
-vi.mock('../agents', () => ({ inspectContactWork: state.inspect, inspectContactDelivery: state.delivery }))
+vi.mock('../agents', () => ({ inspectContactWork: state.inspect, inspectContactDelivery: state.delivery, contactAgentsCall: async () => [{ scope: { kind: 'contact' }, revision: 1, preference: { instruction: '先给待处理事项' } }] }))
 vi.mock('../ai', () => ({ streamAIChat: state.model }))
 vi.mock('../skills', () => ({ contactSkillInstruction: () => '已配置技能：核对依据后简要总结。' }))
 vi.mock('../reminder-events', () => ({ notifyReminderChanges: vi.fn() }))
@@ -26,6 +26,13 @@ beforeEach(() => {
 })
 afterEach(() => { closeAssistantRoutines(); vi.useRealTimers() })
 describe('assistant routine integration', () => {
+  it('includes contact-level cards with no task in inspected facts and actual briefing links', async () => {
+    state.inspect.mockResolvedValue({ topics: [], runs: [], reports: [], pendingInteractions: [{ id: 'action:credential', characterId: 'alice', version: 'v1', kind: 'action', status: 'pending', request: { title: '配置搜索密钥', body: '请安全填写新密钥', purpose: 'configuration', subject: { kind: 'contact' }, actions: [{ id: 'save', label: '保存密钥', arguments: { private: 'DO_NOT_COPY' } }] } }] })
+    const evidence = await readContactsForAssistant(), text = JSON.stringify(evidence)
+    expect(text).toContain('配置搜索密钥')
+    expect(text).not.toContain('DO_NOT_COPY')
+    expect(summaryTaskLinks(evidence)).toContain('action%3Acredential')
+  })
   it('marks saved length and completion criteria as metadata, never as a completed requirements check', async () => {
     state.delivery.mockResolvedValue({ version: 1, latestVersion: 1, savedSectionCount: 1, savedTextLength: 598,
       completionCriteria: '每期300至500字正文', directory: [{ id: 'opening', title: '第一节', characters: 598 }] })
