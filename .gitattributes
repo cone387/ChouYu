@@ -1,0 +1,2 @@
+# Text fixtures have exact Unicode character counts in acceptance tests.
+src/main/agents/fixtures/*.txt text eol=lf

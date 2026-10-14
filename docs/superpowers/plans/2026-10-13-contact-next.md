@@ -74,6 +74,7 @@ Files: 新增隔离持续运行脚本与验收记录，`docs/contact-task-spec.m
 Interfaces: 复用真实执行/通知持久化；夹具、在线模型、实时时长分别标记，记录进行中进程句柄以便恢复观察。
 - [ ] 实现并执行故障矩阵与完整三联系人链路；用当前实际结果驱动修复。
 - [ ] 真实模型自然语言/长篇抽测；实际24小时跨夜；原生托盘与休眠恢复验收（无环境则明确保留未完成）。
-- [ ] `npm test`、`npm run typecheck`、`npm run build`，运行 agents/assistant-routines/companion/contact-experience/toolbar/settings 相关场景。
+- [x] `npm test`、`npm run typecheck`、`npm run build`，运行 agents/assistant-routines/companion/contact-experience/toolbar/settings 相关场景。各次覆盖见执行记录；最新合入后1618通过/33按需跳过、类型与构建通过，最新agents/contact-experience通过。
 - [x] 一次独立完整代码审查；修复 Important/Critical，并做对应失败→通过及总回归。六项同轮修复提交1e0afd6；1539项通过/27项按需跳过，详见执行记录。
 - [ ] 逐项完成审计、同步规范、保留证据、将验证后的完整结果交付当前项目；不推送远端。
+- [x] 2026-10-14按用户明确要求将已实现代码合入主目录master，并在主目录验证；完整长期与原生验收保持未完成，不以合入代替验收。

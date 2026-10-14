@@ -323,3 +323,12 @@ Final: Ruling: 第6项由Minor调整为Important并纳入修复 — 隐藏页面
 - 最终同一用例通过，run `13f2d42f-e2f0-4575-84fe-bba99f1172ba`，3次调用/8248 Token（无估算）。已通读：引用实际113字原文，对蓝灯、铜铃、陈伯递信的悬念及空间关系给出具体判断与建议；证据正文逐字匹配保存版本，作者原文未改。`quota-restored-discovery-final.log`、`live-discovery.json`。这是一次真实抽测通过，不抹去前述失败或宣称模型长期稳定。
 - 最新全量 `plan-action-final-suite.log` 1618通过/33按需跳过（187文件通过），`plan-action-types.log` 类型检查、`plan-action-build.log` 构建通过（既有大chunk提示）。最初命令误重复传--run未执行测试，以及测试回调漏参数导致类型失败，均已纠正后重新取得上述结果。
 - 原v11仍运行原固定构建，不包含本次修复，不能充当新修复的长时间验收；不拼接或伪造时长。完整长时间、原生托盘/真实休眠及主目录整合仍未完成。当前变更留在实现分支，未将隔离模型数据写入真实联系人。
+
+### 本地主目录合入与合入后验证（2026-10-14 09:25–09:30）
+
+- 用户再次明确要求完成并合入。确认主目录 `D:\codespace\ChouYu` 的 master 干净，基点为d2cff72；已实际 fast-forward 合入至2bb944f，无冲突、未推送远端。代码合入已完成，长期与原生验收仍分别保留未完成，不视为用户批准豁免。
+- 当前构建的 `--agents` 与 `--contact-experience` Electron集成场景均退出0并出现各自PASSED/READY标记，日志在原工作树 `artifacts/contact-next/merge-agents.log`、`merge-experience.log`。涵盖真实执行进程、重启、聊天调整/删除确认、正文/固定版本引用、独立评审返回和过期拒绝；用例故障注入与退出日志保留，不声称无任何错误输出。
+- 合入后在主目录运行全量测试，发现精确字符数夹具被Windows Git检出为CRLF，598码点变成610，汉字数仍为512。`merged-suite.log`准确复现1失败/1617通过；新增仅针对 `src/main/agents/fixtures/*.txt` 的LF属性并规范本地夹具换行，不改生产计数或预期值。最终 `merged-final-suite.log` 1618通过/33按需跳过；主目录 `merged-types.log` 类型检查及 `merged-build.log` 构建退出0，既有大chunk提示保留。
+- 原生 Computer Use 正式入口重新检查仍为native pipe unavailable/os error2。没有执行真实托盘点击或宿主休眠，不能据此关闭原生验收项。
+- 旧v11因构建缺少已修复的工具动作/共享正文边界而由stop.request正常停止，stopped/complete=false，elapsed17744663ms；启动器10468与应用45396均已消失。旧时长不拼入新运行。
+- 主目录当前构建已启动 `artifacts/contact-next/soak-merged-20261014`：2026-10-14 09:29:41+08:00至2026-10-15 11:29:41+08:00，原26小时、原预算及成功条件不变。启动器51388、初始应用35816，固定代码2bb944f，bundle SHA256 `3831cfb4c599234617c4f9e0d3c537b9592339f29f00f1e9e012be90309a1952`。之后仅夹具属性与文档变更，不改变运行的产品代码。结果尚未形成，不能声称长期运行通过。原工作树保留隔离验收证据，不清除唯一日志。
