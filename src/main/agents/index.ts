@@ -11,7 +11,7 @@ import { app, BrowserWindow, dialog, utilityProcess, type UtilityProcess } from 
 import { writeFile } from 'node:fs/promises'
 import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
 import { join } from 'node:path'
-import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, getContactProfile, updateContactProfile } from '../database'
+import { appendAgentNotice, appendContactAction, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, getContactProfile, updateContactProfile } from '../database'
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { createContactProfileTools } from './profile-tools'
@@ -22,7 +22,8 @@ import { loadMaterialImport } from './material-import'
 import { readSource } from './sources'
 import { readFile, stat } from 'node:fs/promises'
 import { contactConversation } from './conversation'
-import { getRegisteredTool, registerTool } from '../tools/registry'
+import { getRegisteredTool, registerTool, prepareRegisteredToolAsync } from '../tools/registry'
+import { executeContactAction } from './action-executor'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
 import type { AgentIdentity } from './service'
 import { setupIdeaLab } from './idea-lab'
@@ -58,6 +59,11 @@ async function deliver(id: string) {
           appendAgentNotice(notice)
           notifyReminderChanges()
           await rpc('ackNotice', characterId, [notice.id])
+        }
+        const cards = await rpc('actionNotices', characterId) as import('../../shared/contact-actions').ContactActionInteraction[]
+        for (const card of cards) {
+          if (getSession(card.request.sessionId)?.characterId === characterId) { appendContactAction(card); notifyReminderChanges() }
+          await rpc('ackActionNotice', characterId, [card.id])
         }
       } catch { /* Durable outbox is retried by the sync timer after storage/process recovery. */ }
     }
@@ -155,6 +161,22 @@ function validateMemoryBoundary(owner: string, method: string, args: unknown[]) 
     if (session?.characterId !== owner || !session.messages.some(message => message.id === source.messageId)) throw new Error('对话来源不存在或不属于此联系人。')
   }
 }
+export async function submitContactInteraction(id: string, interactionId: string, submission: import('../../shared/contact-interactions').ContactInteractionSubmission, window: BrowserWindow) {
+  const card = await contactAgentsCall<import('../../shared/contact-interactions').ContactInteraction>(id, 'getInteraction', [interactionId])
+  if (card.kind !== 'action') return contactAgentsCall(id, 'submitInteraction', [interactionId, submission])
+  const call = (method: string, args: unknown[] = []) => contactAgentsCall<import('../../shared/contact-actions').ContactActionInteraction>(id, method, [interactionId, ...args])
+  await executeContactAction({
+    read: () => call('getInteraction'), claim: (version, response) => call('claimAction', [version, response]),
+    start: version => call('startActionExecution', [version]),
+    finish: (version, result) => call('finishAction', [version, result]), fail: (version, message) => call('failAction', [version, message]), reject: version => call('rejectAction', [version]),
+    prepare: async (option, sessionId) => {
+      if (getSession(sessionId)?.characterId !== id) throw new Error('原会话已删除或归属变化，此操作未执行。')
+      if (!getConfig().aiToolsEnabled || getState(`tool:${option.tool}:enabled`) === 'false') throw new Error('工具已被用户禁用，此操作未执行。')
+      return prepareRegisteredToolAsync(option.tool, option.arguments, window, sessionId)
+    }
+  }, submission)
+  return call('getInteraction')
+}
 export async function startIdeaLab() {
   await ensure()
   return setupIdeaLab((method, id, args) => rpc(method, id, args), async () => { await rpc('sync', '', [identities()]) })
@@ -167,6 +189,11 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  contactHandle('agents:submitInteraction', async (event, id: string, interactionId: string, submission: import('../../shared/contact-interactions').ContactInteractionSubmission) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) throw new Error('交互窗口不可用。')
+    return submitContactInteraction(id, interactionId, submission, window)
+  })
   contactHandle('agents:exportContactFile', async (event, owner: string, id: string) => {
     const result = await contactAgentsCall<{ file: import('../../shared/contact-files').ContactFile; bytes: Uint8Array }>(owner, 'readContactFile', [id])
     const parent = BrowserWindow.fromWebContents(event.sender), options = { title: '导出归档文件', defaultPath: result.file.name.split('/').at(-1) }
@@ -228,7 +255,7 @@ export function initializeAgents() {
   contactHandle('agents:pendingInteractions', async (_event, owner: string) => {
     if (!getCharacter(owner)) throw new Error('联系人不存在。')
     await ensure()
-    const contacts = listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID && c.id !== DEFAULT_CHARACTER_ID && (owner === DEFAULT_CHARACTER_ID || c.id === owner))
+    const contacts = listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID && (owner === DEFAULT_CHARACTER_ID || c.id === owner))
     const result = []
     for (const contact of contacts) {
       const items = await rpc('pendingInteractions', contact.id) as import('../../shared/contact-interactions').ContactInteraction[]
@@ -270,7 +297,7 @@ export function initializeAgents() {
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const method of ['getInteraction', 'submitInteraction', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
+  for (const method of ['getInteraction', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
     contactHandle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       validateMemoryBoundary(id, method, args)

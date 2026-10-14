@@ -5,6 +5,11 @@ import { contactWorkInstructions } from './contact-work-instructions'
 const communication: ContactCommunication = { version: 1, characterId: 'new-cartographer', intent: 'delivery',
   source: { kind: 'task', topicId: 'atlas', runId: 'run', artifact: { version: 2, sectionId: 'map' } } }
 describe('shared contact communication contract', () => {
+  it('preserves a non-task interaction source without allowing it to impersonate a delivery', () => {
+    const card = { version: 1, characterId: 'alice', intent: 'question', source: { kind: 'interaction', interactionId: 'action:one' } }
+    expect(sanitizeContactCommunication(card)).toEqual(card)
+    expect(sanitizeContactCommunication({ ...card, intent: 'delivery' })).toBeUndefined()
+  })
   it('inherits the same rules in conversation, tasks and briefings without persona-specific dispatch', () => {
     expect(contactWorkInstructions).toContain(contactCommunicationRules)
     for (const channel of ['conversation', 'task', 'briefing'] as const) expect(contactCommunicationInstructions(channel)).toContain(contactCommunicationRules)

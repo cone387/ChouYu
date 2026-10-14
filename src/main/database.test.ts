@@ -17,7 +17,7 @@ vi.mock('electron', () => ({
 }))
 
 import {
-  appendAgentNotice, appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase,
+  appendAgentNotice, appendContactAction, appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase,
   getActiveSession, getAssistantUnreadCount, getAssistantUnreadPreview, getConfig, getSession, getSessionWorkspace, getSessions,
   getStorageStatus, initDatabase, listCharacters, markSessionRead, onStorageStatus, saveConfig, saveSessionMessages,
   selectChatSession, setState, searchSessions, updateCharacter, getContactProfile, updateContactProfile, getState
@@ -49,6 +49,23 @@ afterEach(() => {
 })
 
 describe('durable conversations', () => {
+  it('delivers action cards to their original session, preserves unread and survives stale autosaves without duplicating', () => {
+    const owner = listCharacters().find(c => !c.builtIn)!.id
+    const session = createChatSession('原请求', owner).activeSession.id
+    saveSessionMessages(session, [message('request', '改个名字')]); flushDatabase()
+    const second = createChatSession('另一个话题', owner).activeSession.id
+    const card: import('../shared/contact-actions').ContactActionInteraction = { id: 'action:one', version: 'v1', kind: 'action', characterId: owner, topicTitle: '修改名称', status: 'pending', createdAt: Date.now(), budgets: [], request: { title: '修改名称', body: '改为 Alice', purpose: 'configuration', sessionId: session, subject: { kind: 'contact' }, actions: [{ id: 'apply', label: '确认', tool: 'edit_contact_profile', arguments: { name: 'Alice' } }] } }
+    appendContactAction(card)
+    expect(getSession(session)!.messages.at(-1)?.communication?.source.kind).toBe('interaction')
+    expect(getSession(second)!.messages).toEqual([])
+    expect(getSessions().find(s => s.id === session)!.unreadCount).toBe(1)
+    saveSessionMessages(session, [message('request', '改个名字')]); flushDatabase(); initDatabase()
+    expect(getSession(session)!.messages.at(-1)?.id).toBe(card.id)
+    appendContactAction(card)
+    expect(getSession(session)!.messages.filter(m => m.id === card.id)).toHaveLength(1)
+    saveSessionMessages(session, []); flushDatabase(); appendContactAction(card)
+    expect(getSession(session)!.messages).toEqual([])
+  })
   it('saves partial contact profile changes and request receipts durably with optimistic concurrency', () => {
     const character = listCharacters().find(c => !c.builtIn)!
     const before = getContactProfile(character.id)

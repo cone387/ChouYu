@@ -759,6 +759,16 @@ export default function ChatPanel({ visible, position, onPositionChange, petStat
           const contact = contacts.find(c => c.id === target.characterId)
           if (!contact) throw new Error('联系人已删除，无法打开这条待处理事项。')
           const interaction = await window.electronAPI.agents.getInteraction(target.characterId, target.interactionId)
+          if (interaction.kind === 'action') {
+            if (interaction.characterId !== target.characterId) throw new Error('交互事项归属已变化。')
+            await selectSession(interaction.request.sessionId)
+            const workspace = await window.electronAPI.db.getSessionWorkspace()
+            current()
+            if (!workspace.activeSession.messages.some(m => m.id === interaction.id)) throw new Error('原卡片消息已删除，可在联系人的待处理事项中查看。')
+            window.dispatchEvent(new Event('chouyu:contact-navigation-opened'))
+            setMessageFocus({ sessionId: interaction.request.sessionId, messageId: interaction.id }); setShowMessageSearch(false); setLinkedTask(null); navigate('chat')
+            request.resolve(); return
+          }
           const work = await window.electronAPI.agents.get(target.characterId)
           current()
           if (interaction.characterId !== target.characterId || interaction.topicId !== target.topicId || !work.topics.some(topic => topic.id === target.topicId)) throw new Error('这条待处理事项的来源已失效，请重新读取联系人近况。')

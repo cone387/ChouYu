@@ -271,7 +271,7 @@ function messageReadTimestamp(message: Message): number {
 }
 
 function isUnreadMessage(session: ChatSession, message: Message): boolean {
-  return message.role === 'assistant' && (Boolean(message.assistantKind) || Boolean(message.agentNotice)
+  return message.role === 'assistant' && (Boolean(message.assistantKind) || Boolean(message.agentNotice) || message.communication?.source.kind === 'interaction'
     || Boolean(message.replyCompletedAt && message.replyCompletedAt > (message.replyReadAt ?? 0)))
     && messageReadTimestamp(message) > (session.lastReadAt ?? 0)
 }
@@ -562,7 +562,7 @@ function markSessionReadUpToNow(session: ChatSession): void {
 /** Shared durable delivery. Existing receipt keys remain compatible across upgrades. */
 function appendContactMessage(input: {
   content: string; communication: ContactCommunication; receiptKeys: string[]; messageId: string; timestamp?: number
-  title: string; metadata?: Pick<Message, 'assistantKind' | 'agentNotice' | 'taskReminder' | 'snoozeKey'>
+  title: string; sessionId?: string; metadata?: Pick<Message, 'assistantKind' | 'agentNotice' | 'taskReminder' | 'snoozeKey'>
 }): SessionWorkspace {
   const owner = input.communication.characterId
   if (!getCharacter(owner) || owner === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
@@ -572,7 +572,7 @@ function appendContactMessage(input: {
   }
   const communication = validateContactMessage(input.content, input.communication, owner)
   let at = Number.isFinite(input.timestamp) ? Number(input.timestamp) : Date.now()
-  let session = store.sessions.filter(candidate => owner === DEFAULT_CHARACTER_ID
+  let session = input.sessionId ? store.sessions.find(candidate => candidate.id === input.sessionId && candidate.characterId === owner) ?? null : store.sessions.filter(candidate => owner === DEFAULT_CHARACTER_ID
     ? isAssistantCharacter(candidate.characterId) : candidate.characterId === owner)
     .reduce<ChatSession | null>((latest, candidate) => !latest || candidate.updatedAt > latest.updatedAt ? candidate : latest, null)
   if (!session) { session = createSession([], input.title, at, owner); store.sessions.unshift(session) }
@@ -609,6 +609,14 @@ export function appendAgentNotice(notice: AgentNotice): SessionWorkspace {
   if (communication.source.kind !== 'task' || communication.source.topicId !== ref.topicId || communication.source.runId !== ref.runId) throw new Error('任务消息来源不匹配，未发送。')
   return appendContactMessage({ content: notice.content, communication, title: '工作进展', messageId: `agent:${notice.id}`,
     receiptKeys: [`agent-notice:${notice.characterId}:${notice.id}`], metadata: { agentNotice: ref } })
+}
+
+/** A durable action can belong directly to a contact; it has no invented task/run. */
+export function appendContactAction(card: import('../shared/contact-actions').ContactActionInteraction): SessionWorkspace {
+  if (card.kind !== 'action' || !card.id.startsWith('action:') || getSession(card.request.sessionId)?.characterId !== card.characterId) throw new Error('交互事项会话来源不匹配。')
+  return appendContactMessage({ content: `${card.request.title}\n\n${card.request.body}`, title: '待你回应', messageId: card.id, sessionId: card.request.sessionId,
+    receiptKeys: [`contact-action:${card.characterId}:${card.id}`],
+    communication: { version: 1, characterId: card.characterId, intent: 'question', source: { kind: 'interaction', interactionId: card.id } } })
 }
 
 function markSessionReadThrough(session: ChatSession, messageId: string): void {
@@ -787,7 +795,7 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
   const previousImages = new Map(session.messages.filter((message) => message.imageUrl && isAttachmentReference(message.imageUrl)).map((message) => [message.id, message.imageUrl]))
   const previousSnoozeKeys = new Map(session.messages.filter(m => m.snoozeKey).map(m => [m.id, m.snoozeKey]))
   const previousReminders = new Map(session.messages.filter(m => m.taskReminder).map(m => [m.id, m.taskReminder]))
-  const previousProactive = new Map(session.messages.filter(m => m.agentNotice || m.assistantKind).map(m => [m.id, m]))
+  const previousProactive = new Map(session.messages.filter(m => m.agentNotice || m.assistantKind || m.communication?.source.kind === 'interaction').map(m => [m.id, m]))
   const previousNotices = new Map(session.messages.filter(message => message.agentNotice).map(message => [message.id, message.agentNotice]))
   const previousKinds = new Map(session.messages.filter(message => message.assistantKind).map(message => [message.id, message.assistantKind]))
   const previousReplies = new Map(session.messages.filter(message => message.replyReadAt).map(message => [message.id, message]))
@@ -811,7 +819,7 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
   // must preserve them without resurrecting ordinary replies dropped on retry.
   if (nextMessages.length > 0) {
     const known = new Set(nextMessages.map(message => message.id))
-    nextMessages = [...nextMessages, ...session.messages.filter(message => (message.agentNotice || message.assistantKind) && !known.has(message.id))].sort((a, b) => a.timestamp - b.timestamp)
+    nextMessages = [...nextMessages, ...session.messages.filter(message => previousProactive.has(message.id) && !known.has(message.id))].sort((a, b) => a.timestamp - b.timestamp)
   }
   session.messages = nextMessages
   // A receipt for this reply must not acknowledge unrelated proactive deliveries.

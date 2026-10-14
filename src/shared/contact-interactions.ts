@@ -4,20 +4,27 @@ export type ContactBudgetKey = 'taskCalls' | 'dailyCalls' | 'taskTokens' | 'dail
 export interface ContactBudgetField {
   key: ContactBudgetKey; label: string; unit: string; used: number; limit: number; needed: number; max: number
 }
-export interface ContactInteraction {
+export interface ContactInteractionDetails {
   impact?: string
   recoveryMessage?: string
   currentState?: 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'paused' | 'abandoned' | 'deleted' | 'changed' | 'interrupted'
   automaticRetryAt?: number
-  characterName?: string
-  id: string; version: string; characterId: string; topicId: string; runId: string; topicTitle: string
-  kind: ContactInteractionKind; status: ContactInteractionStatus; question?: string
+  question?: string
   failureDetail?: string
   failure?: { title?: string; kind: 'billing' | 'configuration' | 'network' | 'format' | 'permission' | 'skill' | 'source' | 'tool-limit' | 'material' | 'chapter' | 'output' | 'storage' | 'context' | 'unknown'; message: string; action: string; settings: boolean; settingsTarget?: 'work' | 'skills' }
+}
+export interface ContactTaskInteraction extends ContactInteractionDetails {
+  characterName?: string
+  id: string; version: string; characterId: string; topicId: string; runId: string; topicTitle: string
+  kind: ContactInteractionKind; status: ContactInteractionStatus
   budgets: ContactBudgetField[]; result?: string; createdAt: number
 }
+export type ContactInteraction = ContactTaskInteraction | import('./contact-actions').ContactActionInteraction
 export interface ContactInteractionSubmission {
   version: string
+  actionId?: string
+  text?: string
+  reject?: boolean
   answer?: string
   limits?: Partial<Record<ContactBudgetKey, number>>
 }

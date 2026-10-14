@@ -278,7 +278,9 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
               {msg.imageUrl && (
                 <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
               )}
-              {msg.agentNotice?.interactionId && character?.id && !searching ? (
+              {msg.communication?.source.kind === 'interaction' && msg.communication.characterId === character?.id && msg.role === 'assistant' && !searching ? (
+                <ContactInteractionCard characterId={character.id} interactionId={msg.communication.source.interactionId} fallback={msg.content} />
+              ) : msg.agentNotice?.interactionId && character?.id && !searching ? (
                 <ContactInteractionCard characterId={character.id} interactionId={msg.agentNotice.interactionId} fallback={msg.content} onOpen={onAgentNotice ? () => onAgentNotice(msg.agentNotice!, 'work') : undefined} />
               ) : msg.toolData ? (
                 <ToolActivityCard data={msg.toolData} />

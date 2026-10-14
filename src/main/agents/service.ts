@@ -92,6 +92,11 @@ export class AgentService {
       case 'contactHome': return contactHome(this.store, id)
       case 'pendingInteractions': return this.store.decisions.pending(id)
       case 'getInteraction': return { ...this.store.decisions.get(id, String(args[0])), characterName: this.identity(id).name }
+      case 'offerAction': { const result = this.store.actions.offer(id, String(args[0]), args[1]); this.changed(id); return result }
+      case 'claimAction': { const result = this.store.actions.claim(id, String(args[0]), String(args[1]), args[2] as import('../../shared/contact-actions').ContactActionResponse); this.changed(id); return result }
+      case 'finishAction': { const result = this.store.actions.finish(id, String(args[0]), String(args[1]), args[2] as import('../../shared/contact-actions').ContactActionOutcome); this.changed(id); return result }
+      case 'failAction': { const result = this.store.actions.fail(id, String(args[0]), String(args[1]), String(args[2])); this.changed(id); return result }
+      case 'rejectAction': { const result = this.store.actions.reject(id, String(args[0]), String(args[1])); this.changed(id); return result }
       case 'submitInteraction': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         this.checkSearch(id)
@@ -104,6 +109,9 @@ export class AgentService {
         return this.request(String(args[1]), id, args[2] as unknown[])
       }
       case 'notices': return this.store.notices.pending(id)
+      case 'actionNotices': return this.store.actions.notices(id)
+      case 'startActionExecution': this.store.actions.startExecution(id, String(args[0]), String(args[1])); return null
+      case 'ackActionNotice': this.store.actions.ack(id, String(args[0])); return null
       case 'ackNotice': this.store.notices.ack(id, String(args[0])); return null
       case 'continueTopic': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')

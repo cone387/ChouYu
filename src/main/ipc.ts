@@ -20,6 +20,7 @@ import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig } 
 import { agentContext, removeContactAgent, contactAgentsCall, onContactContextChanged } from './agents'
 import { routeContactChange } from './agents/chat-changes'
 import { readContactConfiguration } from './agents'
+import { CONTACT_ACTION_TOOLS, type ContactActionTool, type ContactActionInteraction } from '../shared/contact-actions'
 import {
   type MemoryCandidateInput,
   type MemoryConflictAction,
@@ -715,6 +716,18 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                 summary: needsApproval ? '等待用户确认' : '正在执行'
               })
               if (needsApproval) {
+                if (owner && request.sessionId && CONTACT_ACTION_TOOLS.includes(call.name as ContactActionTool)) {
+                  const card = await contactAgentsCall<ContactActionInteraction>(owner, 'offerAction', [`${request.requestId}:${call.id}`, {
+                    purpose: 'confirmation', title: definition.displayName, body: prepared.preview || definition.description,
+                    sessionId: request.sessionId,
+                    subject: typeof arguments_.topicId === 'string' && Number.isSafeInteger(arguments_.revision)
+                      ? { kind: typeof arguments_.deliveryVersion === 'number' ? 'delivery' : 'task', topicId: arguments_.topicId, revision: arguments_.revision, ...(typeof arguments_.deliveryVersion === 'number' ? { version: arguments_.deliveryVersion } : {}) }
+                      : { kind: 'contact' },
+                    actions: [{ id: 'apply', label: '确认执行', tool: call.name, arguments: arguments_ }]
+                  }])
+                  sendToolEvent(event.sender, { requestId: request.requestId, callId: call.id, name: definition.name, displayName: definition.displayName, risk: definition.risk, status: 'completed', summary: '已发送确认卡片，尚未执行' })
+                  return JSON.stringify({ pendingInteraction: true, interactionId: card.id, message: '已把需要确认的内容放在聊天卡片中；确认后才会执行。' })
+                }
                 const outcome = await requestToolApproval(event.sender, request.requestId, call, controller.signal, prepared.preview)
                 if (outcome !== 'approved') {
                   const failure = toolApprovalFailure(outcome)

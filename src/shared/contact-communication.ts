@@ -22,6 +22,7 @@ export function contactCommunicationInstructions(channel: ContactCommunicationCh
 export type ContactMessageIntent = 'reply' | 'delivery' | 'question' | 'status' | 'blocker' | 'reminder' | 'check-in'
 export type ContactMessageSource =
   | { kind: 'conversation'; sessionId: string }
+  | { kind: 'interaction'; interactionId: string }
   | { kind: 'task'; topicId: string; runId: string; artifact?: { version: number; sectionId: string; evaluationIndex?: number } }
   | { kind: 'proactive'; eventIds: string[] }
 export interface ContactCommunication {
@@ -37,6 +38,7 @@ export function sanitizeContactCommunication(raw: unknown): ContactCommunication
   if (v.version !== 1 || !identifier(v.characterId) || !['reply', 'delivery', 'question', 'status', 'blocker', 'reminder', 'check-in'].includes(v.intent) || !source) return
   let clean: ContactMessageSource
   if (source.kind === 'conversation' && identifier(source.sessionId) && v.intent === 'reply') clean = { kind: source.kind, sessionId: source.sessionId }
+  else if (source.kind === 'interaction' && identifier(source.interactionId) && ['question', 'blocker', 'status'].includes(v.intent)) clean = { kind: source.kind, interactionId: source.interactionId }
   else if (source.kind === 'task' && identifier(source.topicId) && identifier(source.runId) && ['delivery', 'question', 'status', 'blocker'].includes(v.intent)) {
     if (source.artifact && (!Number.isSafeInteger(source.artifact.version) || source.artifact.version < 1 || !identifier(source.artifact.sectionId) || v.intent !== 'delivery')) return
     if (source.artifact?.evaluationIndex !== undefined && (!Number.isSafeInteger(source.artifact.evaluationIndex) || source.artifact.evaluationIndex < 0 || source.artifact.evaluationIndex > 2)) return

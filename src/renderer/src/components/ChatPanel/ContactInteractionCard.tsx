@@ -51,12 +51,32 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       await refreshRef.current()
     } finally { submitting.current = false; setBusy(false) }
   }
-  const openTask = onOpen ?? (view ? () => { void navigateContact({ kind: 'task', characterId, topicId: view.topicId }).catch(e => setError(e.message)) } : undefined)
+  const submitAction = async (actionId?: string) => {
+    if (!view || view.kind !== 'action' || submitting.current || !['pending', 'failed'].includes(view.status)) return
+    submitting.current = true; setBusy(true); setError(''); generation.current++
+    try {
+      setView(await window.electronAPI.agents.submitInteraction(characterId, interactionId, { version: view.version,
+        ...(actionId ? { actionId, ...(view.request.input ? { text: answer } : {}) } : { reject: true }) }))
+    } catch (e) { setError(e instanceof Error ? e.message : '提交失败，请重试'); await refreshRef.current() }
+    finally { submitting.current = false; setBusy(false) }
+  }
+  const openTask = onOpen ?? (view?.topicId ? () => { void navigateContact({ kind: 'task', characterId, topicId: view.topicId! }).catch(e => setError(e.message)) } : undefined)
   const currentTitles: Partial<Record<NonNullable<ContactInteraction['currentState']>, string>> = { queued: '已重新排队', running: '正在重新尝试', completed: '后续工作已完成', waiting: '现在需要你的回复', paused: '任务已暂停', deleted: '任务已删除', failed: '后续尝试仍受阻' }
   const title = view && view.status !== 'pending' ? (view.currentState && currentTitles[view.currentState]) || (view.status === 'resolved' ? '已处理' : '处理状态已更新')
     : view?.kind === 'question' ? '需要你的回复' : view?.kind === 'budget' ? '当前额度不足以继续' : view?.failure?.title || '这次尝试中断'
   return <section className="contact-interaction" data-contact-interaction={interactionId} data-contact-owner={characterId} data-interaction-topic={view?.topicId} aria-busy={busy}>
-    {view ? <>
+    {view?.kind === 'action' ? <>
+      {showOwner && view.characterName && <div className="contact-interaction-task">{view.characterName}</div>}
+      <strong className="contact-interaction-title">{view.request.title}</strong>
+      <p className="contact-interaction-question">{view.request.body}</p>
+      {view.result && <p role="status" className="contact-interaction-result">{view.result}</p>}
+      {['pending', 'failed'].includes(view.status) && view.retryable !== false && <>
+        {view.request.input && <label className="contact-interaction-field"><span>{view.request.input.label}</span><textarea value={answer} onChange={e => setAnswer(e.target.value)} maxLength={view.request.input.maxLength} required={view.request.input.required} rows={3} disabled={busy} /></label>}
+        <div className="contact-interaction-actions">{view.request.actions.map(action => <button key={action.id} type="button" className="primary" disabled={busy || Boolean(view.request.input?.required && !answer.trim())} onClick={() => void submitAction(action.id)}>{busy ? '正在处理…' : action.label}</button>)}
+          <button type="button" disabled={busy} onClick={() => void submitAction()}>拒绝</button>
+        </div>
+      </>}
+    </> : view ? <>
       {showOwner && view.characterName && <div className="contact-interaction-task">{view.characterName}</div>}
       <strong className="contact-interaction-title">{title}</strong>
       <div className="contact-interaction-task">{view.topicTitle}</div>

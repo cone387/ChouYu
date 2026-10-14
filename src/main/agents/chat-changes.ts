@@ -95,6 +95,7 @@ export async function routeContactChange(messages: AIChatMessage[], deps: Deps):
     const rawReceipt = await deps.execute({ id: `contact-change-${crypto.randomUUID()}`, name: profile ? 'edit_contact_profile' : 'configure_contact_skill', arguments: JSON.stringify(args) })
     let receipt: any
     try { receipt = JSON.parse(rawReceipt) } catch { return `这次调整没有完成。${rawReceipt}` }
+    if (receipt.pendingInteraction === true && typeof receipt.message === 'string') return receipt.message
     const changed = profile ? typeof receipt.revision === 'string' && /^[a-f0-9]{64}$/.test(receipt.revision) && receipt.revision !== base : Number.isSafeInteger(receipt.revision) && receipt.revision > Number(base)
     if (receipt.saved !== true || !changed || typeof receipt.message !== 'string') throw new Error('未取得有效的配置保存回执，不能确认修改成功。')
     return receipt.message
@@ -103,6 +104,7 @@ export async function routeContactChange(messages: AIChatMessage[], deps: Deps):
     const result = await deps.execute({ id: `contact-change-${crypto.randomUUID()}`, name: 'edit_contact_work_settings', arguments: JSON.stringify({ ...plan.patch, revision: data.revision, reason: latest.content.trim() }) })
     let receipt: any
     try { receipt = JSON.parse(result) } catch { return `这次调整没有完成。${result}` }
+    if (receipt.pendingInteraction === true && typeof receipt.message === 'string') return receipt.message
     if (receipt.saved === true && Number.isSafeInteger(receipt.revision) && receipt.revision > data.revision && typeof receipt.message === 'string') return receipt.message
     throw new Error('未取得有效的工作设置保存回执，不能确认修改成功。')
   }
@@ -163,6 +165,7 @@ export async function routeContactChange(messages: AIChatMessage[], deps: Deps):
   const result = await deps.execute({ id: `contact-change-${crypto.randomUUID()}`, name, arguments: JSON.stringify(args) })
   let receipt: any
   try { receipt = JSON.parse(result) } catch { return `这次调整没有完成。${result}` }
+  if (receipt.pendingInteraction === true && typeof receipt.message === 'string') return receipt.message
   if (plan.action === 'continue' && receipt.pending === true && receipt.workCompleted === false && typeof receipt.message === 'string') return receipt.message
   if (['edit_contact_task', 'set_contact_schedule'].includes(name) && receipt.saved === true) return receipt.message
   if (['end', 'abandon', 'delete'].includes(plan.action)) {

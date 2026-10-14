@@ -20,7 +20,9 @@ function budgetCard(store: AgentStore) {
   store.finish(run, { runId: run, title: '第一节', body: '已保存正文', nextStep: '继续', evidence: [], createdAt: Date.now() }, [],
     { judgement: '已写第一节', reason: '实际交付', nextStep: '继续', openQuestions: '', status: 'researching' })
   const id = store.notices.pending('alice').find(n => n.purpose === 'resources')!.interactionId!
-  return store.decisions.get('alice', id)
+  const card = store.decisions.get('alice', id)
+  if (card.kind !== 'budget') throw new Error('Expected a task budget interaction')
+  return card
 }
 it('states the failure impact and recovery separately and follows newer work without stale retry time', () => {
   const { store } = fixture(), run = store.createRun('alice', '')

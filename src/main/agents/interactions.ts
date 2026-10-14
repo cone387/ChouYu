@@ -2,11 +2,11 @@ import { contactFailure } from '../../shared/contact-failure'
 import { containsSecret } from '../../shared/memory'
 import { createHash } from 'node:crypto'
 import { agentUsesPlanner, type AgentNotice, type AgentSettings } from '../../shared/agents'
-import type { ContactBudgetField, ContactInteraction, ContactInteractionSubmission } from '../../shared/contact-interactions'
+import type { ContactBudgetField, ContactInteraction, ContactTaskInteraction, ContactInteractionSubmission } from '../../shared/contact-interactions'
 import type { AgentStore } from './store'
 import { withinWorkHours } from '../../shared/work-settings'
 
-type RecordValue = ContactInteraction & { topicRevision: number; settingsGuard: string; questionEventId?: number }
+type RecordValue = ContactTaskInteraction & { topicRevision: number; settingsGuard: string; questionEventId?: number }
 const settingsGuard = (s: AgentSettings) => JSON.stringify([s.enabled, s.paceWriting, s.workHours, s.permissionLevel, s.sources, s.readContactDeliveries, s.shareDeliveries, s.searchEnabled])
 
 /** Persist decisions separately from messages. All mutations share the task database transaction. */
@@ -53,8 +53,8 @@ export class ContactInteractions {
     return notice.id
   }
   pending(owner: string): ContactInteraction[] {
-    const rows = this.store.db.prepare("SELECT id FROM contact_interactions WHERE character_id=? AND json_extract(value,'$.status')='pending'").all(owner) as { id: string }[]
-    return rows.map(row => this.get(owner, row.id)).filter(view => view.status === 'pending')
+    const rows = this.store.db.prepare("SELECT id FROM contact_interactions WHERE character_id=? AND json_extract(value,'$.status') IN ('pending','failed')").all(owner) as { id: string }[]
+    return rows.map(row => this.get(owner, row.id)).filter(view => ['pending', 'failed'].includes(view.status))
   }
   /** Upgrade only a still-current blocker/question, once. Historical messages are never rewritten. */
   publishOutstanding(owner: string, visibleNoticeIds?: ReadonlySet<string>) {
@@ -119,6 +119,7 @@ export class ContactInteractions {
     return fields
   }
   get(owner: string, id: string): ContactInteraction {
+    if (id.startsWith('action:')) return this.store.actions.get(owner, id)
     const v = this.read(owner, id), s = this.store
     const sourceRun = s.getRun(v.runId)
     const presentation = sourceRun && JSON.parse(sourceRun.input).revisionScope === 'presentation'
@@ -194,7 +195,7 @@ export class ContactInteractions {
           : topic.status === 'completed' ? '任务现已完成，无需重试此前的失败。' : '任务已结束，不会再重试。'
       } else if (newer && newer.id !== v.runId) {
         const states: Record<string, string> = { queued: '已重新排队，无需重复点击重试。', running: '正在重新尝试，尚未完成；无需重复点击重试。', waiting: '后续尝试正在等待你的回复，请打开任务查看原问题。', completed: '后续尝试已完成；这不代表整个任务已经结束。', interrupted: '后续尝试已中断，等待恢复；请查看任务的当前状态。', cancelled: '后续尝试已取消；此前的重试操作已失效。' }
-        v.currentState = newer.status === 'cancelled' ? 'changed' : newer.status as ContactInteraction['currentState']
+        v.currentState = newer.status === 'cancelled' ? 'changed' : newer.status as ContactTaskInteraction['currentState']
         v.result = newer.status === 'failed' ? `后续尝试仍受阻：${contactFailure(newer.error).message} 请查看最新的处理事项。` : states[newer.status]
       } else { v.currentState = 'changed'; v.result ??= '任务已变化，此前的操作已失效，请查看当前任务。' }
     }
@@ -205,11 +206,13 @@ export class ContactInteractions {
   submit(owner: string, id: string, raw: ContactInteractionSubmission, conversation: string): ContactInteraction {
     // Resolving obsolete state happens outside the mutation transaction, so a rejected click stays obsolete.
     const current = this.get(owner, id)
+    if (current.kind === 'action') throw new Error('此事项须通过对应的实际操作处理。')
     if (current.status === 'resolved') return current
     if (current.status !== 'pending') throw new Error(current.result)
     if (!raw || raw.version !== current.version) throw new Error('额度或任务已变化，请核对卡片后重新提交。')
     return this.store.db.transaction(() => {
       const current = this.get(owner, id)
+      if (current.kind === 'action') throw new Error('此事项须通过对应的实际操作处理。')
       if (current.status === 'resolved') return current
       if (current.status !== 'pending' || raw.version !== current.version) throw new Error('额度或任务已变化，请核对卡片后重新提交。')
       const s = this.store, record = this.read(owner, id)

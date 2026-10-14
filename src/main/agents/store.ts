@@ -14,6 +14,7 @@ import type { ContentCitation } from '../../shared/contact-content'
 import { validateChapterContinuation } from './chapter-continuation'
 import { AgentTaskFailures } from './task-failures'
 import { ContactInteractions } from './interactions'
+import { ContactActions } from './action-interactions'
 import { AgentTokenBudget } from './token-budget'
 import Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
@@ -52,6 +53,7 @@ export class AgentStore {
   readonly db: Database.Database
   readonly topics: AgentTopics
   readonly decisions: ContactInteractions
+  readonly actions: ContactActions
   readonly notices: AgentNotices
   readonly tokens: AgentTokenBudget
   readonly deliveries: AgentDeliveries
@@ -123,6 +125,7 @@ export class AgentStore {
     this.db.prepare("UPDATE profiles SET settings=json_remove(settings, '$.workUntil') WHERE json_type(settings, '$.workUntil') IS NOT NULL").run()
     this.tokens = new AgentTokenBudget(this.db)
     this.decisions = new ContactInteractions(this)
+    this.actions = new ContactActions(this)
     if (version < 8) this.db.transaction(() => { this.tokens.importHistory(); this.db.pragma('user_version = 8') })()
     if (version < 9) this.db.transaction(() => { this.portfolio.backfill(); this.db.pragma('user_version = 9') })()
     this.materials = new AgentMaterials(this.db)
@@ -781,6 +784,7 @@ export class AgentStore {
     })()
   }
   recover() {
+    this.actions.recoverInterrupted()
     // Recheck legacy continuous-task interruptions once, without fabricating a user reply.
     for (const run of this.db.prepare("SELECT * FROM runs WHERE status='waiting'").all() as RunRow[]) {
       const input = JSON.parse(run.input), settings = JSON.parse(this.profile(run.character_id)!.settings) as AgentSettings
