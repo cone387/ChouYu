@@ -1,6 +1,6 @@
 import { contactHandle } from './query-metrics'
 import { AgentWorkerRPC } from './worker-rpc'
-import { getContactSkills } from '../skills'
+import { configureContactSkill, contactSkillLibrary, getContactSkills } from '../skills'
 import { SKILL_TOOLS } from '../skills/tools'
 import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -11,9 +11,11 @@ import { app, BrowserWindow, dialog, utilityProcess, type UtilityProcess } from 
 import { writeFile } from 'node:fs/promises'
 import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
 import { join } from 'node:path'
-import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState } from '../database'
+import { appendAgentNotice, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, getContactProfile, updateContactProfile } from '../database'
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
+import { createContactProfileTools } from './profile-tools'
+import { notifyJournalConfig } from '../journal'
 import { createMemoryTools } from './memory-tools'
 import { createMaterialTools, MATERIAL_TOOL_NAMES } from './material-tools'
 import { loadMaterialImport } from './material-import'
@@ -140,6 +142,10 @@ export async function contactAgentsCall<T = unknown>(id: string, method: string,
   validateMemoryBoundary(id, method, args)
   await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args) as Promise<T>
 }
+export function readContactConfiguration(id: string) {
+  if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
+  return { profile: getContactProfile(id), skills: contactSkillLibrary().list(id) }
+}
 function validateMemoryBoundary(owner: string, method: string, args: unknown[]) {
   if (method !== 'createMemory' && method !== 'updateMemory') return
   const input = validateMemoryInput(args[method === 'createMemory' ? 0 : 2])
@@ -197,6 +203,21 @@ export function initializeAgents() {
   })
   for (const tool of createMaterialTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   for (const tool of createMemoryTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
+  for (const tool of createContactProfileTools({
+    owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
+    profile: async id => readContactConfiguration(id).profile,
+    skills: async id => readContactConfiguration(id).skills,
+    configure: async (id, skillId, action, revision) => configureContactSkill(id, skillId, action, revision),
+    update: async (id, patch, revision, reason) => {
+      const result = updateContactProfile(id, patch, revision, reason)
+      for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) {
+        window.webContents.send('characters:changed')
+        if (result.builtIn) window.webContents.send('config:changed', getConfig())
+      }
+      if (result.builtIn) notifyJournalConfig(getConfig())
+      return result
+    }
+  })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   registerPresentationProtocol(async (id, topicId, version) => {
     if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     await ensure()

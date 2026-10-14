@@ -24,6 +24,7 @@ interface ContactsViewProps {
 }
 
 interface FormState {
+  revision?: string
   id: string | null
   name: string
   avatar: string
@@ -349,6 +350,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     }
     setForm({
       id: character.id,
+      revision: character.profileRevision,
       name: character.name,
       avatar: character.avatar,
       category: character.category,

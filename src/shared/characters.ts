@@ -68,6 +68,7 @@ export interface Character {
 }
 
 export interface CharacterStats extends Character {
+  profileRevision?: string
   sessionCount: number
   lastActiveAt: number
 }

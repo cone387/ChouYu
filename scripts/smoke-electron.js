@@ -41,7 +41,8 @@ const env = {
   CHOUYU_SMOKE_ASSISTANT_ROUTINES_ONLY: process.argv.includes('--assistant-routines') ? '1' : '0',
   CHOUYU_SMOKE_COMPANION_ONLY: process.argv.includes('--companion') ? '1' : '0',
   CHOUYU_SMOKE_PRESENTATION_ONLY: process.argv.includes('--presentation') ? '1' : '0',
-  CHOUYU_SMOKE_AGENTS_ONLY: process.argv.includes('--agents') ? '1' : '0',
+  CHOUYU_SMOKE_AGENTS_ONLY: process.argv.includes('--agents') || process.argv.includes('--contact-conversation') ? '1' : '0',
+  CHOUYU_SMOKE_CONTACT_CONVERSATION_ONLY: process.argv.includes('--contact-conversation') ? '1' : '0',
   CHOUYU_SMOKE_CONTACTS_ONLY: process.argv.includes('--contacts') ? '1' : '0',
   CHOUYU_SMOKE_CONTACT_EXPERIENCE_ONLY: process.argv.includes('--contact-experience') ? '1' : '0',
   CHOUYU_SMOKE_USER_DATA: smokeUserData

@@ -1,4 +1,4 @@
-import { app, ipcMain, type BrowserWindow } from 'electron'
+import { app, ipcMain, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { getCharacter, getConfig, getState } from '../database'
 import { ASSISTANT_CHARACTER_ID } from '../../shared/characters'
@@ -18,6 +18,14 @@ export function syncSkillToolPolicy() {
 }
 export function contactSkillLibrary() {
   return library ??= new SkillLibrary(join(app.getPath('userData'), 'contact-skills'))
+}
+/** Shared by the settings page, chat tools and interaction actions. */
+export function configureContactSkill(owner: string, id: string, action: SkillAction, revision: number) {
+  if (owner === ASSISTANT_CHARACTER_ID || !getCharacter(owner)) throw new Error('联系人不存在。')
+  const result = contactSkillLibrary().configure(owner, id, action, revision)
+  if (['disable', 'disable_scripts', 'remove'].includes(action)) contactSkillRunner().cancel(owner, id)
+  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('agents:changed', owner)
+  return result
 }
 export function getContactSkills(characterId: string): SkillSnapshot {
   try { return contactSkillLibrary().snapshot(characterId) }
@@ -47,11 +55,7 @@ export function registerSkillHandlers(window: BrowserWindow) {
     status: () => market().status(),
     list: id => contactSkillLibrary().list(assertOwner(id)),
     detail: id => contactSkillLibrary().detail(id),
-    configure: (owner, id, action: SkillAction, revision) => {
-      const result = contactSkillLibrary().configure(assertOwner(owner), id, action, revision)
-      if (['disable', 'disable_scripts', 'remove'].includes(action)) contactSkillRunner().cancel(owner, id)
-      return result
-    },
+    configure: (owner, id, action: SkillAction, revision) => configureContactSkill(assertOwner(owner), id, action, revision),
     uninstall: id => contactSkillLibrary().uninstall(id)
   }
   for (const [method, handler] of Object.entries(handlers)) ipcMain.handle(`skills:${method}`, (event, ...args) => {

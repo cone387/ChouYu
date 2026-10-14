@@ -19,6 +19,7 @@ import { formatSessionMarkdown } from '../shared/sessions'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig } from '../shared/characters'
 import { agentContext, removeContactAgent, contactAgentsCall, onContactContextChanged } from './agents'
 import { routeContactChange } from './agents/chat-changes'
+import { readContactConfiguration } from './agents'
 import {
   type MemoryCandidateInput,
   type MemoryConflictAction,
@@ -686,7 +687,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             const arguments_ = parseToolArguments(call.arguments)
             try {
               await assertContext()
-              const taskMutation = ['edit_contact_task', 'edit_contact_work_settings', 'set_contact_schedule', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
+              const taskMutation = ['edit_contact_profile', 'configure_contact_skill', 'edit_contact_task', 'edit_contact_work_settings', 'set_contact_schedule', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
               if (taskMutation && taskMutationRequested) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
               const prepared: PreparedTool = SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
               if (controller.signal.aborted) throw new Error('AI 请求已取消。')
@@ -775,8 +776,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           }
         } : undefined
       const currentCitations = [...request.messages].reverse().find(m => m.role === 'user')?.contactCitations
-      if (owner && owner !== ASSISTANT_CHARACTER_ID && owner !== DEFAULT_CHARACTER_ID && chatTools && !currentCitations?.length) {
+      if (owner && owner !== ASSISTANT_CHARACTER_ID && chatTools && !currentCitations?.length) {
         const routed = await routeContactChange(request.messages, {
+          configuration: async () => readContactConfiguration(owner),
+          assistant: owner === DEFAULT_CHARACTER_ID,
           read: (method, args) => contactAgentsCall(owner, method, args),
           model: async (prompt, content) => {
             let output = ''

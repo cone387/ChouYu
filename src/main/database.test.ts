@@ -20,7 +20,7 @@ import {
   appendAgentNotice, appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase,
   getActiveSession, getAssistantUnreadCount, getAssistantUnreadPreview, getConfig, getSession, getSessionWorkspace, getSessions,
   getStorageStatus, initDatabase, listCharacters, markSessionRead, onStorageStatus, saveConfig, saveSessionMessages,
-  selectChatSession, setState, searchSessions, updateCharacter
+  selectChatSession, setState, searchSessions, updateCharacter, getContactProfile, updateContactProfile, getState
 } from './database'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS } from '../shared/characters'
 import { DEFAULT_APP_CONFIG } from '../shared/config'
@@ -49,6 +49,38 @@ afterEach(() => {
 })
 
 describe('durable conversations', () => {
+  it('saves partial contact profile changes and request receipts durably with optimistic concurrency', () => {
+    const character = listCharacters().find(c => !c.builtIn)!
+    const before = getContactProfile(character.id)
+    const saved = updateContactProfile(character.id, { name: '测试新名字', soulMd: '独立的新要求' }, before.revision, '以后叫测试新名字，使用独立的新要求')
+    expect(saved.profile).toMatchObject({ name: '测试新名字', soulMd: '独立的新要求', model: before.profile.model, avatar: before.profile.avatar })
+    expect(saved.revision).not.toBe(before.revision)
+    expect(() => updateContactProfile(character.id, { name: '过期名字' }, before.revision, '过期修改')).toThrow('变化')
+    initDatabase()
+    expect(getContactProfile(character.id)).toEqual(saved)
+    expect(getState(`contact-profile-change:${character.id}`)).toContain('以后叫测试新名字')
+  })
+  it('updates built-in effective model/persona once and protects manual edits with the same revision', () => {
+    saveConfig({ model: 'old-model', soulMd: '原始系统人设' })
+    const before = getContactProfile(DEFAULT_CHARACTER_ID)
+    const saved = updateContactProfile(DEFAULT_CHARACTER_ID, { model: 'new-model', soulMd: '新的系统人设' }, before.revision, '修改我的模型和人设')
+    expect(getConfig()).toMatchObject({ model: 'new-model', soulMd: '新的系统人设' })
+    expect(saved.profile).toMatchObject({ model: 'new-model', soulMd: '新的系统人设' })
+    expect(() => updateCharacter(DEFAULT_CHARACTER_ID, { ...before.profile, revision: before.revision })).toThrow('变化')
+    saveConfig({ model: 'third-model' })
+    expect(() => updateContactProfile(DEFAULT_CHARACTER_ID, { avatar: '🐠' }, saved.revision, '换个头像')).toThrow('变化')
+  })
+  it('rolls back profile, built-in config and receipt in memory when durable storage fails', () => {
+    const before = getContactProfile(DEFAULT_CHARACTER_ID), config = getConfig()
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => { throw new Error('disk full') })
+    expect(() => updateContactProfile(DEFAULT_CHARACTER_ID, { name: '未保存的名字', model: 'not-saved' }, before.revision, '修改名字和模型')).toThrow('保存失败')
+    expect(getContactProfile(DEFAULT_CHARACTER_ID)).toEqual(before)
+    expect(getConfig()).toEqual(config)
+    expect(getState(`contact-profile-change:${DEFAULT_CHARACTER_ID}`)).toBeNull()
+    write.mockRestore()
+    initDatabase()
+    expect(getContactProfile(DEFAULT_CHARACTER_ID)).toEqual(before)
+  })
   it('persists exact contact citation versions across reload and rejects malformed or foreign references', () => {
     const session = getActiveSession()
     const citation = { ref: { characterId: session.characterId, topicId: 'topic', version: 1, sectionId: 'section' }, anchor: { start: 0, end: 2, quote: '原文', textHash: 'a'.repeat(64) } }

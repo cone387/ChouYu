@@ -27,6 +27,8 @@ import type { MemoryFeedbackValue } from '../shared/memory'
 import type { AgentMessageRef, AgentNotice } from '../shared/agents'
 import { sanitizeAgentMessageRef } from '../shared/agents'
 import { sanitizeContactCommunication, validateContactMessage, type ContactCommunication } from '../shared/contact-communication'
+import { applyContactProfilePatch, contactProfileSnapshot, type ContactProfilePatch } from '../shared/contact-profile-settings'
+import { containsSecret } from '../shared/memory'
 
 export interface Message {
   communication?: ContactCommunication
@@ -669,6 +671,7 @@ export function listCharacters(): CharacterStats[] {
     const sessions = store.sessions.filter((session) => session.characterId === character.id)
     return {
       ...character,
+      profileRevision: contactProfileSnapshot(character, store.config).revision,
       sessionCount: sessions.length,
       lastActiveAt: sessions.reduce((latest, session) => Math.max(latest, session.updatedAt), character.createdAt)
     }
@@ -704,9 +707,25 @@ export function createCharacter(draft: unknown): CharacterStats {
   return listCharacters().find((item) => item.id === character.id)!
 }
 
-export function updateCharacter(id: string, draft: unknown): CharacterStats {
+export function getContactProfile(id: string) {
+  return contactProfileSnapshot(findCharacterByIdOrThrow(id), store.config)
+}
+
+export function updateContactProfile(id: string, patch: ContactProfilePatch, revision: string, reason: string) {
+  const before = getContactProfile(id)
+  if (typeof revision !== 'string' || revision !== before.revision) throw new Error('联系人资料已变化，请重新读取。')
+  if (typeof reason !== 'string' || !reason.trim() || reason.length > 2000 || containsSecret(reason)) throw new Error('联系人修改要求无效或包含凭据。')
+  if (containsSecret(JSON.stringify(patch))) throw new Error('请通过安全输入设置凭据，不要写入联系人资料。')
+  const next = applyContactProfilePatch(before, patch)
+  updateCharacter(id, { ...next, revision }, reason)
+  return getContactProfile(id)
+}
+
+export function updateCharacter(id: string, draft: unknown, requestReason?: string): CharacterStats {
   const character = findCharacterByIdOrThrow(id)
   if (id === ASSISTANT_CHARACTER_ID) throw new Error('旧版助手已合并到 ChouYu。')
+  const expected = draft && typeof draft === 'object' ? (draft as { revision?: unknown }).revision : undefined
+  if (expected !== undefined && (typeof expected !== 'string' || expected !== getContactProfile(id).revision)) throw new Error('联系人资料已变化，请重新打开后修改。')
   const input = sanitizeCharacterDraft(draft)
   if (!input) throw new Error('角色名称和模型为必填项。')
   if (character.builtIn && input.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置角色固定使用默认档案。')
@@ -716,16 +735,20 @@ export function updateCharacter(id: string, draft: unknown): CharacterStats {
   if (store.characters.some((item) => item.id !== id && item.name.toLowerCase() === input.name.toLowerCase())) {
     throw new Error('已存在同名角色，请换一个名字。')
   }
-  if (character.builtIn) {
-    character.name = input.name
-    character.avatar = input.avatar
-    character.updatedAt = Date.now()
-    // 内置角色的人设与模型写入全局配置，保持单一数据源。
-    saveConfig({ soulMd: input.soulMd, model: input.model })
-    return listCharacters().find((item) => item.id === id)!
+  const previous = { ...character }, previousConfig = store.config, previousState = store.state
+  try {
+    const updatedAt = Math.max(Date.now(), character.updatedAt + 1)
+    if (character.builtIn) {
+      Object.assign(character, { name: input.name, avatar: input.avatar, category: input.category, updatedAt })
+      // Built-in effective fields and receipt commit together, without a second save.
+      store.config = normalizeConfig({ ...store.config, soulMd: input.soulMd, model: input.model })
+    } else Object.assign(character, input, { updatedAt })
+    if (requestReason !== undefined) store.state = { ...store.state, [`contact-profile-change:${id}`]: JSON.stringify({ reason: requestReason, revision: getContactProfile(id).revision, at: updatedAt }) }
+    persist()
+  } catch (error) {
+    Object.assign(character, previous); store.config = previousConfig; store.state = previousState
+    throw error
   }
-  Object.assign(character, input, { updatedAt: Date.now() })
-  persist()
   return listCharacters().find((item) => item.id === id)!
 }
 

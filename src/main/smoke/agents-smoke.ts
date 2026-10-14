@@ -1,5 +1,6 @@
 import { runContactInteractionsSmoke } from './contact-interactions-smoke'
 import { runContactChatChangeSmoke } from './contact-chat-change-smoke'
+import { runContactConversationSmoke } from './contact-conversation-smoke'
 import { runContactTaskToolbarSmoke } from './contact-task-toolbar-smoke'
 import { runContactPermissionsSmoke } from './contact-permissions-smoke'
 import { app, dialog, type BrowserWindow } from 'electron'
@@ -48,7 +49,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('判断用户最新一句是否在调整'))) {
         const context = JSON.parse(payload.messages.at(-1).content)
-        const result = context.latest?.startsWith('验收联系人权限') ? { kind: 'action', topicId: context.topics[0].id, action: 'pause' }
+        const result = context.latest?.startsWith('验收对话资料') ? { kind: 'profile', patch: { name: '对话新名字', model: 'agent-smoke-next', soulMd: '独立评审者' } }
+          : context.latest?.startsWith('验收对话权限') ? { kind: 'settings', patch: { permissionLevel: 'sources', sources: ['https://example.com/'], searchEnabled: false, notifyProgress: false, shareDeliveries: true } }
+          : context.latest?.startsWith('验收对话技能') ? { kind: 'skill', skillId: 'conversation-review', action: 'enable' }
+          : context.latest?.startsWith('验收对话内置') ? { kind: 'profile', patch: { model: 'agent-smoke-built-in' } }
+          : context.latest?.startsWith('验收联系人权限') ? { kind: 'action', topicId: context.topics[0].id, action: 'pause' }
           : context.latest?.startsWith('验收工作时间') ? { kind: 'settings', patch: { workStart: '20:00', workEnd: '23:00' } }
           : context.latest?.startsWith('验收解除上限') ? { kind: 'action', topicId: context.topics[0].id, action: 'edit', patch: { clearTokenLimit: true } }
           : context.latest?.startsWith('验收结束任务') ? { kind: 'action', topicId: context.topics[0].id, action: 'end' }
@@ -146,6 +151,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
     saveConfig({ provider: 'openai', baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'agent-smoke-secret', model: 'agent-smoke', memoryEnabled: false, aiToolsEnabled: true, toolPermissionMode: 'full' })
     window.webContents.send('config:changed', getConfig())
+    if (process.env.CHOUYU_SMOKE_CONTACT_CONVERSATION_ONLY === '1') {
+      await runContactConversationSmoke(window)
+      console.log('CHOUYU_SMOKE_AGENTS_PASSED conversationOnly=true')
+      return
+    }
     if (process.env.CHOUYU_SMOKE_PERMISSIONS_ONLY === '1') {
       await runContactPermissionsSmoke(window)
       console.log('CHOUYU_SMOKE_AGENTS_PASSED permissionsOnly=true')
@@ -931,6 +941,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     console.log('CHOUYU_SMOKE_CONTACT_QUEUE_PASSED acceptedWithoutCapacity=true noCalls=true pause=true stableSelection=true')
     await runContactInteractionsSmoke(window)
     await runContactChatChangeSmoke(window)
+    await runContactConversationSmoke(window)
     console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 feedbackRevisionCalls=1 researchCalls=5 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true autonomousResearch=true unchangedBackoff=true deliverableVersions=true export=true revisionForm=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)
