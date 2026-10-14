@@ -1,7 +1,15 @@
 import { expect, it } from 'vitest'
-import { validateContactActionRequest, validateContactActionResponse } from './contact-actions'
+import { validateContactActionRequest, validateContactActionResponse, contactActionCredential } from './contact-actions'
 
 const request = () => ({ purpose: 'configuration', title: '调整工作时间', body: '只修改当前联系人的时间。', sessionId: 'session', subject: { kind: 'contact' }, actions: [{ id: 'apply', label: '应用', tool: 'edit_contact_work_settings', arguments: { revision: 2, workStart: '20:00', workEnd: '23:00', reason: '晚上工作' } }] })
+it('accepts credentials only through an explicit secure card field and never includes them in persisted responses', () => {
+  const secure = validateContactActionRequest({ ...request(), actions: [{ id: 'apply', label: '保存凭据', tool: 'set_contact_search_credential', arguments: { revision: 0 } }], input: { label: '搜索密钥', argument: 'credential', maxLength: 8192, required: true } })
+  expect(contactActionCredential(secure, { credential: 'private-value' })).toBe('private-value')
+  expect(validateContactActionResponse(secure, { actionId: 'apply', credential: 'private-value' })).toEqual({ actionId: 'apply' })
+  expect(() => contactActionCredential(validateContactActionRequest(request()), { credential: 'private-value' })).toThrow('安全输入')
+  expect(() => contactActionCredential(secure, {})).toThrow('密钥')
+  expect(() => validateContactActionRequest({ ...request(), input: secure.input })).toThrow('凭据')
+})
 it('accepts a contact-only action without inventing a task or run', () => {
   expect(validateContactActionRequest(request())).toEqual(request())
   expect(validateContactActionRequest(request())).not.toHaveProperty('topicId')

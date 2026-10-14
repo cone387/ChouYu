@@ -1,7 +1,7 @@
 import type { ContactInteractionDetails } from './contact-interactions'
 import { containsSecret } from './memory'
 
-export const CONTACT_ACTION_TOOLS = ['edit_contact_work_settings', 'edit_contact_profile', 'configure_contact_skill', 'update_contact_topic', 'answer_contact_question', 'edit_contact_task', 'set_contact_schedule', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'] as const
+export const CONTACT_ACTION_TOOLS = ['edit_contact_work_settings', 'edit_contact_profile', 'configure_contact_skill', 'update_contact_topic', 'answer_contact_question', 'edit_contact_task', 'set_contact_schedule', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine', 'set_contact_search_credential', 'install_contact_skill', 'prepare_contact_skill_environment', 'provide_contact_material', 'remember_contact_memory', 'update_contact_memory', 'forget_contact_memory'] as const
 export type ContactActionTool = typeof CONTACT_ACTION_TOOLS[number]
 export interface ContactActionOption {
   id: string
@@ -16,7 +16,7 @@ export interface ContactActionRequest {
   sessionId: string
   subject: { kind: 'contact' } | { kind: 'task'; topicId: string; revision: number } | { kind: 'delivery'; topicId: string; revision: number; version: number }
   actions: ContactActionOption[]
-  input?: { label: string; argument: 'answer' | 'reason'; maxLength: number; required?: boolean }
+  input?: { label: string; argument: 'answer' | 'reason' | 'credential'; maxLength: number; required?: boolean }
 }
 export interface ContactActionResponse { actionId: string; text?: string }
 export interface ContactActionOutcome { content: string; summary: string }
@@ -56,7 +56,8 @@ export function validateContactActionRequest(raw: unknown): ContactActionRequest
   })
   if (new Set(actions.map(a => a.id)).size !== actions.length) throw new Error('交互事项操作重复。')
   const input = v.input
-  if (input && (!bounded(input.label, 80) || !['answer', 'reason'].includes(input.argument) || !Number.isSafeInteger(input.maxLength) || input.maxLength < 1 || input.maxLength > 2000 || input.required !== undefined && typeof input.required !== 'boolean')) throw new Error('交互事项输入无效。')
+  if (input && (!bounded(input.label, 80) || !['answer', 'reason', 'credential'].includes(input.argument) || !Number.isSafeInteger(input.maxLength) || input.maxLength < 1 || input.maxLength > (input.argument === 'credential' ? 8192 : 2000) || input.required !== undefined && typeof input.required !== 'boolean')) throw new Error('交互事项输入无效。')
+  if (input?.argument === 'credential' && actions.some(a => a.tool !== 'set_contact_search_credential') || actions.some(a => a.tool === 'set_contact_search_credential') && input?.argument !== 'credential') throw new Error('凭据只能使用专用安全输入。')
   if (input?.argument === 'answer' && actions.some(a => a.tool !== 'answer_contact_question')) throw new Error('只有原问题回复可以填写答案。')
   const result: ContactActionRequest = { purpose: v.purpose, title: v.title, body: v.body, sessionId: v.sessionId,
     subject: s.kind === 'contact' ? { kind: s.kind } : { kind: s.kind, topicId: s.topicId, revision: s.revision, ...(s.kind === 'delivery' ? { version: s.version } : {}) } as ContactActionRequest['subject'],
@@ -69,6 +70,16 @@ export function validateContactActionResponse(request: ContactActionRequest, raw
   const v = raw as ContactActionResponse
   if (!v || !request.actions.some(a => a.id === v.actionId)) throw new Error('请选择此事项中的实际操作。')
   if (v.text !== undefined && (typeof v.text !== 'string' || !request.input || v.text.length > request.input.maxLength || containsSecret(v.text))) throw new Error('回复无效、过长或包含凭据。')
-  if (request.input?.required && !v.text?.trim()) throw new Error('请填写回复。')
+  if (request.input?.argument === 'credential' && v.text !== undefined) throw new Error('请使用安全输入填写凭据。')
+  if (request.input?.argument !== 'credential' && request.input?.required && !v.text?.trim()) throw new Error('请填写回复。')
   return { actionId: v.actionId, ...(v.text === undefined ? {} : { text: v.text }) }
+}
+export function contactActionCredential(request: ContactActionRequest, submission: { credential?: unknown }): string | undefined {
+  if (request.input?.argument !== 'credential') {
+    if (submission.credential !== undefined) throw new Error('此卡片没有安全输入。')
+    return
+  }
+  const value = submission.credential
+  if (typeof value !== 'string' || !value.trim() || value.length > request.input.maxLength || /[\r\n\0]/.test(value)) throw new Error('请填写有效的搜索密钥。')
+  return value.trim()
 }

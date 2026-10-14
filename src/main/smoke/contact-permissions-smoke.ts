@@ -5,6 +5,7 @@ import { AgentStore } from '../agents/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { appendAgentNotice, createCharacter, createChatSession, getConfig, listCharacters, saveConfig, selectChatSession } from '../database'
 import { waitForRenderer } from './storage-smoke'
+import { invokeContactChat } from './contact-card-helper'
 
 /** Isolated database, real renderer controls, IPC confirmation and local model fixture. */
 export async function runContactPermissionsSmoke(window: BrowserWindow) {
@@ -31,7 +32,7 @@ export async function runContactPermissionsSmoke(window: BrowserWindow) {
   }
   const invoke = async (mode: string, disabled = false) => {
     const request = { requestId: `permission-${mode}-${disabled}`, sessionId: session, characterId: character.id, messages: [{ role: 'user', content: '验收联系人权限：暂停这项任务' }], systemPrompt: '权限验收' }
-    return run(`(async()=>{const events=[],approvals=[];const off=window.electronAPI.ai.onToolEvent(e=>{if(e.requestId===${JSON.stringify(request.requestId)})events.push(e)});const approval=window.electronAPI.ai.onToolApprovalRequest(r=>{if(r.requestId===${JSON.stringify(request.requestId)}){approvals.push(r);window.electronAPI.ai.resolveToolRequest(r.approvalId,false)}});try {const response=await window.electronAPI.ai.startStream(${JSON.stringify(request)});return {response,events,approvals}}finally{off();approval()}})()`)
+    return invokeContactChat(window, { ...request, messages: request.messages as import('../../shared/ai').AIChatMessage[] }, false)
   }
   for (const mode of ['full', 'auto', 'confirm', 'inherit']) {
     await choose(mode)
@@ -39,7 +40,7 @@ export async function runContactPermissionsSmoke(window: BrowserWindow) {
     if (!result.response.ok) throw new Error(`Permission stream failed: ${JSON.stringify(result)}`)
     if (mode === 'full') {
       if (result.approvals.length || !result.response.reply?.includes('已暂停')) throw new Error('Contact full policy still prompts or failed to persist')
-    } else if (result.approvals.length !== 1 || !result.events.some((e: { status: string }) => e.status === 'denied')) throw new Error(`Contact ${mode} did not preserve confirmation`)
+    } else if (result.approvals.length !== 1 || !result.response.reply?.includes('已拒绝')) throw new Error(`Contact ${mode} did not preserve confirmation`)
   }
   await choose('full')
   await run("window.electronAPI.tools.setEnabled('update_contact_topic',false)")

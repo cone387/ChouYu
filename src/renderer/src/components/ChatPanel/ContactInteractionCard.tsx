@@ -55,8 +55,10 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
     if (!view || view.kind !== 'action' || submitting.current || !['pending', 'failed'].includes(view.status)) return
     submitting.current = true; setBusy(true); setError(''); generation.current++
     try {
-      setView(await window.electronAPI.agents.submitInteraction(characterId, interactionId, { version: view.version,
-        ...(actionId ? { actionId, ...(view.request.input ? { text: answer } : {}) } : { reject: true }) }))
+      const result = await window.electronAPI.agents.submitInteraction(characterId, interactionId, { version: view.version,
+        ...(actionId ? { actionId, ...(view.request.input ? (view.request.input.argument === 'credential' ? { credential: answer } : { text: answer }) : {}) } : { reject: true }) })
+      setView(result)
+      if (result.status === 'resolved') setAnswer('')
     } catch (e) { setError(e instanceof Error ? e.message : '提交失败，请重试'); await refreshRef.current() }
     finally { submitting.current = false; setBusy(false) }
   }
@@ -71,7 +73,9 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       <p className="contact-interaction-question">{view.request.body}</p>
       {view.result && <p role="status" className="contact-interaction-result">{view.result}</p>}
       {['pending', 'failed'].includes(view.status) && view.retryable !== false && <>
-        {view.request.input && <label className="contact-interaction-field"><span>{view.request.input.label}</span><textarea value={answer} onChange={e => setAnswer(e.target.value)} maxLength={view.request.input.maxLength} required={view.request.input.required} rows={3} disabled={busy} /></label>}
+        {view.request.input && <label className="contact-interaction-field"><span>{view.request.input.label}</span>{view.request.input.argument === 'credential'
+          ? <><input type="password" autoComplete="off" value={answer} onChange={e => setAnswer(e.target.value)} maxLength={view.request.input.maxLength} required disabled={busy} /><span className="contact-interaction-usage">仅保存到此联系人的凭据设置，不发送给模型。</span></>
+          : <textarea value={answer} onChange={e => setAnswer(e.target.value)} maxLength={view.request.input.maxLength} required={view.request.input.required} rows={3} disabled={busy} />}</label>}
         <div className="contact-interaction-actions">{view.request.actions.map(action => <button key={action.id} type="button" className="primary" disabled={busy || Boolean(view.request.input?.required && !answer.trim())} onClick={() => void submitAction(action.id)}>{busy ? '正在处理…' : action.label}</button>)}
           <button type="button" disabled={busy} onClick={() => void submitAction()}>拒绝</button>
         </div>

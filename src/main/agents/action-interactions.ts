@@ -115,6 +115,22 @@ export class ContactActions {
     const rows = this.store.db.prepare("SELECT id FROM contact_interactions WHERE character_id=? AND json_extract(value,'$.kind')='action' AND COALESCE(json_extract(value,'$.delivered'),0)=0").all(owner) as { id: string }[]
     return rows.map(row => this.get(owner, row.id))
   }
+  reconcile(owner: string, versions: { profile?: string; skills?: number; credential?: number }) {
+    const rows = this.store.db.prepare("SELECT id FROM contact_interactions WHERE character_id=? AND json_extract(value,'$.kind')='action' AND json_extract(value,'$.status') IN ('pending','failed')").all(owner) as { id: string }[]
+    for (const row of rows) {
+      const value = this.read(owner, row.id)
+      if (value.retryable === false) continue
+      const changed = value.request.actions.some(option => {
+        const expected = option.arguments.revision
+        const actual = option.tool === 'edit_contact_profile' ? versions.profile
+          : ['configure_contact_skill', 'install_contact_skill', 'prepare_contact_skill_environment'].includes(option.tool) ? versions.skills
+          : option.tool === 'set_contact_search_credential' ? versions.credential
+          : option.tool === 'edit_contact_work_settings' ? this.store.profile(owner)?.revision : undefined
+        return actual !== undefined && expected !== actual
+      })
+      if (changed) { value.status = 'obsolete'; value.result = '联系人设置已变化，此前的操作已失效；请重新说明调整要求。'; value.sequence++; this.save(value) }
+    }
+  }
   ack(owner: string, id: string) {
     this.store.db.transaction(() => { const value = this.read(owner, id); value.delivered = true; this.save(value) }).immediate()
   }

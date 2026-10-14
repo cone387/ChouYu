@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { AgentStore } from '../agents/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { createCharacter, createChatSession, listCharacters } from '../database'
+import { invokeContactChat } from './contact-card-helper'
 
 export async function runContactChatChangeSmoke(window: BrowserWindow) {
   if (process.env.CHOUYU_SMOKE_TEST !== '1') throw new Error('Isolated smoke only')
@@ -48,7 +49,7 @@ export async function runContactChatChangeSmoke(window: BrowserWindow) {
   console.log('CHOUYU_SMOKE_CONTINUE_EXISTING_PASSED question=true noApproval=true noFailure=true sameRun=true')
   const invoke = async (content: string, approved = true) => {
     const next = { ...request, requestId: `chat-control-${Date.now()}`, messages: [{ role: 'user', content }] }
-    return window.webContents.executeJavaScript(`(async()=>{const approvals=[];const off=window.electronAPI.ai.onToolApprovalRequest(r=>{if(r.requestId===${JSON.stringify(next.requestId)}){approvals.push(r);window.electronAPI.ai.resolveToolRequest(r.approvalId,${approved})}});try{return {response:await window.electronAPI.ai.startStream(${JSON.stringify(next)}),approvals}}finally{off()}})()`)
+    return invokeContactChat(window, { ...next, messages: next.messages as import('../../shared/ai').AIChatMessage[] }, approved)
   }
   const hours = await invoke('验收工作时间：以后只在20:00到23:00工作')
   if (!hours.response.ok || !hours.response.reply?.includes('已保存')) throw new Error(`Working hours receipt failed: ${JSON.stringify(hours)}`)

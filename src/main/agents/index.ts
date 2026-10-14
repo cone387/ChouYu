@@ -1,6 +1,6 @@
 import { contactHandle } from './query-metrics'
 import { AgentWorkerRPC } from './worker-rpc'
-import { configureContactSkill, contactSkillLibrary, getContactSkills } from '../skills'
+import { configureContactSkill, contactSkillLibrary, getContactSkills, findContactSkills, installContactSkill, contactSkillRunner } from '../skills'
 import { SKILL_TOOLS } from '../skills/tools'
 import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -11,7 +11,7 @@ import { app, BrowserWindow, dialog, utilityProcess, type UtilityProcess } from 
 import { writeFile } from 'node:fs/promises'
 import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
 import { join } from 'node:path'
-import { appendAgentNotice, appendContactAction, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, getContactProfile, updateContactProfile } from '../database'
+import { appendAgentNotice, appendContactAction, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, getContactProfile, updateContactProfile, contactSearchCredential, saveContactSearchCredential } from '../database'
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { createContactProfileTools } from './profile-tools'
@@ -24,6 +24,8 @@ import { readFile, stat } from 'node:fs/promises'
 import { contactConversation } from './conversation'
 import { getRegisteredTool, registerTool, prepareRegisteredToolAsync } from '../tools/registry'
 import { executeContactAction } from './action-executor'
+import { createInteractionTools } from './interaction-tools'
+import { createContactSupportTools } from './support-tools'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
 import type { AgentIdentity } from './service'
 import { setupIdeaLab } from './idea-lab'
@@ -84,8 +86,10 @@ function identities(): AgentIdentity[] {
   const config = getConfig(), sessions = getSessions()
   return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(character => {
     const resolved = resolveCharacterConfig(character, config)
+    let skillsRevision: number | undefined
+    try { skillsRevision = contactSkillLibrary().list(character.id).revision } catch { /* The skill snapshot carries its own error; keep unrelated contacts readable. */ }
     const conversation = contactConversation(sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages ?? []))
-    return { sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: [...SKILL_TOOLS.map(tool => tool.name), ...MATERIAL_TOOL_NAMES].filter(name => getState(`tool:${name}:enabled`) === 'false'), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
+    return { configurationVersions: { profile: getContactProfile(character.id).revision, skills: skillsRevision, credential: contactSearchCredential(character.id).revision }, sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: [...SKILL_TOOLS.map(tool => tool.name), ...MATERIAL_TOOL_NAMES].filter(name => getState(`tool:${name}:enabled`) === 'false'), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
   })
 }
 async function ensure() {
@@ -150,7 +154,7 @@ export async function contactAgentsCall<T = unknown>(id: string, method: string,
 }
 export function readContactConfiguration(id: string) {
   if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
-  return { profile: getContactProfile(id), skills: contactSkillLibrary().list(id) }
+  return { profile: getContactProfile(id), skills: contactSkillLibrary().list(id), searchCredential: contactSearchCredential(id) }
 }
 function validateMemoryBoundary(owner: string, method: string, args: unknown[]) {
   if (method !== 'createMemory' && method !== 'updateMemory') return
@@ -163,16 +167,16 @@ function validateMemoryBoundary(owner: string, method: string, args: unknown[]) 
 }
 export async function submitContactInteraction(id: string, interactionId: string, submission: import('../../shared/contact-interactions').ContactInteractionSubmission, window: BrowserWindow) {
   const card = await contactAgentsCall<import('../../shared/contact-interactions').ContactInteraction>(id, 'getInteraction', [interactionId])
-  if (card.kind !== 'action') return contactAgentsCall(id, 'submitInteraction', [interactionId, submission])
+  if (card.kind !== 'action') return contactAgentsCall<import('../../shared/contact-interactions').ContactInteraction>(id, 'submitInteraction', [interactionId, submission])
   const call = (method: string, args: unknown[] = []) => contactAgentsCall<import('../../shared/contact-actions').ContactActionInteraction>(id, method, [interactionId, ...args])
   await executeContactAction({
     read: () => call('getInteraction'), claim: (version, response) => call('claimAction', [version, response]),
     start: version => call('startActionExecution', [version]),
     finish: (version, result) => call('finishAction', [version, result]), fail: (version, message) => call('failAction', [version, message]), reject: version => call('rejectAction', [version]),
-    prepare: async (option, sessionId) => {
+    prepare: async (option, sessionId, credential) => {
       if (getSession(sessionId)?.characterId !== id) throw new Error('原会话已删除或归属变化，此操作未执行。')
       if (!getConfig().aiToolsEnabled || getState(`tool:${option.tool}:enabled`) === 'false') throw new Error('工具已被用户禁用，此操作未执行。')
-      return prepareRegisteredToolAsync(option.tool, option.arguments, window, sessionId)
+      return prepareRegisteredToolAsync(option.tool, option.arguments, window, sessionId, credential)
     }
   }, submission)
   return call('getInteraction')
@@ -189,6 +193,35 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  for (const tool of createContactSupportTools({
+    owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
+    credential: contactSearchCredential, saveCredential: (owner, secret, revision) => { const result = saveContactSearchCredential(owner, secret, revision); broadcastChanged(owner); return result },
+    skills: async owner => contactSkillLibrary().list(owner), catalog: findContactSkills, runtime: id => contactSkillRunner().statusForSkill(id),
+    install: installContactSkill, prepareRuntime: () => contactSkillRunner().prepare(AbortSignal.timeout(720000)),
+    prepareDependencies: (owner, id) => contactSkillRunner().prepareDependencies(owner, id, AbortSignal.timeout(720000)),
+    material: async (owner, name, topicId, context) => {
+      if (topicId) await contactAgentsCall(owner, 'topicDetail', [topicId])
+      const value = await loadMaterialImport({ name, scope: topicId ? { kind: 'task', topicId } : { kind: 'contact' }, source: { kind: 'file', label: '用户在聊天卡片中选择的文件' } }, {
+        chooseFile: async () => {
+          const selected = await dialog.showOpenDialog(context.mainWindow, { title: '选择一份文本资料', properties: ['openFile'], filters: [{ name: '文本资料', extensions: ['txt', 'md', 'markdown'] }] })
+          if (selected.canceled || !selected.filePaths[0]) return null
+          if ((await stat(selected.filePaths[0])).size > 2 * 1024 * 1024) throw new Error('单份资料不得超过 2 MB。')
+          return { name: selected.filePaths[0], data: await readFile(selected.filePaths[0]) }
+        }, readWeb: async () => { throw new Error('当前卡片只支持用户选择文本文件。') }, allowed: async () => false
+      }, AbortSignal.timeout(720000))
+      if (!value) return null
+      if (getSession(context.sessionId!)?.characterId !== owner) throw new Error('原会话已变化，资料未保存。')
+      return contactAgentsCall(owner, 'saveMaterial', [value])
+    }
+  })) if (!getRegisteredTool(tool.name)) registerTool(tool)
+  for (const tool of createInteractionTools({
+    owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
+    prepare: (option, context) => {
+      if (!getConfig().aiToolsEnabled || getState(`tool:${option.tool}:enabled`) === 'false') throw new Error('此操作工具已被禁用。')
+      return prepareRegisteredToolAsync(option.tool, option.arguments, context.mainWindow, context.sessionId)
+    },
+    offer: (owner, key, request) => contactAgentsCall(owner, 'offerAction', [key, request])
+  })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   contactHandle('agents:submitInteraction', async (event, id: string, interactionId: string, submission: import('../../shared/contact-interactions').ContactInteractionSubmission) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) throw new Error('交互窗口不可用。')
@@ -285,10 +318,10 @@ export function initializeAgents() {
     if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     if (key !== undefined) {
       if (typeof key !== 'string' || key.length > 8192 || /[\r\n]/.test(key)) throw new Error('搜索密钥无效。')
-      setState(`agent-search:${id}:api_key`, key.trim())
+      saveContactSearchCredential(id, key.trim(), contactSearchCredential(id).revision)
       await ensure(); await rpc('sync', '', [identities()]); broadcastChanged(id)
     }
-    return { configured: Boolean(getState(`agent-search:${id}:api_key`)) }
+    return contactSearchCredential(id)
   })
   for (const tool of createContactTools({
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,

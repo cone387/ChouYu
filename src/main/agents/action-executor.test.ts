@@ -16,7 +16,7 @@ it('executes a persisted choice once, revalidates on click, and returns its dura
     const response = { version: card.version, actionId: 'save' }
     const saved = await executeContactAction(access, response)
     expect(saved.status).toBe('resolved')
-    expect(prepare).toHaveBeenCalledWith(card.request.actions[0], 'session')
+    expect(prepare).toHaveBeenCalledWith(card.request.actions[0], 'session', undefined)
     expect(await executeContactAction(access, response)).toEqual(saved)
     expect(run).toHaveBeenCalledTimes(1)
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
@@ -28,4 +28,16 @@ it('never executes a stale or disabled prepared operation and retains a failed r
   const access: any = { read: async () => ({ ...card, status: 'pending' }), claim: async () => card, prepare: async () => { throw new Error('配置已变化') }, fail, finish: vi.fn() }
   expect((await executeContactAction(access, { version: 'v1', actionId: 'save' })).result).toContain('变化')
   expect(access.finish).not.toHaveBeenCalled()
+})
+it('keeps a secure input out of every durable action field while passing it only to the credential writer', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'action-secret-')), store = new AgentStore(join(dir, 'agents.db'))
+  try {
+    store.ensure('alice')
+    const card = store.actions.offer('alice', 'secret', { purpose: 'configuration', title: '搜索密钥', body: '使用安全输入保存。', sessionId: 'session', subject: { kind: 'contact' }, input: { label: '密钥', argument: 'credential', required: true, maxLength: 8192 }, actions: [{ id: 'save', label: '保存', tool: 'set_contact_search_credential', arguments: { revision: 0, reason: '更新密钥' } }] })
+    const prepare = vi.fn(async (_option, _session, secret) => { expect(secret).toBe('private-transient-value'); return { execute: async () => ({ content: '{"saved":true}', summary: '搜索密钥已保存' }) } })
+    await executeContactAction({ read: async () => card, claim: async (version, response) => store.actions.claim('alice', card.id, version, response), start: async version => store.actions.startExecution('alice', card.id, version), finish: async (version, result) => store.actions.finish('alice', card.id, version, result), fail: async (version, message) => store.actions.fail('alice', card.id, version, message), reject: async version => store.actions.reject('alice', card.id, version), prepare }, { version: card.version, actionId: 'save', credential: 'private-transient-value' })
+    const row = store.db.prepare('SELECT value FROM contact_interactions WHERE id=?').get(card.id) as { value: string }
+    expect(row.value).not.toContain('private-transient-value')
+    expect(prepare.mock.calls[0][0].arguments).not.toHaveProperty('credential')
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
 })

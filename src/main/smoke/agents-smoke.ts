@@ -49,7 +49,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       }
       if (payload.messages.some((message: { content?: unknown }) => typeof message.content === 'string' && message.content.includes('判断用户最新一句是否在调整'))) {
         const context = JSON.parse(payload.messages.at(-1).content)
-        const result = context.latest?.startsWith('验收对话资料') ? { kind: 'profile', patch: { name: '对话新名字', model: 'agent-smoke-next', soulMd: '独立评审者' } }
+        const result = context.latest?.startsWith('验收搜索安全输入') ? { kind: 'credential' }
+          : context.latest?.startsWith('验收卡片同意') ? { kind: 'interaction', interactionId: context.pendingInteractions[0].id, actionId: 'apply', evidence: '同意' }
+          : context.latest?.startsWith('验收对话资料') ? { kind: 'profile', patch: { name: '对话新名字', model: 'agent-smoke-next', soulMd: '独立评审者' } }
           : context.latest?.startsWith('验收对话权限') ? { kind: 'settings', patch: { permissionLevel: 'sources', sources: ['https://example.com/'], searchEnabled: false, notifyProgress: false, shareDeliveries: true } }
           : context.latest?.startsWith('验收对话技能') ? { kind: 'skill', skillId: 'conversation-review', action: 'enable' }
           : context.latest?.startsWith('验收对话内置') ? { kind: 'profile', patch: { model: 'agent-smoke-built-in' } }
@@ -135,7 +137,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
   const startFeedback = async (name: string) => {
     scenario = name; toolStep = 0; toolResponses = []
     await run(`window.__contactFeedback = null; window.electronAPI.ai.startStream(${JSON.stringify({ requestId: `contact_${name}`, sessionId: fixtureSession, characterId: DEFAULT_CHARACTER_ID, systemPrompt: '测试联系人事项的确认操作', messages: [{ role: 'user', content: name === 'answer' ? '我熟悉开发者工具，回复这个问题继续。' : '把事项约束改为仅验证开发者工具，预算 200 元。' }] })}).then(result => { window.__contactFeedback = result }); void 0`)
-    await waitForRenderer(window, "Boolean(document.querySelector('.tool-approval-preview'))", 15000)
+    await waitForRenderer(window, 'window.__contactFeedback !== null', 15000)
+    await run(`(async()=>{window.__contactFeedbackCard=(await window.electronAPI.agents.pendingInteractions(${id})).filter(c=>c.kind==='action'&&c.characterId===${id}).sort((a,b)=>b.createdAt-a.createdAt)[0]})()`)
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-contact-interaction=\"'+window.__contactFeedbackCard.id+'\"] .primary'))", 15000)
   }
   const finishFeedback = async () => {
     await waitForRenderer(window, 'window.__contactFeedback !== null', 15000)
@@ -384,9 +388,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitStatus('waiting')
     if (getSession(fixtureSession)!.messages.filter(m => m.agentNotice).length !== noticesBefore) throw new Error('Restart duplicated the proactive question')
     await startFeedback('answer')
-    const answerPreview = await run("document.querySelector('.tool-approval-preview').textContent")
+    const answerPreview = await run("document.querySelector('[data-contact-interaction=\"'+window.__contactFeedbackCard.id+'\"]').textContent")
     if (!answerPreview.includes('你更熟悉哪个行业') || !answerPreview.includes('开发者工具')) throw new Error('Contact answer preview is not concrete')
-    await run("document.querySelector('.tool-approval-actions .primary').click()")
+    await run("document.querySelector('[data-contact-interaction=\"'+window.__contactFeedbackCard.id+'\"] .primary').click()")
     await finishFeedback()
     const completed = await waitStatus('completed')
     console.log('CHOUYU_SMOKE_AGENTS_STAGE completed')
@@ -790,17 +794,18 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-work-tools="${DEFAULT_CHARACTER_ID}"]'))`)
     await run(`window.electronAPI.agents.pause(${id})`)
     await startFeedback('deny')
-    await run("document.querySelector('.tool-approval-actions .secondary').click()")
+    await run("[...document.querySelectorAll('[data-contact-interaction=\"'+window.__contactFeedbackCard.id+'\"] button')].find(b=>b.textContent==='拒绝').click()")
     await finishFeedback()
-    if (!toolResponses.some(value => value.includes('用户拒绝'))) throw new Error('Contact tool denial was ignored')
+    await waitForRenderer(window, "document.querySelector('[data-contact-interaction=\"'+window.__contactFeedbackCard.id+'\"]')?.textContent.includes('已拒绝')")
     await startFeedback('stale')
     const beforeStale = await get(), target = beforeStale.topics.find(t => t.id === beforeStale.focusTopicId)!
     await run(`window.electronAPI.agents.editTopic(${id}, ${JSON.stringify(target.id)}, ${target.revision}, ${JSON.stringify({ title: target.title, goal: target.goal, constraints: '确认期间手动变更' })}, '验收过期操作')`)
-    await run("document.querySelector('.tool-approval-actions .primary').click()")
+    const staleRejected = await run(`window.electronAPI.agents.submitInteraction(${id},window.__contactFeedbackCard.id,{version:window.__contactFeedbackCard.version,actionId:'apply'}).then(()=>false,e=>String(e).includes('变化'))`)
     await finishFeedback()
-    if (!toolResponses.some(value => value.includes('事项已变化'))) throw new Error('Stale contact confirmation was not rejected')
+    if (!staleRejected) throw new Error('Stale contact confirmation was not rejected')
     await startFeedback('constraints')
-    await run("document.querySelector('.tool-approval-actions .primary').click()")
+    await run("document.querySelector('[data-contact-interaction=\"'+window.__contactFeedbackCard.id+'\"] .primary').click()")
+    await waitForRenderer(window, "document.querySelector('[data-contact-interaction=\"'+window.__contactFeedbackCard.id+'\"]')?.textContent.includes('已提交事项调整')")
     await finishFeedback()
     if ((await get()).topics.find(t => t.id === target.id)!.constraints !== '仅验证开发者工具，预算 200 元') throw new Error('Confirmed constraints were not saved')
     if (Number(calls) !== 3) throw new Error('Opening the chat toolbar unexpectedly started model work')

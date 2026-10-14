@@ -863,6 +863,20 @@ export function setState(key: string, value: string): void {
   persist()
 }
 
+export function contactSearchCredential(owner: string) {
+  if (!getCharacter(owner) || owner === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
+  return { configured: Boolean(getState(`agent-search:${owner}:api_key`)), revision: Number(getState(`agent-search:${owner}:revision`) || 0) }
+}
+export function saveContactSearchCredential(owner: string, secret: string, revision: number) {
+  const current = contactSearchCredential(owner)
+  if (!Number.isSafeInteger(revision) || revision !== current.revision) throw new Error('搜索凭据已变化，请重新读取。')
+  if (typeof secret !== 'string' || secret.length > 8192 || /[\r\n\0]/.test(secret)) throw new Error('搜索密钥无效。')
+  const previous = store.state
+  store.state = { ...previous, [`agent-search:${owner}:api_key`]: secret.trim(), [`agent-search:${owner}:revision`]: String(revision + 1) }
+  try { persist() } catch (error) { store.state = previous; throw error }
+  return contactSearchCredential(owner)
+}
+
 export function flushDatabase(): StorageStatus {
   if (store && filePath) persist(false)
   return getStorageStatus()

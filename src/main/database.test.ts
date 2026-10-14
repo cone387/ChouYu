@@ -20,7 +20,7 @@ import {
   appendAgentNotice, appendContactAction, appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase,
   getActiveSession, getAssistantUnreadCount, getAssistantUnreadPreview, getConfig, getSession, getSessionWorkspace, getSessions,
   getStorageStatus, initDatabase, listCharacters, markSessionRead, onStorageStatus, saveConfig, saveSessionMessages,
-  selectChatSession, setState, searchSessions, updateCharacter, getContactProfile, updateContactProfile, getState
+  selectChatSession, setState, searchSessions, updateCharacter, getContactProfile, updateContactProfile, getState, contactSearchCredential, saveContactSearchCredential
 } from './database'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS } from '../shared/characters'
 import { DEFAULT_APP_CONFIG } from '../shared/config'
@@ -49,6 +49,22 @@ afterEach(() => {
 })
 
 describe('durable conversations', () => {
+  it('saves a credential and its version atomically without returning the secret and rejects stale saves', () => {
+    const owner = listCharacters().find(c => !c.builtIn)!.id
+    expect(contactSearchCredential(owner)).toEqual({ configured: false, revision: 0 })
+    const saved = saveContactSearchCredential(owner, 'private-search-value', 0)
+    expect(saved).toEqual({ configured: true, revision: 1 })
+    expect(JSON.stringify(saved)).not.toContain('private-search-value')
+    initDatabase()
+    expect(contactSearchCredential(owner)).toEqual(saved)
+    expect(() => saveContactSearchCredential(owner, 'old-overwrite', 0)).toThrow('变化')
+    expect(getState(`agent-search:${owner}:api_key`)).toBe('private-search-value')
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => { throw new Error('disk full') })
+    expect(() => saveContactSearchCredential(owner, 'failed-value', 1)).toThrow('保存失败')
+    write.mockRestore()
+    expect(contactSearchCredential(owner)).toEqual(saved)
+    expect(getState(`agent-search:${owner}:api_key`)).toBe('private-search-value')
+  })
   it('delivers action cards to their original session, preserves unread and survives stale autosaves without duplicating', () => {
     const owner = listCharacters().find(c => !c.builtIn)!.id
     const session = createChatSession('原请求', owner).activeSession.id

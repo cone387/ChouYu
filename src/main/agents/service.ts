@@ -27,7 +27,7 @@ import type { AIResponseMetadata } from '../../shared/ai-usage'
 import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from './model-output'
 import { workSettingsRequireRestart, withinWorkHours } from '../../shared/work-settings'
 
-export interface AgentIdentity { sessionIds?: string[]; skillToolsEnabled?: boolean; disabledSkillTools?: string[]; visibleNoticeIds?: string[]; id: string; name?: string; soul: string; conversation: string; searchKey?: string; skills?: SkillSnapshot; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
+export interface AgentIdentity { configurationVersions?: { profile?: string; skills?: number; credential?: number }; sessionIds?: string[]; skillToolsEnabled?: boolean; disabledSkillTools?: string[]; visibleNoticeIds?: string[]; id: string; name?: string; soul: string; conversation: string; searchKey?: string; skills?: SkillSnapshot; config: Pick<AppConfig, 'provider' | 'baseUrl' | 'apiKey' | 'model' | 'thinkingDisabledModels'> | null }
 export class AgentService {
   private readonly skillRunner: SkillRunner
   readonly store: AgentStore
@@ -56,7 +56,7 @@ export class AgentService {
     }
     this.runtime.contactSources.names = new Map(identities.map(identity => [identity.id, identity.name || identity.id]))
     this.identities = new Map(identities.map(identity => [identity.id, identity]))
-    for (const identity of identities) { this.store.ensure(identity.id); this.store.memoryLibrary.registerSessions(identity.id, identity.sessionIds ?? []) }
+    for (const identity of identities) { this.store.ensure(identity.id); this.store.actions.reconcile(identity.id, identity.configurationVersions ?? {}); this.store.memoryLibrary.registerSessions(identity.id, identity.sessionIds ?? []) }
     for (const profile of this.store.profiles()) if (!this.identities.has(profile.character_id)) await this.remove(profile.character_id)
     if (!this.ready) for (const identity of identities) this.store.decisions.publishOutstanding(identity.id, new Set(identity.visibleNoticeIds ?? []))
     this.ready = true; this.tick()

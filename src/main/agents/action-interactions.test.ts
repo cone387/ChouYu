@@ -103,3 +103,9 @@ it('does not execute a possibly committed operation again when its completion re
   expect(interrupted.retryable).toBe(false)
   expect(() => f.actions.claim('alice', card.id, interrupted.version, { actionId: 'apply' })).toThrow('核对')
 })
+it('invalidates a contact-only card when a manual entry changes the captured setting version', () => {
+  const f = fixture(), card = f.actions.offer('alice', 'profile', { ...f.request, actions: [{ id: 'apply', label: '保存', tool: 'edit_contact_profile', arguments: { name: '新名称', revision: 'old-profile', reason: '改名' } }] })
+  f.actions.reconcile('alice', { profile: 'new-profile', skills: 1, credential: 0 })
+  expect(f.actions.get('alice', card.id)).toMatchObject({ status: 'obsolete', result: expect.stringContaining('设置已变化') })
+  expect(f.store.decisions.pending('alice')).toEqual([])
+})

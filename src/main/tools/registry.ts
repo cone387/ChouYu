@@ -6,6 +6,8 @@ import { validateToolArguments } from '../../shared/tools'
 import { filterCaptureSources } from '../../shared/capture'
 
 export interface ToolExecutionContext {
+  /** Main-process-only transient input from a dedicated credential card. */
+  secureInput?: string
   sessionId?: string
   mainWindow: BrowserWindow
 }
@@ -172,10 +174,10 @@ export async function executeRegisteredTool(
   return (await prepareRegisteredToolAsync(name, arguments_, mainWindow, sessionId)).execute()
 }
 
-export async function prepareRegisteredToolAsync(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string): Promise<PreparedTool> {
+export async function prepareRegisteredToolAsync(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string, secureInput?: string): Promise<PreparedTool> {
   const tool = tools.find(candidate => candidate.name === name)
   if (!tool) throw new Error(`未知工具：${name}`)
-  return tool.prepareAsync ? tool.prepareAsync(validateToolArguments(tool.inputSchema, arguments_), { mainWindow, sessionId }) : prepareRegisteredTool(name, arguments_, mainWindow, sessionId)
+  return tool.prepareAsync ? tool.prepareAsync(validateToolArguments(tool.inputSchema, arguments_), { mainWindow, sessionId, secureInput }) : prepareRegisteredTool(name, arguments_, mainWindow, sessionId)
 }
 
 export function prepareRegisteredTool(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string): PreparedTool {

@@ -12,6 +12,14 @@ import { getRegisteredTool, registerTool } from '../tools/registry'
 
 let library: SkillLibrary | undefined, hub: SkillHub | undefined
 let runner: SkillRunner | undefined
+const catalog = new SkillCatalog()
+export function contactSkillMarket() { return hub ??= new SkillHub(contactSkillLibrary().root, contactSkillLibrary()) }
+export function findContactSkills(query: string) { return catalog.browse({ keyword: query }) }
+export async function installContactSkill(id: string) {
+  const market = contactSkillMarket(), signal = AbortSignal.timeout(720000)
+  if (!(await market.status()).ready) await market.setup(signal)
+  return market.install(id, signal)
+}
 export function contactSkillRunner() { return runner ??= new SkillRunner(contactSkillLibrary()) }
 export function syncSkillToolPolicy() {
   contactSkillRunner().updateToolPolicy(getConfig().aiToolsEnabled, SKILL_TOOLS.filter(tool => getState(`tool:${tool.name}:enabled`) === 'false').map(tool => tool.name))
@@ -39,9 +47,8 @@ export function contactSkillInstruction(characterId: string): string {
 export function registerSkillHandlers(window: BrowserWindow) {
   syncSkillToolPolicy()
   for (const definition of SKILL_TOOLS) if (!getRegisteredTool(definition.name)) registerTool({ ...definition, execute: () => { throw new Error('技能工具只能在具体联系人的运行上下文中使用。') } })
-  const catalog = new SkillCatalog()
   const operations = new Map<number, AbortController>()
-  const market = () => hub ??= new SkillHub(contactSkillLibrary().root, contactSkillLibrary())
+  const market = contactSkillMarket
   const assertOwner = (id: unknown): string => {
     if (typeof id !== 'string' || id === ASSISTANT_CHARACTER_ID || !getCharacter(id)) throw new Error('联系人不存在。')
     return id
