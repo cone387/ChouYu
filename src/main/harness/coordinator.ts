@@ -44,4 +44,5 @@ export class HarnessCoordinator {
     const current = this.active.get(requestId)
     if (current) { current.abort.abort(); await current.settled }
   }
+  async close():Promise<void>{const runs=[...this.active.values()];for(const run of runs)run.abort.abort();await Promise.all(runs.map(run=>run.settled))}
 }

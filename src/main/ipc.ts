@@ -1,3 +1,5 @@
+import { dshService, existingDshService, closeDshService } from './harness/service'
+import type { HarnessInput } from './harness/contracts'
 import { prepareHarnessInput } from './harness/prepare'
 import { createLegacyAdapter } from './harness/legacy'
 import { HarnessCoordinator } from './harness/coordinator'
@@ -117,7 +119,7 @@ import {
   setState
 } from './database'
 
-const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter() })
+const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter(), dsh:{run:(input,emit)=>dshService().adapter.run(input,emit)} })
 
 const activeAIRequests = new Map<string, AbortController>()
 const pendingToolApprovals = new Map<string, {
@@ -650,6 +652,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     activeAIRequests.set(requestKey, controller)
     const chatState: ChatRequestState = { ownMemoryMutation: false, memoryMutationReceipt: '' }
     let contextSent = false
+    let receiptMode=false
+    let harnessInput:HarnessInput|undefined
     const assertContext = async () => {
       controller.signal.throwIfAborted()
       if (owner && chatState.contactContext) await contactAgentsCall(owner, 'assertContextCurrent', [chatState.contactContext])
@@ -682,6 +686,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       }
       const chatTools = config.aiToolsEnabled ? createChatTools({
           request, owner, signal: controller.signal, cancel: () => controller.abort(), state: chatState,
+          get confirmationMode(){return receiptMode?'await-receipt':'legacy-return-card'},
+          beforePersistentOffer:call=>dshService().adapter.beforePersistentOffer({...harnessInput!,callId:call.id}),
+          waitForActionReceipt:(call,card)=>dshService().actions.waitForActionReceipt({...harnessInput!,callId:call.id},card.id,controller.signal),
           definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)
             && (!SKILL_TOOLS.some(skill => skill.name === tool.name) || skillTools.definitions.some(skill => skill.name === tool.name))
             && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
@@ -721,12 +728,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           return { ok: true, reply: routed }
         }
       }
-      const harnessInput = await prepareHarnessInput(request, {
+      receiptMode=chatHarness.engineFor(owner)==='dsh'
+      harnessInput = await prepareHarnessInput(request, {
         config: effectiveConfig, signal: controller.signal, assertContext,
         citationContext: citations => contactAgentsCall<string>(owner!, 'citationContext', [citations]),
         privateContext, skillContext,
         communication: owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation'),
-        tools: chatTools,
+        tools: receiptMode&&chatTools?{...chatTools,definitions:chatTools.definitions.filter(tool=>['read_contact_material','get_contact_output_preferences','set_contact_output_preference'].includes(tool.name))}:chatTools,
         onMetadata: () => { contextSent = true }
       })
       // Main-process identity scopes equal renderer request ids to their owning sender.
@@ -734,7 +742,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const result = await chatHarness.run(harnessInput, update => {
         if (event.sender.isDestroyed()) return
         if (update.type === 'text') {
-          const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk: update.text, done: false }
+          const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk: update.text, done: false, ...(receiptMode?{operation:update.operation,attemptId:update.attemptId,sequence:update.seq}:{}) }
           event.sender.send('ai:stream-event', streamEvent)
         }
       })
@@ -742,7 +750,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
       await assertContext()
       if (contextSent && chatState.contactContext) setState(`contact-context:${request.requestId}`, JSON.stringify(chatState.contactContext))
-      return { ok: true, contactContext: contextSent ? chatState.contactContext : undefined }
+      return { ok: true, contactContext: contextSent ? chatState.contactContext : undefined, ...(result.source?{reply:result.text,operation:'replace' as const,harnessSource:result.source}:{}) }
     } catch (error) {
       if (contextSent && chatState.contactContext) { chatState.contactContext.status = 'failed'; setState(`contact-context:${request.requestId}`, JSON.stringify(chatState.contactContext)) }
       if (chatState.memoryMutationReceipt) return { ok: true, reply: chatState.memoryMutationReceipt }
@@ -936,6 +944,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!Array.isArray(messages)) throw new Error('Invalid session messages')
     if (readMessageId !== undefined && (typeof readMessageId !== 'string' || !readMessageId || readMessageId.length > 128)) throw new Error('Invalid read message id')
     const workspace = saveSessionMessages(id, messages, readMessageId)
+    const dsh=existingDshService()
+    if(dsh){
+      const saved=getSession(id)
+      if(saved&&!flushDatabase().error)for(const message of saved.messages){
+        const source=message.harnessSource,run=source&&dsh.store.get(source)
+        if(run?.state==='completed'&&run.sessionId===id&&run.characterId===saved.characterId&&run.messageId===message.id&&message.replyCompletedAt)dsh.store.markMessageSaved(run)
+      }
+    }
     notifyAssistantUnread()
     return workspace
   })
@@ -973,3 +989,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   })
 }
+
+export async function closeChatHarness(){for(const controller of activeAIRequests.values())controller.abort();await chatHarness.close();await closeDshService()}

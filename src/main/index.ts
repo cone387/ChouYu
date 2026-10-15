@@ -1,3 +1,4 @@
+import { closeChatHarness } from './ipc'
 import { runContactSoak } from './evaluation/contact-soak'
 import { runContactCardLinksSmoke } from './smoke/contact-card-links-smoke'
 import { runContactPerformanceSmoke } from './smoke/contact-performance-smoke'
@@ -436,7 +437,7 @@ app.on('before-quit', (event) => {
     if (!journalClosing) {
       journalClosing = true
       closeAssistantRoutines()
-      void Promise.allSettled([closeJournal(), closeAgents()]).finally(() => { journalClosed = true; app.quit() })
+      void Promise.allSettled([closeChatHarness().finally(()=>closeAgents()), closeJournal()]).finally(() => { journalClosed = true; app.quit() })
     }
     return
   }

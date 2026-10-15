@@ -9,7 +9,7 @@ export class DshAdapter implements HarnessAdapter {
     if(!run||!lease||!await lease.flush(key))throw new Error('执行日志尚未保存，未创建确认事项。')
     this.store.markDurable(key)
   }
-  constructor(private pool:Pick<DshRuntimePool,'acquire'>,private store:HarnessStore) {}
+  constructor(private pool:Pick<DshRuntimePool,'acquire'>,private store:HarnessStore,private cancelActions?:(key:HarnessInput)=>Promise<void>) {}
   async run(input:HarnessInput,emit:HarnessSink):Promise<HarnessResult> {
     if(this.store.get(input)) return {state:'interrupted',error:'此执行已有记录，未自动重放。请重新发送消息。'}
     this.store.begin(input)
@@ -33,6 +33,9 @@ export class DshAdapter implements HarnessAdapter {
       const record=this.store.get(input)!
       this.store.transition(input,record.state,state)
       return {state,error:error instanceof Error?error.message:'DSH 执行失败。'}
-    } finally {this.leases.delete(JSON.stringify([input.requestId,input.attemptId]));lease?.release()}
+    } finally {
+      try{if(input.signal.aborted)await this.cancelActions?.(input)}
+      finally{this.leases.delete(JSON.stringify([input.requestId,input.attemptId]));lease?.release()}
+    }
   }
 }

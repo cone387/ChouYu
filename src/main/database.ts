@@ -31,6 +31,7 @@ import { applyContactProfilePatch, contactProfileSnapshot, type ContactProfilePa
 import { containsSecret } from '../shared/memory'
 
 export interface Message {
+  harnessSource?:import('../shared/harness').HarnessSource
   communication?: ContactCommunication
   contactCitations?: import('../shared/contact-content').ContentCitation[]
   contactContext?: import('../shared/contact-content').ContactContextRecord

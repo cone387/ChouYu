@@ -337,6 +337,7 @@ export function useSessionWorkspace({
 
     // Buffer rendered content and flush on a cadence instead of re-rendering
     // the whole message list per chunk (see STREAM_RENDER_INTERVAL_MS).
+    let harnessSource:import('../../../../shared/harness').HarnessSource|undefined
     let renderTimer: ReturnType<typeof setTimeout> | null = null
     const renderAccumulated = () => {
       if (renderTimer) {
@@ -351,10 +352,10 @@ export function useSessionWorkspace({
         if (existing) {
           // 续写针对同一条用户消息重新检索记忆，保留原引用（含用户反馈标记）而不是整组替换。
           return previous.map((message) => message.id === targetMessageId
-            ? { ...message, content, contactContext: contactContext ?? message.contactContext, responseStatus: undefined, replyCompletedAt: undefined, memoryRefs: options.appendTo ? message.memoryRefs : memoryRefs }
+            ? { ...message, content, harnessSource, contactContext: contactContext ?? message.contactContext, responseStatus: undefined, replyCompletedAt: undefined, memoryRefs: options.appendTo ? message.memoryRefs : memoryRefs }
             : message)
         }
-        return [...previous, { id: targetMessageId, role: 'assistant', content, timestamp: Date.now(), memoryRefs, contactContext }]
+        return [...previous, { id: targetMessageId, role: 'assistant', content, timestamp: Date.now(), memoryRefs, contactContext, harnessSource }]
       })
     }
     const scheduleRender = () => {
@@ -386,7 +387,7 @@ export function useSessionWorkspace({
         history,
         systemPrompt,
         config,
-        (chunk, done) => {
+        (chunk, done, operation) => {
           if (controller.signal.aborted) return
           if (done) {
             // Commit the final text and scroll layout before checking actual visibility.
@@ -402,7 +403,7 @@ export function useSessionWorkspace({
             if (activeSessionIdRef.current === sessionId) finishPetResponse()
             return
           }
-          if (chunk && generation.toolBoundary) {
+          if (chunk && generation.toolBoundary && operation!=='replace') {
             renderAccumulated()
             segmentIndex += 1
             // 追加模式的分段 id 在既有消息 id 后扩展；安全前提是被续写消息只可能处于 stopped（首次续写渲染即清除）。
@@ -411,7 +412,7 @@ export function useSessionWorkspace({
             generation.responseId = aiMsgId
             generation.toolBoundary = false
           }
-          accumulated += chunk
+          accumulated = operation==='replace'?chunk:accumulated+chunk
           if (activeSessionIdRef.current === sessionId) onPetStateChange('talking')
           scheduleRender()
         },
@@ -422,7 +423,12 @@ export function useSessionWorkspace({
         },
         character && !character.builtIn ? character.id : undefined,
         sessionId,
-        references => { contactContext = references }
+        references => { contactContext = references },
+        source=>{
+          harnessSource=source
+          updateSessionMessages(sessionId,previous=>previous.filter(message=>message.toolData||!(message.id===aiMsgId||message.id===responseBaseId||message.id.startsWith(`${responseBaseId}-`))))
+          aiMsgId=source.messageId;generation.responseId=aiMsgId;generation.toolBoundary=false
+        }
       )
     } catch (error) {
       renderAccumulated()

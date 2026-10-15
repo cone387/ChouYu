@@ -14,12 +14,17 @@ export interface AIStreamRequest {
 }
 
 export interface AIStreamEvent {
+  operation?: 'append'|'replace'
+  attemptId?:string
+  sequence?:number
   requestId: string
   chunk: string
   done: boolean
 }
 
 export interface AIStreamResult {
+  operation?:'append'|'replace'
+  harnessSource?:import('./harness').HarnessSource
   contactContext?: import('./contact-content').ContactContextRecord
   ok: boolean
   error?: string

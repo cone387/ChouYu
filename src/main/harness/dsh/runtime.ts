@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DshTransport } from './transport'
+import { DshStreamReducer } from './stream'
 import type { RpcPeer } from '../../../../runtime/dsh/wire.mjs'
 import { mapProvider } from '../../../../runtime/dsh/provider.mjs'
 import type { HarnessInput, HarnessResult, HarnessSink, RunKey } from '../contracts'
@@ -14,7 +15,7 @@ export interface DshRuntimeLease {
   release():void
 }
 export interface DshRuntimeOptions { home:string; node:string; helper:string }
-type Active = { input:HarnessInput; emit:HarnessSink }
+type Active = { input:HarnessInput; emit:HarnessSink; stream:DshStreamReducer }
 
 class DshRuntime {
   private transport: DshTransport
@@ -30,7 +31,7 @@ class DshRuntime {
       const current = this.active.get(value.sessionId)
       if (!current || current.input.requestId !== value.requestId || current.input.attemptId !== value.attemptId) throw new Error('DSH 请求已经结束或归属无效。')
       const { input, emit } = current
-      if (input.signal.aborted) throw new Error('AI 请求已取消。')
+      if (input.signal.aborted) { if(method==='stream')return true;throw new Error('AI 请求已取消。') }
       if (method === 'tool') {
         if (typeof value.callId !== 'string' || typeof value.name !== 'string' || !input.tools?.definitions.some(t => t.name === value.name)) throw new Error('DSH 工具不在本次授权目录内。')
         await input.assertContext(); input.signal.throwIfAborted()
@@ -40,9 +41,10 @@ class DshRuntime {
         return result
       }
       if (method === 'stream') {
-        // The full revision/index reducer is integrated in the streaming task.
-        const frame = value.frame
-        if (frame?.type === 'chunk' && frame.chunk?.type === 'text-delta') emit({ type: 'text', text: frame.chunk.text, operation: 'append' })
+        for(const update of current.stream.accept(value.frame)) {
+          if(update.type==='usage')input.onMetadata?.(update.metadata)
+          emit(update)
+        }
         return true
       }
       throw new Error('DSH 事件类型无效。')
@@ -72,7 +74,8 @@ class DshRuntime {
     if (this.active.has(input.attemptId)) throw new Error('DSH 尝试已经在执行。')
     const last = input.messages.at(-1)
     if (!last || last.role !== 'user') throw new Error('DSH 当前输入必须是最后一条用户消息，尚未执行。')
-    this.active.set(input.attemptId, {input, emit})
+    const stream=new DshStreamReducer()
+    this.active.set(input.attemptId, {input, emit, stream})
     let cancelling:Promise<void> | undefined
     const abort = () => { cancelling = this.cancel(input).catch(() => {}); }
     input.signal.addEventListener('abort', abort, {once:true})
@@ -80,7 +83,8 @@ class DshRuntime {
       input.signal.throwIfAborted(); await input.assertContext()
       await this.plugin.request('prepare', { requestId:input.requestId,attemptId:input.attemptId,sessionId:input.attemptId, history:input.messages.slice(0,-1), systemPrompt:input.systemPrompt, tools:input.tools?.definitions ?? [], model:input.config.model }, {timeoutMs:30000})
       input.signal.throwIfAborted()
-      const result = await this.plugin.request('run', {requestId:input.requestId,attemptId:input.attemptId,sessionId:input.attemptId,prompt:last.content}) as HarnessResult
+      const result = await this.plugin.request('run', {requestId:input.requestId,attemptId:input.attemptId,sessionId:input.attemptId,prompt:last.content}) as HarnessResult & {committedSeq?:number}
+      if(result.state==='completed'&&!stream.verify(result.committedSeq!))throw new Error('DSH 正式回复与流记录不一致。')
       if (result.state === 'completed' && !await this.flush(input)) throw new Error('DSH 回复尚未确认落盘。')
       return result
     } finally {

@@ -9,7 +9,7 @@ import {
 export { joinApiUrl, parseClaudeStreamLine, parseOpenAIStreamLine }
 export type { ParsedStreamEvent } from '../../../shared/ai'
 
-export type StreamCallback = (chunk: string, done: boolean) => void
+export type StreamCallback = (chunk: string, done: boolean, operation?:'append'|'replace') => void
 
 let requestSequence = 0
 
@@ -31,7 +31,8 @@ export async function streamChat(
   onRequestStart?: (requestId: string) => void,
   characterId?: string,
   sessionId?: string,
-  onContactContext?: (context: import('../../../shared/contact-content').ContactContextRecord) => void
+  onContactContext?: (context: import('../../../shared/contact-content').ContactContextRecord) => void,
+  onHarnessSource?: (source:import('../../../shared/harness').HarnessSource)=>void
 ): Promise<void> {
   if (!characterId && !config.apiKey.trim()) {
     throw new Error('尚未配置 API Key，请先打开设置完成配置。')
@@ -57,8 +58,9 @@ export async function streamChat(
   }
   let completed = false
   const unsubscribe = window.electronAPI.ai.onStreamEvent((event) => {
-    if (event.requestId !== requestId) return
-    if (event.chunk) onChunk(event.chunk, false)
+    if (event.requestId !== requestId || signal?.aborted || completed) return
+    if (event.operation) onChunk(event.chunk, false,event.operation)
+    else if(event.chunk)onChunk(event.chunk,false)
     // The IPC result carries actual context references; attach them before final persistence.
   })
   const abortRequest = () => window.electronAPI.ai.cancelStream(requestId)
@@ -69,7 +71,11 @@ export async function streamChat(
     if (result.contactContext) onContactContext?.(result.contactContext)
     if (signal?.aborted) throw createAbortError()
     if (!result.ok) throw new Error(result.error || 'AI 请求失败，请稍后重试。')
-    if (result.reply !== undefined && !completed) onChunk(result.reply, false)
+    if(result.harnessSource)onHarnessSource?.(result.harnessSource)
+    if (result.reply !== undefined && !completed) {
+      if(result.operation)onChunk(result.reply,false,result.operation)
+      else onChunk(result.reply, false)
+    }
     if (!completed) {
       completed = true
       onChunk('', true)

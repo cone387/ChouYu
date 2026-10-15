@@ -5,6 +5,17 @@ import type { Message } from '../shared/types'
 import { joinApiUrl, parseClaudeStreamLine, parseOpenAIStreamLine, streamChat } from './ai-engine'
 
 describe('AI stream parsers', () => {
+  it('replaces retried text and the committed reply before saving once',async()=>{
+    let listener:(event:any)=>void=()=>{},rendered='',saved=0,sourceSeen=false
+    vi.stubGlobal('window',{electronAPI:{ai:{onStreamEvent:(fn:typeof listener)=>{listener=fn;return()=>{}},cancelStream:vi.fn(),startStream:async(request:AIStreamRequest)=>{
+      listener({requestId:request.requestId,chunk:'old',done:false,operation:'append'})
+      listener({requestId:request.requestId,chunk:'new',done:false,operation:'replace'})
+      return {ok:true,reply:'committed',operation:'replace',harnessSource:{engine:'dsh',version:'v',requestId:'r',attemptId:'a',messageId:'stable'}}
+    }}}})
+    try{await streamChat([],'',{...DEFAULT_APP_CONFIG,apiKey:'k',model:'m'},(text,done,operation)=>{if(done){expect(sourceSeen).toBe(true);saved++}else rendered=operation==='replace'?text:rendered+text},undefined,undefined,undefined,undefined,undefined,()=>{sourceSeen=true})
+      expect(rendered).toBe('committed');expect(saved).toBe(1)
+    }finally{vi.unstubAllGlobals()}
+  })
   it('parses OpenAI-compatible text and completion events', () => {
     expect(parseOpenAIStreamLine('data:{"choices":[{"delta":{"content":"你"}}]}')).toEqual({
       text: '你',

@@ -20,6 +20,7 @@ export async function apply(ctx) {
         throw new Error('DSH 历史角色无效。');
       });
       const committed = {};
+      const streaming = new Set();
       const key = { requestId: value.requestId, attemptId: value.attemptId };
       if (typeof key.requestId !== 'string' || key.attemptId !== value.sessionId) throw new Error('DSH ???????');
       const handle = await ctx.agents.create({
@@ -43,10 +44,13 @@ export async function apply(ctx) {
             output: { schema: { type: 'string' }, render: (_args, result) => [{ type: 'text', text: result }] },
             execute: (args, exec) => peer.request('tool', { ...key, sessionId: value.sessionId, callId: exec.callId, name: exec.name, args }, { signal: exec.signal })
           });
-          scope.on('agent/assistant-stream', ({ frame }) => { void peer.request('stream', { ...key, sessionId: value.sessionId, frame }).catch(() => handle?.agent.cancel({ kind: 'hook', reason: 'bridge disconnected' })); });
+          scope.on('agent/assistant-stream', ({ frame }) => {
+            const pending = peer.request('stream', { ...key, sessionId: value.sessionId, frame }).catch(() => { committed.bridgeError = true; handle.agent.cancel({ kind: 'hook', reason: 'bridge disconnected' }); }).finally(() => streaming.delete(pending));
+            streaming.add(pending);
+          });
         }
       });
-      handles.set(value.sessionId, { ...handle, committed, key });
+      handles.set(value.sessionId, { ...handle, committed, key, streaming });
       return { sessionId: value.sessionId };
     }
     const handle = handles.get(value?.sessionId);
@@ -55,6 +59,8 @@ export async function apply(ctx) {
       const message = createUserMessage({ content: [{ type: 'text', text: value.prompt }], source: { kind: 'user' } });
       handle.agent.followup(message);
       await handle.agent.whenIdle();
+      await Promise.all(handle.streaming);
+      if (handle.committed.bridgeError) throw new Error('DSH 流传输未完成。');
       const { input, turn, assistant } = handle.committed;
       if (turn?.data.reason?.kind === 'aborted') return { state: 'cancelled', error: 'AI 请求已取消。' };
       if (turn?.data.reason?.kind !== 'completed' || input?.data.id !== message.id || !assistant || assistant.seq <= input.seq) return { state: 'failed', error: 'DSH 未提交本次请求的正式回复。' };
