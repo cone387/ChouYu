@@ -5,27 +5,32 @@ import { streamAIChat } from '../ai'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { routeContactChange } from './chat-changes'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
+import type { AIChatMessage } from '../../shared/ai'
+import { contactWorkInstructions } from '../../shared/contact-work-instructions'
+import { createContactTools } from './tools'
 
 // Explicit opt-in: live model, synthetic tasks only. Never modifies real chats/tasks.
 const enabled = Boolean(process.env.CHOUYU_CHAT_CHANGE_ACCEPTANCE)
 
-it.skipIf(!enabled)('live model follows edited latest request instead of an unresolved historical writing question', async () => {
+it.skipIf(!enabled).each([1, 2, 3])('live model follows edited latest request through final prose, sample %i', async sample => {
   const data = JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG || readFileSync(join(process.env.APPDATA!, 'chouyu', 'chouyu-data.json'), 'utf8'))
   const character = data.characters.find((c: { id: string }) => c.id === 'preset-copywriter-bi')
   const resolved = resolveCharacterConfig(character, data.config)
   if (!resolved.ok) throw new Error('验收模型不可用')
   const latest = 'hello 在帮我写一章吞噬星空续看看'
   const decisions: string[] = [], calls: any[] = []
-  const output = await routeContactChange([
+  const messages: AIChatMessage[] = [
     { role: 'user', content: '整体写法' },
     { role: 'assistant', content: '你说的「整体写法」具体想怎么调？比如要加人物心理描写、改变叙事视角、调整节奏等，说一下方向我来改。' },
     { role: 'assistant', content: '第二章·塔与壁\n罗峰在虚空中盘坐下来，星辰塔的纹路渐渐亮起。' },
     { role: 'user', content: latest }
-  ], {
-    read: async () => ({ settings: DEFAULT_AGENT_SETTINGS, topics: [
+  ]
+  const overview = { settings: DEFAULT_AGENT_SETTINGS, topics: [
       { id: 'space', revision: 1, title: '《吞噬星空》同人续写', goal: '续写罗峰的冒险', constraints: '', status: 'paused' },
       { id: 'music', revision: 1, title: '音乐修炼题材玄幻小说', goal: '以音乐修炼为主题写小说', constraints: '', status: 'researching' }
-    ], runs: [], focusTopicId: 'music' }),
+    ], runs: [], focusTopicId: 'music' }
+  const output = await routeContactChange(messages, {
+    read: async () => overview,
     model: async (prompt, content) => {
       let result = ''
       await streamAIChat([{ role: 'user', content }], prompt, { ...data.config, ...resolved.config }, chunk => { result += chunk }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
@@ -34,13 +39,36 @@ it.skipIf(!enabled)('live model follows edited latest request instead of an unre
     },
     execute: async call => { calls.push(call); return JSON.stringify({ saved: true, workCompleted: false, message: '验收夹具接收请求' }) }
   })
+  let prose = ''
+  const toolCalls: { name: string; args: Record<string, unknown> }[] = []
+  if (output === undefined) {
+    await streamAIChat(messages, `${resolved.config.soulMd}\n${contactWorkInstructions}`, { ...data.config, ...resolved.config }, chunk => { prose += chunk }, AbortSignal.timeout(90000), {
+      definitions: createContactTools({ owner: () => 'writer', request: async () => { throw new Error('Only synthetic tool results are allowed') } }),
+      execute: async call => {
+        const args = JSON.parse(call.arguments)
+        toolCalls.push({ name: call.name, args })
+        if (toolCalls.length > 5) throw new Error('Too many tool calls for a single chapter request')
+        if (call.name === 'get_contact_topics') return JSON.stringify({ ...overview, pending: [] })
+        if (call.name === 'get_contact_delivery') {
+          expect(args.topicId).toBe('space')
+          if (args.sectionId !== undefined) expect(args.sectionId).toBe('ch02')
+          if (args.version !== undefined) expect(args.version).toBe(2)
+          return JSON.stringify({ version: 2, directory: [{ id: 'ch02', title: '第二章·塔与壁' }], ...(args.sectionId ? { section: { id: 'ch02', title: '第二章·塔与壁', body: messages[2].content } } : {}) })
+        }
+        throw new Error(`A single chapter request must not change persistent tasks: ${call.name}`)
+      }
+    }, { timeoutMs: 90000, maxOutputTokens: 5000 })
+  }
   mkdirSync('temp/chat-change-model', { recursive: true })
-  writeFileSync('temp/chat-change-model/edited-latest.json', JSON.stringify({ latest, decisions, calls, output }, null, 2))
+  writeFileSync(`temp/chat-change-model/edited-latest-${sample}.json`, JSON.stringify({ latest, decisions, calls, output, toolCalls, prose }, null, 2))
   // Asking for one chapter is an immediate content request, not authorization
   // to change the paused task's persistent execution state.
   expect(output).toBeUndefined()
   expect(calls).toEqual([])
-}, 125000)
+  expect(prose.length).toBeGreaterThan(800)
+  expect(prose).toContain('罗峰')
+  expect(prose).not.toMatch(/对吗[？?]|要继续的是|要调哪个任务|具体想怎么调/)
+}, 215000)
 
 const cases = [
   ['report-unit', '你怎么一次汇报那么多，一次汇报一个就行了，可以吗？', 'edit_contact_task'],
