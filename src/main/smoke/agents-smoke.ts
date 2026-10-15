@@ -179,7 +179,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       return
     }
     await run("document.querySelector('[aria-label=\"关闭面板\"]')?.click()")
-    await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+    await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     console.log('CHOUYU_SMOKE_AGENTS_STAGE closed-panel')
     await run('window.electronAPI.db.getSessionWorkspace()')
     fixtureSession = createChatSession('联系人 Agent 验收').activeSession.id
@@ -965,7 +965,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach()
     window.webContents.disableDeviceEmulation()
     await run("document.querySelector('[data-contacts-close]')?.click(); document.querySelector('[aria-label=\"关闭面板\"]')?.click()")
-    await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+    await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     await run('window.electronAPI.db.getSessionWorkspace()')
     saveConfig(original); window.webContents.send('config:changed', getConfig()); selectChatSession(session); flushDatabase()
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()))

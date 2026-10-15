@@ -15,6 +15,40 @@ function fixture(plan: unknown) {
   return { data, read, model, execute, run }
 }
 describe('contact chat routing and receipts', () => {
+  it('provides an intact bounded Unicode request anchor for a valid clarification', async () => {
+    const latest = '😀'.repeat(120) + '把那个任务的写法改一下'
+    const model = vi.fn(async (_prompt, content) => {
+      expect(JSON.parse(content).requestAnchor).toBe(latest)
+      return JSON.stringify({ kind: 'question', requestText: latest, message: '你要调整哪项任务？' })
+    })
+    const reply = await routeContactChange([{ role: 'user', content: latest }], { model, execute: vi.fn(), read: async () => ({ topics: [], runs: [] }) })
+    expect(reply).toBe('你要调整哪项任务？')
+    expect(model).toHaveBeenCalledTimes(1)
+  })
+  it('reinterprets a clarification grounded in old chat instead of replying to the wrong request', async () => {
+    const latest = 'hello 在帮我写一章吞噬星空续看看'
+    const model = vi.fn().mockResolvedValueOnce(JSON.stringify({ kind: 'question', requestText: '整体写法', message: '整体写法具体怎么调？' }))
+      .mockResolvedValueOnce('{"kind":"none"}')
+    const execute = vi.fn()
+    const reply = await routeContactChange([
+      { role: 'user', content: '整体写法' },
+      { role: 'assistant', content: '要调整哪个任务的整体写法？' },
+      { role: 'user', content: latest }
+    ], { model, execute, read: async () => ({ topics: [], runs: [] }) })
+    expect(reply).toBeUndefined()
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(execute).not.toHaveBeenCalled()
+    expect(JSON.parse(model.mock.calls[1][1]).request.latest).toBe(latest)
+  })
+  it.each([undefined, '整体写法'])('never emits ungrounded clarification after the single repair: %s', async requestText => {
+    const model = vi.fn(async () => JSON.stringify({ kind: 'question', requestText, message: '整体写法具体怎么调？' }))
+    const execute = vi.fn()
+    await expect(routeContactChange([{ role: 'user', content: '再写一章吞噬星空续' }], {
+      model, execute, read: async () => ({ topics: [], runs: [] })
+    })).rejects.toThrow('没有识别出有效')
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(execute).not.toHaveBeenCalled()
+  })
   it('supplies real category identifiers and labels to natural-language profile interpretation', async () => {
     await routeContactChange([{ role: 'user', content: '把分类改成技术' }], {
       read: async () => ({ topics: [], runs: [], settings: {} }), execute: vi.fn(),
@@ -180,7 +214,7 @@ describe('contact chat routing and receipts', () => {
     const f = fixture({ kind: 'none' }); expect(await f.run(message)).toBeUndefined(); expect(f.execute).not.toHaveBeenCalled()
   })
   it('returns clarification or unsupported capability without a write', async () => {
-    const f = fixture({ kind: 'question', message: '你指哪一个任务？本次未修改。' })
+    const f = fixture({ kind: 'question', requestText: '一次汇报一个就行了，可以吗', message: '你指哪一个任务？本次未修改。' })
     expect(await f.run()).toContain('哪一个'); expect(f.execute).not.toHaveBeenCalled()
   })
   it('does not let a guessed focus task authorize an ambiguous multi-task change', async () => {

@@ -8,11 +8,46 @@ import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 // Explicit opt-in: live model, synthetic tasks only. Never modifies real chats/tasks.
 const enabled = Boolean(process.env.CHOUYU_CHAT_CHANGE_ACCEPTANCE)
+
+it.skipIf(!enabled)('live model follows edited latest request instead of an unresolved historical writing question', async () => {
+  const data = JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG || readFileSync(join(process.env.APPDATA!, 'chouyu', 'chouyu-data.json'), 'utf8'))
+  const character = data.characters.find((c: { id: string }) => c.id === 'preset-copywriter-bi')
+  const resolved = resolveCharacterConfig(character, data.config)
+  if (!resolved.ok) throw new Error('验收模型不可用')
+  const latest = 'hello 在帮我写一章吞噬星空续看看'
+  const decisions: string[] = [], calls: any[] = []
+  const output = await routeContactChange([
+    { role: 'user', content: '整体写法' },
+    { role: 'assistant', content: '你说的「整体写法」具体想怎么调？比如要加人物心理描写、改变叙事视角、调整节奏等，说一下方向我来改。' },
+    { role: 'assistant', content: '第二章·塔与壁\n罗峰在虚空中盘坐下来，星辰塔的纹路渐渐亮起。' },
+    { role: 'user', content: latest }
+  ], {
+    read: async () => ({ settings: DEFAULT_AGENT_SETTINGS, topics: [
+      { id: 'space', revision: 1, title: '《吞噬星空》同人续写', goal: '续写罗峰的冒险', constraints: '', status: 'paused' },
+      { id: 'music', revision: 1, title: '音乐修炼题材玄幻小说', goal: '以音乐修炼为主题写小说', constraints: '', status: 'researching' }
+    ], runs: [], focusTopicId: 'music' }),
+    model: async (prompt, content) => {
+      let result = ''
+      await streamAIChat([{ role: 'user', content }], prompt, { ...data.config, ...resolved.config }, chunk => { result += chunk }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
+      decisions.push(result)
+      return result
+    },
+    execute: async call => { calls.push(call); return JSON.stringify({ saved: true, workCompleted: false, message: '验收夹具接收请求' }) }
+  })
+  mkdirSync('temp/chat-change-model', { recursive: true })
+  writeFileSync('temp/chat-change-model/edited-latest.json', JSON.stringify({ latest, decisions, calls, output }, null, 2))
+  // Asking for one chapter is an immediate content request, not authorization
+  // to change the paused task's persistent execution state.
+  expect(output).toBeUndefined()
+  expect(calls).toEqual([])
+}, 125000)
+
 const cases = [
   ['report-unit', '你怎么一次汇报那么多，一次汇报一个就行了，可以吗？', 'edit_contact_task'],
   ['language', '以后评审都用中文，先给结论，依据也保留。', 'edit_contact_task'],
   ['budget', '这个任务的累计Token上限改成30万，其他不变。', 'edit_contact_task'],
   ['pause', '先暂停这个评审任务。', 'update_contact_topic'],
+  ['revise-existing', '这个评审任务已保存的正文结尾太急，把正文重写一版，保留原目标和运行设置。', 'update_contact_topic'],
   ['discussion', '你觉得这个评价标准合理吗？先讨论，不要改。', undefined],
   ['quote', '朋友说“一次汇报一个”，我还没决定，你觉得呢？先不改。', undefined],
   ['daily-schedule', '从明天起每天上午九点准时评价。', 'set_contact_schedule'],
@@ -62,6 +97,7 @@ it.skipIf(!enabled).each(cases)('live model routes %s without a verbal-only prom
     if (key === 'end') expect(calls[0].args.action).toBe('end')
     if (key === 'budget') { expect(calls[0].args.tokens).toBe(300000); expect(calls[0].args.modelCalls).toBeUndefined() }
     if (key === 'pause') expect(calls[0].args.action).toBe('pause')
+    if (key === 'revise-existing') expect(calls[0].args.action).toBe('revise')
     if (key === 'report-unit') { expect(calls[0].args.goal).toBeUndefined(); expect(calls[0].args.separateEvaluations).toBe(true) }
   }
   if (key === 'continue-running') expect(output).toContain('正在执行')

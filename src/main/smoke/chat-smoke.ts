@@ -125,6 +125,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
   let stream: ServerResponse | undefined
   let holdFirstToken = false
   let providerRequests = 0
+  let lastProviderMessages: { role: string; content: string }[] = []
   const resolutions: boolean[] = []
   const onResolution = (_event: unknown, id: string, approved: boolean) => { if (id.startsWith('ui-smoke-')) resolutions.push(approved) }
   ipcMain.on('ai:resolve-tool-request', onResolution)
@@ -136,8 +137,10 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     }
     if (request.url !== '/v1/chat/completions') { response.writeHead(404); response.end(); return }
     providerRequests++
-    request.resume()
+    let body = ''
+    request.on('data', chunk => { body += chunk.toString() })
     request.on('end', () => {
+      lastProviderMessages = JSON.parse(body).messages
       stream = response
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
       if (!holdFirstToken) response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '开始流式回复。' } }] })}\n\n`)
@@ -180,6 +183,10 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     console.log('CHOUYU_CHAT_STAGE panel-ready')
     if (process.env.CHOUYU_SMOKE_CHAT_CLOSE_ONLY === '1') {
       await checkClosingDuringReply()
+      return
+    }
+    if (process.env.CHOUYU_SMOKE_CHAT_EDIT_ONLY === '1') {
+      await checkEditingResend()
       return
     }
     await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
@@ -686,6 +693,22 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await click(window, '[aria-label="关闭面板"]')
     console.log('CHOUYU_WORKSPACE_RESTORE_SMOKE_PASSED saved pages, close/reopen, renderer restart, explicit navigation and stale request protection')
     console.log('CHOUYU_CHAT_SMOKE_PASSED markdown, full-text search, streaming scroll, settings, memory CRUD, approval keyboard')
+
+    async function checkEditingResend(): Promise<void> {
+      const latest = 'hello 在帮我写一章吞噬星空续看看'
+      const requestCount = providerRequests
+      await click(window, '[data-message-id="ui-history-218"] .message-edit-btn')
+      await input(window, '[aria-label="编辑消息内容"]', latest)
+      await click(window, '.message-edit-actions .primary')
+      await waitForRenderer(window, "document.querySelector('.message-area')?.textContent.includes('开始流式回复')")
+      if (providerRequests !== requestCount + 1 || lastProviderMessages.at(-1)?.content !== latest || lastProviderMessages.at(-1)?.role !== 'user') throw new Error('Edit/resend did not submit the edited text as the current request')
+      if (lastProviderMessages.some(message => message.content.includes('const answer = 42'))) throw new Error('Edit/resend included the discarded future answer')
+      stream!.end(`data: ${JSON.stringify({ choices: [{ delta: { content: '按最新请求续写这一章。' } }] })}\n\ndata: [DONE]\n\n`)
+      await waitForRenderer(window, "!document.querySelector('[aria-label=\"停止生成\"]') && document.querySelector('.message-area')?.textContent.includes('按最新请求续写这一章')")
+      const saved = getActiveSession().messages
+      if (saved.at(-2)?.content !== latest || saved.at(-1)?.content !== '开始流式回复。按最新请求续写这一章。' || saved.some(message => message.id === 'ui-history-219')) throw new Error('Edit/resend did not persist the edited conversation and new answer')
+      console.log('CHOUYU_CHAT_EDIT_SMOKE_PASSED edit/save-resend uses latest text, truncates old answer, sends once and persists new answer')
+    }
   } catch (error) {
     console.error('CHOUYU_CHAT_UI_STATE', await window.webContents.executeJavaScript(`JSON.stringify({
       expectedBounds: window.__normalBounds, actualBounds: document.querySelector('.chat-panel')?.getBoundingClientRect().toJSON(),

@@ -13,11 +13,13 @@ import { validateOutputPreference, type ContactOutputPreferenceRecord } from '..
 import { INDUSTRY_LABELS } from '../../shared/characters'
 
 export const CONTACT_CHANGE_PROMPT = `判断用户最新一句是否在调整当前联系人的已有任务或联系人本身的工作设置。你只负责路由，不直接回复“已改好”。只返回一个 JSON 对象。明确要求调整工作设置（含权限、通知、搜索和成果共享）时返回 settings，不能当作 none 普通聊天，即使还没有任务。
+输入最后的 latest 是本次唯一需要处理的用户原话，包括编辑后重新发送的消息；conversation 只是先前交流，不是待逐条补答的问题。先理解 latest 的目标，再用历史解析必要指代。latest 已明确书名、任务或新请求时，不得让历史中尚未回答的追问覆盖它；例如先前讨论“整体写法”，本次说“再帮我写一章吞噬星空续看看”，应围绕这次指定作品的写作请求判断，不能再追问旧的整体写法或要求重新选择已指定的作品。
+“写一章看看”“写一段试试”等索取新增本次正文、未要求修改已有正式成果或任务设置的请求返回none，交给正常回复生成正文；即使有同名已暂停任务，也不等于授权恢复后台长期任务。若针对已有成果说“这章结尾太急，再给我一版”，仍按revise处理原成果修订，不能套用none。continue只用于用户明确要求恢复/继续任务运行，不能仅因“续写”或作品名称带“续”就改变任务状态。若用户明确要求恢复长期任务，则仍用continue核对对象与实际状态。
 同一联系人一次明确调整多个配置领域时返回{"kind":"configuration","changes":[各自的profile/settings/skill/credential/output对象]}，每个领域最多一项，output仅contact范围，同域字段合并在一个patch。程序分别保存待确认步骤及各自回执，可从原卡片继续处理；不是批量任务。不能遗漏其中一项、不能把多个任务操作混入组合。普通闲聊、进度询问、讨论方案、否定修改、引用他人指令、新任务：{"kind":"none"}。
 阅读偏好：{"kind":"output","scope":"contact|task|delivery","topicId":"任务范围时实际ID","deliveryVersion":1,"patch":{}}。只调整阅读类型、间距或表达结构时用output，不改任务目标。patch仅kind(writing/ideas/review/research/plan/briefing/plain/auto)、density(comfortable/compact)、instruction(完整表达要求，保留未撤销要求)。联系人今后所有输出用contact；这项任务以后用task；这次/这份已保存成果用delivery，未知版本省略deliveryVersion由程序读取最新，明确旧版则提供已读取版本。范围不清楚先question，不得把“这次”解释成contact。用户要求重写具体正文仍用revise；定制交互页面用presentation。kind只改变安全排版，instruction在未来生成时使用，不声称已重写正文。
 联系人资料修改：{"kind":"profile","patch":{}}。patch仅包含用户明确修改的name、avatar、category、soulMd、providerProfileId、model；从configuration.profile读取实际资料、供应商目录和版本，保留未撤销人设。角色人设与长期工作规则分别使用profile.soulMd与settings.goal。空人设不得借用ChouYu身份。普通联系人默认档案model为空表示跟随默认；ChouYu模型修改会更新系统默认模型。只能选择目录内供应商，缺少目标才追问；凭据不得写入资料或对话工具。
 已安装技能配置：{"kind":"skill","skillId":"实际目录ID","action":"enable|disable|remove|enable_scripts|disable_scripts"}。从configuration.skills读取真实目录；没有明确指定且多个匹配先追问，不猜ID。启用说明不自动授权脚本，授权脚本必须有用户明确要求。安装、环境准备或其他未在本路由覆盖的配置操作返回none，由对应真实工具继续处理，不得声称已完成。
-对象不明确、缺少必要信息、不支持的能力：{"kind":"question","message":"具体的简短追问或能力限制；说明未修改"}。
+对象不明确、缺少必要信息、不支持的能力：{"kind":"question","requestText":"原样复制输入的requestAnchor","message":"仅针对这次请求所缺必要信息的简短追问或能力限制；说明未修改"}。requestAnchor是系统从latest截取的本次原话，不需自行计数；requestText不能取自conversation。旧问题在本次已给出目标或转入新话题时不再追问。
 明确修改：{"kind":"action","topicId":"现有任务ID","action":"edit|pause|continue|answer|revise|presentation|end|abandon|delete|schedule","patch":{},"reason":"用户最新原话"}。
 edit 用于以后持续遵守的要求、目标、范围、标题、语言、语气、篇幅、汇报单位和任务累计额度；patch 只能包含实际变化的 goal、constraints、title、modelCalls、tokens、separateEvaluations、clearTokenLimit。用户明确取消本任务Token上限用 clearTokenLimit:true，不与tokens同时填写；不解除调用次数保护。
 goal/constraints 返回完整字段，保留未撤销的要求，消除被新要求替代的冲突；其他字段省略。不要将单纯要求修改后续汇报误作 revise。
@@ -44,9 +46,10 @@ interface Deps {
   execute(call: AIToolCall): Promise<string>
 }
 
-function parseDecision(raw: string): Record<string, any> {
+function parseDecision(raw: string, requestAnchor?: string): Record<string, any> {
   const value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
   if (!value || typeof value !== 'object' || !['none', 'question', 'action', 'settings', 'profile', 'skill', 'interaction', 'credential', 'output', 'configuration'].includes(value.kind)) throw new Error('kind 无效')
+  if (value.kind === 'question' && (requestAnchor === undefined || value.requestText !== requestAnchor)) throw new Error('追问没有对应本次 latest 原话；请重新判断本次请求，不要回答 conversation 中的旧问题。')
   if (value.kind === 'configuration') {
     if (!Array.isArray(value.changes) || value.changes.length < 2 || value.changes.length > 5 || value.changes.some((step: any) => !step || !['profile', 'settings', 'skill', 'credential', 'output'].includes(step.kind) || step.kind === 'output' && step.scope !== 'contact') || new Set(value.changes.map((step: any) => step.kind)).size !== value.changes.length) throw new Error('组合设置必须是同一联系人不同配置领域，不含批量任务或嵌套操作')
     value.changes = value.changes.map((step: any) => parseDecision(JSON.stringify(step)))
@@ -89,6 +92,7 @@ function parseDecision(raw: string): Record<string, any> {
 export async function routeContactChange(messages: AIChatMessage[], deps: Deps): Promise<string | undefined> {
   const latest = messages.at(-1)
   if (latest?.role !== 'user' || typeof latest.content !== 'string') return
+  const requestAnchor = Array.from(latest.content).slice(0, 200).join('')
   let data = await deps.read('get') as AgentOverview
   const configuration = await deps.configuration?.()
   const pendingInteractions = await deps.interactions?.() ?? []
@@ -96,15 +100,17 @@ export async function routeContactChange(messages: AIChatMessage[], deps: Deps):
   const prompt = CONTACT_CHANGE_PROMPT + (deps.assistant ? '\n当前为ChouYu：资料、工作设置和技能按上述协议修改；日常职责、问候、休息、晨报与定时安排返回none，由原助手安排工具保存。' : '')
   const content = JSON.stringify({
     configuration, pendingInteractions, outputPreferences, profileCategories: INDUSTRY_LABELS,
-    now: new Date().toString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, latest: latest.content, conversation: messages.slice(-6, -1).map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(-1200) : '' })),
-    settings: data.settings, topics: data.topics, pending: data.runs.filter(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status)), focusTopicId: data.focusTopicId
+    now: new Date().toString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    settings: data.settings, topics: data.topics, pending: data.runs.filter(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status)), focusTopicId: data.focusTopicId,
+    conversation: messages.slice(-6, -1).map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(-1200) : '' })),
+    requestAnchor, latest: latest.content
   })
   const raw = await deps.model(prompt + CONTACT_INTERACTION_PROMPT, content)
   let plan: Record<string, any>
-  try { plan = parseDecision(raw) }
+  try { plan = parseDecision(raw, requestAnchor) }
   catch (error) {
     const repaired = await deps.model(prompt + CONTACT_INTERACTION_PROMPT + '\n上一次返回格式不合法，请根据同一用户请求修正一次，只返回符合协议的 JSON。', JSON.stringify({ request: JSON.parse(content), invalidOutput: raw.slice(0, 16000), error: String(error) }))
-    try { plan = parseDecision(repaired) } catch { throw new Error('没有识别出有效的任务操作，本次未修改，请重试。') }
+    try { plan = parseDecision(repaired, requestAnchor) } catch { throw new Error('没有识别出有效的任务操作，本次未修改，请重试。') }
   }
   if (plan?.kind === 'none') return
   if (plan.kind === 'configuration') {
