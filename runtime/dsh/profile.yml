@@ -40,3 +40,6 @@
     - id: chouyu-provider
       name: '@deepseek-ai/dsh-llm-pi-ai'
       config: !!js JSON.parse(process.env.CHOUYU_DSH_PROVIDER)
+    - id: chouyu-harness
+      name: './plugin.mjs'
+      disabled: !!js 'process.env.CHOUYU_DSH_PORT === undefined'

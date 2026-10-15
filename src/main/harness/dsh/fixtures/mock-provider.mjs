@@ -1,14 +1,15 @@
 import { createServer } from 'node:http';
 
 /** Wire-level fixture: actual SDK/adapter requests, no replacement of the agent loop. */
-export async function startMockProvider(provider) {
+export async function startMockProvider(provider, options = {}) {
   const requests = [];
   const server = createServer(async (req, res) => {
     const buffers = [];
     for await (const part of req) buffers.push(part);
     const body = JSON.parse(Buffer.concat(buffers).toString());
     requests.push({ path: req.url, headers: req.headers, body });
-    const tool = requests.length === 1;
+    if (options.holdText && JSON.stringify(body.messages).includes(options.holdText)) return;
+    const tool = options.tools !== false && requests.length === 1;
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
     const event = (type, data) => res.write(`${type ? `event: ${type}\n` : ''}data: ${JSON.stringify(data)}\n\n`);
     if (provider === 'openai') {
