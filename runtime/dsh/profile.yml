@@ -1,0 +1,42 @@
+# Pinned SDK kernel, without bundled agent tools, identity or extra model calls.
+- id: sandbox
+  disabled: true
+- id: sandbox-policy
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: subprocess
+  disabled: true
+- id: pty
+  disabled: true
+- id: terminal-bash
+  disabled: true
+- id: terminal-pwsh
+  disabled: true
+- id: persistent-bash
+  disabled: true
+- id: persistent-pwsh
+  disabled: true
+- id: compaction-basic
+  disabled: true
+- id: image-offload
+  disabled: true
+- id: llm-deepseek
+  disabled: true
+- id: deepseek-llm-api-extensions
+  disabled: true
+- id: session-log-deepseek
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    personaPrefix: ''
+- insert:
+    - id: chouyu-provider
+      name: '@deepseek-ai/dsh-llm-pi-ai'
+      config: !!js JSON.parse(process.env.CHOUYU_DSH_PROVIDER)

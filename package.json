@@ -30,7 +30,9 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "test:smoke:capture": "npm run build && node scripts/smoke-electron.js --native-capture"
+    "test:smoke:capture": "npm run build && node scripts/smoke-electron.js --native-capture",
+    "setup:dsh-runtime": "npm ci --prefix runtime/dsh --no-audit --no-fund",
+    "test:dsh-runtime": "vitest run src/main/harness/dsh/provider.test.ts src/main/harness/dsh/provider-integration.test.ts"
   },
   "dependencies": {
     "@langchain/core": "1.2.12",
