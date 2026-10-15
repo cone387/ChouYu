@@ -119,8 +119,8 @@ import {
   setState
 } from './database'
 
-const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter(), dsh:{run:(input,emit)=>{assertDshRecovered();return dshService().adapter.run(input,emit)}} })
-setHarnessCancellation(key=>chatHarness.cancel(key))
+const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter(), dsh:{run:(input,emit)=>{assertDshRecovered();return dshService().adapter.run(input,emit)},invalidate:input=>dshService().adapter.invalidate(input)} })
+setHarnessCancellation(key=>{activeAIRequests.get(key)?.abort();return chatHarness.cancel(key)})
 setContactHarnessPurge(characterId=>purgeHarnessData({characterId}))
 
 const activeAIRequests = new Map<string, AbortController>()
@@ -660,7 +660,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       controller.signal.throwIfAborted()
       if(receiptMode&&harnessInput){
         const base=getConfig(),current=resolveCharacterConfig(owner?getCharacter(owner):undefined,base)
-        if(!current.ok||harnessConfigVersion({...base,...current.config})!==harnessInput.configVersion)throw new Error('????????????????????')
+        if(!current.ok||harnessConfigVersion({...base,...current.config})!==harnessInput.configVersion)throw new Error('模型或工具配置已变化，请重新发送消息。')
       }
       if (owner && chatState.contactContext) await contactAgentsCall(owner, 'assertContextCurrent', [chatState.contactContext])
       controller.signal.throwIfAborted()
@@ -758,6 +758,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (contextSent && chatState.contactContext) setState(`contact-context:${request.requestId}`, JSON.stringify(chatState.contactContext))
       return { ok: true, contactContext: contextSent ? chatState.contactContext : undefined, ...(result.source?{reply:result.text,operation:'replace' as const,harnessSource:result.source}:{}) }
     } catch (error) {
+      if (receiptMode && harnessInput) await dshService().adapter.invalidate(harnessInput)
       if (contextSent && chatState.contactContext) { chatState.contactContext.status = 'failed'; setState(`contact-context:${request.requestId}`, JSON.stringify(chatState.contactContext)) }
       if (chatState.memoryMutationReceipt) return { ok: true, reply: chatState.memoryMutationReceipt }
       if (controller.signal.aborted) return { ok: false, error: 'AI 请求已取消。' }

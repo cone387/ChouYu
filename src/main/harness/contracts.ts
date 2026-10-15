@@ -57,4 +57,5 @@ export type HarnessEvent = HarnessUpdate & RunKey & {
 export type HarnessSink = (event: HarnessUpdate) => void;
 export interface HarnessAdapter {
     run(input: HarnessInput, emit: HarnessSink): Promise<HarnessResult>;
+    invalidate?(input: HarnessInput): Promise<void>;
 }

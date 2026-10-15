@@ -46,3 +46,11 @@ it('explicit cancellation invalidates only this run pending cards', async () => 
     await f.bridge.cancelPendingActions(key);
     expect(f.access.cancel).toHaveBeenCalledWith('c', 'card', '1');
 });
+it('invalidates a card whose original offer completes after cancellation cleanup', async () => {
+    const f = fixture(), abort = new AbortController();
+    abort.abort();
+    await f.bridge.cancelPendingActions(key);
+    expect(f.access.cancel).not.toHaveBeenCalled();
+    await expect(f.bridge.waitForActionReceipt(key, 'card', abort.signal)).rejects.toThrow();
+    expect(f.access.cancel).toHaveBeenCalledWith('c', 'card', '1');
+});

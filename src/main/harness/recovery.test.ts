@@ -3,6 +3,17 @@ import { HarnessStore } from './store';
 import { recoverHarnessRuns, purgeHarnessRuns } from './recovery';
 const stores: HarnessStore[] = [];
 afterEach(() => stores.splice(0).forEach(s => s.close()));
+it('purges interrupted and recovered bodies and never publishes explicitly suppressed delivery',async()=>{
+    const store=new HarnessStore(':memory:'); stores.push(store);
+    const keys=['recovered','interrupted','suppressed'].map(id=>({requestId:id,attemptId:id}));
+    for(const key of keys){store.begin({...key,characterId:'c',sessionId:'s',snapshotFingerprint:'f',configVersion:'v'} as never);store.transition(key,'starting','running')}
+    store.suppressDelivery(keys[2]);
+    const save=vi.fn(async()=>{}), purge=vi.fn(async()=>{}), readCommitted=vi.fn(async(run)=>run.attemptId==='recovered'?'reply':undefined);
+    await recoverHarnessRuns(store,{readCommitted,hasMessage:async()=>false,save,purge});
+    expect(save).toHaveBeenCalledTimes(1);expect(purge).toHaveBeenCalledTimes(3);
+    expect(readCommitted.mock.calls.map(([run])=>run.attemptId)).toEqual(['recovered','interrupted']);
+    expect(store.get(keys[2])!.deliverySuppressed).toBe(true);
+});
 it.each(['starting', 'running', 'persistent-card', 'ephemeral-confirmation', 'write-started', 'receipt-saved', 'committed'])('reconciles %s without model or tool replay', async (stage) => {
     const store = new HarnessStore(':memory:');
     stores.push(store);

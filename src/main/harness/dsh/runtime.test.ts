@@ -1,15 +1,50 @@
 import { afterEach, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DEFAULT_APP_CONFIG } from '../../../shared/config';
 import { prepareHarnessInput } from '../prepare';
 import { DshRuntimePool, dshRuntimeGroup, inspectDshRun } from './runtime';
 import { purgeRunLogs } from '../logs';
+import { HarnessStore } from '../store';
+import { ActionResults } from '../action-results';
 import { startMockProvider } from './fixtures/mock-provider.mjs';
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse())
     await cleanup(); });
+it('waits for a delayed original offer to become obsolete before stop settles',async()=>{
+    const home=mkdtempSync(join(tmpdir(),'chouyu-dsh-late-offer-')),mock=await startMockProvider('openai');
+    const pool=new DshRuntimePool({home,node:process.execPath,helper:resolve('runtime/dsh/helper.mjs')}),store=new HarnessStore(':memory:');
+    let release!:()=>void,offered!:()=>void; const delayed=new Promise<void>(r=>{release=r}), started=new Promise<void>(r=>{offered=r});
+    const abort=new AbortController();let obsolete=false;
+    const actions=new ActionResults(store,{read:async()=>({kind:'action',id:'card',version:'1',characterId:'c',status:obsolete?'obsolete':'pending',request:{sessionId:'s'}} as never),subscribe:()=>()=>{},cancel:async()=>{obsolete=true}});
+    cleanups.push(()=>rmSync(home,{recursive:true,force:true}),()=>store.close(),()=>mock.close(),()=>pool.close(),()=>release());
+    const input=await prepareHarnessInput({requestId:'late',characterId:'c',sessionId:'s',systemPrompt:'persona',messages:[{role:'user',content:'fixture'}]},{config:{...DEFAULT_APP_CONFIG,provider:'openai',baseUrl:mock.baseUrl,apiKey:'fixture',model:'fixture'},signal:abort.signal,assertContext:async()=>{},citationContext:async()=>'',privateContext:'',skillContext:'',communication:'',tools:{definitions:[{name:'chouyu_fixture',displayName:'fixture',description:'fixture',source:'builtin',risk:'write',requiresConfirmation:true,inputSchema:{type:'object',properties:{value:{type:'string'}}}}],execute:async call=>{offered();await delayed;return actions.waitForActionReceipt({...input,callId:call.id},'card',abort.signal)}}});
+    store.begin(input);store.transition(input,'starting','running');
+    const lease=await pool.acquire(input);let settled=false;const result=lease.run(input,()=>{}).finally(()=>{settled=true});
+    await started;abort.abort();await actions.cancelPendingActions(input);
+    await new Promise(r=>setTimeout(r,100));expect(settled).toBe(false);expect(obsolete).toBe(false);
+    release();expect((await result).state).toBe('cancelled');expect(obsolete).toBe(true);await lease.release();
+    expect(mock.requests).toHaveLength(1);
+},60000);
+it('starts a fresh runtime only for a new explicit request after its helper crashes', async () => {
+    const home = mkdtempSync(join(tmpdir(),'chouyu-dsh-crash-'));
+    const helper = join(home,'wrapper.mjs'), pidFile = join(home,'pid');
+    writeFileSync(helper, `import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)},String(process.pid)); process.argv[1]=${JSON.stringify(resolve('runtime/dsh/helper.mjs'))}; await import(${JSON.stringify(pathToFileURL(resolve('runtime/dsh/helper.mjs')).href)});`);
+    const mock = await startMockProvider('openai', {tools:false});
+    const pool = new DshRuntimePool({home,node:process.execPath,helper});
+    cleanups.push(()=>rmSync(home,{recursive:true,force:true}),()=>mock.close(),()=>pool.close());
+    const prepare = (id:string)=>prepareHarnessInput({requestId:id,characterId:'c',sessionId:'s',systemPrompt:'persona',messages:[{role:'user',content:id}]},{config:{...DEFAULT_APP_CONFIG,provider:'openai',baseUrl:mock.baseUrl,apiKey:'fixture',model:'fixture'},signal:new AbortController().signal,assertContext:async()=>{},citationContext:async()=>'',privateContext:'',skillContext:'',communication:''});
+    const first=await prepare('first'), lease=await pool.acquire(first);
+    expect((await lease.run(first,()=>{})).state).toBe('completed'); await lease.release();
+    const pid=Number(readFileSync(pidFile,'utf8')); process.kill(pid);
+    await import('vitest').then(({vi})=>vi.waitFor(()=>expect(()=>process.kill(pid,0)).toThrow()));
+    const next=await prepare('next'), nextLease=await pool.acquire(next);
+    expect((await nextLease.run(next,()=>{})).state).toBe('completed'); await nextLease.release();
+    expect(Number(readFileSync(pidFile,'utf8'))).not.toBe(pid);
+    expect(mock.requests).toHaveLength(2);
+},60000);
 it('runs a fresh scoped session with exact history and only the main-owned tools', async () => {
     const home = mkdtempSync(join(tmpdir(), 'chouyu-dsh-runtime-'));
     const mock = await startMockProvider('openai');
@@ -37,6 +72,11 @@ it('runs a fresh scoped session with exact history and only the main-owned tools
     expect(JSON.stringify(mock.requests[0].body)).toContain('Alice persona');
     expect(await lease.flush(first)).toBe(true);
     await lease.release();
+    const imageInput = await prepare('image current');
+    imageInput.messages.at(-1)!.imageUrl = 'data:image/png;base64,fixture';
+    const beforeImage = mock.requests.length;
+    await expect(pool.acquire(imageInput)).rejects.toThrow(/图片|image/i);
+    expect(mock.requests).toHaveLength(beforeImage);
     const second = await prepare('edited current'), next = await pool.acquire(second);
     await next.run(second, () => { });
     expect(first.attemptId).not.toBe(second.attemptId);

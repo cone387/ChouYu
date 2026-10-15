@@ -18,3 +18,12 @@ it('records a durable completion and rejects re-execution of an existing attempt
     expect(lease.run).toHaveBeenCalledTimes(1);
     expect(lease.release).toHaveBeenCalledTimes(1);
 });
+it.each(['abort', 'context'])('does not publish or recover a completion invalidated during final flush: %s', async mode => {
+    const store = new HarnessStore(':memory:'); stores.push(store);
+    const abort = new AbortController(); let stale = false;
+    const input: HarnessInput = { requestId:'r', attemptId:'a', characterId:'c', sessionId:'s', config:DEFAULT_APP_CONFIG, configVersion:'v', snapshotFingerprint:'f', systemPrompt:'', messages:[{role:'user',content:'hi'}], signal:abort.signal, assertContext:async()=>{if(stale)throw new Error('stale context')} };
+    const lease = {run:async()=>({state:'completed' as const,text:'invalid reply'}),flush:async()=>{if(mode==='abort')abort.abort();else stale=true;return true},release:async()=>{},cancel:async()=>{}};
+    const adapter = new DshAdapter({acquire:async()=>lease},store);
+    expect((await adapter.run(input,()=>{})).state).toBe(mode==='abort'?'cancelled':'failed');
+    expect(store.get(input)!.state).not.toBe('completed');
+});

@@ -10,7 +10,14 @@ export class DshAdapter implements HarnessAdapter {
             throw new Error('执行日志尚未保存，未创建确认事项。');
         this.store.markDurable(key);
     }
-    constructor(private pool: Pick<DshRuntimePool, 'acquire'>, private store: HarnessStore, private cancelActions?: (key: HarnessInput) => Promise<void>) { }
+    constructor(private pool: Pick<DshRuntimePool, 'acquire'>, private store: HarnessStore, private cancelActions?: (key: HarnessInput) => Promise<void>, private cleanup?: (run: import('../store').RunRecord) => Promise<void>) { }
+    async invalidate(input: HarnessInput): Promise<void> {
+        const run=this.store.get(input); if (!run) return;
+        this.store.suppressDelivery(input);
+        if (!this.leases.has(JSON.stringify([input.requestId,input.attemptId]))) {
+            try { await this.cleanup?.(this.store.get(input)!); } catch { /* cleanupPending remains durable and visible */ }
+        }
+    }
     async run(input: HarnessInput, emit: HarnessSink): Promise<HarnessResult> {
         if (this.store.get(input))
             return { state: 'interrupted', error: '此执行已有记录，未自动重放。请重新发送消息。' };
@@ -36,6 +43,9 @@ export class DshAdapter implements HarnessAdapter {
                     throw new Error('执行日志尚未确认保存。');
                 this.store.markDurable(input);
             }
+            input.signal.throwIfAborted();
+            await input.assertContext();
+            input.signal.throwIfAborted();
             const record = this.store.get(input)!;
             if (!this.store.transition(input, record.state, result.state))
                 throw new Error('执行状态已变化，不能发布回复。');
@@ -45,6 +55,7 @@ export class DshAdapter implements HarnessAdapter {
             const state = input.signal.aborted ? 'cancelled' : 'failed';
             const record = this.store.get(input)!;
             this.store.transition(input, record.state, state);
+            this.store.suppressDelivery(input);
             return { state, error: error instanceof Error ? error.message : 'DSH 执行失败。' };
         }
         finally {
@@ -55,6 +66,10 @@ export class DshAdapter implements HarnessAdapter {
             finally {
                 this.leases.delete(JSON.stringify([input.requestId, input.attemptId]));
                 await lease?.release();
+                const run=this.store.get(input)!;
+                if (run.state!=='completed' || run.deliverySuppressed) {
+                    try { await this.cleanup?.(run); } catch { /* keep cleanupPending for startup retry */ }
+                }
             }
         }
     }

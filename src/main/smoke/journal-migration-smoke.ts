@@ -25,7 +25,7 @@ function workerClient(directory: string) {
 }
 
 export async function runJournalMigrationSmoke(): Promise<void> {
-  const image = nativeImage.createFromBuffer(readFileSync(join(app.getAppPath(), 'tests/fixtures/ocr-sample.png'))).toJPEG(85)
+  const image = nativeImage.createFromBuffer(readFileSync(process.env.CHOUYU_SMOKE_MIGRATION_FIXTURE || join(app.getAppPath(), 'tests/fixtures/ocr-sample.png'))).toJPEG(85)
   const at = Date.now() - 8 * 86400_000
   for (const version of [7, 8, 9]) {
     const directory = join(app.getPath('userData'), `journal-upgrade-v${version}`)

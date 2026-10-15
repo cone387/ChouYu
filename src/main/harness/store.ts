@@ -22,6 +22,8 @@ export interface RunRecord extends RunKey {
     messageId: string;
     messageSaved: boolean;
     cleanupPending: boolean;
+    logsPurged?: boolean;
+    deliverySuppressed?: boolean;
     createdAt: number;
 }
 export interface ToolRecord extends ToolKey {
@@ -113,7 +115,8 @@ export class HarnessStore {
     recordUsage(key: RunKey, providerRequestId: string, usage: import('../../shared/ai-usage').AIUsage | null): void { this.update(key, record => { record.calls ??= []; if (!record.calls.some(c => c.providerRequestId === providerRequestId))
         record.calls.push({ providerRequestId, usage }); }); }
     markMessageSaved(key: RunKey): void { this.update(key, record => { record.messageSaved = true; }); }
-    markCleanup(key: RunKey, pending: boolean): void { this.update(key, record => { record.cleanupPending = pending; }); }
+    suppressDelivery(key: RunKey): void { this.update(key, record => { record.deliverySuppressed = true; }); }
+    markCleanup(key: RunKey, pending: boolean): void { this.update(key, record => { record.cleanupPending = pending; if (!pending) record.logsPurged = true; }); }
     tools(key: RunKey): ToolRecord[] {
         return (this.db.prepare('SELECT value FROM tools WHERE request_id=? AND attempt_id=?').all(key.requestId, key.attemptId) as {
             value: string;
@@ -151,7 +154,7 @@ export class HarnessStore {
     all(): RunRecord[] { return (this.db.prepare('SELECT value FROM runs').all() as {
         value: string;
     }[]).map(row => JSON.parse(row.value)); }
-    listUnsettled(): RunRecord[] { return this.all().filter(r => !terminal.has(r.state) || r.state === 'completed' && !r.messageSaved || r.cleanupPending); }
+    listUnsettled(): RunRecord[] { return this.all().filter(r => r.cleanupPending || !r.logsPurged && (r.deliverySuppressed || !terminal.has(r.state) || !r.messageSaved)); }
     close(): void { if (this.db.open)
         this.db.close(); }
 }

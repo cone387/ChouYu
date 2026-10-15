@@ -64,6 +64,8 @@ export class ActionResults {
         }
         finally {
             this.store.transition(key, 'waiting-user', 'running');
+            // An offer may finish after the adapter's first cancellation scan.
+            if (signal.aborted) await this.cancelPendingActions(key);
         }
     }
     async cancelPendingActions(key: RunKey): Promise<void> {

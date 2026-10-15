@@ -36,14 +36,14 @@ export async function apply(ctx) {
             append('system/message', { turn: 1, step: 1, message: createSystemMessage(value.systemPrompt) }, true);
             for (const item of value.history) {
                 if (!item || typeof item.content !== 'string' || item.imageUrl)
-                    throw new Error('DSH ???????????');
+                    throw new Error('DSH 当前仅支持纯文本历史。');
                 const content = [{ type: 'text', text: item.content }];
                 if (item.role === 'user')
                     append('user/message', createUserMessage({ content, source: { kind: 'user' } }), true);
                 else if (item.role === 'assistant')
                     append('assistant/message', { turn: 1, step: 1, message: createAssistantMessage({ content, source: { provider: 'chouyu-history', model: 'unknown' } }), stream: [] }, true);
                 else
-                    throw new Error('DSH ?????????????????????????');
+                    throw new Error('DSH 历史仅支持用户和助手消息，额外系统消息尚未适配。');
             }
             append('step/end', { turn: 1, step: 1 });
             append('turn/end', { turn: 1, reason: { kind: 'completed' } });
@@ -51,7 +51,7 @@ export async function apply(ctx) {
             const streaming = new Set();
             const key = { requestId: value.requestId, attemptId: value.attemptId };
             if (typeof key.requestId !== 'string' || key.attemptId !== value.sessionId)
-                throw new Error('DSH ???????');
+                throw new Error('DSH 请求归属无效。');
             const handle = await ctx.agents.create({
                 sessionId: value.sessionId, seed, agentOptions: { provider: 'chouyu', model: value.model },
                 meta: { cwd: process.env.CHOUYU_DSH_WORKDIR },

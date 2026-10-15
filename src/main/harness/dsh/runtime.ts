@@ -24,6 +24,7 @@ type Active = {
     input: HarnessInput;
     emit: HarnessSink;
     stream: DshStreamReducer;
+    tools: Set<Promise<unknown>>;
 };
 class DshRuntime {
     private transport: DshTransport;
@@ -33,6 +34,12 @@ class DshRuntime {
     private active = new Map<string, Active>();
     private closed = false;
     private closePromise?: Promise<void>;
+    get isClosed(): boolean {
+        if (this.closed || this.helper?.closed || this.plugin?.closed || this.child && (this.child.exitCode !== null || this.child.signalCode !== null)) return true;
+        // The OS exit can precede Node's queued child 'exit' notification.
+        try { if (this.child?.pid) process.kill(this.child.pid, 0); } catch { return true; }
+        return false;
+    }
     constructor(private options: DshRuntimeOptions) {
         this.transport = new DshTransport(async (role, method, value) => {
             if (role !== 'plugin' || !value || typeof value.sessionId !== 'string')
@@ -52,7 +59,10 @@ class DshRuntime {
                 await input.assertContext();
                 input.signal.throwIfAborted();
                 emit({ type: 'tool', callId: value.callId, status: 'running' });
-                const result = await input.tools.execute({ id: value.callId, name: value.name, arguments: JSON.stringify(value.args) });
+                const work = input.tools.execute({ id: value.callId, name: value.name, arguments: JSON.stringify(value.args) });
+                current.tools.add(work);
+                let result: string;
+                try { result=await work; } finally { current.tools.delete(work); }
                 emit({ type: 'tool', callId: value.callId, status: 'completed' });
                 return result;
             }
@@ -103,7 +113,8 @@ class DshRuntime {
         if (!last || last.role !== 'user')
             throw new Error('DSH 当前输入必须是最后一条用户消息，尚未执行。');
         const stream = new DshStreamReducer();
-        this.active.set(input.attemptId, { input, emit, stream });
+        const active: Active = {input,emit,stream,tools:new Set()};
+        this.active.set(input.attemptId, active);
         let cancelling: Promise<void> | undefined;
         const abort = () => { cancelling = this.cancel(input).catch(() => { }); };
         input.signal.addEventListener('abort', abort, { once: true });
@@ -125,6 +136,7 @@ class DshRuntime {
         finally {
             input.signal.removeEventListener('abort', abort);
             await cancelling;
+            if (input.signal.aborted) await Promise.allSettled([...active.tools]);
             this.active.delete(input.attemptId);
         }
     }
@@ -167,6 +179,7 @@ export class DshRuntimePool {
     private groups = new Map<string, Promise<DshRuntime>>();
     constructor(private options: DshRuntimeOptions) { }
     async acquire(input: HarnessInput): Promise<DshRuntimeLease> {
+        mapProvider(input.config, {tools:Boolean(input.tools?.definitions.length),images:input.messages.some(m=>Boolean(m.imageUrl))});
         const group = dshRuntimeGroup(input);
         let pending = this.groups.get(group);
         if (!pending) {
@@ -175,6 +188,11 @@ export class DshRuntimePool {
             this.groups.set(group, pending);
         }
         const runtime = await pending;
+        if (runtime.isClosed) {
+            await runtime.close();
+            if (this.groups.get(group) === pending) this.groups.delete(group);
+            return this.acquire(input);
+        }
         const assertOwner = (key: RunKey) => { if (key.requestId !== input.requestId || key.attemptId !== input.attemptId)
             throw new Error('DSH 请求归属无效。'); };
         return { run: async (value, emit) => { assertOwner(value); if (value !== input)
@@ -194,7 +212,7 @@ export async function inspectDshRun(options: DshRuntimeOptions, run: {
     if (!run.runtimeGroup || !run.dshSessionId || !run.inputMessageId)
         return undefined;
     if (!/^[a-f0-9]{64}$/.test(run.runtimeGroup))
-        throw new Error('DSH ???????');
+        throw new Error('DSH 运行环境归属无效。');
     const runtime = new DshRuntime({ ...options, home: join(options.home, run.runtimeGroup) });
     try {
         await runtime.start({ config: { ...DEFAULT_APP_CONFIG, provider: 'openai', baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'recovery-no-dispatch', model: 'recovery' }, messages: [] });

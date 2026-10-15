@@ -19,13 +19,17 @@ function create() {
     const options = { home: join(home, 'logs'), node: paths.node, helper: paths.helper };
     const pool = new DshRuntimePool(options);
     const actions = new ActionResults(store, { read: (owner, id) => contactAgentsCall(owner, 'getInteraction', [id]), subscribe: onContactContextChanged, cancel: (owner, id, version) => contactAgentsCall(owner, 'cancelPendingAction', [id, version]) });
-    const adapter = new DshAdapter(pool, store, key => actions.cancelPendingActions(key));
+    const adapter = new DshAdapter(pool, store, key => actions.cancelPendingActions(key), run => cleanSavedDshRun(run));
     return { store, pool, actions, adapter, options };
 }
 export function dshService() { return instance ??= create(); }
 export function assertDshRecovered() { const error = getState('harness:recovery-error'); if (error)
     throw new Error(`执行记录尚未核对完成：${error}`); }
-export async function cleanSavedDshRun(run: import('./store').RunRecord) { const service = dshService(); service.store.markCleanup(run, true); await purgeRunLogs(service.options.home, run); service.store.markCleanup(run, false); }
+export async function cleanSavedDshRun(run: import('./store').RunRecord) {
+    const service = dshService(); service.store.markCleanup(run, true);
+    try { await purgeRunLogs(service.options.home, run); service.store.markCleanup(run, false); }
+    catch (error) { setState('harness:cleanup-error', '执行日志清理失败，下次启动将重试。'); throw error; }
+}
 export function existingDshService() { return instance; }
 export async function closeDshService() { if (instance) {
     const current = instance;
@@ -38,7 +42,7 @@ export async function recoverDshService() {
         return;
     const service = dshService();
     await recoverHarnessRuns(service.store, {
-        hasMessage: async (run) => Boolean(getSession(run.sessionId)?.messages.some(m => m.id === run.messageId)),
+        hasMessage: async (run) => { const session=getSession(run.sessionId);return session?.characterId===run.characterId&&session.messages.some(m=>m.id===run.messageId&&m.role==='assistant'&&m.harnessSource?.attemptId===run.attemptId&&m.harnessSource.requestId===run.requestId); },
         readCommitted: run => inspectDshRun(service.options, run),
         save: async (run, text) => {
             const session = getSession(run.sessionId);
@@ -49,7 +53,7 @@ export async function recoverDshService() {
             const saved = flushDatabase();
             if (saved.error)
                 throw new Error(saved.error);
-        }, purge: run => purgeRunLogs(service.options.home, run)
+        }, purge: run => cleanSavedDshRun(run)
     });
 }
 export async function purgeHarnessData(scope: {

@@ -36,6 +36,7 @@ export class HarnessCoordinator {
                 await input.assertContext();
         }
         catch (error) {
+            await this.adapters[engine]?.invalidate?.(input);
             result = { state: signal.aborted ? 'cancelled' : 'failed', error: signal.aborted ? 'AI 请求已取消。' : error instanceof Error ? error.message : 'AI 请求失败。' };
         }
         finally {

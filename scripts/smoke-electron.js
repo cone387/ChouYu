@@ -10,7 +10,10 @@ const FAILED_MARKER = 'CHOUYU_SMOKE_FAILED'
 const TIMEOUT_MS = process.argv.includes('--contact-live') ? 1_800_000 : process.env.CHOUYU_SMOKE_ARTIFACTS ? 300_000 : 240_000
 const packagedArgIndex = process.argv.indexOf('--packaged')
 const packagedExecutable = packagedArgIndex >= 0 ? process.argv[packagedArgIndex + 1] : ''
-const executable = packagedExecutable || require('electron')
+if (process.argv.includes('--dsh-harness-live')) {
+  throw new Error('DSH live UI acceptance is not implemented; run the opt-in provider-live.acceptance.test.ts probe. This flag cannot report acceptance success.')
+}
+const executable = packagedExecutable ? path.resolve(packagedExecutable) : require('electron')
 const args = packagedExecutable ? ['--disable-gpu'] : ['--disable-gpu', '.']
 const smokeUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'chouyu-smoke-'))
 const legacyStorePath = path.join(smokeUserData, 'chouyu-data.json')
@@ -30,6 +33,7 @@ const nativeCapture = process.argv.includes('--native-capture')
 const env = {
   ...process.env,
   CHOUYU_SMOKE_TEST: '1',
+  CHOUYU_SMOKE_MIGRATION_FIXTURE: path.resolve(__dirname, '../tests/fixtures/ocr-sample.png'),
   CHOUYU_SMOKE_DSH: process.argv.includes('--dsh-harness') ? '1' : '0',
   CHOUYU_SMOKE_CONTACT_LIVE: process.argv.includes('--contact-live') ? '1' : '0',
   CHOUYU_SMOKE_CAPTURE_ONLY: nativeCapture ? '1' : '0',

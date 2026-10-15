@@ -2,6 +2,14 @@ import { expect, it, vi } from 'vitest';
 import { HarnessCoordinator } from './coordinator';
 import type { HarnessInput } from './contracts';
 const input = () => ({ requestId: 'r', attemptId: 'a', characterId: 'pilot', signal: new AbortController().signal, assertContext: async () => { } } as HarnessInput);
+it('invalidates durable adapter output rejected by final context validation',async()=>{
+    const invalidate=vi.fn(async()=>{});
+    const dsh={run:async()=>({state:'completed' as const,text:'stale'}),invalidate};
+    const coordinator=new HarnessCoordinator({dsh},{CHOUYU_DSH_PILOT_CHARACTER_ID:'pilot'},'win32');
+    const value={...input(),assertContext:async()=>{throw new Error('stale')}};
+    expect((await coordinator.run(value,()=>{})).state).toBe('failed');
+    expect(invalidate).toHaveBeenCalledWith(value);
+});
 it('keeps ordinary contacts on legacy and never falls back after a DSH failure', async () => {
     const legacy = { run: vi.fn(async () => ({ state: 'completed' as const, text: 'legacy' })) }, dsh = { run: vi.fn(async () => { throw new Error('dsh failed'); }) };
     const coordinator = new HarnessCoordinator({ legacy, dsh }, { CHOUYU_DSH_PILOT_CHARACTER_ID: 'pilot' }, 'win32');
