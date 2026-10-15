@@ -8,6 +8,9 @@ import type { PreparedTool } from '../tools/registry'
 
 export interface ChatRequestState { contactContext?: ContactContextRecord; ownMemoryMutation: boolean; memoryMutationReceipt: string }
 export interface ChatToolContext {
+  confirmationMode?: 'legacy-return-card' | 'await-receipt'
+  beforePersistentOffer?(call:AIToolCall):Promise<void>
+  waitForActionReceipt?(call:AIToolCall,card:ContactActionInteraction):Promise<string>
   request: AIStreamRequest
   owner?: string
   signal: AbortSignal
@@ -70,6 +73,11 @@ export function createChatTools(context: ChatToolContext) {
         })
         if (needsApproval) {
           if (owner && request.sessionId && CONTACT_ACTION_TOOLS.includes(call.name as ContactActionTool)) {
+            if(context.confirmationMode==='await-receipt') {
+              if(!context.beforePersistentOffer||!context.waitForActionReceipt)throw new Error('确认回执桥接不可用，未创建事项。')
+              await context.beforePersistentOffer(call)
+              context.signal.throwIfAborted()
+            }
             const card = await context.offerAction(`${request.requestId}:${call.id}`, {
               purpose: 'confirmation', title: definition.displayName, body: `${configurationStep ? `同次设置调整 ${configurationStep.index}/${configurationStep.total}。此项单独确认并保存。\n` : ''}${prepared.preview || definition.description}`,
               sessionId: request.sessionId,
@@ -80,6 +88,7 @@ export function createChatTools(context: ChatToolContext) {
               actions: [{ id: 'apply', label: '确认执行', tool: call.name, arguments: arguments_ }]
               , ...(call.name === 'set_contact_search_credential' ? { input: { label: '搜索密钥', argument: 'credential', maxLength: 8192, required: true } } : {})
             })
+            if(context.confirmationMode==='await-receipt')return await context.waitForActionReceipt!(call,card)
             context.emit({ requestId: request.requestId, callId: call.id, name: definition.name, displayName: definition.displayName, risk: definition.risk, status: 'completed', summary: '已发送确认卡片，尚未执行' })
             return JSON.stringify({ pendingInteraction: true, interactionId: card.id, message: '已把需要确认的内容放在聊天卡片中；确认后才会执行。' })
           }

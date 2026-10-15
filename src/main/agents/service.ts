@@ -98,6 +98,7 @@ export class AgentService {
       case 'finishAction': { const result = this.store.actions.finish(id, String(args[0]), String(args[1]), args[2] as import('../../shared/contact-actions').ContactActionOutcome); this.changed(id); return result }
       case 'failAction': { const result = this.store.actions.fail(id, String(args[0]), String(args[1]), String(args[2])); this.changed(id); return result }
       case 'rejectAction': { const result = this.store.actions.reject(id, String(args[0]), String(args[1])); this.changed(id); return result }
+      case 'cancelPendingAction': { const result = this.store.actions.cancelPending(id, String(args[0]), String(args[1])); this.changed(id); return result }
       case 'acknowledgeAction': { const result = this.store.actions.acknowledge(id, String(args[0]), String(args[1])); this.changed(id); return result }
       case 'submitInteraction': {
         if (!this.identity(id).config) throw new Error('请先为联系人配置可用的模型。')

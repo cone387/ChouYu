@@ -100,6 +100,15 @@ export class ContactActions {
       return this.view(value)
     }).immediate()
   }
+  cancelPending(owner:string,id:string,version:string) {
+    return this.store.db.transaction(()=>{
+      const value=this.read(owner,id)
+      if(value.version===version&&!value.executionStarted&&['pending','failed'].includes(value.status)){
+        value.status='obsolete';value.result='原请求已取消，此操作未执行。';value.sequence++;this.save(value)
+      }
+      return this.view(value)
+    }).immediate()
+  }
   reject(owner: string, id: string, version: string) {
     this.get(owner, id)
     return this.store.db.transaction(() => {

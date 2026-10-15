@@ -18,6 +18,13 @@ function fixture() {
   const request = { purpose: 'configuration', title: '修改工作时间', body: '仅修改此联系人的工作时间。', sessionId: 'chat', subject: { kind: 'contact' }, actions: [{ id: 'apply', label: '应用', tool: 'edit_contact_work_settings', arguments: { revision: store.overview('alice').revision, workStart: '20:00', workEnd: '23:00', reason: '晚上工作' } }] }
   return { store, actions, request, path }
 }
+it('invalidates a stopped harness pending card without hiding an executing action',()=>{
+ const f=fixture(),card=f.actions.offer('alice','stop',f.request)
+ expect(f.actions.cancelPending('alice',card.id,card.version)).toMatchObject({status:'obsolete',result:expect.stringContaining('取消')})
+ expect(()=>f.actions.claim('alice',card.id,card.version,{actionId:'apply'})).toThrow()
+ const other=f.actions.offer('alice','running',f.request),claimed=f.actions.claim('alice',other.id,other.version,{actionId:'apply'})
+ expect(f.actions.cancelPending('alice',claimed.id,claimed.version).status).toBe('executing')
+})
 it('persists a pending action without a task and deduplicates its source request across database reopen', () => {
   const f = fixture()
   const first = f.actions.offer('alice', 'request-one', f.request)

@@ -29,6 +29,18 @@ it('returns the original persistent card without executing an always-confirm act
   expect(f.offers).toHaveLength(1)
 })
 
+it('awaits the original saved action receipt and never calls the prepared writer',async()=>{
+  const f=fixture(),order:string[]=[]
+  f.context.confirmationMode='await-receipt'
+  f.context.beforePersistentOffer=async()=>{order.push('flush')}
+  f.context.waitForActionReceipt=async(_call,card)=>{expect(f.offers).toHaveLength(1);expect(card.id).toBe('card');order.push('receipt');return 'saved original receipt'}
+  expect(await createChatTools(f.context).execute({id:'call',name:'set_contact_output_preference',arguments:'{}'})).toBe('saved original receipt')
+  expect(order).toEqual(['flush','receipt']);expect(f.calls).toEqual([])
+  const bad=fixture();bad.context.confirmationMode='await-receipt';bad.context.waitForActionReceipt=async()=>'';bad.context.beforePersistentOffer=async()=>{throw new Error('flush failed')}
+  expect(await createChatTools(bad.context).execute({id:'call',name:'set_contact_output_preference',arguments:'{}'})).toContain('flush failed')
+  expect(bad.offers).toEqual([])
+})
+
 it('rechecks permissions and context before preparing or executing', async () => {
   const f = fixture(), tools = createChatTools(f.context)
   f.disable()
