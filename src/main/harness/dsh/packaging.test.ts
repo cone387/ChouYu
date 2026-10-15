@@ -4,9 +4,21 @@ import { join } from 'node:path';
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { DEFAULT_APP_CONFIG } from '../../../shared/config';
+import { prepareHarnessInput } from '../prepare';
+import { startMockProvider } from './fixtures/mock-provider.mjs';
+import { resolve } from 'node:path';
 import { mkdirSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
+it.skipIf(!process.env.CHOUYU_DSH_PACKAGED_ROOT)('runs the packaged bridge with its bundled Node and no global Node',async()=>{
+    const root=resolve(process.env.CHOUYU_DSH_PACKAGED_ROOT!),home=mkdtempSync(join(tmpdir(),'dsh-packaged-bridge-'));
+    const original=process.env.PATH;process.env.PATH=`${process.env.SystemRoot}\\System32;${process.env.SystemRoot}`;
+    const pool=new DshRuntimePool({home,node:join(root,'node.exe'),helper:join(root,'helper.mjs')}),mock=await startMockProvider('openai',{tools:false});
+    try{
+        const input=await prepareHarnessInput({requestId:'packaged',characterId:'c',sessionId:'s',systemPrompt:'fixture',messages:[{role:'user',content:'hello'}]},{config:{...DEFAULT_APP_CONFIG,provider:'openai',baseUrl:mock.baseUrl,apiKey:'fixture',model:'fixture'},signal:new AbortController().signal,assertContext:async()=>{},citationContext:async()=>'',privateContext:'',skillContext:'',communication:''});
+        const lease=await pool.acquire(input);expect(await lease.run(input,()=>{})).toMatchObject({state:'completed',text:'DSH_OK'});await lease.release();
+    }finally{process.env.PATH=original;await pool.close();await mock.close();rmSync(home,{recursive:true,force:true})}
+},60000);
 it('copies the SDK closure through the actual electron-builder resource matchers',async()=>{
     const {FileMatcher,copyFiles}=require('app-builder-lib/out/fileMatcher');
     const config=require('js-yaml').load(readFileSync('electron-builder.yml','utf8'));
