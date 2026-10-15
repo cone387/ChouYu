@@ -6,6 +6,7 @@ directories:
 # better-sqlite3 ships Node-API prebuilds for every supported platform/architecture.
 # Rebuilding it only adds an unnecessary Electron headers download.
 npmRebuild: false
+afterPack: scripts/verify-dsh-runtime.cjs
 files:
   - out/**/*
   - "!out/types-*"
@@ -52,6 +53,10 @@ win:
   extraResources:
     - from: out/dsh-runtime
       to: dsh-runtime
+    # electron-builder always excludes a matcher's root node_modules directory.
+    # Give the runtime closure its own root so every nested dependency is copied.
+    - from: out/dsh-runtime/node_modules
+      to: dsh-runtime/node_modules
   icon: resources/icon.png
   target:
     - nsis
