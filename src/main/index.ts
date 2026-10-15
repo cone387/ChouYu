@@ -43,6 +43,7 @@ import { attachMainWindowMouseEvents } from './mouse-events'
 import { runStorageRuntimeSmoke } from './smoke/storage-smoke'
 import { runContactsSmoke } from './smoke/contacts-smoke'
 import { runChatRuntimeSmoke } from './smoke/chat-smoke'
+import { runContactLiveSmoke } from './smoke/contact-live-smoke'
 import { runProviderProfilesUISmoke } from './smoke/provider-profiles-ui-smoke'
 import { runNativeCaptureSmoke } from './smoke/native-capture-smoke'
 import { runJournalSmoke } from './smoke/journal-smoke'
@@ -131,7 +132,9 @@ function createWindow(): void {
         console.log(`CHOUYU_SMOKE_STAGE_PASSED name=${name} durationMs=${Date.now() - started}`)
       }
       try {
-        if (isContactSoak) {
+        if (process.env.CHOUYU_SMOKE_CONTACT_LIVE === '1') {
+          await stage('contact-live', () => runContactLiveSmoke(mainWindow!))
+        } else if (isContactSoak) {
           await runContactSoak(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_CONTACT_CARD_LINKS_ONLY === '1') {
           await runContactCardLinksSmoke(mainWindow!)

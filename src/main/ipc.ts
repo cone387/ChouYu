@@ -812,6 +812,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               output += chunk
               if (output.length > 16000) throw new Error('任务修改解析结果过长，本次未修改。')
             }, controller.signal, undefined, { timeoutMs: 60000, maxOutputTokens: 3000 })
+            if (process.env.CHOUYU_SMOKE_TEST === '1' && process.env.CHOUYU_SMOKE_CONTACT_LIVE === '1') console.log('CONTACT_LIVE_ROUTE', JSON.stringify({ requestId: request.requestId, output }))
             return output
           },
           execute: chatTools.execute,

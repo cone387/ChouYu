@@ -15,6 +15,22 @@ function fixture(plan: unknown) {
   return { data, read, model, execute, run }
 }
 describe('contact chat routing and receipts', () => {
+  it('repairs a truncated task id from a clarified multi-turn request without guessing a target', async () => {
+    const topicId = '9f0c7cda-fabf-4c6a-8ece-a0ab37198a01'
+    const plan = { kind: 'action', topicId: topicId.slice(0, -3), action: 'edit', patch: { tokens: 300000 } }
+    const model = vi.fn().mockResolvedValueOnce(JSON.stringify(plan)).mockResolvedValueOnce(JSON.stringify({ ...plan, topicId }))
+    const execute = vi.fn(async (_call: { arguments: string }) => JSON.stringify({ saved: true, message: '已保存' }))
+    await expect(routeContactChange([{ role: 'user', content: '把那个任务的累计Token改成30万' }, { role: 'assistant', content: '哪个任务？' }, { role: 'user', content: '《吞噬星空》同人续写' }], { read: async () => ({ topics: [{ id: topicId, title: '《吞噬星空》同人续写', revision: 3 }], runs: [] }), model, execute })).resolves.toBe('已保存')
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(execute.mock.calls[0][0].arguments).topicId).toBe(topicId)
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+  it('does not execute if the single repair still names an unknown task', async () => {
+    const model = vi.fn(async () => JSON.stringify({ kind: 'action', topicId: 'not-a-real-task', action: 'pause' })), execute = vi.fn()
+    await expect(routeContactChange([{ role: 'user', content: '暂停那个任务' }], { read: async () => ({ topics: [{ id: 'real', revision: 1 }], runs: [] }), model, execute })).rejects.toThrow()
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(execute).not.toHaveBeenCalled()
+  })
   it('provides an intact bounded Unicode request anchor for a valid clarification', async () => {
     const latest = '😀'.repeat(120) + '把那个任务的写法改一下'
     const model = vi.fn(async (_prompt, content) => {

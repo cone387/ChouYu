@@ -103,20 +103,39 @@ it.skipIf(!enabled).each(cases)('live model routes %s without a verbal-only prom
   const runs = key === 'continue-waiting' ? [{ id: 'run', topicId: 'review', status: 'waiting', question: '请确定这次评价面向哪个行业？' }]
     : key === 'continue-running' || key === 'wrong-book' ? [{ id: 'run', topicId: 'review', status: 'running', question: '' }] : []
   const output = await routeContactChange([{ role: 'user', content: message }], {
-    read: async () => ({ revision: 4, settings: { ...DEFAULT_AGENT_SETTINGS, goal: '评价产品' }, topics: tasks, runs, focusTopicId: 'review' }),
+    read: async (method, args) => {
+      if (method === 'get') return { revision: 4, settings: { ...DEFAULT_AGENT_SETTINGS, goal: '评价产品' }, topics: tasks, runs, focusTopicId: 'review' }
+      if (method === 'outputPreferences') return [{ scope: { kind: 'contact' }, revision: 0, preference: {} }, ...(args?.[0] ? [{ scope: { kind: 'task', topicId: args[0] }, revision: 0, preference: {} }] : [])]
+      throw new Error(`Unsupported synthetic read: ${method}`)
+    },
     model: async (prompt, content) => {
       let result = ''
       await streamAIChat([{ role: 'user', content }], prompt, { ...data.config, ...resolved.config }, chunk => { result += chunk }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
       decisions.push(result)
+      mkdirSync('temp/chat-change-model', { recursive: true })
+      writeFileSync(`temp/chat-change-model/${key}.json`, JSON.stringify({ message, decisions, calls }, null, 2))
       return result
     },
-    execute: async call => { const args = JSON.parse(call.arguments); calls.push({ name: call.name, args }); return JSON.stringify({ saved: true, revision: 5, ...(args.action === 'end' ? { status: 'completed' } : {}), workCompleted: false, message: '验收夹具保存成功' }) }
+    execute: async call => {
+      const args = JSON.parse(call.arguments); calls.push({ name: call.name, args })
+      if (call.name === 'set_contact_output_preference') return JSON.stringify({ saved: true, revision: args.revision + 1, scope: { kind: args.scope, ...(args.topicId ? { topicId: args.topicId } : {}) }, message: '验收夹具保存成功' })
+      return JSON.stringify({ saved: true, revision: 5, ...(args.action === 'end' ? { status: 'completed' } : {}), workCompleted: false, message: '验收夹具保存成功' })
+    }
   })
   mkdirSync('temp/chat-change-model', { recursive: true })
   writeFileSync(`temp/chat-change-model/${key}.json`, JSON.stringify({ message, decisions, calls, output }, null, 2))
   if (expected === 'question') { expect(calls).toHaveLength(0); expect(output).toBeTruthy() }
   else if (!expected) { expect(calls).toHaveLength(0); expect(output).toBeUndefined() }
-  else {
+  else if (key === 'language' && calls[0]?.name === 'set_contact_output_preference') {
+    expect(calls).toHaveLength(1)
+    expect(calls[0].args).toMatchObject({ revision: 0, reason: message })
+    expect(['task', 'contact']).toContain(calls[0].args.scope)
+    if (calls[0].args.scope === 'task') expect(calls[0].args.topicId).toBe('review')
+    expect(calls[0].args.instruction).toMatch(/中文/)
+    expect(calls[0].args.instruction).toMatch(/结论/)
+    expect(calls[0].args.instruction).toMatch(/依据/)
+    expect(output).toContain('保存成功')
+  } else {
     expect(calls).toHaveLength(1); expect(calls[0].name).toBe(expected)
     expect(calls[0].args).toMatchObject(expected === 'edit_contact_work_settings' ? { revision: 4, reason: message } : { topicId: 'review', revision: 3, reason: message })
     if (key === 'daily-budget') expect(calls[0].args.dailyTokenLimit).toBe(300000)

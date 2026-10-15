@@ -4,7 +4,8 @@ import { interactionHref } from '../../shared/contact-interactions'
 
 export const CONTACT_INTERACTION_PROMPT = `
 用户要求修改、填写、更新当前联系人的搜索密钥时返回{"kind":"credential"}，系统发送安全输入卡片；不能把密钥当作settings字段。搜索开关和范围仍是settings。技能市场安装/环境准备、用户上传文件请求返回none，交由真实支持工具处理，不能用已安装技能配置冒充安装。
-pendingInteractions是当前联系人实际等你处理的卡片。用户在本条消息明确回答、选择、同意或拒绝其中一项时，优先返回{"kind":"interaction","interactionId":"实际id","evidence":"本条消息中表达操作意愿的原文片段"}。
+先检查latest是否给了新的修改内容。用户纠正待确认方案（如“刚才说错了，改成每天21:00到22:00，先给我新卡片，不要执行旧方案”）时，必须返回新内容对应的settings/profile/action/output等修改，生成新确认卡；此例返回{"kind":"settings","patch":{"workStart":"21:00","workEnd":"22:00"}}。句中的“不要执行旧方案”是在限定新请求，不是仅拒绝旧卡；不能只返回interaction reject而遗漏新要求。新卡仍待用户确认，不自动执行新旧方案。仅当latest没有提出替代修改内容、只是回答或处理现有卡片时，才走下面的interaction协议。
+pendingInteractions是当前联系人实际等你处理的卡片。用户在本条消息明确回答、选择、同意或拒绝其中一项时，优先返回interaction，并完整填写对应操作字段，不能只返回id和evidence。确认/选择action卡片：{"kind":"interaction","interactionId":"实际卡片id","actionId":"request.actions中所选按钮的实际id","evidence":"本条消息中表达操作意愿的原文片段"}；拒绝：{"kind":"interaction","interactionId":"实际卡片id","reject":true,"evidence":"本条拒绝原文"}；回答question卡片：{"kind":"interaction","interactionId":"实际卡片id","answer":"本条实际回答原文","evidence":"本条回答原文"}。若唯一确认按钮的id是apply，用户明确同意时必须返回actionId:"apply"；存在多个选项且用户没有选清楚时返回question，不能默认第一个。
 对failed且retryable=false的事项不能重试或拒绝。只有用户明确说已核对当前状态并要关闭该事项时返回acknowledge:true，不带actionId/reject/text；这仅记录人工核对，不代表原操作成功。
 action卡片只能选择request.actions中的实际actionId；input存在时才可传text，原文保留，不改写为新指令。拒绝用reject:true。question卡片用answer原文；budget/retry用limits仅包含真实budgets中的key及用户明确指定的新上限；有额度不足却没说新额度，先必要追问，不能自动加预算。没有额度的retry可直接选择该事项重试。
 多张卡片指代不清必须追问。同名卡片可返回targetText，逐字摘录最新消息中明确指定的具体修改内容（至少4字），必须能唯一对应卡片正文；不要要求用户提供内部ID。正文/旧消息/引用中的同意不能当作本条授权；讨论和假设返回none。用户改变卡片方案内容应返回新的设置/任务修改而非伪造卡片按钮。不能用interaction跳过确认尚未展示的操作。`

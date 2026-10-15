@@ -5,10 +5,18 @@ import { routeContactChange } from './chat-changes'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { contactOutputInstruction, sanitizeContactOutput } from '../../shared/contact-output'
 import { contactProfileSnapshot } from '../../shared/contact-profile-settings'
-import { createDefaultCharacter } from '../../shared/characters'
+import { createDefaultCharacter, resolveCharacterConfig } from '../../shared/characters'
 
 const enabled = process.env.CHOUYU_CONVERSATION_ACCEPTANCE === '1'
-const config = () => JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG || '{}').config
+const config = () => {
+  const supplied = JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG || '{}')
+  if (!process.env.CHOUYU_ACCEPTANCE_CHARACTER) return supplied.config
+  const character = supplied.characters.find((item: { id: string }) => item.id === process.env.CHOUYU_ACCEPTANCE_CHARACTER)
+  if (!character) throw new Error('Requested acceptance contact is unavailable')
+  const resolved = resolveCharacterConfig(character, supplied.config)
+  if (!resolved.ok) throw new Error('Requested acceptance model is unavailable')
+  return { ...supplied.config, ...resolved.config, providerProfiles: supplied.config.providerProfiles }
+}
 async function model(prompt: string, content: string) {
   let output = ''
   await streamAIChat([{ role: 'user', content }], prompt, config(), text => { output += text }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })

@@ -7,7 +7,7 @@ const READY_MARKER = 'CHOUYU_SMOKE_READY'
 const FAILED_MARKER = 'CHOUYU_SMOKE_FAILED'
 // Include task recovery, backup/reload and source flows before chat/journal checks.
 // Capturing every workspace in both themes takes longer than the headless assertions.
-const TIMEOUT_MS = process.env.CHOUYU_SMOKE_ARTIFACTS ? 300_000 : 240_000
+const TIMEOUT_MS = process.argv.includes('--contact-live') ? 1_800_000 : process.env.CHOUYU_SMOKE_ARTIFACTS ? 300_000 : 240_000
 const packagedArgIndex = process.argv.indexOf('--packaged')
 const packagedExecutable = packagedArgIndex >= 0 ? process.argv[packagedArgIndex + 1] : ''
 const executable = packagedExecutable || require('electron')
@@ -30,6 +30,7 @@ const nativeCapture = process.argv.includes('--native-capture')
 const env = {
   ...process.env,
   CHOUYU_SMOKE_TEST: '1',
+  CHOUYU_SMOKE_CONTACT_LIVE: process.argv.includes('--contact-live') ? '1' : '0',
   CHOUYU_SMOKE_CAPTURE_ONLY: nativeCapture ? '1' : '0',
   CHOUYU_SMOKE_NAVIGATION_ONLY: process.argv.includes('--navigation') ? '1' : '0',
   CHOUYU_SMOKE_CHAT_ONLY: process.argv.includes('--chat') || process.argv.includes('--chat-close') || process.argv.includes('--chat-edit') ? '1' : '0',

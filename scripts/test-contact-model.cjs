@@ -32,6 +32,16 @@ if (!process.versions.electron) {
     const length = process.argv.includes('--length')
     const counts = process.argv.includes('--counts')
     const conversation = process.argv.includes('--conversation')
+    const matrix = process.argv.includes('--matrix')
+    if (matrix) {
+      const child = spawn(process.argv[2], ['scripts/smoke-electron.js', '--contact-live'], {
+        stdio: 'inherit', windowsHide: true,
+        env: { ...process.env, CHOUYU_ACCEPTANCE_CONFIG: JSON.stringify({ config, characters }) }
+      })
+      child.on('error', () => finish(1))
+      child.on('exit', code => finish(code ?? 1))
+      return
+    }
     const child = spawn(process.argv[2], ['node_modules/vitest/vitest.mjs', 'run', conversation ? 'src/main/agents/conversation-model.acceptance.test.ts' : counts ? 'src/main/agents/counts-model.acceptance.test.ts' : length ? 'src/main/agents/length-model.acceptance.test.ts' : briefing ? 'src/main/assistant-routines/briefing-model.acceptance.test.ts' : recovery ? 'src/main/agents/recovery-model.acceptance.test.ts' : discovery ? 'src/main/agents/discovery-model.acceptance.test.ts' : calendar ? 'src/main/assistant-routines/calendar-model.acceptance.test.ts' : completion ? 'src/main/agents/completion-model.acceptance.test.ts' : experience ? 'src/main/agents/experience-model.acceptance.test.ts' : chapters ? 'src/main/agents/chapter-model.acceptance.test.ts' : chatChanges ? 'src/main/agents/chat-change-model.acceptance.test.ts' : 'src/main/agents/contact-model.acceptance.test.ts'], {
       stdio: 'inherit', windowsHide: true,
       env: { ...process.env, ...(conversation ? { CHOUYU_CONVERSATION_ACCEPTANCE: '1' } : counts ? { CHOUYU_COUNTS_ACCEPTANCE: '1' } : length ? { CHOUYU_LENGTH_ACCEPTANCE: '1' } : briefing ? { CHOUYU_BRIEFING_ACCEPTANCE: '1' } : recovery ? { CHOUYU_RECOVERY_ACCEPTANCE: '1' } : discovery ? { CHOUYU_DISCOVERY_ACCEPTANCE: '1' } : calendar ? { CHOUYU_CALENDAR_ACCEPTANCE: '1' } : completion ? { CHOUYU_COMPLETION_ACCEPTANCE: '1' } : experience ? { CHOUYU_EXPERIENCE_ACCEPTANCE: '1' } : chapters ? { CHOUYU_CHAPTER_MODEL_ACCEPTANCE: '1' } : chatChanges ? { CHOUYU_CHAT_CHANGE_ACCEPTANCE: '1', CHOUYU_ACCEPTANCE_CHARACTER: 'preset-copywriter-bi' } : { CHOUYU_CONTACT_MODEL_ACCEPTANCE: '1' }), CHOUYU_ACCEPTANCE_CONFIG: JSON.stringify({ config, characters }) }

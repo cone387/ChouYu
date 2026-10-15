@@ -24,6 +24,22 @@ it('uses a real pending option and captured version for a natural-language choic
   expect(f.submit).toHaveBeenCalledExactlyOnceWith(card.id, { version: card.version, actionId: 'outline' })
   expect(f.execute).not.toHaveBeenCalled()
 })
+it('repairs a missing actionId once before submitting the current explicit choice', async () => {
+  const incomplete = { kind: 'interaction', interactionId: card.id, evidence: '先写提纲' }
+  const model = vi.fn().mockResolvedValueOnce(JSON.stringify(incomplete)).mockResolvedValueOnce(JSON.stringify({ ...incomplete, actionId: 'outline' }))
+  const submit = vi.fn(async () => ({ ...card, status: 'resolved' as const, result: '已提交提纲任务' }))
+  const reply = await routeContactChange([{ role: 'user', content: '先写提纲吧' }], { read: async () => ({ topics: [], runs: [] }), model, execute: vi.fn(), interactions: async () => [card], submitInteraction: submit })
+  expect(reply).toBe('已提交提纲任务')
+  expect(model).toHaveBeenCalledTimes(2)
+  expect(submit).toHaveBeenCalledExactlyOnceWith(card.id, { version: card.version, actionId: 'outline' })
+})
+it('never invents or submits an action if the repaired decision still omits actionId', async () => {
+  const model = vi.fn(async () => JSON.stringify({ kind: 'interaction', interactionId: card.id, evidence: '同意' }))
+  const submit = vi.fn()
+  await expect(routeContactChange([{ role: 'user', content: '同意' }], { read: async () => ({ topics: [], runs: [] }), model, execute: vi.fn(), interactions: async () => [card], submitInteraction: submit })).rejects.toThrow()
+  expect(model).toHaveBeenCalledTimes(2)
+  expect(submit).not.toHaveBeenCalled()
+})
 it('does not use historical consent or invented actions as a new authorization', async () => {
   const historical = fixture({ kind: 'interaction', interactionId: card.id, actionId: 'outline', evidence: '同意' })
   await expect(historical.run('先别执行')).rejects.toThrow('本条')
