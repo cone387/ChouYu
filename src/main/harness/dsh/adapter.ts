@@ -1,6 +1,7 @@
 import type { HarnessAdapter, HarnessInput, HarnessResult, HarnessSink } from '../contracts'
 import type { HarnessStore } from '../store'
 import type { DshRuntimePool, DshRuntimeLease } from './runtime'
+import {dshRuntimeGroup} from './runtime'
 
 export class DshAdapter implements HarnessAdapter {
   private leases=new Map<string,DshRuntimeLease>()
@@ -13,6 +14,7 @@ export class DshAdapter implements HarnessAdapter {
   async run(input:HarnessInput,emit:HarnessSink):Promise<HarnessResult> {
     if(this.store.get(input)) return {state:'interrupted',error:'此执行已有记录，未自动重放。请重新发送消息。'}
     this.store.begin(input)
+    this.store.bindRuntime(input,dshRuntimeGroup(input))
     let lease:DshRuntimeLease|undefined
     try {
       input.signal.throwIfAborted();await input.assertContext()
@@ -20,7 +22,11 @@ export class DshAdapter implements HarnessAdapter {
       this.leases.set(JSON.stringify([input.requestId,input.attemptId]),lease)
       this.store.bindSession(input,input.attemptId)
       this.store.transition(input,'starting','running')
-      const result=await lease.run(input,emit)
+      const result=await lease.run(input,event=>{
+        if(event.type==='prepared')this.store.bindInput(input,event.inputMessageId)
+        if(event.type==='usage')this.store.recordUsage(input,event.providerRequestId,event.metadata.usage??null)
+        emit(event)
+      })
       if(result.state==='completed') {
         if(!await lease.flush(input))throw new Error('执行日志尚未确认保存。')
         this.store.markDurable(input)
@@ -35,7 +41,7 @@ export class DshAdapter implements HarnessAdapter {
       return {state,error:error instanceof Error?error.message:'DSH 执行失败。'}
     } finally {
       try{if(input.signal.aborted)await this.cancelActions?.(input)}
-      finally{this.leases.delete(JSON.stringify([input.requestId,input.attemptId]));lease?.release()}
+      finally{this.leases.delete(JSON.stringify([input.requestId,input.attemptId]));await lease?.release()}
     }
   }
 }

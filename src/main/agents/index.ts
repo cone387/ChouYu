@@ -148,10 +148,14 @@ export async function inspectContactDelivery(characterId: string, topicId: strin
   await ensure()
   return rpc('inspectDelivery', characterId, [topicId])
 }
+let purgeHarnessContact:(owner:string)=>Promise<unknown>=async()=>{}
+export function setContactHarnessPurge(purge:typeof purgeHarnessContact){purgeHarnessContact=purge}
+async function purgeWithdrawnContext(id:string,method:string){if(['withdrawMaterial','purgeMaterial','forgetMemory','updateMemory','deleteTopic'].includes(method))await purgeHarnessContact(id)}
 /** Main-process entry for the contact-task gateway; mirrors the agents:* IPC guards. */
 export async function contactAgentsCall<T = unknown>(id: string, method: string, args: unknown[] = []): Promise<T> {
   if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
   validateMemoryBoundary(id, method, args)
+  await purgeWithdrawnContext(id,method)
   await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args) as Promise<T>
 }
 export function readContactConfiguration(id: string) {
@@ -341,6 +345,7 @@ export function initializeAgents() {
     contactHandle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       validateMemoryBoundary(id, method, args)
+  await purgeWithdrawnContext(id,method)
       await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
     })
   }

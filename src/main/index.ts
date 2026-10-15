@@ -1,3 +1,4 @@
+import { recoverDshService } from './harness/service'
 import { closeChatHarness } from './ipc'
 import { runContactSoak } from './evaluation/contact-soak'
 import { runContactCardLinksSmoke } from './smoke/contact-card-links-smoke'
@@ -27,7 +28,7 @@ import { runTaskViewsUISmoke } from './smoke/task-views-ui-smoke'
 import { runTaskSchedulingUISmoke } from './smoke/task-scheduling-ui-smoke'
 import { setTrayUnread, setupTray } from './tray'
 import { registerHotkey } from './hotkey'
-import { initDatabase, getConfig, flushDatabase, getAssistantUnreadCount, getAssistantUnreadPreview } from './database'
+import { initDatabase, setState, getConfig, flushDatabase, getAssistantUnreadCount, getAssistantUnreadPreview } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
@@ -233,6 +234,7 @@ app.whenReady().then(async () => {
   if (process.platform === 'win32') app.setAppUserModelId('com.chouyu.app')
   // Init database first (needed by plugins and IPC handlers)
   initDatabase()
+  try{await recoverDshService();setState('harness:recovery-error','')}catch(error){setState('harness:recovery-error',error instanceof Error?error.message:'????????')}
   registerBuiltInCapabilities()
   initializeMemory()
   if (isSmokeTest && !isContactSoak && process.env.CHOUYU_SMOKE_CAPTURE_ONLY !== '1') {

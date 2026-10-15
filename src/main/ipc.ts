@@ -1,6 +1,6 @@
-import { dshService, existingDshService, closeDshService } from './harness/service'
+import { dshService, existingDshService, closeDshService, setHarnessCancellation, purgeHarnessData, assertDshRecovered, cleanSavedDshRun } from './harness/service'
 import type { HarnessInput } from './harness/contracts'
-import { prepareHarnessInput } from './harness/prepare'
+import { prepareHarnessInput, harnessConfigVersion } from './harness/prepare'
 import { createLegacyAdapter } from './harness/legacy'
 import { HarnessCoordinator } from './harness/coordinator'
 import { createChatTools, type ChatRequestState } from './harness/tools'
@@ -23,7 +23,7 @@ import type { ResolvedProviderProfile } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig } from '../shared/characters'
-import { agentContext, removeContactAgent, contactAgentsCall, onContactContextChanged } from './agents'
+import { agentContext, removeContactAgent, contactAgentsCall, onContactContextChanged, setContactHarnessPurge } from './agents'
 import { routeContactChange } from './agents/chat-changes'
 import { readContactConfiguration, submitContactInteraction, pendingContactInteractions } from './agents'
 import { type ContactActionInteraction } from '../shared/contact-actions'
@@ -119,7 +119,9 @@ import {
   setState
 } from './database'
 
-const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter(), dsh:{run:(input,emit)=>dshService().adapter.run(input,emit)} })
+const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter(), dsh:{run:(input,emit)=>{assertDshRecovered();return dshService().adapter.run(input,emit)}} })
+setHarnessCancellation(key=>chatHarness.cancel(key))
+setContactHarnessPurge(characterId=>purgeHarnessData({characterId}))
 
 const activeAIRequests = new Map<string, AbortController>()
 const pendingToolApprovals = new Map<string, {
@@ -656,6 +658,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     let harnessInput:HarnessInput|undefined
     const assertContext = async () => {
       controller.signal.throwIfAborted()
+      if(receiptMode&&harnessInput){
+        const base=getConfig(),current=resolveCharacterConfig(owner?getCharacter(owner):undefined,base)
+        if(!current.ok||harnessConfigVersion({...base,...current.config})!==harnessInput.configVersion)throw new Error('????????????????????')
+      }
       if (owner && chatState.contactContext) await contactAgentsCall(owner, 'assertContextCurrent', [chatState.contactContext])
       controller.signal.throwIfAborted()
     }
@@ -885,6 +891,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle('characters:delete', async (_event, id: string) => {
     const character = getCharacter(id)
+    if(character&&!character.builtIn)await purgeHarnessData({characterId:id})
     if (character && !character.builtIn) await removeContactAgent(id)
     const workspace = deleteCharacter(id)
     contactSkillLibrary().removeContact(id)
@@ -933,23 +940,25 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (typeof title !== 'string') throw new Error('Invalid session title')
     return renameChatSession(id, title.slice(0, 80))
   })
-  ipcMain.handle('db:delete-session', (_event, id: string) => {
+  ipcMain.handle('db:delete-session', async (_event, id: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
+    const session=getSession(id);if(session)await purgeHarnessData({characterId:session.characterId,sessionId:id})
     const workspace = deleteChatSession(id)
     notifyAssistantUnread()
     return workspace
   })
-  ipcMain.handle('db:save-session-messages', (_event, id: string, messages, readMessageId?: string) => {
+  ipcMain.handle('db:save-session-messages', async (_event, id: string, messages, readMessageId?: string) => {
     if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
     if (!Array.isArray(messages)) throw new Error('Invalid session messages')
     if (readMessageId !== undefined && (typeof readMessageId !== 'string' || !readMessageId || readMessageId.length > 128)) throw new Error('Invalid read message id')
+    if(!messages.length){const session=getSession(id);if(session)await purgeHarnessData({characterId:session.characterId,sessionId:id})}
     const workspace = saveSessionMessages(id, messages, readMessageId)
     const dsh=existingDshService()
     if(dsh){
       const saved=getSession(id)
       if(saved&&!flushDatabase().error)for(const message of saved.messages){
         const source=message.harnessSource,run=source&&dsh.store.get(source)
-        if(run?.state==='completed'&&run.sessionId===id&&run.characterId===saved.characterId&&run.messageId===message.id&&message.replyCompletedAt)dsh.store.markMessageSaved(run)
+        if(run?.state==='completed'&&run.sessionId===id&&run.characterId===saved.characterId&&run.messageId===message.id&&message.replyCompletedAt){dsh.store.markMessageSaved(run);await cleanSavedDshRun(run)}
       }
     }
     notifyAssistantUnread()

@@ -21,6 +21,7 @@ export interface HarnessInput extends RunKey {
 export type HarnessResult = { state: 'completed'; text: string; source?: HarnessSource }
   | { state: 'failed' | 'cancelled' | 'interrupted'; error: string }
 export type HarnessUpdate = { type: 'started'; engine: HarnessEngine }
+  | {type:'prepared';inputMessageId:string}
   | { type: 'text'; text: string; operation: 'append' | 'replace' }
   | { type: 'usage'; providerRequestId: string; metadata: AIResponseMetadata }
   | { type: 'tool'; callId: string; status: 'running' | 'waiting-user' | 'completed' }

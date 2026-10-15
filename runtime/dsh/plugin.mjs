@@ -8,17 +8,35 @@ export async function apply(ctx) {
   const handles = new Map();
   const socket = connect(Number(process.env.CHOUYU_DSH_PORT), '127.0.0.1');
   const peer = new RpcPeer(socket, async (method, value) => {
+    if (method === 'inspect') {
+      if (!value || typeof value.inputMessageId !== 'string' || typeof value.sessionId !== 'string') return null;
+      if (!await ctx.sessionPersistence.stat(value.sessionId)) return null;
+      const log = await ctx.sessionPersistence.open(value.sessionId, 'read');
+      try {
+        const { events } = await log.read();
+        const input = events.find(e => e.type === 'user/message' && e.data.id === value.inputMessageId);
+        const turn = events.findLast(e => e.type === 'turn/end');
+        const reply = events.findLast(e => e.type === 'assistant/message' && !e.data.interrupted);
+        if (!input || !reply || reply.seq <= input.seq || turn?.data.reason?.kind !== 'completed' || turn.seq <= reply.seq) return null;
+        return reply.data.message.content.filter(b => b.type === 'text').map(b => b.text).join('');
+      } finally { await log.close(); }
+    }
     if (method === 'prepare') {
       if (!value || typeof value.sessionId !== 'string' || handles.has(value.sessionId) || !Array.isArray(value.history) || !Array.isArray(value.tools) || typeof value.systemPrompt !== 'string') throw new Error('DSH 上下文无效或已存在。');
-      const seed = value.history.map((item, seq) => {
-        if (!item || typeof item.content !== 'string' || item.imageUrl) throw new Error('DSH 历史格式或能力不支持。');
+      const seed = [];
+      const append = (type, data, surface = false) => seed.push({ type, data, seq: seed.length, time: Date.now(), ...(surface ? { surfaceOp: 'append' } : {}) });
+      append('turn/start', { turn: 1 });
+      append('step/start', { turn: 1, step: 1 });
+      append('system/message', { turn: 1, step: 1, message: createSystemMessage(value.systemPrompt) }, true);
+      for (const item of value.history) {
+        if (!item || typeof item.content !== 'string' || item.imageUrl) throw new Error('DSH ???????????');
         const content = [{ type: 'text', text: item.content }];
-        const base = { seq, time: Date.now(), surfaceOp: 'append' };
-        if (item.role === 'user') return { ...base, type: 'user/message', data: createUserMessage({ content, source: { kind: 'user' } }) };
-        if (item.role === 'assistant') return { ...base, type: 'assistant/message', data: { turn: 0, step: 0, message: createAssistantMessage({ content, source: { provider: 'chouyu-history', model: 'unknown' } }), stream: [] } };
-        if (item.role === 'system') return { ...base, type: 'system/message', data: { turn: 0, step: 0, message: createSystemMessage(item.content) } };
-        throw new Error('DSH 历史角色无效。');
-      });
+        if (item.role === 'user') append('user/message', createUserMessage({ content, source: { kind: 'user' } }), true);
+        else if (item.role === 'assistant') append('assistant/message', { turn: 1, step: 1, message: createAssistantMessage({ content, source: { provider: 'chouyu-history', model: 'unknown' } }), stream: [] }, true);
+        else throw new Error('DSH ?????????????????????????');
+      }
+      append('step/end', { turn: 1, step: 1 });
+      append('turn/end', { turn: 1, reason: { kind: 'completed' } });
       const committed = {};
       const streaming = new Set();
       const key = { requestId: value.requestId, attemptId: value.attemptId };
@@ -50,13 +68,16 @@ export async function apply(ctx) {
           });
         }
       });
-      handles.set(value.sessionId, { ...handle, committed, key, streaming });
-      return { sessionId: value.sessionId };
+      const message = createUserMessage({ content: [{ type: 'text', text: value.prompt }], source: { kind: 'user' } });
+      handles.set(value.sessionId, { ...handle, committed, key, streaming, message });
+      return { sessionId: value.sessionId, inputMessageId: message.id };
     }
     const handle = handles.get(value?.sessionId);
     if (!handle || handle.key.requestId !== value.requestId || handle.key.attemptId !== value.attemptId) throw new Error('DSH 请求关联不存在。');
     if (method === 'run') {
-      const message = createUserMessage({ content: [{ type: 'text', text: value.prompt }], source: { kind: 'user' } });
+      const message = handle.message;
+      if (message.content[0].text !== value.prompt || handle.started) throw new Error('DSH 输入不可替换或重放。');
+      handle.started = true;
       handle.agent.followup(message);
       await handle.agent.whenIdle();
       await Promise.all(handle.streaming);

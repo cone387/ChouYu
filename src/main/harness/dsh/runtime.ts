@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DshTransport } from './transport'
 import { DshStreamReducer } from './stream'
+import {DEFAULT_APP_CONFIG} from '../../../shared/config'
 import type { RpcPeer } from '../../../../runtime/dsh/wire.mjs'
 import { mapProvider } from '../../../../runtime/dsh/provider.mjs'
 import type { HarnessInput, HarnessResult, HarnessSink, RunKey } from '../contracts'
@@ -12,7 +13,7 @@ export interface DshRuntimeLease {
   run(input:HarnessInput, emit:HarnessSink):Promise<HarnessResult>
   cancel(key:RunKey):Promise<void>
   flush(key:RunKey):Promise<boolean>
-  release():void
+  release():void|Promise<void>
 }
 export interface DshRuntimeOptions { home:string; node:string; helper:string }
 type Active = { input:HarnessInput; emit:HarnessSink; stream:DshStreamReducer }
@@ -50,7 +51,7 @@ class DshRuntime {
       throw new Error('DSH 事件类型无效。')
     }, () => { if (!this.closed) void this.close() })
   }
-  async start(input:HarnessInput):Promise<void> {
+  async start(input:Pick<HarnessInput,'config'|'messages'|'tools'>):Promise<void> {
     mapProvider(input.config, { tools: Boolean(input.tools?.definitions.length), images: input.messages.some(m => Boolean(m.imageUrl)) })
     mkdirSync(this.options.home, { recursive: true })
     const port = await this.transport.listen()
@@ -81,7 +82,8 @@ class DshRuntime {
     input.signal.addEventListener('abort', abort, {once:true})
     try {
       input.signal.throwIfAborted(); await input.assertContext()
-      await this.plugin.request('prepare', { requestId:input.requestId,attemptId:input.attemptId,sessionId:input.attemptId, history:input.messages.slice(0,-1), systemPrompt:input.systemPrompt, tools:input.tools?.definitions ?? [], model:input.config.model }, {timeoutMs:30000})
+      const prepared=await this.plugin.request('prepare', { requestId:input.requestId,attemptId:input.attemptId,sessionId:input.attemptId, prompt:last.content, history:input.messages.slice(0,-1), systemPrompt:input.systemPrompt, tools:input.tools?.definitions ?? [], model:input.config.model }, {timeoutMs:30000})
+      emit({type:'prepared',inputMessageId:prepared.inputMessageId})
       input.signal.throwIfAborted()
       const result = await this.plugin.request('run', {requestId:input.requestId,attemptId:input.attemptId,sessionId:input.attemptId,prompt:last.content}) as HarnessResult & {committedSeq?:number}
       if(result.state==='completed'&&!stream.verify(result.committedSeq!))throw new Error('DSH 正式回复与流记录不一致。')
@@ -93,9 +95,10 @@ class DshRuntime {
       this.active.delete(input.attemptId)
     }
   }
+  async inspect(sessionId:string,inputMessageId:string):Promise<string|undefined>{return await this.plugin!.request('inspect',{sessionId,inputMessageId},{timeoutMs:30000})??undefined}
   async cancel(key:RunKey):Promise<void> { if (this.plugin && !this.closed) await this.plugin.request('cancel', { ...key, sessionId:key.attemptId }, {timeoutMs:15000}) }
   async flush(key:RunKey):Promise<boolean> { return Boolean(await this.plugin?.request('flush', {...key,sessionId:key.attemptId}, {timeoutMs:15000})) }
-  release(key:RunKey):void { if (this.plugin && !this.closed) void this.plugin.request('dispose', {...key,sessionId:key.attemptId}, {timeoutMs:15000}).catch(() => {}) }
+  async release(key:RunKey):Promise<void> { if (this.plugin && !this.closed) await this.plugin.request('dispose', {...key,sessionId:key.attemptId}, {timeoutMs:15000}) }
   close():Promise<void> {
     return this.closePromise ??= (async () => {
       this.closed = true
@@ -115,7 +118,7 @@ export class DshRuntimePool {
   private groups = new Map<string,Promise<DshRuntime>>()
   constructor(private options:DshRuntimeOptions) {}
   async acquire(input:HarnessInput):Promise<DshRuntimeLease> {
-    const group = createHash('sha256').update(JSON.stringify([input.config.provider,input.config.baseUrl,input.config.model,input.configVersion])).digest('hex')
+    const group = dshRuntimeGroup(input)
     let pending = this.groups.get(group)
     if (!pending) {
       const runtime = new DshRuntime({...this.options,home:join(this.options.home,group)})
@@ -127,4 +130,12 @@ export class DshRuntimePool {
     return { run:async(value,emit)=>{assertOwner(value);if(value!==input)throw new Error('DSH 上下文归属不可替换。');return runtime.run(value,emit)}, cancel:async key=>{assertOwner(key);await runtime.cancel(key)}, flush:async key=>{assertOwner(key);return runtime.flush(key)}, release:()=>runtime.release(input) }
   }
   async close():Promise<void> { const groups=[...this.groups.values()]; this.groups.clear(); await Promise.all(groups.map(async pending=>{try{await (await pending).close()}catch{}})) }
+}
+
+export function dshRuntimeGroup(input:HarnessInput):string{return createHash('sha256').update(JSON.stringify([input.config.provider,input.config.baseUrl,input.config.model,input.configVersion])).digest('hex')}
+export async function inspectDshRun(options:DshRuntimeOptions,run:{runtimeGroup?:string;dshSessionId?:string;inputMessageId?:string}):Promise<string|undefined>{
+ if(!run.runtimeGroup||!run.dshSessionId||!run.inputMessageId)return undefined
+ if(!/^[a-f0-9]{64}$/.test(run.runtimeGroup))throw new Error('DSH ???????')
+ const runtime=new DshRuntime({...options,home:join(options.home,run.runtimeGroup)})
+ try{await runtime.start({config:{...DEFAULT_APP_CONFIG,provider:'openai',baseUrl:'http://127.0.0.1:1/v1',apiKey:'recovery-no-dispatch',model:'recovery'},messages:[]});return await runtime.inspect(run.dshSessionId,run.inputMessageId)}finally{await runtime.close()}
 }

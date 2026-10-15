@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DEFAULT_APP_CONFIG } from '../../../shared/config'
 import { prepareHarnessInput } from '../prepare'
-import { DshRuntimePool } from './runtime'
+import { DshRuntimePool,dshRuntimeGroup,inspectDshRun } from './runtime'
+import {purgeRunLogs} from '../logs'
 import { startMockProvider } from './fixtures/mock-provider.mjs'
 
 const cleanups: Array<() => unknown> = []
@@ -18,20 +19,29 @@ it('runs a fresh scoped session with exact history and only the main-owned tools
   const tools = { definitions: [{ name: 'chouyu_fixture', displayName: 'Fixture', description: 'synthetic tool', risk: 'safe' as const, requiresConfirmation: false, source: 'builtin' as const, inputSchema: { type: 'object' as const, properties: { value: { type: 'string' as const } }, required: ['value'] } }], execute: async () => 'fixture-result' }
   const prepare = (last: string) => prepareHarnessInput({ requestId: last, characterId: 'alice', sessionId: 'chat', systemPrompt: 'Alice persona', messages: [{ role: 'user', content: 'history user' }, { role: 'assistant', content: 'history assistant' }, { role: 'user', content: last }] }, { config: { ...DEFAULT_APP_CONFIG, provider: 'openai', baseUrl: mock.baseUrl, apiKey: 'fixture-key', model: 'custom-model' }, signal: new AbortController().signal, assertContext: async () => {}, citationContext: async () => '', privateContext: '', skillContext: '', communication: '', tools })
   const first = await prepare('current input'), lease = await pool.acquire(first)
-  const result = await lease.run(first, () => {})
+  let inputMessageId=''
+  const result = await lease.run(first, event => {if(event.type==='prepared')inputMessageId=event.inputMessageId})
   expect(result).toMatchObject({ state: 'completed', text: 'DSH_OK' })
   const messages = mock.requests[0].body.messages
   expect(messages.filter((m: {role:string}) => ['user', 'assistant'].includes(m.role)).map((m: {role:string; content:unknown}) => [m.role, m.content])).toEqual([['user', 'history user'], ['assistant', 'history assistant'], ['user', 'current input']])
   expect(mock.requests[0].body.tools.map((t: {function:{name:string}}) => t.function.name)).toEqual(['chouyu_fixture'])
   expect(JSON.stringify(mock.requests[0].body)).toContain('Alice persona')
   expect(await lease.flush(first)).toBe(true)
-  lease.release()
+  await lease.release()
   const second = await prepare('edited current'), next = await pool.acquire(second)
   await next.run(second, () => {})
   expect(first.attemptId).not.toBe(second.attemptId)
   expect(JSON.stringify(mock.requests.at(-1)!.body)).not.toContain('current input')
   expect(JSON.stringify(mock.requests.at(-1)!.body)).toContain('edited current')
-  next.release()
+  await next.release()
+  await pool.close()
+  const record={runtimeGroup:dshRuntimeGroup(first),dshSessionId:first.attemptId,inputMessageId}
+  const options={home,node:process.execPath,helper:resolve('runtime/dsh/helper.mjs')}
+  const calls=mock.requests.length
+  expect(await inspectDshRun(options,record)).toBe('DSH_OK')
+  expect(mock.requests).toHaveLength(calls)
+  await purgeRunLogs(home,record as never)
+  expect(await inspectDshRun(options,record)).toBeUndefined()
 }, 60000)
 
 it('separates provider groups and contact scopes, and cancelling one keeps its sibling', async () => {

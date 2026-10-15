@@ -12,6 +12,9 @@ export interface RunRecord extends RunKey {
   snapshotFingerprint: string
   configVersion: string
   dshSessionId?: string
+  inputMessageId?:string
+  runtimeGroup?:string
+  calls?:Array<{providerRequestId:string;usage:import('../../shared/ai-usage').AIUsage|null}>
   state: RunState
   durable: boolean
   messageId: string
@@ -86,6 +89,9 @@ export class HarnessStore {
     })
   }
   markDurable(key: RunKey): void { this.update(key, record => { if (!record.dshSessionId) throw new Error('会话尚未关联。'); record.durable = true }) }
+  bindInput(key:RunKey,id:string):void{this.update(key,record=>{if(record.inputMessageId&&record.inputMessageId!==id)throw new Error('输入关联不可替换。');record.inputMessageId=id})}
+  bindRuntime(key:RunKey,group:string):void{this.update(key,record=>{record.runtimeGroup=group})}
+  recordUsage(key:RunKey,providerRequestId:string,usage:import('../../shared/ai-usage').AIUsage|null):void{this.update(key,record=>{record.calls??=[];if(!record.calls.some(c=>c.providerRequestId===providerRequestId))record.calls.push({providerRequestId,usage})})}
   markMessageSaved(key: RunKey): void { this.update(key, record => { record.messageSaved = true }) }
   markCleanup(key: RunKey, pending: boolean): void { this.update(key, record => { record.cleanupPending = pending }) }
   tools(key: RunKey): ToolRecord[] {

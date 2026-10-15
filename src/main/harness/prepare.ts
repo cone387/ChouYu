@@ -45,6 +45,7 @@ export async function prepareHarnessInput(request: AIStreamRequest, context: Pre
     onMetadata: context.onMetadata,
     snapshotFingerprint: createHash('sha256').update(JSON.stringify({ messages, systemPrompt })).digest('hex'),
     // A one-way revision fingerprint separates runtime initialization after effective config changes.
-    configVersion: createHash('sha256').update(JSON.stringify([config.provider, config.baseUrl, config.model, config.apiKey, config.soulMd])).digest('hex')
+    configVersion: harnessConfigVersion(config)
   }
 }
+export function harnessConfigVersion(config:AppConfig):string{return createHash('sha256').update(JSON.stringify([config.provider,config.baseUrl,config.model,config.apiKey,config.soulMd,config.aiToolsEnabled,config.toolPermissionMode])).digest('hex')}
