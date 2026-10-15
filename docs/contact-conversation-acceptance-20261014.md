@@ -50,6 +50,7 @@
 - `matrix-output-conversation.log`：阿笔实际模型13项配置/动态输出专项全部通过（88.1秒）。复现命令：PowerShell先设置`$env:CHOUYU_ACCEPTANCE_CHARACTER='preset-copywriter-bi'`，再运行`node scripts/test-contact-model.cjs --conversation`。普通默认模型运行保留原行为及失败记录。
 - 其他真实模型专项：默认正式成果/样式2项、`--experience`1项、`--briefing`2项、`--calendar`3项、`--recovery`1项通过。对应 `matrix-delivery/experience/briefing/calendar/recovery.log`。合计43项专项，加上22项实际应用场景为65个不同场景；跨迭代证据分层记录，不将重复复跑累加为新覆盖，也不代表每轮首答全部成功。
 - `matrix-close-smoke.log`、`matrix-edit-smoke.log`及`matrix-release-contact-smoke.log`实际Electron回归通过，使用本地可控模型，覆盖显式停止、流中关闭、旧消息截断、卡片、保存及重启续办，不冒充额外真实模型样本。
+- 主实现`c574fbf`已快进合入主项目，`matrix-merged-build.log`构建成功；日志、各轮JSON及正文样本已复制到主项目artifacts目录。运行中的用户进程仍为9:21启动，未被自动重启；需要从托盘退出应用再启动才能加载新主进程。24小时浸泡测试进程保持运行。本轮未推送或发布。
 
 日志位于 `artifacts/contact-edit-20261015/matrix-*`，逐场景证据位于 `artifacts/contact-live-matrix/`，第1–6轮快照保留在其`run1/`至`run6/`，根目录为第7轮22项完整结果。人工阅读已核对正文、聊天稿三轮修改及任务补充结果，同时记录质量缺口：第三轮评审中出现无资料支持的点击率/留存率推断，不能以有结论和建议就认定事实依据合格；该行为断言未覆盖量化事实准确性。长期稳定性、任意自然语言表述、原著设定及文学质量不因有限样本而宣称全面通过；恢复后台与正式修订在此矩阵检查确认边界，实际生成/保存另由真实模型专项验证。
 
