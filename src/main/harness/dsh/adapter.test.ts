@@ -1,19 +1,20 @@
-import { afterEach, expect, it, vi } from 'vitest'
-import { HarnessStore } from '../store'
-import { DshAdapter } from './adapter'
-import { DEFAULT_APP_CONFIG } from '../../../shared/config'
-import type { HarnessInput } from '../contracts'
-const stores:HarnessStore[]=[]
-afterEach(()=>stores.splice(0).forEach(s=>s.close()))
-it('records a durable completion and rejects re-execution of an existing attempt',async()=>{
-  const store=new HarnessStore(':memory:');stores.push(store)
-  const input:HarnessInput={requestId:'r',attemptId:'a',characterId:'c',sessionId:'s',config:DEFAULT_APP_CONFIG,configVersion:'v',snapshotFingerprint:'f',systemPrompt:'',messages:[{role:'user',content:'hi'}],signal:new AbortController().signal,assertContext:async()=>{}}
-  const lease={run:vi.fn(async()=>({state:'completed' as const,text:'saved'})),flush:vi.fn(async()=>true),release:vi.fn(),cancel:vi.fn()}
-  const adapter=new DshAdapter({acquire:async()=>lease},store)
-  const result=await adapter.run(input,()=>{})
-  expect(result).toMatchObject({state:'completed',text:'saved',source:{attemptId:'a',messageId:store.get(input)!.messageId}})
-  expect(store.get(input)).toMatchObject({state:'completed',durable:true,dshSessionId:'a'})
-  expect(await adapter.run(input,()=>{})).toMatchObject({state:'interrupted'})
-  expect(lease.run).toHaveBeenCalledTimes(1)
-  expect(lease.release).toHaveBeenCalledTimes(1)
-})
+import { afterEach, expect, it, vi } from 'vitest';
+import { HarnessStore } from '../store';
+import { DshAdapter } from './adapter';
+import { DEFAULT_APP_CONFIG } from '../../../shared/config';
+import type { HarnessInput } from '../contracts';
+const stores: HarnessStore[] = [];
+afterEach(() => stores.splice(0).forEach(s => s.close()));
+it('records a durable completion and rejects re-execution of an existing attempt', async () => {
+    const store = new HarnessStore(':memory:');
+    stores.push(store);
+    const input: HarnessInput = { requestId: 'r', attemptId: 'a', characterId: 'c', sessionId: 's', config: DEFAULT_APP_CONFIG, configVersion: 'v', snapshotFingerprint: 'f', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }], signal: new AbortController().signal, assertContext: async () => { } };
+    const lease = { run: vi.fn(async () => ({ state: 'completed' as const, text: 'saved' })), flush: vi.fn(async () => true), release: vi.fn(), cancel: vi.fn() };
+    const adapter = new DshAdapter({ acquire: async () => lease }, store);
+    const result = await adapter.run(input, () => { });
+    expect(result).toMatchObject({ state: 'completed', text: 'saved', source: { attemptId: 'a', messageId: store.get(input)!.messageId } });
+    expect(store.get(input)).toMatchObject({ state: 'completed', durable: true, dshSessionId: 'a' });
+    expect(await adapter.run(input, () => { })).toMatchObject({ state: 'interrupted' });
+    expect(lease.run).toHaveBeenCalledTimes(1);
+    expect(lease.release).toHaveBeenCalledTimes(1);
+});

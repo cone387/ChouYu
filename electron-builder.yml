@@ -9,6 +9,7 @@ npmRebuild: false
 files:
   - out/**/*
   - "!out/types-*"
+  - "!out/dsh-runtime/**"
 
 extraResources:
   - from: resources/journal-activity-mac.js
@@ -48,6 +49,9 @@ dmg:
   sign: false
 
 win:
+  extraResources:
+    - from: out/dsh-runtime
+      to: dsh-runtime
   icon: resources/icon.png
   target:
     - nsis

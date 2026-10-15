@@ -12,8 +12,8 @@
     "dev": "node scripts/dev.js",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-vite build && electron-builder --win",
-    "package:win": "electron-vite build && electron-builder --win",
+    "package": "electron-vite build && npm run build:dsh-runtime && electron-builder --win",
+    "package:win": "electron-vite build && npm run build:dsh-runtime && electron-builder --win",
     "package:mac": "electron-vite build && electron-builder --mac",
     "package:all": "electron-vite build && electron-builder --mac --win",
     "publish": "electron-vite build && electron-builder --mac --win --publish always",
@@ -32,7 +32,8 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test:smoke:capture": "npm run build && node scripts/smoke-electron.js --native-capture",
     "setup:dsh-runtime": "npm ci --prefix runtime/dsh --no-audit --no-fund",
-    "test:dsh-runtime": "vitest run src/main/harness/dsh/provider.test.ts src/main/harness/dsh/provider-integration.test.ts"
+    "test:dsh-runtime": "vitest run src/main/harness/dsh/provider.test.ts src/main/harness/dsh/provider-integration.test.ts",
+    "build:dsh-runtime": "node scripts/build-dsh-runtime.cjs"
   },
   "dependencies": {
     "@langchain/core": "1.2.12",
