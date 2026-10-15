@@ -30,6 +30,7 @@ const nativeCapture = process.argv.includes('--native-capture')
 const env = {
   ...process.env,
   CHOUYU_SMOKE_TEST: '1',
+  CHOUYU_SMOKE_DSH: process.argv.includes('--dsh-harness') ? '1' : '0',
   CHOUYU_SMOKE_CONTACT_LIVE: process.argv.includes('--contact-live') ? '1' : '0',
   CHOUYU_SMOKE_CAPTURE_ONLY: nativeCapture ? '1' : '0',
   CHOUYU_SMOKE_NAVIGATION_ONLY: process.argv.includes('--navigation') ? '1' : '0',

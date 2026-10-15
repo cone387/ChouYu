@@ -1,3 +1,4 @@
+import { runDshHarnessSmoke } from './smoke/dsh-harness-smoke'
 import { recoverDshService } from './harness/service'
 import { closeChatHarness } from './ipc'
 import { runContactSoak } from './evaluation/contact-soak'
@@ -134,7 +135,9 @@ function createWindow(): void {
         console.log(`CHOUYU_SMOKE_STAGE_PASSED name=${name} durationMs=${Date.now() - started}`)
       }
       try {
-        if (process.env.CHOUYU_SMOKE_CONTACT_LIVE === '1') {
+        if(process.env.CHOUYU_SMOKE_DSH==='1'){
+          await stage('dsh-harness',()=>runDshHarnessSmoke(mainWindow!))
+        } else if (process.env.CHOUYU_SMOKE_CONTACT_LIVE === '1') {
           await stage('contact-live', () => runContactLiveSmoke(mainWindow!))
         } else if (isContactSoak) {
           await runContactSoak(mainWindow!)
