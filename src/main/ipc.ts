@@ -1,3 +1,7 @@
+import { prepareHarnessInput } from './harness/prepare'
+import { createLegacyAdapter } from './harness/legacy'
+import { HarnessCoordinator } from './harness/coordinator'
+import { createChatTools, type ChatRequestState } from './harness/tools'
 import { contactCommunicationInstructions } from '../shared/contact-communication'
 import { validateCitationShapes } from '../shared/contact-citations'
 import { contactSkillRunner, getContactSkills, contactSkillLibrary, registerSkillHandlers, syncSkillToolPolicy } from './skills'
@@ -20,7 +24,7 @@ import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig } 
 import { agentContext, removeContactAgent, contactAgentsCall, onContactContextChanged } from './agents'
 import { routeContactChange } from './agents/chat-changes'
 import { readContactConfiguration, submitContactInteraction, pendingContactInteractions } from './agents'
-import { CONTACT_ACTION_TOOLS, type ContactActionTool, type ContactActionInteraction } from '../shared/contact-actions'
+import { type ContactActionInteraction } from '../shared/contact-actions'
 import {
   type MemoryCandidateInput,
   type MemoryConflictAction,
@@ -47,8 +51,8 @@ import { setClipboardWatcherEnabled } from './clipboard'
 import { setTrayUnread } from './tray'
 import { initAutoUpdater } from './updater'
 import { diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
-import { prepareRegisteredToolAsync, getRegisteredTool, getToolDefinitions, type PreparedTool } from './tools/registry'
-import { waitForToolApproval, toolApprovalFailure, type ToolApprovalOutcome } from './tool-approval'
+import { prepareRegisteredToolAsync, getRegisteredTool, getToolDefinitions } from './tools/registry'
+import { waitForToolApproval, type ToolApprovalOutcome } from './tool-approval'
 import { bindAIRequestLifecycle } from './ai-request-lifecycle'
 import {
   getMemoryProvider,
@@ -80,8 +84,7 @@ import {
   type ToolCatalogItem,
   type ToolApprovalRequest,
   type ToolExecutionEvent,
-  parseToolArguments,
-  shouldConfirmTool
+  parseToolArguments
 } from '../shared/tools'
 import {
   getStorageStatus,
@@ -113,6 +116,8 @@ import {
   getState,
   setState
 } from './database'
+
+const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter() })
 
 const activeAIRequests = new Map<string, AbortController>()
 const pendingToolApprovals = new Map<string, {
@@ -643,18 +648,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       effectiveConfig = { ...config, ...resolution.config }
     }
     activeAIRequests.set(requestKey, controller)
-    let taskMutationRequested = false
-    const configurationStepTools = new Set<string>()
-    let contactContext: import('../shared/contact-content').ContactContextRecord | undefined
+    const chatState: ChatRequestState = { ownMemoryMutation: false, memoryMutationReceipt: '' }
     let contextSent = false
-    let ownMemoryMutation = false, memoryMutationReceipt = ''
     const assertContext = async () => {
       controller.signal.throwIfAborted()
-      if (owner && contactContext) await contactAgentsCall(owner, 'assertContextCurrent', [contactContext])
+      if (owner && chatState.contactContext) await contactAgentsCall(owner, 'assertContextCurrent', [chatState.contactContext])
       controller.signal.throwIfAborted()
     }
     const releaseContext = onContactContextChanged(id => {
-      if (id === owner && contactContext && !ownMemoryMutation) void assertContext().catch(() => { if (!ownMemoryMutation) controller.abort() })
+      if (id === owner && chatState.contactContext && !chatState.ownMemoryMutation) void assertContext().catch(() => { if (!chatState.ownMemoryMutation) controller.abort() })
     })
     const releaseRendererLifecycle = bindAIRequestLifecycle(event.sender, controller)
 
@@ -675,124 +677,21 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           const topicId = refs?.length && refs.every(ref => ref.ref.topicId === refs[0].ref.topicId) ? refs[0].ref.topicId : undefined
           const selected = await agentContext(owner, { characterId: owner, sessionId: request.sessionId, topicId, query: latest?.content || '' })
           privateContext = selected.text
-          contactContext = { characterId: owner, requestId: request.requestId, memories: selected.memories, truncated: selected.truncated, status: 'completed' }
+          chatState.contactContext = { characterId: owner, requestId: request.requestId, memories: selected.memories, truncated: selected.truncated, status: 'completed' }
         } catch { privateContext = '\n独立工作记录暂时无法读取，请勿声称知道未提供的工作经历。' }
       }
-      const chatTools = config.aiToolsEnabled ? {
+      const chatTools = config.aiToolsEnabled ? createChatTools({
+          request, owner, signal: controller.signal, cancel: () => controller.abort(), state: chatState,
           definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)
             && (!SKILL_TOOLS.some(skill => skill.name === tool.name) || skillTools.definitions.some(skill => skill.name === tool.name))
             && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
-          execute: async (call: AIToolCall, configurationStep?: { index: number; total: number }) => {
-            const definition = getRegisteredTool(call.name)
-            if (!definition) return `工具不存在：${call.name}`
-            if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) return `工具已被用户禁用：${call.name}`
-            const arguments_ = parseToolArguments(call.arguments)
-            try {
-              await assertContext()
-              const taskMutation = CONTACT_ACTION_TOOLS.includes(call.name as ContactActionTool) || ['request_contact_action', 'edit_contact_profile', 'configure_contact_skill', 'edit_contact_task', 'edit_contact_work_settings', 'set_contact_schedule', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name)
-              if (configurationStep && (!['edit_contact_profile', 'edit_contact_work_settings', 'configure_contact_skill', 'set_contact_search_credential', 'set_contact_output_preference'].includes(call.name) || configurationStepTools.has(call.name) || configurationStepTools.size >= 5 || call.name === 'set_contact_output_preference' && arguments_.scope !== 'contact')) throw new Error('组合设置步骤不在当前联系人允许范围内。')
-              if (taskMutation && taskMutationRequested && !configurationStep) throw new Error('每次对话请求只能确认一个任务操作，不支持批量处理。请等待用户下一条明确指令。')
-              const prepared: PreparedTool = SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : await prepareRegisteredToolAsync(call.name, arguments_, mainWindow, request.sessionId)
-              if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) throw new Error('工具已被用户禁用。')
-              if (prepared.noOpResult) {
-                const result = prepared.noOpResult
-                sendToolEvent(event.sender, {
-                  requestId: request.requestId, callId: call.id, name: definition.name,
-                  displayName: definition.displayName, risk: definition.risk,
-                  status: 'completed', summary: result.summary.slice(0, 500)
-                })
-                return result.content.slice(0, 50_000)
-              }
-              if (taskMutation) taskMutationRequested = true
-              if (configurationStep) configurationStepTools.add(call.name)
-              const contactPolicy = owner ? (await contactAgentsCall(owner, 'get') as import('../shared/agents').AgentOverview).settings.toolPermissionMode : undefined
-              if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              const needsApproval = Boolean(configurationStep) || prepared.confirmationRequired === true || shouldConfirmTool(definition, getConfig().toolPermissionMode, contactPolicy)
-              sendToolEvent(event.sender, {
-                requestId: request.requestId,
-                callId: call.id,
-                name: definition.name,
-                displayName: definition.displayName,
-                risk: definition.risk,
-                status: needsApproval ? 'requested' : 'running',
-                summary: needsApproval ? '等待用户确认' : '正在执行'
-              })
-              if (needsApproval) {
-                if (owner && request.sessionId && CONTACT_ACTION_TOOLS.includes(call.name as ContactActionTool)) {
-                  const card = await contactAgentsCall<ContactActionInteraction>(owner, 'offerAction', [`${request.requestId}:${call.id}`, {
-                    purpose: 'confirmation', title: definition.displayName, body: `${configurationStep ? `同次设置调整 ${configurationStep.index}/${configurationStep.total}。此项单独确认并保存。\n` : ''}${prepared.preview || definition.description}`,
-                    sessionId: request.sessionId,
-                    ...(configurationStep ? { configurationGroup: { id: request.requestId, ...configurationStep } } : {}),
-                    subject: call.name !== 'set_contact_output_preference' && typeof arguments_.topicId === 'string' && Number.isSafeInteger(arguments_.revision)
-                      ? { kind: typeof arguments_.deliveryVersion === 'number' ? 'delivery' : 'task', topicId: arguments_.topicId, revision: arguments_.revision, ...(typeof arguments_.deliveryVersion === 'number' ? { version: arguments_.deliveryVersion } : {}) }
-                      : { kind: 'contact' },
-                    actions: [{ id: 'apply', label: '确认执行', tool: call.name, arguments: arguments_ }]
-                    , ...(call.name === 'set_contact_search_credential' ? { input: { label: '搜索密钥', argument: 'credential', maxLength: 8192, required: true } } : {})
-                  }])
-                  sendToolEvent(event.sender, { requestId: request.requestId, callId: call.id, name: definition.name, displayName: definition.displayName, risk: definition.risk, status: 'completed', summary: '已发送确认卡片，尚未执行' })
-                  return JSON.stringify({ pendingInteraction: true, interactionId: card.id, message: '已把需要确认的内容放在聊天卡片中；确认后才会执行。' })
-                }
-                const outcome = await requestToolApproval(event.sender, request.requestId, call, controller.signal, prepared.preview)
-                if (outcome !== 'approved') {
-                  const failure = toolApprovalFailure(outcome)
-                  sendToolEvent(event.sender, {
-                    requestId: request.requestId,
-                    callId: call.id,
-                    name: definition.name,
-                    displayName: definition.displayName,
-                    risk: definition.risk,
-                    status: failure.status,
-                    summary: failure.summary
-                  })
-                  return failure.content
-                }
-                sendToolEvent(event.sender, {
-                  requestId: request.requestId,
-                  callId: call.id,
-                  name: definition.name,
-                  displayName: definition.displayName,
-                  risk: definition.risk,
-                  status: 'running',
-                  summary: '已授权，正在执行'
-                })
-              }
-              if (controller.signal.aborted) throw new Error('AI 请求已取消。')
-              if (!getConfig().aiToolsEnabled || !isToolEnabled(call.name)) throw new Error('工具已被用户禁用。')
-              await assertContext()
-              ownMemoryMutation = ['update_contact_memory', 'forget_contact_memory'].includes(call.name) && Boolean(contactContext?.memories.some(m => m.id === arguments_.id))
-              const result = await prepared.execute()
-              if (ownMemoryMutation) { memoryMutationReceipt = result.summary; ownMemoryMutation = false; controller.abort() }
-              if (call.name === 'read_contact_material' && contactContext) {
-                const ref = JSON.parse(result.content).materialRead as import('../shared/contact-materials').MaterialReadRef
-                contactContext.materials = [...(contactContext.materials ?? []), ref]
-              }
-              sendToolEvent(event.sender, {
-                requestId: request.requestId,
-                callId: call.id,
-                name: definition.name,
-                displayName: definition.displayName,
-                risk: definition.risk,
-                status: 'completed',
-                summary: result.summary.slice(0, 500), taskId: result.taskId, taskRefs: result.taskRefs
-              })
-              return result.content.slice(0, 50_000)
-            } catch (error) {
-              ownMemoryMutation = false
-              const message = getErrorMessage(error)
-              sendToolEvent(event.sender, {
-                requestId: request.requestId,
-                callId: call.id,
-                name: definition.name,
-                displayName: definition.displayName,
-                risk: definition.risk,
-                status: 'error',
-                summary: message.slice(0, 500)
-              })
-              return `工具执行失败：${message}`
-            }
-          }
-        } : undefined
+          getDefinition: getRegisteredTool, getConfig, isToolEnabled, assertContext,
+          prepare: async (call, args) => SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : prepareRegisteredToolAsync(call.name, args, mainWindow, request.sessionId),
+          contactPolicy: async () => owner ? (await contactAgentsCall(owner, 'get') as import('../shared/agents').AgentOverview).settings.toolPermissionMode : undefined,
+          offerAction: (key, action) => contactAgentsCall<ContactActionInteraction>(owner!, 'offerAction', [key, action]),
+          approve: (call, preview) => requestToolApproval(event.sender, request.requestId, call, controller.signal, preview),
+          emit: toolEvent => sendToolEvent(event.sender, toolEvent)
+        }) : undefined
       const currentCitations = [...request.messages].reverse().find(m => m.role === 'user')?.contactCitations
       if (owner && owner !== ASSISTANT_CHARACTER_ID && chatTools && !currentCitations?.length) {
         const routed = await routeContactChange(request.messages, {
@@ -822,39 +721,33 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           return { ok: true, reply: routed }
         }
       }
-      const citedMessages: AIChatMessage[] = []
-      const lastUserIndex = request.messages.reduce((last, m, i) => m.role === 'user' ? i : last, -1)
-      for (let i = 0; i < request.messages.length; i++) {
-        const message = request.messages[i]
-        let referenceContext = ''
-        if (message.contactCitations?.length) {
-          if (!owner) throw new Error('请在原联系人的会话中讨论这份成果。')
-          try { referenceContext = await contactAgentsCall<string>(owner, 'citationContext', [message.contactCitations]) }
-          catch (e) { if (i === lastUserIndex) throw e; referenceContext = '\n（此历史消息引用的正文已移除或无法读取，请勿假定其内容。）' }
-        }
-        citedMessages.push({ role: message.role, content: message.content + referenceContext, imageUrl: message.imageUrl })
-      }
-      await streamAIChat(
-        citedMessages,
-        request.systemPrompt + privateContext + skillContext + (owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation')),
-        effectiveConfig,
-        (chunk, done) => {
-          if (event.sender.isDestroyed()) return
-          const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk, done }
+      const harnessInput = await prepareHarnessInput(request, {
+        config: effectiveConfig, signal: controller.signal, assertContext,
+        citationContext: citations => contactAgentsCall<string>(owner!, 'citationContext', [citations]),
+        privateContext, skillContext,
+        communication: owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation'),
+        tools: chatTools,
+        onMetadata: () => { contextSent = true }
+      })
+      // Main-process identity scopes equal renderer request ids to their owning sender.
+      harnessInput.requestId = requestKey
+      const result = await chatHarness.run(harnessInput, update => {
+        if (event.sender.isDestroyed()) return
+        if (update.type === 'text') {
+          const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk: update.text, done: false }
           event.sender.send('ai:stream-event', streamEvent)
-        },
-        controller.signal,
-        chatTools,
-        { onMetadata: () => { contextSent = true }, beforeRound: async () => { await assertContext(); return undefined } }
-      )
+        }
+      })
+      if (result.state !== 'completed') throw new Error(result.error)
+
       await assertContext()
-      if (contextSent && contactContext) setState(`contact-context:${request.requestId}`, JSON.stringify(contactContext))
-      return { ok: true, contactContext: contextSent ? contactContext : undefined }
+      if (contextSent && chatState.contactContext) setState(`contact-context:${request.requestId}`, JSON.stringify(chatState.contactContext))
+      return { ok: true, contactContext: contextSent ? chatState.contactContext : undefined }
     } catch (error) {
-      if (contextSent && contactContext) { contactContext.status = 'failed'; setState(`contact-context:${request.requestId}`, JSON.stringify(contactContext)) }
-      if (memoryMutationReceipt) return { ok: true, reply: memoryMutationReceipt }
+      if (contextSent && chatState.contactContext) { chatState.contactContext.status = 'failed'; setState(`contact-context:${request.requestId}`, JSON.stringify(chatState.contactContext)) }
+      if (chatState.memoryMutationReceipt) return { ok: true, reply: chatState.memoryMutationReceipt }
       if (controller.signal.aborted) return { ok: false, error: 'AI 请求已取消。' }
-      return { ok: false, error: getErrorMessage(error), contactContext: contextSent && contactContext ? { ...contactContext, status: 'failed' } : undefined }
+      return { ok: false, error: getErrorMessage(error), contactContext: contextSent && chatState.contactContext ? { ...chatState.contactContext, status: 'failed' } : undefined }
     } finally {
       releaseContext()
       releaseRendererLifecycle()
