@@ -36,6 +36,7 @@ export class AgentSpace {
   private readonly faults = new Map<string, string>()
   private readonly deleting = new Set<string>()
   private ready = false
+  private recoveredContacts = new Set<string>()
   private closed = false
   private ticking = false
   private closing?: Promise<void>
@@ -72,33 +73,43 @@ export class AgentSpace {
     if (this.closed || this.wakeTimer) return
     this.wakeTimer = setTimeout(() => { this.wakeTimer = undefined; this.tick() }, 0)
   }
-  async sync(identities: ContactIdentity[]) {
+  async sync(identities: ContactIdentity[], enqueue: (id: string, operation: () => Promise<void>) => Promise<void> = (_id, operation) => operation(), queuedOwners: string[] = []) {
     this.assertOpen()
     if (identities.some(identity => !identity.id) || new Set(identities.map(identity => identity.id)).size !== identities.length) throw new Error('联系人身份重复或无效。')
-    for (const identity of identities) {
-      let contact = this.contacts.get(identity.id)
-      if (contact && signature(contact.identity) !== signature(identity)) {
-        this.scheduler.abort(identity.id)
-        this.store.cancel(identity.id, '角色人设或模型配置已变化，请重新发起工作。')
-        this.notify(identity.id)
-      }
-      if (contact) contact.update(identity)
-      else {
-        contact = new ContactAgent(identity, this.modules)
-        contact.mount(this.options.modules ?? ['workloop'])
-        this.contacts.set(identity.id, contact)
-        this.subscriptions.set(identity.id, this.events.subscribe(identity.id, () => this.wake()))
-      }
-      this.store.ensure(identity.id)
-      this.store.actions.reconcile(identity.id, identity.configurationVersions ?? {})
-      this.store.memoryLibrary.registerSessions(identity.id, identity.sessionIds ?? [])
-    }
-    this.runtime.contactSources.names = new Map(identities.map(identity => [identity.id, identity.name || identity.id]))
     const liveIds = new Set(identities.map(identity => identity.id))
-    for (const profile of this.store.profiles()) if (!liveIds.has(profile.character_id)) await this.remove(profile.character_id)
-    if (!this.ready) for (const identity of identities) this.store.decisions.publishOutstanding(identity.id, new Set(identity.visibleNoticeIds ?? []))
+    const knownIds = new Set([...this.store.profiles().map(profile => profile.character_id), ...queuedOwners])
+    const removed = [...knownIds].filter(id => !liveIds.has(id))
+    await Promise.all([
+      ...identities.map(identity => enqueue(identity.id, async () => { this.syncContact(identity) })),
+      ...removed.map(id => enqueue(id, () => this.remove(id)))
+    ])
+  }
+  syncContact(identity: ContactIdentity) {
+    this.assertOpen()
+    if (!identity?.id || this.deleting.has(identity.id)) throw new Error('联系人身份无效或正在删除。')
+    let contact = this.contacts.get(identity.id)
+    if (contact && signature(contact.identity) !== signature(identity)) {
+      this.scheduler.abort(identity.id)
+      this.store.cancel(identity.id, '角色人设或模型配置已变化，请重新发起工作。')
+      this.notify(identity.id)
+    }
+    if (contact) contact.update(identity)
+    else {
+      contact = new ContactAgent(identity, this.modules)
+      contact.mount(this.options.modules ?? ['workloop'])
+      this.contacts.set(identity.id, contact)
+      this.subscriptions.set(identity.id, this.events.subscribe(identity.id, () => this.wake()))
+    }
+    this.store.ensure(identity.id)
+    this.store.actions.reconcile(identity.id, identity.configurationVersions ?? {})
+    this.store.memoryLibrary.registerSessions(identity.id, identity.sessionIds ?? [])
+    this.runtime.contactSources.names.set(identity.id, identity.name || identity.id)
+    if (!this.recoveredContacts.has(identity.id)) {
+      this.store.decisions.publishOutstanding(identity.id, new Set(identity.visibleNoticeIds ?? []))
+      this.recoveredContacts.add(identity.id)
+    }
     this.ready = true
-    this.tick()
+    this.wake()
   }
   async remove(id: string) {
     this.assertOpen()
@@ -111,6 +122,7 @@ export class AgentSpace {
       await this.scheduler.drain(id)
       for (const runId of this.store.remove(id)) await this.cleanupThread(runId)
       this.contacts.delete(id); this.faults.delete(id)
+      this.runtime.contactSources.names.delete(id); this.recoveredContacts.delete(id)
     } finally { this.deleting.delete(id) }
   }
   async detachModule(id: string, moduleId: string) {

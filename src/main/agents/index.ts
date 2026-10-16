@@ -39,6 +39,7 @@ let closing = false
 let failures = 0
 let syncTimer: ReturnType<typeof setInterval> | undefined
 const requests = new AgentWorkerRPC(event => {
+  if (process.env.CHOUYU_SMOKE_TEST === '1') console.error('CHOUYU_AGENT_RPC', JSON.stringify(event))
   // Only protocol metadata; never persist credentials, prompts or provider responses.
   try {
     const path = join(app.getPath('userData'), 'contact-worker-diagnostics.log')
@@ -94,6 +95,11 @@ function identities(): ContactIdentity[] {
     return { configurationVersions: { profile: getContactProfile(character.id).revision, skills: skillsRevision, credential: contactSearchCredential(character.id).revision }, sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: [...SKILL_TOOLS.map(tool => tool.name), ...MATERIAL_TOOL_NAMES].filter(name => getState(`tool:${name}:enabled`) === 'false'), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
   })
 }
+async function syncContact(id: string) {
+  const identity = identities().find(identity => identity.id === id)
+  if (!identity) throw new Error('联系人不存在。')
+  await rpc('syncContact', id, [identity])
+}
 async function ensure() {
   if (closing) throw new Error('应用正在退出。')
   if (starting) return starting
@@ -134,12 +140,12 @@ async function ensure() {
   })().finally(() => { starting = undefined; for (const id of dirty) void deliver(id) })
   return starting
 }
-export async function agentContext(characterId: string, context: import('../../shared/contact-content').ContactReadContext) { await ensure(); await rpc('sync', '', [identities()]); return await rpc('contextSnapshot', characterId, [context]) as { text: string; memories: { id: string; revision: number }[]; truncated: boolean } }
+export async function agentContext(characterId: string, context: import('../../shared/contact-content').ContactReadContext) { await ensure(); await syncContact(characterId); return await rpc('contextSnapshot', characterId, [context]) as { text: string; memories: { id: string; revision: number }[]; truncated: boolean } }
 /** Read-only access for ChouYu's assistant; no contact mutations are exposed. */
 export async function inspectContactWork(characterId: string) {
   if (!getCharacter(characterId) || characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
   await ensure()
-  await rpc('sync', '', [identities()])
+  await syncContact(characterId)
   const overview = await rpc('get', characterId) as import('../../shared/agents').AgentOverview
   return { ...overview, pendingInteractions: await rpc('pendingInteractions', characterId) as import('../../shared/contact-interactions').ContactInteraction[] }
 }
@@ -156,7 +162,7 @@ export async function contactAgentsCall<T = unknown>(id: string, method: string,
   if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
   validateMemoryBoundary(id, method, args)
   await purgeWithdrawnContext(id,method)
-  await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args) as Promise<T>
+  await ensure(); await syncContact(id); return rpc(method, id, args) as Promise<T>
 }
 export function readContactConfiguration(id: string) {
   if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
@@ -330,7 +336,7 @@ export function initializeAgents() {
       if (typeof key !== 'string' || key.length > 8192 || /[\r\n]/.test(key)) throw new Error('搜索密钥无效。')
       if (!Number.isSafeInteger(revision)) throw new Error('请先读取搜索密钥配置，再保存。')
       saveContactSearchCredential(id, key.trim(), revision!)
-      await ensure(); await rpc('sync', '', [identities()]); broadcastChanged(id)
+      await ensure(); await syncContact(id); broadcastChanged(id)
     }
     return contactSearchCredential(id)
   })
@@ -338,7 +344,7 @@ export function initializeAgents() {
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
     request: async (method, id, args) => {
       if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
-      await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
+      await ensure(); await syncContact(id); return rpc(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   for (const method of ['getInteraction', 'outputPreferences', 'setOutputPreference', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
@@ -346,7 +352,7 @@ export function initializeAgents() {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       validateMemoryBoundary(id, method, args)
   await purgeWithdrawnContext(id,method)
-      await ensure(); await rpc('sync', '', [identities()]); return rpc(method, id, args)
+      await ensure(); await syncContact(id); return rpc(method, id, args)
     })
   }
   void ensure().catch(() => {})

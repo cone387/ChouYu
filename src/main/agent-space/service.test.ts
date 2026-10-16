@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { AgentSpace } from './service'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { evidenceFromText } from '../agents/sources'
+import { ContactCommandQueue } from './command-queue'
+import { dispatchContactCommand } from './worker-commands'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
@@ -53,4 +55,29 @@ it('rejects work after shutdown and makes repeated close safe', async () => {
   await Promise.all([space.close(), space.close()])
   await expect(space.sync(identities)).rejects.toThrow(/关闭/)
   await expect(space.request('get', 'alice')).rejects.toThrow(/关闭/)
+})
+
+it('reconciles a removed contact whose first identity update is still queued', async () => {
+  const { space } = await fixture(1)
+  const queue = new ContactCommandQueue()
+  const newIdentity = { ...identities[0], id: 'charlie' }
+  const adding = dispatchContactCommand(queue, space, 'syncContact', 'charlie', [newIdentity])
+  const removing = dispatchContactCommand(queue, space, 'sync', '', [identities])
+  await Promise.all([adding, removing])
+  expect(space.store.profile('charlie')).toBeUndefined()
+})
+
+it('reads a peer while roster reconciliation waits for a removed contact to drain', async () => {
+  const { space } = await fixture(1), queue = new ContactCommandQueue()
+  let release!: () => void
+  const hold = new Promise<void>(resolve => { release = resolve })
+  const remove = space.remove.bind(space)
+  vi.spyOn(space, 'remove').mockImplementation(async id => { await hold; await remove(id) })
+  const removing = dispatchContactCommand(queue, space, 'sync', '', [[identities[1]]])
+  try {
+    await dispatchContactCommand(queue, space, 'syncContact', 'bob', [identities[1]])
+    const overview = await dispatchContactCommand(queue, space, 'get', 'bob', [])
+    expect(overview.settings.goal).toBe('Research')
+  } finally { release(); await removing }
+  expect(space.store.profile('alice')).toBeUndefined()
 })

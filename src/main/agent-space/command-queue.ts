@@ -1,7 +1,8 @@
-/** Per-contact ordering, with exclusive barriers for identity sync/init/shutdown. */
+/** Per-contact ordering, with exclusive barriers only for initialization/shutdown. */
 export class ContactCommandQueue {
   private barrier = Promise.resolve()
   private tails = new Map<string, Promise<void>>()
+  owners(): string[] { return [...this.tails.keys()].filter(Boolean) }
   submit<T>(owner: string, exclusive: boolean, operation: () => Promise<T>): Promise<T> {
     const dependencies = exclusive ? [this.barrier, ...this.tails.values()] : [this.barrier, this.tails.get(owner)]
     const result = Promise.all(dependencies).then(operation)

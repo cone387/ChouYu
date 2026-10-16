@@ -12,12 +12,12 @@ it('keeps one contact ordered while another contact can complete', async () => {
   expect(order).toEqual(['a1', 'b', 'a2'])
 })
 
-it('orders identity sync and shutdown across all contacts, including failed commands', async () => {
+it('orders shutdown across all contacts, including failed commands', async () => {
   const queue = new ContactCommandQueue(), hold = gate(), order: string[] = []
   const before = queue.submit('alice', false, async () => { await hold.promise; order.push('before'); throw new Error('failed request') }).catch(() => {})
-  const sync = queue.submit('', true, async () => { order.push('sync') })
+  const sync = queue.submit('', true, async () => { order.push('close') })
   const after = queue.submit('bob', false, async () => { order.push('after') })
   await Promise.resolve(); expect(order).toEqual([])
   hold.release(); await Promise.all([before, sync, after])
-  expect(order).toEqual(['before', 'sync', 'after'])
+  expect(order).toEqual(['before', 'close', 'after'])
 })

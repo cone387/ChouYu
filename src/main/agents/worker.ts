@@ -3,19 +3,20 @@ import { SkillLibrary } from '../skills/library'
 import { dirname, join } from 'node:path'
 import { evidenceFromText } from './sources'
 import { ContactCommandQueue } from '../agent-space/command-queue'
+import { dispatchContactCommand } from '../agent-space/worker-commands'
 const port = process.parentPort!
 let service: AgentSpace | undefined
-// Mutations are ordered per contact; lifecycle commands form an exclusive barrier.
+// Only init/close form an exclusive barrier; roster sync fans out per contact.
 const messages = new ContactCommandQueue()
 port.on('message', event => {
   // Probe the event loop independently of a slow, awaited command.
   if (typeof event.data.ping === 'number') { port.postMessage({ pong: event.data.ping }); return }
   const { requestId, method, id, args } = event.data
-  void messages.submit(id, ['init', 'sync', 'close'].includes(method), async () => {
-    port.postMessage({ requestId, started: true })
+  const execute = async () => {
     try {
       let result: unknown
       if (method === 'init') {
+        port.postMessage({ requestId, started: true })
         const smoke = process.env.CHOUYU_SMOKE_TEST === '1' && Boolean(process.env.CHOUYU_SMOKE_USER_DATA)
         service = new AgentSpace(args[0], characterId => port.postMessage({ changed: characterId }), undefined, smoke ? async (url) => {
           const fixtures: Record<string, string> = {
@@ -33,13 +34,15 @@ port.on('message', event => {
         } : undefined, id => new SkillLibrary(join(dirname(args[0]), 'contact-skills')).snapshot(id), join(dirname(args[0]), 'contact-skills'))
       }
       else if (!service) throw new Error('Agent 执行进程尚未初始化。')
-      else if (method === 'sync') await service.sync(args[0])
-      else if (method === 'close') { await service.close(); service = undefined }
-      else result = await service.request(method, id, args)
+      else {
+        result = await dispatchContactCommand(messages, service, method, id, args, () => port.postMessage({ requestId, started: true }))
+        if (method === 'close') service = undefined
+      }
       port.postMessage({ requestId, result })
     } catch (error) {
       if (process.env.CHOUYU_SMOKE_TEST === '1') console.error('Agent RPC failed', method, error)
       port.postMessage({ requestId, error: error instanceof Error ? error.message : 'Agent 操作失败。' })
     }
-  }).catch(error => console.error('Agent worker transport failed', error instanceof Error ? error.name : 'Error'))
+  }
+  void (method === 'init' ? messages.submit('', true, execute) : execute()).catch(error => console.error('Agent worker transport failed', error instanceof Error ? error.name : 'Error'))
 })
