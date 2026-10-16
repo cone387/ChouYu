@@ -5,6 +5,27 @@ import type { AIToolDefinition } from '../../../shared/tools'
 
 afterEach(() => vi.unstubAllGlobals())
 const definition: AIToolDefinition = { name: 'write', displayName: 'write', description: 'write', source: 'builtin', risk: 'write', requiresConfirmation: false, inputSchema: { type: 'object', properties: {} } }
+it.each([['openai', 'error'], ['claude', 'error'], ['openai', 'eof'], ['claude', 'eof']] as const)('rejects %s stream %s without completing or executing partial tool calls', async (provider, failure) => {
+    const execute = vi.fn(async () => 'written'), onChunk = vi.fn();
+    const partial = provider === 'claude'
+      ? [{ type: 'content_block_delta', delta: { type: 'text_delta', text: 'partial' } }, { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'call', name: 'write', input: {} } }]
+      : [{ choices: [{ delta: { content: 'partial', tool_calls: [{ index: 0, id: 'call', function: { name: 'write', arguments: '{}' } }] } }] }];
+    const error = { type: 'error', error: { type: 'overloaded_error', message: 'provider overloaded' } };
+    const frames: unknown[] = failure === 'error' ? [...partial, error] : partial;
+    const fetchMock = vi.fn(async () => new Response(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join('')));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(streamNativeChat([{ role: 'user', content: 'work' }], '', { ...DEFAULT_APP_CONFIG, provider, baseUrl: 'https://fixture.example', apiKey: 'fixture', model: 'fixture' }, onChunk, undefined,
+      { definitions: [definition], execute })).rejects.toThrow(failure === 'error' ? 'provider overloaded' : '中断');
+    expect(execute).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(onChunk).not.toHaveBeenCalledWith('', true);
+});
+it.each(['openai', 'claude'] as const)('accepts the final %s protocol marker without a trailing newline', async provider => {
+  vi.stubGlobal('fetch', async () => new Response(provider === 'claude' ? 'data: {"type":"message_stop"}' : 'data: [DONE]'));
+  const onChunk = vi.fn();
+  await streamNativeChat([{ role: 'user', content: 'work' }], '', { ...DEFAULT_APP_CONFIG, provider, baseUrl: 'https://fixture.example', apiKey: 'fixture', model: 'fixture' }, onChunk);
+  expect(onChunk).toHaveBeenLastCalledWith('', true);
+});
 function response(provider: string, count = 2) {
   const events = Array.from({ length: count }, (_, index) => provider === 'claude'
     ? { type: 'content_block_start', index, content_block: { type: 'tool_use', id: `call${index}`, name: 'write', input: {} } }

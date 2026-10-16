@@ -81,6 +81,10 @@ export async function readSseStream(body: ReadableStream<Uint8Array>, onPayload:
     if (data === '[DONE]') { completed = true; return }
     let payload: any
     try { payload = JSON.parse(data) } catch { return }
+    if (payload?.error || payload?.type === 'error') {
+      const detail = payload.error?.message ?? payload.error?.type ?? payload.message
+      throw new Error(`模型响应失败：${typeof detail === 'string' ? detail.slice(0, 2000) : '服务端返回流错误。'}`)
+    }
     onPayload(payload)
     if (payload?.type === 'message_stop') completed = true
   }
@@ -99,7 +103,11 @@ export async function readSseStream(body: ReadableStream<Uint8Array>, onPayload:
     }
 
     buffer += decoder.decode()
-    if (buffer) buffer.split('\n').forEach(consumeLine)
+    if (buffer) for (const line of buffer.split('\n')) {
+      consumeLine(line)
+      if (completed) return
+    }
+    if (!completed) throw new Error('模型响应中断，尚未收到完整结束标记，请重试。')
   } finally {
     // Some gateways keep the HTTP connection open after the protocol end event.
     // Do not wait for transport EOF (or for a potentially stalled cancel).

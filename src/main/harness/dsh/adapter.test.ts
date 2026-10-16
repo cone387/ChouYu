@@ -5,6 +5,25 @@ import { DEFAULT_APP_CONFIG } from '../../../shared/config';
 import type { HarnessInput } from '../contracts';
 const stores: HarnessStore[] = [];
 afterEach(() => stores.splice(0).forEach(s => s.close()));
+it.each([false, true])('preserves the execution failure and attempts every cleanup even when release fails (cancelled=%s)', async cancelled => {
+    const store = new HarnessStore(':memory:'); stores.push(store);
+    const abort = new AbortController();
+    const input: HarnessInput = { requestId: 'r', attemptId: 'a', characterId: 'c', sessionId: 's', config: DEFAULT_APP_CONFIG, configVersion: 'v', snapshotFingerprint: 'f', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }], signal: abort.signal, assertContext: async () => {} };
+    const lease = { run: async () => { if (cancelled) abort.abort(); throw new Error('original provider failure'); }, flush: async () => true, release: vi.fn(async () => { throw new Error('dispose timeout'); }), cancel: async () => {} };
+    const cancelActions = vi.fn(async () => { throw new Error('card cleanup failure'); });
+    const cleanup = vi.fn(async () => { throw new Error('log cleanup failure'); });
+    const adapter = new DshAdapter({ acquire: async () => lease }, store, cancelActions, cleanup);
+    const result = await adapter.run(input, () => {});
+    expect(result).toMatchObject({ state: cancelled ? 'cancelled' : 'failed' });
+    if (result.state === 'completed') throw new Error('Failed execution was reported complete');
+    expect(result.error).toContain('original provider failure');
+    expect(result.error).toContain('dispose timeout');
+    expect(result.error).toContain('log cleanup failure');
+    if (cancelled) expect(result.error).toContain('card cleanup failure');
+    expect(lease.release).toHaveBeenCalledOnce();
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(store.get(input)).toMatchObject({ deliverySuppressed: true, cleanupPending: true });
+});
 it('records a durable completion and rejects re-execution of an existing attempt', async () => {
     const store = new HarnessStore(':memory:');
     stores.push(store);

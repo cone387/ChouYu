@@ -118,6 +118,8 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         await openEngineForm(character.id);
         if (await run("document.querySelector('[data-contacts-harness]').value") !== 'dsh') throw new Error('Reopened editor lost engine selection');
         await run("document.querySelector('[data-contacts-harness]').focus()");
+        // Let the compositor paint the already-verified form before capturing it.
+        await new Promise(resolve => setTimeout(resolve, 300));
         writeFileSync(join(artifacts, 'contact-engine-settings.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
         await run("document.querySelector('[data-contacts-form]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
         await openEngineForm('chouyu');

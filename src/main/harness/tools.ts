@@ -143,6 +143,9 @@ export function createChatTools(context: ChatToolContext) {
                 if (!context.getConfig().aiToolsEnabled || !context.isToolEnabled(call.name))
                     throw new Error('工具已被用户禁用。');
                 await context.assertContext();
+                context.signal.throwIfAborted();
+                if (!context.getConfig().aiToolsEnabled || !context.isToolEnabled(call.name))
+                    throw new Error('工具已被用户禁用。');
                 context.state.ownMemoryMutation = ['update_contact_memory', 'forget_contact_memory'].includes(call.name) && Boolean(context.state.contactContext?.memories.some(m => m.id === arguments_.id));
                 const result = await prepared.execute();
                 if (context.state.ownMemoryMutation) {

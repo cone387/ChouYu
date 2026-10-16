@@ -24,6 +24,7 @@ export class DshAdapter implements HarnessAdapter {
         this.store.begin(input);
         this.store.bindRuntime(input, dshRuntimeGroup(input));
         let lease: DshRuntimeLease | undefined;
+        let outcome: HarnessResult;
         try {
             input.signal.throwIfAborted();
             await input.assertContext();
@@ -49,28 +50,35 @@ export class DshAdapter implements HarnessAdapter {
             const record = this.store.get(input)!;
             if (!this.store.transition(input, record.state, result.state))
                 throw new Error('执行状态已变化，不能发布回复。');
-            return result.state === 'completed' ? { ...result, source: { requestId: input.requestId, attemptId: input.attemptId, engine: 'dsh', version: record.version, messageId: record.messageId } } : result;
+            outcome = result.state === 'completed' ? { ...result, source: { requestId: input.requestId, attemptId: input.attemptId, engine: 'dsh', version: record.version, messageId: record.messageId } } : result;
         }
         catch (error) {
             const state = input.signal.aborted ? 'cancelled' : 'failed';
             const record = this.store.get(input)!;
             this.store.transition(input, record.state, state);
             this.store.suppressDelivery(input);
-            return { state, error: error instanceof Error ? error.message : 'DSH 执行失败。' };
+            outcome = { state, error: error instanceof Error ? error.message : 'DSH 执行失败。' };
         }
         finally {
-            try {
-                if (input.signal.aborted)
-                    await this.cancelActions?.(input);
-            }
-            finally {
-                this.leases.delete(JSON.stringify([input.requestId, input.attemptId]));
-                await lease?.release();
-                const run=this.store.get(input)!;
-                if (run.state!=='completed' || run.deliverySuppressed) {
-                    try { await this.cleanup?.(run); } catch { /* keep cleanupPending for startup retry */ }
-                }
-            }
+            this.leases.delete(JSON.stringify([input.requestId, input.attemptId]));
         }
+        const cleanupErrors: string[] = [];
+        const attemptCleanup = async (action: () => void | Promise<void>) => {
+            try { await action(); }
+            catch (error) { cleanupErrors.push(error instanceof Error ? error.message : 'DSH 清理失败。'); }
+        };
+        if (input.signal.aborted) await attemptCleanup(() => this.cancelActions?.(input));
+        await attemptCleanup(() => lease?.release());
+        if (cleanupErrors.length || input.signal.aborted) this.store.suppressDelivery(input);
+        const run = this.store.get(input)!;
+        if (run.state !== 'completed' || run.deliverySuppressed) {
+            this.store.markCleanup(input, true);
+            await attemptCleanup(() => this.cleanup?.(this.store.get(input)!));
+        }
+        if (cleanupErrors.length) {
+            const error = `${outcome.state !== 'completed' ? `${outcome.error} ` : ''}清理未完成：${cleanupErrors.join('；')}`;
+            return { state: input.signal.aborted ? 'cancelled' : outcome.state === 'completed' ? 'failed' : outcome.state, error };
+        }
+        return outcome;
     }
 }

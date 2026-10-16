@@ -3,6 +3,10 @@ import { DEFAULT_APP_CONFIG } from '../../shared/config';
 import type { AIToolDefinition } from '../../shared/tools';
 import type { ToolExecutionEvent } from '../../shared/tools';
 import { createChatTools, type ChatToolContext } from './tools';
+import { HarnessCoordinator } from './coordinator';
+import { HarnessRegistry } from './registry';
+import { createNativeModule } from './native';
+import type { HarnessInput } from './contracts';
 function fixture() {
     const calls: string[] = [], offers: unknown[] = [];
     const definition: AIToolDefinition = { name: 'set_contact_output_preference', displayName: '偏好', description: '偏好', risk: 'write', requiresConfirmation: true, alwaysConfirm: true, source: 'builtin', inputSchema: { type: 'object', properties: {} } };
@@ -19,6 +23,34 @@ function fixture() {
     };
     return { context, calls, offers, disable: () => { enabled = false; } };
 }
+it.each(['native', 'dsh'] as const)('stops %s writes when coordinator cancellation arrives during the final context check', async id => {
+    const f = fixture(), module = { ...createNativeModule(), id };
+    f.context.definitions[0].alwaysConfirm = false;
+    let checks = 0, entered!: () => void, release!: () => void;
+    const validating = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    f.context.assertContext = async () => { if (++checks === 2) { entered(); await gate; } };
+    const input: HarnessInput = { requestId: 'r', attemptId: 'a', messages: [], systemPrompt: '', config: f.context.getConfig(), configVersion: 'v', snapshotFingerprint: 'f', signal: f.context.signal, assertContext: async () => {} };
+    input.bindTools = run => createChatTools({ ...f.context, signal: run.signal });
+    module.adapter = { run: async run => ({ state: 'completed', text: await run.tools!.execute({ id: 'call', name: 'set_contact_output_preference', arguments: '{}' }) }) };
+    const coordinator = new HarnessCoordinator(new HarnessRegistry([module]));
+    const running = coordinator.run(input, () => {}, id);
+    await validating;
+    const cancelling = coordinator.cancel(input.requestId);
+    release();
+    await cancelling;
+    expect(await running).toMatchObject({ state: 'cancelled' });
+    expect(input.signal.aborted).toBe(false);
+    expect(f.calls).toEqual([]);
+});
+it('rechecks live tool permission after asynchronous context validation', async () => {
+    const f = fixture();
+    f.context.definitions[0].alwaysConfirm = false;
+    let checks = 0;
+    f.context.assertContext = async () => { if (++checks === 2) f.disable(); };
+    await createChatTools(f.context).execute({ id: 'call', name: 'set_contact_output_preference', arguments: '{}' });
+    expect(f.calls).toEqual([]);
+});
 it('publishes real tool states and distinguishes a pending card from a saved action', async () => {
     const f = fixture(), tools = createChatTools(f.context), events: ToolExecutionEvent[] = [];
     const release = tools.subscribe(event => events.push(event));
