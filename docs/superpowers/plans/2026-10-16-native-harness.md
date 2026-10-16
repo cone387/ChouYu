@@ -10,7 +10,7 @@
 
 **Spec:** [已确认设计](../specs/2026-10-16-native-harness-design.md)
 
-状态：四项任务已完成；独立审查三项 Important 已修复，最终 1892 项测试及四项 Electron smoke 通过。详见[验收记录](../../native-harness-acceptance-20261016.md)。分支 `feat/native-harness` 保留，尚未合入或推送。
+状态：四项任务已完成；独立审查三项 Important 已修复，最终 1892 项测试及四项 Electron smoke 通过。详见[验收记录](../../native-harness-acceptance-20261016.md)。已按用户指令快进合入本地 `master`（`35fbb0b`），主目录全套 1892 项通过，未推送；原托管工作树和验收产物保留。
 
 ## Global Constraints
 
