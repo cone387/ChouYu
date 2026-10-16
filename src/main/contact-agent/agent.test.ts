@@ -34,3 +34,13 @@ it('routes events only to the requested contact and removes subscriptions on dis
   events.publish('alice'); dispose(); events.publish('alice'); events.publish('bob')
   expect(received).toEqual(['alice', 'bob'])
 })
+
+it('settles every module close even if one close throws synchronously', async () => {
+  const registry = new ModuleRegistry(), closed: string[] = []
+  registry.register('broken', () => ({ id: 'broken', close: () => { throw new Error('broken close') } }))
+  registry.register('workloop', () => ({ id: 'workloop', close: async () => { closed.push('workloop') } }))
+  const agent = new ContactAgent({ id: 'alice', soul: '', conversation: '', config: null }, registry)
+  agent.mount(['broken', 'workloop'])
+  await expect(agent.close()).rejects.toThrow('broken close')
+  expect(closed).toEqual(['workloop'])
+})

@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentService } from './service'
+import { AgentSpace } from '../agent-space/service'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { streamNativeChat } from '../harness/native/runner'
 
@@ -10,7 +10,7 @@ vi.mock('../harness/native/runner', () => ({ streamNativeChat: vi.fn() }))
 
 it.each([true, false])('distinguishes plan actions and disabled tools with shared access=%s without reading data', async (contactAccess) => {
   const directory = mkdtempSync(join(tmpdir(), 'chouyu-tool-boundary-'))
-  const service = new AgentService(directory, () => {})
+  const service = new AgentSpace(directory, () => {})
   const responses: Record<string, string> = {}
   vi.mocked(streamNativeChat).mockImplementation(async (_messages, _system, _config, onChunk, _signal, tools) => {
     for (const name of ['read_contacts', 'discover_contacts', 'invented_tool', 'read_contact_material']) {

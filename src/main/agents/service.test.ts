@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentService } from './service'
-import { AgentStore } from './store'
+import { AgentSpace } from '../agent-space/service'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { evidenceFromText } from './sources'
 
@@ -22,7 +22,7 @@ type Pending = { signal: AbortSignal; resolve: (value: string) => void; reject: 
 async function fixture(ignoreAbort = false) {
   const directory = mkdtempSync(join(tmpdir(), 'chouyu-concurrent-agents-'))
   const calls = new Map<string, Pending[]>()
-  const service = new AgentService(directory, () => {}, identity => async (_prompt, signal) => {
+  const service = new AgentSpace(directory, () => {}, identity => async (_prompt, signal) => {
     return new Promise<string>((resolve, reject) => {
       signal.throwIfAborted()
       calls.set(identity.id, [...(calls.get(identity.id) ?? []), { signal, resolve, reject }])
@@ -166,7 +166,7 @@ it('retains low-frequency provider recovery after three failed assignment reques
     await vi.waitFor(() => expect(f.service.store.getRun(run.id)?.status).toBe('failed'))
   }
   f.service.store.save('alice', { ...f.service.store.overview('alice').settings, enabled: true }, Date.now(), false)
-  const reopened = new AgentStore(f.service.store.db.name)
+  const reopened = new TaskCenter(f.service.store.db.name)
   cleanups.push(async () => reopened.close())
   const due = reopened.providerRecovery('alice')!.at
   expect(due).toBe(began + 903000)

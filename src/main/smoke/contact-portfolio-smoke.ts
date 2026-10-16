@@ -1,7 +1,7 @@
 import { app, type BrowserWindow } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { restartAgentsForSmoke } from '../agents'
 import { waitForRenderer } from './storage-smoke'
 import { runContactCitationSmoke } from './contact-citation-smoke'
@@ -14,7 +14,7 @@ export async function runContactPortfolioSmoke(window: BrowserWindow, owner: str
     window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
     window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
   }
-  const file = join(app.getPath('userData'), 'contact-agents', 'agents.db'), store = new AgentStore(file)
+  const file = join(app.getPath('userData'), 'contact-agents', 'agents.db'), store = new TaskCenter(file)
   const topic = store.topics.create(owner, { title: '海边手记', goal: '写一组海边故事', constraints: '' }, '隔离验收')
   const write = (text: string, sectionId = 'a') => {
     const runId = store.createRun(owner, '', Date.now(), topic.id)

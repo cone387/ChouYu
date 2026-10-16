@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentStore } from './store'
-import { AgentRuntime } from './runtime'
+import { TaskCenter } from '../task-center/store'
+import { WorkStrategyRuntime } from '../workloop/workflow'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { taskState } from '../../shared/task-state'
 import { reviewTaskCompletion } from './task-completion'
@@ -16,10 +16,10 @@ const draft = { title: '想法一', body: '新的想法', question: '', memories
 const decision = { mode: 'ongoing', satisfied: true, endsAt: null, reason: '用户要求持续生产，单条交付不结束任务', nextStep: '继续产出下一条想法', completionCriteria: '持续产出，直到用户明确结束' }
 function fixture(goal = '全天持续生产 AI 产品 idea') {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-completion-'))
-  let store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+  let store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal, enabled: true, dailyCalls: 100, intervalMinutes: 15 })
   cleanups.push(() => { runtime.close(); store.close(); rmSync(dir, { recursive: true, force: true }) })
-  return { get store() { return store }, get runtime() { return runtime }, reopen() { runtime.close(); store.close(); store = new AgentStore(join(dir, 'agents.db')); runtime = new AgentRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
+  return { get store() { return store }, get runtime() { return runtime }, reopen() { runtime.close(); store.close(); store = new TaskCenter(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
 }
 it.each(['completed', 'abandoned'])('preserves the deliverable and keeps ongoing work scheduled when the model proposes %s', async status => {
   const f = fixture(), run = f.store.createRun('alice', '')

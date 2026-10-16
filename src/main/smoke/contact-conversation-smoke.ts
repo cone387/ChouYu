@@ -2,7 +2,7 @@ import { app, type BrowserWindow } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createCharacter, createChatSession, getContactProfile, getConfig, listCharacters, getSession, getState, contactSearchCredential, appendAgentNotice, appendContactAction, selectChatSession, saveConfig } from '../database'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { contactSkillLibrary } from '../skills'
 import { DEFAULT_CHARACTER_ID } from '../../shared/characters'
 import { contactAgentsCall, restartAgentsForSmoke } from '../agents'
@@ -72,7 +72,7 @@ export async function runContactConversationSmoke(window: BrowserWindow) {
   if (secure.status !== 'resolved' || !contactSearchCredential(character.id).configured || getState(`agent-search:${character.id}:api_key`) !== 'fixture-private-search-value') throw new Error('Secure input did not persist the actual credential')
   const staleCredential = await window.webContents.executeJavaScript(`window.electronAPI.agents.searchCredential(${JSON.stringify(character.id)},'stale-fixture',${manualCredential.revision}).then(()=>false,e=>String(e).includes('变化'))`)
   if (!staleCredential || getState(`agent-search:${character.id}:api_key`) !== 'fixture-private-search-value') throw new Error('Stale manual credential overwrote a chat update')
-  const storage = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const storage = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   try {
     const row = storage.db.prepare('SELECT value FROM contact_interactions WHERE id=?').get(secure.id) as { value: string }
     if (row.value.includes('fixture-private-search-value') || JSON.stringify(getSession(session)).includes('fixture-private-search-value')) throw new Error('Credential leaked into card or conversation storage')
@@ -94,7 +94,7 @@ export async function runContactConversationSmoke(window: BrowserWindow) {
   if (getContactProfile(character.id).profile.avatar !== '🐟' || !(await contactAgentsCall<AgentOverview>(character.id, 'get')).settings.readContactDeliveries) throw new Error('Combination did not save each independent setting')
   console.log('CHOUYU_SMOKE_CONTACT_COMBINATION_PASSED groupedCards=true separateReceipts=true resumeAfterRestart=true staleManualCredential=true')
   await contactAgentsCall(character.id, 'get')
-  const deliveryStore = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const deliveryStore = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   let topicId: string
   try {
     deliveryStore.save(character.id, { ...deliveryStore.overview(character.id).settings, notifyProgress: true }, Date.now(), false)
@@ -140,7 +140,7 @@ export async function runContactConversationSmoke(window: BrowserWindow) {
   await waitForRenderer(window, `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('已记录你对版本 1 的认可')`, 15000)
   const accepted = await contactAgentsCall<AgentOverview>(character.id, 'get')
   if (accepted.topics.find(t => t.id === topic.id)!.status !== topic.status || accepted.runs.length !== current.runs.length) throw new Error('Acceptance changed continuous task state')
-  const failureStore = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const failureStore = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   let failureId: string
   try {
     const run = failureStore.createRun(character.id, '', Date.now(), topic.id)

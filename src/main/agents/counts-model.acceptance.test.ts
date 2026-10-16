@@ -3,10 +3,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { streamNativeChat } from '../harness/native/runner'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { ContactSources } from './contact-sources'
 import { correctDeliveryCounts } from './delivery-counts'
-import { parseDraft, type AgentModel } from './runtime'
+import { parseDraft, type AgentModel } from '../workloop/workflow'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { resolveCharacterConfig } from '../../shared/characters'
@@ -16,7 +16,7 @@ it.skipIf(!process.env.CHOUYU_COUNTS_ACCEPTANCE)('live metadata corrections use 
   const data = JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG!), resolved = resolveCharacterConfig(data.characters[0], data.config)
   if (!resolved.ok) throw Error('验收模型不可用')
   const config = { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }
-  const directory = mkdtempSync(join(tmpdir(), 'chouyu-live-counts-')), store = new AgentStore(join(directory, 'agents.db'))
+  const directory = mkdtempSync(join(tmpdir(), 'chouyu-live-counts-')), store = new TaskCenter(join(directory, 'agents.db'))
   const authorBody = readFileSync(new URL('./fixtures/oversized-opening.txt', import.meta.url), 'utf8')
   const review = JSON.parse(readFileSync(new URL('./fixtures/reviewer-count.json', import.meta.url), 'utf8')) as { body: string; summary: string }
   const records: { owner: string; output: string; metadata: AIResponseMetadata }[] = []

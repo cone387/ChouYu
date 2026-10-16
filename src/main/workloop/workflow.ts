@@ -1,26 +1,26 @@
 const fileDeliveryInstruction = '\nFormal delivery may include fileIds, but only IDs returned by successful skill tools in this run. Inputs and temporary work files are not completed deliverables; include only files that actually fulfil the requested output. Never invent IDs or infer success from a filename.\n'
-import { contactMessageInstruction } from './contact-message'
-import { reviewTaskQuestion, taskBoundaryInstruction } from './task-boundary'
-import { reviewTaskCompletion, taskCompletionInstruction } from './task-completion'
-import { TokenBudgetError } from './token-budget'
+import { contactMessageInstruction } from '../agents/contact-message'
+import { reviewTaskQuestion, taskBoundaryInstruction } from '../agents/task-boundary'
+import { reviewTaskCompletion, taskCompletionInstruction } from '../agents/task-completion'
+import { TokenBudgetError } from '../agents/token-budget'
 import { taskInputInstruction, presentationInstruction } from '../../shared/agent-delivery-instructions'
-import { revisePresentation } from './presentation-revision'
+import { revisePresentation } from '../agents/presentation-revision'
 import Database from 'better-sqlite3'
 import { validateTaskResourceBudget, type TaskResourceBudget } from '../../shared/agent-resources'
 import { Annotation, StateGraph, START, END, interrupt, Command } from '@langchain/langgraph'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { agentUsesPlanner, validateTopicProgress, type AgentEvidence, type AgentReport, type AgentSettings, type AgentTopic, type AgentTopicProgress } from '../../shared/agents'
-import { AgentStore } from './store'
-import { readSource } from './sources'
-import { InvalidContactReferenceError, ResearchPlanFormatError, researchPlanValue, validateContactSelection, InvalidSectionReferenceError, parseResearchPlan, researchUrl, searchBrave, type AgentSearcher } from './research'
+import { TaskCenter } from '../task-center/store'
+import { readSource } from '../agents/sources'
+import { InvalidContactReferenceError, ResearchPlanFormatError, researchPlanValue, validateContactSelection, InvalidSectionReferenceError, parseResearchPlan, researchUrl, searchBrave, type AgentSearcher } from '../agents/research'
 import type { AgentResearchPlan, AgentResearch } from '../../shared/agents'
-import { ContactSources } from './contact-sources'
-import { AgentOutputFormatError, AgentOutputTruncatedError } from './model-output'
-import { WritingRecovery } from './writing-recovery'
-import { safeAgentFailure } from './failure'
-import { deliveryLengthInstruction, enforceDeliveryLength } from './delivery-length'
-import { correctDeliveryCounts, textCountFacts, textCountInstruction } from './delivery-counts'
-import { ChapterContinuationError, chapterContinuationPrompt, chapterInstruction, planChapterContinuation, validateChapterContinuation } from './chapter-continuation'
+import { ContactSources } from '../agents/contact-sources'
+import { AgentOutputFormatError, AgentOutputTruncatedError } from '../agents/model-output'
+import { WritingRecovery } from '../agents/writing-recovery'
+import { safeAgentFailure } from '../agents/failure'
+import { deliveryLengthInstruction, enforceDeliveryLength } from '../agents/delivery-length'
+import { correctDeliveryCounts, textCountFacts, textCountInstruction } from '../agents/delivery-counts'
+import { ChapterContinuationError, chapterContinuationPrompt, chapterInstruction, planChapterContinuation, validateChapterContinuation } from '../agents/chapter-continuation'
 import { calculateEvaluations, evaluationInstruction, evaluationMarkdown, evaluationSummary, type AgentEvaluation } from '../../shared/agent-evaluation'
 import { validateDeliveryUpdate, validateDeliveryPlan, type DeliveryPlan, type DeliveryUpdate, type AgentDelivery } from '../../shared/agent-delivery'
 import { contactOutputInstruction } from '../../shared/contact-output'
@@ -42,7 +42,7 @@ function parseBrief(raw: string): Brief {
   if (plan.stages.some(stage => stage.status !== 'pending')) throw new Error('接单时的阶段尚未执行，不能标为进行中或完成。')
   return { title: value.title.trim(), nextStep: value.nextStep.trim(), question: value.question.trim(), plan, ...(value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }
 }
-async function reviewBrief(store: AgentStore, runId: string, topic: AgentTopic | undefined, model: AgentModel, signal: AbortSignal, live: () => void, raw: string): Promise<Brief> {
+async function reviewBrief(store: TaskCenter, runId: string, topic: AgentTopic | undefined, model: AgentModel, signal: AbortSignal, live: () => void, raw: string): Promise<Brief> {
   live()
   try { return parseBrief(raw) } catch { /* One durable correction; premature prose is never a saved delivery. */ }
   if (store.db.prepare("SELECT 1 FROM events WHERE run_id=? AND kind='brief-format-repair'").get(runId)) throw new Error('接单计划已纠正过一次但仍无效，尚未保存或交付正文。')
@@ -83,11 +83,11 @@ export function parseDraft(raw: string, evidenceCount?: number, evaluationRequir
   const field = (key: string, max: number, required = false) => { const text = value && value[key]; if (typeof text !== 'string' || text.length > max || required && !text.trim()) throw new Error(`成果字段 ${key} 无效（${text == null ? '缺失或为空值' : typeof text !== 'string' ? '类型应为字符串' : text.length > max ? `长度 ${text.length} 超过 ${max}` : '不得为空字符串'}）。`); return text.trim() }
   return { evaluations, resourceBudget: budgetAllocated || value.resourceBudget === undefined ? undefined : validateTaskResourceBudget(value.resourceBudget), title: field('title', 160, true), body: field('body', 10000, true), nextStep: field('nextStep', 1000), question: field('question', 1000), progress, delivery, memories: Array.isArray(value.memories) ? value.memories.filter((m): m is string => typeof m === 'string' && m.length > 0 && m.length <= 2000).slice(0, 3) : [] }
 }
-export class AgentRuntime {
+export class WorkStrategyRuntime {
   readonly contactSources: ContactSources
   readonly checkpoints: SqliteSaver
   private db: Database.Database
-  constructor(readonly store: AgentStore, checkpointPath: string, private reader = readSource, private searcher: AgentSearcher = searchBrave) {
+  constructor(readonly store: TaskCenter, checkpointPath: string, private reader = readSource, private searcher: AgentSearcher = searchBrave) {
     this.contactSources = new ContactSources(store)
     this.db = new Database(checkpointPath); this.db.pragma('journal_mode = WAL'); this.db.pragma('busy_timeout = 5000')
     this.checkpoints = new SqliteSaver(this.db)
@@ -97,7 +97,7 @@ export class AgentRuntime {
     const run = this.store.assertLive(runId)
     const deliveryInstruction = baseDeliveryInstruction + contactOutputInstruction + '\n实际阅读偏好（联系人到当前任务，后者优先，仅影响表达与排版）：' + JSON.stringify(this.store.outputs.list(run.character_id, run.topic_id ?? undefined).map(item => item.preference))
     if (JSON.parse(run.input).revisionScope === 'presentation') return revisePresentation(this.store, runId, soul, model, signal, changed)
-    let input = JSON.parse(run.input) as { handoffPin?: import('./handoffs').HandoffPin; citationContext?: string; revisionSectionId?: string; deliveryVersion?: number; delivery?: Pick<AgentDelivery, 'version' | 'summary' | 'stages' | 'completionCriteria' | 'sections' | 'inputs' | 'presentation'> & { directory: { id: string; title: string }[] }; feedback?: string; assignment?: boolean; brief?: Brief; briefAnswer?: string; researchVersion?: number; baseline?: { evidence: { url: string; hash: string }[]; topicRevision: number }; settings: AgentSettings; topic?: AgentTopic; memories: unknown[]; previous: unknown[]; conversation: string }
+    let input = JSON.parse(run.input) as { handoffPin?: import('../agents/handoffs').HandoffPin; citationContext?: string; revisionSectionId?: string; deliveryVersion?: number; delivery?: Pick<AgentDelivery, 'version' | 'summary' | 'stages' | 'completionCriteria' | 'sections' | 'inputs' | 'presentation'> & { directory: { id: string; title: string }[] }; feedback?: string; assignment?: boolean; brief?: Brief; briefAnswer?: string; researchVersion?: number; baseline?: { evidence: { url: string; hash: string }[]; topicRevision: number }; settings: AgentSettings; topic?: AgentTopic; memories: unknown[]; previous: unknown[]; conversation: string }
     const live = () => {
       signal.throwIfAborted(); this.store.assertLive(runId)
       for (const ref of this.store.research(runId)?.plan.contactRefs ?? []) this.contactSources.allowed(run.character_id, ref.characterId)

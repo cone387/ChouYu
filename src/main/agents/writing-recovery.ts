@@ -1,8 +1,8 @@
 import { contactMessageInstruction } from './contact-message'
 import { createHash } from 'node:crypto'
 import { textCountFacts, textCountInstruction } from './delivery-counts'
-import type { AgentStore } from './store'
-import type { AgentModel } from './runtime'
+import type { TaskCenter } from '../task-center/store'
+import type { AgentModel } from '../workloop/workflow'
 import { AgentOutputTruncatedError } from './model-output'
 
 const END = '[[SECTION_END]]'
@@ -16,7 +16,7 @@ function recoveryCommentary(text: string) {
 /** Unpublished text, separate from deliverables and memories. One draft per task/context. */
 export class WritingRecovery {
   private key: string
-  constructor(private store: AgentStore, private runId: string, context: unknown) {
+  constructor(private store: TaskCenter, private runId: string, context: unknown) {
     this.key = createHash('sha256').update(JSON.stringify(context)).digest('hex')
     store.db.exec(`CREATE TABLE IF NOT EXISTS writing_drafts (
       topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,

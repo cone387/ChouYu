@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { deliveryText, textHash } from '../../shared/contact-content'
 import { citationContext, validateCitation } from './citations'
 
-const stores: AgentStore[] = []
+const stores: TaskCenter[] = []
 afterEach(() => stores.splice(0).forEach(s => s.close()))
 function fixture() {
-  const store = new AgentStore(':memory:'); stores.push(store)
+  const store = new TaskCenter(':memory:'); stores.push(store)
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '写故事' })
   const topic = store.overview('alice').topics[0], runId = store.createRun('alice', '')
   const body = '重复😀\n\n重复😀', text = deliveryText(body)

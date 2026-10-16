@@ -1,13 +1,13 @@
 import { afterEach, expect, it } from 'vitest'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-const stores: AgentStore[] = []
+const stores: TaskCenter[] = []
 afterEach(() => stores.splice(0).forEach(store => store.close()))
 function fixture() {
-  const store = new AgentStore(':memory:'); stores.push(store)
+  const store = new TaskCenter(':memory:'); stores.push(store)
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'Write', enabled: false })
   const topic = store.topics.create('alice', { title: 'Draft', goal: 'Write', constraints: '' }, 'user')
   const runId = store.createRun('alice', '', Date.now(), topic.id)
@@ -47,7 +47,7 @@ it('rejects invalid names, limits, wrong run provenance and corrupt archived byt
 })
 it('commits bytes and metadata together, recovers immutable chat files on reopen and keeps cancelled work informal', () => {
   const root = mkdtempSync(join(tmpdir(), 'contact-file-archive-')), filename = join(root, 'files.db')
-  let store = new AgentStore(filename)
+  let store = new TaskCenter(filename)
   try {
     store.ensure('alice'); store.memoryLibrary.registerSessions('alice', ['session'])
     const context = { characterId: 'alice', skillId: 'writer', sessionId: 'session', requestId: 'chat-request' }
@@ -56,7 +56,7 @@ it('commits bytes and metadata together, recovers immutable chat files on reopen
     expect(store.db.prepare('SELECT count(*) AS n FROM contact_file_bytes').get()).toEqual({ n: 0 })
     store.db.exec('DROP TRIGGER fail_file')
     const [file] = store.files.archive(context, [{ name: 'note.txt', bytes: Buffer.from('old bytes') }])
-    store.close(); store = new AgentStore(filename)
+    store.close(); store = new TaskCenter(filename)
     expect(Buffer.from(store.files.read('alice', file.id).bytes).toString()).toBe('old bytes')
     expect(store.files.list('alice')[0].context).toEqual(context)
     expect(() => store.files.archive({ ...context, sessionId: 'foreign' }, [])).toThrow()

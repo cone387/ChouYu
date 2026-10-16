@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { contactSkillLibrary, contactSkillRunner } from '../skills'
 import { skillToolRuntime } from '../skills/tools'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { waitForRenderer } from './storage-smoke'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { DEFAULT_CHARACTER_ID } from '../../shared/characters'
@@ -19,7 +19,7 @@ export async function runContactCapabilitySmoke(window: BrowserWindow, owner: st
   const library = contactSkillLibrary(), runner = contactSkillRunner()
   library.publish('output-fixture', root); library.configure(owner, 'output-fixture', 'enable', library.list(owner).revision)
   await run(`window.electronAPI.agents.save(${JSON.stringify(owner)},${JSON.stringify({ ...DEFAULT_AGENT_SETTINGS, goal: 'File test', enabled: false })})`)
-  const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   try {
     const before = store.topics.list(owner).length
     await click('[data-agent-tab=skills]'); await waitForRenderer(window, "Boolean(document.querySelector('[data-skill-library]'))"); await click('[data-skill-library]')

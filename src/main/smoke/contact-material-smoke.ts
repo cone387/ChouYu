@@ -1,7 +1,7 @@
 import { app, dialog, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { restartAgentsForSmoke } from '../agents'
 import { getActiveSession, getConfig, saveConfig, selectChatSession, flushDatabase } from '../database'
 import { waitForRenderer } from './storage-smoke'
@@ -9,7 +9,7 @@ export async function runContactMaterialSmoke(window: BrowserWindow, owner: stri
   const run = (s: string) => window.webContents.executeJavaScript(s), ownerJson = JSON.stringify(owner)
   const click = (selector: string) => run(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e||e.disabled)throw Error('Missing material control');e.click()})()`)
   const fill = (selector: string, value: string) => run(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}))})()`)
-  const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   const active = getActiveSession().id, config = getConfig()
   try {
     await click('[data-agent-tab=materials]'); await waitForRenderer(window, "Boolean(document.querySelector('[data-material-new]'))")

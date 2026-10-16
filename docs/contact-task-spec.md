@@ -361,13 +361,15 @@ ChouYu 的助手定位不要求独立 UI。联系人能力可以不同，任务�
 
 - [公共任务页面](../src/renderer/src/components/Contacts/ContactTopics.tsx)、[公共表单](../src/renderer/src/components/Contacts/ContactTaskDialog.tsx)、[任务数据适配](../src/renderer/src/components/Contacts/contactTaskPresentation.ts)。
 - [任务请求解析](../src/main/assistant-routines/gateway.ts)、[定时执行与历史](../src/main/assistant-routines/service.ts)、[晨报生成与投递](../src/main/assistant-routines/index.ts)、[主动工作检查](../src/main/assistant-routines/companion.ts)。
-- [联系人执行服务](../src/main/agents/service.ts)、[联系人持久化](../src/main/agents/store.ts)、[导航](../src/renderer/src/components/Contacts/contactNavigation.tsx)。
+- [联系人运行空间](../src/main/agent-space/service.ts)、[持续工作模块](../src/main/workloop/loop.ts)、[联系人任务持久化](../src/main/task-center/store.ts)、[导航](../src/renderer/src/components/Contacts/contactNavigation.tsx)。
 
 2026-10-16 用户纠正执行器入口：每位联系人（包括 ChouYu）在现有资料编辑弹窗独立选择聊天执行引擎，不使用启动环境变量。默认原生；保存成功后下一次普通聊天生效，无需重启，进行中的请求保持原引擎。旧数据默认原生，修改其他字段保留引擎，过期或保存失败不覆盖并保留表单；后台任务仍沿用原流程，界面说明 DSH 当前支持范围。验收覆盖独立设置、重启保存、切回原生、旧表单冲突和真实界面选择，结果记于 [DSH 接入验收](dsh-harness-acceptance-20261015.md)。
 
 2026-10-16 内置 Harness 模块化：普通聊天统一经过模块注册、能力校验与请求协调，原生 ID 为 `native`，DSH 为 `dsh`；移除旧原生包装和执行入口。后台任务、日记、晨报与主动检查迁移到同一原生模型循环，保留原调度、逐轮预算、总时限和交流/来源规则，不随普通聊天引擎选择切换。原生确认返回待处理卡，DSH 等待真实保存回执；发送卡片不能被当成业务完成。任务界面、单描述设置和主动未读闪烁保持现行约定。实现、实际界面回归与未完成发布门槛见 [本轮验收](native-harness-acceptance-20261016.md)。
 
 ## 11. 验收规范
+
+2026-10-16 AgentSpace 重构：联系人后台拆为运行空间、独立联系人实例与可装卸 WorkLoop，联系人任务存储迁至系统级 TaskCenter 入口，结果事务与原任务交互不变。新增全局执行名额和联系人轮转；命令按联系人排序，生命周期同步为全局屏障。单个 RPC 超时不再直接杀死共享进程，改为独立探活后判定失联。后台模型经 Harness 模块的逐轮预算能力入口；DSH 后台契约尚未具备，普通聊天的执行器选择范围不扩大。用户待办、ChouYu 定时引擎及普通聊天的模块迁移不是本次已实现项。验证与剩余边界见 [AgentSpace 验收记录](agentspace-refactor-acceptance-20261016.md)。
 
 每次变更选择受影响项验证并记录结果，不能只凭截图证明保存，也不能只凭接口测试证明交互。
 

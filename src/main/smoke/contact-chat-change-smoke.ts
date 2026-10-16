@@ -1,7 +1,7 @@
 import { app, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { createCharacter, createChatSession, listCharacters } from '../database'
 import { invokeContactChat } from './contact-card-helper'
@@ -13,7 +13,7 @@ export async function runContactChatChangeSmoke(window: BrowserWindow) {
   const session = createChatSession('聊天修改验收', character.id).activeSession.id
   const directory = join(app.getPath('userData'), 'contact-agents')
   mkdirSync(directory, { recursive: true })
-  const store = new AgentStore(join(directory, 'agents.db'))
+  const store = new TaskCenter(join(directory, 'agents.db'))
   let topicId: string
   try {
     store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '评价产品idea', enabled: false, defaultTaskTokenLimit: 5000 })
@@ -30,7 +30,7 @@ export async function runContactChatChangeSmoke(window: BrowserWindow) {
   const saved = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
   const topic = saved.topics.find((t: { id: string }) => t.id === topicId)
   if (!topic.separateEvaluations || !topic.constraints.includes('一个') || !topic.requestLog.includes(request.messages[0].content) || topic.status !== 'paused') throw new Error('Chat change was not durably applied or resumed a paused task')
-  const fixture = new AgentStore(join(directory, 'agents.db'))
+  const fixture = new TaskCenter(join(directory, 'agents.db'))
   let runId: string
   try {
     fixture.changeTopic(character.id, topicId, topic.revision, { status: 'planned', reason: '隔离验收已有工作' })

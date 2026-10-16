@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
-import { AgentRuntime, parseDraft } from './runtime'
-import { AgentService, type AgentIdentity } from './service'
+import { TaskCenter } from '../task-center/store'
+import { WorkStrategyRuntime, parseDraft } from '../workloop/workflow'
+import { AgentSpace, type ContactIdentity } from '../agent-space/service'
 import { evidenceFromText, publicAddress } from './sources'
 import { DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 
@@ -17,7 +17,7 @@ const reader = vi.fn(async () => evidence)
 const draft = { title: '本轮机会假设', body: '资料 [1] 提到了需求，尚未验证付费意愿。', nextStep: '下轮跟进需求证据', memories: ['付费意愿仍是待验证假设'], question: '', progress: { judgement: '需求存在，付费意愿尚未验证。', openQuestions: '用户是否付费？', nextStep: '下轮跟进需求证据', reason: '资料 [1] 提到了需求，但没有付费证据。', status: 'needs_evidence' } }
 afterEach(async () => { reader.mockClear(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 function fixture() {
-  const dir = directory(), store = new AgentStore(join(dir, 'store.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'), reader)
+  const dir = directory(), store = new TaskCenter(join(dir, 'store.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), reader)
   cleanups.push(() => store.close(), () => runtime.close())
   store.save('alice', settings); store.save('bob', settings)
   return { dir, store, runtime }
@@ -34,7 +34,7 @@ describe('contact agent durability and isolation', () => {
       return new Response(payloads.map(p => `data: ${JSON.stringify(p)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
     })
     cleanups.push(() => fetchMock.mockRestore())
-    const service = new AgentService(directory(), () => {}, undefined, reader)
+    const service = new AgentSpace(directory(), () => {}, undefined, reader)
     cleanups.push(() => service.close())
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     await service.request('save', 'alice', [settings])
@@ -106,7 +106,7 @@ describe('contact agent durability and isolation', () => {
     await runtime.execute(run, 'Alice', async () => JSON.stringify({ ...draft, question: '你更熟悉哪个行业？' }), new AbortController().signal)
     expect(store.detail('alice', run).run.status).toBe('waiting')
     runtime.close(); store.close(); cleanups.splice(0)
-    const reopened = new AgentStore(join(dir, 'store.db')), recovered = new AgentRuntime(reopened, join(dir, 'checkpoints.db'), reader)
+    const reopened = new TaskCenter(join(dir, 'store.db')), recovered = new WorkStrategyRuntime(reopened, join(dir, 'checkpoints.db'), reader)
     cleanups.push(() => reopened.close(), () => recovered.close())
     reopened.recover(); reopened.answer('alice', run, '开发者工具')
     const model = vi.fn(async () => { throw new Error('must not call') })
@@ -175,9 +175,9 @@ describe('contact agent durability and isolation', () => {
   it('removes a role while a model call is in flight and cannot resurrect its records', async () => {
     const dir = directory(); let started!: () => void
     const entered = new Promise<void>(r => { started = r })
-    const service = new AgentService(dir, () => {}, () => async (_prompt, signal) => { started(); await new Promise<void>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })); return JSON.stringify(draft) }, reader)
+    const service = new AgentSpace(dir, () => {}, () => async (_prompt, signal) => { started(); await new Promise<void>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })); return JSON.stringify(draft) }, reader)
     cleanups.push(() => service.close())
-    const identity: AgentIdentity = { id: 'alice', soul: 'Alice', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'private-provider-secret', model: 'test', thinkingDisabledModels: [] } }
+    const identity: ContactIdentity = { id: 'alice', soul: 'Alice', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'private-provider-secret', model: 'test', thinkingDisabledModels: [] } }
     await service.sync([identity]); await service.request('save', 'alice', [settings]); await service.request('run', 'alice')
     await entered
     expect(JSON.stringify(service.store.db.prepare('SELECT input FROM runs').all())).not.toContain('private-provider-secret')
@@ -188,7 +188,7 @@ describe('contact agent durability and isolation', () => {
   })
   it('automatically schedules enabled contacts, leaves others idle, and respects the next due time', async () => {
     const model = vi.fn(async () => JSON.stringify(draft))
-    const service = new AgentService(directory(), () => {}, () => model, reader)
+    const service = new AgentSpace(directory(), () => {}, () => model, reader)
     cleanups.push(() => service.close())
     const config = { provider: 'openai' as const, baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] }
     await service.sync(['alice', 'bob'].map(id => ({ id, soul: id, conversation: '', config })))

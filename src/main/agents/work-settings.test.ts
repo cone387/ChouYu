@@ -2,15 +2,15 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-import { AgentService } from './service'
+import { AgentSpace } from '../agent-space/service'
 
 const cleanups: (() => void)[] = []
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-work-settings-'))
-  const path = join(dir, 'agents.db'), store = new AgentStore(path)
+  const path = join(dir, 'agents.db'), store = new TaskCenter(path)
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }), () => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '写作', enabled: true, dailyCalls: 100, dailyTokenLimit: 10000, defaultTaskTokenLimit: 6000 }, Date.now(), false)
   return { store, path }
@@ -23,7 +23,7 @@ it('persists independent contact confirmation policies without cancelling waitin
   const before = store.overview('alice')
   store.save('alice', { ...before.settings, toolPermissionMode: 'full' }, Date.now(), false, before.revision)
   store.save('bob', { ...DEFAULT_AGENT_SETTINGS, goal: '另一个联系人' }, Date.now(), false)
-  const reopened = new AgentStore(path); cleanups.push(() => reopened.close())
+  const reopened = new TaskCenter(path); cleanups.push(() => reopened.close())
   expect(reopened.overview('alice').settings).toMatchObject({ toolPermissionMode: 'full' })
   expect(reopened.overview('bob').settings.toolPermissionMode).toBeUndefined()
   expect(reopened.getRun(run.id)?.status).toBe('waiting')
@@ -64,7 +64,7 @@ it('reserves before requests, settles actual usage and preserves unknown usage a
   store.tokens.settle(second.key!, {})
   expect(store.tokens.usage('alice').today).toBe(3517)
   expect(store.tokens.usage('alice').estimated).toBe(1)
-  const reopened = new AgentStore(path); cleanups.push(() => reopened.close())
+  const reopened = new TaskCenter(path); cleanups.push(() => reopened.close())
   expect(reopened.tokens.usage('alice').today).toBe(3517)
   reopened.deleteTopic('alice', task.id, reopened.topics.get('alice', task.id).revision)
   expect(reopened.tokens.usage('alice').today).toBe(3517)
@@ -114,7 +114,7 @@ it('allows unrelated settings changes after the automatic deadline expires', () 
 it('blocks the actual model before assignment parsing and resumes after a daily cap increase', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-token-service-'))
   const model = vi.fn(async () => JSON.stringify({ title: '写作', nextStep: '了解主题', question: '写什么主题？', plan: { completionCriteria: '完成文章', stages: [{ id: 'draft', title: '写作', status: 'pending' }] } }))
-  const service = new AgentService(dir, () => {}, () => model)
+  const service = new AgentSpace(dir, () => {}, () => model)
   try {
     service.store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '写作', dailyTokenLimit: 100, dailyCalls: 100 }, Date.now(), false)
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'http://127.0.0.1:1', model: 'synthetic', apiKey: 'synthetic', thinkingDisabledModels: [] } }])
@@ -154,7 +154,7 @@ it('cleans obsolete deadlines on restart and can enable automatic work with the 
   store.focusTopic('alice', task.id)
   const before = store.overview('alice')
   store.db.prepare('UPDATE profiles SET settings=? WHERE character_id=?').run(JSON.stringify({ ...before.settings, enabled: false, workUntil: 1 }), 'alice')
-  const reopened = new AgentStore(path); cleanups.push(() => reopened.close())
+  const reopened = new TaskCenter(path); cleanups.push(() => reopened.close())
   expect(JSON.parse(reopened.profile('alice')!.settings)).not.toHaveProperty('workUntil')
   expect(reopened.overview('alice').revision).toBe(before.revision)
   reopened.save('alice', { ...reopened.overview('alice').settings, enabled: true }, Date.now(), false, before.revision)

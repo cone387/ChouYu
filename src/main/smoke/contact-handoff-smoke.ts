@@ -1,7 +1,7 @@
 import { app, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { createCharacter, getActiveSession, selectChatSession, flushDatabase } from '../database'
 import { restartAgentsForSmoke } from '../agents'
@@ -28,7 +28,7 @@ export async function runContactHandoffSmoke(window: BrowserWindow, owner: strin
   }
   const fill = (selector: string, value: string, select = false) => run(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLTextAreaElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}))})()`)
   const navigate = (target: unknown) => run(`new Promise((resolve,reject)=>{const detail={target:${JSON.stringify(target)},handled:false,resolve,reject};window.dispatchEvent(new CustomEvent('chouyu:contact-navigation',{detail}));if(!detail.handled)reject(Error('No navigation handler'))})`)
-  const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db')), active = getActiveSession().id
+  const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db')), active = getActiveSession().id
   try {
     const reviewer = createCharacter({ name: '交接评审者', model: 'review-model', soulMd: '依据实际稿件提出独立意见。' })
     for (const id of [owner, reviewer.id]) {

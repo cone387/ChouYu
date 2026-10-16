@@ -1,9 +1,9 @@
 import { containsSecret } from '../../shared/memory'
-import type { AgentStore } from './store'
+import type { TaskCenter } from '../task-center/store'
 import type { AgentOverview } from '../../shared/agents'
 import type { RegisteredTool } from '../tools/registry'
 
-export function saveDeliveryFeedback(store: AgentStore, owner: string, topicId: string, revision: number, version: number, action: string, reason: string, conversation: string) {
+export function saveDeliveryFeedback(store: TaskCenter, owner: string, topicId: string, revision: number, version: number, action: string, reason: string, conversation: string) {
   store.db.exec(`CREATE TABLE IF NOT EXISTS contact_delivery_feedback (
     id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,
     topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, version INTEGER NOT NULL,

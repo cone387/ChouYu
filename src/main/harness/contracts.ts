@@ -93,4 +93,23 @@ export interface HarnessModule {
     adapter: HarnessAdapter;
     confirmation(input: HarnessInput): HarnessConfirmation;
     lifecycle?: HarnessLifecycle;
+    /** Background execution is opt-in: every provider round must preserve host accounting. */
+    background?: BackgroundHarness;
 }
+
+export interface BackgroundHarnessInput {
+    messages: AIChatMessage[];
+    systemPrompt: string;
+    config: AppConfig;
+    signal: AbortSignal;
+    tools?: HarnessToolRuntime;
+    onChunk(chunk: string, done: boolean): void;
+    options?: {
+        timeoutMs?: number;
+        maxOutputTokens?: number;
+        beforeRound?(round: number, serializedInput: string): number | undefined | Promise<number | undefined>;
+        afterRound?(): void;
+        onMetadata?(metadata: AIResponseMetadata): void;
+    };
+}
+export interface BackgroundHarness { run(input: BackgroundHarnessInput): Promise<void> }

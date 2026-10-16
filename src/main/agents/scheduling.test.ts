@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentStore } from './store'
-import { AgentService } from './service'
+import { TaskCenter } from '../task-center/store'
+import { AgentSpace } from '../agent-space/service'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 const cleanup: (() => void | Promise<void>)[] = []
@@ -14,7 +14,7 @@ function directory() {
   return dir
 }
 function fixture() {
-  const path = join(directory(), 'agents.db'), store = new AgentStore(path)
+  const path = join(directory(), 'agents.db'), store = new TaskCenter(path)
   cleanup.push(() => store.close())
   return { store, path }
 }
@@ -29,7 +29,7 @@ describe('persistent contact task scheduling', () => {
     const firstRun = store.overview('alice').runs[0]
     store.setStatus(firstRun.id, 'completed')
     store.changeTopic('alice', first.id, first.revision, { status: 'completed', reason: 'Finished' })
-    const reopened = new AgentStore(path); cleanup.push(() => reopened.close())
+    const reopened = new TaskCenter(path); cleanup.push(() => reopened.close())
     expect(reopened.overview('alice').queuedTopicIds).toEqual([second.id, third.id])
     expect(reopened.nextScheduledTopic('alice')).toBe(second.id)
     const run = reopened.startScheduledTopic('alice', second.id, 'later chat')
@@ -67,7 +67,7 @@ describe('persistent contact task scheduling', () => {
     const second = store.assignTopic('alice', 'Second task', '')
     expect(store.nextScheduledTopic('alice')).toBeUndefined()
     expect(store.nextScheduledTopic('alice', Date.now() + 86400000)).toBe(second.id)
-    const reopened = new AgentStore(path); cleanup.push(() => reopened.close())
+    const reopened = new TaskCenter(path); cleanup.push(() => reopened.close())
     reopened.save('alice', { ...reopened.overview('alice').settings, dailyCalls: 6 }, Date.now(), false)
     expect(reopened.nextScheduledTopic('alice')).toBe(second.id)
     expect(reopened.callCount('alice')).toBe(3)
@@ -99,7 +99,7 @@ describe('persistent contact task scheduling', () => {
     const gate = new Promise<void>(resolve => { release = resolve })
     let secondStarted = false, concurrent = 0, peak = 0
     const stages = [{ id: 'draft', title: 'Draft', status: 'pending' }]
-    const service = new AgentService(dir, () => {}, () => async prompt => {
+    const service = new AgentSpace(dir, () => {}, () => async prompt => {
       concurrent++; peak = Math.max(peak, concurrent)
       try {
         if (prompt.startsWith('任务结束核对')) return JSON.stringify({ mode: 'finite', satisfied: true, endsAt: null, reason: '要求的初稿已保存', nextStep: '', completionCriteria: 'A draft' })
@@ -156,7 +156,7 @@ it.each([false, true])('requires structured prose and schedules only actual chan
   const first = finish('陆沉拨动琴弦，灯火随之摇曳。')
   const topicId = store.getRun(first)!.topic_id!
   expect(store.deliveries.get(topicId)?.sections[0].body).toContain('灯火')
-  const reopened = new AgentStore(path); cleanup.push(() => reopened.close())
+  const reopened = new TaskCenter(path); cleanup.push(() => reopened.close())
   expect(reopened.nextScheduledTopic('alice', Date.now() + 100)).toBe(paceWriting ? undefined : topicId)
   const second = finish('陆沉拨动琴弦，灯火随之摇曳。')
   expect(store.detail('alice', second).events.some(e => e.kind === 'continuing')).toBe(false)

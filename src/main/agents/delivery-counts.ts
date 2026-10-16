@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { AgentEvidence, AgentTopic, AgentTopicProgress } from '../../shared/agents'
 import type { DeliveryUpdate } from '../../shared/agent-delivery'
-import type { AgentModel } from './runtime'
-import type { AgentStore } from './store'
+import type { AgentModel } from '../workloop/workflow'
+import type { TaskCenter } from '../task-center/store'
 import { deliveryTextLength } from './delivery-length'
 import { researchPlanValue } from './research'
 
@@ -52,7 +52,7 @@ function metadata(draft: Candidate): Partial<Record<Field, string>> {
     ...(draft.progress ? { 'progress.judgement': draft.progress.judgement, 'progress.reason': draft.progress.reason } : {}) }
 }
 
-export async function correctDeliveryCounts<T extends Candidate>(store: AgentStore, runId: string, topic: AgentTopic, draft: T, evidence: AgentEvidence[],
+export async function correctDeliveryCounts<T extends Candidate>(store: TaskCenter, runId: string, topic: AgentTopic, draft: T, evidence: AgentEvidence[],
   model: AgentModel, signal: AbortSignal, live: () => void, validate: (raw: string) => T): Promise<T> {
   const section = draft.delivery?.section
   if (!section) return draft

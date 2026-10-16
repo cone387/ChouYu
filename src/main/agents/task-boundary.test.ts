@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentStore } from './store'
-import { AgentRuntime } from './runtime'
+import { TaskCenter } from '../task-center/store'
+import { WorkStrategyRuntime } from '../workloop/workflow'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 const cleanups: (() => void)[] = []
@@ -16,10 +16,10 @@ const optional = { ...draft, question: '是否认可此MVP验证计划，直接�
 const optionalDecision = { blocking: false, reason: '用户只要求持续产出，招募不是原任务的前置条件', missingInformation: '', nextStep: '继续产出下一个 idea' }
 function fixture(enabled = true) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-boundary-'))
-  let store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+  let store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '持续产出 AI 产品 idea，只交付想法和验证方法', enabled, dailyCalls: 100, intervalMinutes: 15 })
   cleanups.push(() => { runtime.close(); store.close(); rmSync(dir, { recursive: true, force: true }) })
-  return { get store() { return store }, get runtime() { return runtime }, reopen() { runtime.close(); store.close(); store = new AgentStore(join(dir, 'agents.db')); runtime = new AgentRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
+  return { get store() { return store }, get runtime() { return runtime }, reopen() { runtime.close(); store.close(); store = new TaskCenter(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
 }
 const json = JSON.stringify
 it('rejects an optional expansion, produces the original deliverable, and never invents an answer', async () => {

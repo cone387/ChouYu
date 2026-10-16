@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentService } from './service'
-import { AgentStore } from './store'
+import { AgentSpace } from '../agent-space/service'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 import { evidenceFromText } from './sources'
 import { createContactTools } from './tools'
@@ -21,7 +21,7 @@ const writingResult = () => JSON.stringify({ ...JSON.parse(result()), delivery: 
 async function fixture(limit?: number, ignoreAbort = false) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-task-concurrency-'))
   const pending: { signal: AbortSignal; resolve: (s: string) => void; reject: (e: Error) => void }[] = []
-  const service = new AgentService(dir, () => {}, () => async (_prompt, signal) => new Promise<string>((resolve, reject) => {
+  const service = new AgentSpace(dir, () => {}, () => async (_prompt, signal) => new Promise<string>((resolve, reject) => {
     signal.throwIfAborted(); pending.push({ signal, resolve, reject })
     if (!ignoreAbort) signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })
   }), async () => evidenceFromText(settings.sources[0], 'Actual evidence. '.repeat(100)))
@@ -45,14 +45,15 @@ it('persists the per-contact limit and rejects invalid counts without overwritin
   for (const maxConcurrentTasks of [0, -1, 1.5, NaN, Infinity, '2', null]) {
     expect(() => validateAgentSettings({ ...settings, maxConcurrentTasks })).toThrow()
   }
-  const reopened = new AgentStore(join(f.dir, 'agents.db'))
+  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
   try { expect(reopened.overview('alice').settings).toMatchObject({ maxConcurrentTasks: 3 }) } finally { reopened.close() }
 })
 
 it.each([undefined, 2])('runs at most the configured slots (%s) and drains queued tasks without duplicate execution', async limit => {
   const f = await fixture(limit), expected = limit ?? 1
   for (let i = 0; i < 3; i++) await f.run(i)
-  await vi.waitFor(() => expect(f.active()).toHaveLength(expected))
+  // A running graph may still be awaiting source I/O before its first model request.
+  await vi.waitFor(() => { expect(f.active()).toHaveLength(expected); expect(f.pending).toHaveLength(expected) })
   for (let i = 0; i < 5; i++) { f.service.tick(); await f.run(0) }
   expect(f.pending).toHaveLength(expected)
   expect(f.service.store.overview('alice').runs).toHaveLength(3)
@@ -120,7 +121,7 @@ it('does not let a successful task reset another task failure backoff or stop it
   expect(s.providerRecovery('alice')).toMatchObject({ topicId: f.topics[0], at: due })
   const third = s.assignTopic('alice', 'New assignment', '')
   expect(s.overview('alice').runs.some(r => r.topicId === third.id && r.status === 'queued')).toBe(true)
-  const reopened = new AgentStore(join(f.dir, 'agents.db'))
+  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
   try { expect(reopened.providerRecovery('alice')).toMatchObject({ topicId: f.topics[0], at: due }) } finally { reopened.close() }
 })
 
@@ -181,7 +182,7 @@ it('restores interrupted rounds under the saved limit without reviving a paused 
   const paused = s.topics.get('alice', f.topics[2])
   s.changeTopic('alice', paused.id, paused.revision, { status: 'paused', reason: 'Do not restart' })
   await f.service.close()
-  const resumed = new AgentService(f.dir, () => {}, () => async (_prompt, signal) => new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cleanup')), { once: true })), async () => evidenceFromText(settings.sources[0], 'Evidence. '.repeat(100)))
+  const resumed = new AgentSpace(f.dir, () => {}, () => async (_prompt, signal) => new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cleanup')), { once: true })), async () => evidenceFromText(settings.sources[0], 'Evidence. '.repeat(100)))
   cleanups.push(() => resumed.close())
   expect(resumed.store.overview('alice').runs.filter(r => r.status === 'interrupted')).toHaveLength(2)
   await resumed.sync([{ id: 'alice', soul: '', conversation: '', config }])
@@ -248,7 +249,7 @@ it('preserves legacy failure counts when upgrading during an unfinished retry', 
   for (let i = 0; i < 2; i++) { const run = s.createRun('alice', '', Date.now(), f.topics[0]); s.fail(run, 'API error 503') }
   const retry = s.createRun('alice', '', Date.now(), f.topics[0])
   s.db.exec('DROP TABLE task_failures') // Recreate the on-disk shape of the older serial build.
-  const reopened = new AgentStore(join(f.dir, 'agents.db'))
+  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
   try {
     reopened.fail(retry, 'API error 503')
     expect(reopened.profile('alice')!.failures).toBe(3)

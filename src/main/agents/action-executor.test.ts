@@ -2,11 +2,11 @@ import { expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { executeContactAction } from './action-executor'
 
 it('executes a persisted choice once, revalidates on click, and returns its durable receipt', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'action-executor-')), store = new AgentStore(join(dir, 'agents.db'))
+  const dir = mkdtempSync(join(tmpdir(), 'action-executor-')), store = new TaskCenter(join(dir, 'agents.db'))
   try {
     store.ensure('alice')
     const card = store.actions.offer('alice', 'one', { purpose: 'configuration', title: '更改名称', body: '名称改为 Alice', sessionId: 'session', subject: { kind: 'contact' }, actions: [{ id: 'save', label: '保存', tool: 'edit_contact_profile', arguments: { name: 'Alice', revision: 'profile-v1', reason: '改名' } }] })
@@ -30,7 +30,7 @@ it('never executes a stale or disabled prepared operation and retains a failed r
   expect(access.finish).not.toHaveBeenCalled()
 })
 it('records an uncertain outcome when execution succeeded but its receipt could not be saved', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'action-receipt-')), store = new AgentStore(join(dir, 'agents.db'))
+  const dir = mkdtempSync(join(tmpdir(), 'action-receipt-')), store = new TaskCenter(join(dir, 'agents.db'))
   try {
     store.ensure('alice')
     const card = store.actions.offer('alice', 'receipt', { purpose: 'configuration', title: '保存', body: '保存名称', sessionId: 'chat', subject: { kind: 'contact' }, actions: [{ id: 'save', label: '保存', tool: 'edit_contact_profile', arguments: { revision: 'v1', name: 'Alice', reason: '改名' } }] })
@@ -44,7 +44,7 @@ it('records an uncertain outcome when execution succeeded but its receipt could 
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
 })
 it('keeps a secure input out of every durable action field while passing it only to the credential writer', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'action-secret-')), store = new AgentStore(join(dir, 'agents.db'))
+  const dir = mkdtempSync(join(tmpdir(), 'action-secret-')), store = new TaskCenter(join(dir, 'agents.db'))
   try {
     store.ensure('alice')
     const card = store.actions.offer('alice', 'secret', { purpose: 'configuration', title: '搜索密钥', body: '使用安全输入保存。', sessionId: 'session', subject: { kind: 'contact' }, input: { label: '密钥', argument: 'credential', required: true, maxLength: 8192 }, actions: [{ id: 'save', label: '保存', tool: 'set_contact_search_credential', arguments: { revision: 0, reason: '更新密钥' } }] })

@@ -34,7 +34,11 @@ export class ContactAgent implements ContactModuleOwner {
   close(): Promise<void> {
     if (this.closing) return this.closing
     this.closed = true
-    this.closing = Promise.all([...this.modules.values()].map(module => module.close())).then(() => { this.modules.clear() })
+    this.closing = Promise.allSettled([...this.modules.values()].map(module => Promise.resolve().then(() => module.close()))).then(results => {
+      this.modules.clear()
+      const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failed) throw failed.reason
+    })
     return this.closing
   }
 }

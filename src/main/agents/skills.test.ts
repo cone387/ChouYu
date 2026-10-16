@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentService, type AgentIdentity } from './service'
+import { AgentSpace, type ContactIdentity } from '../agent-space/service'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { evidenceFromText } from './sources'
 import type { SkillSnapshot } from '../../shared/skills'
@@ -24,7 +24,7 @@ it('executes an actual background skill file tool and accounts for both model re
     const event = { choices: [{ delta: first ? { tool_calls: [{ index: 0, id: 'save-design', function: { name: 'write_skill_file', arguments: JSON.stringify({ skillId: 'design', path: 'notes/design.md', content: 'verified design content' }) } }] } : { content: final }, finish_reason: first ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } }
     return new Response(`data: ${JSON.stringify(event)}\n\ndata: [DONE]\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })
   }))
-  const service = new AgentService(join(root, 'agents'), () => {}, undefined, async () => evidenceFromText('https://example.com/', '事实。'.repeat(60)), undefined, id => library.snapshot(id), library.root)
+  const service = new AgentSpace(join(root, 'agents'), () => {}, undefined, async () => evidenceFromText('https://example.com/', '事实。'.repeat(60)), undefined, id => library.snapshot(id), library.root)
   cleanups.push(async () => { await service.close(); rmSync(root, { recursive: true, force: true }) })
   await service.sync([{ id: 'alice', soul: 'alice', conversation: '', skillToolsEnabled: true, config: { provider: 'openai', baseUrl: 'https://provider.example/v1', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
   await service.request('save', 'alice', [{ ...DEFAULT_AGENT_SETTINGS, goal: '评审', sources: ['https://example.com/'] }]); await service.request('run', 'alice')
@@ -40,11 +40,11 @@ it('saves the owning contact skill snapshot and does not cancel a run when skill
   const root = mkdtempSync(join(tmpdir(), 'chouyu-skill-runs-'))
   const calls: { id: string; prompt: string; signal: AbortSignal; resolve: (text: string) => void }[] = []
   let latest: SkillSnapshot | undefined
-  const service = new AgentService(root, () => {}, identity => (prompt, signal) => new Promise((resolve, reject) => {
+  const service = new AgentSpace(root, () => {}, identity => (prompt, signal) => new Promise((resolve, reject) => {
     calls.push({ id: identity.id, prompt, signal, resolve }); signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })
   }), async () => evidenceFromText('https://example.com/', '需求事实。'.repeat(40)), undefined, id => latest ?? { entries: [{ id: `${id}-review`, digest: 'a'.repeat(64) }], instruction: `${id} 的独立技能正文` })
   cleanups.push(async () => { await service.close(); rmSync(root, { recursive: true, force: true }) })
-  const identities: AgentIdentity[] = ['alice', 'bob'].map(id => ({ id, soul: id, conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] }, skills: { entries: [{ id: `${id}-review`, digest: 'a'.repeat(64) }], instruction: `${id} 的独立技能正文` } }))
+  const identities: ContactIdentity[] = ['alice', 'bob'].map(id => ({ id, soul: id, conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] }, skills: { entries: [{ id: `${id}-review`, digest: 'a'.repeat(64) }], instruction: `${id} 的独立技能正文` } }))
   await service.sync(identities)
   for (const id of ['alice', 'bob']) { await service.request('save', id, [{ ...DEFAULT_AGENT_SETTINGS, goal: '评审', sources: ['https://example.com/'] }]); await service.request('run', id) }
   await vi.waitFor(() => expect(calls).toHaveLength(2))
@@ -68,12 +68,12 @@ it('recovers an interrupted round with its saved skills after a worker restart',
   const root = mkdtempSync(join(tmpdir(), 'chouyu-skill-restart-'))
   const prompts: string[] = []
   let instruction = '原轮技能标记'
-  const create = () => new AgentService(root, () => {}, () => (prompt, signal) => new Promise((_resolve, reject) => {
+  const create = () => new AgentSpace(root, () => {}, () => (prompt, signal) => new Promise((_resolve, reject) => {
     prompts.push(prompt); signal.addEventListener('abort', () => reject(new Error('closed')), { once: true })
   }), async () => evidenceFromText('https://example.com/', '资料事实。'.repeat(40)), undefined, () => ({ entries: [], instruction }))
   let service = create()
   cleanups.push(async () => { await service.close(); rmSync(root, { recursive: true, force: true }) })
-  const identity: AgentIdentity = { id: 'alice', soul: 'alice', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }
+  const identity: ContactIdentity = { id: 'alice', soul: 'alice', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }
   await service.sync([identity])
   await service.request('save', 'alice', [{ ...DEFAULT_AGENT_SETTINGS, goal: '评审', sources: ['https://example.com/'] }])
   await service.request('run', 'alice')

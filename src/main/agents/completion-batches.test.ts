@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { completionParts, reviewCompletionBatches } from './completion-batches'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import type { DeliverySection } from '../../shared/agent-delivery'
 
@@ -11,7 +11,7 @@ const cleanup: (() => void)[] = []
 afterEach(() => { cleanup.splice(0).reverse().forEach(close => close()) })
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'completion-parts-'))
-  const store = new AgentStore(join(dir, 'agents.db'))
+  const store = new TaskCenter(join(dir, 'agents.db'))
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '写完长文', dailyCalls: 1000 })
   const run = store.createRun('alice', ''), topicId = store.getRun(run)!.topic_id!
   cleanup.push(() => { store.close(); rmSync(dir, { recursive: true, force: true }) })

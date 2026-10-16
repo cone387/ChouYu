@@ -1,11 +1,11 @@
 import { afterEach, expect, it } from 'vitest'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { buildContactContext } from './context'
 import type { MemoryInput } from '../../shared/contact-memories'
-const stores: AgentStore[] = []
+const stores: TaskCenter[] = []
 afterEach(() => stores.splice(0).forEach(s => s.close()))
 it('uses the same explicit scope for chat and run context and rejects corrected snapshots', () => {
-  const store = new AgentStore(':memory:'); stores.push(store); store.ensure('alice'); store.ensure('bob')
+  const store = new TaskCenter(':memory:'); stores.push(store); store.ensure('alice'); store.ensure('bob')
   const a = store.topics.create('alice', { title: 'A', goal: 'A', constraints: '' }, 'test')
   const b = store.topics.create('alice', { title: 'B', goal: 'B', constraints: '' }, 'test')
   store.memoryLibrary.registerSessions('alice', ['chat'])
@@ -31,7 +31,7 @@ it('uses the same explicit scope for chat and run context and rejects corrected 
   expect(JSON.parse(store.getRun(runA)!.input).memories).toEqual([])
 })
 it('exposes only actually supplied background memory versions and preserves references after corrections', () => {
-  const store = new AgentStore(':memory:'); stores.push(store); store.ensure('alice')
+  const store = new TaskCenter(':memory:'); stores.push(store); store.ensure('alice')
   const topic = store.topics.create('alice', { title: 'A', goal: 'A', constraints: '' }, 'test')
   const input: MemoryInput = { content: 'original', kind: 'project', scope: { kind: 'task', topicId: topic.id }, source: { kind: 'user', at: 1 } }
   const memory = store.memoryLibrary.create('alice', input), run = store.createRun('alice', '', Date.now(), topic.id)

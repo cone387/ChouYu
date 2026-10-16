@@ -1,7 +1,7 @@
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { contactAgentsCall } from '../agents'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { waitForRenderer } from './storage-smoke'
@@ -13,7 +13,7 @@ export async function runContactHomeSmoke(window: BrowserWindow, owner: string) 
     window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point }); window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
   }
   await run(`window.electronAPI.agents.save(${JSON.stringify(owner)},${JSON.stringify({ ...DEFAULT_AGENT_SETTINGS, goal: 'Homepage acceptance', enabled: false })})`)
-  const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   try {
     const topic = store.topics.create(owner, { title: '海边来信', goal: 'Write a story', constraints: '' }, 'user'), first = store.createRun(owner, '', Date.now(), topic.id)
     store.finish(first, { runId: first, title: '开篇', body: '她沿着海岸往前走，终于看见信中提到的灯塔。', nextStep: 'Continue', evidence: [], createdAt: Date.now() }, [], { status: 'researching', judgement: 'Saved', reason: 'Saved', nextStep: 'Continue', openQuestions: '' })

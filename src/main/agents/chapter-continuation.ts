@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { DeliverySection, DeliveryUpdate } from '../../shared/agent-delivery'
 import type { AgentTopic, AgentTopicProgress } from '../../shared/agents'
-import type { AgentStore } from './store'
-import type { AgentModel } from './runtime'
+import type { TaskCenter } from '../task-center/store'
+import type { AgentModel } from '../workloop/workflow'
 
 export const chapterInstruction = '\n小说的章节与本轮输出分节不同：每轮短输出不代表一章需要无限分节。未指定篇幅时，每章约3000–5000字，在完整情节节点收章并开始下一章；用户明确的篇幅或按情节分章要求优先。nextStep 是历史计划，不是用户要求，不能因为它反复写“第一章下一节”就无限延长第一章。收章必须有实际收尾正文，不能只改标题、摘要或声称写完；下一章承接前文，不重写开头。'
 
@@ -53,7 +53,7 @@ export interface ChapterContinuation {
 }
 
 /** Only long fiction chapters need this extra call; the normal short-chunk path is unchanged. */
-export async function planChapterContinuation(store: AgentStore, runId: string, topic: AgentTopic, model: AgentModel, signal: AbortSignal, live: () => void): Promise<ChapterContinuation | undefined> {
+export async function planChapterContinuation(store: TaskCenter, runId: string, topic: AgentTopic, model: AgentModel, signal: AbortSignal, live: () => void): Promise<ChapterContinuation | undefined> {
   signal.throwIfAborted(); live()
   const run = store.getRun(runId)!
   const input = JSON.parse(run.input)

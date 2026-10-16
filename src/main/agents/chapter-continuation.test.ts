@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
-import { AgentRuntime, parseDraft } from './runtime'
+import { TaskCenter } from '../task-center/store'
+import { WorkStrategyRuntime, parseDraft } from '../workloop/workflow'
 import { DEFAULT_AGENT_SETTINGS, type AgentTopicProgress } from '../../shared/agents'
 import { chapterTail, planChapterContinuation, validateChapterContinuation } from './chapter-continuation'
 import { AgentOutputTruncatedError } from './model-output'
@@ -16,8 +16,8 @@ const update = (id: string, title: string, body: string) => ({ completionCriteri
 const draft = (id: string, title: string, body: string) => JSON.stringify({ title, body: '本轮新增正文', question: '', memories: [], progress, delivery: update(id, title, body) })
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'chapter-continuation-'))
-  let store = new AgentStore(join(dir, 'agents.db'))
-  let runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+  let store = new TaskCenter(join(dir, 'agents.db'))
+  let runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   cleanup.push(() => { runtime.close(); store.close(); rmSync(dir, { recursive: true, force: true }) })
   store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '续写长篇小说', dailyCalls: 48 })
   const topicId = store.overview('writer').focusTopicId!
@@ -26,7 +26,7 @@ function fixture() {
     store.finish(runId, { runId, title: '新增正文', body: '变化摘要', nextStep: progress.nextStep, evidence: [], createdAt: Date.now() }, [], progress, update(`ch1s${n}`, '第一章·塔内', '塔内传来脚步声。'.repeat(130)))
   }
   return { get store() { return store }, get runtime() { return runtime }, topicId, topic: () => store.topics.get('writer', topicId),
-    reopen() { runtime.close(); store.close(); store = new AgentStore(join(dir, 'agents.db')); runtime = new AgentRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
+    reopen() { runtime.close(); store.close(); store = new TaskCenter(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
 }
 const decision = { action: 'close', reason: '本章情节已充分展开，先完成脱险', beat: '离开塔内险地，以远方来信留下悬念', userLengthQuote: '', nextChapterAllowed: true, nextChapter: 2, nextVolume: null }
 

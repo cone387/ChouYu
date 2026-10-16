@@ -3,7 +3,7 @@ import { interactionHref } from '../../shared/contact-interactions'
 import { app, type BrowserWindow } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { appendAssistantMessage, getSessions, appendAgentNotice, createCharacter, createChatSession, getConfig, getSession, listCharacters, saveConfig, selectChatSession } from '../database'
 import { waitForRenderer } from './storage-smoke'
@@ -22,7 +22,7 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
     // Drain older identity snapshots before writing fixtures outside the worker.
     // Otherwise an in-flight sync without the new character can remove its rows.
     await contactAgentsCall(character.id, 'get')
-    const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+    const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
     let cardId: string, topicId: string, runId: string
     try {
       store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '写一篇介绍', dailyCalls: 100, enabled: kind === 'billing' })
@@ -74,12 +74,12 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
     const fill = async (control: string, value: string) => run(`(() => {const el=document.querySelector(${JSON.stringify(selector + ' ' + control)});Object.getOwnPropertyDescriptor(${control === 'textarea' ? 'HTMLTextAreaElement' : 'HTMLInputElement'}.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`)
     if (kind === 'budget-success') {
       await fill('input', '12')
-      const database = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+      const database = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
       try { database.db.exec(`CREATE TRIGGER interaction_failure BEFORE INSERT ON runs WHEN NEW.character_id='${character.id}' BEGIN SELECT RAISE(ABORT,'interaction disk failure fixture'); END`) } finally { database.close() }
       await run(`document.querySelector(${JSON.stringify(selector)}).querySelector('button[type=submit]').click()`)
       await waitForRenderer(window, `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('interaction disk failure fixture')`)
       if (await run(`document.querySelector(${JSON.stringify(selector)}).querySelector('input').value`) !== '12') throw new Error('Failure erased the budget input')
-      const recovered = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+      const recovered = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
       try {
         if (recovered.topics.get(character.id, topicId!).resourceBudget?.modelCalls !== 3) throw new Error('Failed submit changed budget')
         recovered.db.exec('DROP TRIGGER interaction_failure')

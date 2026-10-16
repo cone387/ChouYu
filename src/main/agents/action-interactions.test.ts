@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { ContactActions } from './action-interactions'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
@@ -10,7 +10,7 @@ const cleanups: (() => void)[] = []
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'contact-actions-'))
-  const path = join(directory, 'agents.db'), store = new AgentStore(path)
+  const path = join(directory, 'agents.db'), store = new TaskCenter(path)
   cleanups.push(() => rmSync(directory, { recursive: true, force: true }), () => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '独立工作' }, Date.now(), false)
   store.save('bob', { ...DEFAULT_AGENT_SETTINGS, goal: '另一位联系人' }, Date.now(), false)
@@ -31,7 +31,7 @@ it('persists a pending action without a task and deduplicates its source request
   expect(first).toMatchObject({ kind: 'action', status: 'pending', characterId: 'alice', request: f.request })
   expect(first.topicId).toBeUndefined()
   expect(f.store.topics.list('alice')).toEqual([])
-  const reopened = new AgentStore(f.path); cleanups.push(() => reopened.close())
+  const reopened = new TaskCenter(f.path); cleanups.push(() => reopened.close())
   const actions = new ContactActions(reopened)
   expect(actions.offer('alice', 'request-one', f.request)).toEqual(first)
   expect(() => actions.get('bob', first.id)).toThrow('归属')
@@ -42,7 +42,7 @@ it('persists configuration step grouping independently from each step result', (
   const first = f.actions.offer('alice', 'combined:1', { ...f.request, configurationGroup: group })
   const second = f.actions.offer('alice', 'combined:2', { ...f.request, configurationGroup: { ...group, index: 2 } })
   f.actions.reject('alice', first.id, first.version)
-  const reopened = new AgentStore(f.path); cleanups.push(() => reopened.close())
+  const reopened = new TaskCenter(f.path); cleanups.push(() => reopened.close())
   expect(reopened.actions.get('alice', first.id).status).toBe('resolved')
   expect(reopened.actions.get('alice', second.id)).toMatchObject({ status: 'pending', request: { configurationGroup: { ...group, index: 2 } } })
 })

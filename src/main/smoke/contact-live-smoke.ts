@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 import { createCharacter, createChatSession, deleteCharacter, getActiveSession, getConfig, getContactProfile, getSession, getSessions, saveConfig, saveSessionMessages, selectChatSession, flushDatabase, type Message } from '../database'
 import { contactAgentsCall } from '../agents'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS, type AgentOverview } from '../../shared/agents'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { DEFAULT_PROFILE_ID } from '../../shared/config'
@@ -35,7 +35,7 @@ export async function runContactLiveSmoke(window: BrowserWindow) {
     const character = createCharacter({ name: emptyPersona ? '小岚' : '阿笔验收', avatar: '✍️', category: 'other', soulMd: emptyPersona ? '' : resolved.ok ? resolved.config.soulMd : '', model: resolved.ok ? resolved.config.model : '', providerProfileId: DEFAULT_PROFILE_ID })
     const session = createChatSession(name, character.id).activeSession.id
     await contactAgentsCall(character.id, 'get')
-    const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+    const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
     const topics: string[] = []
     try {
       store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '根据用户要求写作并提供判断', enabled: false, notifyProgress: false, dailyCalls: 20 }, Date.now(), false)
@@ -139,14 +139,14 @@ export async function runContactLiveSmoke(window: BrowserWindow) {
     })
     await check('continue-wrong-target', async f => { const r = await f.say('恢复后台的三体续写任务，不是吞噬星空或音乐小说。'); unchanged(r); assert.match(r.text, /找不到|没有|不存在|哪|确认/) })
     await check('pause-target', async f => {
-      const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+      const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
       try { const topic = store.topics.get(f.character.id, f.topics[1]); store.topics.status(f.character.id, topic.id, topic.revision, 'planned', '准备单任务暂停验收') } finally { store.close() }
       const r = await f.say('暂停音乐修炼题材玄幻小说这个任务，吞噬星空保持不变。'); assert.equal(r.cards.length, 1); assert.deepEqual(r.after, r.before); await f.apply(r.cards[0]);
       const after = await f.snapshot(); assert.equal(after.topics.find(t => t.id === f.topics[1])?.status, 'paused'); assert.deepEqual(after.topics.find(t => t.id === f.topics[0]), r.before.topics.find(t => t.id === f.topics[0]))
     })
     await check('card-stale-rejection', async f => {
       const r = await f.say('把你的每日Token上限改成30万。'); assert.equal(r.cards.length, 1)
-      const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+      const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
       try { store.save(f.character.id, { ...store.overview(f.character.id).settings, dailyTokenLimit: 400000 }, Date.now(), false) } finally { store.close() }
       try { await f.apply(r.cards[0]) } catch { /* Version rejection may be surfaced as an IPC error. State is the oracle. */ }
       assert.equal((await f.get()).settings.dailyTokenLimit, 400000)

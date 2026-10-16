@@ -2,17 +2,17 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { reviewTaskCompletion } from './task-completion'
-import { AgentService } from './service'
+import { AgentSpace } from '../agent-space/service'
 
 const at = (day: number, hour: number) => new Date(2026, 9, day, hour).getTime()
 const input = { title: '每日想法', instruction: '每天给一个新的想法', cadence: 'daily', times: ['09:00'], kind: 'contact-summary', enabled: true }
-let store: AgentStore, directory: string
+let store: TaskCenter, directory: string
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(at(13, 8))
-  directory = mkdtempSync(join(tmpdir(), 'chouyu-calendar-')); store = new AgentStore(join(directory, 'agents.db'))
+  directory = mkdtempSync(join(tmpdir(), 'chouyu-calendar-')); store = new TaskCenter(join(directory, 'agents.db'))
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '独立研究', enabled: true, dailyCalls: 100 }, Date.now(), false)
 })
 afterEach(() => { store.close(); rmSync(directory, { force: true, recursive: true }); vi.useRealTimers() })
@@ -41,7 +41,7 @@ it('saves a real calendar without starting early, catches up the latest occurren
   expect(store.overview('alice').runs).toEqual([])
   expect(store.nextScheduledTopic('alice')).toBeUndefined()
   expect(store.topics.get('alice', topic.id).calendar).toMatchObject({ cadence: 'daily', times: ['09:00'] })
-  store.close(); store = new AgentStore(join(directory, 'agents.db'))
+  store.close(); store = new TaskCenter(join(directory, 'agents.db'))
   vi.setSystemTime(at(16, 10))
   expect(store.nextScheduledTopic('alice')).toBe(topic.id)
   const runId = store.startScheduledTopic('alice', topic.id, '')
@@ -67,7 +67,7 @@ it('keeps a pre-existing long task title when adding a calendar', () => {
 
 it('starts due calendars through each contact’s own execution identity and keeps existing call reservations', async () => {
   const started: string[] = []
-  const service = new AgentService(join(directory, 'service'), () => {}, identity => async (_prompt, signal) => {
+  const service = new AgentSpace(join(directory, 'service'), () => {}, identity => async (_prompt, signal) => {
     started.push(identity.id)
     return new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }))
   })
@@ -94,7 +94,7 @@ it('preserves failed period receipts across restart and does not overlap a waiti
   vi.setSystemTime(at(13, 10))
   const first = store.startScheduledTopic('alice', topic.id, '')
   store.fail(first, 'offline')
-  store.close(); store = new AgentStore(join(directory, 'agents.db'))
+  store.close(); store = new TaskCenter(join(directory, 'agents.db'))
   vi.setSystemTime(at(15, 10))
   expect(store.nextScheduledTopic('alice')).toBe(topic.id)
   const retry = store.startScheduledTopic('alice', topic.id, '')
@@ -105,7 +105,7 @@ it('preserves failed period receipts across restart and does not overlap a waiti
 })
 
 it('settles the pinned period when retrying a failed calendar from work history', async () => {
-  const service = new AgentService(join(directory, 'manual-retry'), () => {})
+  const service = new AgentSpace(join(directory, 'manual-retry'), () => {})
   try {
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'fixture', thinkingDisabledModels: [] } }])
     vi.spyOn(service, 'tick').mockImplementation(() => {})
@@ -181,6 +181,6 @@ it('finishes a once calendar after one successful round even after reopening lat
   const runId = store.startScheduledTopic('alice', topic.id, '')
   store.defer(runId, '已检查，无新增内容')
   expect(store.overview('alice').taskSchedule?.[topic.id].finishedAt).toBe(at(16, 10))
-  store.close(); store = new AgentStore(join(directory, 'agents.db'))
+  store.close(); store = new TaskCenter(join(directory, 'agents.db'))
   expect(store.nextScheduledTopic('alice', at(17, 10))).toBeUndefined()
 })

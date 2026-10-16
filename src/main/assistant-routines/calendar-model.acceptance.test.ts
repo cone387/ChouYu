@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { requestContactTask } from './gateway'
 import { AssistantRoutineService } from './service'
 import { ContactTaskDraftStore } from './drafts'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { streamNativeChat } from '../harness/native/runner'
 import { resolveCharacterConfig } from '../../shared/characters'
 
@@ -18,7 +18,7 @@ const cases = [
 it.skipIf(!process.env.CHOUYU_CALENDAR_ACCEPTANCE).each(cases)('live calendar %s saves the actual interpreted schedule', async (key, owner, message, expected) => {
   const data = JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG!), resolved = resolveCharacterConfig(data.characters[0], data.config)
   if (!resolved.ok) throw Error('验收模型不可用')
-  const directory = mkdtempSync(join(tmpdir(), 'chouyu-calendar-live-')), store = new AgentStore(join(directory, 'agents.db'))
+  const directory = mkdtempSync(join(tmpdir(), 'chouyu-calendar-live-')), store = new TaskCenter(join(directory, 'agents.db'))
   const read = (file: string) => existsSync(join(directory, file)) ? readFileSync(join(directory, file), 'utf8') : ''
   const write = (file: string, text: string) => writeFileSync(join(directory, file), text)
   const service = new AssistantRoutineService({ read: () => read('routines.json'), write: text => write('routines.json', text), readHistory: () => undefined, writeHistory: () => {}, generate: async () => { throw Error('Do not execute during parser acceptance') }, deliver: () => {} })

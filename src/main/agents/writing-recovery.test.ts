@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
-import { AgentRuntime, parseDraft, type AgentModel } from './runtime'
+import { TaskCenter } from '../task-center/store'
+import { WorkStrategyRuntime, parseDraft, type AgentModel } from '../workloop/workflow'
 import { AgentOutputTruncatedError } from './model-output'
 import { WritingRecovery } from './writing-recovery'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -13,7 +13,7 @@ afterEach(() => { for (const close of cleanup.splice(0).reverse()) close() })
 function fixture(dailyCalls = 40) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-draft-recovery-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  let store = new AgentStore(join(dir, 'agents.db'))
+  let store = new TaskCenter(join(dir, 'agents.db'))
   cleanup.push(() => store.close())
   store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '写音乐修炼小说', dailyCalls })
   let run = store.createRun('writer', '')
@@ -23,7 +23,7 @@ function fixture(dailyCalls = 40) {
     recovery: () => new WritingRecovery(store, run, context),
     reopen() {
       store.fail(run, '模拟停止')
-      store.close(); store = new AgentStore(join(dir, 'agents.db'))
+      store.close(); store = new TaskCenter(join(dir, 'agents.db'))
       run = store.createRun('writer', '')
     }
   }
@@ -175,7 +175,7 @@ it('stops before an unbudgeted call and retains complete prose', async () => {
 })
 
 it('recovers an actual runtime write truncation and commits one complete deliverable', async () => {
-  const f = fixture(), runtime = new AgentRuntime(f.store, join(f.dir, 'checkpoints.db'))
+  const f = fixture(), runtime = new WorkStrategyRuntime(f.store, join(f.dir, 'checkpoints.db'))
   cleanup.push(() => runtime.close())
   let writes = 0
   await runtime.execute(f.run, '', async (prompt, _signal, options) => {

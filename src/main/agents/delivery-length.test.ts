@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
-import { AgentRuntime, parseDraft } from './runtime'
+import { TaskCenter } from '../task-center/store'
+import { WorkStrategyRuntime, parseDraft } from '../workloop/workflow'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { deliveryTextLength, enforceDeliveryLength, explicitDeliveryLengths } from './delivery-length'
 import { contactFailure } from '../../shared/contact-failure'
@@ -18,13 +18,13 @@ const draft = (body: string) => ({ title: '蓝灯之夜', body: '沈青抵达雾
 const correction = (body: string) => JSON.stringify({ sectionBody: body, reportBody: '沈青抵达雾港。', summary: '沈青抵达雾港。', judgement: '沈青抵达雾港。', reason: '已写出抵达的故事。', memories: [] })
 function fixture(description = goal, limit = 12) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-delivery-length-'))
-  let store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+  let store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   cleanup.push(() => { runtime.close(); store.close(); rmSync(dir, { recursive: true, force: true }) })
   store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: description, dailyCalls: limit })
   const topicId = store.overview('writer').focusTopicId!
   const run = store.createRun('writer', '')
   return { get store() { return store }, get runtime() { return runtime }, topicId, run,
-    reopen() { runtime.close(); store.close(); store = new AgentStore(join(dir, 'agents.db')); runtime = new AgentRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
+    reopen() { runtime.close(); store.close(); store = new TaskCenter(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
 }
 function modelFor(body: string, repair: (prompt: string) => Promise<string> = async () => correction(valid)) {
   return vi.fn(async (prompt: string) => {

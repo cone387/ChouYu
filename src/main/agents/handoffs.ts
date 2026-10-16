@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { AgentStore } from './store'
+import type { TaskCenter } from '../task-center/store'
 import { ContactSources } from './contact-sources'
 import { validId, validateDeliveryRef } from '../../shared/contact-content'
 import type { Handoff, HandoffPreparation, HandoffRequest, HandoffWork } from '../../shared/contact-handoffs'
@@ -10,7 +10,7 @@ import type { DeliveryRef } from '../../shared/contact-content'
 import { taskState } from '../../shared/task-state'
 export type HandoffPin = { id: string; source: DeliveryRef; hash: string }
 export class AgentHandoffs {
-  constructor(private store: AgentStore) {
+  constructor(private store: TaskCenter) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS contact_handoffs(id TEXT PRIMARY KEY,owner TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,request_id TEXT NOT NULL,payload TEXT NOT NULL,value TEXT NOT NULL,UNIQUE(owner,request_id));
       CREATE TABLE IF NOT EXISTS contact_handoff_preparations(token TEXT PRIMARY KEY,owner TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,request_id TEXT NOT NULL,payload TEXT NOT NULL,value TEXT NOT NULL,UNIQUE(owner,request_id));
       CREATE TABLE IF NOT EXISTS contact_handoff_reviews(handoff_id TEXT NOT NULL REFERENCES contact_handoffs(id) ON DELETE CASCADE,run_id TEXT PRIMARY KEY,source TEXT NOT NULL,hash TEXT NOT NULL);`)

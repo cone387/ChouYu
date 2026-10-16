@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 it('summarizes active tasks, all retained usage and current memories per contact', () => {
-  const store = new AgentStore(':memory:')
+  const store = new TaskCenter(':memory:')
   try {
     expect(store.summary('new')).toEqual({ tasks: 0, activeTasks: 0, calls: 0, reported: 0, tokens: 0, memories: 0 })
     store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A' })

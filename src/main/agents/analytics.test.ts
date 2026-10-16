@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { analyticsRange } from './analytics'
 
 const at = (day: string, time: string) => +new Date(`${day}T${time}`)
 describe('daily contact activity and consumption', () => {
   it('keeps the last work time separate from heartbeat and newly queued work', () => {
-    const store = new AgentStore(':memory:')
+    const store = new TaskCenter(':memory:')
     try {
       store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A', enabled: true }, 1000)
       expect(store.dashboard(['alice']).contacts.alice.lastWorkedAt).toBeUndefined()
@@ -21,7 +21,7 @@ describe('daily contact activity and consumption', () => {
     } finally { store.close() }
   })
   it('splits execution across midnight, excludes waits, attributes returned tokens and isolates contacts', () => {
-    const store = new AgentStore(':memory:')
+    const store = new TaskCenter(':memory:')
     try {
       const before = at('2026-09-27', '23:50:00'), midnight = at('2026-09-28', '00:00:00')
       store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A' }, before)
@@ -55,7 +55,7 @@ describe('daily contact activity and consumption', () => {
     } finally { store.close() }
   })
   it('keeps unknown usage distinct, includes all rounds beyond overview limit and filters tasks', () => {
-    const store = new AgentStore(':memory:')
+    const store = new TaskCenter(':memory:')
     try {
       const start = at('2026-09-28', '00:00:00')
       store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A', dailyCalls: 100 }, start)
@@ -88,7 +88,7 @@ describe('daily contact activity and consumption', () => {
     expect(analyticsRange({ date: '2026-09-28', days: 30 }).boundaries).toHaveLength(31)
   })
   it('records contiguous idle heartbeats without log spam, excludes gaps and scopes timeline data', () => {
-    const store = new AgentStore(':memory:')
+    const store = new TaskCenter(':memory:')
     try {
       const start = at('2026-09-28', '10:00:00')
       store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A', enabled: true }, start)

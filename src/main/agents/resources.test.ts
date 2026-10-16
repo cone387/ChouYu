@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentStore } from './store'
-import { AgentService } from './service'
+import { TaskCenter } from '../task-center/store'
+import { AgentSpace } from '../agent-space/service'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { validateTaskResourceBudget } from '../../shared/agent-resources'
 
@@ -15,7 +15,7 @@ function directory() {
   return dir
 }
 function fixture() {
-  const path = join(directory(), 'agents.db'), store = new AgentStore(path)
+  const path = join(directory(), 'agents.db'), store = new TaskCenter(path)
   cleanups.push(() => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '任务资源分配', dailyCalls: 12 })
   return { store, path, topic: store.overview('alice').topics[0] }
@@ -62,7 +62,7 @@ describe('task resource allocation within contact resources', () => {
     expect(() => store.charge(run)).toThrow('本任务调用预算不足')
     store.setStatus(run, 'failed')
     expect(store.callCount('alice')).toBe(0)
-    const reopened = new AgentStore(path); cleanups.push(() => reopened.close())
+    const reopened = new TaskCenter(path); cleanups.push(() => reopened.close())
     expect(reopened.taskCallCount('alice', topic.id)).toBe(2)
     expect(() => reopened.createRun('alice', '', Date.now(), topic.id)).toThrow('本任务调用预算不足')
     const current = reopened.topics.get('alice', topic.id)
@@ -90,7 +90,7 @@ describe('task resource allocation within contact resources', () => {
       if (prompt.startsWith('为联系人')) return JSON.stringify({ action: 'write', reason: '写出初稿', query: '', urls: [], checkAfterMinutes: 180 })
       return JSON.stringify({ title: '初稿', body: '已保存初稿', nextStep: '复核', memories: [], question: '', progress: { judgement: '初稿完成', openQuestions: '', nextStep: '复核', reason: '实际交付初稿', status: 'researching' }, delivery: { completionCriteria: '初稿与复核', stages: [{ ...stages[0], status: 'active' }], summary: '初稿已保存', section: { id: 'text', title: '初稿', body: '实际正文' } } })
     })
-    const service = new AgentService(directory(), () => {}, () => model)
+    const service = new AgentSpace(directory(), () => {}, () => model)
     cleanups.push(() => service.close())
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     await service.request('assignTopic', 'alice', ['写一篇短文'])

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import type { AgentEvidence, ContactDeliveryRef } from '../../shared/agents'
-import type { AgentStore } from './store'
+import type { TaskCenter } from '../task-center/store'
 
 /** Only published deliverables cross contact boundaries; never chats, memories or credentials. */
 export class ContactSources {
   names = new Map<string, string>()
-  constructor(private store: AgentStore) {}
+  constructor(private store: TaskCenter) {}
   allowed(reader: string, owner: string) {
     if (!this.store.overview(reader).settings.readContactDeliveries) throw new Error('未授权读取联系人的共享成果。')
     if (reader === owner || !this.store.profile(owner) || !this.store.overview(owner).settings.shareDeliveries) throw new Error('该联系人的成果未共享或已撤回。')

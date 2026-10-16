@@ -2,7 +2,7 @@ import { app, type BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { createCharacter, getConfig, saveConfig, getActiveSession, selectChatSession, flushDatabase, getSessions, getSession } from '../database'
 import { restartAgentsForSmoke } from '../agents'
@@ -21,7 +21,7 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
   const fill = (selector: string, value: string, select = false) => run(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLTextAreaElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}))})()`)
   const navigate = (target: unknown) => run(`new Promise((resolve,reject)=>{const detail={target:${JSON.stringify(target)},handled:false,resolve,reject};window.dispatchEvent(new CustomEvent('chouyu:contact-navigation',{detail}));if(!detail.handled)reject(Error('No navigation handler'))})`)
   await run(`window.electronAPI.agents.get(${JSON.stringify(owner)})`)
-  const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db')), originalConfig = getConfig(), originalSession = getActiveSession().id
+  const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db')), originalConfig = getConfig(), originalSession = getActiveSession().id
   let material: { id: string; version: number }, topicId = '', initial = true
   let stale: { id: string; revision: number; mode: string; changed: boolean } | undefined
   const requests: { model: string; messages: unknown[] }[] = []

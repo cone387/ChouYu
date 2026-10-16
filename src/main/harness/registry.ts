@@ -10,6 +10,12 @@ export class HarnessRegistry {
     }
   }
   all(): readonly HarnessModule[] { return [...this.modules.values()] }
+  background(engine: HarnessEngine, platform: NodeJS.Platform = process.platform) {
+    const module = this.get(engine)
+    if (module.capabilities.platforms !== 'all' && !module.capabilities.platforms.includes(platform)) throw new Error(`${module.label} 暂不支持此平台，本次未执行。`)
+    if (!module.background) throw new Error(`${module.label} 尚未支持带逐轮预算控制的后台执行，本次未执行。`)
+    return module.background
+  }
   get(engine: HarnessEngine): HarnessModule {
     const module = this.modules.get(engine)
     if (!module) throw new Error(`执行模块 ${engine} 尚不可用，本次未执行。`)

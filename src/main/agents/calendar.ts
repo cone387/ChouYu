@@ -3,7 +3,7 @@ import { calendarTimeZone, rebaseCalendarAt, latestCalendarAt, nextCalendarAt, t
 
 export type { CalendarOccurrence } from '../../shared/calendar-schedule'
 interface CalendarRow { topic_id: string; revision: number; next_at: number; attempt_at: number | null; last_due_at: number | null; finished_at: number | null; time_zone: string | null }
-/** Uses the AgentStore transaction: claiming an occurrence and creating its run are atomic. */
+/** Uses the TaskCenter transaction: claiming an occurrence and creating its run are atomic. */
 export class ContactCalendars {
   constructor(private db: Database.Database) {
     db.exec(`CREATE TABLE IF NOT EXISTS contact_calendars (

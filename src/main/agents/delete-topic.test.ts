@@ -2,14 +2,14 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentService } from './service'
+import { AgentSpace } from '../agent-space/service'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn() })
 it('deletes an executing task, aborts its model and clears checkpoints without affecting another task', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-delete-'))
   let signal: AbortSignal | undefined
-  const service = new AgentService(dir, () => {}, () => async (_prompt, value) => {
+  const service = new AgentSpace(dir, () => {}, () => async (_prompt, value) => {
     signal = value
     return new Promise<string>((_resolve, reject) => value.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))
   })
@@ -37,7 +37,7 @@ it('deletes an executing task, aborts its model and clears checkpoints without a
 
 it('still deletes tasks and contacts when the checkpoint store never created its tables', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-delete-nocheckpoints-'))
-  const service = new AgentService(dir, () => {}, () => async (_prompt, value) => {
+  const service = new AgentSpace(dir, () => {}, () => async (_prompt, value) => {
     return new Promise<string>((_resolve, reject) => value.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))
   })
   cleanup.push(async () => { await service.close(); rmSync(dir, { recursive: true, force: true }) })

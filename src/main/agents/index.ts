@@ -1,5 +1,5 @@
 import { contactHandle } from './query-metrics'
-import { AgentWorkerRPC } from './worker-rpc'
+import { AgentWorkerRPC } from '../agent-space/worker-rpc'
 import { configureContactSkill, contactSkillLibrary, getContactSkills, findContactSkills, installContactSkill, contactSkillRunner } from '../skills'
 import { SKILL_TOOLS } from '../skills/tools'
 import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs'
@@ -29,7 +29,7 @@ import { executeContactAction } from './action-executor'
 import { createInteractionTools } from './interaction-tools'
 import { createContactSupportTools } from './support-tools'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
-import type { AgentIdentity } from './service'
+import type { ContactIdentity } from '../agent-space/service'
 import { setupIdeaLab } from './idea-lab'
 import { validateMemoryInput } from '../../shared/contact-memories'
 
@@ -84,7 +84,7 @@ function rpc(method: string, id = '', args: unknown[] = []): Promise<any> {
   if (!child) return Promise.reject(new Error('Agent 执行进程不可用，请稍后重试。'))
   return requests.request(child, method, id, args)
 }
-function identities(): AgentIdentity[] {
+function identities(): ContactIdentity[] {
   const config = getConfig(), sessions = getSessions()
   return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(character => {
     const resolved = resolveCharacterConfig(character, config)

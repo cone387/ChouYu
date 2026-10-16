@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
-import { AgentRuntime, parseDraft } from './runtime'
+import { TaskCenter } from '../task-center/store'
+import { WorkStrategyRuntime, parseDraft } from '../workloop/workflow'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { correctDeliveryCounts, invalidCountClaims } from './delivery-counts'
 import { contactFailure } from '../../shared/contact-failure'
@@ -16,11 +16,11 @@ const candidate = { title: '蓝灯', body: '沈青抵达雾港，约480字。', 
   delivery: { completionCriteria: '持续写作', summary: '沈青抵达雾港。', stages: [{ id: 'story', title: '故事', status: 'active' }], section: { id: 'opening', title: '蓝灯', body } } }
 function fixture(dailyCalls = 12) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-counts-'))
-  let store = new AgentStore(join(dir, 'agents.db')), runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'))
+  let store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   cleanups.push(() => { runtime.close(); store.close(); rmSync(dir, { recursive: true, force: true }) })
   store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '持续写作灯塔故事，每轮300至500字', dailyCalls })
   return { get store() { return store }, get runtime() { return runtime }, topicId: store.overview('writer').focusTopicId!, run: store.createRun('writer', ''),
-    reopen() { runtime.close(); store.close(); store = new AgentStore(join(dir, 'agents.db')); runtime = new AgentRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
+    reopen() { runtime.close(); store.close(); store = new TaskCenter(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db')); store.recover() } }
 }
 
 it('corrects a false writer count before committing while leaving the actual prose unchanged', async () => {

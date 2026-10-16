@@ -3,13 +3,13 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { streamNativeChat } from '../harness/native/runner'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { reviewTaskCompletion } from './task-completion'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { resolveCharacterConfig } from '../../shared/characters'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
-import type { AgentModel } from './runtime'
+import type { AgentModel } from '../workloop/workflow'
 
 // Paid opt-in: >60k synthetic Chinese characters, real batch/final decisions and real budget records.
 it.skipIf(!process.env.CHOUYU_COMPLETION_ACCEPTANCE)('live model catches the final-section contradiction and only rechecks changed text after reopening', async () => {
@@ -17,7 +17,7 @@ it.skipIf(!process.env.CHOUYU_COMPLETION_ACCEPTANCE)('live model catches the fin
   if (!resolved.ok) throw Error('验收模型不可用')
   const config = { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }
   const directory = mkdtempSync(join(tmpdir(), 'chouyu-live-completion-')), database = join(directory, 'agents.db')
-  let store = new AgentStore(database), activeRun = ''
+  let store = new TaskCenter(database), activeRun = ''
   const records: { inputCharacters: number; batch: boolean; output: string; metadata: AIResponseMetadata }[] = []
   try {
     store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '交付七节合成灯塔材料。唯一验收标准：所有灯塔灯光都必须是蓝色，不能出现灯塔亮红灯。重复措辞、文风、篇幅和故事是否完结都不作为验收条件。不需要用户确认。', enabled: false, dailyCalls: 30, dailyTokenLimit: 300000 })
@@ -52,7 +52,7 @@ it.skipIf(!process.env.CHOUYU_COMPLETION_ACCEPTANCE)('live model catches the fin
     expect(records.some(record => /红灯|红色/.test(record.output))).toBe(true)
     const firstCalls = records.length
     expect(firstCalls).toBe(8)
-    store.setStatus(activeRun, 'completed'); store.close(); store = new AgentStore(database)
+    store.setStatus(activeRun, 'completed'); store.close(); store = new TaskCenter(database)
     const saved = store.deliveries.get(topicId)!, last = saved.sections.at(-1)!
     activeRun = store.createRun('writer', '', Date.now(), topicId)
     const corrected = { ...draft, delivery: { completionCriteria: saved.completionCriteria, summary: saved.summary, stages: saved.stages, section: { id: last.id, title: last.title, body: last.body.replace('最终亮起红灯', '最终仍亮蓝灯') } } }

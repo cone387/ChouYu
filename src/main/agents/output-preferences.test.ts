@@ -2,12 +2,12 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const close of cleanup.splice(0).reverse()) close() })
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'output-preferences-')), path = join(dir, 'agents.db'), store = new AgentStore(path)
+  const dir = mkdtempSync(join(tmpdir(), 'output-preferences-')), path = join(dir, 'agents.db'), store = new TaskCenter(path)
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }), () => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '写作' }, Date.now(), false); store.ensure('bob')
   const topic = store.topics.create('alice', { title: '写作', goal: '写一篇文章', constraints: '' }), run = store.createRun('alice', '', Date.now(), topic.id)
@@ -21,7 +21,7 @@ it('persists layered preferences without changing content, version, task state o
   f.store.outputs.save('alice', { kind: 'contact' }, 0, { kind: 'review' })
   f.store.outputs.save('alice', { kind: 'task', topicId: f.topic.id }, 0, { density: 'compact' })
   f.store.outputs.save('alice', { kind: 'delivery', topicId: f.topic.id, version: 1 }, 0, { kind: 'plain' })
-  const reopened = new AgentStore(f.path); cleanup.push(() => reopened.close())
+  const reopened = new TaskCenter(f.path); cleanup.push(() => reopened.close())
   expect(reopened.outputs.list('alice', f.topic.id, 1).map(p => p.preference)).toEqual([{ kind: 'review' }, { density: 'compact' }, { kind: 'plain' }])
   expect(reopened.outputs.list('alice', f.topic.id).map(p => p.preference)).toEqual([{ kind: 'review' }, { density: 'compact' }])
   expect(reopened.deliveries.get(f.topic.id)).toEqual(artifact)

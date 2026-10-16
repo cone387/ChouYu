@@ -1,11 +1,11 @@
 import { Script } from 'node:vm'
 import { validatePresentation } from '../../shared/agent-delivery'
 import { presentationInstruction } from '../../shared/agent-delivery-instructions'
-import type { AgentModel } from './runtime'
-import type { AgentStore } from './store'
+import type { AgentModel } from '../workloop/workflow'
+import type { TaskCenter } from '../task-center/store'
 
 /** Separate execution path: the model never controls content, stages or task status. */
-export async function revisePresentation(store: AgentStore, runId: string, soul: string, model: AgentModel, signal: AbortSignal, changed: () => void) {
+export async function revisePresentation(store: TaskCenter, runId: string, soul: string, model: AgentModel, signal: AbortSignal, changed: () => void) {
   const run = store.assertLive(runId), input = JSON.parse(run.input)
   const artifact = store.deliveries.get(run.topic_id!)
   try {

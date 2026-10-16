@@ -4,6 +4,7 @@ type Entry = { worker: Worker; method: string; phase: string; resolve(value: unk
 export class AgentWorkerRPC {
   private sequence = 0
   private entries = new Map<number, Entry>()
+  private probes = new Map<Worker, { id: number; timer: ReturnType<typeof setTimeout> }>()
   constructor(private diagnostic: (event: { method: string; phase: string; elapsedMs: number }) => void = () => {}) {}
   request(worker: Worker, method: string, id: string, args: unknown[]): Promise<any> {
     return new Promise((resolve, reject) => {
@@ -21,11 +22,31 @@ export class AgentWorkerRPC {
       if (this.entries.get(id) !== entry) return
       this.entries.delete(id)
       this.diagnostic({ method: entry.method, phase: entry.phase, elapsedMs: Date.now() - entry.born })
-      entry.reject(new Error(entry.phase === 'startup' ? '联系人执行进程启动超时，正在恢复。' : '联系人执行进程响应超时，正在恢复；未确认的操作请检查原事项状态。'))
-      entry.worker.kill()
+      entry.reject(new Error(entry.method === 'init' ? '联系人执行进程启动超时，正在恢复。' : '联系人操作响应超时；结果尚未确认，请检查原事项状态，勿重复提交。'))
+      if (entry.method === 'init') entry.worker.kill()
+      else this.probe(entry.worker)
     }, duration)
   }
-  receive(worker: Worker, message: { requestId: number; started?: boolean; result?: unknown; error?: string }) {
+  private probe(worker: Worker) {
+    if (this.probes.has(worker)) return
+    const id = ++this.sequence
+    const timer = setTimeout(() => {
+      if (this.probes.get(worker)?.id !== id) return
+      this.probes.delete(worker)
+      this.diagnostic({ method: 'health', phase: 'unresponsive', elapsedMs: 5000 })
+      this.exited(worker); worker.kill()
+    }, 5000)
+    this.probes.set(worker, { id, timer })
+    try { worker.postMessage({ ping: id }) }
+    catch { clearTimeout(timer); this.probes.delete(worker); this.exited(worker); worker.kill() }
+  }
+  receive(worker: Worker, message: { requestId?: number; pong?: number; started?: boolean; result?: unknown; error?: string }) {
+    if (message.pong !== undefined) {
+      const probe = this.probes.get(worker)
+      if (probe?.id === message.pong) { clearTimeout(probe.timer); this.probes.delete(worker) }
+      return
+    }
+    if (message.requestId === undefined) return
     const entry = this.entries.get(message.requestId)
     if (!entry || entry.worker !== worker) return
     if (message.started) {
@@ -37,6 +58,8 @@ export class AgentWorkerRPC {
     if (message.error) entry.reject(new Error(message.error)); else entry.resolve(message.result)
   }
   exited(worker: Worker) {
+    const probe = this.probes.get(worker)
+    if (probe) { clearTimeout(probe.timer); this.probes.delete(worker) }
     for (const [id, entry] of this.entries) if (entry.worker === worker) {
       clearTimeout(entry.timer); this.entries.delete(id)
       entry.reject(new Error('联系人执行进程已退出，未完成工作将在恢复后继续。'))

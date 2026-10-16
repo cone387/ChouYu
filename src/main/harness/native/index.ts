@@ -4,7 +4,8 @@ export function createNativeModule(): HarnessModule {
     return {
         id: 'native', label: 'ChouYu 原生',
         capabilities: { platforms: 'all', scenarios: ['chat'], images: true, systemHistory: true, tools: 'host', confirmation: 'return-card', recovery: 'none' },
-        adapter: createNativeAdapter(), confirmation: () => ({ mode: 'return-card' })
+        adapter: createNativeAdapter(), confirmation: () => ({ mode: 'return-card' }),
+        background: { run: input => streamNativeChat(input.messages, input.systemPrompt, input.config, input.onChunk, input.signal, input.tools, input.options) }
     };
 }
 export function createNativeAdapter(model: typeof streamNativeChat = streamNativeChat): HarnessAdapter {

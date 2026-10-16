@@ -2,8 +2,8 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentService } from './service'
-import { AgentStore } from './store'
+import { AgentSpace } from '../agent-space/service'
+import { TaskCenter } from '../task-center/store'
 import { createContactTools } from './tools'
 import { routeContactChange } from './chat-changes'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -12,9 +12,9 @@ import type { ToolExecutionContext } from '../tools/registry'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
-async function fixture(config: import('./service').AgentIdentity['config'] = null) {
+async function fixture(config: import('../agent-space/service').ContactIdentity['config'] = null) {
   const dir = mkdtempSync(join(tmpdir(), 'contact-chat-controls-'))
-  const service = new AgentService(dir, () => {})
+  const service = new AgentSpace(dir, () => {})
   cleanup.push(async () => { await service.close(); rmSync(dir, { recursive: true, force: true }) })
   await service.sync([{ id: 'alice', name: '作者', soul: '', conversation: '', config }, { id: 'bob', name: '评审', soul: '', conversation: '', config: null }])
   let owner = 'alice'
@@ -40,7 +40,7 @@ it('saves working hours through chat for a contact without tasks and retains a d
   expect(current.topics).toEqual([])
   expect(current.settings.enabled).toBe(false)
   expect(f.store.overview('bob').settings.workHours).toBeUndefined()
-  const reopened = new AgentStore(join(f.dir, 'agents.db'))
+  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
   try {
     expect(reopened.overview('alice').settings.workHours).toEqual({ start: '20:00', end: '23:00' })
     expect(reopened.db.prepare('SELECT reason FROM work_settings_changes WHERE character_id=?').get('alice')).toEqual({ reason: '以后只在晚上八点到十一点工作' })
@@ -54,7 +54,7 @@ it('persists permissions, notifications and sharing through the same chat settin
   expect(reply).toContain('仅指定网页')
   expect(f.store.overview('alice')).toMatchObject({ settings: patch, topics: [] })
   expect(f.store.overview('bob')).toEqual(bob)
-  const reopened = new AgentStore(join(f.dir, 'agents.db'))
+  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
   try { expect(reopened.overview('alice').settings).toMatchObject(patch) } finally { reopened.close() }
 })
 it('does not partially save a combined patch when the required search credential is missing', async () => {

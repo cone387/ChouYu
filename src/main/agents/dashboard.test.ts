@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-import { AgentService } from './service'
+import { AgentSpace } from '../agent-space/service'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 describe('contacts dashboard', () => {
   it('serves the global dashboard without requiring a single contact identity', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'chouyu-dashboard-'))
-    const service = new AgentService(directory, () => {})
+    const service = new AgentSpace(directory, () => {})
     try {
       const data = await service.request('dashboard', '', [['new-contact']])
       expect(data.contacts['new-contact'].summary.tasks).toBe(0)
@@ -17,7 +17,7 @@ describe('contacts dashboard', () => {
     } finally { await service.close(); rmSync(directory, { recursive: true, force: true }) }
   })
   it('aggregates all contacts and rounds with accurate usage and event ownership', () => {
-    const store = new AgentStore(':memory:')
+    const store = new TaskCenter(':memory:')
     try {
       for (const id of ['alice', 'bob', 'excluded']) store.save(id, { ...DEFAULT_AGENT_SETTINGS, goal: `${id} task` })
       const first = store.createRun('alice', '')
@@ -46,7 +46,7 @@ describe('contacts dashboard', () => {
     } finally { store.close() }
   })
   it('bounds the log window and returns stable chronological event order', () => {
-    const store = new AgentStore(':memory:')
+    const store = new TaskCenter(':memory:')
     try {
       store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A' })
       const run = store.createRun('alice', '')

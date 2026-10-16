@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import type { DeliverySection } from '../../shared/agent-delivery'
-import type { AgentStore } from './store'
-import type { AgentModel } from './runtime'
+import type { TaskCenter } from '../task-center/store'
+import type { AgentModel } from '../workloop/workflow'
 
 const protocol = 'completion-batches-v1'
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -50,7 +50,7 @@ function parseReceipt(raw: string, key: string): CompletionReceipt {
 }
 
 /** Cached facts are scoped to exact requirements and text, not a mutable delivery version. */
-export async function reviewCompletionBatches(store: AgentStore, runId: string, topicId: string,
+export async function reviewCompletionBatches(store: TaskCenter, runId: string, topicId: string,
   sections: DeliverySection[], requirements: unknown, model: AgentModel, signal: AbortSignal, live: () => void) {
   const requirementsKey = digest({ protocol, requirements })
   const parts = completionParts(sections)

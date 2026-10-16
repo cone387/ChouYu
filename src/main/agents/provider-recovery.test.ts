@@ -2,9 +2,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentService } from './service'
+import { AgentSpace } from '../agent-space/service'
 import { dirname } from 'node:path'
-import { AgentStore } from './store'
+import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { providerRecoveryDelay } from '../../shared/contact-failure'
 const cleanups: (() => void | Promise<void>)[] = []
@@ -13,7 +13,7 @@ function fixture(error = 'API error 429: 余额不足或无可用资源包') {
   vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 10, 10))
   const dir = mkdtempSync(join(tmpdir(), 'provider-recovery-')), path = join(dir, 'agents.db')
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new AgentStore(path); cleanups.push(() => store.close())
+  const store = new TaskCenter(path); cleanups.push(() => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '持续写作', enabled: true, dailyCalls: 100 })
   let run = ''
   for (let i = 0; i < 3; i++) { vi.setSystemTime(Date.now() + 1000); run = store.createRun('alice', ''); store.charge(run); store.fail(run, error) }
@@ -23,7 +23,7 @@ it('restores old billing blocks across restart without resetting failures or byp
   const { store, path, run, topic } = fixture()
   // Old builds recorded only a three-minute wait before permanently stopping.
   store.db.prepare('UPDATE profiles SET next_at=?').run(Date.now() + 180000)
-  const reopened = new AgentStore(path); cleanups.push(() => reopened.close())
+  const reopened = new TaskCenter(path); cleanups.push(() => reopened.close())
   const due = reopened.providerRecovery('alice')!.at
   expect(due).toBe(Date.now() + 15 * 60000)
   expect(reopened.nextScheduledTopic('alice', due - 1)).toBeUndefined()
@@ -81,7 +81,7 @@ it('restarts the real scheduler after an outage and saves recovered output witho
     : prompt.startsWith('为联系人')
     ? JSON.stringify({ action: 'write', reason: '写正文', query: '', urls: [], checkAfterMinutes: 180 })
     : JSON.stringify({ title: '恢复后的成果', body: '已经保存的正文。', nextStep: '', memories: [], question: '', progress: { judgement: '完成', openQuestions: '', nextStep: '', reason: '已保存', status: 'completed' }, delivery: { completionCriteria: '交付正文', summary: '正文已保存', stages: [{ id: 'draft', title: '正文', status: 'done' }], section: { id: 'text', title: '恢复后的成果', body: '已经保存的正文。' } } }))
-  const service = new AgentService(dirname(path), () => {}, () => model)
+  const service = new AgentSpace(dirname(path), () => {}, () => model)
   cleanups.push(() => service.close())
   await service.sync([{ id: 'alice', soul: '写作者', conversation: '', config: { provider: 'openai', baseUrl: 'http://test.invalid', apiKey: 'fixture', model: 'fixture', thinkingDisabledModels: [] } }])
   await vi.waitFor(() => expect(service.store.overview('alice').reports).toHaveLength(1))
@@ -103,7 +103,7 @@ it('does not call the provider when Token allowance is insufficient for recovery
   store.save('alice', { ...store.overview('alice').settings, dailyTokenLimit: 1 }, Date.now(), false)
   vi.setSystemTime(store.providerRecovery('alice')!.at)
   const model = vi.fn(async () => { throw new Error('must not be called') })
-  const service = new AgentService(dirname(path), () => {}, () => model)
+  const service = new AgentSpace(dirname(path), () => {}, () => model)
   cleanups.push(() => service.close())
   await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'http://test.invalid', apiKey: 'fixture', model: 'fixture', thinkingDisabledModels: [] } }])
   await vi.waitFor(() => expect(service.store.overview('alice').runs[0].status).toBe('interrupted'))

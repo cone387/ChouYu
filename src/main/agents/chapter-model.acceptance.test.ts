@@ -6,8 +6,8 @@ import { streamNativeChat } from '../harness/native/runner'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-import { AgentStore } from './store'
-import { AgentRuntime } from './runtime'
+import { TaskCenter } from '../task-center/store'
+import { WorkStrategyRuntime } from '../workloop/workflow'
 import { chapterTail } from './chapter-continuation'
 
 // Opt-in paid provider test. Synthetic prose and temporary SQLite only.
@@ -16,7 +16,7 @@ it.skipIf(!process.env.CHOUYU_CHAPTER_MODEL_ACCEPTANCE)('real author model advan
   const resolved = resolveCharacterConfig(data.characters[0], data.config)
   if (!resolved.ok) throw new Error('阿笔模型配置不可用')
   const directory = mkdtempSync(join(tmpdir(), 'chouyu-chapter-model-'))
-  const store = new AgentStore(join(directory, 'agents.db')), runtime = new AgentRuntime(store, join(directory, 'checkpoints.db'))
+  const store = new TaskCenter(join(directory, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(directory, 'checkpoints.db'))
   const records: unknown[] = []
   try {
     store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '续写长篇奇幻小说《海上旧塔》。接着既有情节写下去，保持人物设定，不重写开头。', sources: [], dailyCalls: 20 })

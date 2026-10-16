@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentStore } from './store'
-import { AgentRuntime } from './runtime'
-import { AgentService } from './service'
+import { TaskCenter } from '../task-center/store'
+import { WorkStrategyRuntime } from '../workloop/workflow'
+import { AgentSpace } from '../agent-space/service'
 import { evidenceFromText } from './sources'
 import { DEFAULT_AGENT_SETTINGS, type AgentTopicProgress } from '../../shared/agents'
 import { deliveryMarkdown, validateDeliveryUpdate, type DeliveryUpdate } from '../../shared/agent-delivery'
@@ -15,13 +15,13 @@ afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-delivery-'))
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
-  let store = new AgentStore(join(dir, 'agents.db'))
+  let store = new TaskCenter(join(dir, 'agents.db'))
   const reader = vi.fn(async () => evidenceFromText('https://example.com/', '真实资料仅说明个人免费，团队需求尚未验证。'.repeat(10)))
-  let runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'), reader)
+  let runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), reader)
   cleanups.push(() => { runtime.close(); store.close() })
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '完成五章小说初稿', sources: [], dailyCalls: 48 })
   return { get store() { return store }, get runtime() { return runtime }, reader, dir,
-    reopen() { runtime.close(); store.close(); store = new AgentStore(join(dir, 'agents.db')); runtime = new AgentRuntime(store, join(dir, 'checkpoints.db'), reader); store.recover() } }
+    reopen() { runtime.close(); store.close(); store = new TaskCenter(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), reader); store.recover() } }
 }
 const progress: AgentTopicProgress = { judgement: '正在推进', openQuestions: '', nextStep: '继续下一章', reason: '已交付正文', status: 'researching' }
 const plan = { action: 'write', reason: '继续创作', urls: [], query: '', checkAfterMinutes: 180 }
@@ -250,7 +250,7 @@ describe('durable deliverables', () => {
   })
   it('enforces ownership at the service boundary and cascades deletion', async () => {
     const f = fixture(); await write(f, 1)
-    const service = new AgentService(f.dir, () => {})
+    const service = new AgentSpace(f.dir, () => {})
     cleanups.push(() => service.close())
     await service.sync(['alice', 'bob'].map(id => ({ id, soul: '', conversation: '', config: null })))
     const topicId = f.store.overview('alice').focusTopicId!

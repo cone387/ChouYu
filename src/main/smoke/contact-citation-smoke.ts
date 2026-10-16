@@ -1,7 +1,7 @@
 import { app, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { AgentStore } from '../agents/store'
+import { TaskCenter } from '../task-center/store'
 import { flushDatabase, getSessions, getSession, getActiveSession, selectChatSession } from '../database'
 import { waitForRenderer } from './storage-smoke'
 
@@ -14,7 +14,7 @@ export async function runContactCitationSmoke(window: BrowserWindow, owner: stri
   }
   const fill = (selector: string, value: string) => run(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}))})()`)
   const select = () => run("(()=>{const el=document.querySelector('.contact-portfolio .delivery-reader .contact-markdown p');const range=document.createRange();range.selectNodeContents(el);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);return selection.toString()})()")
-  const store = new AgentStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   try {
     const count = store.overview(owner).runs.length, version = store.deliveries.get(topicId)!.version
     const quote = await select()
