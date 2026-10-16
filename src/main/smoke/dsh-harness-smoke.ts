@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createCharacter, createChatSession, listCharacters, getCharacter, getConfig, getSession, getSessions, saveConfig, selectChatSession, flushDatabase } from '../database';
 import { contactAgentsCall, pendingContactInteractions } from '../agents';
 import { waitForRenderer } from './storage-smoke';
-import { dshService } from '../harness/service';
+import { dshService } from '../harness/dsh/service';
 import type { MaterialVersion } from '../../shared/contact-materials';
 import type { ContactActionInteraction } from '../../shared/contact-actions';
 /** Actual renderer, IPC, pinned SDK, registered tools, persistent card and business storage. */

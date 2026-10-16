@@ -1,9 +1,6 @@
-import { dshService, existingDshService, closeDshService, setHarnessCancellation, purgeHarnessData, assertDshRecovered, cleanSavedDshRun } from './harness/service'
-import type { HarnessInput } from './harness/contracts'
+import { chatHarness, harnessRegistry, acknowledgeHarnessMessages, closeHarnessModules, setHarnessCancellation, purgeHarnessData } from './harness/service'
+import type { HarnessInput, HarnessConfirmation } from './harness/contracts'
 import { prepareHarnessInput, harnessConfigVersion } from './harness/prepare'
-import { createNativeModule } from './harness/native'
-import { HarnessRegistry } from './harness/registry'
-import { HarnessCoordinator } from './harness/coordinator'
 import { createChatTools, type ChatRequestState } from './harness/tools'
 import { contactCommunicationInstructions } from '../shared/contact-communication'
 import { validateCitationShapes } from '../shared/contact-citations'
@@ -121,12 +118,6 @@ import {
   setState
 } from './database'
 
-const chatHarness = new HarnessCoordinator(new HarnessRegistry([createNativeModule(), {
-  id: 'dsh', label: 'DeepSeek Harness',
-  capabilities: { platforms: ['win32'], scenarios: ['chat'], images: false, systemHistory: false, tools: ['read_contact_material', 'get_contact_output_preferences', 'set_contact_output_preference'], confirmation: 'await-receipt', recovery: 'committed-result' },
-  adapter: { run: (input, emit) => { assertDshRecovered(); return dshService().adapter.run(input, emit) }, invalidate: input => dshService().adapter.invalidate(input) },
-  confirmation: input => ({ mode: 'await-receipt', beforeOffer: call => dshService().adapter.beforePersistentOffer({ ...input, callId: call.id }), waitForReceipt: (call, card) => dshService().actions.waitForActionReceipt({ ...input, callId: call.id }, card.id, input.signal) })
-}]), id => getCharacter(id)?.harnessEngine ?? 'native')
 setHarnessCancellation(key=>{activeAIRequests.get(key)?.abort();return chatHarness.cancel(key)})
 setContactHarnessPurge(characterId=>purgeHarnessData({characterId}))
 
@@ -650,6 +641,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
     // Freeze the choice before context preparation or intent routing can yield.
     const selectedEngine = chatHarness.engineFor(owner)
+    const selectedModule = harnessRegistry.get(selectedEngine)
 
     const requestKey = getAIRequestKey(event.sender.id, request.requestId)
     activeAIRequests.get(requestKey)?.abort()
@@ -664,12 +656,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     activeAIRequests.set(requestKey, controller)
     const chatState: ChatRequestState = { ownMemoryMutation: false, memoryMutationReceipt: '' }
     let contextSent = false
-    let receiptMode=false
     let harnessInput:HarnessInput|undefined
     const assertContext = async () => {
       controller.signal.throwIfAborted()
-      if(receiptMode&&harnessInput){
-        const base=getConfig(),current=resolveCharacterConfig(owner?getCharacter(owner):undefined,base)
+      if(harnessInput){
+        const base=getConfig(),current=resolveCharacterConfig(request.characterId?getCharacter(request.characterId):undefined,base)
         if(!current.ok||harnessConfigVersion({...base,...current.config})!==harnessInput.configVersion)throw new Error('模型或工具配置已变化，请重新发送消息。')
       }
       if (owner && chatState.contactContext) await contactAgentsCall(owner, 'assertContextCurrent', [chatState.contactContext])
@@ -684,8 +675,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const skillSnapshot = request.characterId ? getContactSkills(request.characterId) : { entries: [], instruction: '' }
       if (skillSnapshot.error) throw new Error(skillSnapshot.error)
       const skillContext = skillSnapshot.instruction
-      const skillTools = skillToolRuntime(request.characterId || '', skillSnapshot, contactSkillRunner(), controller.signal, async (skillId, files) => {
-        controller.signal.throwIfAborted()
+      const buildSkillTools = (signal: AbortSignal) => skillToolRuntime(request.characterId || '', skillSnapshot, contactSkillRunner(), signal, async (skillId, files) => {
+        signal.throwIfAborted()
         if (!owner || !request.sessionId || getSession(request.sessionId)?.characterId !== owner) throw new Error('文件缺少可验证的会话来源。')
         return contactAgentsCall(owner, 'archiveFiles', [{ characterId: owner, skillId, sessionId: request.sessionId, requestId: request.requestId }, files])
       })
@@ -700,11 +691,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           chatState.contactContext = { characterId: owner, requestId: request.requestId, memories: selected.memories, truncated: selected.truncated, status: 'completed' }
         } catch { privateContext = '\n独立工作记录暂时无法读取，请勿声称知道未提供的工作经历。' }
       }
-      const chatTools = config.aiToolsEnabled ? createChatTools({
-          request, owner, signal: controller.signal, cancel: () => controller.abort(), state: chatState,
-          get confirmationMode(){return receiptMode?'await-receipt':'return-card'},
-          beforePersistentOffer:call=>dshService().adapter.beforePersistentOffer({...harnessInput!,callId:call.id}),
-          waitForActionReceipt:(call,card)=>dshService().actions.waitForActionReceipt({...harnessInput!,callId:call.id},card.id,controller.signal),
+      const buildChatTools = (confirmation: HarnessConfirmation, signal = controller.signal) => {
+        const skillTools = buildSkillTools(signal)
+        return config.aiToolsEnabled ? createChatTools({
+          request, owner, signal, cancel: () => controller.abort(), state: chatState,
+          confirmation,
           definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)
             && (!SKILL_TOOLS.some(skill => skill.name === tool.name) || skillTools.definitions.some(skill => skill.name === tool.name))
             && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
@@ -712,9 +703,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           prepare: async (call, args) => SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : prepareRegisteredToolAsync(call.name, args, mainWindow, request.sessionId),
           contactPolicy: async () => owner ? (await contactAgentsCall(owner, 'get') as import('../shared/agents').AgentOverview).settings.toolPermissionMode : undefined,
           offerAction: (key, action) => contactAgentsCall<ContactActionInteraction>(owner!, 'offerAction', [key, action]),
-          approve: (call, preview) => requestToolApproval(event.sender, request.requestId, call, controller.signal, preview),
+          approve: (call, preview) => requestToolApproval(event.sender, request.requestId, call, signal, preview),
           emit: toolEvent => sendToolEvent(event.sender, toolEvent)
         }) : undefined
+      }
+      const chatTools = buildChatTools({ mode: 'return-card' })
       const currentCitations = [...request.messages].reverse().find(m => m.role === 'user')?.contactCitations
       if (owner && owner !== ASSISTANT_CHARACTER_ID && chatTools && !currentCitations?.length) {
         const routed = await routeContactChange(request.messages, {
@@ -744,21 +737,20 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           return { ok: true, reply: routed }
         }
       }
-      receiptMode=selectedEngine==='dsh'
       harnessInput = await prepareHarnessInput(request, {
         config: effectiveConfig, signal: controller.signal, assertContext,
         citationContext: citations => contactAgentsCall<string>(owner!, 'citationContext', [citations]),
         privateContext, skillContext,
         communication: owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation'),
-        tools: receiptMode&&chatTools?{...chatTools,definitions:chatTools.definitions.filter(tool=>['read_contact_material','get_contact_output_preferences','set_contact_output_preference'].includes(tool.name))}:chatTools,
         onMetadata: () => { contextSent = true }
       })
       // Main-process identity scopes equal renderer request ids to their owning sender.
       harnessInput.requestId = requestKey
+      harnessInput.bindTools = run => buildChatTools(selectedModule.confirmation(run), run.signal)
       const result = await chatHarness.run(harnessInput, update => {
         if (event.sender.isDestroyed()) return
         if (update.type === 'text') {
-          const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk: update.text, done: false, ...(receiptMode?{operation:update.operation,attemptId:update.attemptId,sequence:update.seq}:{}) }
+          const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk: update.text, done: false, operation:update.operation,attemptId:update.attemptId,sequence:update.seq }
           event.sender.send('ai:stream-event', streamEvent)
         }
       }, selectedEngine)
@@ -768,7 +760,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (contextSent && chatState.contactContext) setState(`contact-context:${request.requestId}`, JSON.stringify(chatState.contactContext))
       return { ok: true, contactContext: contextSent ? chatState.contactContext : undefined, ...(result.source?{reply:result.text,operation:'replace' as const,harnessSource:result.source}:{}) }
     } catch (error) {
-      if (receiptMode && harnessInput) await dshService().adapter.invalidate(harnessInput)
+      if (harnessInput) {
+        try { await selectedModule.adapter.invalidate?.(harnessInput) }
+        catch (cleanupError) { error = new Error(`${getErrorMessage(error)} 清理未完成：${getErrorMessage(cleanupError)}`) }
+      }
       if (contextSent && chatState.contactContext) { chatState.contactContext.status = 'failed'; setState(`contact-context:${request.requestId}`, JSON.stringify(chatState.contactContext)) }
       if (chatState.memoryMutationReceipt) return { ok: true, reply: chatState.memoryMutationReceipt }
       if (controller.signal.aborted) return { ok: false, error: 'AI 请求已取消。' }
@@ -964,14 +959,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (readMessageId !== undefined && (typeof readMessageId !== 'string' || !readMessageId || readMessageId.length > 128)) throw new Error('Invalid read message id')
     if(!messages.length){const session=getSession(id);if(session)await purgeHarnessData({characterId:session.characterId,sessionId:id})}
     const workspace = saveSessionMessages(id, messages, readMessageId)
-    const dsh=existingDshService()
-    if(dsh){
-      const saved=getSession(id)
-      if(saved&&!flushDatabase().error)for(const message of saved.messages){
-        const source=message.harnessSource,run=source&&dsh.store.get(source)
-        if(run?.state==='completed'&&run.sessionId===id&&run.characterId===saved.characterId&&run.messageId===message.id&&message.replyCompletedAt){dsh.store.markMessageSaved(run);await cleanSavedDshRun(run)}
-      }
-    }
+    await acknowledgeHarnessMessages(id)
     notifyAssistantUnread()
     return workspace
   })
@@ -1010,4 +998,4 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 }
 
-export async function closeChatHarness(){for(const controller of activeAIRequests.values())controller.abort();await chatHarness.close();await closeDshService()}
+export async function closeChatHarness(){for(const controller of activeAIRequests.values())controller.abort();await closeHarnessModules()}

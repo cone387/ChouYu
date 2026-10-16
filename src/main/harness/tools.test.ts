@@ -8,6 +8,7 @@ function fixture() {
     const definition: AIToolDefinition = { name: 'set_contact_output_preference', displayName: '偏好', description: '偏好', risk: 'write', requiresConfirmation: true, alwaysConfirm: true, source: 'builtin', inputSchema: { type: 'object', properties: {} } };
     let enabled = true;
     const context: ChatToolContext = {
+        confirmation: { mode: 'return-card' },
         request: { requestId: 'r', characterId: 'c', sessionId: 's', messages: [], systemPrompt: '' }, owner: 'c',
         signal: new AbortController().signal, cancel() { }, state: { ownMemoryMutation: false, memoryMutationReceipt: '' }, definitions: [definition],
         getDefinition: name => name === definition.name ? definition : undefined,
@@ -48,18 +49,16 @@ it('returns the original persistent card without executing an always-confirm act
 });
 it('awaits the original saved action receipt and never calls the prepared writer', async () => {
     const f = fixture(), order: string[] = [], events: ToolExecutionEvent[] = [];
-    f.context.confirmationMode = 'await-receipt';
-    f.context.beforePersistentOffer = async () => { order.push('flush'); };
-    f.context.waitForActionReceipt = async (_call, card) => { expect(f.offers).toHaveLength(1); expect(card.id).toBe('card'); order.push('receipt'); return 'saved original receipt'; };
+    f.context.confirmation = { mode: 'await-receipt',
+        beforeOffer: async () => { order.push('flush'); },
+        waitForReceipt: async (_call, card) => { expect(f.offers).toHaveLength(1); expect(card.id).toBe('card'); order.push('receipt'); return 'saved original receipt'; } };
     const tools = createChatTools(f.context); tools.subscribe(event => events.push(event));
     expect(await tools.execute({ id: 'call', name: 'set_contact_output_preference', arguments: '{}' })).toBe('saved original receipt');
     expect(events.map(event => event.status)).toEqual(['requested', 'completed']);
     expect(order).toEqual(['flush', 'receipt']);
     expect(f.calls).toEqual([]);
     const bad = fixture();
-    bad.context.confirmationMode = 'await-receipt';
-    bad.context.waitForActionReceipt = async () => '';
-    bad.context.beforePersistentOffer = async () => { throw new Error('flush failed'); };
+    bad.context.confirmation = { mode: 'await-receipt', waitForReceipt: async () => '', beforeOffer: async () => { throw new Error('flush failed'); } };
     expect(await createChatTools(bad.context).execute({ id: 'call', name: 'set_contact_output_preference', arguments: '{}' })).toContain('flush failed');
     expect(bad.offers).toEqual([]);
 });

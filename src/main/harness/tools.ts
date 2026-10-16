@@ -5,15 +5,14 @@ import { CONTACT_ACTION_TOOLS, type ContactActionTool, type ContactActionInterac
 import { parseToolArguments, shouldConfirmTool, type AIToolCall, type AIToolDefinition, type ToolExecutionEvent, type ContactToolPermissionMode } from '../../shared/tools';
 import { toolApprovalFailure, type ToolApprovalOutcome } from '../tool-approval';
 import type { PreparedTool } from '../tools/registry';
+import type { HarnessConfirmation } from './contracts';
 export interface ChatRequestState {
     contactContext?: ContactContextRecord;
     ownMemoryMutation: boolean;
     memoryMutationReceipt: string;
 }
 export interface ChatToolContext {
-    confirmationMode?: 'return-card' | 'await-receipt';
-    beforePersistentOffer?(call: AIToolCall): Promise<void>;
-    waitForActionReceipt?(call: AIToolCall, card: ContactActionInteraction): Promise<string>;
+    confirmation: HarnessConfirmation;
     request: AIStreamRequest;
     owner?: string;
     signal: AbortSignal;
@@ -92,10 +91,8 @@ export function createChatTools(context: ChatToolContext) {
                 });
                 if (needsApproval) {
                     if (owner && request.sessionId && CONTACT_ACTION_TOOLS.includes(call.name as ContactActionTool)) {
-                        if (context.confirmationMode === 'await-receipt') {
-                            if (!context.beforePersistentOffer || !context.waitForActionReceipt)
-                                throw new Error('确认回执桥接不可用，未创建事项。');
-                            await context.beforePersistentOffer(call);
+                        if (context.confirmation.mode === 'await-receipt') {
+                            await context.confirmation.beforeOffer(call);
                             context.signal.throwIfAborted();
                         }
                         const card = await context.offerAction(`${request.requestId}:${call.id}`, {
@@ -108,8 +105,8 @@ export function createChatTools(context: ChatToolContext) {
                             actions: [{ id: 'apply', label: '确认执行', tool: call.name, arguments: arguments_ }],
                             ...(call.name === 'set_contact_search_credential' ? { input: { label: '搜索密钥', argument: 'credential', maxLength: 8192, required: true } } : {})
                         });
-                        if (context.confirmationMode === 'await-receipt') {
-                            const receipt = await context.waitForActionReceipt!(call, card);
+                        if (context.confirmation.mode === 'await-receipt') {
+                            const receipt = await context.confirmation.waitForReceipt(call, card);
                             context.signal.throwIfAborted();
                             emit({ requestId: request.requestId, callId: call.id, name: definition.name, displayName: definition.displayName, risk: definition.risk, status: 'completed', summary: '已收到确认事项处理回执' });
                             return receipt;

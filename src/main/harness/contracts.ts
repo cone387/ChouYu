@@ -15,6 +15,8 @@ export interface HarnessInput extends RunKey {
     snapshotFingerprint: string;
     configVersion: string;
     tools?: HarnessToolRuntime;
+    /** Bind host tools after the coordinator composes the effective cancellation signal. */
+    bindTools?(input: HarnessInput): HarnessToolRuntime | undefined;
     signal: AbortSignal;
     assertContext(): Promise<void>;
     onMetadata?(metadata: AIResponseMetadata): void;

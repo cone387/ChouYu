@@ -32,3 +32,15 @@ it.each(['native', 'dsh'] as const)('%s close waits for cancellation and rejects
   expect(await first).toMatchObject({ state: 'cancelled' })
   expect(events.map(e => e.type)).toEqual(['started','cancelled'])
 })
+it.each(['native', 'dsh'] as const)('%s binds confirmation tools to the coordinator cancellation signal', async id => {
+  const module = { ...createNativeModule(), id }, value = input()
+  let toolSignal: AbortSignal | undefined, finish!: () => void, entered!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  value.bindTools = run => { toolSignal = run.signal; return { definitions: [], execute: async () => 'receipt' } }
+  module.adapter = { run: async () => { entered(); await new Promise<void>(resolve => { finish = resolve }); return { state: 'completed', text: '' } } }
+  const coordinator = new HarnessCoordinator(new HarnessRegistry([module]))
+  const running = coordinator.run(value, () => {}, id); await started
+  const cancelled = coordinator.cancel(value.requestId)
+  try { expect(toolSignal?.aborted).toBe(true); expect(value.signal.aborted).toBe(false) }
+  finally { finish(); await cancelled; await running }
+})

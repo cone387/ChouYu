@@ -93,7 +93,7 @@
 - `HarnessRegistry(modules: HarnessModule[])`：重复 ID 拒绝注册；`get(engine: HarnessEngine): HarnessModule`；`prepare(engine: HarnessEngine, input: HarnessInput, platform: NodeJS.Platform): HarnessInput` 检查平台/场景/图片/system 历史，限制工具定义及 execute，返回新输入对象。
 - `HarnessCoordinator` 改为接收注册表；`run` 保留冻结的 engine 参数，不再接收裸适配器表。`HarnessUpdate` 的工具状态增加 `failed`；`createChatTools` 提供上述 `subscribe` 接口，将真实 `ToolExecutionEvent` 同时送给原 UI 与执行期订阅者，协调器映射为 Harness 工具事件，不从错误字符串猜测成功与否。
 
-- [ ] **1. 写注册表与双引擎契约测试。** 原生/DSH 模块用同一套断言验证能力、序号与终态。覆盖禁用平台、图片、额外 system 历史、工具定义交集、直接调用白名单外工具、调用期间撤权、重复注册及缺少模块。越权调用断言：
+- [x] **1. 写注册表与双引擎契约测试。** 原生/DSH 模块用同一套断言验证能力、序号与终态。覆盖禁用平台、图片、额外 system 历史、工具定义交集、直接调用白名单外工具、调用期间撤权、重复注册及缺少模块。越权调用断言：
 
   ```ts
   await expect(prepared.tools!.execute(forbiddenCall)).rejects.toThrow()
@@ -102,10 +102,10 @@
   ```
 
   协调测试另覆盖执行抛错且 invalidate 也抛错、取消后迟到文本、取消中 close、重复活动请求：仅一个失败/取消终态，保留原错误，之后同请求 ID 可重新显式提交。
-- [ ] **2. 验证失败。** `npx vitest run src/main/harness/registry.test.ts src/main/harness/contract.test.ts src/main/harness/coordinator.test.ts`，确认失败对应新接口及行为。
-- [ ] **3. 实现注册及统一事件。** 注册表校验不初始化引擎资源；协调器只依赖契约与能力，不知道 DSH 工具名。工具服务以实际事件报告执行、等待和失败；不重复发送 DSH runtime 与宿主的同一个工具状态。卡片发送完成与业务完成的含义必须分开，不增加第二套 UI。
-- [ ] **4. 验证契约及工具回归。** 运行上列测试加 `src/main/harness/tools.test.ts src/main/harness/native/index.test.ts`；检查原生启动、取消和失败不触发 DSH factory/进程；共同序号严格递增且终态后无输出。
-- [ ] **5. 提交。** `refactor: unify harness registry capabilities and run lifecycle`。覆盖 NH-04、NH-05 及 NH-06 的事件语义。
+- [x] **2. 验证失败。** `npx vitest run src/main/harness/registry.test.ts src/main/harness/contract.test.ts src/main/harness/coordinator.test.ts`，确认失败对应新接口及行为。
+- [x] **3. 实现注册及统一事件。** 注册表校验不初始化引擎资源；协调器只依赖契约与能力，不知道 DSH 工具名。工具服务以实际事件报告执行、等待和失败；不重复发送 DSH runtime 与宿主的同一个工具状态。卡片发送完成与业务完成的含义必须分开，不增加第二套 UI。
+- [x] **4. 验证契约及工具回归。** 运行上列测试加 `src/main/harness/tools.test.ts src/main/harness/native/index.test.ts`；检查原生启动、取消和失败不触发 DSH factory/进程；共同序号严格递增且终态后无输出。
+- [x] **5. 提交。** `refactor: unify harness registry capabilities and run lifecycle`。覆盖 NH-04、NH-05 及 NH-06 的事件语义。
 
 ## Task 3：DSH 模块化与公共宿主接入
 

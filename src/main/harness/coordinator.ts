@@ -28,7 +28,9 @@ export class HarnessCoordinator {
     try {
       try {
         signal.throwIfAborted()
-        const prepared = this.registry.prepare(engine, { ...input, signal }, this.platform)
+        const bound = { ...input, signal }
+        if (input.bindTools) bound.tools = input.bindTools(bound)
+        const prepared = this.registry.prepare(engine, bound, this.platform)
         adapter = this.registry.get(engine).adapter
         releaseTools = prepared.tools?.subscribe?.(event => emit({
           type: 'tool', callId: event.callId,

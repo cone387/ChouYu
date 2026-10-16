@@ -1,5 +1,5 @@
 import { runDshHarnessSmoke } from './smoke/dsh-harness-smoke'
-import { recoverDshService } from './harness/service'
+import { recoverHarnessModules } from './harness/service'
 import { closeChatHarness } from './ipc'
 import { runContactSoak } from './evaluation/contact-soak'
 import { runContactCardLinksSmoke } from './smoke/contact-card-links-smoke'
@@ -237,7 +237,7 @@ app.whenReady().then(async () => {
   if (process.platform === 'win32') app.setAppUserModelId('com.chouyu.app')
   // Init database first (needed by plugins and IPC handlers)
   initDatabase()
-  try{await recoverDshService();setState('harness:recovery-error','')}catch(error){setState('harness:recovery-error',error instanceof Error?error.message:'????????')}
+  try{await recoverHarnessModules();setState('harness:recovery-error','')}catch(error){setState('harness:recovery-error',error instanceof Error?error.message:'执行记录恢复失败。')}
   registerBuiltInCapabilities()
   initializeMemory()
   if (isSmokeTest && !isContactSoak && process.env.CHOUYU_SMOKE_CAPTURE_ONLY !== '1') {
