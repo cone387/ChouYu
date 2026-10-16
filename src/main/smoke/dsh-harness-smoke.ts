@@ -84,7 +84,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         await waitForRenderer(window, "Boolean(document.querySelector('.chat-panel[data-ready=true]'))", 15000);
         const artifacts = process.env.CHOUYU_SMOKE_ARTIFACTS || join(app.getPath('userData'), 'dsh-acceptance');
         mkdirSync(artifacts, { recursive: true });
-        await run("window.__harnessEvents=[];window.__releaseHarnessEvents=window.electronAPI.ai.onStreamEvent(event=>window.__harnessEvents.push(event))");
+        await run("window.__harnessEvents=[];window.__releaseHarnessEvents=window.electronAPI.ai.onStreamEvent(event=>window.__harnessEvents.push(event));void 0");
         const openEngineForm = async (id: string) => {
             await click('[data-workspace-nav=contacts]');
             await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-card-detail="${id}"]'))`, 15000);
