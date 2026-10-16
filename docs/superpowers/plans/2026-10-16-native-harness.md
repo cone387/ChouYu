@@ -10,7 +10,7 @@
 
 **Spec:** [已确认设计](../specs/2026-10-16-native-harness-design.md)
 
-状态：用户已确认计划及本会话顺序实施、最后独立审查的方式；实施中。任务勾选表示实际完成，不能以写好计划替代实现或验收。
+状态：四项任务已完成；独立审查三项 Important 已修复，最终 1892 项测试及四项 Electron smoke 通过。详见[验收记录](../../native-harness-acceptance-20261016.md)。分支 `feat/native-harness` 保留，尚未合入或推送。
 
 ## Global Constraints
 
@@ -118,12 +118,12 @@
 - `createChatTools` 接收一个完整 `HarnessConfirmation`，路由阶段固定 `return-card`；正式执行输入准备好后，根据冻结模块绑定确认对象，再创建执行阶段工具。不再使用 `receiptMode` 可变闭包和 `harnessInput!`。
 - 公共工具事件订阅绑定具体执行请求，终态/取消时解除订阅；工具结果继续供模型和原业务路由消费，不重写业务保存逻辑。
 
-- [ ] **1. 写模块生命周期与宿主测试。** 使用可控 DSH service 替身证明原生请求不启动 DSH、生命周期分发正确、保存确认仅认可同会话同来源且已落盘的助手消息、清理失败保留状态。借用现有 DSH 真实存储测试验证停止后的记录不会恢复投递。路由延迟期间改变引擎，断言开始时选中的模块仍执行；路由返回已处理结果时两个模块均不运行。
-- [ ] **2. 验证失败。** `npx vitest run src/main/harness/service.test.ts src/main/harness/dsh/module.test.ts`，确认缺失公共接入行为导致失败。
-- [ ] **3. 实现 DSH 模块。** 能力声明使用设计中的三工具列表；执行前 recovery guard、确认前 flush、等待回执、invalidate、恢复/删除/保存确认/关闭均封装到模块。保留原 DSH SDK、日志去重和已提交记录恢复逻辑，不增加业务 writer。
-- [ ] **4. 迁移 IPC 和启动关闭接入。** 请求第一次 await 前冻结模块；自然语言路由使用原公共工具服务，只有普通聊天进入模块。IPC 的文本发送始终使用 operation/attemptId/sequence；最终回复根据公共结果字段处理，不按引擎名称判断。保存确认通过公共生命周期入口且必须在数据库真正落盘后进行。
-- [ ] **5. 验证接入回归。** `npx vitest run src/main/harness`，并检查 `ipc.ts`、`index.ts` 不导入 DSH service/adapter、无 DSH 工具白名单及 engine 等于 dsh 的执行分支。运行 `npm run typecheck`。保留原 stop、权限/引用失效、卡片拒绝/重复提交和删除清理测试。
-- [ ] **6. 提交。** `refactor: route chat and persistence through harness modules`。覆盖 NH-03、NH-06、NH-09。
+- [x] **1. 写模块生命周期与宿主测试。** 使用可控 DSH service 替身证明原生请求不启动 DSH、生命周期分发正确、保存确认仅认可同会话同来源且已落盘的助手消息、清理失败保留状态。借用现有 DSH 真实存储测试验证停止后的记录不会恢复投递。路由延迟期间改变引擎，断言开始时选中的模块仍执行；路由返回已处理结果时两个模块均不运行。
+- [x] **2. 验证失败。** `npx vitest run src/main/harness/service.test.ts src/main/harness/dsh/module.test.ts`，确认缺失公共接入行为导致失败。
+- [x] **3. 实现 DSH 模块。** 能力声明使用设计中的三工具列表；执行前 recovery guard、确认前 flush、等待回执、invalidate、恢复/删除/保存确认/关闭均封装到模块。保留原 DSH SDK、日志去重和已提交记录恢复逻辑，不增加业务 writer。
+- [x] **4. 迁移 IPC 和启动关闭接入。** 请求第一次 await 前冻结模块；自然语言路由使用原公共工具服务，只有普通聊天进入模块。IPC 的文本发送始终使用 operation/attemptId/sequence；最终回复根据公共结果字段处理，不按引擎名称判断。保存确认通过公共生命周期入口且必须在数据库真正落盘后进行。
+- [x] **5. 验证接入回归。** `npx vitest run src/main/harness`，并检查 `ipc.ts`、`index.ts` 不导入 DSH service/adapter、无 DSH 工具白名单及 engine 等于 dsh 的执行分支。运行 `npm run typecheck`。保留原 stop、权限/引用失效、卡片拒绝/重复提交和删除清理测试。
+- [x] **6. 提交。** `refactor: route chat and persistence through harness modules`。覆盖 NH-03、NH-06、NH-09。
 
 ## Task 4：整体回归、实际界面、独立审查和交付
 
@@ -131,12 +131,12 @@
 
 **Interfaces:** 使用前三项产出的实际应用接口；不新增专为通过测试的执行分支。验收记录按 NH-01～NH-10 逐项链接证据。
 
-- [ ] **1. 补实际 UI 验收断言。** 已有 DSH smoke 使用新 `native` ID；确认原生和 DSH 均经过公共事件路径，文字不重复追加，切回原生不增加 DSH 运行记录。保留联系人独立选择、进行中切换、资料读取、确认/拒绝/重复点击、等待中停止、隐藏后未读保存的断言。
-- [ ] **2. 执行整体检查。** 顺序运行 `npm run typecheck`、`npm test`、`npm run build`，各自保存日志与退出码。全量测试不与 Electron smoke 并发。新失败先按 systematic-debugging 定位，不通过改超时或删断言取得通过。
-- [ ] **3. 实际运行界面与关键业务回归。** 使用现有本地 runtime 和隔离用户数据，顺序运行 `node scripts/smoke-electron.js --dsh-harness`、`--agents`、`--assistant-routines`、`--companion`；参数分别单独执行。`CHOUYU_SMOKE_ARTIFACTS` 仅指定验收输出目录，不用于选择用户引擎。检查退出码及具体场景报告，查看原生/DSH切换截图；有截图不等于行为通过。日记用原有单元/集成测试验证总时限和证据引用链路。
-- [ ] **4. 独立代码审查。** 按 requesting-code-review 技能对整条变更分支审查；重点 NH-01～NH-10、上述五项风险及公共业务权限/消息来源。修复发现的问题并运行与修改匹配的回归，不将未处理的重要问题写成完成。
-- [ ] **5. 逐项完成审计及文档。** 用实际代码、测试结果、运行报告和审查结论填写验收表。记录仍存在的 DSH 发布门槛，不声称真实供应商或完整崩溃矩阵通过。架构及产品实现状态说明新的调用边界；对已删除函数、旧 ID、残留 DSH IPC 分支做定向搜索，不靠搜索结果替代行为验证。
-- [ ] **6. 提交并交付。** `docs: record native harness implementation and verification`。提供实际分支、提交、验证结果及限制；推送/发布不在本轮要求内。若用户要求合入，按已有授权和当前分支状态完成本地集成及必要复核。
+- [x] **1. 补实际 UI 验收断言。** 已有 DSH smoke 使用新 `native` ID；确认原生和 DSH 均经过公共事件路径，文字不重复追加，切回原生不增加 DSH 运行记录。保留联系人独立选择、进行中切换、资料读取、确认/拒绝/重复点击、等待中停止、隐藏后未读保存的断言。
+- [x] **2. 执行整体检查。** 顺序运行 `npm run typecheck`、`npm test`、`npm run build`，各自保存日志与退出码。全量测试不与 Electron smoke 并发。新失败先按 systematic-debugging 定位，不通过改超时或删断言取得通过。
+- [x] **3. 实际运行界面与关键业务回归。** 使用现有本地 runtime 和隔离用户数据，顺序运行 `node scripts/smoke-electron.js --dsh-harness`、`--agents`、`--assistant-routines`、`--companion`；参数分别单独执行。`CHOUYU_SMOKE_ARTIFACTS` 仅指定验收输出目录，不用于选择用户引擎。检查退出码及具体场景报告，查看原生/DSH切换截图；有截图不等于行为通过。日记用原有单元/集成测试验证总时限和证据引用链路。
+- [x] **4. 独立代码审查。** 按 requesting-code-review 技能对整条变更分支审查；重点 NH-01～NH-10、上述五项风险及公共业务权限/消息来源。修复发现的问题并运行与修改匹配的回归，不将未处理的重要问题写成完成。
+- [x] **5. 逐项完成审计及文档。** 用实际代码、测试结果、运行报告和审查结论填写验收表。记录仍存在的 DSH 发布门槛，不声称真实供应商或完整崩溃矩阵通过。架构及产品实现状态说明新的调用边界；对已删除函数、旧 ID、残留 DSH IPC 分支做定向搜索，不靠搜索结果替代行为验证。
+- [x] **6. 提交并交付。** `docs: record native harness implementation and verification`。提供实际分支、提交、验证结果及限制；推送/发布不在本轮要求内。若用户要求合入，按已有授权和当前分支状态完成本地集成及必要复核。
 
 ## 完成对应关系与执行建议
 

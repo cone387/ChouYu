@@ -1,6 +1,6 @@
 # 联系人持续工作与 24h 实验架构
 
-更新：2026-10-09。以下为当前代码实现。产品与 UI 约束统一以 [联系人任务 spec](contact-task-spec.md) 为准；实现差距见该文第 10 节。
+更新：2026-10-16。以下为当前代码实现。产品与 UI 约束统一以 [联系人任务 spec](contact-task-spec.md) 为准；实现差距见该文第 10 节。
 
 ## 一张图看懂
 
@@ -125,10 +125,18 @@ flowchart TD
 验收与未覆盖边界见 [联系人消息验收](contact-messaging-acceptance-20261009.md)。
 
 
-## 2026-10-16 可插拔 HarnessAdapter 接入
+## 2026-10-16 内置 Harness 模块
 
-普通聊天经 HarnessCoordinator 调用原生执行器或 DSH adapter。每位联系人的 `harnessEngine` 保存在原联系人资料中，默认 legacy；内置 ChouYu 同样独立保存。现有资料编辑弹窗与自然语言资料修改共用保存、版本检查与回执。下一次普通聊天读取最新选择，单次请求固定引擎，失败不自动回退或重发。
+普通聊天由公共 `harness/service.ts` 静态注册 `native` 和 `dsh` 两个模块，经 Registry 校验能力、Coordinator 管理请求。每位联系人的 `harnessEngine` 保存在原联系人资料中，默认 `native`；内置 ChouYu 同样独立保存。入口为“联系人 → 详情 → 编辑 → 聊天执行引擎”，不使用环境变量。保存后下一次普通聊天生效，进行中的请求固定引擎，失败不自动回退或重发。
 
-ChouYu 保留身份、上下文、原业务服务、确认卡片、会话保存与未读投递；DSH 通过独立 Node 24 helper 和公开 scoped Agent/session API 执行模型循环。确认操作等待原服务的持久回执，DSH 不重复调用 writer。主进程与 helper 使用认证的本地 TCP 通道，SQLite 记录运行与工具状态；启动时只读核对 SDK 日志，不自动 resume 推理。
+ChouYu 宿主负责身份、有效配置、记忆、引用、权限、真实业务工具、确认卡片、消息保存与未读。模块声明平台、输入、工具和确认能力；注册器同时限制工具暴露和实际执行，能力不能扩大宿主授权。协调器统一生成请求 ID、尝试 ID、递增序号和唯一终态，取消后抑制迟到事件，清理失败仍释放活动请求并保留原错误。
 
-此选择当前只用于普通聊天；LangGraph 后台任务不迁移。DSH 仅在 Windows 启用，macOS 明确拒绝执行。构建、恢复、平台和实际供应商的验证边界见 [接入验收](dsh-harness-acceptance-20261015.md)。
+原生实现位于 `harness/native/`：`runner.ts` 是唯一的工具循环，OpenAI-compatible / Claude 只实现各自单轮协议。最多 6 轮、图片、用量、超时、逐轮预算和工具回传共用此基础；`ai.ts` 仅保留模型列表与诊断。后台任务、日记和主动消息直接使用 `streamNativeChat`，调度仍由原业务服务负责，不随联系人普通聊天引擎设置改用 DSH。旧包装 `legacy.ts` 和 `streamAIChat` 已移除，不保留别名或兼容入口。
+
+DSH 模块在 `harness/dsh/module.ts` 绑定确认和生命周期；具体 SDK、运行日志、回执与恢复留在 `harness/dsh/service.ts`。通过独立 Node 24 helper 和公开 scoped Agent/session API 执行模型循环，主进程与 helper 使用认证的本地 TCP 通道。普通原生请求不会因注册模块而初始化 DSH。恢复、清理、消息保存确认和关闭由公共服务分发，IPC 不再导入 DSH 实现或判断具体引擎。
+
+原生工具发送原确认卡后返回“待处理”；DSH 在日志持久化后发同一张卡，等待原业务服务的持久回执，不重复调用 writer。工具调用已返回不等于业务已完成，公共事件以 `pendingInteraction` 区分。路由阶段只使用普通卡片语义，不进入 DSH 回执等待。消息保存确认核对实际完成的 assistant 消息、来源版本、联系人、会话和磁盘保存结果；启动恢复只核对已提交记录，不自动重新推理。
+
+DSH 当前仅 Windows、文本、三项资料/输出偏好工具；不支持图片和额外 system 历史时明确拒绝。两种模块交付前均校验有效配置，单纯切换引擎不使当前请求失效。当前模块是随应用发布的可信内置代码，不是第三方插件沙箱。
+
+本轮证据见 [内置 Harness 验收](native-harness-acceptance-20261016.md)。实际供应商、完整跨库强杀、严格断网和 NSIS 安装等既有发布门槛仍见 [DSH 接入验收](dsh-harness-acceptance-20261015.md)，模块化不代表这些门槛已完成。
