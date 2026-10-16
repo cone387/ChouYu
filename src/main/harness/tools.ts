@@ -33,19 +33,24 @@ export interface ChatToolContext {
 }
 export function createChatTools(context: ChatToolContext) {
     const { request, owner } = context;
+    const listeners = new Set<(event: ToolExecutionEvent) => void>();
+    const emit = (event: ToolExecutionEvent) => { context.emit(event); for (const listener of listeners) listener(event); };
     let taskMutationRequested = false;
     const configurationStepTools = new Set<string>();
     return {
         definitions: context.definitions,
+        subscribe(listener: (event: ToolExecutionEvent) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
         execute: async (call: AIToolCall, configurationStep?: {
             index: number;
             total: number;
         }) => {
             const definition = context.getDefinition(call.name);
-            if (!definition)
-                return `工具不存在：${call.name}`;
-            if (!context.getConfig().aiToolsEnabled || !context.isToolEnabled(call.name))
-                return `工具已被用户禁用：${call.name}`;
+            const unavailable = !definition ? `工具不存在：${call.name}` : !context.getConfig().aiToolsEnabled || !context.isToolEnabled(call.name) ? `工具已被用户禁用：${call.name}` : '';
+            if (unavailable) {
+                emit({ requestId: request.requestId, callId: call.id, name: call.name, displayName: definition?.displayName ?? call.name, risk: definition?.risk ?? 'safe', status: 'error', summary: unavailable });
+                return unavailable;
+            }
+            if (!definition) throw new Error('工具定义不存在。');
             const arguments_ = parseToolArguments(call.arguments);
             try {
                 await context.assertContext();
@@ -61,7 +66,7 @@ export function createChatTools(context: ChatToolContext) {
                     throw new Error('工具已被用户禁用。');
                 if (prepared.noOpResult) {
                     const result = prepared.noOpResult;
-                    context.emit({
+                    emit({
                         requestId: request.requestId, callId: call.id, name: definition.name,
                         displayName: definition.displayName, risk: definition.risk,
                         status: 'completed', summary: result.summary.slice(0, 500)
@@ -76,7 +81,7 @@ export function createChatTools(context: ChatToolContext) {
                 if (context.signal.aborted)
                     throw new Error('AI 请求已取消。');
                 const needsApproval = Boolean(configurationStep) || prepared.confirmationRequired === true || shouldConfirmTool(definition, context.getConfig().toolPermissionMode, contactPolicy);
-                context.emit({
+                emit({
                     requestId: request.requestId,
                     callId: call.id,
                     name: definition.name,
@@ -103,15 +108,19 @@ export function createChatTools(context: ChatToolContext) {
                             actions: [{ id: 'apply', label: '确认执行', tool: call.name, arguments: arguments_ }],
                             ...(call.name === 'set_contact_search_credential' ? { input: { label: '搜索密钥', argument: 'credential', maxLength: 8192, required: true } } : {})
                         });
-                        if (context.confirmationMode === 'await-receipt')
-                            return await context.waitForActionReceipt!(call, card);
-                        context.emit({ requestId: request.requestId, callId: call.id, name: definition.name, displayName: definition.displayName, risk: definition.risk, status: 'completed', summary: '已发送确认卡片，尚未执行' });
+                        if (context.confirmationMode === 'await-receipt') {
+                            const receipt = await context.waitForActionReceipt!(call, card);
+                            context.signal.throwIfAborted();
+                            emit({ requestId: request.requestId, callId: call.id, name: definition.name, displayName: definition.displayName, risk: definition.risk, status: 'completed', summary: '已收到确认事项处理回执' });
+                            return receipt;
+                        }
+                        emit({ requestId: request.requestId, callId: call.id, name: definition.name, displayName: definition.displayName, risk: definition.risk, status: 'completed', pendingInteraction: true, summary: '已发送确认卡片，尚未执行' });
                         return JSON.stringify({ pendingInteraction: true, interactionId: card.id, message: '已把需要确认的内容放在聊天卡片中；确认后才会执行。' });
                     }
                     const outcome = await context.approve(call, prepared.preview);
                     if (outcome !== 'approved') {
                         const failure = toolApprovalFailure(outcome);
-                        context.emit({
+                        emit({
                             requestId: request.requestId,
                             callId: call.id,
                             name: definition.name,
@@ -122,7 +131,7 @@ export function createChatTools(context: ChatToolContext) {
                         });
                         return failure.content;
                     }
-                    context.emit({
+                    emit({
                         requestId: request.requestId,
                         callId: call.id,
                         name: definition.name,
@@ -148,7 +157,7 @@ export function createChatTools(context: ChatToolContext) {
                     const ref = JSON.parse(result.content).materialRead as import('../../shared/contact-materials').MaterialReadRef;
                     context.state.contactContext.materials = [...(context.state.contactContext.materials ?? []), ref];
                 }
-                context.emit({
+                emit({
                     requestId: request.requestId,
                     callId: call.id,
                     name: definition.name,
@@ -162,7 +171,7 @@ export function createChatTools(context: ChatToolContext) {
             catch (error) {
                 context.state.ownMemoryMutation = false;
                 const message = error instanceof Error && error.message ? error.message : 'AI 请求失败，请检查 Provider 配置和网络后重试。';
-                context.emit({
+                emit({
                     requestId: request.requestId,
                     callId: call.id,
                     name: definition.name,

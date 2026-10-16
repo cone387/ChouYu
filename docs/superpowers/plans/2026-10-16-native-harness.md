@@ -10,7 +10,7 @@
 
 **Spec:** [已确认设计](../specs/2026-10-16-native-harness-design.md)
 
-状态：待用户评审本计划并选择执行方式。任务勾选表示实际完成，不能以写好计划替代实现或验收。
+状态：用户已确认计划及本会话顺序实施、最后独立审查的方式；实施中。任务勾选表示实际完成，不能以写好计划替代实现或验收。
 
 ## Global Constraints
 
@@ -64,7 +64,7 @@
 - `streamNativeChat(messages: AIChatMessage[], systemPrompt: string, config: AppConfig, onChunk: NativeStreamCallback, signal?: AbortSignal, tools?: HarnessToolRuntime, options?: NativeStreamOptions): Promise<void>`。
 - `createNativeAdapter(model = streamNativeChat): HarnessAdapter`：模块内部使用的新原生适配器；没有旧名称导出。
 
-- [ ] **1. 写协议级测试。** 将现有 AI 执行测试迁入 `native/runner.test.ts`，供应商诊断测试留在 `ai.test.ts`。给两种协议补“响应完成后取消”“第二轮预算不足”“工具间取消”测试，断言真实 fetch 次数、工具调用次数和钩子次数，而非只检查导出名称。例如第二轮预算拒绝：
+- [x] **1. 写协议级测试。** 将现有 AI 执行测试迁入 `native/runner.test.ts`，供应商诊断测试留在 `ai.test.ts`。给两种协议补“响应完成后取消”“第二轮预算不足”“工具间取消”测试，断言真实 fetch 次数、工具调用次数和钩子次数，而非只检查导出名称。例如第二轮预算拒绝：
 
   ```ts
   expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -73,11 +73,11 @@
   expect(afterRound).toHaveBeenCalledTimes(1)
   ```
 
-- [ ] **2. 验证新增测试失败。** 运行 `npx vitest run src/main/harness/native/runner.test.ts`，确认缺少新入口或缺少取消检查导致预期失败，不接受无关夹具错误。
-- [ ] **3. 提取协议请求与执行循环。** 按上列接口搬移协议编码、请求守卫、流终止处理和用量解析；`runner.ts` 负责唯一循环及每个副作用边界的取消检查。原生适配器输出公共文本和用量事件，每轮使用稳定请求标识更新累计用量。
-- [ ] **4. 一次迁移全部调用方与引擎 ID。** 删除旧导出和包装；正常设置及默认值使用 `native`。修改业务调用的 import 和 mock，不改变其超时、预算及输出限制。`accumulateOpenAIToolCalls` / `accumulateClaudeToolCalls` 的测试直接导入新 provider 文件，不从 `ai.ts` 转导出。
-- [ ] **5. 验证原生与调用方回归。** 运行 `npx vitest run src/main/ai.test.ts src/main/harness/native src/main/agents/service-tool-boundary.test.ts src/main/assistant-routines src/main/journal/summary.test.ts src/shared/characters.test.ts src/shared/contact-profile-settings.test.ts src/main/database.test.ts`，并运行 `npm run typecheck`。确认 `rg -n 'streamAIChat|createLegacyAdapter|AIToolRuntime|AIStreamOptions|AIStreamCallback' src scripts` 无旧执行入口命中；检查 Harness 相关 ID 无 `legacy` 分支。
-- [ ] **6. 提交。** `refactor: extract native harness and migrate execution callers`。覆盖 NH-01、NH-02、NH-08，以及 NH-07 的设置类型部分。
+- [x] **2. 验证新增测试失败。** 运行 `npx vitest run src/main/harness/native/runner.test.ts`，确认缺少新入口或缺少取消检查导致预期失败，不接受无关夹具错误。
+- [x] **3. 提取协议请求与执行循环。** 按上列接口搬移协议编码、请求守卫、流终止处理和用量解析；`runner.ts` 负责唯一循环及每个副作用边界的取消检查。原生适配器输出公共文本和用量事件，每轮使用稳定请求标识更新累计用量。
+- [x] **4. 一次迁移全部调用方与引擎 ID。** 删除旧导出和包装；正常设置及默认值使用 `native`。修改业务调用的 import 和 mock，不改变其超时、预算及输出限制。`accumulateOpenAIToolCalls` / `accumulateClaudeToolCalls` 的测试直接导入新 provider 文件，不从 `ai.ts` 转导出。
+- [x] **5. 验证原生与调用方回归。** 运行 `npx vitest run src/main/ai.test.ts src/main/harness/native src/main/agents/service-tool-boundary.test.ts src/main/assistant-routines src/main/journal/summary.test.ts src/shared/characters.test.ts src/shared/contact-profile-settings.test.ts src/main/database.test.ts`，并运行 `npm run typecheck`。确认 `rg -n 'streamAIChat|createLegacyAdapter|AIToolRuntime|AIStreamOptions|AIStreamCallback' src scripts` 无旧执行入口命中；检查 Harness 相关 ID 无 `legacy` 分支。
+- [x] **6. 提交。** `refactor: extract native harness and migrate execution callers`。覆盖 NH-01、NH-02、NH-08，以及 NH-07 的设置类型部分。
 
 ## Task 2：模块注册、能力约束与协调契约
 

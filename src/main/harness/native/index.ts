@@ -1,5 +1,12 @@
 import { streamNativeChat } from './runner';
-import type { HarnessAdapter } from '../contracts';
+import type { HarnessAdapter, HarnessModule } from '../contracts';
+export function createNativeModule(): HarnessModule {
+    return {
+        id: 'native', label: 'ChouYu 原生',
+        capabilities: { platforms: 'all', scenarios: ['chat'], images: true, systemHistory: true, tools: 'host', confirmation: 'return-card', recovery: 'none' },
+        adapter: createNativeAdapter(), confirmation: () => ({ mode: 'return-card' })
+    };
+}
 export function createNativeAdapter(model: typeof streamNativeChat = streamNativeChat): HarnessAdapter {
     return {
         async run(input, emit) {

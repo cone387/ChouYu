@@ -59,6 +59,8 @@ export interface ToolApprovalRequest {
 }
 
 export interface ToolExecutionEvent {
+  /** The tool returned a confirmation card; the business action has not executed. */
+  pendingInteraction?: boolean
   taskRefs?: ToolTaskReference[]
   taskId?: string
   requestId: string

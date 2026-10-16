@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { DEFAULT_APP_CONFIG } from '../../shared/config';
 import type { AIToolDefinition } from '../../shared/tools';
+import type { ToolExecutionEvent } from '../../shared/tools';
 import { createChatTools, type ChatToolContext } from './tools';
 function fixture() {
     const calls: string[] = [], offers: unknown[] = [];
@@ -17,6 +18,25 @@ function fixture() {
     };
     return { context, calls, offers, disable: () => { enabled = false; } };
 }
+it('publishes real tool states and distinguishes a pending card from a saved action', async () => {
+    const f = fixture(), tools = createChatTools(f.context), events: ToolExecutionEvent[] = [];
+    const release = tools.subscribe(event => events.push(event));
+    await tools.execute({ id: 'call', name: 'set_contact_output_preference', arguments: '{}' });
+    expect(events.map(e => e.status)).toEqual(['requested', 'completed']);
+    expect(events.at(-1)?.pendingInteraction).toBe(true);
+    expect(f.calls).toEqual([]);
+    release();
+    f.disable();
+    await tools.execute({ id: 'disabled', name: 'set_contact_output_preference', arguments: '{}' });
+    expect(events).toHaveLength(2);
+});
+it('reports permission revocation as an error event without preparing an action', async () => {
+    const f = fixture(), tools = createChatTools(f.context), events: ToolExecutionEvent[] = [];
+    tools.subscribe(event => events.push(event)); f.disable();
+    await tools.execute({ id: 'call', name: 'set_contact_output_preference', arguments: '{}' });
+    expect(events.map(e => e.status)).toEqual(['error']);
+    expect(f.offers).toEqual([]);
+});
 it('returns the original persistent card without executing an always-confirm action', async () => {
     const f = fixture(), tools = createChatTools(f.context);
     const result = JSON.parse(await tools.execute({ id: 'call', name: 'set_contact_output_preference', arguments: '{"scope":"contact"}' }));
@@ -27,11 +47,13 @@ it('returns the original persistent card without executing an always-confirm act
     expect(f.offers).toHaveLength(1);
 });
 it('awaits the original saved action receipt and never calls the prepared writer', async () => {
-    const f = fixture(), order: string[] = [];
+    const f = fixture(), order: string[] = [], events: ToolExecutionEvent[] = [];
     f.context.confirmationMode = 'await-receipt';
     f.context.beforePersistentOffer = async () => { order.push('flush'); };
     f.context.waitForActionReceipt = async (_call, card) => { expect(f.offers).toHaveLength(1); expect(card.id).toBe('card'); order.push('receipt'); return 'saved original receipt'; };
-    expect(await createChatTools(f.context).execute({ id: 'call', name: 'set_contact_output_preference', arguments: '{}' })).toBe('saved original receipt');
+    const tools = createChatTools(f.context); tools.subscribe(event => events.push(event));
+    expect(await tools.execute({ id: 'call', name: 'set_contact_output_preference', arguments: '{}' })).toBe('saved original receipt');
+    expect(events.map(event => event.status)).toEqual(['requested', 'completed']);
     expect(order).toEqual(['flush', 'receipt']);
     expect(f.calls).toEqual([]);
     const bad = fixture();

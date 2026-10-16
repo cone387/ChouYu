@@ -1,7 +1,8 @@
 import { dshService, existingDshService, closeDshService, setHarnessCancellation, purgeHarnessData, assertDshRecovered, cleanSavedDshRun } from './harness/service'
 import type { HarnessInput } from './harness/contracts'
 import { prepareHarnessInput, harnessConfigVersion } from './harness/prepare'
-import { createNativeAdapter } from './harness/native'
+import { createNativeModule } from './harness/native'
+import { HarnessRegistry } from './harness/registry'
 import { HarnessCoordinator } from './harness/coordinator'
 import { createChatTools, type ChatRequestState } from './harness/tools'
 import { contactCommunicationInstructions } from '../shared/contact-communication'
@@ -120,7 +121,12 @@ import {
   setState
 } from './database'
 
-const chatHarness = new HarnessCoordinator({ native: createNativeAdapter(), dsh:{run:(input,emit)=>{assertDshRecovered();return dshService().adapter.run(input,emit)},invalidate:input=>dshService().adapter.invalidate(input)} }, id => getCharacter(id)?.harnessEngine ?? 'native')
+const chatHarness = new HarnessCoordinator(new HarnessRegistry([createNativeModule(), {
+  id: 'dsh', label: 'DeepSeek Harness',
+  capabilities: { platforms: ['win32'], scenarios: ['chat'], images: false, systemHistory: false, tools: ['read_contact_material', 'get_contact_output_preferences', 'set_contact_output_preference'], confirmation: 'await-receipt', recovery: 'committed-result' },
+  adapter: { run: (input, emit) => { assertDshRecovered(); return dshService().adapter.run(input, emit) }, invalidate: input => dshService().adapter.invalidate(input) },
+  confirmation: input => ({ mode: 'await-receipt', beforeOffer: call => dshService().adapter.beforePersistentOffer({ ...input, callId: call.id }), waitForReceipt: (call, card) => dshService().actions.waitForActionReceipt({ ...input, callId: call.id }, card.id, input.signal) })
+}]), id => getCharacter(id)?.harnessEngine ?? 'native')
 setHarnessCancellation(key=>{activeAIRequests.get(key)?.abort();return chatHarness.cancel(key)})
 setContactHarnessPurge(characterId=>purgeHarnessData({characterId}))
 

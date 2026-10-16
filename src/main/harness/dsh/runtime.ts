@@ -58,12 +58,12 @@ class DshRuntime {
                     throw new Error('DSH 工具不在本次授权目录内。');
                 await input.assertContext();
                 input.signal.throwIfAborted();
-                emit({ type: 'tool', callId: value.callId, status: 'running' });
+                if (!input.tools.subscribe) emit({ type: 'tool', callId: value.callId, status: 'running' });
                 const work = input.tools.execute({ id: value.callId, name: value.name, arguments: JSON.stringify(value.args) });
                 current.tools.add(work);
                 let result: string;
                 try { result=await work; } finally { current.tools.delete(work); }
-                emit({ type: 'tool', callId: value.callId, status: 'completed' });
+                if (!input.tools.subscribe) emit({ type: 'tool', callId: value.callId, status: 'completed' });
                 return result;
             }
             if (method === 'stream') {
