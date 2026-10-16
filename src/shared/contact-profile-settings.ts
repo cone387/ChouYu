@@ -13,7 +13,7 @@ export interface ContactProfileSnapshot {
   providers: { id: string; name: string; provider: 'openai' | 'claude' }[]
 }
 export const contactProfileProperties = {
-  harnessEngine: { type: 'string' as const, enum: ['native', 'dsh'], description: '当前联系人的普通聊天执行引擎：legacy 为 ChouYu 原生；dsh 为 DeepSeek Harness（实验性，仅 Windows，暂不支持图片）；后台任务不受此项影响' },
+  harnessEngine: { type: 'string' as const, enum: ['native', 'dsh'], description: '当前联系人的普通聊天执行引擎：native 为 ChouYu 原生；dsh 为 DeepSeek Harness（实验性，仅 Windows，暂不支持图片）；后台任务不受此项影响' },
   name: { type: 'string' as const, description: '联系人显示名字，最多24个字符' },
   avatar: { type: 'string' as const, description: '联系人文字或emoji头像，最多8个字符' },
   category: { type: 'string' as const, description: '分类ID，空字符串清除分类', enum: ['', ...Object.keys(INDUSTRY_LABELS)] },

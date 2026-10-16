@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createCharacter, createChatSession, listCharacters, getCharacter, getConfig, getSession, getSessions, saveConfig, selectChatSession, flushDatabase } from '../database';
 import { contactAgentsCall, pendingContactInteractions } from '../agents';
 import { waitForRenderer } from './storage-smoke';
-import { dshService } from '../harness/dsh/service';
+import { dshService, existingDshService } from '../harness/dsh/service';
 import type { MaterialVersion } from '../../shared/contact-materials';
 import type { ContactActionInteraction } from '../../shared/contact-actions';
 /** Actual renderer, IPC, pinned SDK, registered tools, persistent card and business storage. */
@@ -16,6 +16,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
     let material: MaterialVersion, toolStep = 0, providerCalls = 0, routeCalls = 0, holdFinal = false, pendingFinal: ServerResponse | undefined;
     let mode: 'tools' | 'plain' = 'tools', desiredDensity = 'compact';
     let holdRoute = false, pendingRoute: ServerResponse | undefined;
+    let routeQuestion = false;
     const requests: any[] = [];
     const send = (res: ServerResponse, delta: unknown, finish: string | null = null) => res.write(`data: ${JSON.stringify({ id: 'smoke-message', object: 'chat.completion.chunk', created: 1, model: 'dsh-smoke', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
     const finish = (res: ServerResponse, text: string) => { send(res, { content: text }); send(res, {}, 'stop'); res.end(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 } })}\n\ndata: [DONE]\n\n`); };
@@ -33,7 +34,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         if (body.messages.some((m: any) => typeof m.content === 'string' && m.content.includes('判断用户最新一句是否在调整'))) {
             routeCalls++;
             if (holdRoute) { pendingRoute = res; return; }
-            finish(res, JSON.stringify({ kind: 'none' }));
+            finish(res, JSON.stringify(routeQuestion ? { kind: 'question', requestText: '修改一下设置。', message: '请说明具体设置，本次尚未修改。' } : { kind: 'none' }));
             return;
         }
         providerCalls++;
@@ -83,6 +84,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         await waitForRenderer(window, "Boolean(document.querySelector('.chat-panel[data-ready=true]'))", 15000);
         const artifacts = process.env.CHOUYU_SMOKE_ARTIFACTS || join(app.getPath('userData'), 'dsh-acceptance');
         mkdirSync(artifacts, { recursive: true });
+        await run("window.__harnessEvents=[];window.__releaseHarnessEvents=window.electronAPI.ai.onStreamEvent(event=>window.__harnessEvents.push(event))");
         const openEngineForm = async (id: string) => {
             await click('[data-workspace-nav=contacts]');
             await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-card-detail="${id}"]'))`, 15000);
@@ -105,7 +107,12 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         await saveEngine('dsh');
         holdRoute = false; finish(pendingRoute!, JSON.stringify({ kind: 'none' })); pendingRoute = undefined;
         const prior = await inFlight;
-        if (!prior.ok || prior.harnessSource || dshService().store.all().length) throw new Error('Settings changed the engine of an already started request: ' + JSON.stringify(prior));
+        if (!prior.ok || prior.harnessSource || existingDshService()) throw new Error('Native request changed engine or initialized DSH: ' + JSON.stringify(prior));
+        routeQuestion = true;
+        const callsBeforeRoute = providerCalls;
+        const routed = await run(`window.electronAPI.ai.startStream(${JSON.stringify({ requestId: 'route-handled', systemPrompt: '独立联系人', characterId: character.id, sessionId: session, messages: [{ role: 'user', content: '修改一下设置。' }] })})`);
+        routeQuestion = false;
+        if (!routed.ok || routed.reply !== '请说明具体设置，本次尚未修改。' || providerCalls !== callsBeforeRoute || existingDshService()) throw new Error('Handled route entered a harness: ' + JSON.stringify(routed));
         mode = 'tools';
         if (getCharacter(character.id)?.harnessEngine !== 'dsh' || (getCharacter('chouyu')?.harnessEngine ?? 'native') !== 'native') throw new Error('Contact selection was not saved independently');
         await openEngineForm(character.id);
@@ -191,7 +198,20 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         const native = await run(`window.electronAPI.ai.startStream(${JSON.stringify({ requestId: 'native-after-switch', systemPrompt: '独立联系人', characterId: character.id, sessionId: session, messages: [{ role: 'user', content: '切回原生后打个招呼' }] })})`);
         if (!native.ok || native.harnessSource || dshService().store.all().length !== attempts || providerCalls !== callsBeforeNative + 1) throw new Error('Switching back did not use native without restart: ' + JSON.stringify(native));
         await click('[data-workspace-nav=chat]');
-        const report = { dshVersion: record.version, perContactSettings: true, builtInSettings: true, inFlightEngineStable: true, nativeSwitchBack: true, ordinaryChat: true, readMaterial: true, originalCard: pending.id, waitMs: Date.now() - started, providerCalls, routeCalls, hiddenUnread: true, source, originalPreference: true, rejection: true, duplicateClick: true, stopInvalidatesCard: true };
+        const nativeBefore = getSession(session)!.messages.filter(message => message.role === 'assistant' && message.replyCompletedAt && !message.harnessSource).length;
+        await sendUser('原生界面验收：你好。');
+        await until(() => getSession(session)!.messages.filter(message => message.role === 'assistant' && message.replyCompletedAt && !message.harnessSource).length === nativeBefore + 1, 'saved native reply');
+        const nativeReply = getSession(session)!.messages.filter(message => message.role === 'assistant' && message.replyCompletedAt && !message.harnessSource).at(-1)!;
+        if (nativeReply.content !== 'DSH 普通对话验收通过。' || dshService().store.all().length !== attempts) throw new Error('Native UI duplicated text or started DSH');
+        const events = await run('window.__harnessEvents') as Array<{requestId: string; attemptId: string; operation: string; sequence: number}>;
+        if (!events.some(event => event.requestId === 'native-after-switch') || !events.some(event => event.operation === 'replace')) throw new Error('Missing native/DSH stream coverage');
+        const seen = new Map<string, { attemptId: string; sequence: number }>();
+        for (const event of events) {
+            const previous = seen.get(event.requestId);
+            if (!event.attemptId || !['append','replace'].includes(event.operation) || !Number.isSafeInteger(event.sequence) || previous && (event.attemptId !== previous.attemptId || event.sequence <= previous.sequence)) throw new Error('Invalid common harness stream identity or order');
+            seen.set(event.requestId, event);
+        }
+        const report = { dshVersion: record.version, commonStream: true, nativeUiSaved: true, handledRouteBypassesHarness: true, nativeLeavesDshUninitialized: true, perContactSettings: true, builtInSettings: true, inFlightEngineStable: true, nativeSwitchBack: true, ordinaryChat: true, readMaterial: true, originalCard: pending.id, waitMs: Date.now() - started, providerCalls, routeCalls, hiddenUnread: true, source, originalPreference: true, rejection: true, duplicateClick: true, stopInvalidatesCard: true };
         writeFileSync(join(artifacts, 'dsh-acceptance.json'), JSON.stringify(report, null, 2));
         writeFileSync(join(artifacts, 'dsh-chat.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
         console.log('CHOUYU_DSH_SMOKE_PASSED', JSON.stringify(report));
@@ -209,6 +229,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         throw error;
     }
     finally {
+        await run('window.__releaseHarnessEvents?.();delete window.__releaseHarnessEvents;delete window.__harnessEvents');
         pendingRoute?.end();
         pendingFinal?.end();
         server.closeAllConnections();
