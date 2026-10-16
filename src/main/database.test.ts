@@ -49,6 +49,34 @@ afterEach(() => {
 })
 
 describe('durable conversations', () => {
+  it('persists each contact engine including ChouYu and preserves it during unrelated edits', () => {
+    const other = listCharacters().find(c => !c.builtIn)!
+    const initial = getContactProfile(other.id)
+    const saved = updateContactProfile(other.id, { harnessEngine: 'dsh' }, initial.revision, '使用 DSH')
+    expect(saved.profile.harnessEngine).toBe('dsh')
+    expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.harnessEngine ?? 'legacy').toBe('legacy')
+    expect(() => updateContactProfile(other.id, { harnessEngine: 'legacy' }, initial.revision, '过期设置')).toThrow('变化')
+    // Simulate an older caller that sends no engine field.
+    const { harnessEngine: _engine, ...oldDraft } = getContactProfile(other.id).profile
+    updateCharacter(other.id, { ...oldDraft, name: '改名保留引擎' })
+    const builtIn = getContactProfile(DEFAULT_CHARACTER_ID)
+    updateContactProfile(DEFAULT_CHARACTER_ID, { harnessEngine: 'dsh' }, builtIn.revision, '使用 DSH')
+    initDatabase()
+    expect(getContactProfile(other.id).profile.harnessEngine).toBe('dsh')
+    expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.harnessEngine).toBe('dsh')
+    const current = getContactProfile(other.id)
+    updateContactProfile(other.id, { harnessEngine: 'legacy' }, current.revision, '切回原生')
+    initDatabase()
+    expect(getContactProfile(other.id).profile.harnessEngine).toBe('legacy')
+    expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.harnessEngine).toBe('dsh')
+  })
+  it.each(['built-in', 'custom'])('does not publish an engine change when persistence fails: %s', kind => {
+    const id = kind === 'built-in' ? DEFAULT_CHARACTER_ID : listCharacters().find(c => !c.builtIn)!.id
+    const before = getContactProfile(id)
+    vi.spyOn(fs, 'writeFileSync').mockImplementation(() => { throw new Error('disk full') })
+    expect(() => updateContactProfile(id, { harnessEngine: 'dsh' }, before.revision, '使用 DSH')).toThrow('保存失败')
+    expect(getContactProfile(id)).toEqual(before)
+  })
   it('saves a credential and its version atomically without returning the secret and rejects stale saves', () => {
     const owner = listCharacters().find(c => !c.builtIn)!.id
     expect(contactSearchCredential(owner)).toEqual({ configured: false, revision: 0 })

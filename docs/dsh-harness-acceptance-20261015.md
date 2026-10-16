@@ -1,10 +1,27 @@
 # DSH 首阶段接入验收（2026-10-15）
 
+## 2026-10-16 联系人设置补齐
+
+按用户明确要求移除启动环境变量选择，复用「通讯录 → 联系人详情 → 编辑 → 聊天执行引擎」。每位联系人包括 ChouYu 独立保存；默认原生，可随时切回，下一次普通聊天生效。旧调用不提供引擎字段时保留当前选择。共享资料版本、自然语言修改与确认回执包含此字段；写盘失败恢复原值，旧表单拒绝覆盖。
+
+引擎在请求归属确认后、读取上下文和意图路由之前固定，防止路由等待期间设置变化影响当前请求。DSH 当前范围仍为文字聊天、资料读取、阅读偏好确认；后台任务不迁移，图片和非 Windows 执行不支持。
+
+验证记录：
+
+- 单元回归覆盖独立保存、内置联系人重启保留、改名不重置、切回原生、非法值、资料版本变化及写盘失败回滚。初始测试按预期失败，修复后通过；写盘失败补测也实际发现并修复了旧数据缺少字段时的内存回滚问题。
+- 首次全量测试与 Electron 冒烟同时运行，3 项 SDK 启动/时序测试失败（`provider-integration.test.ts` 一项、`runtime.test.ts` 两项）；独立运行均通过。随后完整一轮 215 个文件、1837 项测试通过，53 项跳过。日志 `.superpowers/contact-engine-final-suite.log`。
+- 独立审查提出引擎快照过晚的问题；新增实际 IPC/界面测试暂停意图路由、保存 DSH、再释放路由，旧实现创建了错误的 DSH 执行记录，已将快照提前。审查未覆盖既有 DSH 整体、真实供应商、长期运行、跨平台和安装包；本轮不改变原有发布门槛。
+- 实际界面已验证联系人独立设置、ChouYu 设置、重开显示、切回原生无需重启、DSH 原确认/拒绝/停止与未读。初版切回测试漏传 IPC 必填 `systemPrompt`，修正夹具后通过。运行使用隔离数据及本地协议模型，不消耗真实供应商额度。
+- 最终实际界面验收通过（71,453 ms），包含等待意图路由期间切换设置、原请求引擎不变；原卡片等待 66,491 ms、14 次普通模型请求（含原生请求）、6 次原意图路由。记录：`artifacts/contact-engine-final/dsh-acceptance.json`；已查看的设置截图：`artifacts/contact-engine-settings/contact-engine-settings.png`（首次界面运行）；最终快速切页截图捕获到前一帧详情页，不用作设置外观证据。日志 `.superpowers/contact-engine-verified-ui.log`。最终类型检查与构建通过，保留既有大 bundle 提示；未重新生成安装包。
+- 快照修复后的最终全量回归再次通过：215 个文件、1837 项测试通过，53 项跳过，64.73 秒；日志 `.superpowers/contact-engine-verified-suite.log`。
+
+本轮修改仍在 `feat/dsh-harness` 独立工作区；旧安装包不包含此设置入口。
+
 状态：实现位于 `feat/dsh-harness` 独立工作区；默认仍为 legacy。真实供应商、完整故障注入及安装包验收门槛未全部关闭，不能据此启用日常联系人。
 
 ## 已实现范围
 
-- 普通聊天通过统一 HarnessAdapter 接口选择 legacy 或 DSH。仅 `CHOUYU_DSH_PILOT_CHARACTER_ID` 指定的联系人进入 DSH；macOS 明确拒绝启动 DSH，无自动回退或重发。
+- 普通聊天通过统一 HarnessAdapter 接口选择 legacy 或 DSH。2026-10-16 按用户纠正改为每位联系人独立保存 `harnessEngine`，默认 legacy，下一次聊天生效，无需重启；macOS 明确拒绝启动 DSH，无自动回退或重发。
 - 保留原自然语言意图路由。路由直接完成的请求不计为 DSH 成功；LangGraph 长期任务、额度和任务界面继续原路径。
 - 官方 SDK 负责启动、初始化和关闭。自有插件通过公开 AgentRegistry/Agent/sessionPersistence 接口建立隔离会话、执行、取消、落盘和只读核对；SDK 私有会话表不允许外部预建会话接管，未使用私有补丁。
 - 每次请求重新装入当前 user/assistant 历史、独立人设、公共交流规则和上下文。图片与额外 system-role 历史尚不支持，发送前明确拒绝。
@@ -32,7 +49,7 @@
 
 ## 运行和打包
 
-开发：先 `npm run setup:dsh-runtime`，再 `npm run build:dsh-runtime`；普通 `npm run dev` 不下载运行时。内部试点由启动环境中的联系人 ID 控制，没有新增产品设置。
+开发：先 `npm run setup:dsh-runtime`，再 `npm run build:dsh-runtime`；普通 `npm run dev` 不下载运行时。设置入口：通讯录 → 联系人「详情」→「编辑」→「聊天执行引擎」，选择 ChouYu 原生或 DeepSeek Harness（实验性）后保存。普通联系人的卡片更多菜单「编辑」也进入同一弹窗。内置 ChouYu 同样独立保存，不影响其他联系人。
 
 Windows：`npm run package:win` 在构建阶段校验 Node 24.15.0 归档、按独立锁文件安装 DSH 0.2.1-alpha.3，将物理依赖放入 `resources/dsh-runtime`。运行时不安装依赖，不使用 Electron 当 Node，不依赖 dsh-desktop 仓库或全局 CLI。macOS 原构建入口保持原路径，DSH 未验证。
 
@@ -40,7 +57,7 @@ Windows：`npm run package:win` 在构建阶段校验 Node 24.15.0 归档、按�
 
 本次 NSIS 文件 `dist/ChouYu Setup 1.3.5.exe` 为 327,627,749 字节（约 312 MiB），SHA-256 `B9EAB1E631C583F495F5B5FBABA2795023754620F6CD1EA56A06AD16245F2C17`。默认最高压缩耗时明显增加；本次最终保留默认压缩完成，没有交付缺依赖的早期构建。成品验证记录位于本地 `artifacts/dsh-standalone/dsh-acceptance.json` 和 `dsh-chat.png`；未执行 NSIS 安装到日常环境。
 
-回滚试点：移除 `CHOUYU_DSH_PILOT_CHARACTER_ID` 后重启，后续请求恢复原执行器。已产生的原确认卡片和回执仍由原服务管理；不复制/重放旧请求。不要手工清理正在使用的 SQLite 或 SDK 日志目录。
+切回原生：在该联系人的编辑弹窗选择「ChouYu 原生」并保存，后续请求恢复原执行器，无需重启。进行中的请求保持已选引擎，不跨引擎重放。已产生的原确认卡片和回执仍由原服务管理；不复制/重放旧请求。不要手工清理正在使用的 SQLite 或 SDK 日志目录。
 
 ## 未关闭门槛
 

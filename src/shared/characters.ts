@@ -1,4 +1,5 @@
 import type { AppConfig } from './config'
+import type { HarnessEngine } from './harness'
 import { DEFAULT_PROFILE_ID, getProviderProfiles, isAIConfigured } from './config'
 
 export const DEFAULT_CHARACTER_ID = 'chouyu'
@@ -55,6 +56,7 @@ function clampCodePoints(value: string, max: number): string {
 }
 
 export interface Character {
+  harnessEngine?: HarnessEngine
   id: string
   name: string
   avatar: string
@@ -74,6 +76,7 @@ export interface CharacterStats extends Character {
 }
 
 export interface CharacterDraft {
+  harnessEngine?: HarnessEngine
   name: string
   avatar: string
   category: string
@@ -89,6 +92,7 @@ export function isDefaultCharacter(id: string): boolean {
 export function sanitizeCharacterDraft(value: unknown): CharacterDraft | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
+  if (input.harnessEngine !== undefined && input.harnessEngine !== 'legacy' && input.harnessEngine !== 'dsh') return null
   const name = typeof input.name === 'string' ? clampCodePoints(input.name.replace(/\s+/g, ' ').trim(), MAX_CHARACTER_NAME_LENGTH) : ''
   if (!name) return null
   const model = typeof input.model === 'string' ? input.model.trim().slice(0, 256) : ''
@@ -99,7 +103,7 @@ export function sanitizeCharacterDraft(value: unknown): CharacterDraft | null {
   const avatar = typeof input.avatar === 'string' && input.avatar.trim() ? clampCodePoints(input.avatar.trim(), 8) : Array.from(name)[0] ?? ''
   const category = typeof input.category === 'string' && input.category in INDUSTRY_LABELS ? input.category : ''
   const soulMd = typeof input.soulMd === 'string' ? input.soulMd.slice(0, 50_000) : ''
-  return { name, avatar, category, soulMd, providerProfileId, model }
+  return { name, avatar, category, soulMd, providerProfileId, model, ...(input.harnessEngine !== undefined ? { harnessEngine: input.harnessEngine } : {}) }
 }
 
 export function createDefaultCharacter(now = Date.now()): Character {
@@ -157,7 +161,7 @@ export function normalizeCharacters(value: unknown): Character[] {
       ? clampCodePoints(input.name.replace(/\s+/g, ' ').trim(), MAX_CHARACTER_NAME_LENGTH)
       : DEFAULT_CHARACTER_NAME
     const avatar = typeof input.avatar === 'string' && input.avatar.trim() ? clampCodePoints(input.avatar.trim(), 8) : defaultCharacter.avatar
-    defaultCharacter = { ...defaultCharacter, name, avatar }
+    defaultCharacter = { ...defaultCharacter, name, avatar, harnessEngine: input.harnessEngine === 'dsh' ? 'dsh' : 'legacy' }
   }
   const names = new Set<string>([defaultCharacter.name])
   const ids = new Set<string>([DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID])

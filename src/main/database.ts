@@ -735,7 +735,7 @@ export function updateCharacter(id: string, draft: unknown, requestReason?: stri
   if (id === ASSISTANT_CHARACTER_ID) throw new Error('旧版助手已合并到 ChouYu。')
   const expected = draft && typeof draft === 'object' ? (draft as { revision?: unknown }).revision : undefined
   if (expected !== undefined && (typeof expected !== 'string' || expected !== getContactProfile(id).revision)) throw new Error('联系人资料已变化，请重新打开后修改。')
-  const input = sanitizeCharacterDraft(draft)
+  const input = sanitizeCharacterDraft(draft && typeof draft === 'object' ? { harnessEngine: character.harnessEngine ?? 'legacy', ...draft } : draft)
   if (!input) throw new Error('角色名称和模型为必填项。')
   if (character.builtIn && input.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置角色固定使用默认档案。')
   if (!getProviderProfiles(store.config).some((profile) => profile.id === input.providerProfileId)) {
@@ -748,14 +748,14 @@ export function updateCharacter(id: string, draft: unknown, requestReason?: stri
   try {
     const updatedAt = Math.max(Date.now(), character.updatedAt + 1)
     if (character.builtIn) {
-      Object.assign(character, { name: input.name, avatar: input.avatar, category: input.category, updatedAt })
+      Object.assign(character, { name: input.name, avatar: input.avatar, category: input.category, harnessEngine: input.harnessEngine, updatedAt })
       // Built-in effective fields and receipt commit together, without a second save.
       store.config = normalizeConfig({ ...store.config, soulMd: input.soulMd, model: input.model })
     } else Object.assign(character, input, { updatedAt })
     if (requestReason !== undefined) store.state = { ...store.state, [`contact-profile-change:${id}`]: JSON.stringify({ reason: requestReason, revision: getContactProfile(id).revision, at: updatedAt }) }
     persist()
   } catch (error) {
-    Object.assign(character, previous); store.config = previousConfig; store.state = previousState
+    Object.assign(character, previous, { harnessEngine: previous.harnessEngine }); store.config = previousConfig; store.state = previousState
     throw error
   }
   return listCharacters().find((item) => item.id === id)!

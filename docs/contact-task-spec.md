@@ -363,6 +363,8 @@ ChouYu 的助手定位不要求独立 UI。联系人能力可以不同，任务�
 - [任务请求解析](../src/main/assistant-routines/gateway.ts)、[定时执行与历史](../src/main/assistant-routines/service.ts)、[晨报生成与投递](../src/main/assistant-routines/index.ts)、[主动工作检查](../src/main/assistant-routines/companion.ts)。
 - [联系人执行服务](../src/main/agents/service.ts)、[联系人持久化](../src/main/agents/store.ts)、[导航](../src/renderer/src/components/Contacts/contactNavigation.tsx)。
 
+2026-10-16 用户纠正执行器入口：每位联系人（包括 ChouYu）在现有资料编辑弹窗独立选择聊天执行引擎，不使用启动环境变量。默认原生；保存成功后下一次普通聊天生效，无需重启，进行中的请求保持原引擎。旧数据默认原生，修改其他字段保留引擎，过期或保存失败不覆盖并保留表单；后台任务仍沿用原流程，界面说明 DSH 当前支持范围。验收覆盖独立设置、重启保存、切回原生、旧表单冲突和真实界面选择，结果记于 [DSH 接入验收](dsh-harness-acceptance-20261015.md)。
+
 ## 11. 验收规范
 
 每次变更选择受影响项验证并记录结果，不能只凭截图证明保存，也不能只凭接口测试证明交互。

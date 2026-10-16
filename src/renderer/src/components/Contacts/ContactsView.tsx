@@ -11,6 +11,7 @@ import ContactsActivityLog from './ContactsActivityLog'
 import { useContactsDashboard } from './useContactsDashboard'
 import { compareMetrics } from './contactMetrics'
 import './Contacts.css'
+import type { HarnessEngine } from '../../../../shared/harness'
 
 interface ContactsViewProps {
   active: boolean
@@ -24,6 +25,7 @@ interface ContactsViewProps {
 }
 
 interface FormState {
+  harnessEngine: HarnessEngine
   revision?: string
   id: string | null
   name: string
@@ -37,7 +39,7 @@ interface FormState {
 type CategoryFilter = 'all' | 'other' | string
 type SortKey = 'pinyin' | 'popular' | 'recent' | 'tokens' | 'tasks'
 
-const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '' }
+const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '', harnessEngine: 'legacy' }
 
 const PINYIN_COLLATOR = new Intl.Collator('zh-Hans-CN-u-co-pinyin', { sensitivity: 'base' })
 
@@ -350,6 +352,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     }
     setForm({
       id: character.id,
+      harnessEngine: character.harnessEngine ?? 'legacy',
       revision: character.profileRevision,
       name: character.name,
       avatar: character.avatar,
@@ -612,6 +615,15 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
           <datalist id="contacts-model-options">{models.map((model) => <option key={model} value={model} />)}</datalist>
         </label>
         {modelStatus && <p className="contacts-hint" role="status">{modelStatus}</p>}
+        <label className="contacts-field"><span className="contacts-field-name">聊天执行引擎</span>
+          <select data-contacts-harness value={form.harnessEngine} aria-describedby="contact-harness-hint"
+            onChange={(event) => setForm({ ...form, harnessEngine: event.target.value as HarnessEngine })}>
+            <option value="legacy">ChouYu 原生</option>
+            <option value="dsh" disabled={!navigator.platform.startsWith('Win')}>DeepSeek Harness（实验性）</option>
+          </select></label>
+        <p id="contact-harness-hint" className="contacts-hint">仅用于这位联系人的普通聊天，保存后下一次聊天生效。后台任务沿用原执行流程。
+          {form.harnessEngine === 'dsh' && ' DSH 使用上方的 AI 服务与模型，目前支持文字聊天、读取资料和阅读偏好确认，暂不支持图片。'}
+          {!navigator.platform.startsWith('Win') && ' DSH 目前仅支持 Windows。'}</p>
         {form.id === DEFAULT_CHARACTER_ID && <p className="contacts-hint">内置角色的人设与模型会写回设置页的全局配置。</p>}
         <label className="contacts-field contacts-field-multiline"><span className="contacts-field-name">人设</span>
           <textarea data-contacts-soulmd rows={3} value={form.soulMd}

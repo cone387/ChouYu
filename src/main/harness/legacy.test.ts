@@ -18,7 +18,7 @@ it('preserves the original model boundary and produces a single terminal result'
         chunk('two', false);
         chunk('', true);
     });
-    const result = await new HarnessCoordinator({ legacy: adapter }, {}).run(input, e => events.push(e));
+    const result = await new HarnessCoordinator({ legacy: adapter }).run(input, e => events.push(e));
     expect(result).toMatchObject({ state: 'completed', text: 'onetwo' });
     expect(events.filter(e => e.type === 'completed')).toHaveLength(1);
     expect(events.map(e => e.seq)).toEqual(events.map((_, i) => i + 1));
@@ -26,7 +26,7 @@ it('preserves the original model boundary and produces a single terminal result'
 it('does not call legacy when a selected DSH adapter is unavailable', async () => {
     let calls = 0;
     const adapter = createLegacyAdapter(async () => { calls++; });
-    const result = await new HarnessCoordinator({ legacy: adapter }, { CHOUYU_DSH_PILOT_CHARACTER_ID: 'c' }).run(await prepare(), () => { });
+    const result = await new HarnessCoordinator({ legacy: adapter }, () => 'dsh').run(await prepare(), () => { });
     expect(result.state).toBe('failed');
     expect(calls).toBe(0);
 });
@@ -35,7 +35,7 @@ it('does not turn cancellation or failed context verification into completion', 
     input.signal = controller.signal;
     const events: HarnessEvent[] = [];
     const adapter = createLegacyAdapter(async (_m, _p, _c, chunk) => { chunk('partial', false); controller.abort(); });
-    const result = await new HarnessCoordinator({ legacy: adapter }, {}).run(input, e => events.push(e));
+    const result = await new HarnessCoordinator({ legacy: adapter }).run(input, e => events.push(e));
     expect(result.state).toBe('cancelled');
     expect(events.some(e => e.type === 'completed')).toBe(false);
 });

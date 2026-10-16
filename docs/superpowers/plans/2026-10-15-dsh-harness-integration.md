@@ -1,5 +1,7 @@
 # ChouYu DSH Harness Integration Implementation Plan
 
+> 2026-10-16 用户明确纠正：执行器改为每位联系人在现有资料编辑弹窗独立设置；下文首阶段内部绑定/无用户入口的约定已被取代。保存后下一次普通聊天生效，不再读取启动环境变量。实现与验证见 `docs/dsh-harness-acceptance-20261015.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让指定测试联系人通过 DSH 完成普通聊天、资料读取及原确认卡片驱动的偏好修改，并验证 Windows 安装包。

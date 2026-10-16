@@ -20,6 +20,13 @@ it('applies only explicit fields and preserves empty independent persona', () =>
   expect(applyContactProfilePatch(snapshot, validateContactProfilePatch({ soulMd: '' })).soulMd).toBe('')
   expect(snapshot.profile.name).toBe('作者')
 })
+it('rejects invalid engines and includes the saved engine in profile revision', () => {
+  expect(() => validateContactProfilePatch({ harnessEngine: 'invalid' })).toThrow('引擎')
+  const before = contactProfileSnapshot(character, DEFAULT_APP_CONFIG)
+  const selected = contactProfileSnapshot({ ...character, harnessEngine: 'dsh' }, DEFAULT_APP_CONFIG)
+  expect(selected.revision).not.toBe(before.revision)
+  expect(applyContactProfilePatch(selected, { name: '另一个名字' }).harnessEngine).toBe('dsh')
+})
 it.each([{}, { name: '' }, { name: '字'.repeat(25) }, { avatar: 'x'.repeat(9) }, { soulMd: 'x'.repeat(50001) }, { model: 'x'.repeat(257) }, { category: 'unknown' }, { builtIn: false }, { model: null }, { providerProfileId: '' }])('rejects invalid profile fields without silently truncating: %j', patch => {
   expect(() => validateContactProfilePatch(patch)).toThrow()
 })

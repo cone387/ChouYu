@@ -119,7 +119,7 @@ import {
   setState
 } from './database'
 
-const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter(), dsh:{run:(input,emit)=>{assertDshRecovered();return dshService().adapter.run(input,emit)},invalidate:input=>dshService().adapter.invalidate(input)} })
+const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter(), dsh:{run:(input,emit)=>{assertDshRecovered();return dshService().adapter.run(input,emit)},invalidate:input=>dshService().adapter.invalidate(input)} }, id => getCharacter(id)?.harnessEngine ?? 'legacy')
 setHarnessCancellation(key=>{activeAIRequests.get(key)?.abort();return chatHarness.cancel(key)})
 setContactHarnessPurge(characterId=>purgeHarnessData({characterId}))
 
@@ -641,6 +641,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (owner && request.characterId && owner !== request.characterId) return { ok: false, error: '会话与联系人不匹配。' }
     if (owner) request.characterId = owner
 
+    // Freeze the choice before context preparation or intent routing can yield.
+    const selectedEngine = chatHarness.engineFor(owner)
+
     const requestKey = getAIRequestKey(event.sender.id, request.requestId)
     activeAIRequests.get(requestKey)?.abort()
     const controller = new AbortController()
@@ -734,7 +737,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           return { ok: true, reply: routed }
         }
       }
-      receiptMode=chatHarness.engineFor(owner)==='dsh'
+      receiptMode=selectedEngine==='dsh'
       harnessInput = await prepareHarnessInput(request, {
         config: effectiveConfig, signal: controller.signal, assertContext,
         citationContext: citations => contactAgentsCall<string>(owner!, 'citationContext', [citations]),
@@ -751,7 +754,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk: update.text, done: false, ...(receiptMode?{operation:update.operation,attemptId:update.attemptId,sequence:update.seq}:{}) }
           event.sender.send('ai:stream-event', streamEvent)
         }
-      })
+      }, selectedEngine)
       if (result.state !== 'completed') throw new Error(result.error)
 
       await assertContext()

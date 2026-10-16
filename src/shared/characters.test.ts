@@ -16,6 +16,13 @@ const customCharacter: Character = {
 }
 
 describe('sanitizeCharacterDraft', () => {
+  it('preserves an explicit execution engine and rejects unknown engines', () => {
+    expect(sanitizeCharacterDraft({ name: '作者', harnessEngine: 'dsh' })?.harnessEngine).toBe('dsh')
+    expect(sanitizeCharacterDraft({ name: '作者', harnessEngine: 'unknown' })).toBeNull()
+    expect(sanitizeCharacterDraft({ name: '作者' })?.harnessEngine ?? 'legacy').toBe('legacy')
+    const saved = normalizeCharacters([{ ...createDefaultCharacter(1), harnessEngine: 'dsh' }, { ...customCharacter, harnessEngine: 'dsh' }])
+    expect(saved.map(c => c.harnessEngine)).toEqual(['dsh', 'dsh'])
+  })
   it('requires name and model and fills defaults', () => {
     expect(sanitizeCharacterDraft({ name: ' 小猫 ', model: ' m1 ', soulMd: 'x', providerProfileId: 'default' }))
       .toEqual({ name: '小猫', avatar: '小', category: '', soulMd: 'x', providerProfileId: 'default', model: 'm1' })
