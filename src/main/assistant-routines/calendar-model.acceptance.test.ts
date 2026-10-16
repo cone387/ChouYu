@@ -6,7 +6,7 @@ import { requestContactTask } from './gateway'
 import { AssistantRoutineService } from './service'
 import { ContactTaskDraftStore } from './drafts'
 import { AgentStore } from '../agents/store'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { resolveCharacterConfig } from '../../shared/characters'
 
 const cases = [
@@ -37,7 +37,7 @@ it.skipIf(!process.env.CHOUYU_CALENDAR_ACCEPTANCE).each(cases)('live calendar %s
       }
     }, async (instruction, content) => {
       let answer = ''
-      await streamAIChat([{ role: 'user', content }], instruction, { ...data.config, ...resolved.config }, text => { answer += text }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2000 })
+      await streamNativeChat([{ role: 'user', content }], instruction, { ...data.config, ...resolved.config }, text => { answer += text }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2000 })
       raw += answer + '\n'; return answer
     })
     expect(result.kind).toBe(owner === 'chouyu' ? 'routine' : 'work-created')

@@ -11,7 +11,7 @@ export interface ChatRequestState {
     memoryMutationReceipt: string;
 }
 export interface ChatToolContext {
-    confirmationMode?: 'legacy-return-card' | 'await-receipt';
+    confirmationMode?: 'return-card' | 'await-receipt';
     beforePersistentOffer?(call: AIToolCall): Promise<void>;
     waitForActionReceipt?(call: AIToolCall, card: ContactActionInteraction): Promise<string>;
     request: AIStreamRequest;

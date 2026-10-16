@@ -16,10 +16,15 @@ const customCharacter: Character = {
 }
 
 describe('sanitizeCharacterDraft', () => {
+  it('retains the contact when stored engine metadata is invalid, while rejecting invalid edits', () => {
+    expect(normalizeCharacters([{ ...customCharacter, harnessEngine: 'corrupt-engine' }]).find(c => c.id === customCharacter.id))
+      .toMatchObject({ id: 'c1', name: '小猫', soulMd: '# 小猫人设', harnessEngine: 'native' })
+    expect(sanitizeCharacterDraft({ ...customCharacter, harnessEngine: 'corrupt-engine' })).toBeNull()
+  })
   it('preserves an explicit execution engine and rejects unknown engines', () => {
     expect(sanitizeCharacterDraft({ name: '作者', harnessEngine: 'dsh' })?.harnessEngine).toBe('dsh')
     expect(sanitizeCharacterDraft({ name: '作者', harnessEngine: 'unknown' })).toBeNull()
-    expect(sanitizeCharacterDraft({ name: '作者' })?.harnessEngine ?? 'legacy').toBe('legacy')
+    expect(sanitizeCharacterDraft({ name: '作者' })?.harnessEngine ?? 'native').toBe('native')
     const saved = normalizeCharacters([{ ...createDefaultCharacter(1), harnessEngine: 'dsh' }, { ...customCharacter, harnessEngine: 'dsh' }])
     expect(saved.map(c => c.harnessEngine)).toEqual(['dsh', 'dsh'])
   })

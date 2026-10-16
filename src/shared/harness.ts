@@ -1,4 +1,4 @@
-export type HarnessEngine = 'legacy' | 'dsh';
+export type HarnessEngine = 'native' | 'dsh';
 export type RunState = 'starting' | 'running' | 'waiting-user' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 export interface RunKey {
     requestId: string;

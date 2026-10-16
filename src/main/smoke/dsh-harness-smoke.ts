@@ -90,14 +90,14 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
             await click(`[data-contacts-edit="${id}"]`);
             await waitForRenderer(window, "Boolean(document.querySelector('[data-contacts-harness]'))", 15000);
         };
-        const saveEngine = async (engine: 'legacy' | 'dsh') => {
+        const saveEngine = async (engine: 'native' | 'dsh') => {
             await run(`(()=>{const el=document.querySelector('[data-contacts-harness]');el.value=${JSON.stringify(engine)};el.dispatchEvent(new Event('change',{bubbles:true}));})()`);
             await click('[data-contacts-save]');
             await waitForRenderer(window, "!document.querySelector('[data-contacts-form]')", 15000);
         };
         // Select the engine through the real per-contact editor, never a startup switch.
         await openEngineForm(character.id);
-        if (await run("document.querySelector('[data-contacts-harness]').value") !== 'legacy') throw new Error('New contact did not default to native');
+        if (await run("document.querySelector('[data-contacts-harness]').value") !== 'native') throw new Error('New contact did not default to native');
         // A change while the original intent route is pending affects only the next request.
         mode = 'plain'; holdRoute = true;
         const inFlight = run(`window.electronAPI.ai.startStream(${JSON.stringify({ requestId: 'engine-before-route', systemPrompt: '独立联系人', characterId: character.id, sessionId: session, messages: [{ role: 'user', content: '你好，先聊一会儿' }] })})`);
@@ -107,7 +107,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         const prior = await inFlight;
         if (!prior.ok || prior.harnessSource || dshService().store.all().length) throw new Error('Settings changed the engine of an already started request: ' + JSON.stringify(prior));
         mode = 'tools';
-        if (getCharacter(character.id)?.harnessEngine !== 'dsh' || (getCharacter('chouyu')?.harnessEngine ?? 'legacy') !== 'legacy') throw new Error('Contact selection was not saved independently');
+        if (getCharacter(character.id)?.harnessEngine !== 'dsh' || (getCharacter('chouyu')?.harnessEngine ?? 'native') !== 'native') throw new Error('Contact selection was not saved independently');
         await openEngineForm(character.id);
         if (await run("document.querySelector('[data-contacts-harness]').value") !== 'dsh') throw new Error('Reopened editor lost engine selection');
         await run("document.querySelector('[data-contacts-harness]').focus()");
@@ -117,7 +117,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         await saveEngine('dsh');
         if (getCharacter('chouyu')?.harnessEngine !== 'dsh' || getCharacter(character.id)?.harnessEngine !== 'dsh') throw new Error('Built-in contact engine was not saved independently');
         await openEngineForm('chouyu');
-        await saveEngine('legacy');
+        await saveEngine('native');
         await run("document.querySelector('[data-workspace-nav=chat]')?.click()");
         const sendUser = async (text: string) => { toolStep = 0; await run(`(()=>{const el=document.querySelector('.input-textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,${JSON.stringify(text)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`); await click('[aria-label="发送消息"]'); };
         const card = async () => { const items = await pendingContactInteractions(character.id); return items.find(c => c.kind === 'action' && c.status === 'pending' && (c as ContactActionInteraction).request.sessionId === session) as ContactActionInteraction | undefined; };
@@ -185,7 +185,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         if (!late || JSON.stringify(await contactAgentsCall(character.id, 'outputPreferenceCatalogue')) !== JSON.stringify(preferences))
             throw new Error('Late response replayed a cancelled write');
         await openEngineForm(character.id);
-        await saveEngine('legacy');
+        await saveEngine('native');
         mode = 'plain';
         const attempts = dshService().store.all().length, callsBeforeNative = providerCalls;
         const native = await run(`window.electronAPI.ai.startStream(${JSON.stringify({ requestId: 'native-after-switch', systemPrompt: '独立联系人', characterId: character.id, sessionId: session, messages: [{ role: 'user', content: '切回原生后打个招呼' }] })})`);

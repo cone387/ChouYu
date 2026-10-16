@@ -1,6 +1,6 @@
-import { streamAIChat } from '../ai';
-import type { HarnessAdapter } from './contracts';
-export function createLegacyAdapter(model: typeof streamAIChat = streamAIChat): HarnessAdapter {
+import { streamNativeChat } from './runner';
+import type { HarnessAdapter } from '../contracts';
+export function createNativeAdapter(model: typeof streamNativeChat = streamNativeChat): HarnessAdapter {
     return {
         async run(input, emit) {
             let text = '', round = 0;

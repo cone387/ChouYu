@@ -735,7 +735,7 @@ export function updateCharacter(id: string, draft: unknown, requestReason?: stri
   if (id === ASSISTANT_CHARACTER_ID) throw new Error('旧版助手已合并到 ChouYu。')
   const expected = draft && typeof draft === 'object' ? (draft as { revision?: unknown }).revision : undefined
   if (expected !== undefined && (typeof expected !== 'string' || expected !== getContactProfile(id).revision)) throw new Error('联系人资料已变化，请重新打开后修改。')
-  const input = sanitizeCharacterDraft(draft && typeof draft === 'object' ? { harnessEngine: character.harnessEngine ?? 'legacy', ...draft } : draft)
+  const input = sanitizeCharacterDraft(draft && typeof draft === 'object' ? { harnessEngine: character.harnessEngine ?? 'native', ...draft } : draft)
   if (!input) throw new Error('角色名称和模型为必填项。')
   if (character.builtIn && input.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置角色固定使用默认档案。')
   if (!getProviderProfiles(store.config).some((profile) => profile.id === input.providerProfileId)) {

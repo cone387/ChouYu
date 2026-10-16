@@ -92,7 +92,7 @@ export function isDefaultCharacter(id: string): boolean {
 export function sanitizeCharacterDraft(value: unknown): CharacterDraft | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
-  if (input.harnessEngine !== undefined && input.harnessEngine !== 'legacy' && input.harnessEngine !== 'dsh') return null
+  if (input.harnessEngine !== undefined && input.harnessEngine !== 'native' && input.harnessEngine !== 'dsh') return null
   const name = typeof input.name === 'string' ? clampCodePoints(input.name.replace(/\s+/g, ' ').trim(), MAX_CHARACTER_NAME_LENGTH) : ''
   if (!name) return null
   const model = typeof input.model === 'string' ? input.model.trim().slice(0, 256) : ''
@@ -161,7 +161,7 @@ export function normalizeCharacters(value: unknown): Character[] {
       ? clampCodePoints(input.name.replace(/\s+/g, ' ').trim(), MAX_CHARACTER_NAME_LENGTH)
       : DEFAULT_CHARACTER_NAME
     const avatar = typeof input.avatar === 'string' && input.avatar.trim() ? clampCodePoints(input.avatar.trim(), 8) : defaultCharacter.avatar
-    defaultCharacter = { ...defaultCharacter, name, avatar, harnessEngine: input.harnessEngine === 'dsh' ? 'dsh' : 'legacy' }
+    defaultCharacter = { ...defaultCharacter, name, avatar, harnessEngine: input.harnessEngine === 'dsh' ? 'dsh' : 'native' }
   }
   const names = new Set<string>([defaultCharacter.name])
   const ids = new Set<string>([DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID])
@@ -171,7 +171,7 @@ export function normalizeCharacters(value: unknown): Character[] {
     const id = typeof input.id === 'string' ? input.id.trim().slice(0, 128) : ''
     if (!id || isDefaultCharacter(id) || isAssistantCharacter(id)) continue
     if (ids.has(id)) continue
-    const draft = sanitizeCharacterDraft(input)
+    const draft = sanitizeCharacterDraft({ ...input, harnessEngine: input.harnessEngine === 'dsh' ? 'dsh' : 'native' })
     if (!draft) continue
     let characterName = draft.name
     let suffix = 2

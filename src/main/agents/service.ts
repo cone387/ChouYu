@@ -17,7 +17,7 @@ import { mkdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import type { AppConfig } from '../../shared/config'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { AgentStore } from './store'
 import { saveDeliveryFeedback } from './delivery-feedback'
 import { AgentRuntime, type AgentModel } from './runtime'
@@ -460,7 +460,7 @@ export class AgentService {
       }
       try {
         if (testModel) { beforeRound(0, prompt); const result = await testModel(prompt, signal, options); if (options?.suppliesMemories) recordMemoryContext(); return result }
-        await streamAIChat([{ role: 'user', content: prompt }], options?.plainText ? 'Output the requested plain text, without JSON.' : 'Follow the work instruction and return JSON. Distinguish facts, assumptions, and sources.', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) }, signal, tools, { timeoutMs: 180000, beforeRound, afterRound, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model }; if (options?.suppliesMemories) recordMemoryContext() } })
+        await streamNativeChat([{ role: 'user', content: prompt }], options?.plainText ? 'Output the requested plain text, without JSON.' : 'Follow the work instruction and return JSON. Distinguish facts, assumptions, and sources.', { ...DEFAULT_APP_CONFIG, ...identity.config! }, chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) }, signal, tools, { timeoutMs: 180000, beforeRound, afterRound, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model }; if (options?.suppliesMemories) recordMemoryContext() } })
         if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError(output)
       } finally { afterRound() }
       return output

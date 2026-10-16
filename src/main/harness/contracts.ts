@@ -2,7 +2,7 @@ import type { AIChatMessage } from '../../shared/ai';
 import type { AIResponseMetadata } from '../../shared/ai-usage';
 import type { AppConfig } from '../../shared/config';
 import type { HarnessEngine, HarnessSource, RunKey } from '../../shared/harness';
-import type { AIToolRuntime } from '../ai';
+import type { HarnessToolRuntime } from './tool-runtime';
 export type { RunKey, ToolKey, RunState } from '../../shared/harness';
 export interface HarnessInput extends RunKey {
     characterId?: string;
@@ -12,7 +12,7 @@ export interface HarnessInput extends RunKey {
     config: AppConfig;
     snapshotFingerprint: string;
     configVersion: string;
-    tools?: AIToolRuntime;
+    tools?: HarnessToolRuntime;
     signal: AbortSignal;
     assertContext(): Promise<void>;
     onMetadata?(metadata: AIResponseMetadata): void;

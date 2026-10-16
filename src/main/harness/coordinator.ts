@@ -5,9 +5,9 @@ export class HarnessCoordinator {
         abort: AbortController;
         settled: Promise<void>;
     }>();
-    constructor(private adapters: Partial<Record<HarnessEngine, HarnessAdapter>>, private readEngine: (characterId: string) => HarnessEngine = () => 'legacy', private platform: NodeJS.Platform = process.platform) { }
+    constructor(private adapters: Partial<Record<HarnessEngine, HarnessAdapter>>, private readEngine: (characterId: string) => HarnessEngine = () => 'native', private platform: NodeJS.Platform = process.platform) { }
     engineFor(characterId?: string): HarnessEngine {
-        return characterId ? this.readEngine(characterId) : 'legacy';
+        return characterId ? this.readEngine(characterId) : 'native';
     }
     async run(input: HarnessInput, output: (event: HarnessEvent) => void, engine = this.engineFor(input.characterId)): Promise<HarnessResult> {
         let seq = 0, terminal = false;

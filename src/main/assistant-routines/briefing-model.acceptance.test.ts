@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { resolveCharacterConfig } from '../../shared/characters'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
@@ -21,7 +21,7 @@ it.skipIf(!process.env.CHOUYU_BRIEFING_ACCEPTANCE)('live briefing does not certi
   let output = '', rounds = 0, reads = 0
   const usage: AIResponseMetadata[] = []
   try {
-    await streamAIChat([{ role: 'user', content: JSON.stringify(routineSummaryInput('检查作者实际工作与正式成果，简短告诉我真正交付了什么。没有正文不能声称交付，未完整读过原文不要评价质量，不替任何人答复或更改工作。', Date.now(), undefined, evidence)) }],
+    await streamNativeChat([{ role: 'user', content: JSON.stringify(routineSummaryInput('检查作者实际工作与正式成果，简短告诉我真正交付了什么。没有正文不能声称交付，未完整读过原文不要评价质量，不替任何人答复或更改工作。', Date.now(), undefined, evidence)) }],
       routineSummaryInstruction('你是用户的专属助手 ChouYu。'), config, chunk => { output += chunk }, AbortSignal.timeout(100000), {
         definitions: [{ name: 'read_contact_delivery', displayName: '核实正式成果', source: 'builtin', risk: 'read', requiresConfirmation: false,
           description: '核实正式保存版本、目录与累计字符数，不读取正文，不执行验收。',
@@ -59,7 +59,7 @@ it.skipIf(!process.env.CHOUYU_BRIEFING_ACCEPTANCE)('live midnight briefing disti
   let output = ''
   const usage: AIResponseMetadata[] = []
   try {
-    await streamAIChat([{ role: 'user', content: JSON.stringify(input) }], routineSummaryInstruction('你是用户的专属助手 ChouYu。'), config,
+    await streamNativeChat([{ role: 'user', content: JSON.stringify(input) }], routineSummaryInstruction('你是用户的专属助手 ChouYu。'), config,
       chunk => { output += chunk }, AbortSignal.timeout(100000), undefined,
       { timeoutMs: 90000, maxOutputTokens: 1000, onMetadata: value => { if (value.usage || value.finishReason) usage.push(value) } })
     const authorStart = output.indexOf('验收作者'), reviewerStart = output.indexOf('验收评审')

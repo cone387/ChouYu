@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('../ai', () => ({ streamAIChat: vi.fn() }))
+vi.mock('../harness/native/runner', () => ({ streamNativeChat: vi.fn() }))
 import { answerJournalQuestion, journalModelEvidence, parseJournalSummary, selectJournalEvidence } from './summary'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import type { AppConfig } from '../../shared/config'
 
 const sources = [{ id: 'activity:1', at: 1, app: 'test', title: 'test', text: 'test' }]
@@ -31,13 +31,13 @@ describe('journal summary provenance', () => {
     expect(journalModelEvidence(input)).toEqual([{ app: 'test', title: 'test', text: 'test', occurrences: [{ id: 'activity:1', at: 1 }, { id: 'activity:2', at: 2, endedAt: 5 }] }])
   })
   it('does not expose an uncited model assertion as a factual answer', async () => {
-    vi.mocked(streamAIChat).mockImplementationOnce(async (_messages, _system, _config, onChunk) => { onChunk('{"text":"已经全部完成","sourceIds":[]}', true) })
+    vi.mocked(streamNativeChat).mockImplementationOnce(async (_messages, _system, _config, onChunk) => { onChunk('{"text":"已经全部完成","sourceIds":[]}', true) })
     const result = await answerJournalQuestion({ from: 0, to: 10, sources, truncated: false }, '完成了吗', { model: 'test' } as AppConfig, new AbortController().signal)
     expect(result.text).toContain('没有足够依据')
     expect(result.text).not.toContain('全部完成')
   })
   it('rejects invented answer sources', async () => {
-    vi.mocked(streamAIChat).mockImplementationOnce(async (_messages, _system, _config, onChunk) => { onChunk('{"text":"有依据","sourceIds":["activity:999"]}', true) })
+    vi.mocked(streamNativeChat).mockImplementationOnce(async (_messages, _system, _config, onChunk) => { onChunk('{"text":"有依据","sourceIds":["activity:999"]}', true) })
     await expect(answerJournalQuestion({ from: 0, to: 10, sources, truncated: false }, '在哪', { model: 'test' } as AppConfig, new AbortController().signal)).rejects.toThrow('有效来源')
   })
 })

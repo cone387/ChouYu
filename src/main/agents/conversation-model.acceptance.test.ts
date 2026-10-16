@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { routeContactChange } from './chat-changes'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { contactOutputInstruction, sanitizeContactOutput } from '../../shared/contact-output'
@@ -19,7 +19,7 @@ const config = () => {
 }
 async function model(prompt: string, content: string) {
   let output = ''
-  await streamAIChat([{ role: 'user', content }], prompt, config(), text => { output += text }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
+  await streamNativeChat([{ role: 'user', content }], prompt, config(), text => { output += text }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
   return output
 }
 const save = (name: string, data: unknown) => { mkdirSync('artifacts/contact-conversation/live', { recursive: true }); writeFileSync(`artifacts/contact-conversation/live/${name}.json`, JSON.stringify(data, null, 2)) }

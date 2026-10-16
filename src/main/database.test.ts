@@ -54,8 +54,8 @@ describe('durable conversations', () => {
     const initial = getContactProfile(other.id)
     const saved = updateContactProfile(other.id, { harnessEngine: 'dsh' }, initial.revision, '使用 DSH')
     expect(saved.profile.harnessEngine).toBe('dsh')
-    expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.harnessEngine ?? 'legacy').toBe('legacy')
-    expect(() => updateContactProfile(other.id, { harnessEngine: 'legacy' }, initial.revision, '过期设置')).toThrow('变化')
+    expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.harnessEngine ?? 'native').toBe('native')
+    expect(() => updateContactProfile(other.id, { harnessEngine: 'native' }, initial.revision, '过期设置')).toThrow('变化')
     // Simulate an older caller that sends no engine field.
     const { harnessEngine: _engine, ...oldDraft } = getContactProfile(other.id).profile
     updateCharacter(other.id, { ...oldDraft, name: '改名保留引擎' })
@@ -65,9 +65,9 @@ describe('durable conversations', () => {
     expect(getContactProfile(other.id).profile.harnessEngine).toBe('dsh')
     expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.harnessEngine).toBe('dsh')
     const current = getContactProfile(other.id)
-    updateContactProfile(other.id, { harnessEngine: 'legacy' }, current.revision, '切回原生')
+    updateContactProfile(other.id, { harnessEngine: 'native' }, current.revision, '切回原生')
     initDatabase()
-    expect(getContactProfile(other.id).profile.harnessEngine).toBe('legacy')
+    expect(getContactProfile(other.id).profile.harnessEngine).toBe('native')
     expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.harnessEngine).toBe('dsh')
   })
   it.each(['built-in', 'custom'])('does not publish an engine change when persistence fails: %s', kind => {

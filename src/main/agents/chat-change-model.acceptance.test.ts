@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { routeContactChange } from './chat-changes'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -33,7 +33,7 @@ it.skipIf(!enabled).each([1, 2, 3])('live model follows edited latest request th
     read: async () => overview,
     model: async (prompt, content) => {
       let result = ''
-      await streamAIChat([{ role: 'user', content }], prompt, { ...data.config, ...resolved.config }, chunk => { result += chunk }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
+      await streamNativeChat([{ role: 'user', content }], prompt, { ...data.config, ...resolved.config }, chunk => { result += chunk }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
       decisions.push(result)
       return result
     },
@@ -42,7 +42,7 @@ it.skipIf(!enabled).each([1, 2, 3])('live model follows edited latest request th
   let prose = ''
   const toolCalls: { name: string; args: Record<string, unknown> }[] = []
   if (output === undefined) {
-    await streamAIChat(messages, `${resolved.config.soulMd}\n${contactWorkInstructions}`, { ...data.config, ...resolved.config }, chunk => { prose += chunk }, AbortSignal.timeout(90000), {
+    await streamNativeChat(messages, `${resolved.config.soulMd}\n${contactWorkInstructions}`, { ...data.config, ...resolved.config }, chunk => { prose += chunk }, AbortSignal.timeout(90000), {
       definitions: createContactTools({ owner: () => 'writer', request: async () => { throw new Error('Only synthetic tool results are allowed') } }),
       execute: async call => {
         const args = JSON.parse(call.arguments)
@@ -110,7 +110,7 @@ it.skipIf(!enabled).each(cases)('live model routes %s without a verbal-only prom
     },
     model: async (prompt, content) => {
       let result = ''
-      await streamAIChat([{ role: 'user', content }], prompt, { ...data.config, ...resolved.config }, chunk => { result += chunk }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
+      await streamNativeChat([{ role: 'user', content }], prompt, { ...data.config, ...resolved.config }, chunk => { result += chunk }, AbortSignal.timeout(60000), undefined, { timeoutMs: 60000, maxOutputTokens: 2500 })
       decisions.push(result)
       mkdirSync('temp/chat-change-model', { recursive: true })
       writeFileSync(`temp/chat-change-model/${key}.json`, JSON.stringify({ message, decisions, calls }, null, 2))

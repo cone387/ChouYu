@@ -7,7 +7,7 @@ vi.mock('../database', () => ({
   getSession: () => ({ characterId: 'chouyu' }), listCharacters: () => [{ id: 'chouyu', name: '丑鱼' }, { id: 'alice', name: '阿笔' }, { id: 'bob', name: '老周' }]
 }))
 vi.mock('../agents', () => ({ inspectContactWork: state.inspect, inspectContactDelivery: state.delivery, contactAgentsCall: async () => [{ scope: { kind: 'contact' }, revision: 1, preference: { instruction: '先给待处理事项' } }] }))
-vi.mock('../ai', () => ({ streamAIChat: state.model }))
+vi.mock('../harness/native/runner', () => ({ streamNativeChat: state.model }))
 vi.mock('../skills', () => ({ contactSkillInstruction: () => '已配置技能：核对依据后简要总结。' }))
 vi.mock('../reminder-events', () => ({ notifyReminderChanges: vi.fn() }))
 vi.mock('../tools/registry', () => ({ getRegisteredTool: () => null, registerTool: vi.fn() }))

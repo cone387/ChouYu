@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto'
 import type { AppConfig } from '../../shared/config'
 import { formatMemoryContext, normalizeMemoryKey, type MemoryRecord } from '../../shared/memory'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { Mem0MemorySyncAdapter } from '../memory/sync/mem0-adapter'
 
 interface Corpus {
@@ -42,7 +42,7 @@ export async function runMem0Recall(config: AppConfig, corpus: Corpus, evaluateE
           try {
             let response = ''
             const context = formatMemoryContext(records.map((record, index) => ({ ...memories.find(memory => memory.id === record.metadata.chouyu_id)!, id: actual[index], score: 1 / (index + 1) })))
-            await streamAIChat([{ role: 'user', content: sample.query }], `${context}\n\n请仅输出 JSON：{"answer":"简短回答；没有依据时写 UNKNOWN","evidenceIds":["直接支持回答的 memory ID"]}。只列直接使用的依据；无依据时 evidenceIds 为空数组。`, config, chunk => { response += chunk })
+            await streamNativeChat([{ role: 'user', content: sample.query }], `${context}\n\n请仅输出 JSON：{"answer":"简短回答；没有依据时写 UNKNOWN","evidenceIds":["直接支持回答的 memory ID"]}。只列直接使用的依据；无依据时 evidenceIds 为空数组。`, config, chunk => { response += chunk })
             const parsed = JSON.parse(response.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim())
             if (typeof parsed.answer !== 'string' || !Array.isArray(parsed.evidenceIds) || parsed.evidenceIds.some((id: unknown) => typeof id !== 'string')) throw new Error('Invalid evidence response')
             const rawSelected = parsed.evidenceIds as string[]

@@ -1,5 +1,6 @@
 import type { AppConfig } from '../../shared/config'
-import { fetchProviderModels, streamAIChat } from '../ai'
+import { fetchProviderModels } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 
 export async function runProviderAcceptance(config: AppConfig) {
   const checks: Array<{ name: string; passed: boolean; detail: Record<string, unknown> }> = []
@@ -13,7 +14,7 @@ export async function runProviderAcceptance(config: AppConfig) {
   }
   await run('stream-completion', async () => {
     let text = '', chunks = 0, done = 0
-    await streamAIChat([{ role: 'user', content: '请仅输出 CHOUYU_ACCEPTANCE_OK。' }], 'Follow the user instruction precisely.', config, (chunk, finished) => { text += chunk; if (chunk) chunks++; if (finished) done++ })
+    await streamNativeChat([{ role: 'user', content: '请仅输出 CHOUYU_ACCEPTANCE_OK。' }], 'Follow the user instruction precisely.', config, (chunk, finished) => { text += chunk; if (chunk) chunks++; if (finished) done++ })
     if (!text.includes('CHOUYU_ACCEPTANCE_OK') || chunks < 1 || done !== 1) throw new Error('Invalid completion')
     return { chunks, done, markerMatched: true }
   })
@@ -22,7 +23,7 @@ export async function runProviderAcceptance(config: AppConfig) {
     let chunks = 0, done = 0, aborted = false
     const start = Date.now()
     try {
-      await streamAIChat([{ role: 'user', content: '从 1 数到 300，每个数字单独一行，不要省略。' }], 'Follow the user instruction.', config, (chunk, finished) => {
+      await streamNativeChat([{ role: 'user', content: '从 1 数到 300，每个数字单独一行，不要省略。' }], 'Follow the user instruction.', config, (chunk, finished) => {
         if (finished) done++
         if (chunk) { chunks++; controller.abort() }
       }, controller.signal)
@@ -32,7 +33,7 @@ export async function runProviderAcceptance(config: AppConfig) {
   })
   await run('pure-tool-roundtrip', async () => {
     let calls = 0, text = ''
-    await streamAIChat([{ role: 'user', content: '调用 acceptance_echo 工具，text 参数为 CHOUYU_TOOL_OK，然后原样输出工具返回值。' }], 'Use the requested tool before answering.', config, chunk => { text += chunk }, undefined, {
+    await streamNativeChat([{ role: 'user', content: '调用 acceptance_echo 工具，text 参数为 CHOUYU_TOOL_OK，然后原样输出工具返回值。' }], 'Use the requested tool before answering.', config, chunk => { text += chunk }, undefined, {
       definitions: [{ name: 'acceptance_echo', displayName: 'Synthetic echo', description: 'Returns the supplied synthetic text. No external effects.', risk: 'safe', source: 'builtin', requiresConfirmation: false, inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } }],
       execute: async call => {
         if (call.name !== 'acceptance_echo') throw new Error('Unexpected tool')

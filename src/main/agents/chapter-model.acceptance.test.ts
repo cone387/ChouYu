@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -37,7 +37,7 @@ it.skipIf(!process.env.CHOUYU_CHAPTER_MODEL_ACCEPTANCE)('real author model advan
       await runtime.execute(run, resolved.config.soulMd, async (prompt, runSignal, options) => {
         if (++calls > 10) throw new Error('验收调用达到限定次数')
         let raw = ''
-        await streamAIChat([{ role: 'user', content: prompt }], options?.plainText ? '按要求只输出正文。' : '按要求输出完整 JSON。', { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }, chunk => { raw += chunk; options?.onPartial?.(raw) }, runSignal, undefined, { timeoutMs: 90000, maxOutputTokens: 8192 })
+        await streamNativeChat([{ role: 'user', content: prompt }], options?.plainText ? '按要求只输出正文。' : '按要求输出完整 JSON。', { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }, chunk => { raw += chunk; options?.onPartial?.(raw) }, runSignal, undefined, { timeoutMs: 90000, maxOutputTokens: 8192 })
         return raw
       }, signal)
       const row = store.getRun(run)!

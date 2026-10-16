@@ -39,7 +39,7 @@ interface FormState {
 type CategoryFilter = 'all' | 'other' | string
 type SortKey = 'pinyin' | 'popular' | 'recent' | 'tokens' | 'tasks'
 
-const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '', harnessEngine: 'legacy' }
+const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '', harnessEngine: 'native' }
 
 const PINYIN_COLLATOR = new Intl.Collator('zh-Hans-CN-u-co-pinyin', { sensitivity: 'base' })
 
@@ -352,7 +352,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     }
     setForm({
       id: character.id,
-      harnessEngine: character.harnessEngine ?? 'legacy',
+      harnessEngine: character.harnessEngine ?? 'native',
       revision: character.profileRevision,
       name: character.name,
       avatar: character.avatar,
@@ -618,7 +618,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <label className="contacts-field"><span className="contacts-field-name">聊天执行引擎</span>
           <select data-contacts-harness value={form.harnessEngine} aria-describedby="contact-harness-hint"
             onChange={(event) => setForm({ ...form, harnessEngine: event.target.value as HarnessEngine })}>
-            <option value="legacy">ChouYu 原生</option>
+            <option value="native">ChouYu 原生</option>
             <option value="dsh" disabled={!navigator.platform.startsWith('Win')}>DeepSeek Harness（实验性）</option>
           </select></label>
         <p id="contact-harness-hint" className="contacts-hint">仅用于这位联系人的普通聊天，保存后下一次聊天生效。后台任务沿用原执行流程。

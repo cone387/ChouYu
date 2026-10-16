@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { AgentStore } from './store'
 import { enforceDeliveryLength } from './delivery-length'
 import { parseDraft, type AgentModel } from './runtime'
@@ -33,7 +33,7 @@ it.skipIf(!process.env.CHOUYU_LENGTH_ACCEPTANCE)('live repair satisfies the orig
       let output = '', metadata: AIResponseMetadata = { model: config.model }, reservation: string | undefined
       const callId = store.latestCallId(runId)!
       try {
-        await streamAIChat([{ role: 'user', content: prompt }], 'Follow the work instruction and return JSON. Preserve established story facts.', config, chunk => { output += chunk }, signal, undefined, {
+        await streamNativeChat([{ role: 'user', content: prompt }], 'Follow the work instruction and return JSON. Preserve established story facts.', config, chunk => { output += chunk }, signal, undefined, {
           timeoutMs: 90000, maxOutputTokens: 4000,
           beforeRound: (_round, input) => { const value = store.tokens.reserve(runId, callId, 'writer', topicId, input, 4000); if ('error' in value) throw Error(value.error); reservation = value.key; return value.maxOutputTokens },
           onMetadata: value => { metadata = value }

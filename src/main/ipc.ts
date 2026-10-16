@@ -1,7 +1,7 @@
 import { dshService, existingDshService, closeDshService, setHarnessCancellation, purgeHarnessData, assertDshRecovered, cleanSavedDshRun } from './harness/service'
 import type { HarnessInput } from './harness/contracts'
 import { prepareHarnessInput, harnessConfigVersion } from './harness/prepare'
-import { createLegacyAdapter } from './harness/legacy'
+import { createNativeAdapter } from './harness/native'
 import { HarnessCoordinator } from './harness/coordinator'
 import { createChatTools, type ChatRequestState } from './harness/tools'
 import { contactCommunicationInstructions } from '../shared/contact-communication'
@@ -52,7 +52,8 @@ import { capabilityRegistry } from './capabilities/registry'
 import { setClipboardWatcherEnabled } from './clipboard'
 import { setTrayUnread } from './tray'
 import { initAutoUpdater } from './updater'
-import { diagnoseProvider, fetchProviderModels, streamAIChat } from './ai'
+import { diagnoseProvider, fetchProviderModels } from './ai'
+import { streamNativeChat } from './harness/native/runner'
 import { prepareRegisteredToolAsync, getRegisteredTool, getToolDefinitions } from './tools/registry'
 import { waitForToolApproval, type ToolApprovalOutcome } from './tool-approval'
 import { bindAIRequestLifecycle } from './ai-request-lifecycle'
@@ -119,7 +120,7 @@ import {
   setState
 } from './database'
 
-const chatHarness = new HarnessCoordinator({ legacy: createLegacyAdapter(), dsh:{run:(input,emit)=>{assertDshRecovered();return dshService().adapter.run(input,emit)},invalidate:input=>dshService().adapter.invalidate(input)} }, id => getCharacter(id)?.harnessEngine ?? 'legacy')
+const chatHarness = new HarnessCoordinator({ native: createNativeAdapter(), dsh:{run:(input,emit)=>{assertDshRecovered();return dshService().adapter.run(input,emit)},invalidate:input=>dshService().adapter.invalidate(input)} }, id => getCharacter(id)?.harnessEngine ?? 'native')
 setHarnessCancellation(key=>{activeAIRequests.get(key)?.abort();return chatHarness.cancel(key)})
 setContactHarnessPurge(characterId=>purgeHarnessData({characterId}))
 
@@ -695,7 +696,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       }
       const chatTools = config.aiToolsEnabled ? createChatTools({
           request, owner, signal: controller.signal, cancel: () => controller.abort(), state: chatState,
-          get confirmationMode(){return receiptMode?'await-receipt':'legacy-return-card'},
+          get confirmationMode(){return receiptMode?'await-receipt':'return-card'},
           beforePersistentOffer:call=>dshService().adapter.beforePersistentOffer({...harnessInput!,callId:call.id}),
           waitForActionReceipt:(call,card)=>dshService().actions.waitForActionReceipt({...harnessInput!,callId:call.id},card.id,controller.signal),
           definitions: getToolDefinitions().filter((tool) => isToolEnabled(tool.name)
@@ -723,7 +724,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           read: (method, args) => contactAgentsCall(owner, method, args),
           model: async (prompt, content) => {
             let output = ''
-            await streamAIChat([{ role: 'user', content }], prompt, effectiveConfig, chunk => {
+            await streamNativeChat([{ role: 'user', content }], prompt, effectiveConfig, chunk => {
               output += chunk
               if (output.length > 16000) throw new Error('任务修改解析结果过长，本次未修改。')
             }, controller.signal, undefined, { timeoutMs: 60000, maxOutputTokens: 3000 })

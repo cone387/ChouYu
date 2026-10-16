@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { AgentStore } from './store'
@@ -32,7 +32,7 @@ it.skipIf(!process.env.CHOUYU_EXPERIENCE_ACCEPTANCE)('real model applies correct
       throw new Error('Unexpected acceptance method')
     } })
     let prose = '', usage: unknown
-    await streamAIChat([{ role: 'user', content: `请读取资料“灯塔设定”，写一段不超过150字的正文，使用我纠正后的主角姓名、地点、灯光颜色和亮灯日期，正文后明确注明资料名和版本。任务 ID：${topic.id}。` }], `${resolved.config.soulMd}\n${contactCommunicationInstructions('conversation')}\n${context.text}`, config, chunk => { prose += chunk }, AbortSignal.timeout(100000), {
+    await streamNativeChat([{ role: 'user', content: `请读取资料“灯塔设定”，写一段不超过150字的正文，使用我纠正后的主角姓名、地点、灯光颜色和亮灯日期，正文后明确注明资料名和版本。任务 ID：${topic.id}。` }], `${resolved.config.soulMd}\n${contactCommunicationInstructions('conversation')}\n${context.text}`, config, chunk => { prose += chunk }, AbortSignal.timeout(100000), {
       definitions: tools, execute: async call => { calls.push(call.name); if (calls.length > 5) throw Error('Tool limit'); const tool = tools.find(tool => tool.name === call.name); if (!tool) throw Error('Unexpected tool'); return (await tool.execute(JSON.parse(call.arguments), {} as ToolExecutionContext)).content }
     }, { timeoutMs: 100000, maxOutputTokens: 1600, onMetadata: value => { usage = value } })
     outputs.push({ kind: 'material-and-memory', prose, usage, suppliedMemories: context.memories, material: { id: material.id, version: material.version }, calls })
@@ -41,7 +41,7 @@ it.skipIf(!process.env.CHOUYU_EXPERIENCE_ACCEPTANCE)('real model applies correct
     publish(prose); publish('最新版：主角换成陆白，在晴港看周日亮起的红灯。')
     const pinned = citationContext('writer', [{ ref: { characterId: 'writer', topicId: topic.id, version: 1, sectionId: 'text' } }], store.portfolio)
     let review = ''
-    await streamAIChat([{ role: 'user', content: '请只评审附带的第1版，先明确版本与主角，再给一个具体修改建议及原文依据。已知第2版把人物改为陆白，但这次不评审它。不要声称已修改原文。' }], `你是独立稿件评审者。${contactCommunicationInstructions('conversation')}${pinned}`, config, chunk => { review += chunk }, AbortSignal.timeout(90000), undefined, { timeoutMs: 90000, maxOutputTokens: 1400, onMetadata: value => { usage = value } })
+    await streamNativeChat([{ role: 'user', content: '请只评审附带的第1版，先明确版本与主角，再给一个具体修改建议及原文依据。已知第2版把人物改为陆白，但这次不评审它。不要声称已修改原文。' }], `你是独立稿件评审者。${contactCommunicationInstructions('conversation')}${pinned}`, config, chunk => { review += chunk }, AbortSignal.timeout(90000), undefined, { timeoutMs: 90000, maxOutputTokens: 1400, onMetadata: value => { usage = value } })
     outputs.push({ kind: 'pinned-review', review, usage, sourceVersion: 1, latestVersion: 2 })
     expect(review).toMatch(/沈青/); expect(review).toMatch(/第\s*1\s*版|第一版|版本\s*1/); expect(store.deliveries.get(topic.id)?.version).toBe(2)
   } finally {

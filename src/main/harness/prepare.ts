@@ -3,7 +3,7 @@ import type { AIChatMessage, AIStreamRequest } from '../../shared/ai';
 import type { ContentCitation } from '../../shared/contact-content';
 import type { AppConfig } from '../../shared/config';
 import type { HarnessInput } from './contracts';
-import type { AIToolRuntime } from '../ai';
+import type { HarnessToolRuntime } from './tool-runtime';
 export interface PreparationContext {
     config: AppConfig;
     signal: AbortSignal;
@@ -12,7 +12,7 @@ export interface PreparationContext {
     privateContext: string;
     skillContext: string;
     communication: string;
-    tools?: AIToolRuntime;
+    tools?: HarnessToolRuntime;
     onMetadata?: HarnessInput['onMetadata'];
 }
 export async function prepareHarnessInput(request: AIStreamRequest, context: PreparationContext): Promise<HarnessInput> {

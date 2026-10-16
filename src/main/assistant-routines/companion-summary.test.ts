@@ -1,15 +1,15 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { routineSummaryInput, routineSummaryInstruction, summarizeCompanionWork } from './companion-summary'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { contactCommunicationRules } from '../../shared/contact-communication'
-vi.mock('../ai', () => ({ streamAIChat: vi.fn() }))
+vi.mock('../harness/native/runner', () => ({ streamNativeChat: vi.fn() }))
 afterEach(() => vi.useRealTimers())
 
 it('applies saved expression preferences to the original routine and companion requests', async () => {
   const preferences = [{ kind: 'briefing' as const, instruction: '先给待处理事项，再说明依据' }]
   expect(routineSummaryInstruction('', '', preferences)).toContain(preferences[0].instruction)
-  vi.mocked(streamAIChat).mockImplementationOnce(async (_messages, system, _config, callback) => {
+  vi.mocked(streamNativeChat).mockImplementationOnce(async (_messages, system, _config, callback) => {
     expect(system).toContain(preferences[0].instruction)
     expect(system).toContain('不改变事实')
     callback('有一项待回复。', false)
@@ -39,7 +39,7 @@ it('formats a western time zone on its local date instead of the following UTC d
 it('sends the actual local check clock for greeting and return summaries', async () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-10-13T16:56:00Z'))
-  vi.mocked(streamAIChat).mockImplementationOnce(async (messages, _system, _config, callback) => {
+  vi.mocked(streamNativeChat).mockImplementationOnce(async (messages, _system, _config, callback) => {
     const clock = JSON.parse(messages[0].content).检查时间
     expect(clock).toBeDefined()
     // The configured machine zone is the production source, not a hard-coded China offset.
@@ -50,7 +50,7 @@ it('sends the actual local check clock for greeting and return summaries', async
   expect(await summarizeCompanionWork([], DEFAULT_APP_CONFIG, '')).toBe('等待自动重试。')
 })
 it('includes skill methods without replacing the companion contract', async () => {
-  vi.mocked(streamAIChat).mockImplementationOnce(async (_messages, system, _config, callback) => {
+  vi.mocked(streamNativeChat).mockImplementationOnce(async (_messages, system, _config, callback) => {
     expect(system).toContain('技能方法：先给依据')
     expect(system).toContain(contactCommunicationRules)
     callback('已核对。', false)
@@ -59,7 +59,7 @@ it('includes skill methods without replacing the companion contract', async () =
 })
 it('excludes stale next-step plans from factual summaries, keeps questions and supplies no tools', async () => {
   const task = { runStatus: 'failed', nextStep: '等待用户选择范围', error: '503', question: '' }
-  vi.mocked(streamAIChat).mockImplementationOnce(async (messages, system, _config, callback, _signal, tools) => {
+  vi.mocked(streamNativeChat).mockImplementationOnce(async (messages, system, _config, callback, _signal, tools) => {
     expect(system).toContain(contactCommunicationRules)
     const input = JSON.parse(messages[0].content)
     expect(input.tasks[0]).toMatchObject({ runStatus: 'failed', error: '503' })

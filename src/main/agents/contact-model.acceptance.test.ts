@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { contactWorkInstructions } from '../../shared/contact-work-instructions'
 import { createContactTools } from './tools'
@@ -20,7 +20,7 @@ it.skipIf(!process.env.CHOUYU_CONTACT_MODEL_ACCEPTANCE)('real contact model read
   const calls: string[] = [], requests: unknown[] = []
   let output = ''
   const definitions = createContactTools({ owner: () => 'writer', request: async () => { throw new Error('Acceptance uses synthetic fixtures only') } })
-  await streamAIChat([
+  await streamNativeChat([
     { role: 'assistant', content: '十章已经全部写完了。但我不能修改联系人那边的阅读样式。' },
     { role: 'user', content: '这是之前的说法。请先核实正式成果到底存了几章，再把小说成果展示改为跟系统亮色主题一致，保留正文。' }
   ], `${resolved.config.soulMd}\n${contactWorkInstructions}`, { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }, chunk => { output += chunk }, AbortSignal.timeout(150000), {
@@ -65,7 +65,7 @@ it.skipIf(!process.env.CHOUYU_CONTACT_MODEL_ACCEPTANCE)('real model produces a s
     const run = store.revisePresentation('writer', topicId, topic.revision, '跟随系统亮色，作家小说阅读排版，舒适字号行距，保留正文，提供调整字号的交互', '', 1)
     await runtime.execute(run, resolved.config.soulMd, async (prompt, signal) => {
       let raw = ''
-      await streamAIChat([{ role: 'user', content: prompt }], '按要求输出完整 JSON。', { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }, chunk => { raw += chunk }, signal, undefined, { timeoutMs: 90000, maxOutputTokens: 8192 })
+      await streamNativeChat([{ role: 'user', content: prompt }], '按要求输出完整 JSON。', { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }, chunk => { raw += chunk }, signal, undefined, { timeoutMs: 90000, maxOutputTokens: 8192 })
       return raw
     }, AbortSignal.timeout(120000))
     const result = store.deliveries.get(topicId)!

@@ -7,7 +7,7 @@ import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID, resolveCharacterConfig } 
 import { inspectContactWork, inspectContactDelivery, contactAgentsCall } from '../agents'
 import { parseToolArguments } from '../../shared/tools'
 import { notifyReminderChanges } from '../reminder-events'
-import { streamAIChat } from '../ai'
+import { streamNativeChat } from '../harness/native/runner'
 import { getRegisteredTool, registerTool } from '../tools/registry'
 import { AssistantRoutineService } from './service'
 import { createAssistantTools } from './tools'
@@ -130,7 +130,7 @@ export function initializeAssistantRoutines() {
       if (signal.aborted) throw new Error('已取消。')
       let output = ''
       let calls = 0
-      await streamAIChat([{ role: 'user', content: JSON.stringify(routineSummaryInput(item.instruction, item.nextAt, item.lastAt, evidence)) }],
+      await streamNativeChat([{ role: 'user', content: JSON.stringify(routineSummaryInput(item.instruction, item.nextAt, item.lastAt, evidence)) }],
         routineSummaryInstruction(config.soulMd, contactSkillInstruction(DEFAULT_CHARACTER_ID), await assistantOutputPreferences()),
         config, chunk => { output += chunk; if (output.length > 12000) throw new Error('总结过长。') }, signal, {
           definitions: [{ name: 'read_contact_delivery', displayName: '核实联系人正式成果', source: 'builtin', risk: 'read', requiresConfirmation: false,
@@ -180,7 +180,7 @@ export function initializeAssistantRoutines() {
     const resolved = resolveCharacterConfig(character, config)
     if (!resolved.ok) throw new Error('请先配置 ChouYu 使用的模型。')
     let output = ''
-    await streamAIChat([{ role: 'user', content }], instruction, { ...config, ...resolved.config }, chunk => {
+    await streamNativeChat([{ role: 'user', content }], instruction, { ...config, ...resolved.config }, chunk => {
       output += chunk
       if (output.length > 16000) throw new Error('任务解析结果过长。')
     }, AbortSignal.timeout(120000), undefined, { timeoutMs: 120000, maxOutputTokens: 1800 })
