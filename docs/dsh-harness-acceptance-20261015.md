@@ -15,9 +15,17 @@
 - 最终实际界面验收通过（71,453 ms），包含等待意图路由期间切换设置、原请求引擎不变；原卡片等待 66,491 ms、14 次普通模型请求（含原生请求）、6 次原意图路由。记录：`artifacts/contact-engine-final/dsh-acceptance.json`；已查看的设置截图：`artifacts/contact-engine-settings/contact-engine-settings.png`（首次界面运行）；最终快速切页截图捕获到前一帧详情页，不用作设置外观证据。日志 `.superpowers/contact-engine-verified-ui.log`。最终类型检查与构建通过，保留既有大 bundle 提示；未重新生成安装包。
 - 快照修复后的最终全量回归再次通过：215 个文件、1837 项测试通过，53 项跳过，64.73 秒；日志 `.superpowers/contact-engine-verified-suite.log`。
 
-本轮修改仍在 `feat/dsh-harness` 独立工作区；旧安装包不包含此设置入口。
+2026-10-16 按用户明确要求，`feat/dsh-harness` 已快进合入 `D:\codespace\ChouYu` 的本地主分支 `master`（功能提交 `75a6c75`）。旧安装包不包含此设置入口。
 
-状态：实现位于 `feat/dsh-harness` 独立工作区；默认仍为 legacy。真实供应商、完整故障注入及安装包验收门槛未全部关闭，不能据此启用日常联系人。
+状态：实现已合入本地 `master`；默认仍为 legacy。真实供应商、完整故障注入及安装包验收门槛未全部关闭；本次合并不代表这些验收已经完成。
+
+### 主目录合入验证
+
+- 合入前全量复核通过：1837 项通过、53 项跳过。最初 `fake-mem0-server.test.ts` 的 Windows 测试子进程曾异常退出（3221226505）；该文件未被本次改动修改，详细单独复核 7 项及后续全量均通过，未更改测试断言。
+- `D:\codespace\ChouYu` 已运行 `npm run build:dsh-runtime`，校验锁定 Node 归档并安装 610 个依赖包，生成 63,716 个运行时文件；不需要联系人环境变量。类型检查和应用构建通过，保留原有大 bundle 提示。
+- 合入后主目录全量复核：215 个文件、1837 项测试通过，53 项跳过，59.30 秒。首次运行有资源复制测试 5 秒超时及 DSH 控制请求超时；相关单独复核 7 项通过，随后完整复核通过，没有放宽超时或跳过失败测试。日志：`.superpowers/merge-master-tests.log`、`merge-master-targeted.log`、`merge-master-tests-recheck.log`。
+- 首次主目录界面启动也曾遇到 DSH 控制请求超时，确切原因未确认；核对运行时代码内容一致后，独立自带 Node 桥接验证 4 项通过（包括实际模型请求），完整界面复核通过。未自动重放失败请求，也未切换至真实供应商测试。
+- 最终界面复核 69,593 ms，通过联系人/ChouYu 独立设置、原请求引擎固定、切回原生、资料读取、原确认/拒绝/重复点击/停止及未读保存；使用隔离数据和本地协议模型。结果：`artifacts/dsh-master-merge/dsh-acceptance.json`；日志：`.superpowers/merge-master-ui-recheck.log`。主目录开发版运行时已准备，旧安装包未更新，未推送远程。
 
 ## 已实现范围
 
