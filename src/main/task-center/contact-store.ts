@@ -71,7 +71,7 @@ export class ContactTaskStore {
     try {
       this.db.pragma('foreign_keys = ON')
       const version = this.db.pragma('user_version', { simple: true }) as number
-      if (version > 16) throw new Error('Agent 数据版本较新，请升级应用。')
+      if (version > 17) throw new Error('Agent 数据版本较新，请升级应用。')
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -161,6 +161,8 @@ export class ContactTaskStore {
       this.taskFailures = new AgentTaskFailures(this.db)
       this.calendars = new ContactCalendars(this.db)
       if (version < 16) this.db.pragma('user_version = 16')
+      this.db.exec('CREATE TABLE IF NOT EXISTS execution_cleanup (character_id TEXT NOT NULL, request_id TEXT NOT NULL, PRIMARY KEY(character_id,request_id));')
+      if (version < 17) this.db.pragma('user_version = 17')
       this.restoreFailureSchedules()
     } catch (error) { this.db.close(); throw contactStorageFailure(error, 'tasks', 'schema') }
   }
@@ -204,6 +206,8 @@ export class ContactTaskStore {
     for (const id of this.heartbeatRows.keys()) if (!seen.has(id)) this.heartbeatRows.delete(id)
   }
   close() { this.db.close() }
+  pendingCleanup() { return this.db.prepare('SELECT character_id AS characterId,request_id AS requestId FROM execution_cleanup ORDER BY rowid').all() as { characterId: string; requestId: string }[] }
+  finishCleanup(characterId: string, requestId: string) { this.db.prepare('DELETE FROM execution_cleanup WHERE character_id=? AND request_id=?').run(characterId, requestId) }
   dashboard(characterIds: string[]): import('../../shared/agents').AgentDashboard {
     const contacts: import('../../shared/agents').AgentDashboard['contacts'] = {}
     for (const id of characterIds) {
@@ -316,16 +320,21 @@ export class ContactTaskStore {
     }
   }
   invalidateMemory(owner: string, memoryId: string) {
-    const affected: string[] = []
-    for (const run of this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(owner) as RunRow[]) {
-      const input = JSON.parse(run.input)
-      if ((input.contextReferences?.memories ?? input.memories ?? []).some((m: { id: string }) => m.id === memoryId)) {
-        this.setStatus(run.id, 'cancelled'); this.event(run.id, 'cancelled', '参考记忆已被纠正或忘记，本轮停止，已有成果保留。'); affected.push(run.id)
+    return this.db.transaction(() => {
+      const affected: string[] = []
+      for (const run of this.db.prepare('SELECT * FROM runs WHERE character_id=?').all(owner) as RunRow[]) {
+        const input = JSON.parse(run.input)
+        if (!(input.contextReferences?.memories ?? input.memories ?? []).some((m: { id: string }) => m.id === memoryId)) continue
+        this.db.prepare('INSERT OR IGNORE INTO execution_cleanup VALUES(?,?)').run(owner, run.id)
+        affected.push(run.id)
+        if (['queued', 'running', 'waiting', 'interrupted'].includes(run.status)) {
+          this.setStatus(run.id, 'cancelled'); this.event(run.id, 'cancelled', '参考记忆已被纠正或忘记，本轮停止，已有成果保留。')
+        }
         // Remove cached plaintext while retaining reference IDs for the work history.
         input.memories = []; this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), run.id)
       }
-    }
-    return affected
+      return affected
+    })()
   }
   recordMaterialRead(runId: string, ref: import('../../shared/contact-materials').MaterialReadRef) {
     const run = this.assertLive(runId), input = JSON.parse(run.input)
@@ -345,15 +354,29 @@ export class ContactTaskStore {
     this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), runId)
   }
   invalidateMaterial(owner: string, materialId: string) {
-    const affected: string[] = []
-    for (const run of this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(owner) as RunRow[]) {
-      if ((JSON.parse(run.input).contextReferences?.materials ?? []).some((m: { id: string }) => m.id === materialId)) {
-        this.setStatus(run.id, 'cancelled'); this.event(run.id, 'cancelled', '参考资料已撤回，本轮停止，已有成果保留。'); affected.push(run.id)
+    return this.db.transaction(() => {
+      const affected: string[] = []
+      for (const run of this.db.prepare('SELECT * FROM runs WHERE character_id=?').all(owner) as RunRow[]) {
+        if (!(JSON.parse(run.input).contextReferences?.materials ?? []).some((m: { id: string }) => m.id === materialId)) continue
+        this.db.prepare('INSERT OR IGNORE INTO execution_cleanup VALUES(?,?)').run(owner, run.id)
+        affected.push(run.id)
+        if (['queued', 'running', 'waiting', 'interrupted'].includes(run.status)) {
+          this.setStatus(run.id, 'cancelled'); this.event(run.id, 'cancelled', '参考资料已撤回，本轮停止，已有成果保留。')
+        }
       }
-    }
-    return affected
+      return affected
+    })()
   }
-  remove(id: string) { const runs = (this.db.prepare('SELECT id FROM runs WHERE character_id=?').all(id) as { id: string }[]).map(r => r.id); this.db.prepare('DELETE FROM profiles WHERE character_id=?').run(id); this.db.prepare('DELETE FROM token_ledger WHERE character_id=?').run(id); for (const runId of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(runId); return runs }
+  remove(id: string) {
+    return this.db.transaction(() => {
+      const runs = (this.db.prepare('SELECT id FROM runs WHERE character_id=?').all(id) as { id: string }[]).map(r => r.id)
+      for (const runId of runs) this.db.prepare('INSERT OR IGNORE INTO execution_cleanup VALUES(?,?)').run(id, runId)
+      this.db.prepare('DELETE FROM profiles WHERE character_id=?').run(id)
+      this.db.prepare('DELETE FROM token_ledger WHERE character_id=?').run(id)
+      for (const runId of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(runId)
+      return runs
+    })()
+  }
   overview(id: string, now = Date.now()): AgentOverview {
     const profile = this.profile(id)
     const scheduled = this.scheduled(id)
@@ -1011,6 +1034,7 @@ export class ContactTaskStore {
     return this.db.transaction(() => {
       this.topics.check(id, topicId, revision)
       const runs = this.db.prepare('SELECT id FROM runs WHERE character_id=? AND topic_id=?').all(id, topicId) as { id: string }[]
+      for (const run of runs) this.db.prepare('INSERT OR IGNORE INTO execution_cleanup VALUES(?,?)').run(id, run.id)
       for (const memory of this.memoryLibrary.list(id)) {
         if ((memory.scope.kind === 'task' && memory.scope.topicId === topicId) || (memory.source.kind === 'research' && runs.some(run => memory.source.kind === 'research' && run.id === memory.source.runId))) this.memoryLibrary.forget(id, memory.id, memory.revision)
       }

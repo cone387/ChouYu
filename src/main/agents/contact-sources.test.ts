@@ -29,6 +29,31 @@ function fixture() {
   return { store, runtime, topic, publish }
 }
 describe('agent-planned contact deliverable tools', () => {
+  it('uses the authorized shared catalog when accepting a new review task without asking for an upload', async () => {
+    const f = fixture(); f.publish(); f.publish('private', '私有正文')
+    const topic = f.store.assignTopic('reviewer', '持续评审阿想的已共享成果，不需要我上传正文', '')
+    const run = f.store.overview('reviewer').runs.find(item => item.topicId === topic.id)!.id
+    let accepted = false
+    await f.runtime.execute(run, '', async prompt => {
+      expect(prompt).not.toContain('私有正文')
+      if (prompt.startsWith('你是联系人，刚收到')) {
+        const data = JSON.parse(prompt.split('\n').at(-1)!)
+        accepted = data.sharedContactDeliveries?.items.some((item: { contact: string }) => item.contact === '阿想') === true
+        return JSON.stringify({ title: '独立评审', nextStep: '读取共享正文再评审', question: accepted ? '' : '请上传作者正文', plan: { completionCriteria: '持续评审', stages: [{ id: 'review', title: '读取和评审', status: 'pending' }] }, resourceBudget: { modelCalls: 20, reason: '持续评审' } })
+      }
+      if (prompt.startsWith('为联系人')) {
+        const data = JSON.parse(prompt.split('\n').at(-1)!)
+        return JSON.stringify({ ...plan, action: 'read_contacts', contactRefs: [data.sharedContactDeliveries.items[0].ref] })
+      }
+      expect(prompt).toContain('帮助小团队整理需求')
+      return JSON.stringify({ title: '独立评审', body: '依据真实正文 [1]', nextStep: '继续', memories: [], question: '', progress,
+        delivery: { completionCriteria: '持续评审', summary: '本轮评审', stages: [{ id: 'review', title: '读取和评审', status: 'active' }], section: { id: 'review1', title: '结论', body: '已读正文，建议明确小团队需求来源 [1]。' } } })
+    }, new AbortController().signal)
+    expect(accepted).toBe(true)
+    expect(f.store.detail('reviewer', run).run.status).toBe('completed')
+    expect(f.store.detail('reviewer', run).report?.evidence[0].text).toBe('帮助小团队整理需求的 AI 工具')
+    expect(f.store.notices.pending('reviewer').some(item => item.kind === 'question')).toBe(false)
+  })
   it.each([true, false])('repairs missing URL arrays in contact plans once, successful correction=%s', async corrected => {
     const f = fixture(); f.publish()
     const ref = f.runtime.contactSources.discover('reviewer', f.topic('reviewer'), '').items[0].ref

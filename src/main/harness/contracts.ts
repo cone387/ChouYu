@@ -79,7 +79,7 @@ export type HarnessConfirmation = { mode: 'return-card' } | {
     beforeOffer(call: AIToolCall): Promise<void>;
     waitForReceipt(call: AIToolCall, card: ContactActionInteraction): Promise<string>;
 };
-export interface HarnessPurgeScope { characterId: string; sessionId?: string; sourceIds?: string[] }
+export interface HarnessPurgeScope { characterId: string; sessionId?: string; sourceIds?: string[]; requestIds?: string[] }
 export interface HarnessLifecycle {
     recover?(): Promise<void>;
     purge?(scope: HarnessPurgeScope): Promise<void>;

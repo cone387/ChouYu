@@ -2,7 +2,7 @@ import { lstat, readdir, rm, realpath } from 'node:fs/promises';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import type { RunRecord } from './store';
 /** Only the pinned JSONL backend's project/session directory for this recorded UUID. */
-export async function purgeRunLogs(root: string, run: RunRecord): Promise<void> {
+export async function purgeRunLogs(root: string, run: Pick<RunRecord, 'runtimeGroup' | 'dshSessionId'>): Promise<void> {
     if (!run.runtimeGroup || !run.dshSessionId)
         return;
     if (!/^[a-f0-9]{64}$/.test(run.runtimeGroup) || !/^[A-Za-z0-9_-]{1,128}$/.test(run.dshSessionId))

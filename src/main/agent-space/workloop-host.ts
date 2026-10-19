@@ -38,6 +38,9 @@ export class WorkLoopHost {
   private readonly subscriptions = new Map<string, () => void>()
   private readonly commands: ContactTaskCommands
   private readonly faults = new Map<string, string>()
+  private readonly cleaning = new Map<string, Promise<void>>()
+  private readonly cleanupFaults = new Map<string, { characterId: string; error: string }>()
+  private nextCleanupAt = 0
   private readonly deleting = new Set<string>()
   private ready = false
   private recoveredContacts = new Set<string>()
@@ -94,6 +97,7 @@ export class WorkLoopHost {
       ...identities.map(identity => enqueue(identity.id, async () => { this.syncContact(identity) })),
       ...removed.map(id => enqueue(id, () => this.remove(id)))
     ])
+    await this.recoverCleanup()
   }
   syncContact(identity: ContactIdentity) {
     this.assertOpen()
@@ -131,6 +135,7 @@ export class WorkLoopHost {
       this.scheduler.abort(id); this.skillRunner.cancel(id)
       await this.contacts.get(id)?.close()
       await this.scheduler.drain(id)
+      await Promise.all(this.harnesses.all().map(module => module.lifecycle?.purge?.({ characterId: id })))
       for (const runId of this.store.remove(id)) await this.cleanupThread(runId)
       this.contacts.delete(id); this.faults.delete(id)
       this.runtime.contactSources.names.delete(id); this.recoveredContacts.delete(id)
@@ -141,11 +146,34 @@ export class WorkLoopHost {
     await this.contacts.get(id)!.detach(moduleId)
     this.notify(id)
   }
-  private async cleanupThread(runId: string) {
+  private cleanupThread(runId: string): Promise<void> {
+    const existing = this.cleaning.get(runId)
+    if (existing) return existing
+    const intent = this.store.pendingCleanup().find(item => item.requestId === runId)
+    if (!intent) return Promise.resolve()
+    const work = (async () => {
+      try {
+        await this.scheduler.get(runId)?.promise
+        await Promise.all(this.harnesses.all().map(module => module.lifecycle?.purge?.({ characterId: intent.characterId, requestIds: [runId] })))
+        await this.runtime.checkpoints.getTuple({ configurable: { thread_id: runId } })
+        await this.runtime.checkpoints.deleteThread(runId)
+        this.store.finishCleanup(intent.characterId, runId)
+        this.cleanupFaults.delete(runId)
+      } catch (error) {
+        this.cleanupFaults.set(runId, { characterId: intent.characterId, error: safeAgentFailure(error) })
+        throw error
+      }
+    })().finally(() => this.cleaning.delete(runId))
+    this.cleaning.set(runId, work)
+    return work
+  }
+  private async recoverCleanup() {
     try {
-      await this.runtime.checkpoints.getTuple({ configurable: { thread_id: runId } })
-      await this.runtime.checkpoints.deleteThread(runId)
-    } catch { /* A run can fail before checkpoint tables exist. */ }
+      await Promise.allSettled(this.store.pendingCleanup().map(intent => this.cleanupThread(intent.requestId)))
+      this.cleanupFaults.delete('cleanup-storage')
+    } catch (error) {
+      this.cleanupFaults.set('cleanup-storage', { characterId: '', error: safeAgentFailure(error) })
+    }
   }
   async request(method: string, id: string, args: unknown[] = []): Promise<any> {
     this.assertOpen()
@@ -159,11 +187,12 @@ export class WorkLoopHost {
       if (this.contacts.has(id)) await this.detachModule(id, String(args[0]))
       return null
     }
-    if (method === 'spaceDiagnostics') return { activeRuns: this.scheduler.size, capacity: this.scheduler.capacity, faults: [...this.faults].map(([characterId, error]) => ({ characterId, error })) }
+    if (method === 'spaceDiagnostics') return { activeRuns: this.scheduler.size, capacity: this.scheduler.capacity, faults: [...this.faults].map(([characterId, error]) => ({ characterId, error })).concat([...this.cleanupFaults.values()]) }
     return this.commands.request(method, id, args)
   }
   tick() {
     if (!this.ready || this.closed || this.ticking) return
+    if (Date.now() >= this.nextCleanupAt) { this.nextCleanupAt = Date.now() + 15000; void this.recoverCleanup() }
     this.ticking = true
     try {
       this.store.recordHeartbeats()
@@ -192,6 +221,7 @@ export class WorkLoopHost {
     this.events.clear(); this.subscriptions.clear(); this.skillRunner.cancel()
     this.closing = Promise.all([...this.contacts.values()].map(contact => contact.close())).then(async () => {
       await this.scheduler.drain()
+      await Promise.allSettled([...this.cleaning.values()])
       await Promise.all(this.harnesses.all().map(module => module.lifecycle?.close?.()))
       this.runtime.close(); this.store.close(); this.contacts.clear()
     })
