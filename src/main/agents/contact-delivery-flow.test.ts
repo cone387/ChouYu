@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { createContactTools } from './tools'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import type { ToolExecutionContext } from '../tools/registry'
@@ -10,7 +10,7 @@ import type { ToolExecutionContext } from '../tools/registry'
 it('carries a chat style request through real service, runtime, versioned delivery and truthful inspection', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'chouyu-contact-flow-'))
   const model = vi.fn(async () => JSON.stringify({ presentation: { title: '随系统阅读', html: '<div id="content"></div>', css: '.body{line-height:2}', script: '' } }))
-  const service = new AgentSpace(directory, () => {}, () => model)
+  const service = new WorkLoopHost(directory, () => {}, () => model)
   try {
     await service.sync([{ id: 'writer', soul: '阿笔', conversation: '旧聊天声称十章已经写完。', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     service.store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '写十章小说', sources: [], dailyCalls: 20 })

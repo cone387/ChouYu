@@ -1,5 +1,7 @@
 import type { AppConfig } from '../../shared/config'
 import type { SkillSnapshot } from '../../shared/skills'
+import type { HarnessEngine } from '../../shared/harness'
+import type { HarnessInput, HarnessEvent, HarnessResult } from '../harness/contracts'
 
 export interface ContactIdentity {
   configurationVersions?: { profile?: string; skills?: number; credential?: number }
@@ -17,9 +19,16 @@ export interface ContactIdentity {
 }
 export interface ContactModule {
   readonly id: string
+  readonly chat?: ContactChatPort
+  readonly work?: ContactWorkPort
   prepare?(): void
   advance?(): boolean
   close(): Promise<void>
 }
+export interface ContactChatPort {
+  run(input: HarnessInput, output: (event: HarnessEvent) => void, engine?: HarnessEngine): Promise<HarnessResult>
+  cancel(requestId: string): Promise<void>
+}
+export interface ContactWorkPort { request(method: string, args: unknown[]): Promise<unknown> }
 export interface ContactModuleOwner { readonly id: string; readonly identity: ContactIdentity }
 export type ContactModuleFactory = (owner: ContactModuleOwner) => ContactModule

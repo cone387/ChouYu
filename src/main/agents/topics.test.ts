@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TaskCenter } from '../task-center/store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { evidenceFromText } from './sources'
 import { DEFAULT_AGENT_SETTINGS, validateTopicProgress, type AgentTopicProgress } from '../../shared/agents'
 
@@ -26,7 +26,7 @@ function fixture() {
 describe('persistent contact topics', () => {
   it('applies confirmed feedback with profile and topic checks and resumes without enabling scheduling', async () => {
     const model = vi.fn(async () => output())
-    const service = new AgentSpace(directory(), () => {}, () => model, reader); closers.push(() => service.close())
+    const service = new WorkLoopHost(directory(), () => {}, () => model, reader); closers.push(() => service.close())
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     await service.request('save', 'alice', [settings])
     let data = service.store.overview('alice'), topic = data.topics[0]
@@ -147,7 +147,7 @@ describe('persistent contact topics', () => {
     const model = vi.fn(async (prompt: string) => prompt.startsWith('任务结束核对')
       ? JSON.stringify({ mode: 'finite', satisfied: true, endsAt: null, reason: '资料已否定本次待验证的方向', nextStep: '', completionCriteria: '核对方向是否有依据' })
       : output({ ...progress, status: 'abandoned', reason: '资料 [1] 不支持这一方向，停止投入。', nextStep: '' }))
-    const service = new AgentSpace(directory(), () => {}, () => model, reader); closers.push(() => service.close())
+    const service = new WorkLoopHost(directory(), () => {}, () => model, reader); closers.push(() => service.close())
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     await service.request('save', 'alice', [{ ...settings, enabled: true }])
     await vi.waitFor(() => expect(service.store.overview('alice').reports).toHaveLength(1))

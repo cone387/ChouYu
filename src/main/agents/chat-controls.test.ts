@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { TaskCenter } from '../task-center/store'
 import { createContactTools } from './tools'
 import { routeContactChange } from './chat-changes'
@@ -12,9 +12,9 @@ import type { ToolExecutionContext } from '../tools/registry'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
-async function fixture(config: import('../agent-space/service').ContactIdentity['config'] = null) {
+async function fixture(config: import('../agent-space/workloop-host').ContactIdentity['config'] = null) {
   const dir = mkdtempSync(join(tmpdir(), 'contact-chat-controls-'))
-  const service = new AgentSpace(dir, () => {})
+  const service = new WorkLoopHost(dir, () => {})
   cleanup.push(async () => { await service.close(); rmSync(dir, { recursive: true, force: true }) })
   await service.sync([{ id: 'alice', name: '作者', soul: '', conversation: '', config }, { id: 'bob', name: '评审', soul: '', conversation: '', config: null }])
   let owner = 'alice'

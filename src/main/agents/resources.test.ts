@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { TaskCenter } from '../task-center/store'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { validateTaskResourceBudget } from '../../shared/agent-resources'
 
@@ -90,7 +90,7 @@ describe('task resource allocation within contact resources', () => {
       if (prompt.startsWith('为联系人')) return JSON.stringify({ action: 'write', reason: '写出初稿', query: '', urls: [], checkAfterMinutes: 180 })
       return JSON.stringify({ title: '初稿', body: '已保存初稿', nextStep: '复核', memories: [], question: '', progress: { judgement: '初稿完成', openQuestions: '', nextStep: '复核', reason: '实际交付初稿', status: 'researching' }, delivery: { completionCriteria: '初稿与复核', stages: [{ ...stages[0], status: 'active' }], summary: '初稿已保存', section: { id: 'text', title: '初稿', body: '实际正文' } } })
     })
-    const service = new AgentSpace(directory(), () => {}, () => model)
+    const service = new WorkLoopHost(directory(), () => {}, () => model)
     cleanups.push(() => service.close())
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     await service.request('assignTopic', 'alice', ['写一篇短文'])

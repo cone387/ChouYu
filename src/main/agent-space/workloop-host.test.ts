@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSpace } from './service'
+import { WorkLoopHost } from './workloop-host'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { evidenceFromText } from '../agents/sources'
 import { ContactCommandQueue } from './command-queue'
@@ -16,7 +16,7 @@ const report = JSON.stringify({ title: 'Saved', body: 'Evidence [1].', nextStep:
 async function fixture(capacity: number) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-space-'))
   const pending: { owner: string; signal: AbortSignal; resolve: (text: string) => void }[] = []
-  const space = new AgentSpace(dir, () => {}, identity => async (_prompt, signal) => new Promise<string>((resolve, reject) => {
+  const space = new WorkLoopHost(dir, () => {}, identity => async (_prompt, signal) => new Promise<string>((resolve, reject) => {
     signal.throwIfAborted(); pending.push({ owner: identity.id, signal, resolve })
     signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })
   }), async () => evidenceFromText('https://example.com/', 'Evidence. '.repeat(100)), undefined, undefined, undefined, { capacity })

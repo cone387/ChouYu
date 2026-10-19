@@ -25,6 +25,10 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
     const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
     let cardId: string, topicId: string, runId: string
     try {
+      // The fixture is a second writer alongside the live worker. Reserve its write
+      // transaction before reading; a deferred read snapshot cannot be upgraded
+      // after the worker commits a heartbeat or another contact's result.
+      store.db.transaction(() => {
       store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '写一篇介绍', dailyCalls: 100, enabled: kind === 'billing' })
       if (kind === 'billing') for (let attempt = 0; attempt < 2; attempt++) store.fail(store.createRun(character.id, ''), 'API error 429: 余额不足或无可用资源包')
       runId = store.createRun(character.id, '')
@@ -38,6 +42,7 @@ export async function runContactInteractionsSmoke(window: BrowserWindow) {
       const notice = store.notices.pending(character.id).find(n => n.interactionId && n.runId === runId)!
       cardId = notice.interactionId!
       appendAgentNotice(notice); store.notices.ack(character.id, notice.id)
+      }).immediate()
     } finally { store.close() }
     selectChatSession(session); window.webContents.send('sessions:changed')
     let selector = `[data-contact-interaction="${cardId!}"]`

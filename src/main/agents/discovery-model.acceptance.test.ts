@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 
 // Paid opt-in: real service and native tool definitions, synthetic data, no user contacts.
 it.skipIf(!process.env.CHOUYU_DISCOVERY_ACCEPTANCE)('real reviewer finds published prose despite an empty uploaded-material directory', async () => {
@@ -12,7 +12,7 @@ it.skipIf(!process.env.CHOUYU_DISCOVERY_ACCEPTANCE)('real reviewer finds publish
   const resolved = resolveCharacterConfig(data.characters[0], data.config)
   if (!resolved.ok) throw Error('联系人模型配置不可用')
   const directory = mkdtempSync(join(tmpdir(), 'chouyu-live-discovery-'))
-  const service = new AgentSpace(directory, () => {})
+  const service = new WorkLoopHost(directory, () => {})
   let runId = ''
   try {
     service.store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '持续写作灯塔故事', enabled: false, shareDeliveries: true })

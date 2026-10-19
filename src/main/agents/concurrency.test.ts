@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 import { evidenceFromText } from './sources'
@@ -21,7 +21,7 @@ const writingResult = () => JSON.stringify({ ...JSON.parse(result()), delivery: 
 async function fixture(limit?: number, ignoreAbort = false) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-task-concurrency-'))
   const pending: { signal: AbortSignal; resolve: (s: string) => void; reject: (e: Error) => void }[] = []
-  const service = new AgentSpace(dir, () => {}, () => async (_prompt, signal) => new Promise<string>((resolve, reject) => {
+  const service = new WorkLoopHost(dir, () => {}, () => async (_prompt, signal) => new Promise<string>((resolve, reject) => {
     signal.throwIfAborted(); pending.push({ signal, resolve, reject })
     if (!ignoreAbort) signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })
   }), async () => evidenceFromText(settings.sources[0], 'Actual evidence. '.repeat(100)))
@@ -182,7 +182,7 @@ it('restores interrupted rounds under the saved limit without reviving a paused 
   const paused = s.topics.get('alice', f.topics[2])
   s.changeTopic('alice', paused.id, paused.revision, { status: 'paused', reason: 'Do not restart' })
   await f.service.close()
-  const resumed = new AgentSpace(f.dir, () => {}, () => async (_prompt, signal) => new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cleanup')), { once: true })), async () => evidenceFromText(settings.sources[0], 'Evidence. '.repeat(100)))
+  const resumed = new WorkLoopHost(f.dir, () => {}, () => async (_prompt, signal) => new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cleanup')), { once: true })), async () => evidenceFromText(settings.sources[0], 'Evidence. '.repeat(100)))
   cleanups.push(() => resumed.close())
   expect(resumed.store.overview('alice').runs.filter(r => r.status === 'interrupted')).toHaveLength(2)
   await resumed.sync([{ id: 'alice', soul: '', conversation: '', config }])

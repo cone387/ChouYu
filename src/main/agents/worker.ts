@@ -1,11 +1,11 @@
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { SkillLibrary } from '../skills/library'
 import { dirname, join } from 'node:path'
 import { evidenceFromText } from './sources'
 import { ContactCommandQueue } from '../agent-space/command-queue'
 import { dispatchContactCommand } from '../agent-space/worker-commands'
 const port = process.parentPort!
-let service: AgentSpace | undefined
+let service: WorkLoopHost | undefined
 // Only init/close form an exclusive barrier; roster sync fans out per contact.
 const messages = new ContactCommandQueue()
 port.on('message', event => {
@@ -18,7 +18,7 @@ port.on('message', event => {
       if (method === 'init') {
         port.postMessage({ requestId, started: true })
         const smoke = process.env.CHOUYU_SMOKE_TEST === '1' && Boolean(process.env.CHOUYU_SMOKE_USER_DATA)
-        service = new AgentSpace(args[0], characterId => port.postMessage({ changed: characterId }), undefined, smoke ? async (url) => {
+        service = new WorkLoopHost(args[0], characterId => port.postMessage({ changed: characterId }), undefined, smoke ? async (url) => {
           const fixtures: Record<string, string> = {
             'https://chouyu-agent-smoke.invalid/research': '开发者访谈提出了需求，是否愿意付费需要进一步验证。',
             'https://chouyu-agent-smoke.invalid/counter-evidence': '补充访谈：个人用户不愿意付费，团队管理员可能有预算，需要进一步核对。',

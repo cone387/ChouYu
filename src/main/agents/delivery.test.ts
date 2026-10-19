@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TaskCenter } from '../task-center/store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { evidenceFromText } from './sources'
 import { DEFAULT_AGENT_SETTINGS, type AgentTopicProgress } from '../../shared/agents'
 import { deliveryMarkdown, validateDeliveryUpdate, type DeliveryUpdate } from '../../shared/agent-delivery'
@@ -250,7 +250,7 @@ describe('durable deliverables', () => {
   })
   it('enforces ownership at the service boundary and cascades deletion', async () => {
     const f = fixture(); await write(f, 1)
-    const service = new AgentSpace(f.dir, () => {})
+    const service = new WorkLoopHost(f.dir, () => {})
     cleanups.push(() => service.close())
     await service.sync(['alice', 'bob'].map(id => ({ id, soul: '', conversation: '', config: null })))
     const topicId = f.store.overview('alice').focusTopicId!

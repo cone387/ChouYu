@@ -1,10 +1,10 @@
-import type { AgentSpace } from './service'
+import type { WorkLoopHost } from './workloop-host'
 import type { ContactIdentity } from '../contact-agent/contracts'
 import { ContactCommandQueue } from './command-queue'
 
 /** Roster reconciliation fans out synchronously before later owner commands are queued. */
 export function dispatchContactCommand(queue: ContactCommandQueue,
-  service: Pick<AgentSpace, 'sync' | 'syncContact' | 'request' | 'close'>,
+  service: Pick<WorkLoopHost, 'sync' | 'syncContact' | 'request' | 'close'>,
   method: string, id: string, args: unknown[], started: () => void = () => {}) {
   if (method === 'sync') {
     started()

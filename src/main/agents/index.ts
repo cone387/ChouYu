@@ -1,4 +1,8 @@
 import { contactHandle } from './query-metrics'
+import { AgentSpace } from '../agent-space/service'
+import { chatHarness } from '../harness/service'
+import type { HarnessInput, HarnessEvent } from '../harness/contracts'
+import type { HarnessEngine } from '../../shared/harness'
 import { AgentWorkerRPC } from '../agent-space/worker-rpc'
 import { configureContactSkill, contactSkillLibrary, getContactSkills, findContactSkills, installContactSkill, contactSkillRunner } from '../skills'
 import { SKILL_TOOLS } from '../skills/tools'
@@ -29,7 +33,7 @@ import { executeContactAction } from './action-executor'
 import { createInteractionTools } from './interaction-tools'
 import { createContactSupportTools } from './support-tools'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
-import type { ContactIdentity } from '../agent-space/service'
+import type { ContactIdentity } from '../agent-space/workloop-host'
 import { setupIdeaLab } from './idea-lab'
 import { validateMemoryInput } from '../../shared/contact-memories'
 
@@ -81,13 +85,27 @@ function broadcastChanged(characterId: string) {
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('agents:changed', characterId)
   void deliver(characterId)
 }
-function rpc(method: string, id = '', args: unknown[] = []): Promise<any> {
+function workerRpc(method: string, id = '', args: unknown[] = []): Promise<any> {
   if (!child) return Promise.reject(new Error('Agent 执行进程不可用，请稍后重试。'))
   return requests.request(child, method, id, args)
 }
-function identities(): ContactIdentity[] {
+const contactSpace = new AgentSpace({ harness: chatHarness, readIdentity: id => identities(id)[0], work: {
+  request: workerRpc,
+  detach: async id => { await starting; if (child) await workerRpc('detachModule', id, ['workloop']) },
+  remove: async id => { await workerRpc('remove', id) }
+} })
+function rpc(method: string, id = '', args: unknown[] = []): Promise<any> {
+  if (!id || ['syncContact', 'detachModule', 'remove'].includes(method)) return workerRpc(method, id, args)
+  return contactSpace.request(method, id, args)
+}
+export function runContactChat(input: HarnessInput, output: (event: HarnessEvent) => void, engine?: HarnessEngine) {
+  return contactSpace.runChat(input, output, engine)
+}
+export function cancelContactChat(requestId: string) { return contactSpace.cancelChat(requestId) }
+export function closeContactSpace() { return contactSpace.close() }
+function identities(onlyId?: string): ContactIdentity[] {
   const config = getConfig(), sessions = getSessions()
-  return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(character => {
+  return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID && (!onlyId || c.id === onlyId)).map(character => {
     const resolved = resolveCharacterConfig(character, config)
     let skillsRevision: number | undefined
     try { skillsRevision = contactSkillLibrary().list(character.id).revision } catch { /* The skill snapshot carries its own error; keep unrelated contacts readable. */ }
@@ -96,8 +114,9 @@ function identities(): ContactIdentity[] {
   })
 }
 async function syncContact(id: string) {
-  const identity = identities().find(identity => identity.id === id)
+  const identity = identities(id)[0]
   if (!identity) throw new Error('联系人不存在。')
+  contactSpace.syncContact(identity)
   await rpc('syncContact', id, [identity])
 }
 async function ensure() {
@@ -198,7 +217,7 @@ export async function startIdeaLab() {
   await ensure()
   return setupIdeaLab((method, id, args) => rpc(method, id, args), async () => { await rpc('sync', '', [identities()]) })
 }
-export async function removeContactAgent(characterId: string) { setState(`agent-search:${characterId}:api_key`, ''); await ensure(); await rpc('remove', characterId) }
+export async function removeContactAgent(characterId: string) { setState(`agent-search:${characterId}:api_key`, ''); await ensure(); await contactSpace.remove(characterId) }
 export async function pendingContactInteractions(owner: string) {
   if (!getCharacter(owner)) throw new Error('联系人不存在。')
   await ensure()
@@ -360,6 +379,6 @@ export function initializeAgents() {
 }
 export async function closeAgents() {
   closing = true; clearInterval(syncTimer)
-  try { await starting; if (child) await rpc('close') } catch { /* killed processes recover from their checkpoints */ }
+  try { await starting; await contactSpace.close(); if (child) await rpc('close') } catch { /* killed processes recover from their checkpoints */ }
   child?.kill(); child = undefined
 }

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 const cleanups: (() => Promise<void>)[] = []
@@ -22,7 +22,7 @@ async function fixture(options: { enabled?: boolean; dailyCalls?: number; repeat
       progress: { judgement: '已保存本轮正文', reason: '实际交付', openQuestions: '', nextStep: done ? '' : '继续下一部分', status: done ? 'completed' : 'researching' },
       delivery: { ...brief.plan, summary: '已保存正文', stages: stages.map(s => ({ ...s, status: done ? 'done' : 'active' })), section: { id: options.repeat && !options.renamedRepeat ? 'same' : `part${drafts}`, title: '正文', body: options.repeat ? '相同正文' : `正文第 ${drafts} 部分` } } })
   })
-  const service = new AgentSpace(dir, () => {}, () => model)
+  const service = new WorkLoopHost(dir, () => {}, () => model)
   cleanups.push(async () => { await service.close(); rmSync(dir, { recursive: true, force: true }) })
   await service.sync([{ id: 'bi', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
   await service.request('savePreferences', 'bi', [{ ...DEFAULT_AGENT_SETTINGS, goal: '按用户要求创作', enabled: options.enabled ?? true, dailyCalls: options.dailyCalls ?? 8 }])

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TaskCenter } from '../task-center/store'
 import { WorkStrategyRuntime, parseDraft } from '../workloop/workflow'
-import { AgentSpace, type ContactIdentity } from '../agent-space/service'
+import { WorkLoopHost, type ContactIdentity } from '../agent-space/workloop-host'
 import { evidenceFromText, publicAddress } from './sources'
 import { DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 
@@ -34,7 +34,7 @@ describe('contact agent durability and isolation', () => {
       return new Response(payloads.map(p => `data: ${JSON.stringify(p)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
     })
     cleanups.push(() => fetchMock.mockRestore())
-    const service = new AgentSpace(directory(), () => {}, undefined, reader)
+    const service = new WorkLoopHost(directory(), () => {}, undefined, reader)
     cleanups.push(() => service.close())
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     await service.request('save', 'alice', [settings])
@@ -175,7 +175,7 @@ describe('contact agent durability and isolation', () => {
   it('removes a role while a model call is in flight and cannot resurrect its records', async () => {
     const dir = directory(); let started!: () => void
     const entered = new Promise<void>(r => { started = r })
-    const service = new AgentSpace(dir, () => {}, () => async (_prompt, signal) => { started(); await new Promise<void>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })); return JSON.stringify(draft) }, reader)
+    const service = new WorkLoopHost(dir, () => {}, () => async (_prompt, signal) => { started(); await new Promise<void>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })); return JSON.stringify(draft) }, reader)
     cleanups.push(() => service.close())
     const identity: ContactIdentity = { id: 'alice', soul: 'Alice', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'private-provider-secret', model: 'test', thinkingDisabledModels: [] } }
     await service.sync([identity]); await service.request('save', 'alice', [settings]); await service.request('run', 'alice')
@@ -188,7 +188,7 @@ describe('contact agent durability and isolation', () => {
   })
   it('automatically schedules enabled contacts, leaves others idle, and respects the next due time', async () => {
     const model = vi.fn(async () => JSON.stringify(draft))
-    const service = new AgentSpace(directory(), () => {}, () => model, reader)
+    const service = new WorkLoopHost(directory(), () => {}, () => model, reader)
     cleanups.push(() => service.close())
     const config = { provider: 'openai' as const, baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] }
     await service.sync(['alice', 'bob'].map(id => ({ id, soul: id, conversation: '', config })))

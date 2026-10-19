@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { TaskCenter } from '../task-center/store'
 import { parseResearchPlan } from './research'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -30,7 +30,7 @@ describe('legacy contact tasks without a work direction', () => {
       const body = rounds === 1 ? '第一声琴音在山谷间响起。' : '少年循着余音踏入山门。'
       return JSON.stringify({ title: `第 ${rounds} 轮创作`, body, nextStep: '接着写主角的修炼经历', memories: [], question: '', progress: { judgement: `已写出第 ${rounds} 段正文`, openQuestions: '', nextStep: '接着写主角的修炼经历', reason: '按原任务推进正文', status: 'researching' }, delivery: { completionCriteria: '完成小说', summary: '主角以琴音修炼', stages: [{ id: 'draft', title: '初稿', status: 'active' }], section: { id: `section${rounds}`, title: `第${rounds}节`, body } } })
     })
-    const service = new AgentSpace(directory(), () => {}, () => model, reader, searcher)
+    const service = new WorkLoopHost(directory(), () => {}, () => model, reader, searcher)
     cleanups.push(() => service.close())
     await service.sync([{ id: 'bi', soul: '小说作者', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     await service.request('createTopic', 'bi', [task])

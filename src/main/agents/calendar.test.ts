@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { reviewTaskCompletion } from './task-completion'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 
 const at = (day: number, hour: number) => new Date(2026, 9, day, hour).getTime()
 const input = { title: '每日想法', instruction: '每天给一个新的想法', cadence: 'daily', times: ['09:00'], kind: 'contact-summary', enabled: true }
@@ -67,7 +67,7 @@ it('keeps a pre-existing long task title when adding a calendar', () => {
 
 it('starts due calendars through each contact’s own execution identity and keeps existing call reservations', async () => {
   const started: string[] = []
-  const service = new AgentSpace(join(directory, 'service'), () => {}, identity => async (_prompt, signal) => {
+  const service = new WorkLoopHost(join(directory, 'service'), () => {}, identity => async (_prompt, signal) => {
     started.push(identity.id)
     return new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }))
   })
@@ -105,7 +105,7 @@ it('preserves failed period receipts across restart and does not overlap a waiti
 })
 
 it('settles the pinned period when retrying a failed calendar from work history', async () => {
-  const service = new AgentSpace(join(directory, 'manual-retry'), () => {})
+  const service = new WorkLoopHost(join(directory, 'manual-retry'), () => {})
   try {
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'fixture', thinkingDisabledModels: [] } }])
     vi.spyOn(service, 'tick').mockImplementation(() => {})

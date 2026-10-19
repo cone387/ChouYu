@@ -44,3 +44,50 @@ it('settles every module close even if one close throws synchronously', async ()
   await expect(agent.close()).rejects.toThrow('broken close')
   expect(closed).toEqual(['workloop'])
 })
+
+it('retains a draining module until detach finishes and close waits for it', async () => {
+  let release!: () => void
+  const hold = new Promise<void>(resolve => { release = resolve })
+  const registry = new ModuleRegistry()
+  registry.register('chat', () => ({ id: 'chat', close: () => hold }))
+  const agent = new ContactAgent({ id: 'alice', soul: '', conversation: '', config: null }, registry)
+  agent.mount(['chat'])
+  const detached = agent.detach('chat')
+  expect(agent.module('chat')).toBeUndefined()
+  expect(() => agent.mount(['chat'])).toThrow(/卸载/)
+  let closed = false
+  const closing = agent.close().then(() => { closed = true })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(closed).toBe(false)
+  release(); await Promise.all([closing, detached])
+})
+
+it('remounts only a detached capability while preserving its peer', async () => {
+  const registry = new ModuleRegistry(), calls: string[] = []
+  for (const id of ['chat', 'workloop']) registry.register(id, () => ({ id, close: async () => { calls.push(id) } }))
+  const agent = new ContactAgent({ id: 'alice', soul: '', conversation: '', config: null }, registry)
+  agent.mount(['chat', 'workloop'])
+  const work = agent.module('workloop')
+  await agent.detach('chat')
+  agent.mount(['chat'])
+  expect(agent.module('workloop')).toBe(work)
+  expect(agent.module('chat')).toBeDefined()
+  expect(() => agent.mount(['chat'])).toThrow(/装配/)
+  await agent.close()
+  expect(calls.filter(id => id === 'chat')).toHaveLength(2)
+})
+
+it('keeps a failed detach unavailable until a successful retry', async () => {
+  let fail = true
+  const registry = new ModuleRegistry()
+  registry.register('workloop', () => ({ id: 'workloop', close: async () => { if (fail) throw new Error('transport lost') } }))
+  const agent = new ContactAgent({ id: 'alice', soul: '', conversation: '', config: null }, registry)
+  agent.mount(['workloop'])
+  await expect(agent.detach('workloop')).rejects.toThrow('transport lost')
+  expect(agent.module('workloop')).toBeUndefined()
+  expect(() => agent.mount(['workloop'])).toThrow(/卸载/)
+  fail = false
+  await agent.detach('workloop')
+  agent.mount(['workloop'])
+  await agent.close()
+})

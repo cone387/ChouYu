@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 describe('contacts dashboard', () => {
   it('serves the global dashboard without requiring a single contact identity', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'chouyu-dashboard-'))
-    const service = new AgentSpace(directory, () => {})
+    const service = new WorkLoopHost(directory, () => {})
     try {
       const data = await service.request('dashboard', '', [['new-contact']])
       expect(data.contacts['new-contact'].summary.tasks).toBe(0)

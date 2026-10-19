@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -8,7 +8,7 @@ const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn() })
 async function fixture(execute = false) {
   const directory = mkdtempSync(join(tmpdir(), 'contact-handoff-'))
-  let service = new AgentSpace(directory, () => {}, () => async (_prompt, signal) => new Promise<string>((_resolve, reject) => { signal.throwIfAborted(); signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }) }))
+  let service = new WorkLoopHost(directory, () => {}, () => async (_prompt, signal) => new Promise<string>((_resolve, reject) => { signal.throwIfAborted(); signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }) }))
   cleanup.push(async () => { await service.close(); if (!directory.startsWith(join(tmpdir(), 'contact-handoff-'))) throw Error('Unexpected cleanup path'); rmSync(directory, { recursive: true, force: true }) })
   const identities = ['alice', 'bob'].map(id => ({ id, soul: id, conversation: '', config: execute ? { provider: 'openai' as const, baseUrl: 'https://example.invalid', apiKey: 'fixture', model: 'fixture', thinkingDisabledModels: [] } : null }))
   await service.sync(identities)
@@ -17,7 +17,7 @@ async function fixture(execute = false) {
   const runId = service.store.createRun('alice', '', Date.now(), topic.id)
   service.store.finish(runId, { runId, title: 'Saved', body: 'Source prose', nextStep: 'Continue', evidence: [], createdAt: Date.now() }, [], { status: 'researching', judgement: 'Saved', nextStep: 'Continue', openQuestions: '', reason: 'Draft' }, { completionCriteria: 'Write', stages: [{ id: 'draft', title: 'Draft', status: 'active' }], summary: 'Source', section: { id: 'text', title: 'Text', body: 'Actual source prose' } })
   const request = { requestId: 'review-1', source: { characterId: 'alice', topicId: topic.id, version: 1, sectionId: 'text' }, recipientId: 'bob', description: 'Review this draft once' }
-  return { get service() { return service }, request, async reopen() { await service.close(); service = new AgentSpace(directory, () => {}); await service.sync(identities) } }
+  return { get service() { return service }, request, async reopen() { await service.close(); service = new WorkLoopHost(directory, () => {}); await service.sync(identities) } }
 }
 it('commits one actual receiver task atomically and replays it after restart without changing the author', async () => {
   const f = await fixture(), before = f.service.store.overview('alice'), receiverCount = f.service.store.topics.list('bob').length

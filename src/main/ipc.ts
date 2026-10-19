@@ -21,7 +21,7 @@ import type { ResolvedProviderProfile } from '../shared/config'
 import type { AIChatMessage, AIModelListResult, AIStreamEvent, AIStreamRequest, AIStreamResult } from '../shared/ai'
 import { formatSessionMarkdown } from '../shared/sessions'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig } from '../shared/characters'
-import { agentContext, removeContactAgent, contactAgentsCall, onContactContextChanged, setContactHarnessPurge } from './agents'
+import { agentContext, removeContactAgent, contactAgentsCall, onContactContextChanged, setContactHarnessPurge, runContactChat, cancelContactChat, closeContactSpace } from './agents'
 import { routeContactChange } from './agents/chat-changes'
 import { readContactConfiguration, submitContactInteraction, pendingContactInteractions } from './agents'
 import { type ContactActionInteraction } from '../shared/contact-actions'
@@ -118,7 +118,7 @@ import {
   setState
 } from './database'
 
-setHarnessCancellation(key=>{activeAIRequests.get(key)?.abort();return chatHarness.cancel(key)})
+setHarnessCancellation(key=>{activeAIRequests.get(key)?.abort();return cancelContactChat(key)})
 setContactHarnessPurge(characterId=>purgeHarnessData({characterId}))
 
 const activeAIRequests = new Map<string, AbortController>()
@@ -633,7 +633,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('ai:stream', async (event, rawRequest): Promise<AIStreamResult> => {
     const request = parseAIStreamRequest(rawRequest)
     if (!request) return { ok: false, error: 'AI 请求参数无效。' }
-    const owner = request.sessionId ? getSession(request.sessionId)?.characterId : undefined
+    const owner = request.sessionId ? getSession(request.sessionId)?.characterId : request.characterId || DEFAULT_CHARACTER_ID
     if (request.sessionId && !owner) return { ok: false, error: '会话已不存在，请重新打开对话。' }
     if (request.characterId && !getCharacter(request.characterId)) return { ok: false, error: '联系人已不存在。' }
     if (owner && request.characterId && owner !== request.characterId) return { ok: false, error: '会话与联系人不匹配。' }
@@ -747,7 +747,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       // Main-process identity scopes equal renderer request ids to their owning sender.
       harnessInput.requestId = requestKey
       harnessInput.bindTools = run => buildChatTools(selectedModule.confirmation(run), run.signal)
-      const result = await chatHarness.run(harnessInput, update => {
+      const result = await runContactChat(harnessInput, update => {
         if (event.sender.isDestroyed()) return
         if (update.type === 'text') {
           const streamEvent: AIStreamEvent = { requestId: request.requestId, chunk: update.text, done: false, operation:update.operation,attemptId:update.attemptId,sequence:update.seq }
@@ -998,4 +998,4 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 }
 
-export async function closeChatHarness(){for(const controller of activeAIRequests.values())controller.abort();await closeHarnessModules()}
+export async function closeChatHarness(){for(const controller of activeAIRequests.values())controller.abort();try{await closeContactSpace()}finally{await closeHarnessModules()}}

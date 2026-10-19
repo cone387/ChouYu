@@ -5,7 +5,7 @@ if (!process.versions.electron) {
   fs.mkdirSync(output, { recursive: true })
   const build = require('esbuild').buildSync
   build({ entryPoints: [path.join(root, 'tests/fixtures/work-settings-ui.tsx')], bundle: true, platform: 'browser', jsx: 'automatic', outfile: path.join(output, 'ui.js'), define: { 'process.env.NODE_ENV': '"development"' } })
-  build({ entryPoints: [path.join(root, 'src/main/agent-space/service.ts')], bundle: true, platform: 'node', packages: 'external', outfile: path.join(output, 'service.cjs') })
+  build({ entryPoints: [path.join(root, 'src/main/agent-space/workloop-host.ts')], bundle: true, platform: 'node', packages: 'external', outfile: path.join(output, 'service.cjs') })
   fs.writeFileSync(path.join(output, 'preload.cjs'), `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('electronAPI',{agents:{deliveryReading:(...args)=>ipcRenderer.invoke('settings:action','deliveryReading',...args),saveDeliveryReading:(...args)=>ipcRenderer.invoke('settings:action','saveDeliveryReading',...args),portfolio:(...args)=>ipcRenderer.invoke('settings:action','portfolio',...args),continueTopic:(...args)=>ipcRenderer.invoke('settings:action','continueTopic',...args),topicStatus:(...args)=>ipcRenderer.invoke('settings:action','topicStatus',...args),onChanged:cb=>{const fn=(_event,id)=>cb(id);ipcRenderer.on('settings:changed',fn);return()=>ipcRenderer.removeListener('settings:changed',fn)},analytics:(...args)=>ipcRenderer.invoke('settings:action','analytics',...args),run:(...args)=>ipcRenderer.invoke('settings:action','run',...args),topicDetail:(...args)=>ipcRenderer.invoke('settings:action','topicDetail',...args),delivery:(...args)=>ipcRenderer.invoke('settings:action','delivery',...args),get:id=>ipcRenderer.invoke('settings:get',id),savePreferences:(...args)=>ipcRenderer.invoke('settings:save',...args),searchCredential:(...args)=>ipcRenderer.invoke('settings:key',...args)}});contextBridge.exposeInMainWorld('settingsTest',{fail:()=>ipcRenderer.invoke('settings:fail'),conflict:()=>ipcRenderer.invoke('settings:conflict')});`)
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
   require('node:child_process').spawn(require('electron'), [__filename], { cwd: root, env, stdio: 'inherit', windowsHide: true }).on('exit', code => process.exit(code ?? 1))
@@ -16,8 +16,8 @@ if (!process.versions.electron) {
   let service, window
   const timeout = setTimeout(() => { console.error('Settings smoke timed out'); app.exit(1) }, 90000)
   app.whenReady().then(async () => {
-    const { AgentSpace } = require(path.join(output, 'service.cjs'))
-    service = new AgentSpace(path.join(directory, 'agents'), id => { if (window && !window.isDestroyed()) window.webContents.send('settings:changed', id) }, () => async (_prompt, signal) => new Promise((_resolve, reject) => {
+    const { WorkLoopHost } = require(path.join(output, 'service.cjs'))
+    service = new WorkLoopHost(path.join(directory, 'agents'), id => { if (window && !window.isDestroyed()) window.webContents.send('settings:changed', id) }, () => async (_prompt, signal) => new Promise((_resolve, reject) => {
       signal.throwIfAborted(); signal.addEventListener('abort', () => reject(Error('Isolated smoke stopped')), { once: true })
     }))
     service.store.save('settings-smoke', { goal: '隔离设置验收', sources: [], intervalMinutes: 30, dailyCalls: 100, enabled: true, dailyTokenLimit: 100000, defaultTaskTokenLimit: 300000 }, Date.now(), false)

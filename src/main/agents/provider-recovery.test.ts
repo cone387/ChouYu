@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { dirname } from 'node:path'
 import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -81,7 +81,7 @@ it('restarts the real scheduler after an outage and saves recovered output witho
     : prompt.startsWith('为联系人')
     ? JSON.stringify({ action: 'write', reason: '写正文', query: '', urls: [], checkAfterMinutes: 180 })
     : JSON.stringify({ title: '恢复后的成果', body: '已经保存的正文。', nextStep: '', memories: [], question: '', progress: { judgement: '完成', openQuestions: '', nextStep: '', reason: '已保存', status: 'completed' }, delivery: { completionCriteria: '交付正文', summary: '正文已保存', stages: [{ id: 'draft', title: '正文', status: 'done' }], section: { id: 'text', title: '恢复后的成果', body: '已经保存的正文。' } } }))
-  const service = new AgentSpace(dirname(path), () => {}, () => model)
+  const service = new WorkLoopHost(dirname(path), () => {}, () => model)
   cleanups.push(() => service.close())
   await service.sync([{ id: 'alice', soul: '写作者', conversation: '', config: { provider: 'openai', baseUrl: 'http://test.invalid', apiKey: 'fixture', model: 'fixture', thinkingDisabledModels: [] } }])
   await vi.waitFor(() => expect(service.store.overview('alice').reports).toHaveLength(1))
@@ -103,7 +103,7 @@ it('does not call the provider when Token allowance is insufficient for recovery
   store.save('alice', { ...store.overview('alice').settings, dailyTokenLimit: 1 }, Date.now(), false)
   vi.setSystemTime(store.providerRecovery('alice')!.at)
   const model = vi.fn(async () => { throw new Error('must not be called') })
-  const service = new AgentSpace(dirname(path), () => {}, () => model)
+  const service = new WorkLoopHost(dirname(path), () => {}, () => model)
   cleanups.push(() => service.close())
   await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'http://test.invalid', apiKey: 'fixture', model: 'fixture', thinkingDisabledModels: [] } }])
   await vi.waitFor(() => expect(service.store.overview('alice').runs[0].status).toBe('interrupted'))

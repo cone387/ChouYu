@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { evidenceFromText } from './sources'
@@ -22,7 +22,7 @@ type Pending = { signal: AbortSignal; resolve: (value: string) => void; reject: 
 async function fixture(ignoreAbort = false) {
   const directory = mkdtempSync(join(tmpdir(), 'chouyu-concurrent-agents-'))
   const calls = new Map<string, Pending[]>()
-  const service = new AgentSpace(directory, () => {}, identity => async (_prompt, signal) => {
+  const service = new WorkLoopHost(directory, () => {}, identity => async (_prompt, signal) => {
     return new Promise<string>((resolve, reject) => {
       signal.throwIfAborted()
       calls.set(identity.id, [...(calls.get(identity.id) ?? []), { signal, resolve, reject }])

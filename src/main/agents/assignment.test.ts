@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { TaskCenter } from '../task-center/store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { evidenceFromText } from './sources'
 
@@ -149,7 +149,7 @@ describe('description-only task assignment', () => {
   })
   it('starts automatically for a clear request and rejects missing model configuration before creation', async () => {
     const model = vi.fn(async (prompt: string) => JSON.stringify(prompt.startsWith('你是联系人，刚收到') ? { ...brief, question: '' } : draft))
-    const service = new AgentSpace(directory(), () => {}, () => model, async () => reader())
+    const service = new WorkLoopHost(directory(), () => {}, () => model, async () => reader())
     cleanups.push(() => service.close())
     const config = { provider: 'openai' as const, baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] }
     await service.sync([{ id: 'alice', soul: '', conversation: '', config }, { id: 'bob', soul: '', conversation: '', config: null }])

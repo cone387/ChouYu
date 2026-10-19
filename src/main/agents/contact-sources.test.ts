@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TaskCenter } from '../task-center/store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from '../../shared/agents'
 import { parseResearchPlan } from './research'
 
@@ -271,7 +271,7 @@ describe('agent-planned contact deliverable tools', () => {
   it('ignores obsolete deadlines while retaining the model-configuration requirement', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'chouyu-timed-agent-'))
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-    const model = vi.fn(async () => '{}'), service = new AgentSpace(dir, () => {}, () => model)
+    const model = vi.fn(async () => '{}'), service = new WorkLoopHost(dir, () => {}, () => model)
     cleanup.push(() => service.close())
     const settings = { ...DEFAULT_AGENT_SETTINGS, goal: '24h 实验', enabled: true, workUntil: Date.now() - 1 }
     service.store.save('writer', settings, settings.workUntil! - 1000)
@@ -334,7 +334,7 @@ it.each(['阿想 Idea实验员', '过时的名称'])('resumes cached query %s af
   store.db.prepare('UPDATE profiles SET next_at=0 WHERE character_id=?').run('reviewer')
   store.close()
   let calls = 0
-  const service: AgentSpace = new AgentSpace(dir, () => {}, () => async prompt => {
+  const service: WorkLoopHost = new WorkLoopHost(dir, () => {}, () => async prompt => {
     calls++
     if (calls === 1) return JSON.stringify({ ...plan, action: 'discover_contacts', query })
     if (calls === 2) {
@@ -369,7 +369,7 @@ it('continuously reviews new shared sections, idles without model calls, and wak
     }
     return JSON.stringify({ title: '独立评价', body: '读取正文后评价 [1]', nextStep: '继续评审未处理成果', question: '', memories: [], progress: { ...progress, status: 'needs_evidence' } })
   })
-  const service: AgentSpace = new AgentSpace(dir, () => {}, () => model)
+  const service: WorkLoopHost = new WorkLoopHost(dir, () => {}, () => model)
   cleanup.push(() => service.close())
   for (const id of ['writer', 'reviewer']) service.store.save(id, { ...DEFAULT_AGENT_SETTINGS, goal: id, dailyCalls: 100, intervalMinutes: 180,
     enabled: id === 'reviewer', shareDeliveries: id === 'writer', readContactDeliveries: id === 'reviewer' })

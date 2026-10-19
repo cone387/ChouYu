@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TaskCenter } from '../task-center/store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 
 const cleanups: (() => void)[] = []
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
@@ -114,7 +114,7 @@ it('allows unrelated settings changes after the automatic deadline expires', () 
 it('blocks the actual model before assignment parsing and resumes after a daily cap increase', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-token-service-'))
   const model = vi.fn(async () => JSON.stringify({ title: '写作', nextStep: '了解主题', question: '写什么主题？', plan: { completionCriteria: '完成文章', stages: [{ id: 'draft', title: '写作', status: 'pending' }] } }))
-  const service = new AgentSpace(dir, () => {}, () => model)
+  const service = new WorkLoopHost(dir, () => {}, () => model)
   try {
     service.store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '写作', dailyTokenLimit: 100, dailyCalls: 100 }, Date.now(), false)
     await service.sync([{ id: 'alice', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'http://127.0.0.1:1', model: 'synthetic', apiKey: 'synthetic', thinkingDisabledModels: [] } }])

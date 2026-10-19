@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { TaskCenter } from '../task-center/store'
-import { AgentSpace } from '../agent-space/service'
+import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 const cleanup: (() => void | Promise<void>)[] = []
@@ -99,7 +99,7 @@ describe('persistent contact task scheduling', () => {
     const gate = new Promise<void>(resolve => { release = resolve })
     let secondStarted = false, concurrent = 0, peak = 0
     const stages = [{ id: 'draft', title: 'Draft', status: 'pending' }]
-    const service = new AgentSpace(dir, () => {}, () => async prompt => {
+    const service = new WorkLoopHost(dir, () => {}, () => async prompt => {
       concurrent++; peak = Math.max(peak, concurrent)
       try {
         if (prompt.startsWith('任务结束核对')) return JSON.stringify({ mode: 'finite', satisfied: true, endsAt: null, reason: '要求的初稿已保存', nextStep: '', completionCriteria: 'A draft' })
