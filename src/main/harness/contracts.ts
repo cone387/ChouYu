@@ -98,6 +98,8 @@ export interface HarnessModule {
 }
 
 export interface BackgroundHarnessInput {
+    characterId?: string;
+    requestId?: string;
     messages: AIChatMessage[];
     systemPrompt: string;
     config: AppConfig;

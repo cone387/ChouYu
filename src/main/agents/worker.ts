@@ -31,7 +31,7 @@ port.on('message', event => {
           signal.throwIfAborted()
           if (query !== '团队 免费 替代品' || key !== 'search-smoke-secret') throw new Error('Smoke search only accepts its isolated fixture')
           return [{ url: 'https://chouyu-agent-smoke.invalid/search-evidence', title: '新发现的定价页面' }]
-        } : undefined, id => new SkillLibrary(join(dirname(args[0]), 'contact-skills')).snapshot(id), join(dirname(args[0]), 'contact-skills'))
+        } : undefined, id => new SkillLibrary(join(dirname(args[0]), 'contact-skills')).snapshot(id), join(dirname(args[0]), 'contact-skills'), { dshRuntime: args[1] })
       }
       else if (!service) throw new Error('Agent 执行进程尚未初始化。')
       else {

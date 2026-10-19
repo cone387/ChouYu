@@ -28,6 +28,7 @@ it('bounds unanswered requests and preserves abort reasons', async () => {
     const port = await transport.listen(), peer = new RpcPeer(connect(port, '127.0.0.1'), () => { });
     cleanups.push(() => peer.close());
     await peer.request('hello', { role: 'plugin', token: transport.token });
+    await expect(peer.request('prepare', { apiKey: 'must-not-appear' }, { timeoutMs: 5 })).rejects.toThrow('DSH 控制请求超时（prepare）。');
     const abort = new AbortController(), pending = peer.request('wait', {}, { signal: abort.signal });
     abort.abort(new Error('chosen cancellation'));
     await expect(pending).rejects.toThrow('chosen cancellation');

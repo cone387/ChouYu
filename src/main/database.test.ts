@@ -49,6 +49,25 @@ afterEach(() => {
 })
 
 describe('durable conversations', () => {
+  it('persists an independent background engine and rejects stale or failed changes', () => {
+    const other = listCharacters().find(c => !c.builtIn)!, initial = getContactProfile(other.id)
+    const selected = updateContactProfile(other.id, { backgroundHarnessEngine: 'dsh' }, initial.revision, '后台使用DSH')
+    expect(selected.profile.backgroundHarnessEngine).toBe('dsh')
+    expect(selected.profile.harnessEngine).toBe('native')
+    expect(() => updateContactProfile(other.id, { backgroundHarnessEngine: 'native' }, initial.revision, '旧设置')).toThrow('变化')
+    const builtin = getContactProfile(DEFAULT_CHARACTER_ID)
+    updateContactProfile(DEFAULT_CHARACTER_ID, { backgroundHarnessEngine: 'dsh' }, builtin.revision, '后台使用DSH')
+    initDatabase()
+    expect(getContactProfile(other.id).profile.backgroundHarnessEngine).toBe('dsh')
+    expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.backgroundHarnessEngine).toBe('dsh')
+    const current = getContactProfile(other.id)
+    updateContactProfile(other.id, { backgroundHarnessEngine: 'native' }, current.revision, '切回原生')
+    expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.backgroundHarnessEngine).toBe('dsh')
+    const before = getContactProfile(DEFAULT_CHARACTER_ID)
+    vi.spyOn(fs, 'writeFileSync').mockImplementation(() => { throw new Error('disk full') })
+    expect(() => updateContactProfile(DEFAULT_CHARACTER_ID, { backgroundHarnessEngine: 'native' }, before.revision, '切回原生')).toThrow('保存失败')
+    expect(getContactProfile(DEFAULT_CHARACTER_ID)).toEqual(before)
+  })
   it('persists each contact engine including ChouYu and preserves it during unrelated edits', () => {
     const other = listCharacters().find(c => !c.builtIn)!
     const initial = getContactProfile(other.id)

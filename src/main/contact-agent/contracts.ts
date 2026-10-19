@@ -4,6 +4,7 @@ import type { HarnessEngine } from '../../shared/harness'
 import type { HarnessInput, HarnessEvent, HarnessResult } from '../harness/contracts'
 
 export interface ContactIdentity {
+  backgroundHarnessEngine?: HarnessEngine
   configurationVersions?: { profile?: string; skills?: number; credential?: number }
   sessionIds?: string[]
   skillToolsEnabled?: boolean

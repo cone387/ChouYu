@@ -6,7 +6,7 @@ import { SkillRunner } from '../skills/runner'
 import { skillToolRuntime } from '../skills/tools'
 import type { SkillSnapshot } from '../../shared/skills'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
-import { backgroundHarnesses } from '../harness/background'
+import type { HarnessRegistry } from '../harness/registry'
 import { ContactTaskStore } from '../task-center/contact-store'
 import { type AgentModel } from './workflow'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
@@ -15,7 +15,7 @@ import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from '../agents/model-
 import type { ContactIdentity } from '../contact-agent/contracts'
 type Run = NonNullable<ReturnType<ContactTaskStore['getRun']>>
 export function createWorkModel(context: {
-  store: ContactTaskStore; identity: ContactIdentity; run: Run; input: any; skillRunner: SkillRunner
+  store: ContactTaskStore; identity: ContactIdentity; run: Run; input: any; skillRunner: SkillRunner; harnesses: HarnessRegistry
   modelFactory?: (identity: ContactIdentity) => AgentModel
   changed(id: string): void
   request(method: string, owner: string, args: unknown[]): Promise<any>
@@ -83,11 +83,11 @@ export function createWorkModel(context: {
       }
       try {
         if (testModel) { beforeRound(0, prompt); const result = await testModel(prompt, signal, options); if (options?.suppliesMemories) recordMemoryContext(); return result }
-        await backgroundHarnesses.background('native').run({ messages: [{ role: 'user', content: prompt }],
+        await context.harnesses.background(input.backgroundHarnessEngine).run({ characterId: identity.id, requestId: run.id, messages: [{ role: 'user', content: prompt }],
           systemPrompt: options?.plainText ? 'Output the requested plain text, without JSON.' : 'Follow the work instruction and return JSON. Distinguish facts, assumptions, and sources.',
           config: { ...DEFAULT_APP_CONFIG, ...identity.config! }, signal, tools,
           onChunk: chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) },
-          options: { timeoutMs: 180000, beforeRound, afterRound, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model }; if (options?.suppliesMemories) recordMemoryContext() } } })
+          options: { timeoutMs: 180000, maxOutputTokens: AGENT_OUTPUT_TOKENS, beforeRound, afterRound, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model }; if (options?.suppliesMemories) recordMemoryContext() } } })
         if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError(output)
       } finally { afterRound() }
       return output

@@ -84,7 +84,7 @@ export class RpcPeer {
             this.pending.set(id, { resolve: finish(resolve), reject: finish(reject) });
             signal?.addEventListener('abort', aborted, { once: true });
             if (timeoutMs)
-                timer = setTimeout(() => finish(reject)(new Error('DSH 控制请求超时。')), timeoutMs);
+                timer = setTimeout(() => finish(reject)(new Error(`DSH 控制请求超时（${method}）。`)), timeoutMs);
             try {
                 this.send({ type: 'request', id, method, value });
             }

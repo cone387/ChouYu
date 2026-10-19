@@ -1,6 +1,7 @@
 import { connect } from 'node:net';
 import { createUserMessage, createAssistantMessage, createSystemMessage } from '@deepseek-ai/dsh-llm';
 import { RpcPeer } from './wire.mjs';
+import { installBudget } from './budget.mjs';
 export const name = 'chouyu-harness';
 export const inject = ['agents', 'sessions', 'sessionPersistence', 'tools', 'systemPrompt'];
 export async function apply(ctx) {
@@ -56,6 +57,7 @@ export async function apply(ctx) {
                 sessionId: value.sessionId, seed, agentOptions: { provider: 'chouyu', model: value.model },
                 meta: { cwd: process.env.CHOUYU_DSH_WORKDIR },
                 setup(scope) {
+                    if (value.rounds) installBudget(scope, peer, key, value.sessionId, value.maxOutputTokens);
                     scope.on('session/event', (_session, event) => {
                         if (event.type === 'user/message' && event.data.source?.kind === 'user')
                             committed.input = event;
@@ -84,7 +86,7 @@ export async function apply(ctx) {
                 }
             });
             const message = createUserMessage({ content: [{ type: 'text', text: value.prompt }], source: { kind: 'user' } });
-            handles.set(value.sessionId, { ...handle, committed, key, streaming, message });
+            handles.set(value.sessionId, { ...handle, committed, key, streaming, message, budgeted: Boolean(value.rounds) });
             return { sessionId: value.sessionId, inputMessageId: message.id };
         }
         const handle = handles.get(value?.sessionId);
@@ -103,7 +105,7 @@ export async function apply(ctx) {
             const { input, turn, assistant } = handle.committed;
             if (turn?.data.reason?.kind === 'aborted')
                 return { state: 'cancelled', error: 'AI 请求已取消。' };
-            if (turn?.data.reason?.kind !== 'completed' || input?.data.id !== message.id || !assistant || assistant.seq <= input.seq)
+            if (!(turn?.data.reason?.kind === 'completed' || handle.budgeted && turn?.data.reason?.kind === 'max-tokens') || input?.data.id !== message.id || !assistant || assistant.seq <= input.seq)
                 return { state: 'failed', error: 'DSH 未提交本次请求的正式回复。' };
             const text = assistant.data.message.content.filter(b => b.type === 'text').map(b => b.text).join('');
             return { state: 'completed', text, committedSeq: assistant.seq, inputMessageId: message.id };

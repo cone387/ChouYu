@@ -3,7 +3,8 @@ import { createServer, type ServerResponse } from 'node:http';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCharacter, createChatSession, listCharacters, getCharacter, getConfig, getSession, getSessions, saveConfig, selectChatSession, flushDatabase } from '../database';
-import { contactAgentsCall, pendingContactInteractions } from '../agents';
+import { contactAgentsCall, pendingContactInteractions, restartAgentsForSmoke } from '../agents';
+import { DEFAULT_AGENT_SETTINGS, type AgentOverview } from '../../shared/agents';
 import { waitForRenderer } from './storage-smoke';
 import { dshService, existingDshService } from '../harness/dsh/service';
 import type { MaterialVersion } from '../../shared/contact-materials';
@@ -14,7 +15,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         throw new Error('Isolated smoke only');
     const original = getConfig(), originalSession = (await window.webContents.executeJavaScript('window.electronAPI.db.getSessionWorkspace()')).activeSession.id;
     let material: MaterialVersion, toolStep = 0, providerCalls = 0, routeCalls = 0, holdFinal = false, pendingFinal: ServerResponse | undefined;
-    let mode: 'tools' | 'plain' = 'tools', desiredDensity = 'compact';
+    let mode: 'tools' | 'plain' | 'background' = 'tools', desiredDensity = 'compact';
     let holdRoute = false, pendingRoute: ServerResponse | undefined;
     let routeQuestion = false;
     const requests: any[] = [];
@@ -39,6 +40,10 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         }
         providerCalls++;
         requests.push(body);
+        if (mode === 'background') {
+            finish(res, JSON.stringify({ title: '后台执行器验收', body: '开发者访谈提出需求，付费意愿仍需验证 [1]。', nextStep: '继续核对', memories: [], question: '', progress: { judgement: '已保存访谈结论', openQuestions: '付费意愿', nextStep: '继续核对', reason: '访谈资料 [1]', status: 'researching' } }));
+            return;
+        }
         if (mode === 'plain') {
             finish(res, 'DSH 普通对话验收通过。');
             return;
@@ -92,8 +97,8 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
             await click(`[data-contacts-edit="${id}"]`);
             await waitForRenderer(window, "Boolean(document.querySelector('[data-contacts-harness]'))", 15000);
         };
-        const saveEngine = async (engine: 'native' | 'dsh') => {
-            await run(`(()=>{const el=document.querySelector('[data-contacts-harness]');el.value=${JSON.stringify(engine)};el.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        const saveEngine = async (engine: 'native' | 'dsh', field = 'data-contacts-harness') => {
+            await run(`(()=>{const el=document.querySelector('[${field}]');el.value=${JSON.stringify(engine)};el.dispatchEvent(new Event('change',{bubbles:true}));})()`);
             await click('[data-contacts-save]');
             await waitForRenderer(window, "!document.querySelector('[data-contacts-form]')", 15000);
         };
@@ -214,6 +219,29 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
             seen.set(event.requestId, event);
         }
         const report = { dshVersion: record.version, commonStream: true, nativeUiSaved: true, handledRouteBypassesHarness: true, nativeLeavesDshUninitialized: true, perContactSettings: true, builtInSettings: true, inFlightEngineStable: true, nativeSwitchBack: true, ordinaryChat: true, readMaterial: true, originalCard: pending.id, waitMs: Date.now() - started, providerCalls, routeCalls, hiddenUnread: true, source, originalPreference: true, rejection: true, duplicateClick: true, stopInvalidatesCard: true };
+        // Real editor -> persisted contact -> restarted utility process -> DSH SDK -> saved report.
+        await openEngineForm(character.id);
+        if (await run("document.querySelector('[data-contacts-background-harness]').value") !== 'native') throw new Error('Background did not default to native');
+        await saveEngine('dsh', 'data-contacts-background-harness');
+        if (getCharacter(character.id)?.harnessEngine !== 'native' || getCharacter(character.id)?.backgroundHarnessEngine !== 'dsh' || (getCharacter('chouyu')?.backgroundHarnessEngine ?? 'native') !== 'native') throw new Error('Background selection changed chat or another contact');
+        flushDatabase();
+        await restartAgentsForSmoke();
+        await openEngineForm(character.id);
+        if (await run("document.querySelector('[data-contacts-background-harness]').value") !== 'dsh') throw new Error('Background setting lost after worker restart');
+        writeFileSync(join(artifacts, 'contact-background-engine-settings.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
+        await run("document.querySelector('[data-contacts-form]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+        mode = 'background';
+        await contactAgentsCall(character.id, 'save', [{ ...DEFAULT_AGENT_SETTINGS, goal: '核对访谈', sources: ['https://chouyu-agent-smoke.invalid/research'], permissionLevel: 'sources', dailyCalls: 10, dailyTokenLimit: 100000 }]);
+        const beforeWork = providerCalls;
+        await contactAgentsCall(character.id, 'run');
+        await until(async () => (await contactAgentsCall<AgentOverview>(character.id, 'get')).reports.length === 1, 'DSH background saved report');
+        const backgroundHome = join(app.getPath('userData'), 'contact-agents', 'harness');
+        const sdkLogs = readdirSync(backgroundHome, { recursive: true }).filter(file => String(file).endsWith('.jsonl'));
+        const outputCap = requests.at(-1).max_tokens ?? requests.at(-1).max_completion_tokens;
+        const work = await contactAgentsCall<AgentOverview>(character.id, 'get');
+        if (!sdkLogs.length || providerCalls !== beforeWork + 1 || outputCap !== 8192 || work.tokenUsage?.today !== 28 || work.tokenUsage.estimated !== 0) throw new Error(`Background SDK verification failed: ${JSON.stringify({ sessions: sdkLogs.length, calls: providerCalls - beforeWork, outputCap, usage: work.tokenUsage })}`);
+        await contactAgentsCall(character.id, 'pause');
+        Object.assign(report, { backgroundSelectedInUi: true, backgroundWorkerRestart: true, backgroundSavedReport: true, backgroundSdkSessions: sdkLogs.length });
         writeFileSync(join(artifacts, 'dsh-acceptance.json'), JSON.stringify(report, null, 2));
         writeFileSync(join(artifacts, 'dsh-chat.png'), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
         console.log('CHOUYU_DSH_SMOKE_PASSED', JSON.stringify(report));

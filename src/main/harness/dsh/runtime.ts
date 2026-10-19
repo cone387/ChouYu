@@ -4,10 +4,12 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DshTransport } from './transport';
 import { DshStreamReducer } from './stream';
+import { dshMetadata } from './metadata';
 import { DEFAULT_APP_CONFIG } from '../../../shared/config';
 import type { RpcPeer } from '../../../../runtime/dsh/wire.mjs';
 import { mapProvider } from '../../../../runtime/dsh/provider.mjs';
-import type { HarnessInput, HarnessResult, HarnessSink, RunKey } from '../contracts';
+import type { HarnessInput, HarnessResult, HarnessSink, RunKey, BackgroundHarnessInput } from '../contracts';
+export interface DshRunInput extends HarnessInput { rounds?: BackgroundHarnessInput['options'] }
 export interface DshRuntimeLease {
     run(input: HarnessInput, emit: HarnessSink): Promise<HarnessResult>;
     cancel(key: RunKey): Promise<void>;
@@ -21,10 +23,13 @@ export interface DshRuntimeOptions {
     startupTimeoutMs?: number;
 }
 type Active = {
-    input: HarnessInput;
+    input: DshRunInput;
     emit: HarnessSink;
     stream: DshStreamReducer;
     tools: Set<Promise<unknown>>;
+    round: number;
+    roundPending: boolean;
+    failure?: unknown;
 };
 class DshRuntime {
     private transport: DshTransport;
@@ -48,10 +53,32 @@ class DshRuntime {
             if (!current || current.input.requestId !== value.requestId || current.input.attemptId !== value.attemptId)
                 throw new Error('DSH 请求已经结束或归属无效。');
             const { input, emit } = current;
+            if (method === 'round:after') {
+                if (!input.rounds || !current.roundPending || value.round !== current.round) throw new Error('DSH 后台结算归属无效。');
+                try {
+                    try { input.rounds.onMetadata?.(dshMetadata(value.usage, value.finish)); }
+                    finally { input.rounds.afterRound?.(); }
+                } catch (error) { current.failure ??= error; throw error; }
+                finally { current.roundPending = false; current.round++; }
+                if (value.finish?.kind === 'error' && typeof value.finish.failure?.message === 'string') current.failure ??= new Error(value.finish.failure.message);
+                return true;
+            }
             if (input.signal.aborted) {
                 if (method === 'stream')
                     return true;
                 throw new Error('AI 请求已取消。');
+            }
+            if (method === 'round:before') {
+                try {
+                    if (!input.rounds || current.roundPending || value.round !== current.round || typeof value.serializedInput !== 'string') throw new Error('DSH 后台请求归属无效。');
+                    if (current.round >= 6) throw new Error('工具调用次数超过安全上限。');
+                    await input.assertContext();
+                    const cap = await input.rounds.beforeRound?.(current.round, value.serializedInput) ?? input.rounds.maxOutputTokens ?? 16384;
+                    if (!Number.isSafeInteger(cap) || cap < 1) throw new Error('后台输出额度无效。');
+                    current.roundPending = true;
+                    input.signal.throwIfAborted();
+                    return { maxOutputTokens: cap };
+                } catch (error) { current.failure ??= error; throw error; }
             }
             if (method === 'tool') {
                 if (typeof value.callId !== 'string' || typeof value.name !== 'string' || !input.tools?.definitions.some(t => t.name === value.name))
@@ -67,12 +94,14 @@ class DshRuntime {
                 return result;
             }
             if (method === 'stream') {
+                try {
                 for (const update of current.stream.accept(value.frame)) {
-                    if (update.type === 'usage')
+                    if (update.type === 'usage' && !input.rounds)
                         input.onMetadata?.(update.metadata);
                     emit(update);
                 }
                 return true;
+                } catch (error) { current.failure ??= error; throw error; }
             }
             throw new Error('DSH 事件类型无效。');
         }, () => { if (!this.closed)
@@ -104,7 +133,7 @@ class DshRuntime {
             throw error;
         }
     }
-    async run(input: HarnessInput, emit: HarnessSink): Promise<HarnessResult> {
+    async run(input: DshRunInput, emit: HarnessSink): Promise<HarnessResult> {
         if (this.closed || !this.helper || !this.plugin)
             throw new Error('DSH 运行时不可用。');
         if (this.active.has(input.attemptId))
@@ -113,7 +142,7 @@ class DshRuntime {
         if (!last || last.role !== 'user')
             throw new Error('DSH 当前输入必须是最后一条用户消息，尚未执行。');
         const stream = new DshStreamReducer();
-        const active: Active = {input,emit,stream,tools:new Set()};
+        const active: Active = {input,emit,stream,tools:new Set(),round:0,roundPending:false};
         this.active.set(input.attemptId, active);
         let cancelling: Promise<void> | undefined;
         const abort = () => { cancelling = this.cancel(input).catch(() => { }); };
@@ -121,23 +150,26 @@ class DshRuntime {
         try {
             input.signal.throwIfAborted();
             await input.assertContext();
-            const prepared = await this.plugin.request('prepare', { requestId: input.requestId, attemptId: input.attemptId, sessionId: input.attemptId, prompt: last.content, history: input.messages.slice(0, -1), systemPrompt: input.systemPrompt, tools: input.tools?.definitions ?? [], model: input.config.model }, { timeoutMs: 30000 });
+            const prepared = await this.plugin.request('prepare', { requestId: input.requestId, attemptId: input.attemptId, sessionId: input.attemptId, prompt: last.content, history: input.messages.slice(0, -1), systemPrompt: input.systemPrompt, tools: input.tools?.definitions ?? [], model: input.config.model, rounds: Boolean(input.rounds), maxOutputTokens: input.rounds?.maxOutputTokens ?? 16384 }, { timeoutMs: 30000 });
             emit({ type: 'prepared', inputMessageId: prepared.inputMessageId });
             input.signal.throwIfAborted();
             const result = await this.plugin.request('run', { requestId: input.requestId, attemptId: input.attemptId, sessionId: input.attemptId, prompt: last.content }) as HarnessResult & {
                 committedSeq?: number;
             };
+            if (active.failure) throw active.failure;
             if (result.state === 'completed' && !stream.verify(result.committedSeq!))
                 throw new Error('DSH 正式回复与流记录不一致。');
             if (result.state === 'completed' && !await this.flush(input))
                 throw new Error('DSH 回复尚未确认落盘。');
             return result;
         }
+        catch (error) { throw active.failure ?? error; }
         finally {
             input.signal.removeEventListener('abort', abort);
             await cancelling;
             if (input.signal.aborted) await Promise.allSettled([...active.tools]);
-            this.active.delete(input.attemptId);
+            try { if (active.roundPending) input.rounds?.afterRound?.(); }
+            finally { this.active.delete(input.attemptId); }
         }
     }
     async inspect(sessionId: string, inputMessageId: string): Promise<string | undefined> { return await this.plugin!.request('inspect', { sessionId, inputMessageId }, { timeoutMs: 30000 }) ?? undefined; }
@@ -177,8 +209,11 @@ class DshRuntime {
 export function resolveDshRuntimePaths(resourcesPath: string, packaged: boolean) { const root = packaged ? join(resourcesPath, 'dsh-runtime') : join(resourcesPath, 'out', 'dsh-runtime'); return { node: join(root, 'node.exe'), helper: join(root, 'helper.mjs'), profile: join(root, 'profile.yml') }; }
 export class DshRuntimePool {
     private groups = new Map<string, Promise<DshRuntime>>();
+    private closed = false;
     constructor(private options: DshRuntimeOptions) { }
     async acquire(input: HarnessInput): Promise<DshRuntimeLease> {
+        if (this.closed) throw new Error('DSH 运行池已关闭。');
+        input.signal.throwIfAborted();
         mapProvider(input.config, {tools:Boolean(input.tools?.definitions.length),images:input.messages.some(m=>Boolean(m.imageUrl))});
         const group = dshRuntimeGroup(input);
         let pending = this.groups.get(group);
@@ -187,7 +222,15 @@ export class DshRuntimePool {
             pending = runtime.start(input).then(() => runtime).catch(error => { this.groups.delete(group); throw error; });
             this.groups.set(group, pending);
         }
-        const runtime = await pending;
+        let abort: (() => void) | undefined;
+        const interrupted = new Promise<never>((_resolve, reject) => {
+            abort = () => reject(input.signal.reason);
+            input.signal.addEventListener('abort', abort, { once: true });
+            if (input.signal.aborted) abort();
+        });
+        const runtime = await Promise.race([pending, interrupted]).finally(() => input.signal.removeEventListener('abort', abort!));
+        input.signal.throwIfAborted();
+        if (this.closed) throw new Error('DSH 运行池已关闭。');
         if (runtime.isClosed) {
             await runtime.close();
             if (this.groups.get(group) === pending) this.groups.delete(group);
@@ -198,7 +241,7 @@ export class DshRuntimePool {
         return { run: async (value, emit) => { assertOwner(value); if (value !== input)
                 throw new Error('DSH 上下文归属不可替换。'); return runtime.run(value, emit); }, cancel: async (key) => { assertOwner(key); await runtime.cancel(key); }, flush: async (key) => { assertOwner(key); return runtime.flush(key); }, release: () => runtime.release(input) };
     }
-    async close(): Promise<void> { const groups = [...this.groups.values()]; this.groups.clear(); await Promise.all(groups.map(async (pending) => { try {
+    async close(): Promise<void> { this.closed = true; const groups = [...this.groups.values()]; this.groups.clear(); await Promise.all(groups.map(async (pending) => { try {
         await (await pending).close();
     }
     catch { } })); }

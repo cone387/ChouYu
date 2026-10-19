@@ -28,3 +28,12 @@ it('fails sequence gaps and cannot certify partial output', () => {
     expect(() => r.accept({ type: 'chunk', attemptId: 'a', revision: 2, index: 1, chunk: { type: 'text-delta', text: 'partial' } })).toThrow(/缺口/);
     expect(r.verify(2)).toBe(false);
 });
+it('counts disjoint cached input and only supplies a terminal finish reason from the provider', () => {
+    const r = new DshStreamReducer();
+    r.accept({ type: 'start', attemptId: 'a', revision: 1 });
+    r.accept({ type: 'chunk', attemptId: 'a', revision: 2, index: 0, chunk: { type: 'usage', usage: { inputTokens: 11, cacheReadTokens: 20, cacheWriteTokens: 3, outputTokens: 7 } } });
+    r.accept({ type: 'chunk', attemptId: 'a', revision: 3, index: 1, chunk: { type: 'finish', reason: { kind: 'tool-calls' } } });
+    expect(r.accept({ type: 'end', attemptId: 'a', revision: 4, index: 2, outcome: { kind: 'committed', eventType: 'assistant/message', seq: 5 } })).toEqual([
+        { type: 'usage', providerRequestId: 'a', metadata: { finishReason: 'tool_calls', usage: { inputTokens: 34, outputTokens: 7, totalTokens: 41, cacheReadTokens: 20, cacheWriteTokens: 3 } } }
+    ]);
+});

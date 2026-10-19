@@ -26,6 +26,7 @@ interface ContactsViewProps {
 
 interface FormState {
   harnessEngine: HarnessEngine
+  backgroundHarnessEngine: HarnessEngine
   revision?: string
   id: string | null
   name: string
@@ -39,7 +40,7 @@ interface FormState {
 type CategoryFilter = 'all' | 'other' | string
 type SortKey = 'pinyin' | 'popular' | 'recent' | 'tokens' | 'tasks'
 
-const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '', harnessEngine: 'native' }
+const EMPTY_FORM: FormState = { id: null, name: '', avatar: '', category: '', soulMd: '', providerProfileId: DEFAULT_PROFILE_ID, model: '', harnessEngine: 'native', backgroundHarnessEngine: 'native' }
 
 const PINYIN_COLLATOR = new Intl.Collator('zh-Hans-CN-u-co-pinyin', { sensitivity: 'base' })
 
@@ -353,6 +354,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     setForm({
       id: character.id,
       harnessEngine: character.harnessEngine ?? 'native',
+      backgroundHarnessEngine: character.backgroundHarnessEngine ?? 'native',
       revision: character.profileRevision,
       name: character.name,
       avatar: character.avatar,
@@ -621,9 +623,16 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <option value="native">ChouYu 原生</option>
             <option value="dsh" disabled={!navigator.platform.startsWith('Win')}>DeepSeek Harness（实验性）</option>
           </select></label>
-        <p id="contact-harness-hint" className="contacts-hint">仅用于这位联系人的普通聊天，保存后下一次聊天生效。后台任务沿用原执行流程。
+        <p id="contact-harness-hint" className="contacts-hint">用于这位联系人的普通聊天，保存后下一次聊天生效。
           {form.harnessEngine === 'dsh' && ' DSH 使用上方的 AI 服务与模型，目前支持文字聊天、读取资料和阅读偏好确认，暂不支持图片。'}
           {!navigator.platform.startsWith('Win') && ' DSH 目前仅支持 Windows。'}</p>
+        <label className="contacts-field"><span className="contacts-field-name">后台执行引擎</span>
+          <select data-contacts-background-harness value={form.backgroundHarnessEngine} aria-describedby="contact-background-harness-hint"
+            onChange={event => setForm({ ...form, backgroundHarnessEngine: event.target.value as HarnessEngine })}>
+            <option value="native">ChouYu 原生</option>
+            <option value="dsh" disabled={!navigator.platform.startsWith('Win')}>DeepSeek Harness（实验性）</option>
+          </select></label>
+        <p id="contact-background-harness-hint" className="contacts-hint">用于这位联系人的持续工作，保存后下一轮生效，当前轮次保持原引擎。提醒与晨报仍按原安排执行。</p>
         {form.id === DEFAULT_CHARACTER_ID && <p className="contacts-hint">内置角色的人设与模型会写回设置页的全局配置。</p>}
         <label className="contacts-field contacts-field-multiline"><span className="contacts-field-name">人设</span>
           <textarea data-contacts-soulmd rows={3} value={form.soulMd}

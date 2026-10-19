@@ -9,6 +9,7 @@ import { withinWorkHours } from '../../shared/work-settings'
 import type { ContactModule, ContactModuleOwner, ContactIdentity } from '../contact-agent/contracts'
 import { RunScheduler } from '../agent-space/scheduler'
 import { createWorkModel } from './model'
+import type { HarnessRegistry } from '../harness/registry'
 export class WorkLoop implements ContactModule {
   readonly id = 'workloop'
   private closed = false
@@ -16,7 +17,8 @@ export class WorkLoop implements ContactModule {
   constructor(private owner: ContactModuleOwner, private store: ContactTaskStore, private runtime: WorkStrategyRuntime,
     private scheduler: RunScheduler, private skillRunner: SkillRunner, private changed: (id: string) => void,
     private wake: () => void, private request: (method: string, id: string, args: unknown[]) => Promise<any>,
-    private modelFactory?: (identity: ContactIdentity) => AgentModel, private readSkills?: (id: string) => SkillSnapshot) {}
+    private modelFactory: ((identity: ContactIdentity) => AgentModel) | undefined, private readSkills: ((id: string) => SkillSnapshot) | undefined,
+    private harnesses: HarnessRegistry) {}
   private identity(id: string) {
     if (id !== this.owner.id) throw new Error('工作模块不能访问其他联系人身份。')
     return this.owner.identity
@@ -81,6 +83,10 @@ export class WorkLoop implements ContactModule {
     if (run.topic_id && JSON.parse(run.input).revisionScope !== 'presentation') this.store.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(run.topic_id, run.character_id)
     const identity = structuredClone(this.identity(run.character_id))
     const input = JSON.parse(run.input)
+    if (!Object.hasOwn(input, 'backgroundHarnessEngine')) {
+      input.backgroundHarnessEngine = identity.backgroundHarnessEngine ?? 'native'
+      this.store.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), run.id)
+    }
     if (!input.materialDirectory) {
       input.materialDirectory = this.store.materials.list({ characterId: run.character_id, topicId: run.topic_id || undefined, query: '' })
       this.store.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), run.id)
@@ -93,7 +99,7 @@ export class WorkLoop implements ContactModule {
       this.store.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), run.id)
     }
     const model = createWorkModel({ store: this.store, identity, run, input, skillRunner: this.skillRunner,
-      modelFactory: this.modelFactory, changed: this.changed, request: this.request })
+      modelFactory: this.modelFactory, changed: this.changed, request: this.request, harnesses: this.harnesses })
     return this.scheduler.launch({ id: run.id, characterId: run.character_id, topicId: run.topic_id }, limit, async signal => {
       try { signal.throwIfAborted(); await this.runtime.execute(run.id, identity.soul, model, signal, () => this.changed(run.character_id), identity.searchKey) }
       catch (error) {

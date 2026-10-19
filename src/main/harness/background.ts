@@ -1,5 +1,9 @@
 import { HarnessRegistry } from './registry'
 import { createNativeModule } from './native'
+import { createDshBackgroundModule } from './dsh/background'
+import { DshRuntimePool, type DshRuntimeOptions } from './dsh/runtime'
 
 /** Worker-safe registry: no Electron main-process state or chat session ownership. */
-export const backgroundHarnesses = new HarnessRegistry([createNativeModule()])
+export function createBackgroundHarnesses(dsh?: DshRuntimeOptions) {
+  return new HarnessRegistry([createNativeModule(), ...(dsh ? [createDshBackgroundModule(new DshRuntimePool(dsh))] : [])])
+}

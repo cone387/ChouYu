@@ -4,6 +4,12 @@ import { DEFAULT_APP_CONFIG } from './config'
 import { applyContactProfilePatch, contactProfileSnapshot, validateContactProfilePatch } from './contact-profile-settings'
 
 const character = { ...createDefaultCharacter(1), id: 'writer', name: '作者', builtIn: false, soulMd: '原人设', model: '' }
+it('validates background engine selection and preserves it when changing the chat engine', () => {
+  expect(() => validateContactProfilePatch({ backgroundHarnessEngine: 'invalid' })).toThrow(/引擎/)
+  const selected = contactProfileSnapshot({ ...character, backgroundHarnessEngine: 'dsh' }, DEFAULT_APP_CONFIG)
+  expect(applyContactProfilePatch(selected, { harnessEngine: 'native' }).backgroundHarnessEngine).toBe('dsh')
+  expect(selected.revision).not.toBe(contactProfileSnapshot(character, DEFAULT_APP_CONFIG).revision)
+})
 it('projects effective settings without exposing provider credentials', () => {
   const config = { ...DEFAULT_APP_CONFIG, apiKey: 'SECRET', model: 'configured-model', soulMd: '系统人设' }
   const own = contactProfileSnapshot(character, config)

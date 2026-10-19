@@ -56,6 +56,7 @@ function clampCodePoints(value: string, max: number): string {
 }
 
 export interface Character {
+  backgroundHarnessEngine?: HarnessEngine
   harnessEngine?: HarnessEngine
   id: string
   name: string
@@ -76,6 +77,7 @@ export interface CharacterStats extends Character {
 }
 
 export interface CharacterDraft {
+  backgroundHarnessEngine?: HarnessEngine
   harnessEngine?: HarnessEngine
   name: string
   avatar: string
@@ -93,6 +95,7 @@ export function sanitizeCharacterDraft(value: unknown): CharacterDraft | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
   if (input.harnessEngine !== undefined && input.harnessEngine !== 'native' && input.harnessEngine !== 'dsh') return null
+  if (input.backgroundHarnessEngine !== undefined && input.backgroundHarnessEngine !== 'native' && input.backgroundHarnessEngine !== 'dsh') return null
   const name = typeof input.name === 'string' ? clampCodePoints(input.name.replace(/\s+/g, ' ').trim(), MAX_CHARACTER_NAME_LENGTH) : ''
   if (!name) return null
   const model = typeof input.model === 'string' ? input.model.trim().slice(0, 256) : ''
@@ -103,7 +106,7 @@ export function sanitizeCharacterDraft(value: unknown): CharacterDraft | null {
   const avatar = typeof input.avatar === 'string' && input.avatar.trim() ? clampCodePoints(input.avatar.trim(), 8) : Array.from(name)[0] ?? ''
   const category = typeof input.category === 'string' && input.category in INDUSTRY_LABELS ? input.category : ''
   const soulMd = typeof input.soulMd === 'string' ? input.soulMd.slice(0, 50_000) : ''
-  return { name, avatar, category, soulMd, providerProfileId, model, ...(input.harnessEngine !== undefined ? { harnessEngine: input.harnessEngine } : {}) }
+  return { name, avatar, category, soulMd, providerProfileId, model, ...(input.harnessEngine !== undefined ? { harnessEngine: input.harnessEngine } : {}), ...(input.backgroundHarnessEngine !== undefined ? { backgroundHarnessEngine: input.backgroundHarnessEngine } : {}) }
 }
 
 export function createDefaultCharacter(now = Date.now()): Character {
@@ -161,7 +164,7 @@ export function normalizeCharacters(value: unknown): Character[] {
       ? clampCodePoints(input.name.replace(/\s+/g, ' ').trim(), MAX_CHARACTER_NAME_LENGTH)
       : DEFAULT_CHARACTER_NAME
     const avatar = typeof input.avatar === 'string' && input.avatar.trim() ? clampCodePoints(input.avatar.trim(), 8) : defaultCharacter.avatar
-    defaultCharacter = { ...defaultCharacter, name, avatar, harnessEngine: input.harnessEngine === 'dsh' ? 'dsh' : 'native' }
+    defaultCharacter = { ...defaultCharacter, name, avatar, harnessEngine: input.harnessEngine === 'dsh' ? 'dsh' : 'native', backgroundHarnessEngine: input.backgroundHarnessEngine === 'dsh' ? 'dsh' : 'native' }
   }
   const names = new Set<string>([defaultCharacter.name])
   const ids = new Set<string>([DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID])
@@ -171,7 +174,7 @@ export function normalizeCharacters(value: unknown): Character[] {
     const id = typeof input.id === 'string' ? input.id.trim().slice(0, 128) : ''
     if (!id || isDefaultCharacter(id) || isAssistantCharacter(id)) continue
     if (ids.has(id)) continue
-    const draft = sanitizeCharacterDraft({ ...input, harnessEngine: input.harnessEngine === 'dsh' ? 'dsh' : 'native' })
+    const draft = sanitizeCharacterDraft({ ...input, harnessEngine: input.harnessEngine === 'dsh' ? 'dsh' : 'native', backgroundHarnessEngine: input.backgroundHarnessEngine === 'dsh' ? 'dsh' : 'native' })
     if (!draft) continue
     let characterName = draft.name
     let suffix = 2

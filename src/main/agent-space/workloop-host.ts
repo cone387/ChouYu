@@ -15,9 +15,12 @@ import type { AgentSearcher } from '../agents/research'
 import { safeAgentFailure } from '../agents/failure'
 import { RunScheduler } from './scheduler'
 import { ContactEvents } from './events'
+import { createBackgroundHarnesses } from '../harness/background'
+import type { HarnessRegistry } from '../harness/registry'
+import type { DshRuntimeOptions } from '../harness/dsh/runtime'
 
 export type { ContactIdentity } from '../contact-agent/contracts'
-export interface WorkLoopHostOptions { capacity?: number; modules?: readonly string[] }
+export interface WorkLoopHostOptions { capacity?: number; modules?: readonly string[]; harnesses?: HarnessRegistry; dshRuntime?: DshRuntimeOptions }
 const signature = (identity: ContactIdentity) => createHash('sha256').update(JSON.stringify({ soul: identity.soul,
   config: identity.config, searchKey: identity.searchKey, skillToolsEnabled: identity.skillToolsEnabled,
   disabledSkillTools: identity.disabledSkillTools })).digest('hex')
@@ -30,6 +33,7 @@ export class WorkLoopHost {
   private readonly scheduler: RunScheduler
   private readonly events = new ContactEvents()
   private readonly modules = new ModuleRegistry()
+  private readonly harnesses: HarnessRegistry
   private readonly contacts = new Map<string, ContactAgent>()
   private readonly subscriptions = new Map<string, () => void>()
   private readonly commands: ContactTaskCommands
@@ -48,6 +52,7 @@ export class WorkLoopHost {
     searcher?: AgentSearcher, readSkills?: (id: string) => SkillSnapshot, skillDirectory = join(directory, 'skills'),
     private options: WorkLoopHostOptions = {}) {
     this.scheduler = new RunScheduler(options.capacity ?? 8, (error, run) => this.faults.set(run.characterId, safeAgentFailure(error)))
+    this.harnesses = options.harnesses ?? createBackgroundHarnesses(options.dshRuntime)
     mkdirSync(directory, { recursive: true })
     this.skillRunner = new SkillRunner(new SkillLibrary(skillDirectory))
     this.store = new ContactTaskStore(join(directory, 'agents.db'))
@@ -57,7 +62,7 @@ export class WorkLoopHost {
       activeFor: (id, topicId) => this.scheduler.activeFor(id, topicId), abort: (id, topicId) => this.scheduler.abort(id, topicId),
       activeRun: id => this.scheduler.get(id), cleanupThread: id => this.cleanupThread(id) })
     this.modules.register('workloop', owner => new WorkLoop(owner, this.store, this.runtime, this.scheduler,
-      this.skillRunner, id => this.notify(id), () => this.wake(), (method, id, args) => this.request(method, id, args), modelFactory, readSkills))
+      this.skillRunner, id => this.notify(id), () => this.wake(), (method, id, args) => this.request(method, id, args), modelFactory, readSkills, this.harnesses))
     this.modules.resolve(options.modules ?? ['workloop'])
     this.store.recover()
     this.timer = setInterval(() => this.tick(), 15000)
@@ -181,6 +186,7 @@ export class WorkLoopHost {
     this.events.clear(); this.subscriptions.clear(); this.skillRunner.cancel()
     this.closing = Promise.all([...this.contacts.values()].map(contact => contact.close())).then(async () => {
       await this.scheduler.drain()
+      await Promise.all(this.harnesses.all().map(module => module.lifecycle?.close?.()))
       this.runtime.close(); this.store.close(); this.contacts.clear()
     })
     return this.closing

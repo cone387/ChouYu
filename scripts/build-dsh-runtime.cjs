@@ -27,7 +27,7 @@ const node = path.join(extracted, 'node.exe'), npm = path.join(extracted, 'node_
 command(node, [npm, 'ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: runtime, env: { ...process.env, PATH: extracted + path.delimiter + process.env.PATH } });
 removeOwned(output);
 fs.mkdirSync(output, { recursive: true });
-for (const file of ['helper.mjs', 'plugin.mjs', 'wire.mjs', 'provider.mjs', 'profile.yml', 'package.json', 'package-lock.json'])
+for (const file of ['helper.mjs', 'plugin.mjs', 'budget.mjs', 'wire.mjs', 'provider.mjs', 'profile.yml', 'package.json', 'package-lock.json'])
     fs.copyFileSync(path.join(runtime, file), path.join(output, file));
 fs.copyFileSync(node, path.join(output, 'node.exe'));
 fs.copyFileSync(path.join(extracted, 'LICENSE'), path.join(output, 'NODE-LICENSE'));

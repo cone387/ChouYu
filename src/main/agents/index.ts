@@ -3,6 +3,7 @@ import { AgentSpace } from '../agent-space/service'
 import { taskCenter } from '../task-center/service'
 import { createContactDomain, isContactTaskMethod } from '../task-center/contact-domain'
 import { chatHarness } from '../harness/service'
+import { resolveDshRuntimePaths } from '../harness/dsh/runtime'
 import type { HarnessInput, HarnessEvent } from '../harness/contracts'
 import type { HarnessEngine } from '../../shared/harness'
 import { AgentWorkerRPC } from '../agent-space/worker-rpc'
@@ -114,7 +115,7 @@ function identities(onlyId?: string): ContactIdentity[] {
     let skillsRevision: number | undefined
     try { skillsRevision = contactSkillLibrary().list(character.id).revision } catch { /* The skill snapshot carries its own error; keep unrelated contacts readable. */ }
     const conversation = contactConversation(sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages ?? []))
-    return { configurationVersions: { profile: getContactProfile(character.id).revision, skills: skillsRevision, credential: contactSearchCredential(character.id).revision }, sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: [...SKILL_TOOLS.map(tool => tool.name), ...MATERIAL_TOOL_NAMES].filter(name => getState(`tool:${name}:enabled`) === 'false'), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
+    return { backgroundHarnessEngine: character.backgroundHarnessEngine ?? 'native', configurationVersions: { profile: getContactProfile(character.id).revision, skills: skillsRevision, credential: contactSearchCredential(character.id).revision }, sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: [...SKILL_TOOLS.map(tool => tool.name), ...MATERIAL_TOOL_NAMES].filter(name => getState(`tool:${name}:enabled`) === 'false'), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
   })
 }
 async function syncContact(id: string) {
@@ -152,7 +153,10 @@ async function ensure() {
       }
     })
     try {
-      await rpc('init', '', [join(app.getPath('userData'), 'contact-agents')])
+      await rpc('init', '', [join(app.getPath('userData'), 'contact-agents'), {
+        ...resolveDshRuntimePaths(app.isPackaged ? globalThis.process.resourcesPath : app.getAppPath(), app.isPackaged),
+        home: join(app.getPath('userData'), 'contact-agents', 'harness')
+      }])
       const current = identities()
       await rpc('sync', '', [current])
       // In-flight UI reads may have been rejected during the exit. A restored

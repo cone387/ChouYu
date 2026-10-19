@@ -8,9 +8,14 @@ export async function startMockProvider(provider, options = {}) {
             buffers.push(part);
         const body = JSON.parse(Buffer.concat(buffers).toString());
         requests.push({ path: req.url, headers: req.headers, body });
+        if (options.failure) {
+            res.writeHead(options.failure.status, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: options.failure.message, type: 'fixture_error' } }));
+            return;
+        }
         if (options.holdText && JSON.stringify(body.messages).includes(options.holdText))
             return;
-        const tool = options.tools !== false && requests.length === 1;
+        const tool = options.tools === 'always' || options.tools !== false && requests.length === 1;
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
         const event = (type, data) => res.write(`${type ? `event: ${type}\n` : ''}data: ${JSON.stringify(data)}\n\n`);
         if (provider === 'openai') {
@@ -19,11 +24,11 @@ export async function startMockProvider(provider, options = {}) {
             if (tool)
                 chunk({ tool_calls: [{ index: 0, id: 'fixture-call', type: 'function', function: { name: 'chouyu_fixture', arguments: '{"value":"synthetic"}' } }] });
             else {
-                chunk({ content: 'DSH_' });
-                chunk({ content: 'OK' });
+                chunk({ content: options.text ?? 'DSH_' });
+                if (!options.text) chunk({ content: 'OK' });
             }
-            chunk({}, tool ? 'tool_calls' : 'stop');
-            event('', { id: 'fixture-message', object: 'chat.completion.chunk', choices: [], usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 } });
+            chunk({}, tool ? 'tool_calls' : options.truncated ? 'length' : 'stop');
+            if (!options.omitUsage) event('', { id: 'fixture-message', object: 'chat.completion.chunk', choices: [], usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 } });
             res.write('data: [DONE]\n\n');
         }
         else {
