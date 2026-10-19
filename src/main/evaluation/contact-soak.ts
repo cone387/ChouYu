@@ -1,5 +1,7 @@
 import { app, powerMonitor, type BrowserWindow } from 'electron'
-import { existsSync, readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, renameSync, appendFileSync, readdirSync } from 'node:fs'
+import Database from 'better-sqlite3'
+import { auditAgentSpaceSoak, type AgentSpaceSoakEvidence } from './agentspace-soak-audit'
 import { join, resolve } from 'node:path'
 import { contactAgentsCall, restartAgentsForSmoke } from '../agents'
 import { getConfig, getSessions, getSession, getAssistantUnreadCount, flushDatabase } from '../database'
@@ -7,7 +9,7 @@ import { DEFAULT_AGENT_SETTINGS, type AgentOverview } from '../../shared/agents'
 import type { AgentDelivery } from '../../shared/agent-delivery'
 import type { AssistantRoutine, AssistantRoutineHistoryPage } from '../../shared/assistant-routines'
 
-type Options = { output: string; durationMs: number; restartMs: number; beganAt: number; gitHead: string; model: string; provider: string; providerHost: string }
+type Options = { moduleAudit?: boolean; output: string; durationMs: number; restartMs: number; beganAt: number; gitHead: string; model: string; provider: string; providerHost: string }
 type Report = { status: string; beganAt: number; updatedAt: number; elapsedMs: number; dates: string[]; heartbeats: number; appStarts: number; workerRestarted: boolean; appRestarted: boolean; topics: Record<string, string>; routineId?: string; observations: unknown; complete: boolean; gaps: { at: number; milliseconds: number }[]; errors: string[] }
 const localDate = (at: number) => { const date = new Date(at); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
 const clockAt = (minutes: number) => { const date = new Date(Date.now() + minutes * 60000); return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` }
@@ -18,6 +20,14 @@ export async function runContactSoak(window: BrowserWindow) {
   if (resolve(app.getPath('userData')) !== resolve(options.output, 'user-data') || process.env.CHOUYU_SMOKE_TEST !== '1') throw Error('Endurance requires isolated application data')
   const file = join(options.output, 'report.json'), events = join(options.output, 'events.jsonl')
   const report: Report = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { status: 'starting', beganAt: options.beganAt, updatedAt: options.beganAt, elapsedMs: 0, dates: [], heartbeats: 0, appStarts: 0, workerRestarted: false, appRestarted: false, topics: {}, observations: {}, complete: false, gaps: [], errors: [] }
+  const moduleFile = join(options.output, 'module-evidence.json')
+  const moduleEvidence: AgentSpaceSoakEvidence = existsSync(moduleFile) ? JSON.parse(readFileSync(moduleFile, 'utf8')) : {
+    elapsedMs: 0, observedMs: 0, samples: 0, appStarts: 0, workerRestarted: false, pauseVerified: false, duplicateMessages: 0, storageErrors: 0,
+    native: { completed: 0, calls: 0, reportedTokens: 0 }, dsh: { completed: 0, calls: 0, reportedTokens: 0 }, sdkSessions: 0, actualReviews: 0 }
+  const saveModuleEvidence = () => {
+    if (!options.moduleAudit) return
+    writeFileSync(moduleFile + '.tmp', JSON.stringify(moduleEvidence, null, 2)); renameSync(moduleFile + '.tmp', moduleFile)
+  }
   const save = () => { report.updatedAt = Date.now(); report.elapsedMs = Date.now() - report.beganAt; writeFileSync(join(options.output, 'report.tmp'), JSON.stringify(report, null, 2)); renameSync(join(options.output, 'report.tmp'), file) }
   const event = (kind: string, detail: unknown = {}) => appendFileSync(events, JSON.stringify({ at: Date.now(), kind, detail }) + '\n')
   const power = (kind: string) => () => event(kind)
@@ -35,7 +45,7 @@ export async function runContactSoak(window: BrowserWindow) {
       let data = await contactAgentsCall<AgentOverview>(owner, 'get')
       let topic = data.topics.find(t => t.id === report.topics[owner]) ?? data.topics.find(t => t.title === title)
       if (!topic) {
-        const times = [...new Set([clockAt(owner === 'soak-writer' ? 2 : 5), owner === 'soak-writer' ? '00:03' : '00:06'])].sort()
+        const times = [...new Set([clockAt(owner === 'soak-writer' ? 2 : 5), ...(options.moduleAudit && options.durationMs >= 86400000 ? [clockAt(owner === 'soak-writer' ? 60 : 63)] : []), owner === 'soak-writer' ? '00:03' : '00:06'])].sort()
         await contactAgentsCall(owner, 'assignCalendarTopic', [{ title, instruction: instructions[owner as keyof typeof instructions], kind: 'reminder', cadence: 'daily', times, enabled: true }, '隔离持续运行验收：真实日历，每期一次。'])
         data = await contactAgentsCall<AgentOverview>(owner, 'get'); topic = data.topics.find(t => t.title === title)!
         await contactAgentsCall(owner, 'savePreferences', [{ ...DEFAULT_AGENT_SETTINGS, ...data.settings, enabled: true, dailyCalls: 40, dailyTokenLimit: 160000, defaultTaskTokenLimit: 300000, maxConcurrentTasks: 1, searchEnabled: false, shareDeliveries: true, readContactDeliveries: owner === 'soak-reviewer', paceWriting: true, intervalMinutes: 15 }, data.revision])
@@ -52,7 +62,8 @@ export async function runContactSoak(window: BrowserWindow) {
     report.routineId = routine!.id; save()
     event('calendar-saved', { topics: report.topics, routineId: report.routineId, configuredModel: getConfig().model })
     let previous = Date.now(), observationFailures = 0
-    while (Date.now() - report.beganAt < options.durationMs) {
+    const fullModuleDay = options.moduleAudit && options.durationMs >= 86400000
+    while ((Date.now() - report.beganAt < options.durationMs || fullModuleDay && moduleEvidence.observedMs < 86400000) && Date.now() - report.beganAt < options.durationMs + 3600000) {
       if (existsSync(join(options.output, 'stop.request'))) { report.status = 'stopped'; save(); event('stop-request'); app.exit(2); return }
       const now = Date.now(), delta = now - previous; previous = now
       if (delta > 45000) report.gaps.push({ at: now, milliseconds: delta })
@@ -62,15 +73,58 @@ export async function runContactSoak(window: BrowserWindow) {
         const history: AssistantRoutineHistoryPage = await run(`window.electronAPI.assistantRoutines.history(${JSON.stringify(report.routineId)})`)
         const deliveries = await Promise.all(['soak-writer', 'soak-reviewer'].map(owner => contactAgentsCall<AgentDelivery | null>(owner, 'delivery', [report.topics[owner]])))
         const messages = getSessions().flatMap(session => (getSession(session.id)?.messages ?? []).map(message => ({ id: message.id, characterId: session.characterId, agentNotice: message.agentNotice, content: message.content })))
-        if (new Set(messages.map(message => message.id)).size !== messages.length) throw Error('Duplicate delivered message ID')
+        if (new Set(messages.map(message => message.id)).size !== messages.length) { moduleEvidence.duplicateMessages++; saveModuleEvidence(); throw Error('Duplicate delivered message ID') }
         const completedReceipts = history.items.filter(item => item.status === 'completed').map(item => item.receipt)
         if (new Set(completedReceipts).size !== completedReceipts.length) throw Error('Duplicate routine period receipt')
         const overview = (data: AgentOverview) => ({ revision: data.revision, tasks: data.topics.map(t => ({ id: t.id, status: t.status, calendar: t.calendar })), runs: data.runs, callsToday: data.callsToday, tokenUsage: data.tokenUsage, reports: data.reports, next: data.taskSchedule })
         report.observations = { writer: overview(writer), reviewer: overview(reviewer), deliveries, assistantHistory: history.items, messages, unread: getAssistantUnreadCount(), memory: app.getAppMetrics().map(metric => ({ type: metric.type, ...metric.memory })) }
         report.heartbeats++; observationFailures = 0; save()
+        if (options.moduleAudit) {
+          const database = new Database(join(app.getPath('userData'), 'contact-agents', 'agents.db'), { readonly: true })
+          try {
+            moduleEvidence.native = { completed: 0, calls: 0, reportedTokens: 0 }; moduleEvidence.dsh = { completed: 0, calls: 0, reportedTokens: 0 }
+            const runs = database.prepare("SELECT id,status,json_extract(input,'$.backgroundHarnessEngine') AS engine FROM runs WHERE character_id IN ('soak-writer','soak-reviewer')").all() as { id: string; status: string; engine: 'native' | 'dsh' | null }[]
+            for (const work of runs) {
+              if (!work.engine) continue // Queued work has not selected an engine yet.
+              if (!['native', 'dsh'].includes(work.engine)) throw Error('Unexpected persisted harness selection')
+              const engine = moduleEvidence[work.engine]
+              if (work.status === 'completed') engine.completed++
+              const calls = database.prepare('SELECT metadata FROM calls WHERE run_id=?').all(work.id) as { metadata: string | null }[]
+              engine.calls += calls.length
+              for (const call of calls) {
+                const usage = call.metadata ? JSON.parse(call.metadata).usage : undefined
+                if (Number.isSafeInteger(usage?.totalTokens) && usage.totalTokens > 0) engine.reportedTokens += usage.totalTokens
+              }
+            }
+          } finally { database.close() }
+          const home = join(app.getPath('userData'), 'contact-agents', 'harness')
+          moduleEvidence.sdkSessions = existsSync(home) ? readdirSync(home, { recursive: true }).filter(file => String(file).endsWith('.jsonl')).length : 0
+          const diagnosticFile = join(app.getPath('userData'), 'contact-worker-diagnostics.log')
+          if (existsSync(diagnosticFile)) {
+            const diagnostics = readFileSync(diagnosticFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+            moduleEvidence.storageErrors = Math.max(moduleEvidence.storageErrors, diagnostics.filter(value => value.storage).length)
+          }
+          moduleEvidence.observedMs += Math.min(delta, 15000)
+          moduleEvidence.samples++; moduleEvidence.elapsedMs = Date.now() - report.beganAt
+          moduleEvidence.appStarts = report.appStarts; moduleEvidence.workerRestarted = report.workerRestarted
+          moduleEvidence.actualReviews = reviewer.reports.filter(item => item.evidence.some(source => source.url.startsWith('contact-delivery://soak-writer/'))).length
+          saveModuleEvidence()
+          if (!moduleEvidence.pauseVerified && writer.reports.length && reviewer.reports.length && !writer.runs.some(work => ['running', 'queued'].includes(work.status))) {
+            const topic = writer.topics.find(topic => topic.id === report.topics['soak-writer'])!
+            await contactAgentsCall('soak-writer', 'topicStatus', [topic.id, topic.revision, 'paused', '隔离验收：暂停后核对持久状态与请求拒绝。'])
+            const refused = await contactAgentsCall('soak-writer', 'run', [topic.id]).then(() => false, () => true)
+            if (!refused) throw Error('Paused task accepted a new run')
+            await new Promise(resolve => setTimeout(resolve, 5000))
+            const paused = await contactAgentsCall<AgentOverview>('soak-writer', 'get')
+            const saved = paused.topics.find(value => value.id === topic.id)!
+            if (saved.status !== 'paused' || paused.callsToday !== writer.callsToday) throw Error('Paused task changed or dispatched inference')
+            await contactAgentsCall('soak-writer', 'continueTopic', [topic.id, saved.revision, '隔离验收：恢复原日历任务。'])
+            moduleEvidence.pauseVerified = true; saveModuleEvidence(); event('pause-verified-and-resumed')
+          }
+        }
         if (!report.workerRestarted && writer.runs.some(r => r.status === 'running')) {
-          report.workerRestarted = true; save(); event('worker-interrupt-running')
-          await restartAgentsForSmoke(); event('worker-restarted')
+          event('worker-interrupt-running')
+          await restartAgentsForSmoke(); report.workerRestarted = true; save(); event('worker-restarted')
         }
         if (!report.appRestarted && now - report.beganAt >= options.restartMs && ![...writer.runs, ...reviewer.runs].some(r => ['running', 'queued'].includes(r.status))) {
           report.appRestarted = true; save(); await flushDatabase(); event('application-restart-request'); app.exit(75); return
@@ -89,6 +143,13 @@ export async function runContactSoak(window: BrowserWindow) {
       && observed.reviewer.runs.filter(r => r.status === 'completed').length >= 2
       && observed.writer.reports.length >= 2 && actualReviews.length >= 2
       && observed.assistantHistory.filter(item => item.status === 'completed').length >= 2 && observed.unread > 0 && report.errors.length === 0
+    if (options.moduleAudit) {
+      moduleEvidence.elapsedMs = report.elapsedMs; moduleEvidence.appStarts = report.appStarts; moduleEvidence.workerRestarted = report.workerRestarted
+      saveModuleEvidence()
+      const failed = auditAgentSpaceSoak(moduleEvidence)
+      event('module-audit', { failed })
+      report.complete = report.complete && failed.length === 0
+    }
     report.status = report.complete ? 'passed-24-hours' : options.durationMs < 86400000 ? 'short-sample-only' : 'failed'; save()
     event('finished', { complete: report.complete, elapsedMs: report.elapsedMs, dates: report.dates })
     if (options.durationMs >= 86400000 && !report.complete) throw Error('Contact endurance acceptance incomplete; inspect isolated report')

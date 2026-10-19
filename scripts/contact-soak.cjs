@@ -28,13 +28,14 @@ async function main() {
         { id: 'chouyu', name: 'ChouYu', soulMd: '', builtIn: true },
         { id: 'soak-writer', name: '验收作者', soulMd: '你是独立的验收作者，只创作和保存自己的正文，不能借用ChouYu身份。', builtIn: false },
         { id: 'soak-reviewer', name: '验收评审', soulMd: '你是独立的验收评审，只读取真实正文给出结论和依据，不替作者写作。', builtIn: false }
-      ].map(c => ({ ...c, avatar: '', model, providerProfileId: 'default', createdAt: now, updatedAt: now }))
+      ].map(c => ({ ...c, ...(process.argv[3] === 'agentspace' ? { backgroundHarnessEngine: c.id === 'soak-reviewer' ? 'dsh' : 'native' } : {}), avatar: '', model, providerProfileId: 'default', createdAt: now, updatedAt: now }))
       fs.writeFileSync(path.join(userData, 'chouyu-data.json'), JSON.stringify({ version: 4, config, characters, sessions: [], activeSessionId: '', state: { presetCharactersSeeded: String(now) } }))
       app.exit(0)
     } catch (error) { console.error('Contact soak preparation failed:', error.code || error.name); app.exit(1) }
     return
   }
   const args = process.argv.slice(2), value = (key, fallback) => { const n = args.indexOf(key); return n < 0 ? fallback : args[n + 1] }
+  const agentspace = args.includes('--agentspace')
   if (args.includes('--help')) { console.log('node scripts/contact-soak.cjs --hours 24 [--output new-directory] [--restart-seconds 900]\nUses configured writer model, encrypted isolated data, real wall clock, one controlled HTTP 503, worker/app restart. Create stop.request in output to stop. No host sleep or native-tray claim.'); return }
   const hours = Number(value('--hours', '24')), restartMs = Number(value('--restart-seconds', '900')) * 1000
   if (!Number.isFinite(hours) || hours < .02 || hours > 48 || !Number.isFinite(restartMs) || restartMs < 60000) throw Error('Invalid duration or restart interval')
@@ -45,7 +46,7 @@ async function main() {
   if (fs.existsSync(localState)) fs.copyFileSync(localState, path.join(userData, 'Local State'))
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
   await new Promise((resolve, reject) => {
-    const prepare = spawn(require('electron'), [__filename, output], { cwd: root, env, windowsHide: true, stdio: 'inherit' })
+    const prepare = spawn(require('electron'), [__filename, output, agentspace ? 'agentspace' : 'contacts'], { cwd: root, env, windowsHide: true, stdio: 'inherit' })
     prepare.once('error', reject); prepare.once('exit', (code, signal) => code === 0 ? resolve() : reject(Error(`Provider preparation failed (exit=${code}, signal=${signal || 'none'})`)))
   })
   const filename = path.join(userData, 'chouyu-data.json'), data = JSON.parse(fs.readFileSync(filename, 'utf8'))
@@ -55,7 +56,11 @@ async function main() {
     let body = ''; request.setEncoding('utf8'); request.on('data', part => { body += part })
     request.on('end', async () => {
       const id = ++serial, began = Date.now()
-      if (!injected && body.includes('验收评审')) {
+      if (agentspace && serial > 96) {
+        response.writeHead(429, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ error: { message: 'Isolated acceptance request budget exhausted' } }))
+        fs.appendFileSync(proxyEvents, JSON.stringify({ id, at: new Date().toISOString(), budgetDenied: true, status: 429 }) + '\n'); return
+      }
+      if ((!agentspace || hours >= 24) && !injected && body.includes('验收评审')) {
         injected = true; response.writeHead(503, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ error: { message: 'Controlled contact endurance HTTP 503', type: 'server_error' } }))
         fs.appendFileSync(proxyEvents, JSON.stringify({ id, at: new Date().toISOString(), injected: true, status: 503 }) + '\n'); return
       }
@@ -83,12 +88,14 @@ async function main() {
   await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve))
   data.config.baseUrl = `http://127.0.0.1:${proxy.address().port}${upstream.pathname}`
   fs.writeFileSync(filename, JSON.stringify(data))
-  const bundle = path.join(output, 'bundle'); fs.cpSync(path.join(root, 'out'), bundle, { recursive: true })
-  fs.writeFileSync(path.join(bundle, 'package.json'), JSON.stringify({ name: 'chouyu-contact-endurance', version: '1.0.0', main: 'main/index.js' }))
+  const bundle = path.join(output, 'bundle'); fs.mkdirSync(bundle)
+  fs.cpSync(path.join(root, 'out'), path.join(bundle, 'out'), { recursive: true })
+  fs.writeFileSync(path.join(bundle, 'package.json'), JSON.stringify({ name: 'chouyu-contact-endurance', version: '1.0.0', main: 'out/main/index.js' }))
   const hash = createHash('sha256')
   const hashTree = directory => { for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) { const file = path.join(directory, entry.name); if (entry.isDirectory()) hashTree(file); else { hash.update(path.relative(bundle, file)); hash.update(fs.readFileSync(file)) } } }
   hashTree(bundle)
   const options = { output, durationMs: hours * 3600000, restartMs, sourceHash: hash.digest('hex'), gitHead: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim(), model: data.config.model, provider: data.config.provider, providerHost: upstream.host, beganAt: Date.now() }
+  options.moduleAudit = agentspace
   const optionsPath = path.join(output, 'options.json'); fs.writeFileSync(optionsPath, JSON.stringify(options, null, 2))
   const log = fs.createWriteStream(path.join(output, 'console.log'), { flags: 'a' })
   fs.writeFileSync(path.join(output, 'launcher.json'), JSON.stringify({ pid: process.pid, output, beganAt: options.beganAt }))
