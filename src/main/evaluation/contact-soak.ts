@@ -1,6 +1,7 @@
 import { app, powerMonitor, type BrowserWindow } from 'electron'
-import { existsSync, readFileSync, writeFileSync, renameSync, appendFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, appendFileSync, readdirSync } from 'node:fs'
 import Database from 'better-sqlite3'
+import { writeSoakReport } from './soak-report-file'
 import { auditAgentSpaceSoak, type AgentSpaceSoakEvidence } from './agentspace-soak-audit'
 import { join, resolve } from 'node:path'
 import { contactAgentsCall, restartAgentsForSmoke } from '../agents'
@@ -24,17 +25,17 @@ export async function runContactSoak(window: BrowserWindow) {
   const moduleEvidence: AgentSpaceSoakEvidence = existsSync(moduleFile) ? JSON.parse(readFileSync(moduleFile, 'utf8')) : {
     elapsedMs: 0, observedMs: 0, samples: 0, appStarts: 0, workerRestarted: false, pauseVerified: false, duplicateMessages: 0, storageErrors: 0,
     native: { completed: 0, calls: 0, reportedTokens: 0 }, dsh: { completed: 0, calls: 0, reportedTokens: 0 }, sdkSessions: 0, actualReviews: 0 }
-  const saveModuleEvidence = () => {
+  const saveModuleEvidence = async () => {
     if (!options.moduleAudit) return
-    writeFileSync(moduleFile + '.tmp', JSON.stringify(moduleEvidence, null, 2)); renameSync(moduleFile + '.tmp', moduleFile)
+    await writeSoakReport(moduleFile, moduleEvidence)
   }
-  const save = () => { report.updatedAt = Date.now(); report.elapsedMs = Date.now() - report.beganAt; writeFileSync(join(options.output, 'report.tmp'), JSON.stringify(report, null, 2)); renameSync(join(options.output, 'report.tmp'), file) }
+  const save = async () => { report.updatedAt = Date.now(); report.elapsedMs = Date.now() - report.beganAt; await writeSoakReport(file, report) }
   const event = (kind: string, detail: unknown = {}) => appendFileSync(events, JSON.stringify({ at: Date.now(), kind, detail }) + '\n')
   const power = (kind: string) => () => event(kind)
   const suspend = power('actual-os-suspend'), resume = power('actual-os-resume')
   powerMonitor.on('suspend', suspend); powerMonitor.on('resume', resume)
   const run = (code: string) => window.webContents.executeJavaScript(code)
-  report.appStarts++; report.status = 'running'; save(); event('app-start', { count: report.appStarts, model: options.model })
+  report.appStarts++; report.status = 'running'; await save(); event('app-start', { count: report.appStarts, model: options.model })
   const titles = { 'soak-writer': '灯塔故事持续写作', 'soak-reviewer': '灯塔故事独立评审' }
   const instructions = {
     'soak-writer': '持续写作合成灯塔故事，每个日历期次交付一段300至500字正文并正式保存，以400个汉字为写作目标；字数只计汉字，不包含标点、空白和标题。主角沈青，地点雾港，灯塔每周四亮蓝灯。沿用已经保存的故事进展，不重复旧段，不结束整个重复任务。不需要用户补问，不访问网页，不评价其他联系人。直接交付故事正文，不把计划或阶段状态当作成果。',
@@ -51,7 +52,7 @@ export async function runContactSoak(window: BrowserWindow) {
         await contactAgentsCall(owner, 'savePreferences', [{ ...DEFAULT_AGENT_SETTINGS, ...data.settings, enabled: true, dailyCalls: 40, dailyTokenLimit: 160000, defaultTaskTokenLimit: 300000, maxConcurrentTasks: 1, searchEnabled: false, shareDeliveries: true, readContactDeliveries: owner === 'soak-reviewer', paceWriting: true, intervalMinutes: 15 }, data.revision])
         await contactAgentsCall(owner, 'setTaskBudget', [topic.id, topic.revision, { modelCalls: 40, tokens: 300000, reason: '隔离验收预先固定额度：最多40次调用和30万Token，失败和纠正均计入，不在运行中扩额。' }])
       }
-      report.topics[owner] = topic.id; save()
+      report.topics[owner] = topic.id; await save()
     }
     const routines: AssistantRoutine[] = await run('window.electronAPI.assistantRoutines.list()')
     let routine = routines.find(r => r.id === report.routineId || r.title === '隔离验收联系人检查')
@@ -59,12 +60,12 @@ export async function runContactSoak(window: BrowserWindow) {
       const input = { title: '隔离验收联系人检查', instruction: '检查验收作者和验收评审的实际工作与正式成果，简短告诉我各自真正交付了什么、有什么阻塞。没有正文不能声称交付，未完整读过原文不要评价质量，不替任何人答复或更改工作。', kind: 'contact-summary', cadence: 'daily', times: [...new Set([clockAt(8), '00:09'])].sort(), enabled: true }
       routine = (await run(`window.electronAPI.assistantRoutines.save(${JSON.stringify(input)})`)).find((r: AssistantRoutine) => r.title === input.title)
     }
-    report.routineId = routine!.id; save()
+    report.routineId = routine!.id; await save()
     event('calendar-saved', { topics: report.topics, routineId: report.routineId, configuredModel: getConfig().model })
     let previous = Date.now(), observationFailures = 0
     const fullModuleDay = options.moduleAudit && options.durationMs >= 86400000
     while ((Date.now() - report.beganAt < options.durationMs || fullModuleDay && moduleEvidence.observedMs < 86400000) && Date.now() - report.beganAt < options.durationMs + 3600000) {
-      if (existsSync(join(options.output, 'stop.request'))) { report.status = 'stopped'; save(); event('stop-request'); app.exit(2); return }
+      if (existsSync(join(options.output, 'stop.request'))) { report.status = 'stopped'; await save(); event('stop-request'); app.exit(2); return }
       const now = Date.now(), delta = now - previous; previous = now
       if (delta > 45000) report.gaps.push({ at: now, milliseconds: delta })
       if (!report.dates.includes(localDate(now))) report.dates.push(localDate(now))
@@ -73,12 +74,12 @@ export async function runContactSoak(window: BrowserWindow) {
         const history: AssistantRoutineHistoryPage = await run(`window.electronAPI.assistantRoutines.history(${JSON.stringify(report.routineId)})`)
         const deliveries = await Promise.all(['soak-writer', 'soak-reviewer'].map(owner => contactAgentsCall<AgentDelivery | null>(owner, 'delivery', [report.topics[owner]])))
         const messages = getSessions().flatMap(session => (getSession(session.id)?.messages ?? []).map(message => ({ id: message.id, characterId: session.characterId, agentNotice: message.agentNotice, content: message.content })))
-        if (new Set(messages.map(message => message.id)).size !== messages.length) { moduleEvidence.duplicateMessages++; saveModuleEvidence(); throw Error('Duplicate delivered message ID') }
+        if (new Set(messages.map(message => message.id)).size !== messages.length) { moduleEvidence.duplicateMessages++; await saveModuleEvidence(); throw Error('Duplicate delivered message ID') }
         const completedReceipts = history.items.filter(item => item.status === 'completed').map(item => item.receipt)
         if (new Set(completedReceipts).size !== completedReceipts.length) throw Error('Duplicate routine period receipt')
         const overview = (data: AgentOverview) => ({ revision: data.revision, tasks: data.topics.map(t => ({ id: t.id, status: t.status, calendar: t.calendar })), runs: data.runs, callsToday: data.callsToday, tokenUsage: data.tokenUsage, reports: data.reports, next: data.taskSchedule })
         report.observations = { writer: overview(writer), reviewer: overview(reviewer), deliveries, assistantHistory: history.items, messages, unread: getAssistantUnreadCount(), memory: app.getAppMetrics().map(metric => ({ type: metric.type, ...metric.memory })) }
-        report.heartbeats++; observationFailures = 0; save()
+        report.heartbeats++; observationFailures = 0; await save()
         if (options.moduleAudit) {
           const database = new Database(join(app.getPath('userData'), 'contact-agents', 'agents.db'), { readonly: true })
           try {
@@ -108,7 +109,7 @@ export async function runContactSoak(window: BrowserWindow) {
           moduleEvidence.samples++; moduleEvidence.elapsedMs = Date.now() - report.beganAt
           moduleEvidence.appStarts = report.appStarts; moduleEvidence.workerRestarted = report.workerRestarted
           moduleEvidence.actualReviews = reviewer.reports.filter(item => item.evidence.some(source => source.url.startsWith('contact-delivery://soak-writer/'))).length
-          saveModuleEvidence()
+          await saveModuleEvidence()
           if (!moduleEvidence.pauseVerified && writer.reports.length && reviewer.reports.length && !writer.runs.some(work => ['running', 'queued'].includes(work.status))) {
             const topic = writer.topics.find(topic => topic.id === report.topics['soak-writer'])!
             await contactAgentsCall('soak-writer', 'topicStatus', [topic.id, topic.revision, 'paused', '隔离验收：暂停后核对持久状态与请求拒绝。'])
@@ -119,23 +120,23 @@ export async function runContactSoak(window: BrowserWindow) {
             const saved = paused.topics.find(value => value.id === topic.id)!
             if (saved.status !== 'paused' || paused.callsToday !== writer.callsToday) throw Error('Paused task changed or dispatched inference')
             await contactAgentsCall('soak-writer', 'continueTopic', [topic.id, saved.revision, '隔离验收：恢复原日历任务。'])
-            moduleEvidence.pauseVerified = true; saveModuleEvidence(); event('pause-verified-and-resumed')
+            moduleEvidence.pauseVerified = true; await saveModuleEvidence(); event('pause-verified-and-resumed')
           }
         }
         if (!report.workerRestarted && writer.runs.some(r => r.status === 'running')) {
           event('worker-interrupt-running')
-          await restartAgentsForSmoke(); report.workerRestarted = true; save(); event('worker-restarted')
+          await restartAgentsForSmoke(); report.workerRestarted = true; await save(); event('worker-restarted')
         }
         if (!report.appRestarted && now - report.beganAt >= options.restartMs && ![...writer.runs, ...reviewer.runs].some(r => ['running', 'queued'].includes(r.status))) {
-          report.appRestarted = true; save(); await flushDatabase(); event('application-restart-request'); app.exit(75); return
+          report.appRestarted = true; await save(); await flushDatabase(); event('application-restart-request'); app.exit(75); return
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error); report.errors.push(message); event('observation-error', { message }); save()
-        if (++observationFailures >= 3) { report.status = 'failed-observation'; save(); throw error }
+        const message = error instanceof Error ? error.message : String(error); report.errors.push(message); event('observation-error', { message }); await save()
+        if (++observationFailures >= 3) { report.status = 'failed-observation'; await save(); throw error }
       }
       await new Promise(resolve => setTimeout(resolve, 5000))
     }
-    save()
+    await save()
     const observed = report.observations as { writer: { runs: { status: string }[]; reports: unknown[] }; reviewer: { runs: { status: string }[]; reports: { evidence: { url: string }[] }[] }; deliveries: (AgentDelivery | null)[]; assistantHistory: { status: string }[]; unread: number }
     const actualReviews = observed.reviewer.reports.filter(item => item.evidence.some(source => source.url.startsWith('contact-delivery://soak-writer/')))
     report.complete = options.durationMs >= 86400000 && report.elapsedMs >= 86400000 && report.dates.length >= 2 && report.workerRestarted && report.appRestarted
@@ -145,12 +146,12 @@ export async function runContactSoak(window: BrowserWindow) {
       && observed.assistantHistory.filter(item => item.status === 'completed').length >= 2 && observed.unread > 0 && report.errors.length === 0
     if (options.moduleAudit) {
       moduleEvidence.elapsedMs = report.elapsedMs; moduleEvidence.appStarts = report.appStarts; moduleEvidence.workerRestarted = report.workerRestarted
-      saveModuleEvidence()
+      await saveModuleEvidence()
       const failed = auditAgentSpaceSoak(moduleEvidence)
       event('module-audit', { failed })
       report.complete = report.complete && failed.length === 0
     }
-    report.status = report.complete ? 'passed-24-hours' : options.durationMs < 86400000 ? 'short-sample-only' : 'failed'; save()
+    report.status = report.complete ? 'passed-24-hours' : options.durationMs < 86400000 ? 'short-sample-only' : 'failed'; await save()
     event('finished', { complete: report.complete, elapsedMs: report.elapsedMs, dates: report.dates })
     if (options.durationMs >= 86400000 && !report.complete) throw Error('Contact endurance acceptance incomplete; inspect isolated report')
   } finally { powerMonitor.removeListener('suspend', suspend); powerMonitor.removeListener('resume', resume) }
