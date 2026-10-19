@@ -64,7 +64,7 @@
 
 ## Task 6: 完整审查与交付
 
-- [x] `npm test`、`npm run typecheck`、`npm run build`，真实 Electron 聊天/联系人/助手安排/主动检查冒烟。收尾修复后 1966 项通过、53 项跳过；五类 Electron 场景（含 DSH）通过，最后的接单解析修复另跑联系人回归通过。证据 `final-fixes-*` 与 `task6-recovery-*`；后续源代码改动需按影响更新验证。
+- [x] `npm test`、`npm run typecheck`、`npm run build`，真实 Electron 聊天/联系人/助手安排/主动检查冒烟。五类 Electron 场景（含 DSH）通过（`task6-recovery-*`）；后续接单/规划工具边界修复后 1968 项通过、53 项跳过，类型检查、构建和联系人 Electron 再次通过（`planning-tools-final-tests.log`、`planning-tools-{types,build,agents}.log`）。原生和实际 DSH SDK 协议用例验证规划不暴露工具、宿主实际读取共享正文、正文阶段工具保留；后续源代码改动需按影响更新验证。
 - [x] 一次独立整分支审查，重要缺陷按失败测试修复并回归。审查范围 `9a4e0e8..6aab747`，无 Critical、两项 Important：worker 重启恢复已卸载 WorkLoop、上下文修改与清理意图未原子提交；均有实际服务/SQLite 失败测试与修复。真实 24h 尚未完成，不据此批准最终交付。
 - [ ] 逐条审计 spec 1–6 的权威证据，更新架构/产品状态/验收文档；所有项目实现且验证前保持目标 active。
 - [ ] 提交完整功能分支；合并、推送按会话中实际授权处理。

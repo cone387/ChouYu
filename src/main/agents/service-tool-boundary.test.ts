@@ -12,17 +12,30 @@ it.each([true, false])('distinguishes plan actions and disabled tools with share
   const directory = mkdtempSync(join(tmpdir(), 'chouyu-tool-boundary-'))
   const service = new WorkLoopHost(directory, () => {})
   const responses: Record<string, string> = {}
+  let rounds = 0
+  const sharedRead = vi.spyOn(service.runtime.contactSources, 'read')
   vi.mocked(streamNativeChat).mockImplementation(async (_messages, _system, _config, onChunk, _signal, tools) => {
+    if (++rounds === 1) {
+      expect(tools).toBeUndefined()
+      onChunk(JSON.stringify({ action: 'write', reason: '创作虚构故事', query: '', urls: [], checkAfterMinutes: 180 }), false)
+      return
+    }
+    expect(tools).toBeDefined()
     for (const name of ['read_contacts', 'discover_contacts', 'invented_tool', 'read_contact_material']) {
       responses[name] = await tools!.execute({ id: name, name, arguments: '{}' })
     }
-    onChunk(JSON.stringify({ action: 'wait', reason: '测试边界', query: '', urls: [], checkAfterMinutes: 180 }), false)
+    onChunk(JSON.stringify({ title: '虚构故事', body: '灯塔亮起蓝光。', nextStep: '继续创作', memories: [], question: '',
+      progress: { status: 'researching', judgement: '本轮已创作', openQuestions: '', nextStep: '继续创作', reason: '虚构正文，无外部资料' },
+      delivery: { completionCriteria: '持续创作虚构故事', summary: '首段', stages: [{ id: 'story', title: '创作', status: 'active' }], section: { id: 'opening', title: '开篇', body: '灯塔亮起蓝光。' } } }), false)
   })
   try {
-    service.store.save('reviewer', { ...DEFAULT_AGENT_SETTINGS, goal: '评审共享正文', enabled: false, readContactDeliveries: contactAccess, searchEnabled: false })
+    service.store.save('reviewer', { ...DEFAULT_AGENT_SETTINGS, goal: '写一个虚构故事', enabled: false, readContactDeliveries: contactAccess, searchEnabled: false })
     await service.sync([{ id: 'reviewer', soul: '独立评审', conversation: '', skillToolsEnabled: true, disabledSkillTools: ['read_contact_material'], config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
     await service.request('run', 'reviewer', [service.store.overview('reviewer').focusTopicId])
-    await vi.waitFor(() => expect(service.store.overview('reviewer').runs[0].status).toBe('completed'))
+    await vi.waitFor(() => {
+      const run = service.store.overview('reviewer').runs[0]
+      expect(run.status, JSON.stringify(run)).toBe('completed')
+    })
     for (const name of ['read_contacts', 'discover_contacts']) {
       if (contactAccess) {
         expect(responses[name]).toContain('action')
@@ -33,7 +46,9 @@ it.each([true, false])('distinguishes plan actions and disabled tools with share
     expect(responses.invented_tool).toContain('不存在')
     expect(responses.invented_tool).not.toContain('用户禁用')
     expect(responses.read_contact_material).toBe('工具已被用户禁用。')
-    expect(service.store.overview('reviewer').reports).toHaveLength(0)
+    expect(rounds).toBe(2)
+    expect(sharedRead).not.toHaveBeenCalled()
+    expect(service.store.overview('reviewer').reports[0].evidence).toEqual([])
   } finally {
     await service.close()
     rmSync(directory, { recursive: true, force: true })

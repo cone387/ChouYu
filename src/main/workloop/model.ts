@@ -61,7 +61,7 @@ export function createWorkModel(context: {
         if (!reference || !input.materialDirectory.some((m: import('../../shared/contact-materials').MaterialRef) => m.id === reference.id && m.version === reference.version)) throw new MaterialReferenceError()
         return request(method, owner, [{ query: '', topicId: run.topic_id || undefined }, ...args.slice(1)])
       } })
-      const tools = identity.skillToolsEnabled ? { definitions: [...skillRuntime.definitions, ...materialTools], execute: withMaterialReferenceRepair(async (call: import('../../shared/tools').AIToolCall) => {
+      const tools = options?.tools !== false && identity.skillToolsEnabled ? { definitions: [...skillRuntime.definitions, ...materialTools], execute: withMaterialReferenceRepair(async (call: import('../../shared/tools').AIToolCall) => {
         signal.throwIfAborted(); store.assertLive(run.id)
         const material = materialTools.find(t => t.name === call.name)
         if (!material) return skillRuntime.execute(call)

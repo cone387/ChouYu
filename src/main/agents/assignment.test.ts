@@ -52,6 +52,8 @@ describe('description-only task assignment', () => {
       .mockResolvedValueOnce(JSON.stringify(brief))
     await runtime.execute(run, '', model, new AbortController().signal)
     expect(model).toHaveBeenCalledTimes(2)
+    expect(model).toHaveBeenNthCalledWith(1, expect.any(String), expect.any(AbortSignal), { tools: false })
+    expect(model).toHaveBeenNthCalledWith(2, expect.any(String), expect.any(AbortSignal), { tools: false })
     expect(store.callCount('writer')).toBe(2)
     expect(store.getRun(run)?.status).toBe('waiting')
     expect(store.deliveries.get(topic.id)).toBeNull()
