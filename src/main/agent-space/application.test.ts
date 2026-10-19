@@ -125,3 +125,35 @@ it('keeps a detached WorkLoop disabled across worker replacement until explicitl
     await vi.waitFor(() => expect(entered).toEqual(['bob', 'alice']))
   } finally { await space.close(); await host.close(); rmSync(dir, { recursive: true, force: true }) }
 })
+
+it('restores a peer after worker replacement while another contact removal awaits a retry', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chouyu-removal-restart-'))
+  const owners = ['alice', 'bob'].map(id => ({ ...identity(id), config: { provider: 'openai' as const, baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }))
+  const entered: string[] = []
+  const makeHost = () => new WorkLoopHost(dir, () => {}, owner => async (_prompt, signal) => {
+    entered.push(owner.id)
+    return new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }))
+  }, async () => evidenceFromText('https://example.com/', 'Evidence. '.repeat(100)))
+  let host = makeHost(), removalFails = true
+  const space = new AgentSpace({ harness: new HarnessCoordinator(registryFor({ native: { run: async () => ({ state: 'completed', text: 'hello' }) } })), readIdentity: id => owners.find(owner => owner.id === id),
+    work: { request: (method, id, args) => host.request(method, id, args), detach: id => host.detachModule(id, 'workloop'), remove: async id => {
+      if (removalFails) throw new Error('fixture cleanup unavailable')
+      await host.remove(id)
+    } } })
+  try {
+    await host.sync(owners.map(owner => space.workerIdentity(owner)))
+    for (const owner of owners) await space.request('save', owner.id, [{ ...DEFAULT_AGENT_SETTINGS, enabled: false, goal: 'Fixture', sources: ['https://example.com/'], permissionLevel: 'sources', dailyCalls: 100 }])
+    await expect(space.remove('alice')).rejects.toThrow('fixture cleanup unavailable')
+    // IPC keeps the character until cleanup succeeds, so it remains in the next roster.
+    await host.close(); host = makeHost()
+    await host.sync(owners.map(owner => space.workerIdentity(owner)))
+    host.store.createRun('alice', ''); host.store.createRun('bob', ''); host.tick()
+    await vi.waitFor(() => expect(entered).toEqual(['bob']))
+    await expect(space.runChat(input('alice'), () => {})).rejects.toThrow(/删除/)
+    await expect(space.request('get', 'alice')).rejects.toThrow(/删除/)
+    removalFails = false
+    await space.remove('alice')
+    expect(host.store.profile('alice')).toBeUndefined()
+    expect(entered).toEqual(['bob'])
+  } finally { try { await space.close() } catch { /* Keep the original roster failure visible. */ } await host.close(); rmSync(dir, { recursive: true, force: true }) }
+})

@@ -47,6 +47,9 @@ export class AgentSpace {
     return this.syncContact(identity)
   }
   workerIdentity(identity: ContactIdentity): ContactIdentity {
+    // A failed/in-flight deletion remains in the main roster until cleanup succeeds.
+    // Keep it inert without recreating its application contact or blocking peers.
+    if (!this.closed && this.retired.has(identity.id)) return { ...identity, workLoopEnabled: false }
     const contact = this.syncContact(identity)
     return { ...identity, workLoopEnabled: Boolean(contact.module('workloop')) }
   }
