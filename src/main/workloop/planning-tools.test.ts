@@ -31,7 +31,8 @@ it.each(['native', 'dsh'] as const)('%s plans before executing tools and reviews
       const source = host!.runtime.contactSources.discover('reviewer', topic, '').items[0]
       output = { action: 'read_contacts', reason: '实际读取作者正文', contactRefs: [source.ref], query: '', urls: [], checkAfterMinutes: 15 }
     } else {
-      output = { title: '评审结论', body: '基于真实正文 [1]', nextStep: '继续下一期', memories: [], question: '', progress,
+      output = { title: '评审结论', body: '基于真实正文 [1]', nextStep: '继续下一期', memories: [], question: '',
+        progress: { ...progress, judgement: '已读取作者全文（12字）[1]。线索明确。' },
         delivery: { completionCriteria: '持续独立评审', summary: '已评审首节', stages: [{ id: 'review', title: '读取与评审', status: 'active' }],
           section: { id: 'review1', title: '结论', body: prompt.includes('真实来源正文：灯塔亮起蓝光') ? '灯塔蓝光的线索明确，建议补充人物动机 [1]。' : '未读到正文' } } }
     }

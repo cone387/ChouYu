@@ -62,6 +62,35 @@ it('uses the nearest explicit text scope and preserves a counted object within t
   expect(invalidCountClaims('札记共8字。', facts)).toEqual([])
 })
 
+it('keeps an explicitly read source scope when full-text words qualify that source', () => {
+  const sourceFacts = { ...facts, sources: [{ ...facts.sources[0], counts: counts(408) }] }
+  expect(invalidCountClaims('事实：已读取作者第二分节「盒中之物」v2全文（408字）[1]。', sourceFacts)).toEqual([])
+  expect(invalidCountClaims('已阅读来源全稿共408字[1]。', sourceFacts)).toEqual([])
+  expect(invalidCountClaims('已读取作者全文（845字）[1]。', { ...sourceFacts, total: counts(845) })).toEqual([{ claim: '845字', scope: 'source', expected: 408 }])
+  expect(invalidCountClaims('已读取作者408字原文；评审全文累计1800字。', sourceFacts)).toEqual([])
+  expect(invalidCountClaims('已读取作者408字原文，评审全文累计1800字。', sourceFacts)).toEqual([])
+  expect(invalidCountClaims('已读取作者408字原文，评审全文1800字。', sourceFacts)).toEqual([])
+  expect(invalidCountClaims('读取作者原文后评审全文1800字。', sourceFacts)).toEqual([])
+  const many = { ...sourceFacts, sources: [...sourceFacts.sources, { ...sourceFacts.sources[0], number: 2, counts: counts(600) }] }
+  expect(invalidCountClaims('读取作者全文（600字）[2]。', many)).toEqual([])
+  expect(invalidCountClaims('读取作者全文（600字）。', many)).toEqual([{ claim: '600字', scope: 'source', expected: undefined }])
+})
+
+it('delivers a correctly counted source review without spending a metadata correction call', async () => {
+  const f = fixture(), source = '灯'.repeat(408)
+  const draft = parseDraft(JSON.stringify({ ...candidate,
+    body: '已读取作者正文并完成评审。',
+    progress: { ...candidate.progress, judgement: '事实：已读取作者第二分节「盒中之物」v2全文（408字）[1]。判断：通过验收。' },
+    evaluations: [{ subject: '盒中之物', sourceNumbers: [1], dimensions: [{ name: '情节', score: 4, maxScore: 5, weight: 100, reason: '线索延续[1]' }], summary: '通过', risks: '待展开', nextStep: '继续观察' }],
+    delivery: { ...candidate.delivery, summary: '已读取作者新分节并完成评审。' }
+  }), 1)
+  const evidence = [{ url: 'contact-delivery://author/topic/box_contents?version=2', title: '盒中之物', text: source, hash: 'source-408', capturedAt: 1 }]
+  const model = vi.fn(async () => { throw Error('correct source count must not request correction') })
+  expect(await correctDeliveryCounts(f.store, f.run, f.store.topics.get('writer', f.topicId), draft, evidence, model, new AbortController().signal, () => f.store.assertLive(f.run), raw => parseDraft(raw, 1))).toBe(draft)
+  expect(model).not.toHaveBeenCalled()
+  expect(f.store.callCount('writer')).toBe(0)
+})
+
 it('corrects the v7 reviewer summary using the read source without altering ratings or prose', async () => {
   const f = fixture(), source = readFileSync(new URL('./fixtures/oversized-opening.txt', import.meta.url), 'utf8')
   const evidence = [{ url: facts.sources[0].url, title: '蓝灯之夜·抵达', text: source, hash: 'fixed-source', capturedAt: 1 }]

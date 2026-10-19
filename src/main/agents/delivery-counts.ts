@@ -34,6 +34,13 @@ export function invalidCountClaims(text: string, facts: Facts): InvalidCount[] {
     if (!/^(?:约|大约|总计)$/.test(match[1] || '') && !/(?:正文|原文|原稿|候选|交付|写出|读取|字数|长度|全文|全稿|累计)/.test(before + (match[1] || '')) && !/^正文/.test(after)) continue
     let scopeMarker = [...(before + (match[1] || '')).matchAll(/原候选|原草稿|原正文|修订前|修改前|累计|总计|全文|全稿|读取|阅读|原文|原稿|作者|来源|来稿|本轮正文|本次正文|评审正文|评论正文|修订后|修改后|本轮交付|本次交付/g)].at(-1)?.[0] || ''
     if (scopeMarker === '原正文' && /(?:读取|阅读|作者|来源|来稿)[^，,。]*原正文/.test(before)) scopeMarker = '来源'
+    if (/^(?:全文|全稿)$/.test(scopeMarker)) {
+      // “Read the author's full text” still counts the source, not our accumulated output.
+      // A new clause or explicit review/current-output subject ends that ownership.
+      const clause = before.split(/[，,]/).at(-1) || ''
+      const subject = [...clause.matchAll(/原候选|原草稿|原正文|修订前|修改前|读取|阅读|原文|原稿|作者|来源|来稿|本轮正文|本次正文|评审|评论|修订后|修改后|本轮交付|本次交付/g)].at(-1)?.[0]
+      if (subject && /^(?:读取|阅读|原文|原稿|作者|来源|来稿)$/.test(subject)) scopeMarker = '来源'
+    }
     const scope = /原候选|原草稿|原正文|修订前|修改前/.test(scopeMarker) ? 'original'
       : /累计|总计|全文|全稿/.test(scopeMarker) ? 'total'
         : /读取|阅读|原文|原稿|作者|来源|来稿/.test(scopeMarker) ? 'source' : 'current'
