@@ -1,7 +1,7 @@
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { createCharacter, listCharacters, getActiveSession, selectChatSession, flushDatabase } from '../database'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { waitForRenderer } from './storage-smoke'
@@ -14,7 +14,7 @@ export async function runContactNavigationSmoke(window: BrowserWindow, owner: st
   }
   const navigate = (target: unknown) => run(`new Promise((resolve,reject)=>{const detail={target:${JSON.stringify(target)},handled:false,resolve,reject};window.dispatchEvent(new CustomEvent('chouyu:contact-navigation',{detail}));if(!detail.handled)reject(Error('No navigation handler'))})`)
   const fill = (selector: string, value: string, select = false) => run(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLTextAreaElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}))})()`)
-  const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const store = new ContactTaskStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   const originalSession = getActiveSession().id
   try {
     const recipient = createCharacter({ name: '返回路径评审者', soulMd: '只读评审', model: 'review-model' })

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import type { AgentTopic, AgentTopicProgress } from '../../shared/agents'
 import type { DeliveryUpdate } from '../../shared/agent-delivery'
 import type { AgentModel } from '../workloop/workflow'
-import type { TaskCenter } from '../task-center/store'
+import type { ContactTaskStore } from '../task-center/contact-store'
 import { reviewCompletionBatches } from './completion-batches'
 
 export const taskCompletionInstruction = `任务生命周期与本轮执行分开：持续产出、持续评审、全天或24h运行不以一条成果、一个批次、所有当前阶段已完成作为整个任务的结束条件。暂时没有新内容应等待，额度不足或服务失败是阻塞，不是完成或放弃。只有用户明确要求限时运行（例如“运行24小时后结束”）才有截止条件；“全天/24h持续工作”不能自行解释为一天后结束。没有明确终点的任务保持 researching 或 needs_evidence，直到用户明确结束。有限目标必须核对全部原始要求和实际成果才可结束，不得缩减目标或把阶段计划当作成果。`
@@ -22,7 +22,7 @@ function batchContext(context: unknown): unknown {
 }
 
 /** Extra semantic check only when the model proposes to terminate a task, including old tasks. */
-export async function reviewTaskCompletion<T extends Candidate>(store: TaskCenter, runId: string, topic: AgentTopic, draft: T,
+export async function reviewTaskCompletion<T extends Candidate>(store: ContactTaskStore, runId: string, topic: AgentTopic, draft: T,
   model: AgentModel, signal: AbortSignal, live: () => void, context?: unknown): Promise<T> {
   if (!draft.progress || !['completed', 'abandoned'].includes(draft.progress.status)) return draft
   if (topic.calendar && topic.calendar.cadence !== 'once') {

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { streamNativeChat } from '../harness/native/runner'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { parseDraft, type AgentModel } from '../workloop/workflow'
 import { WritingRecovery } from './writing-recovery'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -17,7 +17,7 @@ it.skipIf(!process.env.CHOUYU_RECOVERY_ACCEPTANCE)('live recovery describes the 
   const data = JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG!), resolved = resolveCharacterConfig(data.characters[0], data.config)
   if (!resolved.ok) throw Error('验收模型不可用')
   const config = { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }
-  const directory = mkdtempSync(join(tmpdir(), 'chouyu-live-recovery-')), store = new TaskCenter(join(directory, 'agents.db'))
+  const directory = mkdtempSync(join(tmpdir(), 'chouyu-live-recovery-')), store = new ContactTaskStore(join(directory, 'agents.db'))
   const body = readFileSync(new URL('./fixtures/recovery-opening.txt', import.meta.url), 'utf8')
   const records: { output: string; metadata: AIResponseMetadata }[] = []
   let runId = '', topicId = '', result: ReturnType<typeof parseDraft> | undefined

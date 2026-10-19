@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
 import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -22,7 +22,7 @@ const reader = () => evidenceFromText(settings.sources[0], '公开网页提供�
 
 describe('description-only task assignment', () => {
   it('corrects premature prose and completed stages once before accepting a brief', async () => {
-    const dir = directory(), store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+    const dir = directory(), store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
     cleanups.push(() => { runtime.close(); store.close() })
     const topic = store.assignTopic('writer', '写灯塔故事', ''), run = store.overview('writer').runs[0].id
     const model = vi.fn().mockResolvedValueOnce('已经交付正文。\n' + JSON.stringify({ ...brief, plan: { ...brief.plan, stages: [{ id: 'research', title: '写作', status: 'done' }] } }))
@@ -35,7 +35,7 @@ describe('description-only task assignment', () => {
     expect(store.topics.get('writer', topic.id).initialPlan?.stages.every(s => s.status === 'pending')).toBe(true)
   })
   it.each(['failed', 'interrupted'])('bounds brief correction after a %s correction without saving premature results', async mode => {
-    const dir = directory(), store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+    const dir = directory(), store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
     cleanups.push(() => { runtime.close(); store.close() })
     const topic = store.assignTopic('writer', '写灯塔故事', ''), run = store.overview('writer').runs[0].id
     if (mode === 'interrupted') store.event(run, 'brief-format-repair', '之前的纠正已发起')
@@ -47,7 +47,7 @@ describe('description-only task assignment', () => {
   })
   it('organizes known inputs and persists a missing required input as a question across restart', async () => {
     const dir = directory()
-    let store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+    let store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
     cleanups.push(() => { runtime.close(); store.close() })
     const topic = store.assignTopic('writer', '写一篇奇幻短篇', '用户之前说喜欢宋体排版')
     const run = store.overview('writer').runs[0].id
@@ -59,7 +59,7 @@ describe('description-only task assignment', () => {
     expect(store.detail('writer', run).run.question).toContain('请补充：读者')
     expect(store.detail('writer', run).run.inputFields).toEqual(inputs)
     runtime.close(); store.close()
-    store = new TaskCenter(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+    store = new ContactTaskStore(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
     expect(store.topics.get('writer', topic.id).initialPlan?.inputs).toEqual(inputs)
     expect(store.overview('writer').runs[0].inputFields).toEqual(inputs)
     expect(store.notices.pending('writer')[0].kind).toBe('question')
@@ -76,7 +76,7 @@ describe('description-only task assignment', () => {
     expect(store.deliveries.get(topic.id)?.inputs?.find(field => field.id === 'reader')?.value).toBe('成人')
   })
   it('creates the default profile, focused topic and first run atomically from one description', () => {
-    const store = new TaskCenter(join(directory(), 'agents.db')); cleanups.push(() => store.close())
+    const store = new ContactTaskStore(join(directory(), 'agents.db')); cleanups.push(() => store.close())
     const topic = store.assignTopic('alice', '帮我研究下班后能做的项目', '')
     const data = store.overview('alice')
     expect(data.topics).toHaveLength(1)
@@ -92,7 +92,7 @@ describe('description-only task assignment', () => {
     expect(store.overview('alice').runs).toHaveLength(1)
   })
   it('keeps a new assignment queued without spending when the first round cannot be afforded', () => {
-    const store = new TaskCenter(join(directory(), 'agents.db')); cleanups.push(() => store.close())
+    const store = new ContactTaskStore(join(directory(), 'agents.db')); cleanups.push(() => store.close())
     store.save('alice', { ...settings, sources: [], dailyCalls: 2 })
     const before = store.overview('alice')
     const topic = store.assignTopic('alice', '新的研究', '')
@@ -102,7 +102,7 @@ describe('description-only task assignment', () => {
   })
   it('persists clarification across restart, carries replies into research, and delivers a later question separately', async () => {
     const dir = directory()
-    let store = new TaskCenter(join(dir, 'agents.db'))
+    let store = new ContactTaskStore(join(dir, 'agents.db'))
     const read = vi.fn(async () => reader())
     let runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), read)
     cleanups.push(() => { runtime.close(); store.close() })
@@ -110,7 +110,7 @@ describe('description-only task assignment', () => {
     // Upgrade a populated v4 store, whose old index allowed only one change per run.
     store.db.exec('DROP INDEX changes_run; CREATE UNIQUE INDEX changes_run ON topic_changes(run_id) WHERE run_id IS NOT NULL; PRAGMA user_version=4;')
     runtime.close(); store.close()
-    store = new TaskCenter(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), read)
+    store = new ContactTaskStore(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), read)
     expect(store.overview('alice').topics).toHaveLength(1)
     const description = '帮我研究下班后能做的项目'
     const topic = store.assignTopic('alice', description, '')
@@ -129,7 +129,7 @@ describe('description-only task assignment', () => {
     expect(firstQuestion.content).toContain(brief.question)
     store.notices.ack('alice', firstQuestion.id)
     runtime.close(); store.close()
-    store = new TaskCenter(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), read)
+    store = new ContactTaskStore(join(dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), read)
     expect(store.topics.get('alice', topic.id).initialPlan).toEqual(brief.plan)
     store.answer('alice', runId, '每周五小时')
     await runtime.execute(runId, '', model, new AbortController().signal)

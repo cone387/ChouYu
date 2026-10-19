@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { streamNativeChat } from '../harness/native/runner'
 import { resolveCharacterConfig } from '../../shared/characters'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { buildContactContext } from './context'
 import { citationContext } from './citations'
 import { createMaterialTools } from './material-tools'
@@ -14,7 +14,7 @@ import type { ToolExecutionContext } from '../tools/registry'
 it.skipIf(!process.env.CHOUYU_EXPERIENCE_ACCEPTANCE)('real model applies corrected scoped memory, reads material and reviews the pinned historical version', async () => {
   const data = JSON.parse(process.env.CHOUYU_ACCEPTANCE_CONFIG!), resolved = resolveCharacterConfig(data.characters[0], data.config)
   if (!resolved.ok) throw new Error('联系人模型配置不可用')
-  const store = new TaskCenter(':memory:'), outputs: unknown[] = [], calls: string[] = []
+  const store = new ContactTaskStore(':memory:'), outputs: unknown[] = [], calls: string[] = []
   const config = { ...DEFAULT_APP_CONFIG, ...data.config, ...resolved.config }
   try {
     store.ensure('writer'); store.ensure('reviewer')

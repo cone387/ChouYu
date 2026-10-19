@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { AgentTopic, AgentTopicProgress } from '../../shared/agents'
 import type { DeliveryUpdate } from '../../shared/agent-delivery'
-import type { TaskCenter } from '../task-center/store'
+import type { ContactTaskStore } from '../task-center/contact-store'
 import type { AgentModel } from '../workloop/workflow'
 import { researchPlanValue } from './research'
 
@@ -62,7 +62,7 @@ export function deliveryLengthInstruction(topic: Pick<AgentTopic, 'goal' | 'cons
 }
 
 type Candidate = { body: string; memories: string[]; question: string; progress?: AgentTopicProgress; delivery?: DeliveryUpdate; evaluations?: unknown[] }
-export async function enforceDeliveryLength<T extends Candidate>(store: TaskCenter, runId: string, topic: AgentTopic, draft: T,
+export async function enforceDeliveryLength<T extends Candidate>(store: ContactTaskStore, runId: string, topic: AgentTopic, draft: T,
   model: AgentModel, signal: AbortSignal, live: () => void, validate: (raw: string) => T, feedback = ''): Promise<T> {
   const rules = explicitDeliveryLengths(topic, feedback), section = draft.delivery?.section
   if (!section || !rules.length) return draft

@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { SkillLibrary } from './library'
 import { SkillRunner, containerArguments } from './runner'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -27,7 +27,7 @@ it.skipIf(process.env.CHOUYU_TEST_DOCKER !== '1')('runs Node, Python and Bash, i
   const status = await runner.status(); expect(status.engineReady, status.message).toBe(true)
   if (!status.ready) expect((await runner.prepare(signal)).ready).toBe(true)
   const snapshot = library.snapshot('alice')
-  const archive = new TaskCenter(join(root, 'archive.db'))
+  const archive = new ContactTaskStore(join(root, 'archive.db'))
   archive.ensure('alice'); archive.memoryLibrary.registerSessions('alice', ['docker-session'])
   try {
     for (const script of ['node.cjs', 'python.py', 'shell.sh', 'bounds.cjs', 'network.cjs']) {

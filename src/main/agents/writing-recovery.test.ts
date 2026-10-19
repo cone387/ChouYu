@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime, parseDraft, type AgentModel } from '../workloop/workflow'
 import { AgentOutputTruncatedError } from './model-output'
 import { WritingRecovery } from './writing-recovery'
@@ -13,7 +13,7 @@ afterEach(() => { for (const close of cleanup.splice(0).reverse()) close() })
 function fixture(dailyCalls = 40) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-draft-recovery-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  let store = new TaskCenter(join(dir, 'agents.db'))
+  let store = new ContactTaskStore(join(dir, 'agents.db'))
   cleanup.push(() => store.close())
   store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '写音乐修炼小说', dailyCalls })
   let run = store.createRun('writer', '')
@@ -23,7 +23,7 @@ function fixture(dailyCalls = 40) {
     recovery: () => new WritingRecovery(store, run, context),
     reopen() {
       store.fail(run, '模拟停止')
-      store.close(); store = new TaskCenter(join(dir, 'agents.db'))
+      store.close(); store = new ContactTaskStore(join(dir, 'agents.db'))
       run = store.createRun('writer', '')
     }
   }

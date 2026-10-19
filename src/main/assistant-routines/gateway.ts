@@ -10,7 +10,7 @@ import type { AssistantRoutineService } from './service'
 import { ContactTaskDraftStore } from './drafts'
 
 export interface GatewayDeps {
-  routineService: AssistantRoutineService
+  routineService: Pick<AssistantRoutineService, 'list' | 'save'>
   drafts: ContactTaskDraftStore
   agents: (id: string, method: string, args: unknown[]) => Promise<unknown>
   config: () => Pick<AppConfig, 'proactiveReturnAwayMinutes' | 'proactiveRestMinutes' | 'proactiveCooldownMinutes'>

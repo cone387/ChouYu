@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
 import { DEFAULT_AGENT_SETTINGS, type AgentTopicProgress } from '../../shared/agents'
 
@@ -12,7 +12,7 @@ const presentation = { title: '系统阅读', html: '<div id="content"></div>', 
 const progress: AgentTopicProgress = { judgement: '已交付第二章', nextStep: '继续第三章', openQuestions: '', reason: '正文已保存', status: 'researching' }
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-style-')); cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new TaskCenter(join(dir, 'agents.db')); const reader = vi.fn()
+  const store = new ContactTaskStore(join(dir, 'agents.db')); const reader = vi.fn()
   const runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), reader)
   cleanup.push(() => { runtime.close(); store.close() })
   store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '写十章小说', sources: [], dailyCalls: 20 })

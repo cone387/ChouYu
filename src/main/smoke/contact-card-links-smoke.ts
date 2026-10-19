@@ -2,7 +2,7 @@ import { app, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { createCharacter, getActiveSession, selectChatSession } from '../database'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { waitForRenderer } from './storage-smoke'
 
@@ -11,7 +11,7 @@ export async function runContactCardLinksSmoke(window: BrowserWindow) {
   const original = getActiveSession().id
   const owner = createCharacter({ name: '直达验收作者', soulMd: '直接交付保存的正文。' }).id
   await run(`window.electronAPI.agents.get(${JSON.stringify(owner)})`)
-  const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const store = new ContactTaskStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   const click = async (selector: string) => {
     const point = await run(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e||e.disabled)throw Error('Missing card control '+${JSON.stringify(selector)});e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
     window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point }); window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })

@@ -1,9 +1,9 @@
 import { validateOutputPreference, type ContactOutputScope, type ContactOutputPreferenceRecord } from '../../shared/contact-output'
 import { containsSecret } from '../../shared/memory'
-import type { TaskCenter } from '../task-center/store'
+import type { ContactTaskStore } from '../task-center/contact-store'
 
 export class ContactOutputPreferences {
-  constructor(private store: TaskCenter) {
+  constructor(private store: ContactTaskStore) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS contact_output_preferences (
       character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,
       scope_key TEXT NOT NULL, topic_id TEXT REFERENCES topics(id) ON DELETE CASCADE,

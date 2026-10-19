@@ -7,7 +7,7 @@ import { resolveCharacterConfig } from '../../shared/characters'
 import { contactWorkInstructions } from '../../shared/contact-work-instructions'
 import { createContactTools } from './tools'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
@@ -54,7 +54,7 @@ it.skipIf(!process.env.CHOUYU_CONTACT_MODEL_ACCEPTANCE)('real model produces a s
   const resolved = resolveCharacterConfig(data.characters[0], data.config)
   if (!resolved.ok) throw new Error('阿笔模型配置不可用')
   const directory = mkdtempSync(join(tmpdir(), 'chouyu-live-style-'))
-  const store = new TaskCenter(join(directory, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(directory, 'checkpoints.db'))
+  const store = new ContactTaskStore(join(directory, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(directory, 'checkpoints.db'))
   try {
     store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '写一篇小说', sources: [], dailyCalls: 5 })
     const topicId = store.overview('writer').focusTopicId!, first = store.createRun('writer', '')

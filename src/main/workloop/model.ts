@@ -7,15 +7,15 @@ import { skillToolRuntime } from '../skills/tools'
 import type { SkillSnapshot } from '../../shared/skills'
 import { DEFAULT_APP_CONFIG } from '../../shared/config'
 import { backgroundHarnesses } from '../harness/background'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { type AgentModel } from './workflow'
 import type { AIResponseMetadata } from '../../shared/ai-usage'
 import { AGENT_OUTPUT_TOKENS, AgentOutputTruncatedError } from '../agents/model-output'
 
 import type { ContactIdentity } from '../contact-agent/contracts'
-type Run = NonNullable<ReturnType<TaskCenter['getRun']>>
+type Run = NonNullable<ReturnType<ContactTaskStore['getRun']>>
 export function createWorkModel(context: {
-  store: TaskCenter; identity: ContactIdentity; run: Run; input: any; skillRunner: SkillRunner
+  store: ContactTaskStore; identity: ContactIdentity; run: Run; input: any; skillRunner: SkillRunner
   modelFactory?: (identity: ContactIdentity) => AgentModel
   changed(id: string): void
   request(method: string, owner: string, args: unknown[]): Promise<any>

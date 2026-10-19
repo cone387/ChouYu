@@ -3,7 +3,7 @@ import { citationContext, validateCitation } from '../agents/citations'
 import { buildContactContext } from '../agents/context'
 import type { ContactReadContext } from '../../shared/contact-content'
 import type { MemoryInput } from '../../shared/contact-memories'
-import { TaskCenter } from './store'
+import { ContactTaskStore } from './contact-store'
 import { saveDeliveryFeedback } from '../agents/delivery-feedback'
 import { applyContactWorkSettingsPatch, validateContactWorkSettingsPatch } from '../../shared/contact-work-settings'
 import type { AgentSettings, AgentTopicStatus } from '../../shared/agents'
@@ -12,7 +12,7 @@ import { workSettingsRequireRestart } from '../../shared/work-settings'
 import type { ContactIdentity } from '../contact-agent/contracts'
 import type { ActiveRun } from '../agent-space/scheduler'
 interface CommandContext {
-  store: TaskCenter
+  store: ContactTaskStore
   identity(id: string): ContactIdentity
   changed(id: string): void
   tick(): void

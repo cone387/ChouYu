@@ -49,7 +49,7 @@ const dayStart = (now: number) => { const date = new Date(now); date.setHours(0,
 const failureDelay = (settings: AgentSettings, failures: number) => settings.paceWriting
   ? Math.max(settings.intervalMinutes * 60000, 15 * 60000) : (failures === 1 ? 60000 : 180000)
 
-export class TaskCenter {
+export class ContactTaskStore {
   readonly calendars: ContactCalendars
   readonly db: Database.Database
   readonly topics: AgentTopics

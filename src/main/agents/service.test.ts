@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WorkLoopHost } from '../agent-space/workloop-host'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { evidenceFromText } from './sources'
 
@@ -166,7 +166,7 @@ it('retains low-frequency provider recovery after three failed assignment reques
     await vi.waitFor(() => expect(f.service.store.getRun(run.id)?.status).toBe('failed'))
   }
   f.service.store.save('alice', { ...f.service.store.overview('alice').settings, enabled: true }, Date.now(), false)
-  const reopened = new TaskCenter(f.service.store.db.name)
+  const reopened = new ContactTaskStore(f.service.store.db.name)
   cleanups.push(async () => reopened.close())
   const due = reopened.providerRecovery('alice')!.at
   expect(due).toBe(began + 903000)

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WorkLoopHost } from '../agent-space/workloop-host'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { parseResearchPlan } from './research'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
@@ -58,7 +58,7 @@ describe('legacy contact tasks without a work direction', () => {
     expect(reader).not.toHaveBeenCalled(); expect(searcher).not.toHaveBeenCalled()
   })
   it('still enforces access restrictions and budgets when deriving the goal from the task', () => {
-    const store = new TaskCenter(join(directory(), 'agents.db')); cleanups.push(() => store.close())
+    const store = new ContactTaskStore(join(directory(), 'agents.db')); cleanups.push(() => store.close())
     store.createTopic('bi', task)
     store.db.prepare('UPDATE profiles SET settings=? WHERE character_id=?').run(JSON.stringify({ ...DEFAULT_AGENT_SETTINGS, permissionLevel: 'sources' }), 'bi')
     expect(() => store.createRun('bi', '')).toThrow('限制访问')

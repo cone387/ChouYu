@@ -1,7 +1,7 @@
-import type { TaskCenter } from '../task-center/store'
+import type { ContactTaskStore } from '../task-center/contact-store'
 import type { ContactHomeData } from '../../shared/contact-home'
 import { taskState } from '../../shared/task-state'
-export function contactHome(store: TaskCenter, owner: string): ContactHomeData {
+export function contactHome(store: ContactTaskStore, owner: string): ContactHomeData {
   if (!store.profile(owner)) throw new Error('联系人工作记录不存在。')
   const data = store.overview(owner), measuredAt = Date.now()
   return { pending: store.decisions.pending(owner), recentDeliveries: store.portfolio.list(owner, { sort: 'updated' }).items.slice(0, 5),

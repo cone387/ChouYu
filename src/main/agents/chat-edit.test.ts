@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { calculateEvaluations, evaluationMarkdown } from '../../shared/agent-evaluation'
 const cleanup: (() => void)[] = []
@@ -10,7 +10,7 @@ afterEach(() => { while (cleanup.length) cleanup.pop()!() })
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'chat-edit-')), path = join(dir, 'agents.db')
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new TaskCenter(path); cleanup.push(() => store.close())
+  const store = new ContactTaskStore(path); cleanup.push(() => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '评价 idea，一次可研究1–3个', enabled: true, dailyCalls: 100 })
   const id = store.overview('alice').focusTopicId!
   return { store, path, id, topic: () => store.topics.get('alice', id) }
@@ -22,7 +22,7 @@ it('persists future reporting requirements, stops the old run, rejects late work
   expect(store.getRun(run)?.status).toBe('cancelled')
   expect(() => store.assertLive(run)).toThrow()
   expect(topic().goal).toBe(old.goal); expect(topic().requestLog).toContain('一次汇报一个')
-  const reopened = new TaskCenter(path); cleanup.push(() => reopened.close())
+  const reopened = new ContactTaskStore(path); cleanup.push(() => reopened.close())
   expect(reopened.topics.get('alice', id).constraints).toContain('每条交付')
   const next = reopened.createRun('alice', 'x'.repeat(5000) + '最新要求')
   const input = JSON.parse(reopened.getRun(next)!.input)
@@ -65,7 +65,7 @@ it('rejects stale versions, foreign owners, unknown fields and attempts to reduc
   expect(() => store.editTaskFromChat('alice', id, before.revision, { modelCalls: 1 }, '改为一次')).toThrow('已使用')
   expect(topic()).toEqual(before); expect(store.getRun(run)?.status).toBe('queued')
 })
-function finishEvaluations(store: TaskCenter, run: string) {
+function finishEvaluations(store: ContactTaskStore, run: string) {
   const evaluations = calculateEvaluations(['甲', '乙', '丙'].map(subject => ({ subject, sourceNumbers: [], dimensions: [{ name: '可行性', score: 4, maxScore: 5, weight: 100, reason: '验收用判断' }], summary: `${subject}的结论`, risks: '未经市场验证', nextStep: '核实需求' })))
   store.finish(run, { runId: run, title: '三个评价', body: '评价已保存', nextStep: '继续评审', evaluations, evidence: [], createdAt: Date.now() }, [],
     { judgement: '评价三个对象', reason: '完成评审', nextStep: '继续评审', openQuestions: '', status: 'researching' },
@@ -84,7 +84,7 @@ it('delivers one saved evaluation per message without dropping other researched 
   })
   expect(store.deliveries.get(id)?.sections[0].body).toBe(evaluationMarkdown(evaluations))
   store.notices.ack('alice', messages[0].id)
-  const reopened = new TaskCenter(path); cleanup.push(() => reopened.close())
+  const reopened = new ContactTaskStore(path); cleanup.push(() => reopened.close())
   expect(reopened.notices.pending('alice').map(n => n.id)).toEqual(messages.slice(1).map(n => n.id))
   expect(() => reopened.notices.enqueue({ ...messages[1], id: 'forged', content: messages[0].content })).toThrow('不一致')
 })

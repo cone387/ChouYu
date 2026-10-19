@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { ContactTaskCommands } from '../task-center/commands'
 import { WorkStrategyRuntime, type AgentModel } from '../workloop/workflow'
 import { WorkLoop } from '../workloop/loop'
@@ -24,7 +24,7 @@ const signature = (identity: ContactIdentity) => createHash('sha256').update(JSO
 
 /** Shared worker execution host; application contact composition lives in AgentSpace. */
 export class WorkLoopHost {
-  readonly store: TaskCenter
+  readonly store: ContactTaskStore
   readonly runtime: WorkStrategyRuntime
   private readonly skillRunner: SkillRunner
   private readonly scheduler: RunScheduler
@@ -50,7 +50,7 @@ export class WorkLoopHost {
     this.scheduler = new RunScheduler(options.capacity ?? 8, (error, run) => this.faults.set(run.characterId, safeAgentFailure(error)))
     mkdirSync(directory, { recursive: true })
     this.skillRunner = new SkillRunner(new SkillLibrary(skillDirectory))
-    this.store = new TaskCenter(join(directory, 'agents.db'))
+    this.store = new ContactTaskStore(join(directory, 'agents.db'))
     this.runtime = new WorkStrategyRuntime(this.store, join(directory, 'checkpoints.db'), reader, searcher)
     this.commands = new ContactTaskCommands({ store: this.store, identity: id => this.identity(id),
       changed: id => this.notify(id), tick: () => this.tick(), remove: id => this.remove(id),

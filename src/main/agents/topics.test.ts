@@ -3,7 +3,7 @@ import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
 import { WorkLoopHost } from '../agent-space/workloop-host'
 import { evidenceFromText } from './sources'
@@ -17,7 +17,7 @@ const output = (next: AgentTopicProgress = progress, question = '') => JSON.stri
 const reader = async () => evidenceFromText(settings.sources[0], '公开访谈：用户希望减少操作，但是否愿意付费尚未确定。'.repeat(8))
 afterEach(async () => { for (const close of closers.splice(0).reverse()) await close(); for (const path of dirs.splice(0)) rmSync(path, { recursive: true, force: true }) })
 function fixture() {
-  const dir = directory(), store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), reader)
+  const dir = directory(), store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), reader)
   closers.push(() => store.close(), () => runtime.close())
   store.save('alice', settings); store.save('bob', settings)
   return { dir, store, runtime, topic: store.overview('alice').topics[0] }
@@ -51,7 +51,7 @@ describe('persistent contact topics', () => {
     for (let round = 0; round < 3; round++) {
       if (round === 1) {
         runtime.close(); store.close(); closers.splice(0)
-        store = new TaskCenter(join(initial.dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(initial.dir, 'checkpoints.db'), async () => evidenceFromText(settings.sources[0], '反对证据：个人用户不愿意付费，团队管理员有预算。'.repeat(8)))
+        store = new ContactTaskStore(join(initial.dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(initial.dir, 'checkpoints.db'), async () => evidenceFromText(settings.sources[0], '反对证据：个人用户不愿意付费，团队管理员有预算。'.repeat(8)))
         const reopenedStore = store, reopenedRuntime = runtime
         closers.push(() => reopenedStore.close(), () => reopenedRuntime.close())
       }
@@ -66,7 +66,7 @@ describe('persistent contact topics', () => {
         expect(store.detail('alice', runId).run.status).toBe('waiting')
         expect(store.topics.get('alice', topicId).judgement).toBe(conclusions[0])
         runtime.close(); store.close(); closers.splice(0)
-        store = new TaskCenter(join(initial.dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(initial.dir, 'checkpoints.db'), reader)
+        store = new ContactTaskStore(join(initial.dir, 'agents.db')); runtime = new WorkStrategyRuntime(store, join(initial.dir, 'checkpoints.db'), reader)
         const recoveredStore = store, recoveredRuntime = runtime
         closers.push(() => recoveredStore.close(), () => recoveredRuntime.close())
         store.recover(); store.answer('alice', runId, '继续研究团队，只读验证')
@@ -182,7 +182,7 @@ describe('persistent contact topics', () => {
     await runtime.execute(runId, '', async () => JSON.stringify(legacy), new AbortController().signal)
     expect(store.detail('alice', runId).run.status).toBe('waiting')
     runtime.close(); store.close(); closers.splice(0)
-    const reopened = new TaskCenter(join(dir, 'agents.db')), recovered = new WorkStrategyRuntime(reopened, join(dir, 'checkpoints.db'), reader)
+    const reopened = new ContactTaskStore(join(dir, 'agents.db')), recovered = new WorkStrategyRuntime(reopened, join(dir, 'checkpoints.db'), reader)
     closers.push(() => reopened.close(), () => recovered.close())
     reopened.recover(); reopened.answer('alice', runId, '旧问题的补充回复')
     const model = vi.fn(async () => output())
@@ -202,18 +202,18 @@ describe('persistent contact topics', () => {
     old.prepare("INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input) VALUES('old','alice',1,'completed',1,1,'{}')").run()
     const report = { runId: 'old', title: '升级前报告', body: '旧判断', nextStep: '旧的下一步', evidence: [], createdAt: 1 }
     old.prepare('INSERT INTO reports VALUES(?,?,?)').run('old', 'alice', JSON.stringify(report)); old.close()
-    const migrated = new TaskCenter(path)
+    const migrated = new ContactTaskStore(path)
     expect(migrated.overview('alice').reports).toEqual([report])
     expect(migrated.detail('alice', 'old').run.topicId).toBeNull()
     const topic = migrated.overview('alice').topics[0]
     expect(topic.goal).toBe(settings.goal); expect(topic.judgement).toBe('')
     expect(migrated.profile('alice')!.focus_topic_id).toBe(topic.id)
     migrated.close()
-    const reopened = new TaskCenter(path)
+    const reopened = new ContactTaskStore(path)
     expect(reopened.overview('alice').topics).toHaveLength(1)
     expect(reopened.db.pragma('foreign_key_check')).toEqual([])
     reopened.db.pragma('user_version=99'); reopened.close()
-    expect(() => new TaskCenter(path)).toThrow('版本较新')
+    expect(() => new ContactTaskStore(path)).toThrow('版本较新')
   })
 })
 

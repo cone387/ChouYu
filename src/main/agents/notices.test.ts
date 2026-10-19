@@ -2,19 +2,19 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS, type AgentTopicProgress } from '../../shared/agents'
 
-const stores: TaskCenter[] = [], dirs: string[] = []
+const stores: ContactTaskStore[] = [], dirs: string[] = []
 const progress: AgentTopicProgress = { judgement: '需求存在', reason: '资料提供线索', nextStep: '核对付费意愿', openQuestions: '谁愿付费', status: 'needs_evidence' }
 const settings = { ...DEFAULT_AGENT_SETTINGS, goal: '研究需求', sources: ['https://example.com'] }
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-notices-')); dirs.push(dir)
-  const path = join(dir, 'agents.db'), store = new TaskCenter(path); stores.push(store)
+  const path = join(dir, 'agents.db'), store = new ContactTaskStore(path); stores.push(store)
   store.save('alice', settings); store.save('bob', settings)
   return { store, path, topic: store.overview('alice').topics[0] }
 }
-function finish(store: TaskCenter, hash = 'one', change = progress) {
+function finish(store: ContactTaskStore, hash = 'one', change = progress) {
   const runId = store.createRun('alice', '')
   const report = { runId, title: '报告', body: '真实资料', nextStep: change.nextStep, createdAt: Date.now(), evidence: [{ url: 'https://example.com', title: '资料', text: '公开资料', capturedAt: Date.now(), hash }] }
   store.finish(runId, report, [], change)
@@ -51,7 +51,7 @@ describe('contact notice outbox', () => {
     store.cancel('alice', '暂停')
     expect(store.interactions('alice', topic.id).items[0].pending).toBe(false)
     store.close(); stores.splice(stores.indexOf(store), 1)
-    const reopened = new TaskCenter(path); stores.push(reopened)
+    const reopened = new ContactTaskStore(path); stores.push(reopened)
     expect(reopened.interactions('alice', topic.id).items[0].text).toBe('最后一个问题')
   })
   it('survives restart, isolates owners, and does not enqueue duplicate commits', () => {
@@ -64,7 +64,7 @@ describe('contact notice outbox', () => {
     expect(first.content).toBe('报告\n\n真实资料')
     expect(first.content).not.toContain('变化原因：')
     store.close(); stores.splice(stores.indexOf(store), 1)
-    const recovered = new TaskCenter(path); stores.push(recovered)
+    const recovered = new ContactTaskStore(path); stores.push(recovered)
     expect(recovered.notices.pending('alice')).toEqual([first])
     recovered.notices.ack('bob', first.id)
     expect(recovered.notices.pending('alice')).toHaveLength(1)
@@ -137,7 +137,7 @@ it('delivers each committed result immediately across revisions and restart, bey
   expect(store.notices.pending('alice').map(n => n.runId)).toEqual(runs)
   for (const notice of store.notices.pending('alice').slice(0, 9)) store.notices.ack('alice', notice.id)
   store.close(); stores.splice(stores.indexOf(store), 1)
-  const reopened = new TaskCenter(path); stores.push(reopened)
+  const reopened = new ContactTaskStore(path); stores.push(reopened)
   expect(reopened.notices.pending('alice').map(n => n.runId)).toEqual(runs.slice(9))
 })
 it('retries continuous work promptly, reports failures once, and restores old long waits on restart', () => {
@@ -158,7 +158,7 @@ it('retries continuous work promptly, reports failures once, and restores old lo
   const second = store.createRun('alice', ''); store.fail(second, '再次失败')
   store.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=?').run(Date.now() + 10800000, 'alice')
   store.close(); stores.splice(stores.indexOf(store), 1)
-  const reopened = new TaskCenter(path); stores.push(reopened)
+  const reopened = new ContactTaskStore(path); stores.push(reopened)
   expect(reopened.overview('alice').failures).toBe(2)
   expect(reopened.overview('alice').nextAt).toBeLessThanOrEqual(Date.now() + 180000)
   const third = reopened.createRun('alice', ''); reopened.fail(third, '仍然失败')

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime, parseDraft } from '../workloop/workflow'
 import { WorkLoopHost, type ContactIdentity } from '../agent-space/workloop-host'
 import { evidenceFromText, publicAddress } from './sources'
@@ -17,7 +17,7 @@ const reader = vi.fn(async () => evidence)
 const draft = { title: '本轮机会假设', body: '资料 [1] 提到了需求，尚未验证付费意愿。', nextStep: '下轮跟进需求证据', memories: ['付费意愿仍是待验证假设'], question: '', progress: { judgement: '需求存在，付费意愿尚未验证。', openQuestions: '用户是否付费？', nextStep: '下轮跟进需求证据', reason: '资料 [1] 提到了需求，但没有付费证据。', status: 'needs_evidence' } }
 afterEach(async () => { reader.mockClear(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 function fixture() {
-  const dir = directory(), store = new TaskCenter(join(dir, 'store.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), reader)
+  const dir = directory(), store = new ContactTaskStore(join(dir, 'store.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'), reader)
   cleanups.push(() => store.close(), () => runtime.close())
   store.save('alice', settings); store.save('bob', settings)
   return { dir, store, runtime }
@@ -106,7 +106,7 @@ describe('contact agent durability and isolation', () => {
     await runtime.execute(run, 'Alice', async () => JSON.stringify({ ...draft, question: '你更熟悉哪个行业？' }), new AbortController().signal)
     expect(store.detail('alice', run).run.status).toBe('waiting')
     runtime.close(); store.close(); cleanups.splice(0)
-    const reopened = new TaskCenter(join(dir, 'store.db')), recovered = new WorkStrategyRuntime(reopened, join(dir, 'checkpoints.db'), reader)
+    const reopened = new ContactTaskStore(join(dir, 'store.db')), recovered = new WorkStrategyRuntime(reopened, join(dir, 'checkpoints.db'), reader)
     cleanups.push(() => reopened.close(), () => recovered.close())
     reopened.recover(); reopened.answer('alice', run, '开发者工具')
     const model = vi.fn(async () => { throw new Error('must not call') })

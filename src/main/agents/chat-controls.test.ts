@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WorkLoopHost } from '../agent-space/workloop-host'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { createContactTools } from './tools'
 import { routeContactChange } from './chat-changes'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -40,7 +40,7 @@ it('saves working hours through chat for a contact without tasks and retains a d
   expect(current.topics).toEqual([])
   expect(current.settings.enabled).toBe(false)
   expect(f.store.overview('bob').settings.workHours).toBeUndefined()
-  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
+  const reopened = new ContactTaskStore(join(f.dir, 'agents.db'))
   try {
     expect(reopened.overview('alice').settings.workHours).toEqual({ start: '20:00', end: '23:00' })
     expect(reopened.db.prepare('SELECT reason FROM work_settings_changes WHERE character_id=?').get('alice')).toEqual({ reason: '以后只在晚上八点到十一点工作' })
@@ -54,7 +54,7 @@ it('persists permissions, notifications and sharing through the same chat settin
   expect(reply).toContain('仅指定网页')
   expect(f.store.overview('alice')).toMatchObject({ settings: patch, topics: [] })
   expect(f.store.overview('bob')).toEqual(bob)
-  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
+  const reopened = new ContactTaskStore(join(f.dir, 'agents.db'))
   try { expect(reopened.overview('alice').settings).toMatchObject(patch) } finally { reopened.close() }
 })
 it('does not partially save a combined patch when the required search credential is missing', async () => {

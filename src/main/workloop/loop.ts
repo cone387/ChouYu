@@ -1,7 +1,7 @@
 import { safeAgentFailure } from '../agents/failure'
 import { SkillRunner } from '../skills/runner'
 import type { SkillSnapshot } from '../../shared/skills'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime, type AgentModel } from './workflow'
 import type { AgentSettings } from '../../shared/agents'
 import { withinWorkHours } from '../../shared/work-settings'
@@ -13,7 +13,7 @@ export class WorkLoop implements ContactModule {
   readonly id = 'workloop'
   private closed = false
   private closing?: Promise<void>
-  constructor(private owner: ContactModuleOwner, private store: TaskCenter, private runtime: WorkStrategyRuntime,
+  constructor(private owner: ContactModuleOwner, private store: ContactTaskStore, private runtime: WorkStrategyRuntime,
     private scheduler: RunScheduler, private skillRunner: SkillRunner, private changed: (id: string) => void,
     private wake: () => void, private request: (method: string, id: string, args: unknown[]) => Promise<any>,
     private modelFactory?: (identity: ContactIdentity) => AgentModel, private readSkills?: (id: string) => SkillSnapshot) {}
@@ -75,7 +75,7 @@ export class WorkLoop implements ContactModule {
     }
     return false
   }
-  private startRun(run: NonNullable<ReturnType<TaskCenter['getRun']>>, limit: number) {
+  private startRun(run: NonNullable<ReturnType<ContactTaskStore['getRun']>>, limit: number) {
     try { this.store.handoffs.bindRun(run.id) } catch (error) { this.store.fail(run.id, error instanceof Error ? error.message : '交接来源无法读取。'); this.changed(run.character_id); this.store.releaseRunCalls(run.id); return false }
     run = this.store.getRun(run.id)!
     if (run.topic_id && JSON.parse(run.input).revisionScope !== 'presentation') this.store.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(run.topic_id, run.character_id)

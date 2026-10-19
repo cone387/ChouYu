@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { deliveryText, textHash } from '../../shared/contact-content'
 
@@ -12,7 +12,7 @@ afterEach(() => cleanup.splice(0).reverse().forEach(f => f()))
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-portfolio-')), file = join(dir, 'agents.db')
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  let store = new TaskCenter(file)
+  let store = new ContactTaskStore(file)
   cleanup.push(() => store.close())
   for (const owner of ['alice', 'bob']) store.save(owner, { ...DEFAULT_AGENT_SETTINGS, goal: '创作作品', dailyCalls: 200 })
   function topic(owner = 'alice', title = '作品') { return store.topics.create(owner, { title, goal: '写作', constraints: '' }, '用户要求') }
@@ -24,7 +24,7 @@ function fixture() {
       { status: 'researching', judgement: '推进中', openQuestions: '', nextStep: '继续', reason: '已交付' }, update)
     return { characterId: owner, topicId: id, version: store.deliveries.get(id)!.version, sectionId: 's' }
   }
-  return { get store() { return store }, file, topic, write, reopen() { store.close(); store = new TaskCenter(file) } }
+  return { get store() { return store }, file, topic, write, reopen() { store.close(); store = new ContactTaskStore(file) } }
 }
 
 describe('formal portfolio and reading', () => {
@@ -93,7 +93,7 @@ describe('formal portfolio and reading', () => {
     const future = join(tmpdir(), `chouyu-future-${Date.now()}.db`), db = new Database(future)
     db.pragma('user_version=999'); db.close()
     cleanup.push(() => rmSync(future, { force: true }))
-    expect(() => new TaskCenter(future)).toThrow('版本较新')
+    expect(() => new ContactTaskStore(future)).toThrow('版本较新')
   })
   it('rejects malformed query cursors and invalid query fields', () => {
     const f = fixture()

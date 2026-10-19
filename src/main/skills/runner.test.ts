@@ -7,7 +7,7 @@ import { SkillLibrary } from './library'
 import { SkillRunner, scriptArguments, containerArguments } from './runner'
 import { exportedFiles } from './container-worker'
 import { skillToolRuntime } from './tools'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -28,7 +28,7 @@ it('keeps contact workspaces separate and rejects traversal and unassigned packa
   expect(() => runner.readFile('alice', snapshot, 'script', 'C:/secret', 'workspace')).toThrow()
 })
 it('archives actual tool writes with chat attribution and never imports hardlinked files', async () => {
-  const { root, runner, snapshot } = setup(), store = new TaskCenter(':memory:')
+  const { root, runner, snapshot } = setup(), store = new ContactTaskStore(':memory:')
   store.ensure('alice'); store.memoryLibrary.registerSessions('alice', ['session'])
   try {
     const tools = skillToolRuntime('alice', snapshot, runner, new AbortController().signal, async (skillId, files) => store.files.archive({ characterId: 'alice', skillId, sessionId: 'session', requestId: 'request' }, files))

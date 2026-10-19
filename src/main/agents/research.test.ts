@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
 import { parseResearchPlan, researchUrl, searchBrave } from './research'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
@@ -15,7 +15,7 @@ const plan: AgentResearchPlan = { action: 'search', reason: '核对免费替代�
 const draft = { title: '付费假设待验证', body: '原文 [1] 提到免费版本。', nextStep: '核对团队功能', memories: [], question: '', progress: { judgement: '存在免费替代品，收益未验证', reason: '资料 [1] 改变初始判断', openQuestions: '团队会付费吗', nextStep: '核对团队功能', status: 'needs_evidence' } }
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-research-')); dirs.push(dir)
-  const store = new TaskCenter(join(dir, 'agents.db'))
+  const store = new ContactTaskStore(join(dir, 'agents.db'))
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '寻找团队需求', sources: [seed], searchEnabled: true, dailyCalls: 24, dailySearches: 2 })
   const reader = vi.fn(async (url: string) => evidenceFromText(url, '公开定价说明：个人免费，团队版需要核对。'.repeat(10)))
   const searcher = vi.fn(async () => [{ url: found, title: '定价' }])
@@ -212,7 +212,7 @@ describe('autonomous evidence research', () => {
     const waiting = await run(plan, { ...draft, question: '你是否熟悉团队场景？' })
     expect(waiting.detail.run.status).toBe('waiting')
     runtime.close(); store.close(); closers.splice(0)
-    const recovered = new TaskCenter(join(dir, 'agents.db')), graph = new WorkStrategyRuntime(recovered, join(dir, 'checkpoints.db'), reader, searcher)
+    const recovered = new ContactTaskStore(join(dir, 'agents.db')), graph = new WorkStrategyRuntime(recovered, join(dir, 'checkpoints.db'), reader, searcher)
     closers.push(() => recovered.close(), () => graph.close())
     recovered.answer('alice', waiting.id, '熟悉，只研究团队')
     const model = vi.fn(async () => JSON.stringify({ ...draft, body: '按回复缩小到团队，只研究团队。资料仍需验证 [1]。' }))
@@ -235,7 +235,7 @@ describe('autonomous evidence research', () => {
     await expect(runtime.execute(id, '', planner, controller.signal, () => {}, 'SEARCH_SECRET')).rejects.toThrow()
     expect(searcher).toHaveBeenCalledTimes(1)
     runtime.close(); store.close(); closers.splice(0)
-    const recovered = new TaskCenter(join(dir, 'agents.db')), graph = new WorkStrategyRuntime(recovered, join(dir, 'checkpoints.db'), reader, searcher)
+    const recovered = new ContactTaskStore(join(dir, 'agents.db')), graph = new WorkStrategyRuntime(recovered, join(dir, 'checkpoints.db'), reader, searcher)
     closers.push(() => recovered.close(), () => graph.close())
     recovered.recover()
     const model = vi.fn(async () => JSON.stringify(draft))

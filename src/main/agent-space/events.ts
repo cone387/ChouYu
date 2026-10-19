@@ -1,4 +1,4 @@
-/** Contact-scoped wake subscriptions; task data stays in TaskCenter. */
+/** Contact-scoped wake subscriptions; task data stays in ContactTaskStore. */
 export class ContactEvents {
   private listeners = new Map<string, Set<() => void>>()
   subscribe(id: string, listener: () => void) {

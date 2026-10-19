@@ -10,7 +10,7 @@ import { validateTaskResourceBudget, type TaskResourceBudget } from '../../share
 import { Annotation, StateGraph, START, END, interrupt, Command } from '@langchain/langgraph'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { agentUsesPlanner, validateTopicProgress, type AgentEvidence, type AgentReport, type AgentSettings, type AgentTopic, type AgentTopicProgress } from '../../shared/agents'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { readSource } from '../agents/sources'
 import { InvalidContactReferenceError, ResearchPlanFormatError, researchPlanValue, validateContactSelection, InvalidSectionReferenceError, parseResearchPlan, researchUrl, searchBrave, type AgentSearcher } from '../agents/research'
 import type { AgentResearchPlan, AgentResearch } from '../../shared/agents'
@@ -42,7 +42,7 @@ function parseBrief(raw: string): Brief {
   if (plan.stages.some(stage => stage.status !== 'pending')) throw new Error('接单时的阶段尚未执行，不能标为进行中或完成。')
   return { title: value.title.trim(), nextStep: value.nextStep.trim(), question: value.question.trim(), plan, ...(value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }
 }
-async function reviewBrief(store: TaskCenter, runId: string, topic: AgentTopic | undefined, model: AgentModel, signal: AbortSignal, live: () => void, raw: string): Promise<Brief> {
+async function reviewBrief(store: ContactTaskStore, runId: string, topic: AgentTopic | undefined, model: AgentModel, signal: AbortSignal, live: () => void, raw: string): Promise<Brief> {
   live()
   try { return parseBrief(raw) } catch { /* One durable correction; premature prose is never a saved delivery. */ }
   if (store.db.prepare("SELECT 1 FROM events WHERE run_id=? AND kind='brief-format-repair'").get(runId)) throw new Error('接单计划已纠正过一次但仍无效，尚未保存或交付正文。')
@@ -87,7 +87,7 @@ export class WorkStrategyRuntime {
   readonly contactSources: ContactSources
   readonly checkpoints: SqliteSaver
   private db: Database.Database
-  constructor(readonly store: TaskCenter, checkpointPath: string, private reader = readSource, private searcher: AgentSearcher = searchBrave) {
+  constructor(readonly store: ContactTaskStore, checkpointPath: string, private reader = readSource, private searcher: AgentSearcher = searchBrave) {
     this.contactSources = new ContactSources(store)
     this.db = new Database(checkpointPath); this.db.pragma('journal_mode = WAL'); this.db.pragma('busy_timeout = 5000')
     this.checkpoints = new SqliteSaver(this.db)

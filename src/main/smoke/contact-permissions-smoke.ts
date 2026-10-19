@@ -1,7 +1,7 @@
 import { app, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { appendAgentNotice, createCharacter, createChatSession, getConfig, listCharacters, saveConfig, selectChatSession } from '../database'
 import { waitForRenderer } from './storage-smoke'
@@ -15,7 +15,7 @@ export async function runContactPermissionsSmoke(window: BrowserWindow) {
   const character = createCharacter({ ...template, name: '权限与故障处理验收', model: 'agent-smoke' })
   const session = createChatSession('权限与故障处理验收', character.id).activeSession.id
   const directory = join(app.getPath('userData'), 'contact-agents'); mkdirSync(directory, { recursive: true })
-  const store = new TaskCenter(join(directory, 'agents.db'))
+  const store = new ContactTaskStore(join(directory, 'agents.db'))
   let topicId: string
   try { store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '写一篇介绍', dailyCalls: 100, permissionLevel: 'sources', sources: ['https://example.com/'] }); topicId = store.overview(character.id).topics[0].id }
   finally { store.close() }
@@ -66,7 +66,7 @@ export async function runContactPermissionsSmoke(window: BrowserWindow) {
   }
   await capture('contact-tool-policy', '[data-contact-tool-policy]')
   await run("document.querySelector('[aria-label=\"关闭联系人工作弹窗\"]').click()")
-  const failureStore = new TaskCenter(join(directory, 'agents.db'))
+  const failureStore = new ContactTaskStore(join(directory, 'agents.db'))
   let cardId: string
   try {
     const topic = failureStore.topics.get(character.id, topicId)
@@ -108,7 +108,7 @@ export async function runContactPermissionsSmoke(window: BrowserWindow) {
   const resolved = await run(`window.electronAPI.agents.getInteraction(${JSON.stringify(character.id)},${JSON.stringify(cardId)})`)
   if (resolved.status !== 'resolved') throw new Error('Failure remedy was not resolved')
   // The same persisted interaction must follow real newer states, without rewriting the sent notice.
-  const stateStore = new TaskCenter(join(directory, 'agents.db'))
+  const stateStore = new ContactTaskStore(join(directory, 'agents.db'))
   try {
     // Do not race the real worker executing the permission-retry task above.
     const scene = stateStore.topics.create(character.id, { title: '资料失败与恢复验收', goal: '读取指定资料后写作', constraints: '' }, 'isolated fixture')

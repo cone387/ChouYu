@@ -2,7 +2,7 @@ import { DEFAULT_CHARACTER_ID } from '../../shared/characters'
 import type { RegisteredTool } from '../tools/registry'
 import type { AssistantRoutineService } from './service'
 
-export function createAssistantTools(service: AssistantRoutineService, owner: (sessionId?: string) => string | undefined, readContacts: () => Promise<unknown>): RegisteredTool[] {
+export function createAssistantTools(service: Pick<AssistantRoutineService, 'list' | 'save' | 'remove'>, owner: (sessionId?: string) => string | undefined, readContacts: () => Promise<unknown>): RegisteredTool[] {
   const base = { source: 'builtin' as const, risk: 'read' as const, requiresConfirmation: false }
   const check = (sessionId?: string) => { if (owner(sessionId) !== DEFAULT_CHARACTER_ID) throw new Error('请在 ChouYu 的聊天中管理助手安排。') }
   return [

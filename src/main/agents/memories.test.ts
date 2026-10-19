@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import type { MemoryInput } from '../../shared/contact-memories'
-const stores: TaskCenter[] = []
+const stores: ContactTaskStore[] = []
 afterEach(() => stores.splice(0).forEach(s => s.close()))
 function fixture() {
-  const store = new TaskCenter(':memory:'); stores.push(store)
+  const store = new ContactTaskStore(':memory:'); stores.push(store)
   store.ensure('alice'); store.ensure('bob')
   const a = store.topics.create('alice', { title: '项目甲', goal: '研究甲', constraints: '' }, '用户创建')
   const b = store.topics.create('alice', { title: '项目乙', goal: '研究乙', constraints: '' }, '用户创建')

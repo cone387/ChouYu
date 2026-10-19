@@ -2,7 +2,7 @@ import { app, type BrowserWindow } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createCharacter, listCharacters, createChatSession, getActiveSession, saveMessages, selectChatSession } from '../database'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { beginContactQueryMeasurement, endContactQueryMeasurement, failContactReadForSmoke } from '../agents/query-metrics'
 import { waitForRenderer } from './storage-smoke'
@@ -19,7 +19,7 @@ export async function runContactPerformanceSmoke(window: BrowserWindow) {
   }
   selectChatSession(originalSession)
   await run(`window.electronAPI.agents.get(${JSON.stringify(owners[0])})`)
-  const store = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+  const store = new ContactTaskStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   const targets: { characterId: string; topicId: string }[] = []
   for (const owner of owners) {
     store.save(owner, { ...DEFAULT_AGENT_SETTINGS, goal: 'Fixture work', enabled: false, dailyCalls: 200 })
@@ -113,7 +113,7 @@ export async function runContactPerformanceSmoke(window: BrowserWindow) {
     await tab('settings')
     await waitForRenderer(window, `Boolean(document.querySelector('${panel} [data-agent-sources]'))`)
     await run(`(()=>{const e=document.querySelector('${panel} [data-agent-sources]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'https://example.com/unsaved-draft');e.dispatchEvent(new Event('input',{bubbles:true}))})()`)
-    const changedStore = new TaskCenter(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
+    const changedStore = new ContactTaskStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
     const nextRun = changedStore.createRun(target.characterId, '', Date.now(), target.topicId)
     changedStore.finish(nextRun, { runId: nextRun, title: 'New version', body: 'Updated saved paragraph.', nextStep: 'Continue', evidence: [], createdAt: Date.now() }, [],
       { status: 'researching', judgement: 'Saved', openQuestions: '', nextStep: 'Continue', reason: 'Saved' },

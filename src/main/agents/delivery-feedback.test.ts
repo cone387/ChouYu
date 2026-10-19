@@ -2,13 +2,13 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { saveDeliveryFeedback } from './delivery-feedback'
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const close of cleanup.splice(0).reverse()) close() })
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'delivery-feedback-')), store = new TaskCenter(join(dir, 'agents.db'))
+  const dir = mkdtempSync(join(tmpdir(), 'delivery-feedback-')), store = new ContactTaskStore(join(dir, 'agents.db'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }), () => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '写作' }, Date.now(), false); store.ensure('bob')
   const topic = store.topics.create('alice', { title: '写作', goal: '写一篇文章', constraints: '' }), run = store.createRun('alice', '', Date.now(), topic.id)

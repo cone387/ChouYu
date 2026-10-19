@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { AgentTopic } from '../../shared/agents'
 import type { AgentModel } from '../workloop/workflow'
-import type { TaskCenter } from '../task-center/store'
+import type { ContactTaskStore } from '../task-center/contact-store'
 
 export const taskBoundaryInstruction = `用户原始目标、约束和明确补充是任务边界；历史 nextStep、模型计划与建议不是新的用户授权。只执行原任务内的下一步，历史下一步偏离原目标时纠正。持续产出/评审任务不得自行升级为招募、发布、购买、联系第三方或实际运营，也不得为这些额外行动索要批准而中断原任务。验证方法可以作为成果中的建议，不等于启动验证。不要询问是否继续已交代的任务、是否认可普通阶段计划或是否开始下一轮。只有原任务本身确实无法继续、且信息无法从已有描述/资料获得时才填写 question；必须说明缺失什么及为什么阻碍原任务。真正必要的用户决定或授权仍必须等待，不能代答。`
 
@@ -9,7 +9,7 @@ type Candidate = { question: string; nextStep: string }
 type Decision = { blocking: boolean; reason: string; missingInformation: string; nextStep: string }
 
 /** Gate only a proposed interruption. Never manufacture a user answer or execute an extra action. */
-export async function reviewTaskQuestion<T extends Candidate>(store: TaskCenter, runId: string, topic: AgentTopic,
+export async function reviewTaskQuestion<T extends Candidate>(store: ContactTaskStore, runId: string, topic: AgentTopic,
   draft: T, model: AgentModel, signal: AbortSignal, validate: (raw: string) => T, prompt: string, live: () => void, context?: unknown): Promise<T> {
   if (!draft.question) return draft
   const key = createHash('sha256').update(JSON.stringify({ goal: topic.goal, constraints: topic.constraints, requestLog: topic.requestLog, context, draft })).digest('hex')

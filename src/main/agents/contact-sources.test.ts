@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime } from '../workloop/workflow'
 import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from '../../shared/agents'
@@ -15,7 +15,7 @@ const plan = { action: 'write', reason: '产出 idea', query: '', urls: [], chec
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-contact-sources-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+  const store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   cleanup.push(() => { runtime.close(); store.close() })
   for (const id of ['writer', 'reviewer', 'private']) store.save(id, { ...DEFAULT_AGENT_SETTINGS, goal: id, dailyCalls: 400, intervalMinutes: 15, shareDeliveries: id === 'writer', readContactDeliveries: id === 'reviewer' })
   runtime.contactSources.names.set('writer', '阿想')
@@ -322,7 +322,7 @@ it('notifies new saved sections even when the model repeats the same progress su
 it.each(['阿想 Idea实验员', '过时的名称'])('resumes cached query %s after restart and delivers the resulting review', async query => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-workflow-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new TaskCenter(join(dir, 'agents.db'))
+  const store = new ContactTaskStore(join(dir, 'agents.db'))
   for (const id of ['writer', 'reviewer']) store.save(id, { ...DEFAULT_AGENT_SETTINGS, goal: id, dailyCalls: 100,
     intervalMinutes: 15, enabled: id === 'reviewer', paceWriting: true, shareDeliveries: id === 'writer', readContactDeliveries: id === 'reviewer' })
   const old = store.createRun('reviewer', '')

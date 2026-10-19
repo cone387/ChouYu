@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { WorkLoopHost } from '../agent-space/workloop-host'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -17,7 +17,7 @@ describe('contacts dashboard', () => {
     } finally { await service.close(); rmSync(directory, { recursive: true, force: true }) }
   })
   it('aggregates all contacts and rounds with accurate usage and event ownership', () => {
-    const store = new TaskCenter(':memory:')
+    const store = new ContactTaskStore(':memory:')
     try {
       for (const id of ['alice', 'bob', 'excluded']) store.save(id, { ...DEFAULT_AGENT_SETTINGS, goal: `${id} task` })
       const first = store.createRun('alice', '')
@@ -46,7 +46,7 @@ describe('contacts dashboard', () => {
     } finally { store.close() }
   })
   it('bounds the log window and returns stable chronological event order', () => {
-    const store = new TaskCenter(':memory:')
+    const store = new ContactTaskStore(':memory:')
     try {
       store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A' })
       const run = store.createRun('alice', '')

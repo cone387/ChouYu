@@ -12,8 +12,12 @@ import { notifyReminderChanges } from '../reminder-events'
 import type { TaskReminderRef } from '../../shared/reminders'
 import { createTaskTool } from './task-tool'
 import { createTaskAssistantTools } from './assistant-tools'
+import { taskCenter } from '../task-center/service'
+import { createTodoDomain, type TodoCommands } from '../task-center/todo-domain'
 
-let store: TasksStore | undefined
+let database: TasksStore | undefined
+let store: TodoCommands | undefined
+let disposeDomain: (() => void) | undefined
 let scheduler: { stop(): void } | undefined
 let shuttingDown = false
 let storeRebuilt = false
@@ -44,7 +48,10 @@ export interface TasksModuleOptions {
 export function initializeTasks(options: TasksModuleOptions): void {
   if (store) return
   shuttingDown = false
-  store = openTasksStore(join(app.getPath('userData'), 'tasks.db'))
+  database = openTasksStore(join(app.getPath('userData'), 'tasks.db'))
+  const registration = taskCenter.register(createTodoDomain(database))
+  store = registration.bind('user')
+  disposeDomain = registration.dispose
   if (!getRegisteredTool('create_task')) registerTool(createTaskTool(input => {
     if (!store) throw new Error('任务系统尚未就绪。')
     const task = store.createTask(input)
@@ -57,7 +64,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
   }, () => broadcast('tasks:changed'))) {
     if (!getRegisteredTool(tool.name)) registerTool(tool)
   }
-  if (store.quarantinedAt) storeRebuilt = true
+  if (database.quarantinedAt) storeRebuilt = true
   scheduler = startTaskScheduler(
     (now, backlog) => {
       if (store!.generateScheduledOccurrences(now)) broadcast('tasks:changed')
@@ -185,7 +192,9 @@ export function closeTasks(): void {
   readyDelivered = false
   scheduler?.stop()
   scheduler = undefined
-  try { store?.close() } catch { /* 退出路径上尽力关闭 */ }
+  disposeDomain?.(); disposeDomain = undefined
+  try { database?.close() } catch { /* 退出路径上尽力关闭 */ }
+  database = undefined
   store = undefined
 }
 

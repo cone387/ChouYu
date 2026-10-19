@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 describe('task usage metrics', () => {
   it('aggregates all rounds, isolates tasks, preserves unknown usage and migrates existing records', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chouyu-metrics-'))
-    let store = new TaskCenter(join(dir, 'agents.db'))
+    let store = new ContactTaskStore(join(dir, 'agents.db'))
     try {
       store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'A', dailyCalls: 48 }, 1000)
       store.save('bob', { ...DEFAULT_AGENT_SETTINGS, goal: 'B' }, 1000)
@@ -34,10 +34,10 @@ describe('task usage metrics', () => {
       expect(metric).toMatchObject({ runs: 32, calls: 32, elapsedMs: 16000, activeRuns: 0, totalTokens: 3600, inputTokens: 3000, outputTokens: 600, totalReported: 30, models: ['model-a'] })
       expect(store.overview('alice').topicMetrics![other.id]).toBeUndefined()
       expect(store.overview('bob', 14000).topicMetrics![other.id]).toMatchObject({ calls: 1, elapsedMs: 4000, activeRuns: 1, totalTokens: 999, inputReported: 0 })
-      store.close(); store = new TaskCenter(join(dir, 'agents.db'))
+      store.close(); store = new ContactTaskStore(join(dir, 'agents.db'))
       expect(store.overview('alice', 40000).topicMetrics![topic.id]).toEqual(metric)
       store.db.exec('ALTER TABLE calls DROP COLUMN metadata; PRAGMA user_version=6;')
-      store.close(); store = new TaskCenter(join(dir, 'agents.db'))
+      store.close(); store = new ContactTaskStore(join(dir, 'agents.db'))
       expect(store.overview('alice').topicMetrics![topic.id]).toMatchObject({ runs: 32, calls: 32, totalReported: 0, totalTokens: 0 })
     } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
   })

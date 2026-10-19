@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkStrategyRuntime, parseDraft } from '../workloop/workflow'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { deliveryMarkdown } from '../../shared/agent-delivery'
@@ -23,7 +23,7 @@ it('requires structured scores when the plan requests evaluation', () => {
 it.each(['present', 'omitted', 'null', 'conflicting'] as const)('persists computed totals and canonical task continuation with %s report nextStep', async representation => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-evaluation-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+  const store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   cleanup.push(() => { runtime.close(); store.close() })
   store.save('reviewer', { ...DEFAULT_AGENT_SETTINGS, goal: '评价 idea', dailyCalls: 20 })
   const run = store.createRun('reviewer', '')
@@ -45,7 +45,7 @@ it.each(['present', 'omitted', 'null', 'conflicting'] as const)('persists comput
 it('does not publish malformed scores even after one format repair attempt', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-invalid-evaluation-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+  const store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   cleanup.push(() => { runtime.close(); store.close() })
   store.save('reviewer', { ...DEFAULT_AGENT_SETTINGS, goal: '评价 idea', dailyCalls: 20 })
   const run = store.createRun('reviewer', '')
@@ -66,7 +66,7 @@ it('does not publish malformed scores even after one format repair attempt', asy
 it('corrects an erroneous scoring flag for novel writing and preserves the prose', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-writing-intent-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+  const store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   cleanup.push(() => { runtime.close(); store.close() })
   store.save('writer', { ...DEFAULT_AGENT_SETTINGS, goal: '续写音乐修炼小说第二章：试音与评委', dailyCalls: 20 })
   const run = store.createRun('writer', '')
@@ -99,7 +99,7 @@ it('does not substitute evaluation advice or an old report step for missing task
 it('repairs an incomplete evaluation envelope once with the complete delivery contract', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-evaluation-repair-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new TaskCenter(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+  const store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
   cleanup.push(() => { runtime.close(); store.close() })
   store.save('reviewer', { ...DEFAULT_AGENT_SETTINGS, goal: '持续评价 idea', dailyCalls: 20 })
   const run = store.createRun('reviewer', '')

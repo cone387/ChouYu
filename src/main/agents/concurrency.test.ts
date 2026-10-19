@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { WorkLoopHost } from '../agent-space/workloop-host'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
 import { evidenceFromText } from './sources'
 import { createContactTools } from './tools'
@@ -45,7 +45,7 @@ it('persists the per-contact limit and rejects invalid counts without overwritin
   for (const maxConcurrentTasks of [0, -1, 1.5, NaN, Infinity, '2', null]) {
     expect(() => validateAgentSettings({ ...settings, maxConcurrentTasks })).toThrow()
   }
-  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
+  const reopened = new ContactTaskStore(join(f.dir, 'agents.db'))
   try { expect(reopened.overview('alice').settings).toMatchObject({ maxConcurrentTasks: 3 }) } finally { reopened.close() }
 })
 
@@ -121,7 +121,7 @@ it('does not let a successful task reset another task failure backoff or stop it
   expect(s.providerRecovery('alice')).toMatchObject({ topicId: f.topics[0], at: due })
   const third = s.assignTopic('alice', 'New assignment', '')
   expect(s.overview('alice').runs.some(r => r.topicId === third.id && r.status === 'queued')).toBe(true)
-  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
+  const reopened = new ContactTaskStore(join(f.dir, 'agents.db'))
   try { expect(reopened.providerRecovery('alice')).toMatchObject({ topicId: f.topics[0], at: due }) } finally { reopened.close() }
 })
 
@@ -249,7 +249,7 @@ it('preserves legacy failure counts when upgrading during an unfinished retry', 
   for (let i = 0; i < 2; i++) { const run = s.createRun('alice', '', Date.now(), f.topics[0]); s.fail(run, 'API error 503') }
   const retry = s.createRun('alice', '', Date.now(), f.topics[0])
   s.db.exec('DROP TABLE task_failures') // Recreate the on-disk shape of the older serial build.
-  const reopened = new TaskCenter(join(f.dir, 'agents.db'))
+  const reopened = new ContactTaskStore(join(f.dir, 'agents.db'))
   try {
     reopened.fail(retry, 'API error 503')
     expect(reopened.profile('alice')!.failures).toBe(3)

@@ -1,7 +1,7 @@
 import { app, type BrowserWindow } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { waitForRenderer } from './storage-smoke'
 import { restartAgentsForSmoke } from '../agents'
 import { getActiveSession, selectChatSession, flushDatabase } from '../database'
@@ -53,7 +53,7 @@ export async function runContactMemorySmoke(window: BrowserWindow, characterId: 
   await waitForRenderer(window, `Boolean(document.querySelector('${modal}'))`)
   await fill('用户偏好：请用简洁的中文回答。')
   const directory = join(app.getPath('userData'), 'contact-agents')
-  const store = new TaskCenter(join(directory, 'agents.db'))
+  const store = new ContactTaskStore(join(directory, 'agents.db'))
   try {
     store.db.exec("CREATE TRIGGER memory_smoke_failure BEFORE INSERT ON memories BEGIN SELECT RAISE(ABORT,'memory write failure fixture'); END")
     await click('[data-contact-memory-save]')
@@ -78,7 +78,7 @@ export async function runContactMemorySmoke(window: BrowserWindow, characterId: 
   } finally { store.db.exec('DROP TRIGGER IF EXISTS memory_smoke_failure'); store.close() }
   await click('[data-contact-memory-save]')
   await waitForRenderer(window, `!document.querySelector('${modal}') && document.querySelector('.agent-memories')?.textContent.includes('用户偏好：请用简洁的中文回答。')`)
-  const saved = new TaskCenter(join(directory, 'agents.db'))
+  const saved = new ContactTaskStore(join(directory, 'agents.db'))
   try {
     const memories = saved.memories(characterId).filter(m => m.content === '用户偏好：请用简洁的中文回答。')
     if (memories.length !== 1) throw new Error('Memory retry did not save exactly once')

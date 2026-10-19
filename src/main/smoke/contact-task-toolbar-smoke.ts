@@ -1,7 +1,7 @@
 import { app, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { createCharacter, createChatSession, getConfig, listCharacters, saveConfig, selectChatSession } from '../database'
 import { waitForRenderer } from './storage-smoke'
@@ -14,7 +14,7 @@ export async function runContactTaskToolbarSmoke(window: BrowserWindow) {
   // Start/recover the worker before adding isolated in-flight fixtures.
   await run(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
   const directory = join(app.getPath('userData'), 'contact-agents'); mkdirSync(directory, { recursive: true })
-  const store = new TaskCenter(join(directory, 'agents.db'))
+  const store = new ContactTaskStore(join(directory, 'agents.db'))
   let first: string, second: string, waiting: string
   try {
     store.save(character.id, { ...DEFAULT_AGENT_SETTINGS, goal: '续写第一项任务', dailyCalls: 100, maxConcurrentTasks: 2 })
@@ -42,11 +42,11 @@ export async function runContactTaskToolbarSmoke(window: BrowserWindow) {
     const point = await run(`(()=>{const el=document.querySelector(${JSON.stringify(selector)}),r=el.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;if(!el.contains(document.elementFromPoint(x,y)))throw new Error('Control covered');return {x:Math.round(x),y:Math.round(y)}})()`)
     window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point }); window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
   }
-  const failing = new TaskCenter(join(directory, 'agents.db'))
+  const failing = new ContactTaskStore(join(directory, 'agents.db'))
   try { failing.db.exec(`CREATE TRIGGER toolbar_write_failure BEFORE UPDATE OF value ON topics WHEN NEW.id='${first}' BEGIN SELECT RAISE(ABORT,'toolbar write failure fixture'); END`) } finally { failing.close() }
   await click(`${root} [data-current-task-action=pause]`)
   await waitForRenderer(window, `document.querySelector(${JSON.stringify(root)})?.textContent.includes('toolbar write failure fixture') && document.querySelector(${JSON.stringify(root)})?.getAttribute('aria-busy')==='false'`)
-  const recovered = new TaskCenter(join(directory, 'agents.db'))
+  const recovered = new ContactTaskStore(join(directory, 'agents.db'))
   try {
     if (recovered.topics.get(character.id, first).status === 'paused') throw new Error('Failed pause falsely persisted')
     recovered.db.exec('DROP TRIGGER toolbar_write_failure')
@@ -57,7 +57,7 @@ export async function runContactTaskToolbarSmoke(window: BrowserWindow) {
   let overview = await run(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
   if (overview.topics.find((t: { id: string }) => t.id === first).status !== 'paused' || overview.runs.find((r: { id: string }) => r.id === waiting).status !== 'waiting') throw new Error('Pause affected another task or was not saved')
   if (await run(`document.querySelector(${JSON.stringify(root + ' select')}).value`) !== first) throw new Error('Paused task selection changed')
-  const changed = new TaskCenter(join(directory, 'agents.db'))
+  const changed = new ContactTaskStore(join(directory, 'agents.db'))
   try {
     const topic = changed.topics.get(character.id, first)
     changed.changeTopic(character.id, first, topic.revision, { input: { title: topic.title, goal: topic.goal, constraints: '另一入口刚保存的要求' }, reason: '验证旧按钮不得覆盖新版本' })

@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { deliveryText, textHash } from '../../shared/contact-content'
-const stores: TaskCenter[] = []
+const stores: ContactTaskStore[] = []
 afterEach(() => stores.splice(0).forEach(s => s.close()))
 function fixture() {
-  const store = new TaskCenter(':memory:'); stores.push(store)
+  const store = new ContactTaskStore(':memory:'); stores.push(store)
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '写海边的故事' })
   const topicId = store.overview('alice').topics[0].id
   const body = '请保留的第一段。\n\n需要修改的第二段。', text = deliveryText(body)

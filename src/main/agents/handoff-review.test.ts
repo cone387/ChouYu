@@ -1,10 +1,10 @@
 import { afterEach, expect, it } from 'vitest'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-const stores: TaskCenter[] = []
+const stores: ContactTaskStore[] = []
 afterEach(() => stores.splice(0).forEach(s => s.close()))
 function fixture(continuous = false) {
-  const store = new TaskCenter(':memory:'); stores.push(store)
+  const store = new ContactTaskStore(':memory:'); stores.push(store)
   for (const id of ['author', 'reviewer']) store.save(id, { ...DEFAULT_AGENT_SETTINGS, goal: 'Work', enabled: false, shareDeliveries: true, readContactDeliveries: true })
   const topic = store.topics.create('author', { title: 'Draft', goal: 'Write', constraints: '' }, 'user')
   const write = (body: string) => {

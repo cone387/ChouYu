@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { WorkLoopHost } from '../agent-space/workloop-host'
 import { dirname } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { providerRecoveryDelay } from '../../shared/contact-failure'
 const cleanups: (() => void | Promise<void>)[] = []
@@ -13,7 +13,7 @@ function fixture(error = 'API error 429: 余额不足或无可用资源包') {
   vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 10, 10))
   const dir = mkdtempSync(join(tmpdir(), 'provider-recovery-')), path = join(dir, 'agents.db')
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
-  const store = new TaskCenter(path); cleanups.push(() => store.close())
+  const store = new ContactTaskStore(path); cleanups.push(() => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '持续写作', enabled: true, dailyCalls: 100 })
   let run = ''
   for (let i = 0; i < 3; i++) { vi.setSystemTime(Date.now() + 1000); run = store.createRun('alice', ''); store.charge(run); store.fail(run, error) }
@@ -23,7 +23,7 @@ it('restores old billing blocks across restart without resetting failures or byp
   const { store, path, run, topic } = fixture()
   // Old builds recorded only a three-minute wait before permanently stopping.
   store.db.prepare('UPDATE profiles SET next_at=?').run(Date.now() + 180000)
-  const reopened = new TaskCenter(path); cleanups.push(() => reopened.close())
+  const reopened = new ContactTaskStore(path); cleanups.push(() => reopened.close())
   const due = reopened.providerRecovery('alice')!.at
   expect(due).toBe(Date.now() + 15 * 60000)
   expect(reopened.nextScheduledTopic('alice', due - 1)).toBeUndefined()

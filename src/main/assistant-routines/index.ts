@@ -18,13 +18,17 @@ import { CompanionBriefing, type CompanionKind } from './companion'
 import { summarizeCompanionWork, routineSummaryInstruction, routineSummaryInput, savedDeliveryEvidence } from './companion-summary'
 import { taskState } from '../../shared/task-state'
 import type { ContactOutputPreferenceRecord } from '../../shared/contact-output'
+import { taskCenter } from '../task-center/service'
+import { createAssistantDomain, type AssistantTaskCommands } from '../task-center/assistant-domain'
 
 async function assistantOutputPreferences() {
   const records = await contactAgentsCall(DEFAULT_CHARACTER_ID, 'outputPreferences') as ContactOutputPreferenceRecord[]
   return records.map(record => record.preference)
 }
 
-let service: AssistantRoutineService | undefined
+let service: AssistantTaskCommands | undefined
+let engine: AssistantRoutineService | undefined
+let disposeDomain: (() => void) | undefined
 let timer: ReturnType<typeof setInterval> | undefined
 export async function readContactsForAssistant(signal?: AbortSignal) {
   const contacts = listCharacters().filter(c => c.id !== DEFAULT_CHARACTER_ID && c.id !== ASSISTANT_CHARACTER_ID)
@@ -113,7 +117,8 @@ export function summaryTaskLinks(evidence: Awaited<ReturnType<typeof readContact
   return result
 }
 export function initializeAssistantRoutines() {
-  service = new AssistantRoutineService({
+  if (service) return
+  engine = new AssistantRoutineService({
     readHistory: id => getState(`assistant-routine-history:${id}`),
     writeHistory: (id, value) => setState(`assistant-routine-history:${id}`, value),
     read: () => getState('assistant-routines-v1'), write: value => {
@@ -164,6 +169,9 @@ export function initializeAssistantRoutines() {
       return session ? { sessionId: session.id, messageId } : undefined
     }
   })
+  const registration = taskCenter.register(createAssistantDomain(engine))
+  service = registration.bind(DEFAULT_CHARACTER_ID)
+  disposeDomain = registration.dispose
   ipcMain.handle('assistant-routines:list', () => service!.list())
   ipcMain.handle('assistant-routines:history', (_event, id, before) => service!.history(id, before))
   ipcMain.handle('assistant-routines:save', (_event, input, id, revision) => service!.save(input, id, revision))
@@ -206,4 +214,7 @@ export function initializeAssistantRoutines() {
   }
   timer = setInterval(tick, 15000); tick()
 }
-export function closeAssistantRoutines() { clearInterval(timer); service?.close() }
+export function closeAssistantRoutines() {
+  clearInterval(timer); engine?.close(); disposeDomain?.()
+  service = undefined; engine = undefined; disposeDomain = undefined
+}

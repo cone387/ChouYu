@@ -1,20 +1,22 @@
 # 联系人持续工作与 24h 实验架构
 
-更新：2026-10-16。以下为当前代码实现。产品与 UI 约束统一以 [联系人任务 spec](contact-task-spec.md) 为准；实现差距见该文第 10 节。
+更新：2026-10-19。以下为当前代码实现。产品与 UI 约束统一以 [联系人任务 spec](contact-task-spec.md) 为准；实现差距见该文第 10 节。
 
-## 模块边界（2026-10-16 重构）
+## 模块边界
 
 | 模块 | 实现入口 | 职责 |
 | --- | --- | --- |
-| AgentSpace | `src/main/agent-space/service.ts` | 联系人实例装配、事件唤醒、全局资源名额、错误隔离、进程生命周期 |
+| AgentSpace | `src/main/agent-space/service.ts` | 应用层联系人组合，装配 Chat/WorkLoop，独立取消、卸载和删除 |
+| WorkLoopHost | `src/main/agent-space/workloop-host.ts` | 共享 worker 执行承载、事件唤醒、全局资源名额和错误隔离 |
 | ContactAgent | `src/main/contact-agent/agent.ts` | 独立身份快照、模块注册与装配、卸载和关闭 |
 | WorkLoop | `src/main/workloop/loop.ts` | 本联系人任务激活、下一轮选择、运行和停止；`workflow.ts` 承载原工作策略，`model.ts` 承载工具与逐轮额度 |
-| TaskCenter | `src/main/task-center/store.ts` | 联系人任务、轮次和原数据库事务；`commands.ts` 承载原任务操作及校验 |
+| TaskCenter | `src/main/task-center/service.ts` | 注册联系人工作、用户待办、助手安排三个域，核对归属与能力后分派；卸载使旧入口失效 |
+| ContactTaskStore | `src/main/task-center/contact-store.ts` | 联系人任务、轮次和原数据库事务；`commands.ts` 承载原任务操作及校验 |
 | Harness | `src/main/harness/background.ts` | worker 可用的模块注册入口；支持后台契约的模块才能执行 |
 
-TaskCenter 当前接管联系人任务域，用户待办、ChouYu 定时安排仍由各自既有存储和执行器管理，不复制到新数据库，也不冒称全系统任务已迁移完毕。普通聊天仍在主进程承载；ContactAgent 当前装配的是后台 WorkLoop，尚未把聊天实现迁入该实例。
+普通聊天在主进程进入 ContactAgent.Chat，后台工作经同一联系人的远程 WorkLoop 端口交给 WorkLoopHost。主进程持有配置权威，worker 使用执行快照。TaskCenter 统一任务引用 `{domain, owner, id}` 和查询/能力/命令分派；任务 UI、工具与调度的业务入口经实际域绑定调用。用户待办仍使用 TasksStore 的日期生成与事务，助手安排仍使用 AssistantRoutineService 的定时与投递，联系人仍使用 ContactTaskStore 与 WorkLoop。不复制任务、不合并各域状态、不宣称跨库事务。
 
-后台仍为一个 Electron utilityProcess。总执行名额默认 8，可由 AgentSpace 构造配置调整；联系人自己的上限继续生效。同一任务在旧请求真正退出前不能开始替代轮次。按联系人轮转分配空余名额，任务队列仍以数据库中的可运行轮次为准。事件唤醒用于及时补位，15 秒检查用于补偿漏事件与到期时间。
+后台仍为一个 Electron utilityProcess。总执行名额默认 8，可由 WorkLoopHost 构造配置调整；联系人自己的上限继续生效。同一任务在旧请求真正退出前不能开始替代轮次。按联系人轮转分配空余名额，任务队列仍以数据库中的可运行轮次为准。事件唤醒用于及时补位，15 秒检查用于补偿漏事件与到期时间。
 
 停用 WorkLoop 是等待其执行退出并保留任务、成果和检查点；删除联系人仍遵循原产品删除范围，两者不是同一操作。模块装配是内部代码能力，本轮不增加设置 UI 或环境变量。退出应用仍停止后台，不增加系统服务或云节点。
 
@@ -22,7 +24,7 @@ TaskCenter 当前接管联系人任务域，用户待办、ChouYu 定时安排�
 
 后台原生 Harness 提供请求前逐轮额度预留、请求后结算、取消和超时；WorkLoop 不再直接导入原生 runner。DSH 当前只有聊天能力，缺少后台逐轮预算契约时明确拒绝，不自动切换或绕过预算。现有聊天执行器选择仍只影响普通聊天。
 
-结果提交保留 `TaskCenter.finish()` 的单一 SQLite 事务：成果、任务进度和待投递记录一起提交，Delivery 在事务完成后发送；没有拆成三个独立写入。Task、Run 和 LangGraph checkpoint 保持不同生命周期。外部副作用不能保证恰好一次，继续保留原权限、回执和不确定结果规则。
+结果提交保留 `ContactTaskStore.finish()` 的单一 SQLite 事务：成果、任务进度和待投递记录一起提交，Delivery 在事务完成后发送；没有拆成三个独立写入。Task、Run 和 LangGraph checkpoint 保持不同生命周期。外部副作用不能保证恰好一次，继续保留原权限、回执和不确定结果规则。
 
 ## 一张图看懂
 
@@ -89,9 +91,9 @@ flowchart LR
 
 联系人技能由 `src/main/skills/library.ts` 保存共享安装库及独立关联，`skillhub.ts` 适配官方固定版本 Python CLI，`index.ts` 提供严格 IPC 和快照入口。数据位于 `userData/contact-skills`，与其他 Agent 技能目录分离。普通聊天按已核对联系人 ID 读取；后台 worker 在实际开轮时读取同一库，将完整技能上下文及摘要保存到 `run.input.skills`，避免身份同步间隔造成新轮配置滞后。恢复原轮沿用保存快照，技能不是 soul 的组成部分，也不触发人设变化取消。主进程 ChouYu 晨报/工作检查复用同一解析服务；详见 [技能验收](contact-skills-20261010.md)。
 
-- [空间调度](../src/main/agent-space/service.ts)、[执行名额](../src/main/agent-space/scheduler.ts)、[联系人实例](../src/main/contact-agent/agent.ts)。
+- [应用空间](../src/main/agent-space/service.ts)、[后台承载](../src/main/agent-space/workloop-host.ts)、[执行名额](../src/main/agent-space/scheduler.ts)、[联系人实例](../src/main/contact-agent/agent.ts)。
 - [持续工作](../src/main/workloop/loop.ts)、[每轮工作策略](../src/main/workloop/workflow.ts)：规划、资料读取、生成、询问与提交。
-- [工作数据](../src/main/task-center/store.ts)、[任务操作](../src/main/task-center/commands.ts)、[成果版本](../src/main/agents/delivery.ts)：预算、进度与持久化。
+- [系统任务中心](../src/main/task-center/service.ts)、[工作数据](../src/main/task-center/contact-store.ts)、[任务操作](../src/main/task-center/commands.ts)、[成果版本](../src/main/agents/delivery.ts)：预算、进度与持久化。
 - [成果共享](../src/main/agents/contact-sources.ts)、[24h 实验](../src/main/agents/idea-lab.ts)：协作与实验参数。
 
 运行规则改变时同步本文及[使用说明](contact-topics.md)，架构图只保留角色和主要关系。相关验证：`npm test -- src/main/agents`、`npm run typecheck:node`；模拟测试不代替真实供应商的 24 小时耐久验收。

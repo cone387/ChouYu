@@ -2,18 +2,18 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 const cleanups: (() => void)[] = []
 afterEach(() => { for (const close of cleanups.splice(0).reverse()) close() })
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'contact-interactions-')), path = join(dir, 'agents.db')
   cleanups.push(() => rmSync(dir, { force: true, recursive: true }))
-  const store = new TaskCenter(path); cleanups.push(() => store.close())
+  const store = new ContactTaskStore(path); cleanups.push(() => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '持续写作', enabled: true, dailyCalls: 100 })
   return { store, path }
 }
-function budgetCard(store: TaskCenter) {
+function budgetCard(store: ContactTaskStore) {
   const run = store.createRun('alice', '')
   store.allocateTaskBudget(run, { modelCalls: 3, reason: '起步预算' })
   store.charge(run); store.charge(run)
@@ -76,7 +76,7 @@ it('explains disabled automatic work, a real work-hours gate, and three failed a
 it('persists an actionable budget request, then atomically adjusts and queues exactly once across restart', () => {
   const { store, path } = fixture(), card = budgetCard(store)
   expect(card.budgets).toMatchObject([{ key: 'taskCalls', used: 2, limit: 3, needed: 2 }])
-  const other = new TaskCenter(path); cleanups.push(() => other.close())
+  const other = new ContactTaskStore(path); cleanups.push(() => other.close())
   expect(other.decisions.get('alice', card.id)).toEqual(card)
   const result = other.decisions.submit('alice', card.id, { version: card.version, limits: { taskCalls: 10 } }, '')
   expect(result.status).toBe('resolved')
@@ -219,7 +219,7 @@ it('upgrades only current legacy blockers once and leaves old message text intac
   expect(notices[0].interactionId).toBe(`${card.id}:interaction`)
   expect((store.db.prepare('SELECT value FROM notices WHERE id=?').get(card.id) as { value: string }).value).toBe(original)
   store.notices.ack('alice', notices[0].id)
-  const reopened = new TaskCenter(path); cleanups.push(() => reopened.close())
+  const reopened = new ContactTaskStore(path); cleanups.push(() => reopened.close())
   reopened.decisions.publishOutstanding('alice')
   expect(reopened.notices.pending('alice').filter(n => n.interactionId)).toHaveLength(0)
 })

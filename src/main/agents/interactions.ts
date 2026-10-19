@@ -3,7 +3,7 @@ import { containsSecret } from '../../shared/memory'
 import { createHash } from 'node:crypto'
 import { agentUsesPlanner, type AgentNotice, type AgentSettings } from '../../shared/agents'
 import type { ContactBudgetField, ContactInteraction, ContactTaskInteraction, ContactInteractionSubmission } from '../../shared/contact-interactions'
-import type { TaskCenter } from '../task-center/store'
+import type { ContactTaskStore } from '../task-center/contact-store'
 import { withinWorkHours } from '../../shared/work-settings'
 
 type RecordValue = ContactTaskInteraction & { topicRevision: number; settingsGuard: string; questionEventId?: number }
@@ -11,7 +11,7 @@ const settingsGuard = (s: AgentSettings) => JSON.stringify([s.enabled, s.paceWri
 
 /** Persist decisions separately from messages. All mutations share the task database transaction. */
 export class ContactInteractions {
-  constructor(private store: TaskCenter) {
+  constructor(private store: ContactTaskStore) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS contact_interactions (
       id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,
       value TEXT NOT NULL);
@@ -79,9 +79,9 @@ export class ContactInteractions {
     const s = this.store, profile = s.profile(owner)!
     const settings = JSON.parse(profile.settings) as AgentSettings
     if (!settings.enabled) return
-    const candidates = s.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','interrupted') ORDER BY created_at,rowid").all(owner) as NonNullable<ReturnType<TaskCenter['getRun']>>[]
+    const candidates = s.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','interrupted') ORDER BY created_at,rowid").all(owner) as NonNullable<ReturnType<ContactTaskStore['getRun']>>[]
     for (const task of s.scheduled(owner).filter(task => task.next_at <= Date.now())) {
-      const run = s.db.prepare('SELECT * FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(task.topic_id) as ReturnType<TaskCenter['getRun']>
+      const run = s.db.prepare('SELECT * FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(task.topic_id) as ReturnType<ContactTaskStore['getRun']>
       if (run && !candidates.some(candidate => candidate.id === run.id)) candidates.push(run)
     }
     const pending = new Set(this.pending(owner).map(v => v.topicId))

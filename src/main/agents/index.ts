@@ -1,5 +1,7 @@
 import { contactHandle } from './query-metrics'
 import { AgentSpace } from '../agent-space/service'
+import { taskCenter } from '../task-center/service'
+import { createContactDomain, isContactTaskMethod } from '../task-center/contact-domain'
 import { chatHarness } from '../harness/service'
 import type { HarnessInput, HarnessEvent } from '../harness/contracts'
 import type { HarnessEngine } from '../../shared/harness'
@@ -94,8 +96,10 @@ const contactSpace = new AgentSpace({ harness: chatHarness, readIdentity: id => 
   detach: async id => { await starting; if (child) await workerRpc('detachModule', id, ['workloop']) },
   remove: async id => { await workerRpc('remove', id) }
 } })
+const contactTasks = taskCenter.register(createContactDomain(contactSpace))
 function rpc(method: string, id = '', args: unknown[] = []): Promise<any> {
   if (!id || ['syncContact', 'detachModule', 'remove'].includes(method)) return workerRpc(method, id, args)
+  if (isContactTaskMethod(method)) return Promise.resolve(taskCenter.execute({ domain: 'contact', owner: id }, method, args))
   return contactSpace.request(method, id, args)
 }
 export function runContactChat(input: HarnessInput, output: (event: HarnessEvent) => void, engine?: HarnessEngine) {
@@ -381,4 +385,5 @@ export async function closeAgents() {
   closing = true; clearInterval(syncTimer)
   try { await starting; await contactSpace.close(); if (child) await rpc('close') } catch { /* killed processes recover from their checkpoints */ }
   child?.kill(); child = undefined
+  contactTasks.dispose()
 }

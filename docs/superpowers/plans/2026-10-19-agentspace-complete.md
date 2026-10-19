@@ -36,9 +36,9 @@
 
 **Files:** `src/main/task-center/{contracts,service,contact-domain,todo-domain,assistant-domain}.ts`，原 `store.ts` 改为 `contact-store.ts`；`src/main/tasks/index.ts`, `src/main/assistant-routines/index.ts`, `src/main/agents/index.ts` 及真实调用者。
 **Interfaces:** `TaskRef { domain, owner, id }`；注册域暴露 `list/read/execute/capabilities`，中央入口校验域与归属再委派。现有各域命令保持具体参数类型，持久化仍由原事务实现。
-- [ ] 写失败测试覆盖域隔离、过期版本、删除、持久恢复以及实际服务入口分派。
-- [ ] 实现中心和三域模块，将 UI/工具/调度业务调用接入，保留用户待办按日期独立生成、联系人版本和助手自然语言契约。
-- [ ] 运行任务、日历、助手安排、联系人任务回归，提交。
+- [x] 写失败测试覆盖域隔离、过期版本、删除、持久恢复以及实际服务入口分派。
+- [x] 实现中心和三域模块，将 UI/工具/调度业务调用接入，保留用户待办按日期独立生成、联系人版本和助手自然语言契约。
+- [x] 运行任务、日历、助手安排、联系人任务回归，提交。
 
 ## Task 3: DSH 后台预算与用户设置
 

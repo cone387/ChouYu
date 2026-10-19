@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto'
 import { containsSecret } from '../../shared/memory'
 import { validateContactActionRequest, validateContactActionResponse, type ContactActionInteraction, type ContactActionOutcome, type ContactActionResponse } from '../../shared/contact-actions'
-import type { TaskCenter } from '../task-center/store'
+import type { ContactTaskStore } from '../task-center/contact-store'
 
 type StoredAction = ContactActionInteraction & { sequence: number; sourceKey: string; delivered?: boolean; executionStarted?: boolean }
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 
 /** General actions share the original persistent interaction table and owner boundary. */
 export class ContactActions {
-  constructor(private store: TaskCenter) {}
+  constructor(private store: ContactTaskStore) {}
   private read(owner: string, id: string): StoredAction {
     const row = this.store.db.prepare('SELECT character_id,value FROM contact_interactions WHERE id=?').get(id) as { character_id: string; value: string } | undefined
     if (!row || row.character_id !== owner) throw new Error('交互事项不存在或归属不匹配。')

@@ -361,7 +361,7 @@ ChouYu 的助手定位不要求独立 UI。联系人能力可以不同，任务�
 
 - [公共任务页面](../src/renderer/src/components/Contacts/ContactTopics.tsx)、[公共表单](../src/renderer/src/components/Contacts/ContactTaskDialog.tsx)、[任务数据适配](../src/renderer/src/components/Contacts/contactTaskPresentation.ts)。
 - [任务请求解析](../src/main/assistant-routines/gateway.ts)、[定时执行与历史](../src/main/assistant-routines/service.ts)、[晨报生成与投递](../src/main/assistant-routines/index.ts)、[主动工作检查](../src/main/assistant-routines/companion.ts)。
-- [联系人运行空间](../src/main/agent-space/service.ts)、[持续工作模块](../src/main/workloop/loop.ts)、[联系人任务持久化](../src/main/task-center/store.ts)、[导航](../src/renderer/src/components/Contacts/contactNavigation.tsx)。
+- [联系人运行空间](../src/main/agent-space/service.ts)、[持续工作模块](../src/main/workloop/loop.ts)、[联系人任务持久化](../src/main/task-center/contact-store.ts)、[导航](../src/renderer/src/components/Contacts/contactNavigation.tsx)。
 
 2026-10-16 用户纠正执行器入口：每位联系人（包括 ChouYu）在现有资料编辑弹窗独立选择聊天执行引擎，不使用启动环境变量。默认原生；保存成功后下一次普通聊天生效，无需重启，进行中的请求保持原引擎。旧数据默认原生，修改其他字段保留引擎，过期或保存失败不覆盖并保留表单；后台任务仍沿用原流程，界面说明 DSH 当前支持范围。验收覆盖独立设置、重启保存、切回原生、旧表单冲突和真实界面选择，结果记于 [DSH 接入验收](dsh-harness-acceptance-20261015.md)。
 
@@ -370,6 +370,8 @@ ChouYu 的助手定位不要求独立 UI。联系人能力可以不同，任务�
 2026-10-16 AgentSpace 重构：联系人后台拆为运行空间、独立联系人实例与可装卸 WorkLoop，联系人任务存储迁至系统级 TaskCenter 入口，结果事务与原任务交互不变。新增全局执行名额和联系人轮转；普通命令及身份同步按联系人排序，周期名单同步分派至各联系人，只有初始化/关闭形成全局屏障。单个 RPC 超时不再直接杀死共享进程，改为独立探活后判定失联。后台模型经 Harness 模块的逐轮预算能力入口；DSH 后台契约尚未具备，普通聊天的执行器选择范围不扩大。用户待办、ChouYu 定时引擎及普通聊天的模块迁移不是本次已实现项。验证与剩余边界见 [AgentSpace 验收记录](agentspace-refactor-acceptance-20261016.md)。
 
 ## 11. 验收规范
+
+2026-10-19 系统任务中心补齐：三个任务域已接入 TaskCenter 的真实能力分派，原联系人数据库更名 ContactTaskStore，不保留旧类名转发。用户待办 IPC、聊天工具和日期生成共用待办域；助手安排 UI、自然语言保存和定时检查共用助手域；联系人任务经应用联系人 WorkLoop 端口执行。中心检查域、归属与可用能力；卸载后旧绑定失效，读取错误不冒充任务不存在。相关测试覆盖版本冲突、跨联系人引用、模块卸载、删除持久化与上期未完成仍生成新期；全量 1923 项通过、53 项跳过，类型检查、构建及联系人/助手安排/待办周期 Electron 回归通过（隔离数据与模型夹具）。DSH 后台、WAL 恢复专项、真实 24 小时和整分支审查仍未完成。
 
 2026-10-19 完整模块化进展（未全部完成）：应用 AgentSpace 已组合联系人 Chat 与远程 WorkLoop，普通聊天 IPC 进入 Chat 生命周期，后台进程承载改名 WorkLoopHost。卸载立即取消并等待真实退出；联系人关闭包含仍在卸载的模块，卸载失败可重试，重挂载不替换其他模块。验证涉及 RUN-02/03、MSG-04/05：1918 项单元测试通过、53 项跳过，类型检查、构建、隔离 Electron 聊天与联系人冒烟通过。联系人冒烟曾暴露夹具与 worker 并发写库的 SQLITE_BUSY_SNAPSHOT，夹具采用立即事务后复测通过；此结果不代表旧 WAL 重启 I/O 问题已解决。系统任务中心、DSH 后台和真实 24 小时验收仍未完成，按[完整计划](superpowers/plans/2026-10-19-agentspace-complete.md)继续推进。验证日志在工作区 `artifacts/agentspace-complete/`。
 

@@ -1,12 +1,12 @@
 import { afterEach, expect, it } from 'vitest'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import type { MaterialInput } from '../../shared/contact-materials'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { rmSync } from 'node:fs'
-const stores: TaskCenter[] = []
+const stores: ContactTaskStore[] = []
 afterEach(() => stores.splice(0).forEach(s => s.close()))
-function fixture() { const store = new TaskCenter(':memory:'); stores.push(store); store.ensure('alice'); store.ensure('bob'); return store }
+function fixture() { const store = new ContactTaskStore(':memory:'); stores.push(store); store.ensure('alice'); store.ensure('bob'); return store }
 const input = (content: string): MaterialInput => ({ name: '项目.md', content, scope: { kind: 'contact' }, source: { kind: 'text', label: '手动输入' } })
 it('preserves immutable versions, duplicate identity and transaction failures', () => {
   const store = fixture(), lib = store.materials
@@ -53,12 +53,12 @@ it('enforces UTF8 file size, document count and total retained version capacity'
 })
 it('restores exact old snapshots on restart and invalidates them only on withdrawal', () => {
   const path = join(tmpdir(), `contact-material-${Date.now()}.db`)
-  let store = new TaskCenter(path)
+  let store = new ContactTaskStore(path)
   try {
     store.ensure('alice')
     const first = store.materials.save('alice', input('version one'))
     store.materials.save('alice', input('version two'), first.id, 1)
-    store.close(); store = new TaskCenter(path)
+    store.close(); store = new ContactTaskStore(path)
     expect(store.db.pragma('user_version', { simple: true })).toBe(16)
     expect(store.materials.read({ characterId: 'alice', query: '' }, first).text).toBe('version one')
     expect(() => store.assertContextCurrent('alice', { memories: [], materials: [first] })).not.toThrow()

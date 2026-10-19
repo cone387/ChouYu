@@ -1,12 +1,12 @@
 import { afterEach, expect, it } from 'vitest'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { contactHome } from './home'
 import { cardHighlights } from '../../shared/contact-home'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-const stores: TaskCenter[] = []
+const stores: ContactTaskStore[] = []
 afterEach(() => stores.splice(0).forEach(store => store.close()))
 it('projects real pending decisions independently of read notices and pins the latest saved version', () => {
-  const store = new TaskCenter(':memory:'); stores.push(store)
+  const store = new ContactTaskStore(':memory:'); stores.push(store)
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: 'Write', enabled: false })
   store.remember('alice', 'PRIVATE_HOME_MEMORY')
   const topic = store.topics.create('alice', { title: 'Story', goal: 'Write a story', constraints: '' }, 'user')

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { TaskCenter } from '../task-center/store'
+import { ContactTaskStore } from '../task-center/contact-store'
 import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { validateTaskResourceBudget } from '../../shared/agent-resources'
@@ -15,7 +15,7 @@ function directory() {
   return dir
 }
 function fixture() {
-  const path = join(directory(), 'agents.db'), store = new TaskCenter(path)
+  const path = join(directory(), 'agents.db'), store = new ContactTaskStore(path)
   cleanups.push(() => store.close())
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '任务资源分配', dailyCalls: 12 })
   return { store, path, topic: store.overview('alice').topics[0] }
@@ -62,7 +62,7 @@ describe('task resource allocation within contact resources', () => {
     expect(() => store.charge(run)).toThrow('本任务调用预算不足')
     store.setStatus(run, 'failed')
     expect(store.callCount('alice')).toBe(0)
-    const reopened = new TaskCenter(path); cleanups.push(() => reopened.close())
+    const reopened = new ContactTaskStore(path); cleanups.push(() => reopened.close())
     expect(reopened.taskCallCount('alice', topic.id)).toBe(2)
     expect(() => reopened.createRun('alice', '', Date.now(), topic.id)).toThrow('本任务调用预算不足')
     const current = reopened.topics.get('alice', topic.id)
