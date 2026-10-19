@@ -53,6 +53,7 @@ if (!process.versions.electron) {
     })
     child.on('message', message => {
       if (message.started || message.changed) return
+      if (message.storageRetry) { record({ type: 'storage-retry', ...message.storageRetry }); return }
       const entry = pending.get(message.requestId)
       if (!entry || entry.process !== child) return
       clearTimeout(entry.timer); pending.delete(message.requestId)
@@ -119,18 +120,22 @@ if (!process.versions.electron) {
         const state = await request('get', id)
         await request('save', id, [{ ...state.settings, enabled: false, goal: 'Recovery fixture', sources: ['https://chouyu-agent-smoke.invalid/research'], permissionLevel: 'sources', dailyCalls: 1000, dailyTokenLimit: 1000000 }])
       }
-      // Keep a real second connection open across hard exits, as the desktop's
-      // read surfaces do. It never upgrades a deferred snapshot to a write.
-      observer = new Database(path.join(dir, 'contact-agents/agents.db'), { readonly: true })
+      // Exercise both the last-connection crash and a retained external reader.
+      // Keeping a reader open every round bypasses Windows SHM initialization.
       for (let round = 0; round < rounds; round++) {
+        observer = new Database(path.join(dir, 'contact-agents/agents.db'), { readonly: true })
         const before = report.providerRequests
         for (const { id } of identities) await request('run', id)
         await until(() => report.providerRequests >= before + 2, 'both contacts dispatched')
         // Alternate mid-request termination and a finished-transaction boundary.
         if (round % 2) await until(async () => (await Promise.all(identities.map(({ id }) => request('get', id)))).every(state => !state.runs.some(run => ['queued', 'running'].includes(run.status))), 'completed reports')
         const counts = observer.prepare('SELECT character_id, COUNT(*) AS n FROM reports GROUP BY character_id ORDER BY character_id').all()
+        const retainedReader = round % 4 >= 2
+        if (!retainedReader) { observer.close(); observer = undefined }
+        record({ type: 'reader-mode', round, retainedReader, afterCommit: round % 2 === 1 })
         await stop(true)
         await start(identities)
+        observer ??= new Database(path.join(dir, 'contact-agents/agents.db'), { readonly: true })
         const after = observer.prepare('SELECT character_id, COUNT(*) AS n FROM reports GROUP BY character_id ORDER BY character_id').all()
         for (const saved of counts) if ((after.find(row => row.character_id === saved.character_id)?.n ?? 0) < saved.n) throw new Error('Committed report lost at restart')
         if (observer.pragma('integrity_check', { simple: true }) !== 'ok') throw new Error('Contact database integrity failed')
@@ -141,6 +146,7 @@ if (!process.versions.electron) {
         await until(async () => (await Promise.all(identities.map(({ id }) => request('get', id)))).every(state => !state.runs.some(run => ['queued', 'running'].includes(run.status))), 'recovered work drained')
         report.completedRounds++
         record({ type: 'round-complete', round, counts: observer.prepare('SELECT character_id, COUNT(*) AS n FROM reports GROUP BY character_id ORDER BY character_id').all() })
+        observer.close(); observer = undefined
       }
       await stop(false)
       report.complete = true

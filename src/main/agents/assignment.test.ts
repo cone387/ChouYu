@@ -21,6 +21,29 @@ const draft = { title: '初步研究', body: '资料 [1] 仅提供线索，需�
 const reader = () => evidenceFromText(settings.sources[0], '公开网页提供了线索，仍需验证。'.repeat(20))
 
 describe('description-only task assignment', () => {
+  it('accepts one fenced brief with explanation without letting a model replace an allocated budget', async () => {
+    const dir = directory(), store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+    cleanups.push(() => { runtime.close(); store.close() })
+    const topic = store.assignTopic('writer', '写灯塔故事', ''), run = store.overview('writer').runs[0].id
+    store.allocateTaskBudget(run, { modelCalls: 4, reason: '已分配的固定预算' })
+    const model = vi.fn(async () => '```json\n' + JSON.stringify({ ...brief, resourceBudget: { modelCalls: 400 } }) + '\n```\n以上仅为接单计划，尚未写作。')
+    await runtime.execute(run, '', model, new AbortController().signal)
+    expect(model).toHaveBeenCalledTimes(1)
+    expect(store.topics.get('writer', topic.id).resourceBudget?.modelCalls).toBe(4)
+    expect(store.topics.get('writer', topic.id).initialPlan).toMatchObject(brief.plan)
+    expect(store.deliveries.get(topic.id)).toBeNull()
+  })
+  it.each(['ambiguous', 'invalid-budget'])('rejects an %s brief after one correction without saving a plan', async mode => {
+    const dir = directory(), store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
+    cleanups.push(() => { runtime.close(); store.close() })
+    const topic = store.assignTopic('writer', '写灯塔故事', ''), run = store.overview('writer').runs[0].id
+    const output = mode === 'ambiguous' ? JSON.stringify(brief) + '\n' + JSON.stringify(brief) : JSON.stringify({ ...brief, resourceBudget: { modelCalls: 40 } })
+    const model = vi.fn(async () => output)
+    await expect(runtime.execute(run, '', model, new AbortController().signal)).rejects.toThrow('接单')
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(store.topics.get('writer', topic.id).initialPlan).toBeUndefined()
+    expect(store.deliveries.get(topic.id)).toBeNull()
+  })
   it('corrects premature prose and completed stages once before accepting a brief', async () => {
     const dir = directory(), store = new ContactTaskStore(join(dir, 'agents.db')), runtime = new WorkStrategyRuntime(store, join(dir, 'checkpoints.db'))
     cleanups.push(() => { runtime.close(); store.close() })

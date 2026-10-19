@@ -111,7 +111,7 @@ export class WorkLoopHost {
     if (contact) contact.update(identity)
     else {
       contact = new ContactAgent(identity, this.modules)
-      contact.mount(this.options.modules ?? ['workloop'])
+      contact.mount((this.options.modules ?? ['workloop']).filter(id => id !== 'workloop' || identity.workLoopEnabled !== false))
       this.contacts.set(identity.id, contact)
       this.subscriptions.set(identity.id, this.events.subscribe(identity.id, () => this.wake()))
     }
@@ -179,7 +179,8 @@ export class WorkLoopHost {
     this.assertOpen()
     if (method === 'attachModule') {
       this.identity(id)
-      this.contacts.get(id)!.mount([String(args[0])])
+      const contact = this.contacts.get(id)!, moduleId = String(args[0])
+      if (!contact.module(moduleId)) contact.mount([moduleId])
       this.notify(id)
       return null
     }

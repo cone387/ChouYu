@@ -41,7 +41,7 @@ export class AgentWorkerRPC {
     try { worker.postMessage({ ping: id }) }
     catch { clearTimeout(timer); this.probes.delete(worker); this.exited(worker); worker.kill() }
   }
-  receive(worker: Worker, message: { requestId?: number; pong?: number; started?: boolean; result?: unknown; error?: string; storage?: unknown }) {
+  receive(worker: Worker, message: { requestId?: number; pong?: number; started?: boolean; result?: unknown; error?: string; storage?: unknown; storageRetry?: { attempt: number; storage: unknown } }) {
     if (message.pong !== undefined) {
       const probe = this.probes.get(worker)
       if (probe?.id === message.pong) { clearTimeout(probe.timer); this.probes.delete(worker) }
@@ -50,6 +50,11 @@ export class AgentWorkerRPC {
     if (message.requestId === undefined) return
     const entry = this.entries.get(message.requestId)
     if (!entry || entry.worker !== worker) return
+    if (message.storageRetry) {
+      const storage = contactStorageDiagnostic(message.storageRetry.storage), attempt = message.storageRetry.attempt
+      if (entry.method === 'init' && storage && Number.isInteger(attempt) && attempt >= 1 && attempt <= 3) this.diagnostic({ method: 'init', phase: `storage-retry:${attempt}`, elapsedMs: Date.now() - entry.born, storage })
+      return
+    }
     if (message.started) {
       if (entry.phase === 'running') return
       entry.phase = 'running'; this.arm(message.requestId, entry.method === 'init' ? 60000 : 15000); return

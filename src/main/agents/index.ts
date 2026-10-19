@@ -121,8 +121,7 @@ function identities(onlyId?: string): ContactIdentity[] {
 async function syncContact(id: string) {
   const identity = identities(id)[0]
   if (!identity) throw new Error('联系人不存在。')
-  contactSpace.syncContact(identity)
-  await rpc('syncContact', id, [identity])
+  await rpc('syncContact', id, [contactSpace.workerIdentity(identity)])
 }
 async function ensure() {
   if (closing) throw new Error('应用正在退出。')
@@ -157,7 +156,7 @@ async function ensure() {
         ...resolveDshRuntimePaths(app.isPackaged ? globalThis.process.resourcesPath : app.getAppPath(), app.isPackaged),
         home: join(app.getPath('userData'), 'contact-agents', 'harness')
       }])
-      const current = identities()
+      const current = identities().map(identity => contactSpace.workerIdentity(identity))
       await rpc('sync', '', [current])
       // In-flight UI reads may have been rejected during the exit. A restored
       // waiting run emits no new graph event, so explicitly invalidate the UI.
@@ -223,7 +222,7 @@ export async function submitContactInteraction(id: string, interactionId: string
 }
 export async function startIdeaLab() {
   await ensure()
-  return setupIdeaLab((method, id, args) => rpc(method, id, args), async () => { await rpc('sync', '', [identities()]) })
+  return setupIdeaLab((method, id, args) => rpc(method, id, args), async () => { await rpc('sync', '', [identities().map(identity => contactSpace.workerIdentity(identity))]) })
 }
 export async function removeContactAgent(characterId: string) { setState(`agent-search:${characterId}:api_key`, ''); await ensure(); await contactSpace.remove(characterId) }
 export async function pendingContactInteractions(owner: string) {
@@ -383,7 +382,7 @@ export function initializeAgents() {
     })
   }
   void ensure().catch(() => {})
-  syncTimer = setInterval(() => { if (child && !starting && !closing) void rpc('sync', '', [identities()]).then(() => { for (const identity of identities()) void deliver(identity.id) }).catch(() => {}) }, 30000)
+  syncTimer = setInterval(() => { if (child && !starting && !closing) void rpc('sync', '', [identities().map(identity => contactSpace.workerIdentity(identity))]).then(() => { for (const identity of identities()) void deliver(identity.id) }).catch(() => {}) }, 30000)
 }
 export async function closeAgents() {
   closing = true; clearInterval(syncTimer)

@@ -60,3 +60,13 @@ it('records structured storage failure phases without persisting the error messa
   expect(events).toContainEqual(expect.objectContaining({ method: 'init', phase: 'failed:startup', storage: { database: 'checkpoints', phase: 'wal', code: 'SQLITE_IOERR_TRUNCATE' } }))
   expect(JSON.stringify(events)).not.toContain('sensitive-path-or-provider-detail')
 })
+
+it('records bounded startup retries without resolving the request or exposing raw details', async () => {
+  const w = worker(), events: unknown[] = [], rpc = new AgentWorkerRPC(event => events.push(event))
+  const pending = rpc.request(w, 'init', '', [])
+  rpc.receive(w, { requestId: 1, storageRetry: { attempt: 1, storage: { database: 'tasks', phase: 'wal', code: 'SQLITE_IOERR_TRUNCATE', detail: 'private' } } })
+  rpc.receive(w, { requestId: 1, result: 'ready' })
+  expect(await pending).toBe('ready')
+  expect(events).toContainEqual(expect.objectContaining({ phase: 'storage-retry:1', storage: { database: 'tasks', phase: 'wal', code: 'SQLITE_IOERR_TRUNCATE' } }))
+  expect(JSON.stringify(events)).not.toContain('private')
+})

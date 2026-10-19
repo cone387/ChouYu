@@ -37,7 +37,7 @@ export async function runContactSoak(window: BrowserWindow) {
   report.appStarts++; report.status = 'running'; save(); event('app-start', { count: report.appStarts, model: options.model })
   const titles = { 'soak-writer': '灯塔故事持续写作', 'soak-reviewer': '灯塔故事独立评审' }
   const instructions = {
-    'soak-writer': '持续写作合成灯塔故事，每个日历期次交付一段300至500字正文并正式保存。主角沈青，地点雾港，灯塔每周四亮蓝灯。沿用已经保存的故事进展，不重复旧段，不结束整个重复任务。不需要用户补问，不访问网页，不评价其他联系人。直接交付故事正文，不把计划或阶段状态当作成果。',
+    'soak-writer': '持续写作合成灯塔故事，每个日历期次交付一段300至500字正文并正式保存，以400个汉字为写作目标；字数只计汉字，不包含标点、空白和标题。主角沈青，地点雾港，灯塔每周四亮蓝灯。沿用已经保存的故事进展，不重复旧段，不结束整个重复任务。不需要用户补问，不访问网页，不评价其他联系人。直接交付故事正文，不把计划或阶段状态当作成果。',
     'soak-reviewer': '持续独立评审验收作者的灯塔故事。每个日历期次先读取作者最新保存的正式正文，再直接给出结论、引用依据和一项具体建议，保存完整评审正文。不引用自己的旧评审冒充原文；没有新正文如实等待，不重复交付同一版评审，不改写作者任务。不要询问用户，继续保持重复任务。'
   }
   try {

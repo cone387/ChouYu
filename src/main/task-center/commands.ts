@@ -258,22 +258,42 @@ export class ContactTaskCommands {
       case 'purgeMaterial': { this.store.materials.purge(id, args[0] as string, args[1] as number); this.context.changed(id); return }
       case 'saveMaterial': { const result = this.store.materials.save(id, args[0] as import('../../shared/contact-materials').MaterialInput, args[1] as string | undefined, args[2] as number | undefined); this.context.changed(id); return result }
       case 'withdrawMaterial': {
-        this.store.materials.withdraw(id, args[0] as string, args[1] as number)
-        for (const runId of this.store.invalidateMaterial(id, args[0] as string)) { this.context.activeRun(runId)?.controller.abort(); void this.context.cleanupThread(runId).catch(() => {}) }
+        const runs = this.store.db.transaction(() => {
+          this.store.materials.withdraw(id, args[0] as string, args[1] as number)
+          return this.store.invalidateMaterial(id, args[0] as string)
+        })()
+        this.cleanupRuns(runs)
         this.context.changed(id); return
       }
       case 'memoryList': return this.store.memoryLibrary.list(id)
       case 'memoryHistory': return this.store.memoryLibrary.history(id, args[0] as string)
       case 'createMemory': { const result = this.store.memoryLibrary.create(id, args[0] as MemoryInput); this.context.changed(id); return result }
-      case 'updateMemory': { const result = this.store.memoryLibrary.update(id, args[0] as string, args[1] as number, args[2] as MemoryInput); if (result.id === args[0]) this.invalidateMemory(id, result.id); this.context.changed(id); return result }
-      case 'forgetMemory': this.store.memoryLibrary.forget(id, args[0] as string, args[1] as number); this.invalidateMemory(id, args[0] as string); this.context.changed(id); return
-      case 'forget': this.store.forget(id, String(args[0])); this.invalidateMemory(id, String(args[0])); break
+      case 'updateMemory': {
+        const { result, runs } = this.store.db.transaction(() => {
+          const result = this.store.memoryLibrary.update(id, args[0] as string, args[1] as number, args[2] as MemoryInput)
+          return { result, runs: result.id === args[0] ? this.store.invalidateMemory(id, result.id) : [] }
+        })()
+        this.cleanupRuns(runs); this.context.changed(id); return result
+      }
+      case 'forgetMemory': {
+        const runs = this.store.db.transaction(() => {
+          this.store.memoryLibrary.forget(id, args[0] as string, args[1] as number)
+          return this.store.invalidateMemory(id, args[0] as string)
+        })()
+        this.cleanupRuns(runs); this.context.changed(id); return
+      }
+      case 'forget': {
+        const runs = this.store.db.transaction(() => {
+          this.store.forget(id, String(args[0])); return this.store.invalidateMemory(id, String(args[0]))
+        })()
+        this.cleanupRuns(runs); break
+      }
       default: throw new Error('未知 Agent 操作。')
     }
     this.context.changed(id); this.context.tick(); return this.store.overview(id)
   }
-  private invalidateMemory(owner: string, memoryId: string) {
-    for (const runId of this.store.invalidateMemory(owner, memoryId)) {
+  private cleanupRuns(runs: string[]) {
+    for (const runId of runs) {
       this.context.activeRun(runId)?.controller.abort()
       void this.context.cleanupThread(runId).catch(() => {})
     }

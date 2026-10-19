@@ -46,6 +46,10 @@ export class AgentSpace {
     if (!identity || identity.id !== id) throw new Error('联系人不存在。')
     return this.syncContact(identity)
   }
+  workerIdentity(identity: ContactIdentity): ContactIdentity {
+    const contact = this.syncContact(identity)
+    return { ...identity, workLoopEnabled: Boolean(contact.module('workloop')) }
+  }
   async runChat(input: HarnessInput, output: (event: HarnessEvent) => void, engine?: HarnessEngine) {
     if (!input.characterId) throw new Error('聊天缺少联系人归属。')
     const chat = this.contact(input.characterId).module('chat')?.chat

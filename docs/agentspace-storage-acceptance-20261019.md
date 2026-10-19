@@ -16,11 +16,23 @@
 - `storage-diagnostic-red.log` / `storage-diagnostic-green.log`：失败阶段分类从失败到通过。
 - `storage-rpc-red.log` / `storage-rpc-green.log`：结构化诊断与正文隔离从失败到通过，最终 10 项相关测试通过。
 - `node scripts/agentspace-recovery.cjs --rounds 24`：真实 Electron utilityProcess。先制造检查点损坏，核对 `checkpoints/wal/SQLITE_NOTADB`，在失败 worker 仍存活时重命名任务库证明连接已释放。随后两个联系人并行，在请求中途和事务完成后交替硬终止，共完成 24 次重启、48 次 `integrity_check`，已提交成果未丢失，执行恢复后均退出在途状态。始终保留另一个真实只读连接跨越重启；不删库、不重试掩盖失败。
-- 最终报告 `artifacts/agentspace-complete/storage-recovery.json` 记录开始/结束时间、各代 PID、终止和重开事件、成果计数、72 次夹具请求；`complete=true`。日志 `storage-recovery-final.log`。
+- 初次报告已保留为 `artifacts/agentspace-complete/storage-recovery-initial.json`，记录各代 PID、终止和重开事件、成果计数、72 次夹具请求；`complete=true`。日志 `storage-recovery-final.log`。
 - 全量 `npm test`：1942 通过，53 按既有条件跳过；Node/Web 类型检查、构建通过；真实 Electron `--agents` 回归通过。日志 `task4-suite.log`、`task4-typecheck.log`、`task4-build.log`、`task4-agents-smoke.log`。
+
+## 最终回归发现与补正
+
+整分支 Electron `--agents` 回归再次出现 `tasks/wal/SQLITE_IOERR_TRUNCATE`，日志 `task6-agents.log`。因此初次压力测试通过不能作为该错误已经解决的证明。
+
+新增真实 Windows 文件映射夹具：保存一致的 SQLite 主库/WAL 文件，在另一进程保留 SHM 映射；打开数据库实际触发同一个 `SQLITE_IOERR_TRUNCATE`。释放映射后，同一主库/WAL 可重开，已保存数据和 `integrity_check` 均通过。这与 [SQLite 关于 Windows 映射文件不可截断的说明](https://www.sqlite.org/mmap.html)一致，但没有证明原冒烟失败的句柄持有者就是此条件。
+
+worker 初始化仅对 Windows、WAL 阶段、精确错误码 `SQLITE_IOERR_TRUNCATE` 进行 100/250/500 毫秒的三次有界重开；每次失败先释放部分启动资源，记录库、阶段和次数，不删除数据库。映射持续不释放时仍失败；损坏数据库 `SQLITE_NOTADB` 不重试。真实文件映射的释放/持续占用与损坏库测试通过。RPC 中间重试事件不得被误认为初始化成功，已有对应回归。
+
+压力程序补齐“保留/不保留另一个只读连接”与“请求中途/提交后终止”的四种组合。最新 24 轮全部通过，48 次完整性检查、72 次本地请求，报告 `storage-recovery.json`，日志 `storage-recovery-four-modes-final.log`；没有触发存储重试。另一次 100 轮尝试在第 67 轮后因原定每日 Token 预算耗尽停止，报告 `storage-recovery-67-budget-stop.json`，不能计作 100 轮通过，也未为压力测试扩大预算。
+
+有界恢复后的 Electron `--agents`、`--chat`、`--assistant-routines`、`--companion`、`--dsh-harness` 已通过；日志 `task6-recovery-*.log`。此轮未重现原 WAL 错误，不能把无故障回归当作已经证明原错误根因。后续接单解析修复也完成全量回归：1966 项通过、53 项跳过，类型检查和构建通过，联系人 Electron 再次通过（`final-fixes-*`）。
 
 ## 结论边界
 
-2026-10-16 曾出现的 `SQLITE_IOERR_TRUNCATE` 未在本次 24 轮压力测试复现，其具体 Windows 触发条件仍未证实。本次修复的是已复现的启动资源泄漏，并补齐原错误所缺的库/阶段诊断；不声称永久消除了所有磁盘 I/O 错误。后续真实 24 小时验收继续检查该类错误。
+已复现启动资源泄漏和一种实际 Windows SHM 映射引起的截断错误，并补齐有界恢复及分类诊断。原间歇故障的具体句柄来源仍未证实，不声称永久消除了所有磁盘 I/O 错误。后续真实 24 小时验收继续检查该类错误。
 
 这不是 24 小时耐久验收；完整计划的 Task 5 和最终审查/交付仍未完成。

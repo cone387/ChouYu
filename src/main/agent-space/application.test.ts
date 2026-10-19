@@ -98,3 +98,30 @@ it('composes real persisted work with chat and can remount the worker module aft
     expect(host.store.profile(owner.id)).toBeUndefined()
   } finally { await space.close(); await host.close(); rmSync(dir, { recursive: true, force: true }) }
 })
+
+it('keeps a detached WorkLoop disabled across worker replacement until explicitly attached', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chouyu-unloaded-restart-'))
+  const owners = ['alice', 'bob'].map(id => ({ ...identity(id), config: { provider: 'openai' as const, baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }))
+  const entered: string[] = []
+  const makeHost = () => new WorkLoopHost(dir, () => {}, owner => async (_prompt, signal) => {
+    entered.push(owner.id)
+    return new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }))
+  }, async () => evidenceFromText('https://example.com/', 'Evidence. '.repeat(100)))
+  let host = makeHost()
+  const space = new AgentSpace({ harness: new HarnessCoordinator(registryFor({ native: { run: async () => ({ state: 'completed', text: 'hello' }) } })), readIdentity: id => owners.find(owner => owner.id === id),
+    work: { request: (method, id, args) => host.request(method, id, args), detach: id => host.detachModule(id, 'workloop'), remove: id => host.remove(id) } })
+  try {
+    await host.sync(owners.map(owner => space.workerIdentity(owner)))
+    for (const owner of owners) await space.request('save', owner.id, [{ ...DEFAULT_AGENT_SETTINGS, enabled: false, goal: 'Fixture', sources: ['https://example.com/'], permissionLevel: 'sources', dailyCalls: 100 }])
+    await space.detachModule('alice', 'workloop')
+    await host.close(); host = makeHost()
+    await host.sync(owners.map(owner => space.workerIdentity(owner)))
+    // Force durable work due at recovery; only an explicitly attached module may execute it.
+    host.store.createRun('alice', ''); host.store.createRun('bob', ''); host.tick()
+    await vi.waitFor(() => expect(entered).toEqual(['bob']))
+    expect((await space.runChat(input('alice'), () => {})).state).toBe('completed')
+    await expect(space.request('get', 'alice')).rejects.toThrow(/未启用/)
+    await space.attachModule('alice', 'workloop')
+    await vi.waitFor(() => expect(entered).toEqual(['bob', 'alice']))
+  } finally { await space.close(); await host.close(); rmSync(dir, { recursive: true, force: true }) }
+})
