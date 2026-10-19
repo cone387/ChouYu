@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { evidenceFromText } from './sources'
 import { ContactCommandQueue } from '../agent-space/command-queue'
 import { dispatchContactCommand } from '../agent-space/worker-commands'
+import { contactStorageDiagnostic } from '../storage/contact-database'
 const port = process.parentPort!
 let service: WorkLoopHost | undefined
 // Only init/close form an exclusive barrier; roster sync fans out per contact.
@@ -41,7 +42,7 @@ port.on('message', event => {
       port.postMessage({ requestId, result })
     } catch (error) {
       if (process.env.CHOUYU_SMOKE_TEST === '1') console.error('Agent RPC failed', method, error)
-      port.postMessage({ requestId, error: error instanceof Error ? error.message : 'Agent 操作失败。' })
+      port.postMessage({ requestId, error: error instanceof Error ? error.message : 'Agent 操作失败。', storage: contactStorageDiagnostic(error) })
     }
   }
   void (method === 'init' ? messages.submit('', true, execute) : execute()).catch(error => console.error('Agent worker transport failed', error instanceof Error ? error.name : 'Error'))

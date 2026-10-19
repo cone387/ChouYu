@@ -17,7 +17,8 @@ import { ContactInteractions } from '../agents/interactions'
 import { ContactActions } from '../agents/action-interactions'
 import { ContactOutputPreferences } from '../agents/output-preferences'
 import { AgentTokenBudget } from '../agents/token-budget'
-import Database from 'better-sqlite3'
+import type Database from 'better-sqlite3'
+import { openContactDatabase, contactStorageFailure } from '../storage/contact-database'
 import { createHash, randomUUID } from 'node:crypto'
 import type { AgentSettings, AgentRun, AgentOverview, AgentMemory, AgentReport, AgentRunDetail, AgentRunStatus, AgentTopicProgress, AgentTopicStatus } from '../../shared/agents'
 import { agentUsesPlanner, DEFAULT_AGENT_SETTINGS, validateAgentSettings } from '../../shared/agents'
@@ -66,102 +67,102 @@ export class ContactTaskStore {
   readonly handoffs: AgentHandoffs
   readonly files: AgentFiles
   constructor(filename: string) {
-    this.db = new Database(filename)
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('foreign_keys = ON')
-    this.db.pragma('busy_timeout = 5000')
-    const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version > 16) { this.db.close(); throw new Error('Agent 数据版本较新，请升级应用。') }
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS runs_character ON runs(character_id, created_at DESC);
-      CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, kind TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS events_run_time ON events(run_id,at);
-      CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS calls_character_time ON calls(character_id, at);
-      CREATE TABLE IF NOT EXISTS reports (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, content TEXT NOT NULL, run_id TEXT, created_at INTEGER NOT NULL, UNIQUE(character_id, content));
-    `)
-    this.topics = new AgentTopics(this.db)
-    if (version < 2) this.db.transaction(() => {
+    this.db = openContactDatabase(filename, 'tasks')
+    try {
+      this.db.pragma('foreign_keys = ON')
+      const version = this.db.pragma('user_version', { simple: true }) as number
+      if (version > 16) throw new Error('Agent 数据版本较新，请升级应用。')
       this.db.exec(`
-        ALTER TABLE profiles ADD COLUMN focus_topic_id TEXT;
-        ALTER TABLE runs ADD COLUMN topic_id TEXT;
-        ALTER TABLE runs ADD COLUMN topic_revision INTEGER;
-        CREATE TABLE topics (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, value TEXT NOT NULL);
-        CREATE INDEX topics_character ON topics(character_id);
-        CREATE INDEX runs_topic ON runs(topic_id, created_at DESC);
-        CREATE TABLE topic_changes (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, kind TEXT NOT NULL, before_value TEXT, after_value TEXT NOT NULL, reason TEXT NOT NULL, run_id TEXT REFERENCES runs(id) ON DELETE CASCADE, created_at INTEGER NOT NULL);
-        CREATE INDEX changes_topic ON topic_changes(topic_id,id DESC);
-        CREATE UNIQUE INDEX changes_run ON topic_changes(run_id) WHERE run_id IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS runs_character ON runs(character_id, created_at DESC);
+        CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, kind TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS events_run_time ON events(run_id,at);
+        CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS calls_character_time ON calls(character_id, at);
+        CREATE TABLE IF NOT EXISTS reports (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, content TEXT NOT NULL, run_id TEXT, created_at INTEGER NOT NULL, UNIQUE(character_id, content));
       `)
-      for (const profile of this.profiles()) {
-        const settings = JSON.parse(profile.settings) as AgentSettings
-        if (settings.goal.trim()) {
-          const topic = this.topics.create(profile.character_id, { title: settings.goal.slice(0, 160), goal: settings.goal, constraints: '' }, '由升级前的工作方向建立；旧报告保留在工作记录中，未推断其事项归属。')
-          this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, profile.character_id)
+      this.topics = new AgentTopics(this.db)
+      if (version < 2) this.db.transaction(() => {
+        this.db.exec(`
+          ALTER TABLE profiles ADD COLUMN focus_topic_id TEXT;
+          ALTER TABLE runs ADD COLUMN topic_id TEXT;
+          ALTER TABLE runs ADD COLUMN topic_revision INTEGER;
+          CREATE TABLE topics (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, value TEXT NOT NULL);
+          CREATE INDEX topics_character ON topics(character_id);
+          CREATE INDEX runs_topic ON runs(topic_id, created_at DESC);
+          CREATE TABLE topic_changes (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, kind TEXT NOT NULL, before_value TEXT, after_value TEXT NOT NULL, reason TEXT NOT NULL, run_id TEXT REFERENCES runs(id) ON DELETE CASCADE, created_at INTEGER NOT NULL);
+          CREATE INDEX changes_topic ON topic_changes(topic_id,id DESC);
+          CREATE UNIQUE INDEX changes_run ON topic_changes(run_id) WHERE run_id IS NOT NULL;
+        `)
+        for (const profile of this.profiles()) {
+          const settings = JSON.parse(profile.settings) as AgentSettings
+          if (settings.goal.trim()) {
+            const topic = this.topics.create(profile.character_id, { title: settings.goal.slice(0, 160), goal: settings.goal, constraints: '' }, '由升级前的工作方向建立；旧报告保留在工作记录中，未推断其事项归属。')
+            this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, profile.character_id)
+          }
         }
-      }
-      this.db.pragma('user_version = 2')
-    })()
-    this.notices = new AgentNotices(this.db, notice => this.decisions.offer(notice), (owner, id) => {
-      const view = this.decisions.get(owner, id)
-      if (view.kind !== 'retry') return undefined
-      return [`关于「${view.topicTitle}」：${view.failure?.message}`, view.impact, view.recoveryMessage].filter(Boolean).join('\n\n')
-    })
-    this.db.exec(`CREATE TABLE IF NOT EXISTS search_calls (id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS search_calls_character ON search_calls(character_id,at);
-      CREATE TABLE IF NOT EXISTS research (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS research_idle (topic_id TEXT PRIMARY KEY REFERENCES topics(id) ON DELETE CASCADE,streak INTEGER NOT NULL);`)
-    if (version < 5) this.db.transaction(() => {
-      this.db.exec('DROP INDEX IF EXISTS changes_run; CREATE UNIQUE INDEX changes_run ON topic_changes(run_id,kind) WHERE run_id IS NOT NULL;')
-      this.db.pragma('user_version = 5')
-    })()
-    this.deliveries = new AgentDeliveries(this.db)
-    if (version < 7) this.db.transaction(() => {
-      if (!(this.db.pragma('table_info(calls)') as { name: string }[]).some(column => column.name === 'metadata')) this.db.exec('ALTER TABLE calls ADD COLUMN metadata TEXT;')
-      this.db.pragma('user_version = 7')
-    })()
-    // Retire legacy contact deadlines without changing modes, revisions or live checkpoints.
-    this.db.prepare("UPDATE profiles SET settings=json_remove(settings, '$.workUntil') WHERE json_type(settings, '$.workUntil') IS NOT NULL").run()
-    this.tokens = new AgentTokenBudget(this.db)
-    this.decisions = new ContactInteractions(this)
-    this.actions = new ContactActions(this)
-    this.outputs = new ContactOutputPreferences(this)
-    if (version < 8) this.db.transaction(() => { this.tokens.importHistory(); this.db.pragma('user_version = 8') })()
-    if (version < 9) this.db.transaction(() => { this.portfolio.backfill(); this.db.pragma('user_version = 9') })()
-    this.materials = new AgentMaterials(this.db)
-    this.handoffs = new AgentHandoffs(this)
-    this.memoryLibrary = new AgentMemories(this.db)
-    if (version < 10) this.db.transaction(() => {
-      // Scope is part of the new identity; equal text in different scopes must remain independent.
-      this.db.exec(`ALTER TABLE memories RENAME TO memories_v9;
-        CREATE TABLE memories(id TEXT PRIMARY KEY,character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,content TEXT NOT NULL,run_id TEXT,created_at INTEGER NOT NULL);
-        INSERT INTO memories SELECT * FROM memories_v9;
-        DROP TABLE memories_v9;
-        CREATE INDEX memories_owner ON memories(character_id);`)
-      this.memoryLibrary.migrateLegacy()
-      this.db.pragma('user_version = 10')
-    })()
-    if (version < 11) this.db.pragma('user_version = 11')
-    if (version < 12) this.db.pragma('user_version = 12')
-    this.files = new AgentFiles(this.db)
-    if (version < 13) this.db.pragma('user_version = 13')
-    initializeCompletionReviews(this.db)
-    this.db.exec(`CREATE TABLE IF NOT EXISTS work_settings_changes (
-      id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,
-      revision INTEGER NOT NULL, before_value TEXT NOT NULL, after_value TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL);`)
-    if (version < 14) this.db.pragma('user_version = 14')
-    this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)
-    this.db.exec(`CREATE TABLE IF NOT EXISTS task_schedule (
-      topic_id TEXT PRIMARY KEY REFERENCES topics(id) ON DELETE CASCADE,
-      conversation TEXT NOT NULL DEFAULT '', pending INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0);`)
-    this.taskFailures = new AgentTaskFailures(this.db)
-    this.calendars = new ContactCalendars(this.db)
-    if (version < 16) this.db.pragma('user_version = 16')
-    this.restoreFailureSchedules()
+        this.db.pragma('user_version = 2')
+      })()
+      this.notices = new AgentNotices(this.db, notice => this.decisions.offer(notice), (owner, id) => {
+        const view = this.decisions.get(owner, id)
+        if (view.kind !== 'retry') return undefined
+        return [`关于「${view.topicTitle}」：${view.failure?.message}`, view.impact, view.recoveryMessage].filter(Boolean).join('\n\n')
+      })
+      this.db.exec(`CREATE TABLE IF NOT EXISTS search_calls (id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS search_calls_character ON search_calls(character_id,at);
+        CREATE TABLE IF NOT EXISTS research (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS research_idle (topic_id TEXT PRIMARY KEY REFERENCES topics(id) ON DELETE CASCADE,streak INTEGER NOT NULL);`)
+      if (version < 5) this.db.transaction(() => {
+        this.db.exec('DROP INDEX IF EXISTS changes_run; CREATE UNIQUE INDEX changes_run ON topic_changes(run_id,kind) WHERE run_id IS NOT NULL;')
+        this.db.pragma('user_version = 5')
+      })()
+      this.deliveries = new AgentDeliveries(this.db)
+      if (version < 7) this.db.transaction(() => {
+        if (!(this.db.pragma('table_info(calls)') as { name: string }[]).some(column => column.name === 'metadata')) this.db.exec('ALTER TABLE calls ADD COLUMN metadata TEXT;')
+        this.db.pragma('user_version = 7')
+      })()
+      // Retire legacy contact deadlines without changing modes, revisions or live checkpoints.
+      this.db.prepare("UPDATE profiles SET settings=json_remove(settings, '$.workUntil') WHERE json_type(settings, '$.workUntil') IS NOT NULL").run()
+      this.tokens = new AgentTokenBudget(this.db)
+      this.decisions = new ContactInteractions(this)
+      this.actions = new ContactActions(this)
+      this.outputs = new ContactOutputPreferences(this)
+      if (version < 8) this.db.transaction(() => { this.tokens.importHistory(); this.db.pragma('user_version = 8') })()
+      if (version < 9) this.db.transaction(() => { this.portfolio.backfill(); this.db.pragma('user_version = 9') })()
+      this.materials = new AgentMaterials(this.db)
+      this.handoffs = new AgentHandoffs(this)
+      this.memoryLibrary = new AgentMemories(this.db)
+      if (version < 10) this.db.transaction(() => {
+        // Scope is part of the new identity; equal text in different scopes must remain independent.
+        this.db.exec(`ALTER TABLE memories RENAME TO memories_v9;
+          CREATE TABLE memories(id TEXT PRIMARY KEY,character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,content TEXT NOT NULL,run_id TEXT,created_at INTEGER NOT NULL);
+          INSERT INTO memories SELECT * FROM memories_v9;
+          DROP TABLE memories_v9;
+          CREATE INDEX memories_owner ON memories(character_id);`)
+        this.memoryLibrary.migrateLegacy()
+        this.db.pragma('user_version = 10')
+      })()
+      if (version < 11) this.db.pragma('user_version = 11')
+      if (version < 12) this.db.pragma('user_version = 12')
+      this.files = new AgentFiles(this.db)
+      if (version < 13) this.db.pragma('user_version = 13')
+      initializeCompletionReviews(this.db)
+      this.db.exec(`CREATE TABLE IF NOT EXISTS work_settings_changes (
+        id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL, before_value TEXT NOT NULL, after_value TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL);`)
+      if (version < 14) this.db.pragma('user_version = 14')
+      this.db.exec(`CREATE TABLE IF NOT EXISTS activity_heartbeats (id INTEGER PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS activity_heartbeats_topic ON activity_heartbeats(topic_id,ended_at);`)
+      this.db.exec(`CREATE TABLE IF NOT EXISTS task_schedule (
+        topic_id TEXT PRIMARY KEY REFERENCES topics(id) ON DELETE CASCADE,
+        conversation TEXT NOT NULL DEFAULT '', pending INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0);`)
+      this.taskFailures = new AgentTaskFailures(this.db)
+      this.calendars = new ContactCalendars(this.db)
+      if (version < 16) this.db.pragma('user_version = 16')
+      this.restoreFailureSchedules()
+    } catch (error) { this.db.close(); throw contactStorageFailure(error, 'tasks', 'schema') }
   }
   private restoreFailureSchedules() {
     this.db.transaction(() => {

@@ -51,3 +51,12 @@ it('does not accept a health reply from another generation', async () => {
   await vi.advanceTimersByTimeAsync(5000)
   expect(old.kill).toHaveBeenCalledOnce(); expect(next.kill).not.toHaveBeenCalled()
 })
+
+it('records structured storage failure phases without persisting the error message', async () => {
+  const w = worker(), events: unknown[] = [], rpc = new AgentWorkerRPC(event => events.push(event))
+  const pending = rpc.request(w, 'init', '', []).catch(error => error.message)
+  rpc.receive(w, { requestId: 1, error: 'sensitive-path-or-provider-detail', storage: { database: 'checkpoints', phase: 'wal', code: 'SQLITE_IOERR_TRUNCATE' } } as never)
+  expect(await pending).toBe('sensitive-path-or-provider-detail')
+  expect(events).toContainEqual(expect.objectContaining({ method: 'init', phase: 'failed:startup', storage: { database: 'checkpoints', phase: 'wal', code: 'SQLITE_IOERR_TRUNCATE' } }))
+  expect(JSON.stringify(events)).not.toContain('sensitive-path-or-provider-detail')
+})

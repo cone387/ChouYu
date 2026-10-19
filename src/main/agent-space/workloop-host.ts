@@ -56,16 +56,22 @@ export class WorkLoopHost {
     mkdirSync(directory, { recursive: true })
     this.skillRunner = new SkillRunner(new SkillLibrary(skillDirectory))
     this.store = new ContactTaskStore(join(directory, 'agents.db'))
-    this.runtime = new WorkStrategyRuntime(this.store, join(directory, 'checkpoints.db'), reader, searcher)
-    this.commands = new ContactTaskCommands({ store: this.store, identity: id => this.identity(id),
-      changed: id => this.notify(id), tick: () => this.tick(), remove: id => this.remove(id),
-      activeFor: (id, topicId) => this.scheduler.activeFor(id, topicId), abort: (id, topicId) => this.scheduler.abort(id, topicId),
-      activeRun: id => this.scheduler.get(id), cleanupThread: id => this.cleanupThread(id) })
-    this.modules.register('workloop', owner => new WorkLoop(owner, this.store, this.runtime, this.scheduler,
-      this.skillRunner, id => this.notify(id), () => this.wake(), (method, id, args) => this.request(method, id, args), modelFactory, readSkills, this.harnesses))
-    this.modules.resolve(options.modules ?? ['workloop'])
-    this.store.recover()
-    this.timer = setInterval(() => this.tick(), 15000)
+    let runtime: WorkStrategyRuntime | undefined
+    try {
+      this.runtime = runtime = new WorkStrategyRuntime(this.store, join(directory, 'checkpoints.db'), reader, searcher)
+      this.commands = new ContactTaskCommands({ store: this.store, identity: id => this.identity(id),
+        changed: id => this.notify(id), tick: () => this.tick(), remove: id => this.remove(id),
+        activeFor: (id, topicId) => this.scheduler.activeFor(id, topicId), abort: (id, topicId) => this.scheduler.abort(id, topicId),
+        activeRun: id => this.scheduler.get(id), cleanupThread: id => this.cleanupThread(id) })
+      this.modules.register('workloop', owner => new WorkLoop(owner, this.store, this.runtime, this.scheduler,
+        this.skillRunner, id => this.notify(id), () => this.wake(), (method, id, args) => this.request(method, id, args), modelFactory, readSkills, this.harnesses))
+      this.modules.resolve(options.modules ?? ['workloop'])
+      this.store.recover()
+      this.timer = setInterval(() => this.tick(), 15000)
+    } catch (error) {
+      try { runtime?.close() } finally { this.store.close() }
+      throw error
+    }
   }
   private assertOpen() { if (this.closed) throw new Error('联系人空间已关闭。') }
   private identity(id: string) {

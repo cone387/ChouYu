@@ -1,3 +1,4 @@
+import { contactStorageDiagnostic, type StorageDiagnostic } from '../storage/contact-database'
 type Worker = { postMessage(value: unknown): void; kill(): boolean | void }
 type Entry = { worker: Worker; method: string; phase: string; resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; born: number }
 /** Each deadline belongs to a worker generation and a request phase. */
@@ -5,7 +6,7 @@ export class AgentWorkerRPC {
   private sequence = 0
   private entries = new Map<number, Entry>()
   private probes = new Map<Worker, { id: number; timer: ReturnType<typeof setTimeout> }>()
-  constructor(private diagnostic: (event: { method: string; phase: string; elapsedMs: number }) => void = () => {}) {}
+  constructor(private diagnostic: (event: { method: string; phase: string; elapsedMs: number; storage?: StorageDiagnostic }) => void = () => {}) {}
   request(worker: Worker, method: string, id: string, args: unknown[]): Promise<any> {
     return new Promise((resolve, reject) => {
       const requestId = ++this.sequence
@@ -40,7 +41,7 @@ export class AgentWorkerRPC {
     try { worker.postMessage({ ping: id }) }
     catch { clearTimeout(timer); this.probes.delete(worker); this.exited(worker); worker.kill() }
   }
-  receive(worker: Worker, message: { requestId?: number; pong?: number; started?: boolean; result?: unknown; error?: string }) {
+  receive(worker: Worker, message: { requestId?: number; pong?: number; started?: boolean; result?: unknown; error?: string; storage?: unknown }) {
     if (message.pong !== undefined) {
       const probe = this.probes.get(worker)
       if (probe?.id === message.pong) { clearTimeout(probe.timer); this.probes.delete(worker) }
@@ -54,7 +55,8 @@ export class AgentWorkerRPC {
       entry.phase = 'running'; this.arm(message.requestId, entry.method === 'init' ? 60000 : 15000); return
     }
     clearTimeout(entry.timer); this.entries.delete(message.requestId)
-    if (entry.method === 'init' || Date.now() - entry.born >= 5000) this.diagnostic({ method: entry.method, phase: 'completed:' + entry.phase, elapsedMs: Date.now() - entry.born })
+    if (message.error) this.diagnostic({ method: entry.method, phase: 'failed:' + entry.phase, elapsedMs: Date.now() - entry.born, storage: contactStorageDiagnostic(message.storage) })
+    else if (entry.method === 'init' || Date.now() - entry.born >= 5000) this.diagnostic({ method: entry.method, phase: 'completed:' + entry.phase, elapsedMs: Date.now() - entry.born })
     if (message.error) entry.reject(new Error(message.error)); else entry.resolve(message.result)
   }
   exited(worker: Worker) {

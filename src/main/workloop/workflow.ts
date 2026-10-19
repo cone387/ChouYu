@@ -5,7 +5,8 @@ import { reviewTaskCompletion, taskCompletionInstruction } from '../agents/task-
 import { TokenBudgetError } from '../agents/token-budget'
 import { taskInputInstruction, presentationInstruction } from '../../shared/agent-delivery-instructions'
 import { revisePresentation } from '../agents/presentation-revision'
-import Database from 'better-sqlite3'
+import type Database from 'better-sqlite3'
+import { openContactDatabase, contactStorageFailure } from '../storage/contact-database'
 import { validateTaskResourceBudget, type TaskResourceBudget } from '../../shared/agent-resources'
 import { Annotation, StateGraph, START, END, interrupt, Command } from '@langchain/langgraph'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
@@ -89,8 +90,10 @@ export class WorkStrategyRuntime {
   private db: Database.Database
   constructor(readonly store: ContactTaskStore, checkpointPath: string, private reader = readSource, private searcher: AgentSearcher = searchBrave) {
     this.contactSources = new ContactSources(store)
-    this.db = new Database(checkpointPath); this.db.pragma('journal_mode = WAL'); this.db.pragma('busy_timeout = 5000')
-    this.checkpoints = new SqliteSaver(this.db)
+    this.db = openContactDatabase(checkpointPath, 'checkpoints')
+    try {
+      this.checkpoints = new SqliteSaver(this.db)
+    } catch (error) { this.db.close(); throw contactStorageFailure(error, 'checkpoints', 'schema') }
   }
   close() { this.db.close() }
   async execute(runId: string, soul: string, model: AgentModel, signal: AbortSignal, changed: () => void = () => {}, searchKey = '') {
