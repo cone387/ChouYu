@@ -59,15 +59,16 @@ describe('theme preference', () => {
     expect(countVars(mediaBlock)).toBe(countVars(manualBlock))
   })
 
-  it('resolves the palette with a purple fallback for unknown values', () => {
+  it('resolves the palette with a neutral fallback for unknown values', () => {
     expect(resolvePalette('pink')).toBe('pink')
-    expect(resolvePalette(undefined)).toBe('purple')
-    expect(resolvePalette('gold')).toBe('purple')
+    expect(resolvePalette('neutral')).toBe('neutral')
+    expect(resolvePalette(undefined)).toBe('neutral')
+    expect(resolvePalette('gold')).toBe('neutral')
   })
 
   it('defines light and dark accent overrides for every non-default palette', () => {
     const accentVars = ['--accent:', '--accent-hover:', '--focus-ring:', '--user-msg-bg:', '--hover-bg:', '--hljs-keyword:']
-    for (const palette of PALETTE_IDS.filter((id) => id !== 'purple')) {
+    for (const palette of PALETTE_IDS.filter((id) => id !== 'neutral')) {
       const light = darkVarBlock(stylesheet, `:root[data-palette='${palette}']`)
       const dark = darkVarBlock(stylesheet, `:root[data-theme='dark'][data-palette='${palette}']`)
       expect(light, `${palette} light block`).not.toBe('')

@@ -113,10 +113,12 @@ describe('config', () => {
     expect(patch).toEqual({ provider: 'claude', autoStart: true, petSize: 96, aiToolsEnabled: false, toolPermissionMode: 'full', memoryEnabled: false, memoryWriteMode: 'confirm', memoryAutoWriteConfidence: 0.9, memoryEngineProvider: 'chouyu-sqlite', memoryCompressionEnabled: false, memorySyncBaseUrl: 'https://mem0.example/v1', memorySyncApiKey: 'secret', memorySyncUserId: 'user-1', embeddingEnabled: true, embeddingProvider: 'openai-compatible', taskNotifications: false })
   })
 
-  it('defaults the palette to purple and accepts only known ids', () => {
-    expect(normalizeConfig({}).palette).toBe('purple')
+  it('defaults to neutral, preserves saved palettes and accepts only known ids', () => {
+    expect(normalizeConfig({}).palette).toBe('neutral')
+    expect(normalizeConfig({ palette: 'purple' }).palette).toBe('purple')
     expect(normalizeConfig({ palette: 'pink' }).palette).toBe('pink')
-    expect(normalizeConfig({ palette: 'gold' } as unknown as Partial<AppConfig>).palette).toBe('purple')
+    expect(normalizeConfig({ palette: 'gold' } as unknown as Partial<AppConfig>).palette).toBe('neutral')
+    expect(sanitizeConfigPatch({ palette: 'neutral' })).toEqual({ palette: 'neutral' })
     expect(sanitizeConfigPatch({ palette: 'blue' })).toEqual({ palette: 'blue' })
     expect(sanitizeConfigPatch({ palette: 'neon' })).toEqual({})
   })

@@ -6,26 +6,27 @@
 :root {
   color-scheme: light;
   --bg-primary: #ffffff;
-  --bg-secondary: #f7f8fa;
-  --bg-panel: rgba(255, 255, 255, 0.98);
-  --text-primary: #1a1a1a;
-  --text-secondary: #606572;
-  --text-muted: #686d79;
+  --bg-secondary: #f8fafc;
+  --bg-chrome: #eef3f8;
+  --bg-panel: #ffffff;
+  --text-primary: #171717;
+  --text-secondary: #5d6268;
+  --text-muted: #6b7075;
   --border: rgba(0, 0, 0, 0.08);
-  --divider: rgba(49, 46, 82, 0.045);
+  --divider: rgba(0, 0, 0, 0.05);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
-  --user-msg-bg: #f0effb;
+  --user-msg-bg: #f1f3f5;
   --ai-msg-bg: transparent;
-  --code-bg: #f2f3f6;
-  --accent: #6c5ce7;
-  --accent-hover: #5b4bc4;
+  --code-bg: #f4f4f4;
+  --accent: #171717;
+  --accent-hover: #333333;
   --on-accent: #ffffff;
-  --hover-bg: rgba(83, 77, 126, 0.06);
-  --input-bg: #fafbfc;
-  --input-border: rgba(49, 46, 82, 0.10);
+  --hover-bg: rgba(0, 0, 0, 0.045);
+  --input-bg: #ffffff;
+  --input-border: rgba(0, 0, 0, 0.10);
   --input-focus-border: transparent;
-  --focus-ring: rgba(108, 92, 231, 0.24);
+  --focus-ring: rgba(0, 0, 0, 0.12);
   --error: #b42318;
   --on-error: #ffffff;
   --error-border: rgba(180, 35, 24, 0.35);
@@ -56,27 +57,28 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --bg-primary: #1c1d22;
-    --bg-secondary: #24262d;
-    --bg-panel: rgba(28, 29, 34, 0.98);
+    --bg-primary: #212121;
+    --bg-secondary: #191919;
+    --bg-chrome: #17191c;
+    --bg-panel: #212121;
     --text-primary: #f0f0f0;
-    --text-secondary: #b0b3bf;
-    --text-muted: #a5a9b5;
+    --text-secondary: #b4b4b4;
+    --text-muted: #a0a0a0;
     --border: rgba(255, 255, 255, 0.06);
-    --divider: rgba(220, 216, 255, 0.045);
+    --divider: rgba(255, 255, 255, 0.05);
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
-    --user-msg-bg: rgba(108, 92, 231, 0.18);
+    --user-msg-bg: #303030;
     --ai-msg-bg: transparent;
-    --code-bg: #24262d;
-    --accent: #a69aff;
-    --accent-hover: #b9b1ff;
-    --on-accent: #1c1d22;
-    --hover-bg: rgba(186, 177, 255, 0.08);
-    --input-bg: #22242b;
+    --code-bg: #2a2a2a;
+    --accent: #f0f0f0;
+    --accent-hover: #d9d9d9;
+    --on-accent: #212121;
+    --hover-bg: rgba(255, 255, 255, 0.07);
+    --input-bg: #303030;
     --input-border: rgba(255, 255, 255, 0.08);
     --input-focus-border: transparent;
-    --focus-ring: rgba(166, 153, 255, 0.35);
+    --focus-ring: rgba(255, 255, 255, 0.18);
     --error: #ff8a80;
     --on-error: #1c1d22;
     --error-border: rgba(255, 138, 128, 0.45);
@@ -101,27 +103,28 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg-primary: #1c1d22;
-  --bg-secondary: #24262d;
-  --bg-panel: rgba(28, 29, 34, 0.98);
+  --bg-primary: #212121;
+  --bg-secondary: #191919;
+  --bg-chrome: #17191c;
+  --bg-panel: #212121;
   --text-primary: #f0f0f0;
-  --text-secondary: #b0b3bf;
-  --text-muted: #a5a9b5;
+  --text-secondary: #b4b4b4;
+  --text-muted: #a0a0a0;
   --border: rgba(255, 255, 255, 0.06);
-  --divider: rgba(220, 216, 255, 0.045);
+  --divider: rgba(255, 255, 255, 0.05);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --user-msg-bg: rgba(108, 92, 231, 0.18);
+  --user-msg-bg: #303030;
   --ai-msg-bg: transparent;
-  --code-bg: #24262d;
-  --accent: #a69aff;
-  --accent-hover: #b9b1ff;
-  --on-accent: #1c1d22;
-  --hover-bg: rgba(186, 177, 255, 0.08);
-  --input-bg: #22242b;
+  --code-bg: #2a2a2a;
+  --accent: #f0f0f0;
+  --accent-hover: #d9d9d9;
+  --on-accent: #212121;
+  --hover-bg: rgba(255, 255, 255, 0.07);
+  --input-bg: #303030;
   --input-border: rgba(255, 255, 255, 0.08);
   --input-focus-border: transparent;
-  --focus-ring: rgba(166, 153, 255, 0.35);
+  --focus-ring: rgba(255, 255, 255, 0.18);
   --error: #ff8a80;
   --on-error: #1c1d22;
   --error-border: rgba(255, 138, 128, 0.45);
@@ -144,11 +147,29 @@
 }
 
 /*
- * Palette overrides. :root defaults to purple, so only non-default palettes
+ * Palette overrides. :root defaults to neutral, so only non-default palettes
  * need blocks, covering just the accent-derived variables in light and dark
- * variants. The dark combos below outrank the purple dark blocks above by
+ * variants. The dark combos below outrank the neutral dark blocks above by
  * specificity ((0,3,0) vs (0,2,0)), so source order is safe.
  */
+:root[data-palette='purple'] {
+  --accent: #6c5ce7;
+  --accent-hover: #5b4bc4;
+  --focus-ring: rgba(108, 92, 231, 0.24);
+  --user-msg-bg: #f0effb;
+  --hover-bg: rgba(83, 77, 126, 0.06);
+  --hljs-keyword: #7c3aed;
+}
+
+:root[data-theme='dark'][data-palette='purple'] {
+  --accent: #a69aff;
+  --accent-hover: #b9b1ff;
+  --focus-ring: rgba(166, 153, 255, 0.35);
+  --user-msg-bg: rgba(108, 92, 231, 0.18);
+  --hover-bg: rgba(186, 177, 255, 0.08);
+  --hljs-keyword: #c4b5fd;
+}
+
 :root[data-palette='pink'] {
   --accent: #d6336c;
   --accent-hover: #b62357;

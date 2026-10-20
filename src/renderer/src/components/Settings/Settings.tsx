@@ -18,6 +18,7 @@ const SOUL_HISTORY_STATE_KEY = 'soul-history'
 const MAX_SOUL_VERSIONS = 30
 
 const PALETTE_SWATCHES = [
+  { id: 'neutral', label: '中性（ChatGPT 风格）', color: '#171717' },
   { id: 'purple', label: '紫色', color: '#6c5ce7' },
   { id: 'pink', label: '粉色', color: '#d6336c' },
   { id: 'blue', label: '蓝色', color: '#2563eb' },

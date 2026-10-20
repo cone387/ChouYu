@@ -11,7 +11,7 @@ export function resolveTheme(preference: ThemePreference, systemPrefersDark: boo
 }
 
 export function resolvePalette(value: unknown): PaletteId {
-  return isPaletteId(value) ? value : 'purple'
+  return isPaletteId(value) ? value : 'neutral'
 }
 
 /**
@@ -24,7 +24,7 @@ export function resolvePalette(value: unknown): PaletteId {
 export function initTheme(): () => void {
   const media = window.matchMedia('(prefers-color-scheme: dark)')
   let preference: ThemePreference = 'system'
-  let palettePreference: PalettePreference = 'purple'
+  let palettePreference: PalettePreference = 'neutral'
 
   const apply = () => {
     document.documentElement.dataset.theme = resolveTheme(preference, media.matches)

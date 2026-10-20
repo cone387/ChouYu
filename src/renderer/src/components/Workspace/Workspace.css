@@ -2,7 +2,7 @@
 .chat-panel.app-workspace {
   --workspace-outer-radius: var(--radius-xl);
   --workspace-top-inset: 32px;
-  --workspace-chrome: color-mix(in srgb, var(--bg-secondary) 94%, var(--text-primary));
+  --workspace-chrome: var(--bg-chrome);
   flex-direction: row;
   container-type: inline-size;
   container-name: workspace;

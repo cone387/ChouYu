@@ -82,7 +82,7 @@ export interface ResolvedProviderProfile extends ProviderProfile {
   builtIn: boolean
 }
 
-export const PALETTE_IDS = ['purple', 'pink', 'blue', 'green', 'orange'] as const
+export const PALETTE_IDS = ['neutral', 'purple', 'pink', 'blue', 'green', 'orange'] as const
 export type PaletteId = (typeof PALETTE_IDS)[number]
 
 export function isPaletteId(value: unknown): value is PaletteId {
@@ -141,7 +141,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   autoStart: false,
   petSize: 80,
   theme: 'system',
-  palette: 'purple',
+  palette: 'neutral',
   proactiveReturn: true,
   proactiveGreeting: true,
   proactiveRestReminder: true,
@@ -250,7 +250,7 @@ export function normalizeConfig(value?: Partial<AppConfig> | null): AppConfig {
     searchHotkey: (() => { try { return normalizeSearchShortcut(source.searchHotkey ?? DEFAULT_SEARCH_SHORTCUT) } catch { return DEFAULT_SEARCH_SHORTCUT } })(),
     autoStart: source.autoStart === true,
     theme: source.theme === 'light' || source.theme === 'dark' ? source.theme : 'system',
-    palette: isPaletteId(source.palette) ? source.palette : 'purple',
+    palette: isPaletteId(source.palette) ? source.palette : 'neutral',
     proactiveReturn: source.proactiveReturn !== false,
     proactiveGreeting: source.proactiveGreeting !== false,
     proactiveRestReminder: source.proactiveRestReminder !== false,
