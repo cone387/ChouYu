@@ -91,21 +91,21 @@
 
 - [x] `npm test`、`npm run typecheck`、`npm run build`，真实 Electron 聊天/联系人/助手安排/主动检查冒烟。五类 Electron 场景（含 DSH）通过（`task6-recovery-*`）；接单/规划工具边界修复已有原生与实际 DSH SDK 协议证据（`planning-tools-*`）。后续删除失败/worker 重建隔离修复后 1969 项通过、53 项跳过，类型检查、构建和联系人 Electron 再次通过（`removal-restart-{tests,types,build,agents}.log`）。原生和 DSH 规划不暴露工具、宿主实际读取共享正文、正文阶段工具保留；删除待重试的联系人不阻止其他联系人恢复。后续源代码改动需按影响更新验证。
 - [x] 一次独立整分支审查，重要缺陷按失败测试修复并回归。审查范围 `9a4e0e8..6aab747`，无 Critical、两项 Important：worker 重启恢复已卸载 WorkLoop、上下文修改与清理意图未原子提交；均有实际服务/SQLite 失败测试与修复。真实 24h 尚未完成，不据此批准最终交付。
-- [ ] 逐条审计 spec 1–6 的权威证据，更新架构/产品状态/验收文档；所有项目实现且验证前保持目标 active。
+- [x] 按用户取消长测后的 spec 1–6 逐条审计实际入口、测试与运行证据，更新架构、产品状态及验收文档。最终检查与边界见文末。
 - [ ] 提交完整功能分支；合并、推送按会话中实际授权处理。
 
-## 最终审计证据索引（2026-10-19 21:10，尚未最终签收）
+## 最终审计证据索引（2026-10-20，按用户更新后的范围）
 
-本表按 spec 的六项要求核对。代码与测试可证明模块接入和已覆盖行为；长测、最终审计与合入推送仍未完成，不能据本表宣布全目标完成。
+本表逐条核对更新后的 spec 六项要求。2026-10-20 再次读取实际业务入口、模块组合、三域分派、后台配置与预算链，核对真实模型成果审计、存储压力报告及五类 Electron 日志。连续 24 小时与跨日门槛由用户取消，保留所有失败和未验证边界；代码交付与远端结果见文末交付记录。
 
 | 要求 | 已核对的权威入口与证据 | 当前结论与待办 |
 | --- | --- | --- |
-| 1. 同一联系人组合 Chat/WorkLoop 与生命周期 | `ipc.ts` 的聊天入口调用 `runContactChat`，`agents/index.ts` 将聊天与后台请求交给同一 `contactSpace`；`agent-space/application.test.ts` 覆盖真实持久 WorkLoop、独立退出等待、删除/卸载、worker 更换及同伴恢复，`contact-agent/agent.test.ts` 覆盖装卸与失败重试。最新全量和 Electron agents 均通过。 | 代码与覆盖范围已核验；继续以长测验证长期恢复。 |
+| 1. 同一联系人组合 Chat/WorkLoop 与生命周期 | `ipc.ts` 的聊天入口调用 `runContactChat`，`agents/index.ts` 将聊天与后台请求交给同一 `contactSpace`；`agent-space/application.test.ts` 覆盖真实持久 WorkLoop、独立退出等待、删除/卸载、worker 更换及同伴恢复，`contact-agent/agent.test.ts` 覆盖装卸与失败重试。最新全量和 Electron agents 均通过。 | 实现与覆盖范围已核验；没有仅建目录而未接入业务的模块。 |
 | 2. TaskCenter 三任务域与原语义 | `agents/index.ts`、`tasks/index.ts`、`assistant-routines/index.ts` 实际注册/绑定域；`task-center/service.test.ts` 使用实际 TasksStore、AssistantRoutineService、AgentSpace/WorkLoopHost 验证归属、版本、独立日期期次、删除持久性与卸载旧绑定失效。助手安排 Electron 日志包含共同 UI、单描述弹窗与真实定时投递通过标记。 | 已接入真实业务入口；未以通用任务状态覆盖各域语义。 |
-| 3. 后台 DSH 与设置、预算、工具 | `workloop/model.ts` 调用 `context.harnesses.background(input.backgroundHarnessEngine)`；`background-rounds.test.ts` 使用实际 SDK 与本地 HTTP 验证逐轮预留/结算、六次上限、发送前拒绝、取消及未知用量；详见 `agentspace-dsh-background-acceptance-20261019.md` 与 `task3-dsh-ui`。 | SDK/界面/持久化证据已具备；真实供应商完整时长待第 5 项。 |
-| 4. 启动、退出与存储恢复 | 四条部分启动失败有真实 SQLite 文件句柄 RED/GREEN；真实 Windows SHM 映射复现、精确错误有限恢复、不重试损坏库；`storage-recovery.json` 显示 complete=true、48 次完整性检查，四种组合与轮次详见存储验收文档。 | 针对性验证通过；原间歇 WAL 错误具体句柄来源仍未证实，长测继续检查。 |
-| 5. 原生与 DSH 真实 ≥24h | 第一、第二样本均保留失败并停止，不能计作通过。第三样本 `full24h-2026-10-19T13-07-51-916Z` 已在约 12 小时 10 分钟后中断，进程及会话均不存在；退出原因未知。三个样本均不能计作完整通过。 | **未完成**。待自身有效观测 ≥24h、所有门槛及实际正文/引用审计通过。 |
-| 6. 回归、独立审查与最终交付 | 最新 1975 测试通过、53 跳过，类型/构建/Electron agents 通过；其余四类 Electron 原始通过日志为 `task6-recovery-{chat,assistant-routines,companion,dsh-harness}.log`。整分支独立审查的重要缺陷已有失败回归修复；详见 Task 6。 | 最终逐项签收、文档定稿、合入与推送仍待第 5 项结果。首次 DSH 等待/超时失败日志保留，不声称根因已消除。 |
+| 3. 后台 DSH 与设置、预算、工具 | `workloop/model.ts` 调用 `context.harnesses.background(input.backgroundHarnessEngine)`；`background-rounds.test.ts` 使用实际 SDK 与本地 HTTP 验证逐轮预留/结算、六次上限、发送前拒绝、取消及未知用量；详见 `agentspace-dsh-background-acceptance-20261019.md` 与 `task3-dsh-ui`。 | SDK/界面/持久化及两周期真实供应商交付证据已核验。 |
+| 4. 启动、退出与存储恢复 | 四条部分启动失败有真实 SQLite 文件句柄 RED/GREEN；真实 Windows SHM 映射复现、精确错误有限恢复、不重试损坏库；`storage-recovery.json` 显示 complete=true、48 次完整性检查，四种组合与轮次详见存储验收文档。 | 针对性验证通过；原间歇 WAL 错误具体句柄来源仍未知，不宣称永久消除全部 I/O 错误。 |
+| 5. 隔离真实模型交付与恢复证据 | 第四样本有效观测 6675509ms、1321 次采样，原生/DSH 各完成两轮，真实来源正文及版本、旧正文保留、聊天投递、助手汇报和自动恢复已核验；`first-review-audit.json`、`second-writer-audit.json`、`second-review-failure-audit.json`、`second-review-audit.json` 均保留。 | 更新后范围已满足。用户取消连续 24 小时及跨日等待，第四样本正常按要求停止；所有历史失败保留，不宣称长测通过。 |
+| 6. 回归、独立审查与最终交付 | 既有全量 1975 通过、53 跳过，类型/构建/Electron agents 通过；其余四类 Electron 原始通过日志为 `task6-recovery-{chat,assistant-routines,companion,dsh-harness}.log`。整分支与尾部独立审查已完成，重要缺陷有失败回归修复；交付前新检查见文末。 | 已逐项核对实现和证据，文档同步当前范围；最终提交、合入及推送记录见文末。间歇等待/超时失败日志保留，不声称根因已消除。 |
 
 文档一致性检查修正：旧 Harness 章节不再把所有联系人后台任务描述为直接调用原生；当前独立后台选择与普通聊天能力范围已对齐实际实现。此处为文档修正，不改变第三样本运行代码。
 
@@ -115,4 +115,13 @@ reviewer `/root/agentspace_tail_review` 只读补查 `6aab747565b8209c4f6d6de7cd
 
 审查明确保留的范围：既有交付类型判断、章节规划、成果格式修复和字数校正仍可使用原任务已授权技能工具，工作文件写入不会随后续格式失败回滚；这些路径在本次基线已存在，本轮明确修复的是接单与 choose 规划及其纠正，未发现本尾部改动引入越权或交付损坏。执行者接受该范围判断，不宣称所有纯判断请求均禁止工具，也不因此禁止实际正文修订工具。来源字数校验仍不是通用自然语言理解器；原 WAL 句柄来源、首次全量等待/超时和第三样本退出原因仍未知。
 
-**审查结论仅为本次代码补查可通过，不是完整交付签收。** 第四样本第二周期及其正文/引用核验已于 11:09 完成，见 Task 5；跨日、有效观测至少 24 小时、最终正文/引用审计及合入推送仍须完成。
+**上述为 10:44 的历史审查结论。** 第四样本第二周期及其正文/引用核验已于 11:09 完成；用户随后取消 24 小时长测及跨日等待。当前范围和最终交付以 Task 5 的取消记录及文末交付记录为准。
+
+## 交付收尾核验（2026-10-20）
+
+- 用户明确取消 24 小时长测，随后要求完成交付收尾；本次不再启动长测。第四样本及所有历史失败记录保留，未把取消要求写成验收通过。
+- 运行代码最后变更为 `6f6c803`，此后仅文档变化。核对普通聊天 IPC、应用联系人组合、WorkLoopHost、三个实际任务域、联系人后台设置与逐轮预算调用链，未发现未接入业务的占位模块。现行任务 UI、独立身份、消息来源、自然语言描述和未读提醒约定保持原实现。
+- 交付前全量首次运行 1972 通过、3 失败、53 跳过：DSH 工具启动等待及清理钩子超时、打包资源复制超时、强杀 helper 后新请求 `ECONNRESET`。保留 `delivery-final-tests.log`；未修改代码、测试、并发或超时。三个相关文件单独复测 10 通过、1 跳过（`delivery-final-dsh-recheck.log`），随后完整复测 1975 通过、53 跳过、242 文件通过，耗时 80.99 秒（`delivery-final-tests-recheck.log`）。这证明本次复测通过，不证明首次间歇失败根因已消除。
+- Node/Web 类型检查、应用构建通过，构建仅保留已有 chunk 大小提示，证据 `delivery-final-types.log`、`delivery-final-build.log`，执行会话 73067 退出 0。五类 Electron 通过日志、SDK/界面验收、存储 24 轮/48 次完整性检查及两次独立审查已逐一核对；无需为文档改动重复所有真实模型场景。
+- 6 份相关文档的 98 个相对链接均存在，`git diff --check` 通过。架构文档旧 `AgentStore.finish` 名称修正为实际 `ContactTaskStore.finish`。原 WAL 占用者、第三样本退出原因及间歇测试延迟仍保留为已知边界，不扩展宣称第三方插件沙箱、系统服务、断网/休眠工作或安装包发布验收。
+- 主仓库 `master` 与 `origin/master` 均为 `9a4e0e8`，工作区干净；功能分支可快进合入。验收原始文件保留在现有工作树 `artifacts/agentspace-complete/`，不清理持有唯一证据的工作树。最终合入与远端核验结果在实际推送后补记。
