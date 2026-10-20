@@ -56,7 +56,8 @@
 - [x] 记录故障次数、恢复次数、进程退出与完整性检查。最终回归再次出现 IOERR_TRUNCATE，已用真实 Windows SHM 映射复现一种触发条件并补精确错误的有界恢复；四种连接/终止组合 24 轮、48 次完整性检查通过。原冒烟句柄来源仍未知，继续纳入 Task 5；不声称永久消除所有 I/O 错误。
 
 ## Task 5: 真实 24 小时验收
-第三完整样本当前状态（2026-10-19 22:19）：`full24h-2026-10-19T13-07-51-916Z` 正式开始于 21:13:55.576 +08:00，冻结提交 `6f6c80356974a810edf8d3c4d70094cfc56ff0c4`，构建 SHA256 `853e99dc977d49e7f33d37bbfb60ea5fae9a2e2cd82f18ed28ed1076b55e7705`，模型 `as-glm-5.2`；21:07:51 起的复制准备不计入时长。监控会话 96927、launcher PID 18880、应用 PID 36444 核实存活。报告 running/complete=false；有效观测 3896977ms、776 次采样，原生完成 2 轮/8 次调用/24145 reported tokens，DSH 完成 2 轮/6 次调用/34237 reported tokens，SDK 会话 6，真实引用评审 2。worker 硬重启、应用重启、暂停恢复和预定 HTTP 503 后恢复通过；观察、存储及重复消息错误为零。助手安排完成一次，未读 7；跨日和完整 24 小时仍待验证。
+第三完整样本中断核验（2026-10-20 09:29）：原 launcher 18880、应用 36444 均已不存在，工具会话 96927 也已失效。最后报告写于 09:23:48.525 +08:00，observedMs=43791180、samples=8707，约 12 小时 10 分钟；complete=false，原始 running 状态已过时，不能据此判断仍在运行或验收通过。保留全部原始报告，另存 interruption-audit.json。应用日志没有同期退出异常，近 40 分钟 Windows 事件没有 Node/Electron 应用崩溃或系统重启；有一条较早的 LiveKernelEvent，尚无证据与退出相关。退出原因未确定，不归因于产品崩溃或用户暂停。新完整样本必须独立满足 24 小时门槛，不拼接本次时长。
+第三完整样本历史状态（2026-10-19 22:19；已于次日中断，见上文）：`full24h-2026-10-19T13-07-51-916Z` 正式开始于 21:13:55.576 +08:00，冻结提交 `6f6c80356974a810edf8d3c4d70094cfc56ff0c4`，构建 SHA256 `853e99dc977d49e7f33d37bbfb60ea5fae9a2e2cd82f18ed28ed1076b55e7705`，模型 `as-glm-5.2`；21:07:51 起的复制准备不计入时长。监控会话 96927、launcher PID 18880、应用 PID 36444 核实存活。报告 running/complete=false；有效观测 3896977ms、776 次采样，原生完成 2 轮/8 次调用/24145 reported tokens，DSH 完成 2 轮/6 次调用/34237 reported tokens，SDK 会话 6，真实引用评审 2。worker 硬重启、应用重启、暂停恢复和预定 HTTP 503 后恢复通过；观察、存储及重复消息错误为零。助手安排完成一次，未读 7；跨日和完整 24 小时仍待验证。
 
 第三样本正文核验：原生首轮 `b1855abd-e310-4345-b162-c81afd7151f8` 保存 `sec_01_arrival`（384 汉字），第二轮 `328b5a7b-5ecc-482d-b502-0336b2d9b105` 保存 `sec_02_signal`（450 汉字），v2 保留原分节并续写调查线。DSH 第二轮 `8973fd69-eec1-4ebc-a6c1-a86a1eef3267` 保存含结论、评分依据及具体建议的 `ch01-review-signal`，引用 `contact-delivery://soak-writer/cbfe5e49-1261-4102-abcb-29c2230901b9/sec_02_signal?version=2`。已直接核对正式保存正文及引用版本；不把执行阶段字段当作聊天成果。
 
@@ -97,7 +98,7 @@
 | 2. TaskCenter 三任务域与原语义 | `agents/index.ts`、`tasks/index.ts`、`assistant-routines/index.ts` 实际注册/绑定域；`task-center/service.test.ts` 使用实际 TasksStore、AssistantRoutineService、AgentSpace/WorkLoopHost 验证归属、版本、独立日期期次、删除持久性与卸载旧绑定失效。助手安排 Electron 日志包含共同 UI、单描述弹窗与真实定时投递通过标记。 | 已接入真实业务入口；未以通用任务状态覆盖各域语义。 |
 | 3. 后台 DSH 与设置、预算、工具 | `workloop/model.ts` 调用 `context.harnesses.background(input.backgroundHarnessEngine)`；`background-rounds.test.ts` 使用实际 SDK 与本地 HTTP 验证逐轮预留/结算、六次上限、发送前拒绝、取消及未知用量；详见 `agentspace-dsh-background-acceptance-20261019.md` 与 `task3-dsh-ui`。 | SDK/界面/持久化证据已具备；真实供应商完整时长待第 5 项。 |
 | 4. 启动、退出与存储恢复 | 四条部分启动失败有真实 SQLite 文件句柄 RED/GREEN；真实 Windows SHM 映射复现、精确错误有限恢复、不重试损坏库；`storage-recovery.json` 显示 complete=true、48 次完整性检查，四种组合与轮次详见存储验收文档。 | 针对性验证通过；原间歇 WAL 错误具体句柄来源仍未证实，长测继续检查。 |
-| 5. 原生与 DSH 真实 ≥24h | 第一、第二样本均保留失败并停止，不能计作通过。第三样本 `full24h-2026-10-19T13-07-51-916Z` 的 runner 会话 96927 已启动，21:10 仍在冻结构建准备；准备时间不计入 24h。 | **未完成**。待自身有效观测 ≥24h、所有门槛及实际正文/引用审计通过。 |
+| 5. 原生与 DSH 真实 ≥24h | 第一、第二样本均保留失败并停止，不能计作通过。第三样本 `full24h-2026-10-19T13-07-51-916Z` 已在约 12 小时 10 分钟后中断，进程及会话均不存在；退出原因未知。三个样本均不能计作完整通过。 | **未完成**。待自身有效观测 ≥24h、所有门槛及实际正文/引用审计通过。 |
 | 6. 回归、独立审查与最终交付 | 最新 1975 测试通过、53 跳过，类型/构建/Electron agents 通过；其余四类 Electron 原始通过日志为 `task6-recovery-{chat,assistant-routines,companion,dsh-harness}.log`。整分支独立审查的重要缺陷已有失败回归修复；详见 Task 6。 | 最终逐项签收、文档定稿、合入与推送仍待第 5 项结果。首次 DSH 等待/超时失败日志保留，不声称根因已消除。 |
 
 文档一致性检查修正：旧 Harness 章节不再把所有联系人后台任务描述为直接调用原生；当前独立后台选择与普通聊天能力范围已对齐实际实现。此处为文档修正，不改变第三样本运行代码。
