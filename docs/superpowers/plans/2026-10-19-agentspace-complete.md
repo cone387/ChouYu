@@ -7,6 +7,8 @@
 **Tech Stack:** Electron / TypeScript / SQLite / DeepSeek Harness SDK / Vitest。
 **Spec:** `docs/superpowers/specs/2026-10-19-agentspace-complete.md` 与 `docs/contact-task-spec.md`。
 
+**交付状态（2026-10-20）：已完成。** 按用户取消 24 小时长测后的范围完成逐项审计、文档定稿、合入和推送。功能与收尾文档提交 `98304e7a117c59d89192ba4084f785a5ef58295a` 已快进合入 `master`，`git ls-remote origin refs/heads/master` 核验远端相同；本次补记仅记录已完成的交付，不改变运行代码或已有验证结论。
+
 ## Global Constraints
 
 - 用户于 2026-10-20 明确取消 24 小时长测及其跨日等待门槛；保留已有真实模型与专项验证证据，不将取消写成验收通过。其余模块实现与交付要求不变。
@@ -92,7 +94,7 @@
 - [x] `npm test`、`npm run typecheck`、`npm run build`，真实 Electron 聊天/联系人/助手安排/主动检查冒烟。五类 Electron 场景（含 DSH）通过（`task6-recovery-*`）；接单/规划工具边界修复已有原生与实际 DSH SDK 协议证据（`planning-tools-*`）。后续删除失败/worker 重建隔离修复后 1969 项通过、53 项跳过，类型检查、构建和联系人 Electron 再次通过（`removal-restart-{tests,types,build,agents}.log`）。原生和 DSH 规划不暴露工具、宿主实际读取共享正文、正文阶段工具保留；删除待重试的联系人不阻止其他联系人恢复。后续源代码改动需按影响更新验证。
 - [x] 一次独立整分支审查，重要缺陷按失败测试修复并回归。审查范围 `9a4e0e8..6aab747`，无 Critical、两项 Important：worker 重启恢复已卸载 WorkLoop、上下文修改与清理意图未原子提交；均有实际服务/SQLite 失败测试与修复。真实 24h 尚未完成，不据此批准最终交付。
 - [x] 按用户取消长测后的 spec 1–6 逐条审计实际入口、测试与运行证据，更新架构、产品状态及验收文档。最终检查与边界见文末。
-- [ ] 提交完整功能分支；合并、推送按会话中实际授权处理。
+- [x] 完整功能分支已快进合入 `master` 并推送；远端提交核验为 `98304e7a117c59d89192ba4084f785a5ef58295a`。工作区干净，未使用强制推送。
 
 ## 最终审计证据索引（2026-10-20，按用户更新后的范围）
 
@@ -124,4 +126,4 @@ reviewer `/root/agentspace_tail_review` 只读补查 `6aab747565b8209c4f6d6de7cd
 - 交付前全量首次运行 1972 通过、3 失败、53 跳过：DSH 工具启动等待及清理钩子超时、打包资源复制超时、强杀 helper 后新请求 `ECONNRESET`。保留 `delivery-final-tests.log`；未修改代码、测试、并发或超时。三个相关文件单独复测 10 通过、1 跳过（`delivery-final-dsh-recheck.log`），随后完整复测 1975 通过、53 跳过、242 文件通过，耗时 80.99 秒（`delivery-final-tests-recheck.log`）。这证明本次复测通过，不证明首次间歇失败根因已消除。
 - Node/Web 类型检查、应用构建通过，构建仅保留已有 chunk 大小提示，证据 `delivery-final-types.log`、`delivery-final-build.log`，执行会话 73067 退出 0。五类 Electron 通过日志、SDK/界面验收、存储 24 轮/48 次完整性检查及两次独立审查已逐一核对；无需为文档改动重复所有真实模型场景。
 - 6 份相关文档的 98 个相对链接均存在，`git diff --check` 通过。架构文档旧 `AgentStore.finish` 名称修正为实际 `ContactTaskStore.finish`。原 WAL 占用者、第三样本退出原因及间歇测试延迟仍保留为已知边界，不扩展宣称第三方插件沙箱、系统服务、断网/休眠工作或安装包发布验收。
-- 主仓库 `master` 与 `origin/master` 均为 `9a4e0e8`，工作区干净；功能分支可快进合入。验收原始文件保留在现有工作树 `artifacts/agentspace-complete/`，不清理持有唯一证据的工作树。最终合入与远端核验结果在实际推送后补记。
+- 合入前主仓库 `master` 与 `origin/master` 均为 `9a4e0e8`，工作区干净。完整功能分支已快进合入 `98304e7` 并推送，远端提交逐字一致；合入结果与已验证功能分支是同一提交，不重复运行相同代码的全套测试。验收原始文件保留在现有工作树 `artifacts/agentspace-complete/`，不清理持有唯一证据的工作树。交付完成；连续 24 小时、跨日及文中明确未覆盖的发布能力仍不宣称通过。
