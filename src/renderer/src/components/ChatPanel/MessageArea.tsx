@@ -235,7 +235,8 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
         </div>}
       </div>}
     <div className="message-area" ref={scrollRef} aria-live={searching ? 'off' : 'polite'} aria-busy={isStreaming}>
-      <div className="message-list" ref={listRef}>
+      <div className="message-list" ref={listRef}
+        style={useWindowing && windowed.dragContentHeight != null ? { height: windowed.dragContentHeight, overflow: 'clip' } : undefined}>
       {searching && matches.length === 0 && <p className="message-search-empty" role="status">{focusMessageId ? '对应消息已删除，执行结果仍可在任务历史中查看。' : '没有匹配的消息，试试其他关键词。'}</p>}
       {!searching && contextLimit && messages.length > contextLimit && (
         <div className="context-limit-notice" role="status">

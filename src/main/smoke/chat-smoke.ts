@@ -8,6 +8,7 @@ import {
 } from '../database'
 import { waitForRenderer } from './storage-smoke'
 import { runNavigationSmoke } from './navigation-smoke'
+import { runChatScrollSmoke } from './chat-scroll-smoke'
 
 async function input(window: BrowserWindow, selector: string, value: string): Promise<void> {
   await window.webContents.executeJavaScript(`(() => {
@@ -181,6 +182,10 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     window.webContents.send('open-chat-panel')
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true]') && document.querySelector('.input-textarea') && document.querySelector('table') && document.querySelector('del')")
     console.log('CHOUYU_CHAT_STAGE panel-ready')
+    if (process.env.CHOUYU_SMOKE_CHAT_SCROLL_ONLY === '1') {
+      await runChatScrollSmoke(window)
+      return
+    }
     if (process.env.CHOUYU_SMOKE_CHAT_CLOSE_ONLY === '1') {
       await checkClosingDuringReply()
       return
@@ -207,6 +212,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     await runNavigationSmoke(window)
     console.log('CHOUYU_CHAT_STAGE navigation-complete')
     if (process.env.CHOUYU_SMOKE_NAVIGATION_ONLY === '1') return
+    await runChatScrollSmoke(window)
     await snapshots(window, 'chat')
 
     await input(window, '.input-textarea', '窗口模式切换保留草稿')
