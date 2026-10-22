@@ -136,6 +136,8 @@ export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, Contact
   continueTopic(characterId: string, topicId: string, revision: number, reason: string): Promise<AgentOverview>
   setTaskBudget(characterId: string, topicId: string, revision: number, budget: Pick<import('./agent-resources').TaskResourceBudget, 'modelCalls'>): Promise<AgentOverview>
   delivery(characterId: string, topicId: string, version?: number): Promise<import('./agent-delivery').AgentDelivery | null>
+  deliveryFeedback(characterId: string, topicId: string, revision: number, version: number, action: 'accept' | 'revise', reason: string, requestId: string, citation?: import('./contact-content').ContentCitation, scope?: 'content' | 'presentation'): Promise<import('./delivery-feedback').DeliveryFeedbackReceipt>
+  deliveryFeedbackList(characterId: string, topicId: string): Promise<import('./delivery-feedback').DeliveryFeedbackRecord[]>
   exportDelivery(characterId: string, topicId: string, version: number, format?: 'markdown' | 'html'): Promise<boolean>
   reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string, scope?: 'content' | 'presentation', deliveryVersion?: number): Promise<AgentOverview>
   savePreferences(characterId: string, settings: AgentSettings, expectedRevision?: number): Promise<AgentOverview>

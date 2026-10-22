@@ -230,7 +230,7 @@ export async function submitContactInteraction(id: string, interactionId: string
     prepare: async (option, sessionId, credential) => {
       if (getSession(sessionId)?.characterId !== id) throw new Error('原会话已删除或归属变化，此操作未执行。')
       if (!getConfig().aiToolsEnabled || getState(`tool:${option.tool}:enabled`) === 'false') throw new Error('工具已被用户禁用，此操作未执行。')
-      return prepareRegisteredToolAsync(option.tool, option.arguments, window, sessionId, credential)
+      return prepareRegisteredToolAsync(option.tool, option.arguments, window, sessionId, credential, `action:${interactionId}`)
     }
   }, submission)
   return contactAgentsCall(id, 'getInteraction', [interactionId])
@@ -289,7 +289,7 @@ export function initializeAgents() {
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
     prepare: (option, context) => {
       if (!getConfig().aiToolsEnabled || getState(`tool:${option.tool}:enabled`) === 'false') throw new Error('此操作工具已被禁用。')
-      return prepareRegisteredToolAsync(option.tool, option.arguments, context.mainWindow, context.sessionId)
+      return prepareRegisteredToolAsync(option.tool, option.arguments, context.mainWindow, context.sessionId, undefined, context.executionId)
     },
     offer: (owner, key, request) => contactAgentsCall(owner, 'offerAction', [key, request])
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
@@ -393,7 +393,7 @@ export function initializeAgents() {
       await ensure(); await syncContact(id); return dispatchAgentCommand(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const method of ['getInteraction', 'outputPreferences', 'setOutputPreference', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
+  for (const method of ['getInteraction', 'outputPreferences', 'setOutputPreference', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'deliveryFeedback', 'deliveryFeedbackList', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
     contactHandle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       validateMemoryBoundary(id, method, args)

@@ -20,6 +20,7 @@ import type { ContactContextRecord } from '../../../../shared/contact-content'
 import ContactRevisionDialog from './ContactRevisionDialog'
 import ContactHandoffDialog from './ContactHandoffDialog'
 import ContactHandoffs from './ContactHandoffs'
+import ContactDeliveryFeedback from './ContactDeliveryFeedback'
 
 const stageLabel = { pending: '待开始', active: '进行中', done: '已完成' }
 export default function ContactDeliveryReader({ characterId, topic, busy = false, onAction = async action => { await action() }, onReport, view = 'delivery', active = true, initialRef, initialAnchor, onNavigate, onCite }: {
@@ -214,6 +215,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
     {citationError && <p role="alert">{citationError}</p>}
     {artifact && outputDialog && <ContactOutputDialog characterId={characterId} topicId={topic.id} version={artifact.version} onClose={() => setOutputDialog(false)} />}
     {contextRecord && <ContactContextReferences key={contextRecord.requestId} record={contextRecord} />}
+    <ContactDeliveryFeedback owner={characterId} topicId={topic.id} active={active && view === 'delivery'} onOpen={version => load(version)} />
     {!!artifact?.fileIds?.length && <ContactFiles active={active} owner={characterId} topicId={topic.id} fileIds={artifact.fileIds} />}
     {revisionDialog && <ContactRevisionDialog characterId={characterId} topic={topic} citation={revisionDialog.citation} scope={revisionDialog.scope} onClose={() => setRevisionDialog(null)} onSaved={() => setNotice('修改意见已保存，将沿用任务额度修订一轮。')} />}
     {artifact && handoff && <ContactHandoffDialog source={{ characterId, topicId: topic.id, version: artifact.version, ...(readingId ? { sectionId: readingId } : {}) }} title={topic.title} onClose={() => setHandoff(false)} onSaved={() => setNotice('评审任务已保存，接收者会按原权限和额度执行。')} />}

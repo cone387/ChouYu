@@ -1,6 +1,6 @@
 # 协作与恢复 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or the user-selected superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or the user-selected superpowers:subagent-driven-development. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 让反馈能追踪实际修订结果、成果变化唤醒相关任务、失败在原任务中接续，并完成整体验收。
 
@@ -24,11 +24,11 @@ accept 不结束任务，revise 不增加权限/预算；未保存不得显示�
 
 **Interfaces:** `DeliveryFeedbackRecord` 包含 id、owner/topicId、requestId、baseVersion、action/reason、runId?、resultVersion?、createdAt；状态由已关联轮次读取，旧记录无关联明确标为历史未关联。`FeedbackLedger.submit(owner, input): FeedbackReceipt`、`list(owner, topicId): DeliveryFeedbackRecord[]`、`complete(runId, resultVersion): void`。input 复用原 revision/version/action/reason，增加稳定 requestId。
 
-- [ ] 新测试断言同 requestId/同内容只入队一次、同 ID 改内容拒绝；旧 version 拒绝；修订排队/等待/失败/取消不显示新成果；真正完成事务才关联 resultVersion；完成回滚无假关联；旧反馈不推测 run。
-- [ ] 先运行新测试见失败；将 feedback 记录与原修订请求/轮次创建同事务，稳定 requestId 从现有 action/工具调用身份传入；重启读取真实关联。
-- [ ] 接入统一成果阅读和互动记录，显示原版→实际结果版与真实状态，打开各自固定版本；复用原反馈入口和单描述弹窗，不新增复杂任务表单。
-- [ ] 运行 `npm test -- src/main/agents/delivery-feedback.test.ts src/main/agents/feedback-ledger.test.ts src/main/agents/contact-delivery-flow.test.ts`、类型检查；扩展 contact-experience smoke 验证实际反馈、失败恢复、版本打开并查看截图。
-- [ ] 提交 `feat: trace delivery feedback to actual revision results`，记录 F1。
+- [x] 新测试断言同 requestId/同内容只入队一次、同 ID 改内容拒绝；旧 version 拒绝；修订排队/等待/失败/取消不显示新成果；真正完成事务才关联 resultVersion；完成回滚无假关联；旧反馈不推测 run。
+- [x] 先运行新测试见失败；将 feedback 记录与原修订请求/轮次创建同事务，稳定 requestId 从现有 action/工具调用身份传入；重启读取真实关联。
+- [x] 接入统一成果阅读和互动记录，显示原版→实际结果版与真实状态，打开各自固定版本；复用原反馈入口和单描述弹窗，不新增复杂任务表单。
+- [x] 运行 `npm test -- src/main/agents/delivery-feedback.test.ts src/main/agents/feedback-ledger.test.ts src/main/agents/contact-delivery-flow.test.ts`、类型检查；扩展 contact-experience smoke 验证实际反馈、失败恢复、版本打开并查看截图。
+- [x] 提交 `feat: trace delivery feedback to actual revision results`，记录 F1。
 
 ### Task 2: 持久成果依赖与唤醒
 

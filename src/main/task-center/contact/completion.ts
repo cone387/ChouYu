@@ -12,6 +12,7 @@ import { AgentDeliveries } from '../../agents/delivery';
 import { type DeliveryUpdate } from '../../../shared/agent-delivery';
 import type { ContactStoreOperations } from './operations';
 interface Ports {
+  feedbackLedger: Pick<import('../../agents/feedback-ledger').FeedbackLedger, 'complete'>
   getRun: ContactStoreOperations['getRun']
   assertLive: ContactStoreOperations['assertLive']
   materials: Pick<AgentMaterials, "get">
@@ -64,6 +65,7 @@ export class ContactCompletion {
       if (deliveryInput.revisionSectionId && delivery?.section?.id !== deliveryInput.revisionSectionId) throw new Error('成果没有更新指定分节，本轮未提交。')
       if (run.topic_id && progress && JSON.parse(run.input).deliveryVersion === 1) this.ports.deliveries.commit(run.topic_id, report, progress, delivery)
       const committed = run.topic_id ? this.ports.deliveries.get(run.topic_id) : null
+      if (committed?.runId === runId) this.ports.feedbackLedger.complete(runId, committed.version)
       if (delivery?.fileIds?.length) {
         if (!committed || committed.runId !== runId || !run.topic_id) throw new Error('工作文件尚无对应的正式成果。')
         this.ports.files.attach(run.character_id, { characterId: run.character_id, topicId: run.topic_id, version: committed.version }, delivery.fileIds)

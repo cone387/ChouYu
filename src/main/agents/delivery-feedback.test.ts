@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
-import { saveDeliveryFeedback } from './delivery-feedback'
+import { saveDeliveryFeedback, createDeliveryFeedbackTools } from './delivery-feedback'
+import type { ToolExecutionContext } from '../tools/registry'
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const close of cleanup.splice(0).reverse()) close() })
 function fixture() {
@@ -38,4 +39,19 @@ it('does not record a revision as accepted when the original task cannot be revi
   const f = fixture(), revision = f.store.topics.get('alice', f.topic.id).revision
   expect(() => saveDeliveryFeedback(f.store, 'alice', f.topic.id, revision, 1, 'revise', '修改末段', '')).toThrow()
   expect(f.store.db.prepare('SELECT COUNT(*) AS n FROM contact_delivery_feedback').get()).toEqual({ n: 0 })
+})
+it('carries the same actual tool execution identity across preparation and response retries', async () => {
+  const f = fixture(), topic = f.store.topics.get('alice', f.topic.id)
+  const tool = createDeliveryFeedbackTools({ owner: () => 'alice', dispatchUnknown: async (method, owner, args = []) => {
+    if (method === 'get') return f.store.overview(owner)
+    if (method === 'delivery') return f.store.deliveries.get(String(args[0]))
+    if (method === 'deliveryFeedback') return saveDeliveryFeedback(f.store, owner, String(args[0]), Number(args[1]), Number(args[2]), String(args[3]), String(args[4]), '', args[5] as string)
+    throw new Error('Unexpected command')
+  } })[0]
+  const args = { topicId: topic.id, revision: topic.revision, deliveryVersion: 1, action: 'accept', reason: '认可这版' }
+  const context = { sessionId: 'chat', executionId: 'request:one:tool:two' } as unknown as ToolExecutionContext
+  const prepared = await tool.prepareAsync!(args, context), first = await prepared.execute()
+  expect(await prepared.execute()).toEqual(first)
+  expect(await (await tool.prepareAsync!(args, context)).execute()).toEqual(first)
+  expect(f.store.feedbackLedger.list('alice', topic.id)).toHaveLength(1)
 })

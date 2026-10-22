@@ -85,9 +85,11 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
       const memory = await run(`window.electronAPI.agents.createMemory(${JSON.stringify(owner)},${JSON.stringify({ content: 'obsolete fact', kind: 'preference', scope: { kind: 'session', sessionId }, source: { kind: 'user', at: Date.now() } })})`)
       stale = { id: memory.id, revision: 1, mode, changed: false }
       const requestSession = mode === 'unrelated' ? (await run(`window.electronAPI.db.createSession('Unrelated context',${JSON.stringify(owner)})`)).activeSession.id : sessionId
-      if (mode === 'self') await run("window.__approveMemoryRegression=window.electronAPI.ai.onToolApprovalRequest(request=>{if(request.name==='update_contact_memory')window.electronAPI.ai.resolveToolRequest(request.approvalId,true)});true")
       const result = await run(`window.electronAPI.ai.startStream(${JSON.stringify({ requestId: 'stale-' + mode, characterId: owner, sessionId: requestSession, messages: [{ role: 'user', content: 'EXPERIENCE_STALE_CONTEXT just answer' }], systemPrompt: 'Reply briefly.' })})`)
-      if (mode === 'self') await run('window.__approveMemoryRegression()')
+      if (mode === 'self') {
+        if (store.memoryLibrary.get(owner, memory.id).content !== 'obsolete fact') throw Error('Memory changed before the contact action was approved')
+        await run(`(async()=>{const card=(await window.electronAPI.agents.pendingInteractions(${JSON.stringify(owner)})).find(c=>c.kind==='action'&&c.request.actions.some(a=>a.tool==='update_contact_memory'&&a.arguments.id===${JSON.stringify(memory.id)}));if(!card)throw Error('Missing memory confirmation card');await window.electronAPI.agents.submitInteraction(card.characterId,card.id,{version:card.version,actionId:'apply'})})()`)
+      }
       if (mode === 'unrelated' || mode === 'self') {
         if (!result.ok) throw Error('Valid memory operation failed: ' + JSON.stringify(result))
         if (mode === 'self' && store.memoryLibrary.get(owner, memory.id).content !== 'explicit correction') throw Error('Acknowledged memory tool did not write')
@@ -169,6 +171,52 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
     await run(`window.electronAPI.agents.forgetMemory(${JSON.stringify(owner)},${JSON.stringify(memory.id)},2)`)
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .contact-context-references')?.textContent.includes('此记忆已移除')")
     if (Buffer.from(store.files.read(owner, fileId).bytes).toString() !== prose) throw Error('Revision changed archived original bytes')
+    // The existing single-opinion dialog now records an actual revision cause/result.
+    await click('.contact-work-sheet[open] [data-delivery-revise]')
+    await waitForRenderer(window, "Boolean(document.querySelector('[data-contact-revision-dialog]'))")
+    await fill('[data-delivery-feedback]', '保留原文来源，再核对结尾。')
+    const runCount = store.overview(owner).runs.length
+    store.db.exec("CREATE TRIGGER feedback_ui_failure BEFORE INSERT ON contact_delivery_feedback BEGIN SELECT RAISE(ABORT,'feedback UI storage fixture'); END")
+    await click('[data-delivery-submit]')
+    await waitForRenderer(window, "document.querySelector('[data-contact-revision-dialog] [role=alert]')?.textContent.includes('feedback UI storage fixture')")
+    if (await run("document.querySelector('[data-delivery-feedback]').value") !== '保留原文来源，再核对结尾。' || store.overview(owner).runs.length !== runCount) throw Error('Feedback failure lost draft or queued unrecorded work')
+    store.db.exec('DROP TRIGGER feedback_ui_failure')
+    await waitForRenderer(window, "!document.querySelector('[data-delivery-submit]').disabled")
+    await click('[data-delivery-submit]')
+    await waitForRenderer(window, "!document.querySelector('[data-contact-revision-dialog]')")
+    await waitForRenderer(window, `(async()=>{const rows=await window.electronAPI.agents.deliveryFeedbackList(${JSON.stringify(owner)},${JSON.stringify(topicId)});return rows.some(r=>r.baseVersion===2&&r.resultVersion===3&&r.status==='completed')})()`, 40000)
+    const feedback = store.feedbackLedger.list(owner, topicId)[0]
+    if (!feedback.runId || store.deliveries.get(topicId, 3)?.runId !== feedback.runId) throw Error('Feedback points to a different result run')
+    const record = store.db.prepare('SELECT fingerprint FROM contact_delivery_feedback WHERE id=?').get(feedback.id) as { fingerprint: string }
+    const [feedbackTopic, revision, version, action, reason, citation, scope] = JSON.parse(record.fingerprint)
+    await run(`window.electronAPI.agents.deliveryFeedback(${JSON.stringify(owner)},${[feedbackTopic, revision, version, action, reason, feedback.requestId, citation, scope].map(v => JSON.stringify(v)).join(',')})`)
+    if (store.overview(owner).runs.length !== runCount + 1 || store.feedbackLedger.list(owner, topicId).length !== 1) throw Error('Feedback response retry duplicated work')
+    const feedbackRoot = '.contact-work-sheet[open] .contact-portfolio [data-delivery-feedback-records]'
+    await waitForRenderer(window, `Boolean(document.querySelector('${feedbackRoot} [data-feedback-result]'))`)
+    await click(`${feedbackRoot} [data-feedback-base]`)
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] [data-delivery-version]')?.dataset.deliveryVersion==='2'")
+    await click(`${feedbackRoot} [data-feedback-result]`)
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] [data-delivery-version]')?.dataset.deliveryVersion==='3'")
+    await navigate({ kind: 'task', characterId: owner, topicId })
+    await waitForRenderer(window, "[...document.querySelectorAll('.contact-work-sheet[open] [role=tab]')].some(b=>b.textContent==='互动记录')")
+    await run("[...document.querySelectorAll('.contact-work-sheet[open] [role=tab]')].find(b=>b.textContent==='互动记录').click()")
+    const interactionRoot = '.contact-work-sheet[open] [data-topic-interactions] [data-delivery-feedback-records]'
+    await waitForRenderer(window, `Boolean(document.querySelector('${interactionRoot} [data-feedback-result]'))`)
+    await click(`${interactionRoot} [data-feedback-base]`)
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] [data-delivery-version]')?.dataset.deliveryVersion==='2'")
+    const screenshots = join(process.cwd(), 'artifacts', 'system-evolution', 'feedback'); mkdirSync(screenshots, { recursive: true })
+    for (const theme of ['light', 'dark']) for (const width of [375, 1024]) {
+      await run(`document.documentElement.dataset.theme='${theme}'`)
+      window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
+      await waitForRenderer(window, `window.innerWidth === ${width} && document.documentElement.dataset.theme === '${theme}'`)
+      await run(`document.querySelector('${feedbackRoot}').scrollIntoView({block:'center'}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
+      // capturePage may still contain the previous compositor frame after DOM layout.
+      await new Promise(resolve => setTimeout(resolve, 350))
+      if (!await run(`(()=>{const e=document.querySelector('${feedbackRoot}');return e.scrollWidth<=e.clientWidth+1})()`)) throw Error('Feedback overflows the reader')
+      writeFileSync(join(screenshots, `${theme}-${width}.png`), (await window.webContents.capturePage()).toPNG())
+    }
+    window.webContents.disableDeviceEmulation(); await run("document.documentElement.dataset.theme='light'")
+    console.log('CHOUYU_FEEDBACK_LEDGER_SMOKE_PASSED single dialog failure/retry, actual revision, stable replay, fixed base/result, interactions and responsive themes')
     mkdirSync('artifacts/contact-experience', { recursive: true }); writeFileSync('artifacts/contact-experience/receipt.png', (await window.webContents.capturePage()).toPNG())
     writeFileSync('artifacts/contact-experience/result.json', JSON.stringify({ owner, topicId, material, memoryId: memory.id, fileId, handoff, sourceVersion: 1, revisedVersion: 2, requests: requests.length }, null, 2))
     console.log('CHOUYU_CONTACT_EXPERIENCE_SMOKE_PASSED one source: scoped material/memory, actual task tools/prose/file, restart, exact citation discussion, independent review, returned opinion, stale conflict and revised source')

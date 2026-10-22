@@ -101,7 +101,7 @@ export async function executeChat({ sender, request, requestKey, controller }: C
           && (!SKILL_TOOLS.some(skill => skill.name === tool.name) || skillTools.definitions.some(skill => skill.name === tool.name))
           && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
         getDefinition: getRegisteredTool, getConfig, isToolEnabled, assertContext,
-        prepare: async (call, args) => SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : prepareRegisteredToolAsync(call.name, args, mainWindow, request.sessionId),
+        prepare: async (call, args) => SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : prepareRegisteredToolAsync(call.name, args, mainWindow, request.sessionId, undefined, `chat:${request.requestId}:${call.id}`),
         contactPolicy: async () => owner ? (await contactAgentsCall(owner, 'get') as import('../../shared/agents').AgentOverview).settings.toolPermissionMode : undefined,
         offerAction: (key, action) => contactAgentsCall(owner!, 'offerAction', [key, validateContactActionRequest(action)]),
         approve: (call, preview) => approvals.request(sender, request.requestId, call, signal, preview),

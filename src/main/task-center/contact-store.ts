@@ -1,4 +1,5 @@
 import { ContactCompletion } from './contact/completion';
+import { FeedbackLedger } from '../agents/feedback-ledger';
 import { ContactMutations } from './contact/mutations';
 import { ContactScheduling } from './contact/scheduling';
 import { ContactCallBudget } from './contact/call-budget';
@@ -33,6 +34,7 @@ import { AgentDeliveries } from '../agents/delivery';
 
 export class ContactTaskStore {
   readonly completion: ContactCompletion
+  readonly feedbackLedger: FeedbackLedger
   readonly mutations: ContactMutations
   readonly scheduling: ContactScheduling
   readonly callBudget: ContactCallBudget
@@ -222,7 +224,9 @@ export class ContactTaskStore {
         portfolio: this.portfolio,
         setTaskBudget: this.setTaskBudget.bind(this)
       })
+      this.feedbackLedger = new FeedbackLedger(this)
       this.completion = new ContactCompletion(this.db, {
+        feedbackLedger: this.feedbackLedger,
         getRun: this.getRun.bind(this),
         assertLive: this.assertLive.bind(this),
         materials: this.materials,

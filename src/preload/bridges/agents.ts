@@ -10,6 +10,8 @@ return {
     analytics: (id, query) => ipcRenderer.invoke('agents:analytics', id, query),
     interactions: (id, topicId, cursor) => ipcRenderer.invoke('agents:interactions', id, topicId, cursor),
     delivery: (id, topicId, version) => ipcRenderer.invoke('agents:delivery', id, topicId, version),
+    deliveryFeedback: (id, topicId, revision, version, action, reason, requestId, citation, scope) => ipcRenderer.invoke('agents:deliveryFeedback', id, topicId, revision, version, action, reason, requestId, citation, scope),
+    deliveryFeedbackList: (id, topicId) => ipcRenderer.invoke('agents:deliveryFeedbackList', id, topicId),
     portfolio: (id, query) => ipcRenderer.invoke('agents:portfolio', id, query),
     prepareHandoff: (owner, request) => ipcRenderer.invoke('agents:prepareHandoff', owner, request),
     commitHandoff: (owner, preparation) => ipcRenderer.invoke('agents:commitHandoff', owner, preparation),

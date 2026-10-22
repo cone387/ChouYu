@@ -116,13 +116,14 @@ export class ContactTaskCommands {
         break
       }
       case 'deliveryFeedback': {
-        if (args[3] === 'revise') {
+        if (args[3] === 'revise' && !this.store.feedbackLedger.hasRequest(id, args[5] as string)) {
           if (!this.context.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
           this.checkSearch(id)
         }
-        const result = saveDeliveryFeedback(this.store, id, args[0] as string, args[1] as number, args[2] as number, args[3] as string, args[4] as string, this.context.identity(id).conversation)
+        const result = saveDeliveryFeedback(this.store, id, args[0] as string, args[1] as number, args[2] as number, args[3] as string, args[4] as string, this.context.identity(id).conversation, args[5] as string, args[6] as import('../../shared/contact-content').ContentCitation | undefined, args[7] as 'content' | 'presentation' | undefined)
         this.context.changed(id); if (args[3] === 'revise') this.context.tick(); return contactCommandResult('deliveryFeedback', result)
       }
+      case 'deliveryFeedbackList': return contactCommandResult('deliveryFeedbackList', this.store.feedbackLedger.list(id, args[0] as string))
       case 'setDeliveryFavorite': return contactCommandResult('setDeliveryFavorite', this.store.portfolio.favorite(id, args[0] as string, args[1] as boolean))
       case 'outputPreferences': return contactCommandResult('outputPreferences', this.store.outputs.list(id, args[0] as string | undefined, args[1] as number | undefined))
       case 'outputPreferenceCatalogue': return contactCommandResult('outputPreferenceCatalogue', this.store.outputs.catalogue(id))

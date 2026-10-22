@@ -12,14 +12,18 @@ export default function ContactRevisionDialog({ characterId, topic, citation, re
   const [feedback, setFeedback] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [basis, setBasis] = useState(citation), [revision, setRevision] = useState(topic.revision)
   const [latest, setLatest] = useState<AgentDelivery | null>(null)
+  const identity = useRef<{ payload: string; id: string }>()
   useEffect(() => { alive.current = true; const previous = document.activeElement as HTMLElement, el = dialog.current; el?.showModal(); return () => { alive.current = false; el?.close(); if (previous?.isConnected) previous.focus({ preventScroll: true }) } }, [])
   const submit = async () => {
     if (pending.current || !feedback.trim()) return
     pending.current = true; setBusy(true); setError('')
     try {
       if (review) await window.electronAPI.agents.returnReview(characterId, { handoffId: review.handoffId, review: review.citation, source: basis, feedback, topicRevision: revision })
-      else if (scope === 'presentation') await window.electronAPI.agents.reviseTopic(characterId, topic.id, revision, feedback, undefined, 'presentation', basis.ref.version)
-      else await window.electronAPI.agents.reviseCitation(characterId, revision, basis, feedback)
+      else {
+        const payload = JSON.stringify([characterId, topic.id, revision, basis, feedback, scope])
+        if (identity.current?.payload !== payload) identity.current = { payload, id: `dialog:${crypto.randomUUID()}` }
+        await window.electronAPI.agents.deliveryFeedback(characterId, topic.id, revision, basis.ref.version, 'revise', feedback, identity.current.id, basis, scope)
+      }
       if (alive.current) { onSaved(); onClose() }
     } catch (e) {
       if (alive.current) setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '') : String(e))

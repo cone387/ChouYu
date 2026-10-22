@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentInteraction, AgentInteractionPage } from '../../../../shared/agents'
+import ContactDeliveryFeedback from './ContactDeliveryFeedback'
 
 export default function ContactTaskInteractions({ characterId, topicId, visible, onReply, onReport }: {
   characterId: string; topicId: string; visible: boolean; onReply(): void; onReport(runId: string): void
@@ -25,6 +26,7 @@ export default function ContactTaskInteractions({ characterId, topicId, visible,
   }, [characterId, topicId, visible])
   return <div className="topic-interactions" data-topic-interactions>
     <h4>互动记录</h4><p className="agent-caption">按时间倒序保存每次确认问题和你的回复，任务结束后仍可查看。</p>
+    <ContactDeliveryFeedback owner={characterId} topicId={topicId} active={visible} />
     {error && <p className="agent-error" role="alert">{error}<button type="button" onClick={() => void load()}>重试</button></p>}
     {loading && <p role="status">正在读取互动记录…</p>}
     {!loading && !error && !page.items.length && <p className="agent-empty">还没有需要确认的问题。需要补充信息时，联系人会在聊天里发来确认卡片。</p>}
