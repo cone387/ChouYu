@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow } from 'electron'
+import { app, ipcMain, BrowserWindow, type IpcMain } from 'electron'
 import { join } from 'node:path'
 import { getCharacter, getConfig, getState } from '../database'
 import { ASSISTANT_CHARACTER_ID } from '../../shared/characters'
@@ -44,7 +44,7 @@ export function contactSkillInstruction(characterId: string): string {
   if (snapshot.error) throw new Error(snapshot.error)
   return snapshot.instruction
 }
-export function registerSkillHandlers(window: BrowserWindow) {
+export function registerSkillHandlers(window: BrowserWindow, ipc: Pick<IpcMain, 'handle'> = ipcMain): () => void {
   syncSkillToolPolicy()
   for (const definition of SKILL_TOOLS) if (!getRegisteredTool(definition.name)) registerTool({ ...definition, execute: () => { throw new Error('技能工具只能在具体联系人的运行上下文中使用。') } })
   const operations = new Map<number, AbortController>()
@@ -65,11 +65,11 @@ export function registerSkillHandlers(window: BrowserWindow) {
     configure: (owner, id, action: SkillAction, revision) => configureContactSkill(assertOwner(owner), id, action, revision),
     uninstall: id => contactSkillLibrary().uninstall(id)
   }
-  for (const [method, handler] of Object.entries(handlers)) ipcMain.handle(`skills:${method}`, (event, ...args) => {
+  for (const [method, handler] of Object.entries(handlers)) ipc.handle(`skills:${method}`, (event, ...args) => {
     if (event.sender !== window.webContents) throw new Error('技能操作来源无效。')
     return handler(...args)
   })
-  for (const method of ['setup', 'search', 'install', 'prepare-runtime', 'prepare-dependencies'] as const) ipcMain.handle(`skills:${method}`, async (event, input, id) => {
+  for (const method of ['setup', 'search', 'install', 'prepare-runtime', 'prepare-dependencies'] as const) ipc.handle(`skills:${method}`, async (event, input, id) => {
     if (event.sender !== window.webContents) throw new Error('技能操作来源无效。')
     if (operations.has(event.sender.id)) throw new Error('请等待当前技能操作完成，或先取消。')
     const controller = new AbortController(), senderId = event.sender.id
@@ -83,9 +83,11 @@ export function registerSkillHandlers(window: BrowserWindow) {
     }
     finally { operations.delete(senderId); if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', abort) }
   })
-  ipcMain.handle('skills:cancel', event => {
+  ipc.handle('skills:cancel', event => {
     if (event.sender !== window.webContents) throw new Error('技能操作来源无效。')
     operations.get(event.sender.id)?.abort()
   })
-  app.once('before-quit', () => { for (const controller of operations.values()) controller.abort(); runner?.cancel() })
+  const cancel = () => { for (const controller of operations.values()) controller.abort(); runner?.cancel() }
+  app.once('before-quit', cancel)
+  return () => { app.removeListener('before-quit', cancel); cancel() }
 }

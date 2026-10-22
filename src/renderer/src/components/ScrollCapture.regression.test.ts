@@ -6,8 +6,8 @@ import { isScrollCaptureRegion } from '../../../shared/capture'
 const read = (relative: string): string => readFileSync(resolve(process.cwd(), relative), 'utf8')
 
 const captureShared = read('src/shared/capture.ts')
-const ipcSource = read('src/main/ipc.ts')
-const preloadSource = read('src/preload/index.ts')
+const ipcSource = read('src/main/ipc/capture.ts')
+const preloadSource = read('src/preload/bridges/capture.ts')
 const scrollingSource = read('src/main/scrolling-capture.ts')
 const overlaySource = read('src/renderer/src/components/ScreenCapture/ScreenCapture.tsx')
 const inputSource = read('src/renderer/src/components/ChatPanel/InputArea.tsx')
@@ -34,7 +34,7 @@ describe('scrolling capture contract', () => {
   })
 
   it('registers the IPC handler and hides the window while capturing', () => {
-    expect(ipcSource).toContain("ipcMain.handle('capture-scroll-region'")
+    expect(ipcSource).toContain("ipc.handle('capture-scroll-region'")
     expect(ipcSource).toContain('isScrollCaptureRegion(region)')
     expect(ipcSource).toContain('mainWindow.hide()')
     expect(ipcSource).toContain("mainWindow.webContents.send('scroll-capture:progress'")

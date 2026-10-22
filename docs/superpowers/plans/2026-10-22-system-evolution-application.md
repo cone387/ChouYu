@@ -1,6 +1,6 @@
 # 应用与界面边界 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or the user-selected superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or the user-selected superpowers:subagent-driven-development. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 让 IPC、工作区与业务页面各自拥有明确职责，保持所有现有交互。
 
@@ -24,11 +24,11 @@
 
 **Interfaces:** `ChatService.run(sender: ChatSender, request: AIStreamRequest): Promise<AIStreamResult>`、`cancel(senderId: number, requestId: string): void`、`close(): Promise<void>`；`ChatSender` 定义 `id`、`isDestroyed()`、`send(channel, payload)` 和生命周期订阅端口，服务不导入 `ipcMain`。域注册 `registerXHandlers(context): () => void` 返回精确注销函数。preload 各 bridge factory 只构造原域 API。
 
-- [ ] 在 service/registration 测试中固定“两个 sender 同 requestId 取消互不影响”“隐藏面板不取消”“销毁 sender 按原规则取消”“删除联系人/退出等待工具结束”“注册与注销无重复 listener”。断言实际 ContactAgent 入口被调用，不能只断言字符串。
-- [ ] 运行 `npm test -- src/main/chat/service.test.ts src/main/ipc/registration.test.ts`，确认新契约测试在实现前失败。
-- [ ] 从现有 `ipc.ts` 迁移业务编排到 ChatService，保留请求校验、模型路由、记忆回执、引用复核与工具确认；配置/记忆等注册按域迁出；中央文件仅组装。preload 组装同一个 API，并保留 pending-event 行为。
-- [ ] 运行上述测试及 `src/main/ai-request-lifecycle.test.ts`、`src/main/harness`、`src/preload/pending-event.test.ts`；`npm run typecheck`。构建后 `--chat-close`/`--chat-edit` 实际验证，不把源码断言作为生命周期证据。
-- [ ] 提交 `refactor: separate IPC domains and chat application lifecycle`，记录 A1 状态。
+- [x] 在 service/registration 测试中固定“两个 sender 同 requestId 取消互不影响”“隐藏面板不取消”“销毁 sender 按原规则取消”“删除联系人/退出等待工具结束”“注册与注销无重复 listener”。断言实际 ContactAgent 入口被调用，不能只断言字符串。
+- [x] 运行 `npm test -- src/main/chat/service.test.ts src/main/ipc/registration.test.ts`，确认新契约测试在实现前失败。
+- [x] 从现有 `ipc.ts` 迁移业务编排到 ChatService，保留请求校验、模型路由、记忆回执、引用复核与工具确认；配置/记忆等注册按域迁出；中央文件仅组装。preload 组装同一个 API，并保留 pending-event 行为。
+- [x] 运行上述测试及 `src/main/ai-request-lifecycle.test.ts`、`src/main/harness`、`src/preload/pending-event.test.ts`；`npm run typecheck`。构建后 `--chat-close`/`--chat-edit` 实际验证，不把源码断言作为生命周期证据。
+- [x] 提交 `refactor: separate IPC domains and chat application lifecycle`，记录 A1 状态。
 
 ### Task 2: Workspace 与聊天页面
 

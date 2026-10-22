@@ -2,7 +2,7 @@
 
 设计：[完整系统迭代](superpowers/specs/2026-10-22-system-evolution-design.md)。
 
-当前阶段：用户以“ok”确认书面设计；[完整实施计划](superpowers/plans/2026-10-22-system-evolution.md)及四个子计划已写入，等待计划审阅与执行方式选择。产品实现尚未开始。以下是改动前基线，不是本轮功能完成证据。
+当前阶段：用户以“ok”确认书面设计；[完整实施计划](superpowers/plans/2026-10-22-system-evolution.md)及四个子计划已写入，用户以“嗯嗯”批准原生执行；已在 `feat/system-evolution` 开始 A1 实施。以下是改动前基线，不是本轮功能完成证据。
 
 ## 基线
 
@@ -38,3 +38,6 @@
 设计矩阵 A1–H1 全部仍待实现与验证：IPC/工作区/任务页分责、依赖约束、统一消息交付、任务命令类型、ContactTaskStore 拆分、聊天存储测量与优化、成果正文去重、反馈修订关联、成果依赖事件、失败恢复衔接及文档校准。
 
 后续每批记录实际提交、专项/完整测试、真实 Electron 交互与截图、迁移数据核对和剩余缺口。未执行的检查不标为通过，不用本文件或设计文件的存在代替功能证据。
+
+## A1 当前验证
+IPC/preload 已按域拆分，ChatService 持有请求取消和退出等待；技能注册精确注销。24 项定向测试、Node/Web 类型检查、构建通过。此前聊天/harness 回归 165 通过、3 跳过。Electron --chat-edit 通过；--chat-close 首次未在 10 秒内到达模型，增加临时诊断后复测通过（worker init 3265ms），已移除诊断；首次原因尚未确证，保留原始失败日志。构建仍有既有 chunk size 提示。日志位于 artifacts/system-evolution/application-task1-*。

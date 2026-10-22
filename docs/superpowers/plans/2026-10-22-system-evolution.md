@@ -8,7 +8,7 @@
 
 **Tech Stack:** Electron、React 18、TypeScript、better-sqlite3、现有原生/DSH Harness、Vitest；不增加产品依赖。
 
-**Spec:** [已确认完整设计](../specs/2026-10-22-system-evolution-design.md)。用户确认设计的消息为“ok”；本计划尚待审阅和执行方式选择。
+**Spec:** [已确认完整设计](../specs/2026-10-22-system-evolution-design.md)。用户确认设计的消息为“ok”；用户以“嗯嗯”确认计划并选择当前会话原生执行，现已进入实施。
 
 ## Global Constraints
 
@@ -44,8 +44,8 @@
 - [x] 核对 clean 基线 `ef40294`；设计/测量文档提交为 `44cf1f9`、`a5b917f`、`117c0ae`。
 - [x] 基线类型检查与构建通过；全量 1973 通过、2 失败、53 跳过，两个 DSH 失败无改动专项复测通过。首次失败保留，不称根因已解决。
 - [x] 文件保存预检确认 50,000 条合成历史的微小更新仍引起约 258–320 ms 同步保存，范围见验收记录。
-- [ ] 用户审阅完整计划并选择执行方式。
-- [ ] 执行前确认工作区；优先使用已有隔离机制。若当前仍为普通 master checkout，采用当前目录功能分支 `feat/system-evolution` 保留所有现有工作；需要额外 worktree 时遵守 worktree 技能，不复用有其他任务的工作树。
+- [x] 用户以“嗯嗯”确认完整计划和原生执行方式。
+- [x] 执行前确认工作区；优先使用已有隔离机制。若当前仍为普通 master checkout，采用当前目录功能分支 `feat/system-evolution` 保留所有现有工作；需要额外 worktree 时遵守 worktree 技能，不复用有其他任务的工作树。
 - [ ] 每个子任务完成后更新本计划勾选状态和 `docs/system-evolution-acceptance-20261022.md`，记录实际命令、退出码、测试数量及遗留问题。
 
 ## 最终完成核对
