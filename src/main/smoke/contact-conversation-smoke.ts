@@ -51,7 +51,7 @@ export async function runContactConversationSmoke(window: BrowserWindow) {
   const permissions = await invoke('验收对话权限：仅指定网页，关闭通知，共享成果')
   if (!permissions.response.ok || !permissions.response.reply?.includes('已保存')) throw new Error(`Permission chat receipt failed: ${JSON.stringify(permissions)}`)
   await invoke('验收阅读偏好：以后评审排版紧凑些')
-  const preferences = await contactAgentsCall<any[]>(character.id, 'outputPreferences')
+  const preferences = await contactAgentsCall(character.id, 'outputPreferences')
   if (preferences[0].preference.kind !== 'review' || preferences[0].preference.density !== 'compact') throw new Error('Output preference was not actually saved')
   const work = await window.webContents.executeJavaScript(`window.electronAPI.agents.get(${JSON.stringify(character.id)})`)
   if (work.topics.length || work.settings.permissionLevel !== 'sources' || work.settings.sources[0] !== 'https://example.com/' || work.settings.notifyProgress !== false || work.settings.shareDeliveries !== true) throw new Error('No-task permissions were not saved accurately')
@@ -83,15 +83,15 @@ export async function runContactConversationSmoke(window: BrowserWindow) {
   if (getContactProfile(character.id).profile.model !== 'agent-smoke-next') throw new Error('Built-in change overwrote another contact override')
   const combinationRequest = { requestId: `combination-${crypto.randomUUID()}`, sessionId: session, characterId: character.id, systemPrompt: '联系人验收', messages: [{ role: 'user', content: '验收组合设置：头像改为🐟，同时允许读取其他联系人共享的成果' }] }
   const combinationReply = await window.webContents.executeJavaScript(`window.electronAPI.ai.startStream(${JSON.stringify(combinationRequest)})`)
-  const combination = await contactAgentsCall<ContactActionInteraction[]>(character.id, 'pendingInteractions')
-  const steps = combination.filter(card => card.request?.configurationGroup?.id === combinationRequest.requestId).sort((a, b) => a.request.configurationGroup!.index - b.request.configurationGroup!.index)
+  const combination = await contactAgentsCall(character.id, 'pendingInteractions')
+  const steps = combination.filter((card): card is ContactActionInteraction => card.kind === 'action' && card.request.configurationGroup?.id === combinationRequest.requestId).sort((a, b) => a.request.configurationGroup!.index - b.request.configurationGroup!.index)
   if (steps.length !== 2 || getContactProfile(character.id).profile.avatar === '🐟') throw new Error(`Combination did not create two unexecuted durable steps: ${JSON.stringify(combinationReply)}`)
   await window.webContents.executeJavaScript(`window.electronAPI.agents.submitInteraction(${JSON.stringify(character.id)},${JSON.stringify(steps[0].id)},{version:${JSON.stringify(steps[0].version)},actionId:'apply'})`)
   await restartAgentsForSmoke()
-  const resumed = await contactAgentsCall<ContactActionInteraction>(character.id, 'getInteraction', [steps[1].id])
-  if (resumed.status !== 'pending' || resumed.request.configurationGroup?.index !== 2) throw new Error('Unfinished configuration step did not survive restart')
+  const resumed = await contactAgentsCall(character.id, 'getInteraction', [steps[1].id])
+  if (resumed.kind !== 'action' || resumed.status !== 'pending' || resumed.request.configurationGroup?.index !== 2) throw new Error('Unfinished configuration step did not survive restart')
   await window.webContents.executeJavaScript(`window.electronAPI.agents.submitInteraction(${JSON.stringify(character.id)},${JSON.stringify(resumed.id)},{version:${JSON.stringify(resumed.version)},actionId:'apply'})`)
-  if (getContactProfile(character.id).profile.avatar !== '🐟' || !(await contactAgentsCall<AgentOverview>(character.id, 'get')).settings.readContactDeliveries) throw new Error('Combination did not save each independent setting')
+  if (getContactProfile(character.id).profile.avatar !== '🐟' || !(await contactAgentsCall(character.id, 'get')).settings.readContactDeliveries) throw new Error('Combination did not save each independent setting')
   console.log('CHOUYU_SMOKE_CONTACT_COMBINATION_PASSED groupedCards=true separateReceipts=true resumeAfterRestart=true staleManualCredential=true')
   await contactAgentsCall(character.id, 'get')
   const deliveryStore = new ContactTaskStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
@@ -106,7 +106,7 @@ export async function runContactConversationSmoke(window: BrowserWindow) {
     for (const notice of deliveryStore.notices.pending(character.id)) { appendAgentNotice(notice); deliveryStore.notices.ack(character.id, notice.id) }
   } finally { deliveryStore.close() }
   await invoke('验收这次阅读：这次用正文阅读和舒适间距')
-  const savedPreferences = await contactAgentsCall<any[]>(character.id, 'outputPreferences', [topicId!, 1])
+  const savedPreferences = await contactAgentsCall(character.id, 'outputPreferences', [topicId!, 1])
   if (savedPreferences[0].preference.kind !== 'review' || savedPreferences[2].preference.kind !== 'writing') throw new Error('Single delivery preference leaked into contact scope')
   selectChatSession(session); window.webContents.send('characters:changed'); window.webContents.send('sessions:changed')
   await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-nav="chat"]')?.click(); document.querySelector('[aria-label="收起会话列表"]')?.click()`)
@@ -129,16 +129,16 @@ export async function runContactConversationSmoke(window: BrowserWindow) {
     window.webContents.disableDeviceEmulation()
   }
   console.log('CHOUYU_SMOKE_CONTACT_OUTPUT_PASSED actualPreference=true singleVersion=true sharedChatRenderer=true')
-  const current = await contactAgentsCall<AgentOverview>(character.id, 'get'), topic = current.topics.find(t => t.id === topicId!)!
+  const current = await contactAgentsCall(character.id, 'get'), topic = current.topics.find(t => t.id === topicId!)!
   const args = { topicId: topic.id, revision: topic.revision, deliveryVersion: 1, action: 'accept', reason: '认可这版' }
   const prepared = await prepareRegisteredToolAsync('submit_contact_delivery_feedback', args, window, session)
-  const feedback = await contactAgentsCall<ContactActionInteraction>(character.id, 'offerAction', ['feedback-smoke', { purpose: 'feedback', title: '回应这份评审', body: prepared.preview, sessionId: session, subject: { kind: 'delivery', topicId: topic.id, revision: topic.revision, version: 1 }, actions: [{ id: 'accept', label: '认可这版', tool: 'submit_contact_delivery_feedback', arguments: args }] }])
+  const feedback = await contactAgentsCall(character.id, 'offerAction', ['feedback-smoke', { purpose: 'feedback', title: '回应这份评审', body: prepared.preview!, sessionId: session, subject: { kind: 'delivery', topicId: topic.id, revision: topic.revision, version: 1 }, actions: [{ id: 'accept', label: '认可这版', tool: 'submit_contact_delivery_feedback', arguments: args }] }])
   appendContactAction(feedback); window.webContents.send('sessions:changed')
   const selector = `[data-contact-interaction="${feedback.id}"]`
   await waitForRenderer(window, `Boolean(document.querySelector(${JSON.stringify(selector)})?.querySelector('.primary'))`, 15000)
   await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).querySelector('.primary').click()`)
   await waitForRenderer(window, `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('已记录你对版本 1 的认可')`, 15000)
-  const accepted = await contactAgentsCall<AgentOverview>(character.id, 'get')
+  const accepted = await contactAgentsCall(character.id, 'get')
   if (accepted.topics.find(t => t.id === topic.id)!.status !== topic.status || accepted.runs.length !== current.runs.length) throw new Error('Acceptance changed continuous task state')
   const failureStore = new ContactTaskStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
   let failureId: string
@@ -162,7 +162,7 @@ export async function runContactConversationSmoke(window: BrowserWindow) {
   await window.webContents.executeJavaScript(`document.querySelector('[data-delivery-output-preference]').click()`)
   await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-output-dialog] button[type=submit]:not(:disabled)'))`)
   await window.webContents.executeJavaScript(`(()=>{const el=document.querySelector('[data-contact-output-dialog]').querySelectorAll('select')[2];Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(el,'compact');el.dispatchEvent(new Event('change',{bubbles:true}));})()`)
-  const prior = (await contactAgentsCall<any[]>(character.id, 'outputPreferences', [topic.id, 1]))[2]
+  const prior = (await contactAgentsCall(character.id, 'outputPreferences', [topic.id, 1]))[2]
   await contactAgentsCall(character.id, 'setOutputPreference', [{ kind: 'delivery', topicId: topic.id, version: 1 }, prior.revision, { kind: 'plain' }])
   await window.webContents.executeJavaScript(`document.querySelector('[data-contact-output-dialog] button[type=submit]').click()`)
   await waitForRenderer(window, `document.querySelector('[data-contact-output-dialog] [role=alert]')?.textContent.includes('变化')`)
@@ -174,7 +174,7 @@ export async function runContactConversationSmoke(window: BrowserWindow) {
   await window.webContents.executeJavaScript(`(()=>{const el=document.querySelector('[data-contact-output-dialog]').querySelectorAll('select')[2];Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(el,'compact');el.dispatchEvent(new Event('change',{bubbles:true}));})()`)
   await window.webContents.executeJavaScript(`document.querySelector('[data-contact-output-dialog] button[type=submit]').click()`)
   await waitForRenderer(window, `!document.querySelector('[data-contact-output-dialog]')`)
-  if ((await contactAgentsCall<any[]>(character.id, 'outputPreferences', [topic.id, 1]))[2].preference.density !== 'compact') throw new Error('Manual output preference did not persist')
+  if ((await contactAgentsCall(character.id, 'outputPreferences', [topic.id, 1]))[2].preference.density !== 'compact') throw new Error('Manual output preference did not persist')
   console.log('CHOUYU_SMOKE_CONTACT_OUTPUT_DIALOG_PASSED fixedVersion=true staleWriteRejected=true draftPreserved=true escapeKeepsReader=true saved=true')
   console.log('CHOUYU_SMOKE_CONTACT_FEEDBACK_PASSED clickedAcceptance=true fixedVersion=true unchangedTask=true directModelRemedy=true')
   console.log('CHOUYU_SMOKE_CONTACT_CONVERSATION_PASSED profile=true permissions=true skill=true rejectedApproval=true staleManual=true builtIn=true noTask=true naturalCardReply=true secureCredential=true')

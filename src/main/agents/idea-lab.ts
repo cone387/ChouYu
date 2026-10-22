@@ -3,7 +3,7 @@ import { DEFAULT_CHARACTER_ID, resolveCharacterConfig } from '../../shared/chara
 import { DEFAULT_AGENT_SETTINGS, type AgentOverview } from '../../shared/agents'
 
 /** Explicit development experiment; never runs during an ordinary app startup. */
-export async function setupIdeaLab(request: (method: string, id: string, args?: unknown[]) => Promise<AgentOverview>, sync: () => Promise<void>) {
+export async function setupIdeaLab(request: import('../../shared/contact-commands').ContactRequest, sync: () => Promise<void>) {
   const key = 'idea-lab:v1'
   const saved = getState(key)
   const state: { producer?: string; reviewer?: string; until: number; started?: boolean } = saved ? JSON.parse(saved) : { until: Date.now() + 24 * 60 * 60 * 1000 }
@@ -11,7 +11,7 @@ export async function setupIdeaLab(request: (method: string, id: string, args?: 
     await sync()
     for (const id of [state.producer, state.reviewer]) {
       if (!id || !getCharacter(id) || state.until <= Date.now()) continue
-      let overview = await request('get', id)
+      let overview = await request('get', id, [])
       // Upgrade this explicitly launched experiment without resetting its deadline or budgets.
       if (id === state.producer && overview.settings.paceWriting) {
         overview = await request('savePreferences', id, [{ ...overview.settings, paceWriting: false }])
@@ -38,7 +38,7 @@ export async function setupIdeaLab(request: (method: string, id: string, args?: 
   }
   await sync()
   for (const [id, review] of [[state.producer!, false], [state.reviewer!, true]] as const) {
-    const overview = await request('get', id)
+    const overview = await request('get', id, [])
     // Recover interrupted setup without duplicating or resetting existing work.
     if (overview.topics.length) continue
     await request('savePreferences', id, [{ ...DEFAULT_AGENT_SETTINGS, goal: '24 小时 AI 产品 idea 生产与独立评审实验', intervalMinutes: 15,
@@ -49,9 +49,9 @@ export async function setupIdeaLab(request: (method: string, id: string, args?: 
     await request('assignTopic', id, [description])
   }
   for (const id of [state.producer!, state.reviewer!]) {
-    const overview = await request('get', id)
+    const overview = await request('get', id, [])
     // Saving preferences cancels live work; enable through the store before the first run instead.
-    if (!overview.settings.enabled) await request('enableContinuous', id)
+    if (!overview.settings.enabled) await request('enableContinuous', id, [])
   }
   state.started = true; persist()
   return state

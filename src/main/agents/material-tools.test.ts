@@ -16,7 +16,7 @@ it('rejects binary/invalid UTF8 files and does not broaden web access', async ()
 })
 it('lists metadata without pretending to read text and returns bounded actual reads', async () => {
   const reads: unknown[] = []
-  const tools = createMaterialTools({ owner: () => 'alice', request: async (method, _owner, args) => {
+  const tools = createMaterialTools({ owner: () => 'alice', dispatchUnknown: async (method, _owner, args) => {
     if (method === 'materialList') return [{ id: 'doc', version: 2, name: 'Guide' }]
     reads.push(args); return { text: 'actual passage', ref: { id: 'doc', version: 2 }, nextOffset: 12000 }
   } })

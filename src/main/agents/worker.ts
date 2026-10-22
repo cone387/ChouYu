@@ -17,6 +17,8 @@ port.on('message', event => {
     try {
       let result: unknown
       if (method === 'init') {
+        if (!Array.isArray(args) || args.length < 1 || args.length > 2 || typeof args[0] !== 'string' || !args[0].trim()
+          || args[1] !== undefined && (!args[1] || typeof args[1] !== 'object' || Array.isArray(args[1]))) throw new Error('联系人初始化参数无效。')
         port.postMessage({ requestId, started: true })
         const smoke = process.env.CHOUYU_SMOKE_TEST === '1' && Boolean(process.env.CHOUYU_SMOKE_USER_DATA)
         service = await initializeContactStorage(() => new WorkLoopHost(args[0], characterId => port.postMessage({ changed: characterId }), undefined, smoke ? async (url) => {

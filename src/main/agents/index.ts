@@ -1,3 +1,5 @@
+import { validateContactCommand, type ContactCommandName, type ContactArgs, type ContactResult, type EmptyContactCommand } from '../../shared/contact-commands'
+import type { WorkerCommandName, WorkerArgs, WorkerResult } from '../agent-space/worker-rpc'
 import { contactHandle } from './query-metrics'
 import { AgentSpace } from '../agent-space/service'
 import { taskCenter } from '../task-center/service'
@@ -87,7 +89,7 @@ function broadcastChanged(characterId: string) {
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('agents:changed', characterId)
   void deliver(characterId)
 }
-function workerRpc(method: string, id = '', args: unknown[] = []): Promise<any> {
+function workerRpc<M extends WorkerCommandName>(method: M, id = '', args: WorkerArgs<M> = [] as WorkerArgs<M>): Promise<WorkerResult<M>> {
   if (!child) return Promise.reject(new Error('Agent 执行进程不可用，请稍后重试。'))
   return requests.request(child, method, id, args)
 }
@@ -97,10 +99,19 @@ const contactSpace = new AgentSpace({ harness: chatHarness, readIdentity: id => 
   remove: async id => { await workerRpc('remove', id) }
 } })
 const contactTasks = taskCenter.register(createContactDomain(contactSpace))
-function rpc(method: string, id = '', args: unknown[] = []): Promise<any> {
-  if (!id || ['syncContact', 'detachModule', 'remove'].includes(method)) return workerRpc(method, id, args)
-  if (isContactTaskMethod(method)) return Promise.resolve(taskCenter.execute({ domain: 'contact', owner: id }, method, args))
-  return contactSpace.request(method, id, args)
+function rpc<M extends WorkerCommandName>(method: M, id = '', args: WorkerArgs<M> = [] as WorkerArgs<M>): Promise<WorkerResult<M>> {
+  return dispatchAgentCommand(method, id, args) as Promise<WorkerResult<M>>
+}
+async function dispatchAgentCommand(method: unknown, owner: unknown, values: unknown = []): Promise<unknown> {
+  if (typeof method !== 'string' || typeof owner !== 'string' || !Array.isArray(values)) throw new Error('联系人操作参数无效。')
+  const id = owner, args = values
+  if (!['init', 'sync', 'syncContact', 'close'].includes(method)) validateContactCommand(method, id, args)
+  if (!id || ['syncContact', 'detachModule', 'remove'].includes(method)) {
+    if (!child) throw new Error('Agent 执行进程不可用，请稍后重试。')
+    return requests.dispatchUnknown(child, method, id, args)
+  }
+  if (isContactTaskMethod(method)) return Promise.resolve(taskCenter.dispatchUnknown({ domain: 'contact', owner: id }, method, args))
+  return contactSpace.dispatchUnknown(method, id, args)
 }
 export function runContactChat(input: HarnessInput, output: (event: HarnessEvent) => void, engine?: HarnessEngine) {
   return contactSpace.runChat(input, output, engine)
@@ -183,11 +194,17 @@ let purgeHarnessContact:(owner:string)=>Promise<unknown>=async()=>{}
 export function setContactHarnessPurge(purge:typeof purgeHarnessContact){purgeHarnessContact=purge}
 async function purgeWithdrawnContext(id:string,method:string){if(['withdrawMaterial','purgeMaterial','forgetMemory','updateMemory','deleteTopic'].includes(method))await purgeHarnessContact(id)}
 /** Main-process entry for the contact-task gateway; mirrors the agents:* IPC guards. */
-export async function contactAgentsCall<T = unknown>(id: string, method: string, args: unknown[] = []): Promise<T> {
+export function contactAgentsCall<M extends EmptyContactCommand>(id: string, method: M): Promise<ContactResult<M>>
+export function contactAgentsCall<M extends ContactCommandName>(id: string, method: M, args: ContactArgs<M>): Promise<ContactResult<M>>
+export async function contactAgentsCall(id: string, method: ContactCommandName, args: unknown[] = []): Promise<unknown> {
+  return dispatchContactCall(id, method, args)
+}
+export async function dispatchContactCall(id: string, method: unknown, args: unknown = []): Promise<unknown> {
+  validateContactCommand(method, id, args)
   if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
-  validateMemoryBoundary(id, method, args)
+  validateMemoryBoundary(id, method, args as unknown[])
   await purgeWithdrawnContext(id,method)
-  await ensure(); await syncContact(id); return rpc(method, id, args) as Promise<T>
+  await ensure(); await syncContact(id); return dispatchAgentCommand(method, id, args)
 }
 export function readContactConfiguration(id: string) {
   if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
@@ -203,21 +220,25 @@ function validateMemoryBoundary(owner: string, method: string, args: unknown[]) 
   }
 }
 export async function submitContactInteraction(id: string, interactionId: string, submission: import('../../shared/contact-interactions').ContactInteractionSubmission, window: BrowserWindow) {
-  const card = await contactAgentsCall<import('../../shared/contact-interactions').ContactInteraction>(id, 'getInteraction', [interactionId])
-  if (card.kind !== 'action') return contactAgentsCall<import('../../shared/contact-interactions').ContactInteraction>(id, 'submitInteraction', [interactionId, submission])
-  const call = (method: string, args: unknown[] = []) => contactAgentsCall<import('../../shared/contact-actions').ContactActionInteraction>(id, method, [interactionId, ...args])
+  const card = await contactAgentsCall(id, 'getInteraction', [interactionId])
+  if (card.kind !== 'action') return contactAgentsCall(id, 'submitInteraction', [interactionId, submission])
   await executeContactAction({
-    read: () => call('getInteraction'), claim: (version, response) => call('claimAction', [version, response]),
-    start: version => call('startActionExecution', [version]),
-    acknowledge: version => call('acknowledgeAction', [version]),
-    finish: (version, result) => call('finishAction', [version, result]), fail: (version, message) => call('failAction', [version, message]), reject: version => call('rejectAction', [version]),
+    read: () => readContactAction(id, interactionId), claim: (version, response) => contactAgentsCall(id, 'claimAction', [interactionId, version, response]),
+    start: version => contactAgentsCall(id, 'startActionExecution', [interactionId, version]),
+    acknowledge: version => contactAgentsCall(id, 'acknowledgeAction', [interactionId, version]),
+    finish: (version, result) => contactAgentsCall(id, 'finishAction', [interactionId, version, result]), fail: (version, message) => contactAgentsCall(id, 'failAction', [interactionId, version, message]), reject: version => contactAgentsCall(id, 'rejectAction', [interactionId, version]),
     prepare: async (option, sessionId, credential) => {
       if (getSession(sessionId)?.characterId !== id) throw new Error('原会话已删除或归属变化，此操作未执行。')
       if (!getConfig().aiToolsEnabled || getState(`tool:${option.tool}:enabled`) === 'false') throw new Error('工具已被用户禁用，此操作未执行。')
       return prepareRegisteredToolAsync(option.tool, option.arguments, window, sessionId, credential)
     }
   }, submission)
-  return call('getInteraction')
+  return contactAgentsCall(id, 'getInteraction', [interactionId])
+}
+export async function readContactAction(id: string, interactionId: string) {
+  const value = await contactAgentsCall(id, 'getInteraction', [interactionId])
+  if (value.kind !== 'action') throw new Error('交互事项类型已变化，请重新读取。')
+  return value
 }
 export async function startIdeaLab() {
   await ensure()
@@ -278,12 +299,12 @@ export function initializeAgents() {
     return submitContactInteraction(id, interactionId, submission, window)
   })
   contactHandle('agents:exportContactFile', async (event, owner: string, id: string) => {
-    const result = await contactAgentsCall<{ file: import('../../shared/contact-files').ContactFile; bytes: Uint8Array }>(owner, 'readContactFile', [id])
+    const result = await contactAgentsCall(owner, 'readContactFile', [id])
     const parent = BrowserWindow.fromWebContents(event.sender), options = { title: '导出归档文件', defaultPath: result.file.name.split('/').at(-1) }
     const selected = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
     if (selected.canceled || !selected.filePath) return false
     // Revalidate ownership and bytes after the native dialog returns.
-    const current = await contactAgentsCall<typeof result>(owner, 'readContactFile', [id])
+    const current = await contactAgentsCall(owner, 'readContactFile', [id])
     await writeFile(selected.filePath, current.bytes)
     return true
   })
@@ -304,16 +325,16 @@ export function initializeAgents() {
           return { name: selected.filePaths[0], data: await readFile(selected.filePaths[0]) }
         },
         readWeb: async (url, signal) => (await readSource(url, signal)).text,
-        allowed: async url => { const overview = await contactAgentsCall<import('../../shared/agents').AgentOverview>(owner, 'get'); return overview.settings.permissionLevel !== 'sources' || overview.settings.sources.includes(url) }
+        allowed: async url => { const overview = await contactAgentsCall(owner, 'get'); return overview.settings.permissionLevel !== 'sources' || overview.settings.sources.includes(url) }
       }, controller.signal)
       controller.signal.throwIfAborted()
       if (!value) return null
       return await contactAgentsCall(owner, 'saveMaterial', [value, input.id, input.expectedVersion])
     } finally { event.sender.removeListener('destroyed', destroyed); if (imports.get(key) === controller) imports.delete(key) }
   })
-  for (const tool of createMaterialTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const tool of createMemoryTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const tool of [...createOutputTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) }), ...createDeliveryFeedbackTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, request: (method, owner, args) => contactAgentsCall(owner, method, args) })]) if (!getRegisteredTool(tool.name)) registerTool(tool)
+  for (const tool of createMaterialTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, dispatchUnknown: (method, owner, args) => dispatchContactCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
+  for (const tool of createMemoryTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, dispatchUnknown: (method, owner, args) => dispatchContactCall(owner, method, args) })) if (!getRegisteredTool(tool.name)) registerTool(tool)
+  for (const tool of [...createOutputTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, dispatchUnknown: (method, owner, args) => dispatchContactCall(owner, method, args) }), ...createDeliveryFeedbackTools({ owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined, dispatchUnknown: (method, owner, args) => dispatchContactCall(owner, method, args) })]) if (!getRegisteredTool(tool.name)) registerTool(tool)
   for (const tool of createContactProfileTools({
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
     profile: async id => readContactConfiguration(id).profile,
@@ -367,9 +388,9 @@ export function initializeAgents() {
   })
   for (const tool of createContactTools({
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
-    request: async (method, id, args) => {
+    dispatchUnknown: async (method, id, args) => {
       if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
-      await ensure(); await syncContact(id); return rpc(method, id, args)
+      await ensure(); await syncContact(id); return dispatchAgentCommand(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
   for (const method of ['getInteraction', 'outputPreferences', 'setOutputPreference', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
@@ -377,7 +398,7 @@ export function initializeAgents() {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       validateMemoryBoundary(id, method, args)
   await purgeWithdrawnContext(id,method)
-      await ensure(); await syncContact(id); return rpc(method, id, args)
+      await ensure(); await syncContact(id); return dispatchAgentCommand(method, id, args)
     })
   }
   void ensure().catch(() => {})

@@ -100,7 +100,9 @@ it.each(['topicStatus', 'deleteTopic'] as const)('isolates %s and rejects late o
   await f.run(0); await f.run(1)
   await vi.waitFor(() => expect(f.pending).toHaveLength(2))
   const topic = f.service.store.topics.get('alice', f.topics[0])
-  const operation = f.service.request(method, 'alice', [topic.id, topic.revision, 'paused', 'User paused'])
+  const operation = method === 'deleteTopic'
+    ? f.service.request(method, 'alice', [topic.id, topic.revision])
+    : f.service.request(method, 'alice', [topic.id, topic.revision, 'paused', 'User paused'])
   expect(f.pending[0].signal.aborted).toBe(true)
   expect(f.pending[1].signal.aborted).toBe(false)
   await f.run(2)
@@ -195,7 +197,7 @@ it('lets chat continue another task while a peer is running', async () => {
   await f.run(0)
   await vi.waitFor(() => expect(f.active()).toHaveLength(1))
   const topic = f.service.store.topics.get('alice', f.topics[1])
-  const tool = createContactTools({ owner: () => 'alice', request: (...args) => f.service.request(...args) }).find(t => t.name === 'update_contact_topic')!
+  const tool = createContactTools({ owner: () => 'alice', dispatchUnknown: (...args) => f.service.dispatchUnknown(args[0], args[1], args[2] ?? []) }).find(t => t.name === 'update_contact_topic')!
   const prepared = await tool.prepareAsync!({ topicId: topic.id, revision: topic.revision, action: 'continue', reason: 'Continue the second task' }, { sessionId: 'chat' } as ToolExecutionContext)
   await prepared.execute()
   await vi.waitFor(() => expect(f.active()).toHaveLength(2))
@@ -206,7 +208,7 @@ it('routes repeated continuation through real persisted states without duplicate
   await f.run(0)
   await f.run(1)
   await vi.waitFor(() => expect(f.pending).toHaveLength(1))
-  const tools = createContactTools({ owner: () => 'alice', request: (...args) => f.service.request(...args) })
+  const tools = createContactTools({ owner: () => 'alice', dispatchUnknown: (...args) => f.service.dispatchUnknown(args[0], args[1], args[2] ?? []) })
   const previews: string[] = []
   const execute = vi.fn(async (call: { name: string; arguments: string }) => {
     const prepared = await tools.find(t => t.name === call.name)!.prepareAsync!(JSON.parse(call.arguments), { sessionId: 'chat' } as ToolExecutionContext)
@@ -214,7 +216,7 @@ it('routes repeated continuation through real persisted states without duplicate
     return (await prepared.execute()).content
   })
   const route = (index: number, message: string, plan: Record<string, unknown> = {}) => routeContactChange([{ role: 'user', content: message }], {
-    read: (method, args) => f.service.request(method, 'alice', args),
+    read: (method, args) => f.service.dispatchUnknown(method, 'alice', args),
     model: async () => JSON.stringify({ kind: 'action', topicId: f.topics[index], action: 'continue', targetText: index === 0 ? 'First' : 'Second', ...plan }), execute
   })
   expect(await route(0, '继续 First')).toContain('正在执行')

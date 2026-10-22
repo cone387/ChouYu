@@ -1,7 +1,8 @@
 import type { ContactModule, ContactModuleOwner, ContactWorkPort } from './contracts'
+import type { ContactCommandName, ContactArgs, ContactRequest } from '../../shared/contact-commands'
 
 export interface WorkLoopTransport {
-  request(method: string, owner: string, args: unknown[]): Promise<unknown>
+  request: ContactRequest
   detach(owner: string): Promise<void>
   remove(owner: string): Promise<void>
 }
@@ -13,7 +14,7 @@ export class ContactWorkLoop implements ContactModule, ContactWorkPort {
   private closed = false
   private closing?: Promise<void>
   constructor(private owner: ContactModuleOwner, private transport: WorkLoopTransport) {}
-  async request(method: string, args: unknown[]) {
+  async request<M extends ContactCommandName>(method: M, args: ContactArgs<M>) {
     if (this.closed) throw new Error('联系人工作模块已关闭。')
     return this.transport.request(method, this.owner.id, args)
   }

@@ -18,7 +18,7 @@ it('carries a chat style request through real service, runtime, versioned delive
     service.store.finish(first, { runId: first, title: '第一章', body: '正文已保存', nextStep: '继续第二章', evidence: [], createdAt: Date.now() }, [],
       { judgement: '仅一章', nextStep: '继续第二章', reason: '实际成果', openQuestions: '', status: 'researching' },
       { completionCriteria: '完成十章', summary: '第一章', stages: [{ id: 'draft', title: '写作', status: 'active' }], section: { id: 'ch01', title: '第一章', body: '原始小说正文。\n\n第二段。' } })
-    const tools = createContactTools({ owner: () => 'writer', request: (method, id, args) => service.request(method, id, args) })
+    const tools = createContactTools({ owner: () => 'writer', dispatchUnknown: (method, id, args) => service.dispatchUnknown(method, id, args) })
     const context = { sessionId: 'chat' } as ToolExecutionContext
     const inspect = tools.find(t => t.name === 'get_contact_delivery')!
     const before = JSON.parse((await inspect.execute({ topicId }, context)).content)

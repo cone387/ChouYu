@@ -5,7 +5,7 @@ import type { ToolExecutionContext } from '../tools/registry'
 
 it('returns one invalid-reference result to the model, then reads only the supplied version', async () => {
   const read: string[] = []
-  const tools = createMaterialTools({ owner: () => 'alice', request: async (method, _owner, args) => {
+  const tools = createMaterialTools({ owner: () => 'alice', dispatchUnknown: async (method, _owner, args) => {
     if (method === 'materialList') return [{ id: 'allowed', version: 2 }]
     const ref = args[1] as { id: string; version: number }
     if (ref.id !== 'allowed' || ref.version !== 2) throw new MaterialReferenceError()

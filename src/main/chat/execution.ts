@@ -1,3 +1,4 @@
+import { validateContactActionRequest } from '../../shared/contact-actions'
 import { chatHarness, harnessRegistry } from '../harness/service'
 import type { HarnessInput, HarnessConfirmation } from '../harness/contracts'
 import { prepareHarnessInput, harnessConfigVersion } from '../harness/prepare'
@@ -10,7 +11,7 @@ import { contactWorkInstructions } from '../../shared/contact-work-instructions'
 import { BrowserWindow } from 'electron'
 import type { AIStreamEvent, AIStreamResult } from '../../shared/ai'
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig } from '../../shared/characters'
-import { agentContext, contactAgentsCall, onContactContextChanged, runContactChat } from '../agents'
+import { dispatchContactCall, agentContext, contactAgentsCall, onContactContextChanged, runContactChat } from '../agents'
 import { routeContactChange } from '../agents/chat-changes'
 import { readContactConfiguration, submitContactInteraction, pendingContactInteractions } from '../agents'
 import { type ContactActionInteraction } from '../../shared/contact-actions'
@@ -102,7 +103,7 @@ export async function executeChat({ sender, request, requestKey, controller }: C
         getDefinition: getRegisteredTool, getConfig, isToolEnabled, assertContext,
         prepare: async (call, args) => SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : prepareRegisteredToolAsync(call.name, args, mainWindow, request.sessionId),
         contactPolicy: async () => owner ? (await contactAgentsCall(owner, 'get') as import('../../shared/agents').AgentOverview).settings.toolPermissionMode : undefined,
-        offerAction: (key, action) => contactAgentsCall<ContactActionInteraction>(owner!, 'offerAction', [key, action]),
+        offerAction: (key, action) => contactAgentsCall(owner!, 'offerAction', [key, validateContactActionRequest(action)]),
         approve: (call, preview) => approvals.request(sender, request.requestId, call, signal, preview),
         emit: toolEvent => sendToolEvent(sender, toolEvent)
       }) : undefined
@@ -120,7 +121,7 @@ export async function executeChat({ sender, request, requestKey, controller }: C
           return submitContactInteraction(card.characterId, id, submission, mainWindow)
         },
         assistant: owner === DEFAULT_CHARACTER_ID,
-        read: (method, args) => contactAgentsCall(owner, method, args),
+        read: (method, args) => dispatchContactCall(owner, method, args),
         model: async (prompt, content) => {
           let output = ''
           await streamNativeChat([{ role: 'user', content }], prompt, effectiveConfig, chunk => {
@@ -139,7 +140,7 @@ export async function executeChat({ sender, request, requestKey, controller }: C
     }
     harnessInput = await prepareHarnessInput(request, {
       config: effectiveConfig, signal: controller.signal, assertContext,
-      citationContext: citations => contactAgentsCall<string>(owner!, 'citationContext', [citations]),
+      citationContext: citations => contactAgentsCall(owner!, 'citationContext', [citations]),
       privateContext, skillContext,
       communication: owner === DEFAULT_CHARACTER_ID ? contactWorkInstructions + assistantWorkInstructions : owner && owner !== ASSISTANT_CHARACTER_ID ? contactWorkInstructions : contactCommunicationInstructions('conversation'),
       onMetadata: () => { contextSent = true }

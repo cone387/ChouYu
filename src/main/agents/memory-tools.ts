@@ -1,13 +1,15 @@
+import { contactCommandDispatcher, type UnknownContactDispatch } from '../task-center/command-boundary'
 import type { PreparedTool, RegisteredTool, ToolExecutionContext } from '../tools/registry'
 import { validateMemoryInput, type ContactMemory, type MemoryInput } from '../../shared/contact-memories'
-type Access = { owner(sessionId?: string): string | undefined; request(method: string, owner: string, args?: unknown[]): Promise<any> }
+type Access = { owner(sessionId?: string): string | undefined; dispatchUnknown: UnknownContactDispatch }
 export function createMemoryTools(access: Access): RegisteredTool[] {
+  const request = contactCommandDispatcher(access.dispatchUnknown)
   const owner = (context: ToolExecutionContext) => { const id = access.owner(context.sessionId); if (!id) throw new Error('请在联系人的会话中操作记忆。'); return id }
   const prepare = async (action: 'remember' | 'update' | 'forget', args: Record<string, unknown>, context: ToolExecutionContext): Promise<PreparedTool> => {
     const id = owner(context)
     let current: ContactMemory | undefined
     if (action !== 'remember') {
-      current = ((await access.request('memoryList', id)) as ContactMemory[]).find(m => m.id === args.id)
+      current = ((await request('memoryList', id)) as ContactMemory[]).find(m => m.id === args.id)
       if (!current || current.revision !== args.revision) throw new Error('请先读取这条记忆的真实 ID 和当前版本，不能猜测。')
     }
     let input: MemoryInput | undefined
@@ -18,7 +20,7 @@ export function createMemoryTools(access: Access): RegisteredTool[] {
     return { preview: action === 'forget' ? `忘记这条记忆及其历史正文：\n${current!.content}` : `${current ? `原记忆：${current.content}\n` : ''}${input!.source.kind === 'user' ? '确认记住' : '保存待确认经历'}：${input!.content}`, execute: async () => {
       if (used || owner(context) !== id) throw new Error('会话归属已变化或此操作已执行，请重新读取。')
       used = true
-      const value = await access.request(action === 'forget' ? 'forgetMemory' : action === 'update' ? 'updateMemory' : 'createMemory', id,
+      const value = await request(action === 'forget' ? 'forgetMemory' : action === 'update' ? 'updateMemory' : 'createMemory', id,
         action === 'forget' ? [current!.id, current!.revision] : action === 'update' ? [current!.id, current!.revision, input] : [input])
       return { content: JSON.stringify(value ?? { forgotten: true }), summary: action === 'forget' ? '已忘记此条记忆' : '记忆已保存' }
     } }
@@ -29,7 +31,7 @@ export function createMemoryTools(access: Access): RegisteredTool[] {
       description: '读取当前联系人在本次会话范围内的真实记忆和版本。仅用户明确指定任务时提供 topicId。纠正或忘记前必须先读取；指代含糊时询问。',
       inputSchema: { type: 'object', properties: { topicId: { type: 'string', maxLength: 128 } }, additionalProperties: false },
       async execute(args, context) {
-        const items = (await access.request('memoryList', owner(context)) as ContactMemory[]).filter(m => m.scope.kind === 'contact' || m.scope.kind === 'session' && m.scope.sessionId === context.sessionId || m.scope.kind === 'task' && m.scope.topicId === args.topicId)
+        const items = (await request('memoryList', owner(context)) as ContactMemory[]).filter(m => m.scope.kind === 'contact' || m.scope.kind === 'session' && m.scope.sessionId === context.sessionId || m.scope.kind === 'task' && m.scope.topicId === args.topicId)
         return { content: JSON.stringify(items), summary: `读取 ${items.length} 条独立记忆` }
       } },
     ...(['remember', 'update', 'forget'] as const).map(action => ({ ...common, name: `${action}_contact_memory`, displayName: ({ remember: '记住一件事', update: '纠正独立记忆', forget: '忘记一件事' })[action],

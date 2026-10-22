@@ -43,7 +43,7 @@ it.skipIf(!enabled).each([1, 2, 3])('live model follows edited latest request th
   const toolCalls: { name: string; args: Record<string, unknown> }[] = []
   if (output === undefined) {
     await streamNativeChat(messages, `${resolved.config.soulMd}\n${contactWorkInstructions}`, { ...data.config, ...resolved.config }, chunk => { prose += chunk }, AbortSignal.timeout(90000), {
-      definitions: createContactTools({ owner: () => 'writer', request: async () => { throw new Error('Only synthetic tool results are allowed') } }),
+      definitions: createContactTools({ owner: () => 'writer', dispatchUnknown: async () => { throw new Error('Only synthetic tool results are allowed') } }),
       execute: async call => {
         const args = JSON.parse(call.arguments)
         toolCalls.push({ name: call.name, args })

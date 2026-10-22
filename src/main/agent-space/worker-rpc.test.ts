@@ -4,14 +4,14 @@ afterEach(() => vi.useRealTimers())
 function worker() { return { postMessage: vi.fn(), kill: vi.fn() } }
 it('allows a cold start longer than the old 15 second deadline', async () => {
   vi.useFakeTimers(); const w = worker(), rpc = new AgentWorkerRPC()
-  const pending = rpc.request(w, 'init', '', [])
+  const pending = rpc.request(w, 'init', '', ['fixture'])
   await vi.advanceTimersByTimeAsync(20000); expect(w.kill).not.toHaveBeenCalled()
   rpc.receive(w, { requestId: 1, started: true }); rpc.receive(w, { requestId: 1, result: 'ready' })
   expect(await pending).toBe('ready')
 })
 it('bounds a slow request without killing a responsive worker or rejecting its peer', async () => {
   vi.useFakeTimers(); const w = worker(), log = vi.fn(), rpc = new AgentWorkerRPC(log)
-  const pending = rpc.request(w, 'getInteraction', 'owner', []).catch(e => e.message)
+  const pending = rpc.request(w, 'getInteraction', 'owner', ['interaction']).catch(e => e.message)
   await vi.advanceTimersByTimeAsync(20000); expect(w.kill).not.toHaveBeenCalled()
   rpc.receive(w, { requestId: 1, started: true })
   await vi.advanceTimersByTimeAsync(15000)
@@ -28,9 +28,9 @@ it('bounds a slow request without killing a responsive worker or rejecting its p
 })
 it('an old generation timeout cannot kill or resolve the new worker', async () => {
   vi.useFakeTimers(); const old = worker(), next = worker(), rpc = new AgentWorkerRPC()
-  const first = rpc.request(old, 'init', '', []).catch(e => e.message)
+  const first = rpc.request(old, 'init', '', ['fixture']).catch(e => e.message)
   rpc.exited(old); expect(await first).toContain('已退出')
-  const second = rpc.request(next, 'init', '', [])
+  const second = rpc.request(next, 'init', '', ['fixture'])
   rpc.receive(old, { requestId: 2, result: 'wrong' })
   await vi.advanceTimersByTimeAsync(20000)
   expect(next.kill).not.toHaveBeenCalled()
@@ -54,7 +54,7 @@ it('does not accept a health reply from another generation', async () => {
 
 it('records structured storage failure phases without persisting the error message', async () => {
   const w = worker(), events: unknown[] = [], rpc = new AgentWorkerRPC(event => events.push(event))
-  const pending = rpc.request(w, 'init', '', []).catch(error => error.message)
+  const pending = rpc.request(w, 'init', '', ['fixture']).catch(error => error.message)
   rpc.receive(w, { requestId: 1, error: 'sensitive-path-or-provider-detail', storage: { database: 'checkpoints', phase: 'wal', code: 'SQLITE_IOERR_TRUNCATE' } } as never)
   expect(await pending).toBe('sensitive-path-or-provider-detail')
   expect(events).toContainEqual(expect.objectContaining({ method: 'init', phase: 'failed:startup', storage: { database: 'checkpoints', phase: 'wal', code: 'SQLITE_IOERR_TRUNCATE' } }))
@@ -63,7 +63,7 @@ it('records structured storage failure phases without persisting the error messa
 
 it('records bounded startup retries without resolving the request or exposing raw details', async () => {
   const w = worker(), events: unknown[] = [], rpc = new AgentWorkerRPC(event => events.push(event))
-  const pending = rpc.request(w, 'init', '', [])
+  const pending = rpc.request(w, 'init', '', ['fixture'])
   rpc.receive(w, { requestId: 1, storageRetry: { attempt: 1, storage: { database: 'tasks', phase: 'wal', code: 'SQLITE_IOERR_TRUNCATE', detail: 'private' } } })
   rpc.receive(w, { requestId: 1, result: 'ready' })
   expect(await pending).toBe('ready')

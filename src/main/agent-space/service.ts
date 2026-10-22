@@ -6,6 +6,7 @@ import type { ContactIdentity } from '../contact-agent/contracts'
 import type { HarnessCoordinator } from '../harness/coordinator'
 import type { HarnessInput, HarnessEvent } from '../harness/contracts'
 import type { HarnessEngine } from '../../shared/harness'
+import { validateContactCommand, type ContactCommandName, type ContactArgs, type ContactResult, type EmptyContactCommand } from '../../shared/contact-commands'
 
 export interface AgentSpaceOptions {
   harness: HarnessCoordinator
@@ -62,10 +63,17 @@ export class AgentSpace {
   async cancelChat(requestId: string) {
     await Promise.all([...this.contacts.values()].map(contact => contact.module('chat')?.chat?.cancel(requestId)))
   }
-  async request(method: string, id: string, args: unknown[] = []): Promise<any> {
+  request<M extends EmptyContactCommand>(method: M, id: string): Promise<ContactResult<M>>
+  request<M extends ContactCommandName>(method: M, id: string, args: ContactArgs<M>): Promise<ContactResult<M>>
+  async request(method: ContactCommandName, id: string, args: unknown[] = []): Promise<unknown> {
+    return this.dispatchUnknown(method, id, args)
+  }
+  async dispatchUnknown(method: unknown, owner: unknown, args: unknown = []): Promise<unknown> {
+    validateContactCommand(method, owner, args)
+    const id = owner as string
     const work = this.contact(id).module('workloop')?.work
     if (!work) throw new Error('联系人工作模块未启用。')
-    return work.request(method, args)
+    return work.request(method, args as ContactArgs<typeof method>)
   }
   async detachModule(id: string, moduleId: string) { await this.contact(id).detach(moduleId) }
   async attachModule(id: string, moduleId: string) {

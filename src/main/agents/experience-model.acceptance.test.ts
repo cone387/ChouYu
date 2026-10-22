@@ -26,7 +26,7 @@ it.skipIf(!process.env.CHOUYU_EXPERIENCE_ACCEPTANCE)('real model applies correct
     const material = store.materials.save('writer', { name: '灯塔设定', content: '雾港灯塔每逢周四亮起蓝色灯光。灯塔守望者是一位退休钟表匠。', source: { kind: 'text', label: '合成验收设定' }, scope: { kind: 'task', topicId: topic.id } })
     const context = buildContactContext(store, { characterId: 'writer', topicId: topic.id, query: '主角 灯塔 故事' })
     expect(context.text).not.toContain('林旧'); expect(context.text).not.toContain('松石九号')
-    const tools = createMaterialTools({ owner: () => 'writer', request: async (method, owner, args) => {
+    const tools = createMaterialTools({ owner: () => 'writer', dispatchUnknown: async (method, owner, args) => {
       if (method === 'materialList') return store.materials.list({ ...(args[0] as object), characterId: owner, topicId: topic.id, query: '' })
       if (method === 'readMaterial') return store.materials.read({ characterId: owner, topicId: topic.id, query: '' }, args[1] as { id: string; version: number }, args[2] as number)
       throw new Error('Unexpected acceptance method')

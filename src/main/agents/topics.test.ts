@@ -33,7 +33,7 @@ describe('persistent contact topics', () => {
     await service.request('feedback', 'alice', [data.revision, 'topicStatus', [topic.id, topic.revision, 'paused', '聊天要求暂停']])
     data = service.store.overview('alice'); topic = data.topics[0]
     await service.request('save', 'alice', [{ ...settings, dailyCalls: 3 }])
-    await expect(service.request('feedback', 'alice', [data.revision, 'continueTopic', [topic.id, topic.revision, '继续', '']])).rejects.toThrow('工作设置已变化')
+    await expect(service.request('feedback', 'alice', [data.revision, 'continueTopic', [topic.id, topic.revision, '继续']])).rejects.toThrow('工作设置已变化')
     expect(model).not.toHaveBeenCalled()
     data = service.store.overview('alice')
     await service.request('feedback', 'alice', [data.revision, 'continueTopic', [topic.id, topic.revision, '聊天要求继续验证']])

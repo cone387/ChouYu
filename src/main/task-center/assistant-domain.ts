@@ -4,7 +4,7 @@ import { bindOperations, type TaskDomain } from './contracts'
 
 const operations = ['list', 'history', 'save', 'remove', 'tick'] as const
 export type AssistantTaskCommands = Pick<AssistantRoutineService, typeof operations[number]>
-export function createAssistantDomain(service: AssistantRoutineService): TaskDomain<AssistantTaskCommands> {
+export function createAssistantDomain(service: AssistantRoutineService): TaskDomain<'assistant'> {
   const commands = bindOperations(service, operations)
   return { id: 'assistant', operations,
     assertOwner: owner => { if (owner !== DEFAULT_CHARACTER_ID) throw new Error('助手安排归属不匹配。') },

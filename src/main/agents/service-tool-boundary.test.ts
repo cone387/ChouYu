@@ -31,7 +31,7 @@ it.each([true, false])('distinguishes plan actions and disabled tools with share
   try {
     service.store.save('reviewer', { ...DEFAULT_AGENT_SETTINGS, goal: '写一个虚构故事', enabled: false, readContactDeliveries: contactAccess, searchEnabled: false })
     await service.sync([{ id: 'reviewer', soul: '独立评审', conversation: '', skillToolsEnabled: true, disabledSkillTools: ['read_contact_material'], config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] } }])
-    await service.request('run', 'reviewer', [service.store.overview('reviewer').focusTopicId])
+    await service.request('run', 'reviewer', [service.store.overview('reviewer').focusTopicId! ])
     await vi.waitFor(() => {
       const run = service.store.overview('reviewer').runs[0]
       expect(run.status, JSON.stringify(run)).toBe('completed')

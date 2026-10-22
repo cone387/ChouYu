@@ -1,11 +1,13 @@
+import { contactCommandDispatcher, type UnknownContactDispatch } from '../task-center/command-boundary'
 import { outputKinds, validateOutputPreference, type ContactOutputScope, type ContactOutputPreferenceRecord } from '../../shared/contact-output'
 import { containsSecret } from '../../shared/memory'
 import type { RegisteredTool, ToolExecutionContext } from '../tools/registry'
 
 export function createOutputTools(access: {
   owner(sessionId?: string): string | undefined
-  request(method: string, owner: string, args?: unknown[]): Promise<any>
+  dispatchUnknown: UnknownContactDispatch
 }): RegisteredTool[] {
+  const request = contactCommandDispatcher(access.dispatchUnknown)
   const owner = (context: ToolExecutionContext) => {
     const id = access.owner(context.sessionId)
     if (!id) throw new Error('请在具体联系人的聊天中修改阅读偏好。')
@@ -21,7 +23,7 @@ export function createOutputTools(access: {
     throw new Error('阅读偏好范围无效，请指定联系人、任务或实际成果版本。')
   }
   const read = async (id: string, target: ContactOutputScope) => {
-    const records: ContactOutputPreferenceRecord[] = await access.request('outputPreferences', id, target.kind === 'contact' ? [] : [target.topicId, target.kind === 'delivery' ? target.version : undefined])
+    const records: ContactOutputPreferenceRecord[] = await request('outputPreferences', id, target.kind === 'contact' ? [] : [target.topicId, target.kind === 'delivery' ? target.version : undefined])
     const record = records.find(record => JSON.stringify(record.scope) === JSON.stringify(target))
     if (!record) throw new Error('尚未读取实际阅读偏好。')
     return record
@@ -50,7 +52,7 @@ export function createOutputTools(access: {
           if (consumed) throw new Error('此修改已执行，请重新发起。')
           consumed = true
           if (owner(context) !== id) throw new Error('聊天归属已变化，请重新确认。')
-          const saved = await access.request('setOutputPreference', id, [target, before.revision, patch, reason]) as ContactOutputPreferenceRecord
+          const saved = await request('setOutputPreference', id, [target, before.revision, patch, reason]) as ContactOutputPreferenceRecord
           if (saved.revision !== before.revision + 1 || JSON.stringify(saved.scope) !== JSON.stringify(target)) throw new Error('未取得有效的阅读偏好保存回执。')
           const message = `已保存阅读偏好，范围为${range}。已有正文保持完整。`
           return { content: JSON.stringify({ saved: true, revision: saved.revision, scope: saved.scope, message }), summary: message }

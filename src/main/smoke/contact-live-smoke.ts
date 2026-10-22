@@ -51,8 +51,8 @@ export async function runContactLiveSmoke(window: BrowserWindow) {
       }
     } finally { store.close() }
     const history: Message[] = [], turns: unknown[] = []
-    const get = () => contactAgentsCall<AgentOverview>(character.id, 'get')
-    const cards = () => contactAgentsCall<any[]>(character.id, 'pendingInteractions')
+    const get = () => contactAgentsCall(character.id, 'get')
+    const cards = async () => (await contactAgentsCall(character.id, 'pendingInteractions')).filter((c): c is import('../../shared/contact-actions').ContactActionInteraction => c.kind === 'action')
     const snapshot = async () => {
       const data = await get()
       return { settings: data.settings, topics: data.topics, profile: getContactProfile(character.id).profile, runs: data.runs.map(r => ({ id: r.id, status: r.status })) }
@@ -169,11 +169,11 @@ export async function runContactLiveSmoke(window: BrowserWindow) {
     await check('output-scope', async f => {
       const before = await f.snapshot(), preferences = await contactAgentsCall(f.character.id, 'outputPreferenceCatalogue'), delivery = await contactAgentsCall(f.character.id, 'delivery', [f.topics[0]])
       const r = await f.say('《吞噬星空》同人续写这份已保存成果用紧凑间距，只改这版排版，不重写正文。'); assert.equal(r.cards.length, 1); assert.deepEqual(await contactAgentsCall(f.character.id, 'outputPreferenceCatalogue'), preferences); await f.apply(r.cards[0]);
-      const catalogue = await contactAgentsCall<any[]>(f.character.id, 'outputPreferenceCatalogue'); assert.ok(catalogue.some(c => c.scope.kind === 'delivery' && c.scope.topicId === f.topics[0] && c.preference.density === 'compact'))
-      const next = await f.say('今后你的所有成果都用舒适行距，已有正文保持原样。'); assert.equal(next.cards.length, 1); await f.apply(next.cards[0]); const all = await contactAgentsCall<any[]>(f.character.id, 'outputPreferenceCatalogue'); assert.ok(all.some(c => c.scope.kind === 'contact' && c.preference.density === 'comfortable'))
+      const catalogue = await contactAgentsCall(f.character.id, 'outputPreferenceCatalogue'); assert.ok(catalogue.some(c => c.scope.kind === 'delivery' && c.scope.topicId === f.topics[0] && c.preference.density === 'compact'))
+      const next = await f.say('今后你的所有成果都用舒适行距，已有正文保持原样。'); assert.equal(next.cards.length, 1); await f.apply(next.cards[0]); const all = await contactAgentsCall(f.character.id, 'outputPreferenceCatalogue'); assert.ok(all.some(c => c.scope.kind === 'contact' && c.preference.density === 'comfortable'))
       assert.deepEqual(await f.snapshot(), before); assert.deepEqual(await contactAgentsCall(f.character.id, 'delivery', [f.topics[0]]), delivery)
     })
-    await check('secure-input-card', async f => { const r = await f.say('我要更新你的搜索密钥，给我安全输入入口，不要让我贴在聊天里。'); assert.equal(r.cards.length, 1); assert.equal(r.cards[0].request.input.argument, 'credential'); assert.deepEqual(r.after, r.before); await f.apply(r.cards[0], true) }, false)
+    await check('secure-input-card', async f => { const r = await f.say('我要更新你的搜索密钥，给我安全输入入口，不要让我贴在聊天里。'); assert.equal(r.cards.length, 1); assert.equal(r.cards[0].request.input?.argument, 'credential'); assert.deepEqual(r.after, r.before); await f.apply(r.cards[0], true) }, false)
     await check('ui-edit-close-save', async f => {
       f.history.push({ id: 'edit-user', role: 'user', content: '整体写法', timestamp: 1 }, { id: 'discarded-reply', role: 'assistant', content: '你想调整哪个任务的整体写法？', timestamp: 2 })
       saveSessionMessages(f.session, f.history); selectChatSession(f.session)

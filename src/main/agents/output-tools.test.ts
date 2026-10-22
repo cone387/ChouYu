@@ -22,7 +22,7 @@ function fixture() {
     if (method === 'setOutputPreference') { if (args[1] !== revision) throw new Error('变化'); return { scope: args[0], revision: ++revision, preference: args[2] } }
     throw new Error(method)
   })
-  const tools = createOutputTools({ owner: () => owner, request })
+  const tools = createOutputTools({ owner: () => owner, dispatchUnknown: request })
   const prepare = (args: any) => tools.find(t => t.name === 'set_contact_output_preference')!.prepareAsync!(args, { sessionId: 'chat' } as ToolExecutionContext)
   return { request, prepare, owner: (id: string) => { owner = id }, advance: () => { revision++ } }
 }

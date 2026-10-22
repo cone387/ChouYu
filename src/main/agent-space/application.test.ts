@@ -18,7 +18,7 @@ const input = (id: string): HarnessInput => ({ requestId: `request:${id}`, attem
 function fixture(harness = new HarnessCoordinator(registryFor({ native: { run: async value => ({ state: 'completed', text: value.systemPrompt }) } }))) {
   const live = new Set(['alice', 'bob']), closed: string[] = [], calls: string[] = []
   const space = new AgentSpace({ harness, readIdentity: id => live.has(id) ? identity(id) : undefined,
-    work: { request: async (method, id) => { calls.push(`${id}:${method}`); return { owner: id } },
+    work: { request: async (method, id) => { calls.push(`${id}:${method}`); return { owner: id } as unknown as import('../../shared/contact-commands').ContactResult<typeof method> },
       detach: async id => { closed.push(id) }, remove: async id => { live.delete(id) } } })
   return { space, live, closed, calls }
 }

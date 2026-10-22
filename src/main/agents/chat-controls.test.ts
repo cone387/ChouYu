@@ -19,14 +19,14 @@ async function fixture(config: import('../agent-space/workloop-host').ContactIde
   await service.sync([{ id: 'alice', name: '作者', soul: '', conversation: '', config }, { id: 'bob', name: '评审', soul: '', conversation: '', config: null }])
   let owner = 'alice'
   const context = { sessionId: 'chat' } as ToolExecutionContext
-  const tools = createContactTools({ owner: () => owner, request: (method, id, args) => service.request(method, id, args) })
+  const tools = createContactTools({ owner: () => owner, dispatchUnknown: (method, id, args) => service.dispatchUnknown(method, id, args) })
   const prepare = (name: string, args: Record<string, unknown>) => {
     const tool = tools.find(t => t.name === name)
     if (!tool) throw new Error('所需工作工具未接入')
     return tool.prepareAsync!(validateToolArguments(tool.inputSchema, args), context)
   }
   const route = (message: string, plan: unknown) => routeContactChange([{ role: 'user', content: message }], {
-    read: (method, args) => service.request(method, owner, args), model: async () => JSON.stringify(plan),
+    read: (method, args) => service.dispatchUnknown(method, owner, args), model: async () => JSON.stringify(plan),
     execute: async call => (await (await prepare(call.name, JSON.parse(call.arguments))).execute()).content
   })
   return { service, store: service.store, dir, tools, prepare, route, setOwner: (id: string) => { owner = id } }

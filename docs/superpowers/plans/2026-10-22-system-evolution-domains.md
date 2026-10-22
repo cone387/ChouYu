@@ -36,11 +36,11 @@
 
 **Interfaces:** `ContactCommandMap` 为方法名→`{ args: [...]; result: ... }`；`ContactCommandName = keyof ContactCommandMap`。`request<M extends ContactCommandName>(method: M, owner: string, args: ContactCommandMap[M]['args']): Promise<ContactCommandMap[M]['result']>`。动态外部输入先走 `dispatchUnknown(method: unknown, owner: unknown, args: unknown)` 验证，再调用类型化分派。todo/assistant 复用原方法签名推导参数与返回值；`TaskCenter` 的域名和操作保持泛型关联。
 
-- [ ] 编译断言固定 `todo` 不能调用联系人 `assignTopic`、数值版本不能传字符串、delivery 返回值不是 task；用 `@ts-expect-error` 验证错误确实被编译器拒绝。运行时测试拒绝未知命令、非数组参数、错 owner、旧 revision、已卸载旧绑定。
-- [ ] 先运行新测试与 `npm run typecheck`，确认缺失新契约或错误未被捕获的失败；定义公共类型映射，不从 shared 引用 main 服务实例。
-- [ ] 对实际 worker 命令逐项迁移签名和返回值，减少调用处强转；TaskCenter、UI、工具、调度都通过真实域绑定。动态桥仅在传输边界保留 unknown，不给普通业务方法加任意字符串兜底重载。
-- [ ] 运行 `npm test -- src/main/task-center src/main/agent-space src/main/contact-agent`、`npm run typecheck` 和 `npm run check:boundaries`；原错误文案及版本校验保持。
-- [ ] 提交 `refactor: type task domains and contact command transport`，记录 C1。
+- [x] 编译断言固定 `todo` 不能调用联系人 `assignTopic`、数值版本不能传字符串、delivery 返回值不是 task；用 `@ts-expect-error` 验证错误确实被编译器拒绝。运行时测试拒绝未知命令、非数组参数、错 owner、旧 revision、已卸载旧绑定。
+- [x] 先运行新测试与 `npm run typecheck`，确认缺失新契约或错误未被捕获的失败；定义公共类型映射，不从 shared 引用 main 服务实例。
+- [x] 对实际 worker 命令逐项迁移签名和返回值，减少调用处强转；TaskCenter、UI、工具、调度都通过真实域绑定。动态桥仅在传输边界保留 unknown，不给普通业务方法加任意字符串兜底重载。
+- [x] 运行 `npm test -- src/main/task-center src/main/agent-space src/main/contact-agent`、`npm run typecheck` 和 `npm run check:boundaries`；原错误文案及版本校验保持。
+- [x] 提交 `refactor: type task domains and contact command transport`，记录 C1。
 
 ### Task 3: 联系人存储分责与事务回归
 

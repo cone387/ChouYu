@@ -19,7 +19,7 @@ it.skipIf(!process.env.CHOUYU_CONTACT_MODEL_ACCEPTANCE)('real contact model read
   if (!resolved.ok) throw new Error('阿笔模型配置不可用')
   const calls: string[] = [], requests: unknown[] = []
   let output = ''
-  const definitions = createContactTools({ owner: () => 'writer', request: async () => { throw new Error('Acceptance uses synthetic fixtures only') } })
+  const definitions = createContactTools({ owner: () => 'writer', dispatchUnknown: async () => { throw new Error('Acceptance uses synthetic fixtures only') } })
   await streamNativeChat([
     { role: 'assistant', content: '十章已经全部写完了。但我不能修改联系人那边的阅读样式。' },
     { role: 'user', content: '这是之前的说法。请先核实正式成果到底存了几章，再把小说成果展示改为跟系统亮色主题一致，保留正文。' }

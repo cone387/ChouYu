@@ -1,3 +1,4 @@
+import { validateContactCommand, type ContactCommandName, type ContactArgs, type ContactResult, type EmptyContactCommand } from '../../shared/contact-commands'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -175,7 +176,14 @@ export class WorkLoopHost {
       this.cleanupFaults.set('cleanup-storage', { characterId: '', error: safeAgentFailure(error) })
     }
   }
-  async request(method: string, id: string, args: unknown[] = []): Promise<any> {
+  request<M extends EmptyContactCommand>(method: M, id: string): Promise<ContactResult<M>>
+  request<M extends ContactCommandName>(method: M, id: string, args: ContactArgs<M>): Promise<ContactResult<M>>
+  async request(method: ContactCommandName, id: string, args: unknown[] = []): Promise<unknown> {
+    return this.dispatchUnknown(method, id, args)
+  }
+  async dispatchUnknown(rawMethod: unknown, owner: unknown, rawArgs: unknown = []): Promise<unknown> {
+    validateContactCommand(rawMethod, owner, rawArgs)
+    const method = rawMethod, id = owner as string, args = rawArgs as unknown[]
     this.assertOpen()
     if (method === 'attachModule') {
       this.identity(id)
@@ -189,7 +197,7 @@ export class WorkLoopHost {
       return null
     }
     if (method === 'spaceDiagnostics') return { activeRuns: this.scheduler.size, capacity: this.scheduler.capacity, faults: [...this.faults].map(([characterId, error]) => ({ characterId, error })).concat([...this.cleanupFaults.values()]) }
-    return this.commands.request(method, id, args)
+    return this.commands.dispatchUnknown(method, id, args)
   }
   tick() {
     if (!this.ready || this.closed || this.ticking) return

@@ -8,7 +8,7 @@ import { purgeRunLogs } from '../logs';
 import { getSession, saveSessionMessages, flushDatabase, setState, getState } from '../../database';
 import { DshAdapter } from './adapter';
 import { ActionResults } from '../action-results';
-import { contactAgentsCall, onContactContextChanged } from '../../agents';
+import { readContactAction, contactAgentsCall, onContactContextChanged } from '../../agents';
 let instance: ReturnType<typeof create> | undefined;
 function create() {
     const home = join(app.getPath('userData'), 'harness');
@@ -16,7 +16,7 @@ function create() {
     const store = new HarnessStore(join(home, 'runs.db'));
     const options = { home: join(home, 'logs'), node: paths.node, helper: paths.helper };
     const pool = new DshRuntimePool(options);
-    const actions = new ActionResults(store, { read: (owner, id) => contactAgentsCall(owner, 'getInteraction', [id]), subscribe: onContactContextChanged, cancel: (owner, id, version) => contactAgentsCall(owner, 'cancelPendingAction', [id, version]) });
+    const actions = new ActionResults(store, { read: (owner, id) => readContactAction(owner, id), subscribe: onContactContextChanged, cancel: (owner, id, version) => contactAgentsCall(owner, 'cancelPendingAction', [id, version]) });
     const adapter = new DshAdapter(pool, store, key => actions.cancelPendingActions(key), run => cleanSavedDshRun(run));
     return { store, pool, actions, adapter, options };
 }

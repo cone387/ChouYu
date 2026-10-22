@@ -20,7 +20,10 @@ it.each(['withdrawMaterial', 'forgetMemory', 'updateMemory'] as const)('rolls ba
     const run = host.store.createRun('alice', '')
     host.store.db.prepare("UPDATE runs SET input=json_set(input,'$.contextReferences',json(?)),status='waiting' WHERE id=?").run(JSON.stringify({ [material ? 'materials' : 'memories']: [{ id: reference.id }] }), run)
     host.store.db.exec("CREATE TRIGGER cleanup_fault BEFORE INSERT ON execution_cleanup BEGIN SELECT RAISE(ABORT,'fixture cleanup write failed'); END")
-    await expect(host.request(method, 'alice', [reference.id, 1, { ...memoryInput, content: 'corrected' }])).rejects.toThrow('fixture cleanup write failed')
+    const operation = method === 'updateMemory'
+      ? host.request(method, 'alice', [reference.id, 1, { ...memoryInput, content: 'corrected' }])
+      : host.request(method, 'alice', [reference.id, 1])
+    await expect(operation).rejects.toThrow('fixture cleanup write failed')
     await host.close()
     reopened = new ContactTaskStore(join(dir, 'agents.db'))
     if (material) expect(reopened.materials.list({ characterId: 'alice', query: '' }).map(item => item.id)).toContain(reference.id)

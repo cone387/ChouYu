@@ -43,14 +43,17 @@ export async function runContactSoak(window: BrowserWindow) {
   }
   try {
     for (const [owner, title] of Object.entries(titles)) {
-      let data = await contactAgentsCall<AgentOverview>(owner, 'get')
+      let data = await contactAgentsCall(owner, 'get')
       let topic = data.topics.find(t => t.id === report.topics[owner]) ?? data.topics.find(t => t.title === title)
       if (!topic) {
         const times = [...new Set([clockAt(owner === 'soak-writer' ? 2 : 5), ...(options.moduleAudit && options.durationMs >= 86400000 ? [clockAt(owner === 'soak-writer' ? 60 : 63)] : []), owner === 'soak-writer' ? '00:03' : '00:06'])].sort()
         await contactAgentsCall(owner, 'assignCalendarTopic', [{ title, instruction: instructions[owner as keyof typeof instructions], kind: 'reminder', cadence: 'daily', times, enabled: true }, '隔离持续运行验收：真实日历，每期一次。'])
-        data = await contactAgentsCall<AgentOverview>(owner, 'get'); topic = data.topics.find(t => t.title === title)!
+        data = await contactAgentsCall(owner, 'get'); topic = data.topics.find(t => t.title === title)!
         await contactAgentsCall(owner, 'savePreferences', [{ ...DEFAULT_AGENT_SETTINGS, ...data.settings, enabled: true, dailyCalls: 40, dailyTokenLimit: 160000, defaultTaskTokenLimit: 300000, maxConcurrentTasks: 1, searchEnabled: false, shareDeliveries: true, readContactDeliveries: owner === 'soak-reviewer', paceWriting: true, intervalMinutes: 15 }, data.revision])
-        await contactAgentsCall(owner, 'setTaskBudget', [topic.id, topic.revision, { modelCalls: 40, tokens: 300000, reason: '隔离验收预先固定额度：最多40次调用和30万Token，失败和纠正均计入，不在运行中扩额。' }])
+        await contactAgentsCall(owner, 'setTaskBudget', [topic.id, topic.revision, { modelCalls: 40 }])
+        // Call and token budgets have independent commands and revisions.
+        topic = (await contactAgentsCall(owner, 'get')).topics.find(t => t.id === topic!.id)!
+        await contactAgentsCall(owner, 'setTaskTokenLimit', [topic.id, topic.revision, 300000])
       }
       report.topics[owner] = topic.id; await save()
     }
@@ -70,9 +73,9 @@ export async function runContactSoak(window: BrowserWindow) {
       if (delta > 45000) report.gaps.push({ at: now, milliseconds: delta })
       if (!report.dates.includes(localDate(now))) report.dates.push(localDate(now))
       try {
-        const writer = await contactAgentsCall<AgentOverview>('soak-writer', 'get'), reviewer = await contactAgentsCall<AgentOverview>('soak-reviewer', 'get')
+        const writer = await contactAgentsCall('soak-writer', 'get'), reviewer = await contactAgentsCall('soak-reviewer', 'get')
         const history: AssistantRoutineHistoryPage = await run(`window.electronAPI.assistantRoutines.history(${JSON.stringify(report.routineId)})`)
-        const deliveries = await Promise.all(['soak-writer', 'soak-reviewer'].map(owner => contactAgentsCall<AgentDelivery | null>(owner, 'delivery', [report.topics[owner]])))
+        const deliveries = await Promise.all(['soak-writer', 'soak-reviewer'].map(owner => contactAgentsCall(owner, 'delivery', [report.topics[owner]])))
         const messages = getSessions().flatMap(session => (getSession(session.id)?.messages ?? []).map(message => ({ id: message.id, characterId: session.characterId, agentNotice: message.agentNotice, content: message.content })))
         if (new Set(messages.map(message => message.id)).size !== messages.length) { moduleEvidence.duplicateMessages++; await saveModuleEvidence(); throw Error('Duplicate delivered message ID') }
         const completedReceipts = history.items.filter(item => item.status === 'completed').map(item => item.receipt)
@@ -116,7 +119,7 @@ export async function runContactSoak(window: BrowserWindow) {
             const refused = await contactAgentsCall('soak-writer', 'run', [topic.id]).then(() => false, () => true)
             if (!refused) throw Error('Paused task accepted a new run')
             await new Promise(resolve => setTimeout(resolve, 5000))
-            const paused = await contactAgentsCall<AgentOverview>('soak-writer', 'get')
+            const paused = await contactAgentsCall('soak-writer', 'get')
             const saved = paused.topics.find(value => value.id === topic.id)!
             if (saved.status !== 'paused' || paused.callsToday !== writer.callsToday) throw Error('Paused task changed or dispatched inference')
             await contactAgentsCall('soak-writer', 'continueTopic', [topic.id, saved.revision, '隔离验收：恢复原日历任务。'])

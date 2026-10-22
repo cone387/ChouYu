@@ -77,7 +77,7 @@ it('reads a peer while roster reconciliation waits for a removed contact to drai
   try {
     await dispatchContactCommand(queue, space, 'syncContact', 'bob', [identities[1]])
     const overview = await dispatchContactCommand(queue, space, 'get', 'bob', [])
-    expect(overview.settings.goal).toBe('Research')
+    expect((overview as import('../../shared/agents').AgentOverview).settings.goal).toBe('Research')
   } finally { release(); await removing }
   expect(space.store.profile('alice')).toBeUndefined()
 })

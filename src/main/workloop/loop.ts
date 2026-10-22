@@ -10,13 +10,14 @@ import type { ContactModule, ContactModuleOwner, ContactIdentity } from '../cont
 import { RunScheduler } from '../agent-space/scheduler'
 import { createWorkModel } from './model'
 import type { HarnessRegistry } from '../harness/registry'
+import type { ContactRequest } from '../../shared/contact-commands'
 export class WorkLoop implements ContactModule {
   readonly id = 'workloop'
   private closed = false
   private closing?: Promise<void>
   constructor(private owner: ContactModuleOwner, private store: ContactTaskStore, private runtime: WorkStrategyRuntime,
     private scheduler: RunScheduler, private skillRunner: SkillRunner, private changed: (id: string) => void,
-    private wake: () => void, private request: (method: string, id: string, args: unknown[]) => Promise<any>,
+    private wake: () => void, private request: ContactRequest,
     private modelFactory: ((identity: ContactIdentity) => AgentModel) | undefined, private readSkills: ((id: string) => SkillSnapshot) | undefined,
     private harnesses: HarnessRegistry) {}
   private identity(id: string) {

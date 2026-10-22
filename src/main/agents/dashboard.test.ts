@@ -13,7 +13,7 @@ describe('contacts dashboard', () => {
     try {
       const data = await service.request('dashboard', '', [['new-contact']])
       expect(data.contacts['new-contact'].summary.tasks).toBe(0)
-      await expect(service.request('dashboard', '', [null])).rejects.toThrow('联系人列表无效')
+      await expect(service.dispatchUnknown('dashboard', '', [null])).rejects.toThrow('联系人列表无效')
     } finally { await service.close(); rmSync(directory, { recursive: true, force: true }) }
   })
   it('aggregates all contacts and rounds with accurate usage and event ownership', () => {

@@ -1,4 +1,16 @@
 import { contactStorageDiagnostic, type StorageDiagnostic } from '../storage/contact-database'
+import type { ContactCommandMap } from '../../shared/contact-commands'
+import type { ContactIdentity } from '../contact-agent/contracts'
+
+export type WorkerCommandMap = ContactCommandMap & {
+  init: { args: [directory: string, runtime?: import('../harness/dsh/runtime').DshRuntimeOptions]; result: void }
+  sync: { args: [identities: ContactIdentity[]]; result: void }
+  syncContact: { args: [identity: ContactIdentity]; result: void }
+  close: { args: []; result: void }
+}
+export type WorkerCommandName = keyof WorkerCommandMap
+export type WorkerArgs<M extends WorkerCommandName> = WorkerCommandMap[M]['args']
+export type WorkerResult<M extends WorkerCommandName> = WorkerCommandMap[M]['result']
 type Worker = { postMessage(value: unknown): void; kill(): boolean | void }
 type Entry = { worker: Worker; method: string; phase: string; resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; born: number }
 /** Each deadline belongs to a worker generation and a request phase. */
@@ -7,7 +19,10 @@ export class AgentWorkerRPC {
   private entries = new Map<number, Entry>()
   private probes = new Map<Worker, { id: number; timer: ReturnType<typeof setTimeout> }>()
   constructor(private diagnostic: (event: { method: string; phase: string; elapsedMs: number; storage?: StorageDiagnostic }) => void = () => {}) {}
-  request(worker: Worker, method: string, id: string, args: unknown[]): Promise<any> {
+  request<M extends WorkerCommandName>(worker: Worker, method: M, id: string, args: WorkerArgs<M>): Promise<WorkerResult<M>> {
+    return this.dispatchUnknown(worker, method, id, args) as Promise<WorkerResult<M>>
+  }
+  dispatchUnknown(worker: Worker, method: string, id: string, args: unknown[]): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const requestId = ++this.sequence
       const entry: Entry = { worker, method, phase: method === 'init' ? 'startup' : 'queue', resolve, reject, timer: undefined!, born: Date.now() }

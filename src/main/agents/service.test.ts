@@ -96,7 +96,7 @@ it('ignores obsolete deadlines when enabling automatic work without cancelling t
   const f = await fixture()
   const run = await f.start('alice')
   const before = f.service.store.overview('alice')
-  await f.service.request('savePreferences', 'alice', [{ ...before.settings, enabled: true, workUntil: Date.now() - 1 }])
+  await f.service.dispatchUnknown('savePreferences', 'alice', [{ ...before.settings, enabled: true, workUntil: Date.now() - 1 }])
   expect(f.service.store.overview('alice').settings).toEqual({ ...before.settings, enabled: true })
   expect(f.pending('alice').signal.aborted).toBe(false)
   expect(f.service.store.getRun(run)?.status).toBe('running')

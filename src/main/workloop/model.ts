@@ -18,7 +18,7 @@ export function createWorkModel(context: {
   store: ContactTaskStore; identity: ContactIdentity; run: Run; input: any; skillRunner: SkillRunner; harnesses: HarnessRegistry
   modelFactory?: (identity: ContactIdentity) => AgentModel
   changed(id: string): void
-  request(method: string, owner: string, args: unknown[]): Promise<any>
+  request: import('../../shared/contact-commands').ContactRequest
 }): AgentModel {
   const { store, identity, run, input, skillRunner, modelFactory, changed, request } = context
     const skills = input.skills as SkillSnapshot
@@ -54,12 +54,13 @@ export function createWorkModel(context: {
         if (!run.topic_id) throw new Error('工作文件缺少任务来源。')
         return store.files.archive({ characterId: identity.id, skillId, runId: run.id, topicId: run.topic_id, requestId: run.id }, files)
       })
-      const materialTools = createMaterialTools({ owner: () => identity.id, request: async (method, owner, args) => {
+      const materialTools = createMaterialTools({ owner: () => identity.id, dispatchUnknown: async (method, owner, args) => {
         store.assertLive(run.id)
         if (method === 'materialList') return input.materialDirectory
         const reference = args[1] as import('../../shared/contact-materials').MaterialRef
         if (!reference || !input.materialDirectory.some((m: import('../../shared/contact-materials').MaterialRef) => m.id === reference.id && m.version === reference.version)) throw new MaterialReferenceError()
-        return request(method, owner, [{ query: '', topicId: run.topic_id || undefined }, ...args.slice(1)])
+        if (method !== 'readMaterial') throw new Error('后台资料工具操作无效。')
+        return request('readMaterial', owner, [{ query: '', topicId: run.topic_id || undefined }, reference, args[2] as number | undefined])
       } })
       const tools = options?.tools !== false && identity.skillToolsEnabled ? { definitions: [...skillRuntime.definitions, ...materialTools], execute: withMaterialReferenceRepair(async (call: import('../../shared/tools').AIToolCall) => {
         signal.throwIfAborted(); store.assertLive(run.id)

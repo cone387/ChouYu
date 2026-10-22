@@ -16,13 +16,13 @@ function fixture() {
     if ((args?.[2] as unknown[])?.[1] !== topic.revision) throw new Error('事项已变化')
     return data
   })
-  const tools = createContactTools({ owner: () => id, request })
+  const tools = createContactTools({ owner: () => id, dispatchUnknown: request })
   return { tools, topic, data, request, owner: (value?: string) => { id = value } }
 }
 describe('confirmed contact feedback', () => {
   it('reads formal deliverables with the current chat owner and forwards only explicit selection', async () => {
     const request = vi.fn(async () => ({ version: 4, savedSectionCount: 4, directory: [{ id: 'ch02b', title: '第二章下' }] }))
-    const tool = createContactTools({ owner: () => 'alice', request }).find(t => t.name === 'get_contact_delivery')!
+    const tool = createContactTools({ owner: () => 'alice', dispatchUnknown: request }).find(t => t.name === 'get_contact_delivery')!
     expect(shouldConfirmTool(tool, 'full')).toBe(false)
     const result = await tool.execute({ topicId: 'topic', version: 4, sectionId: 'ch02b' }, context)
     expect(request).toHaveBeenCalledWith('inspectDelivery', 'alice', ['topic', 4, 'ch02b'])
@@ -32,7 +32,7 @@ describe('confirmed contact feedback', () => {
     const data = { revision: 7, topics: [{ id: 'topic', title: '小说', revision: 8 }], runs: [] as any[] }
     let version = 4, chatOwner = 'alice'
     const request = vi.fn(async (method: string) => method === 'get' ? data : method === 'delivery' ? { version } : { ...data, runs: [{ id: 'run', topicId: 'topic', status: 'queued' }] })
-    const tool = createContactTools({ owner: () => chatOwner, request }).find(t => t.name === 'revise_contact_presentation')!
+    const tool = createContactTools({ owner: () => chatOwner, dispatchUnknown: request }).find(t => t.name === 'revise_contact_presentation')!
     const args = { topicId: 'topic', revision: 8, deliveryVersion: 4, reason: '亮色主题，与系统一致' }
     const prepared = await tool.prepareAsync!(args, context)
     expect(prepared.preview).toContain('正文、需求、阶段与任务状态保持不变')
@@ -59,7 +59,7 @@ describe('confirmed contact feedback', () => {
   })
   it('assigns one task to the current contact and respects the configured approval mode', async () => {
     const request = vi.fn(async (method: string) => method === 'get' ? { revision: 4, topics: [], runs: [] } : { topics: [{ id: 'new-topic' }], focusTopicId: 'new-topic', runs: [{ id: 'new-run', topicId: 'new-topic', status: 'queued' }] })
-    const tool = createContactTools({ owner: () => 'alice', request }).find(tool => tool.name === 'assign_contact_task')!
+    const tool = createContactTools({ owner: () => 'alice', dispatchUnknown: request }).find(tool => tool.name === 'assign_contact_task')!
     expect(shouldConfirmTool(tool, 'confirm')).toBe(false)
     expect(shouldConfirmTool(tool, 'full')).toBe(false)
     expect(shouldConfirmTool(tool, 'auto')).toBe(true)

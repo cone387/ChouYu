@@ -116,7 +116,7 @@ describe('contact chat routing and receipts', () => {
       if (method !== 'get') throw new Error('Must not write or create another round')
       return { ...f.data, runs: [{ id: 'r', topicId: 't', status, question: '原问题仍在等回复' }] }
     })
-    const tools = createContactTools({ owner: () => 'alice', request })
+    const tools = createContactTools({ owner: () => 'alice', dispatchUnknown: request })
     f.execute.mockImplementation(async call => {
       const prepared = await tools.find(t => t.name === call.name)!.prepareAsync!(JSON.parse(call.arguments), { sessionId: 'chat' } as ToolExecutionContext)
       expect(prepared).toHaveProperty('noOpResult')
@@ -125,7 +125,7 @@ describe('contact chat routing and receipts', () => {
     const reply = await f.run('继续评审')
     expect(reply).toContain(status === 'running' ? '正在执行' : '原问题仍在等回复')
     expect(reply).not.toMatch(/已提交|失败/)
-    expect(request).toHaveBeenCalledExactlyOnceWith('get', 'alice')
+    expect(request).toHaveBeenCalledExactlyOnceWith('get', 'alice', [])
   })
   it.each([
     ['running', '正在执行'], ['queued', '排队'], ['interrupted', '等待恢复'], ['waiting', '你熟悉哪个行业？']

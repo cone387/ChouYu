@@ -1,3 +1,4 @@
+import { contactCommandDispatcher, type UnknownContactDispatch } from '../task-center/command-boundary'
 import { containsSecret } from '../../shared/memory'
 import type { ContactTaskStore } from '../task-center/contact-store'
 import type { AgentOverview } from '../../shared/agents'
@@ -20,16 +21,17 @@ export function saveDeliveryFeedback(store: ContactTaskStore, owner: string, top
   }).immediate()
 }
 
-export function createDeliveryFeedbackTools(access: { owner(sessionId?: string): string | undefined; request(method: string, owner: string, args?: unknown[]): Promise<any> }): RegisteredTool[] {
+export function createDeliveryFeedbackTools(access: { owner(sessionId?: string): string | undefined; dispatchUnknown: UnknownContactDispatch }): RegisteredTool[] {
+  const request = contactCommandDispatcher(access.dispatchUnknown)
   return [{ name: 'submit_contact_delivery_feedback', displayName: '回应成果', source: 'builtin', risk: 'write', requiresConfirmation: true, alwaysConfirm: true,
     description: '认可或修订当前联系人的实际成果。先读取任务revision及最新deliveryVersion。accept仅记录对该版认可，不结束持续任务或恢复暂停任务；revise绑定该版按意见修订，不能把排队说成完成。可放在request_contact_action成果反馈卡中，修改意见用input.reason。',
     inputSchema: { type: 'object', properties: { topicId: { type: 'string' }, revision: { type: 'number' }, deliveryVersion: { type: 'number' }, action: { type: 'string', enum: ['accept', 'revise'] }, reason: { type: 'string' } }, required: ['topicId', 'revision', 'deliveryVersion', 'action', 'reason'], additionalProperties: false },
     async prepareAsync(args, context) {
       const owner = access.owner(context.sessionId)
       if (!owner) throw new Error('会话归属不存在。')
-      const data = await access.request('get', owner) as AgentOverview, topic = data.topics.find(t => t.id === args.topicId)
+      const data = await request('get', owner) as AgentOverview, topic = data.topics.find(t => t.id === args.topicId)
       if (!topic || topic.revision !== args.revision) throw new Error('任务已变化，请重新读取。')
-      const artifact = await access.request('delivery', owner, [topic.id])
+      const artifact = await request('delivery', owner, [topic.id])
       if (!artifact || artifact.version !== args.deliveryVersion) throw new Error('成果版本已变化，请重新读取。')
       if (!['accept', 'revise'].includes(String(args.action)) || typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('成果反馈无效。')
       let consumed = false
@@ -37,7 +39,7 @@ export function createDeliveryFeedbackTools(access: { owner(sessionId?: string):
         if (consumed) throw new Error('反馈已执行，请重新读取。')
         consumed = true
         if (access.owner(context.sessionId) !== owner) throw new Error('会话归属已变化。')
-        const result = await access.request('deliveryFeedback', owner, [topic.id, topic.revision, artifact.version, args.action, args.reason])
+        const result = await request('deliveryFeedback', owner, [topic.id, topic.revision, artifact.version, args.action, args.reason])
         if (result.saved !== true || result.topicId !== topic.id || result.version !== artifact.version || result.action !== args.action) throw new Error('未取得有效的成果反馈保存回执。')
         return { content: JSON.stringify(result), summary: result.message }
       } }

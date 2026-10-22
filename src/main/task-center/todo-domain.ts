@@ -11,7 +11,7 @@ const operations = [
   'listFields', 'createField', 'updateField', 'deleteField'
 ] as const
 export type TodoCommands = Pick<TasksStore, typeof operations[number]>
-export function createTodoDomain(store: TasksStore): TaskDomain<TodoCommands> {
+export function createTodoDomain(store: TasksStore): TaskDomain<'todo'> {
   const commands = bindOperations(store, operations)
   return { id: 'todo', operations, assertOwner: owner => { if (owner !== 'user') throw new Error('用户待办归属不匹配。') },
     commands: () => commands, list: (_owner, query) => store.listTasks(query as TaskListOptions | undefined),

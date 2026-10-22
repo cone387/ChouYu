@@ -147,8 +147,8 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         await waitForRenderer(window, `Boolean(document.querySelector('[data-contact-interaction="${pending.id}"] .primary'))`, 15000);
         await click(`[data-contact-interaction="${pending.id}"] .primary`);
         await until(() => Boolean(pendingFinal), 'post-receipt model call');
-        const saved = await contactAgentsCall<ContactActionInteraction>(character.id, 'getInteraction', [pending.id]);
-        if (saved.status !== 'resolved' || !saved.outcome)
+        const saved = await contactAgentsCall(character.id, 'getInteraction', [pending.id]);
+        if (saved.kind !== 'action' || saved.status !== 'resolved' || !saved.outcome)
             throw new Error('Original saved action receipt missing');
         if (!JSON.stringify(requests.at(-1)).includes(saved.outcome.content.replaceAll('"', '\\"'))) {
             const toolResults = requests.at(-1).messages.filter((m: any) => m.role === 'tool').map((m: any) => m.content);
@@ -162,7 +162,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         const replies = getSession(session)!.messages.filter(m => m.harnessSource?.engine === 'dsh');
         if (replies.length !== 1 || !getSessions().find(s => s.id === session)?.unreadCount)
             throw new Error('Hidden completion duplicated or did not remain unread');
-        const preferences = await contactAgentsCall<any[]>(character.id, 'outputPreferenceCatalogue');
+        const preferences = await contactAgentsCall(character.id, 'outputPreferenceCatalogue');
         if (preferences.find(p => p.scope.kind === 'contact')?.preference.density !== 'compact')
             throw new Error('Original preference store did not change');
         await run(`window.electronAPI.agents.submitInteraction(${JSON.stringify(character.id)},${JSON.stringify(pending.id)},{version:${JSON.stringify(pending.version)},actionId:'apply'})`);
@@ -194,7 +194,7 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         await until(async () => Boolean(await card()), 'cancellation card');
         const stopped = (await card())!;
         await click('[aria-label="停止生成"]');
-        await until(async () => (await contactAgentsCall<ContactActionInteraction>(character.id, 'getInteraction', [stopped.id])).status === 'obsolete', 'cancelled card invalidation');
+        await until(async () => (await contactAgentsCall(character.id, 'getInteraction', [stopped.id])).status === 'obsolete', 'cancelled card invalidation');
         const late = await run(`window.electronAPI.agents.submitInteraction(${JSON.stringify(character.id)},${JSON.stringify(stopped.id)},{version:${JSON.stringify(stopped.version)},actionId:'apply'}).then(()=>false,()=>true)`);
         if (!late || JSON.stringify(await contactAgentsCall(character.id, 'outputPreferenceCatalogue')) !== JSON.stringify(preferences))
             throw new Error('Late response replayed a cancelled write');
@@ -234,11 +234,11 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         await contactAgentsCall(character.id, 'save', [{ ...DEFAULT_AGENT_SETTINGS, goal: '核对访谈', sources: ['https://chouyu-agent-smoke.invalid/research'], permissionLevel: 'sources', dailyCalls: 10, dailyTokenLimit: 100000 }]);
         const beforeWork = providerCalls;
         await contactAgentsCall(character.id, 'run');
-        await until(async () => (await contactAgentsCall<AgentOverview>(character.id, 'get')).reports.length === 1, 'DSH background saved report');
+        await until(async () => (await contactAgentsCall(character.id, 'get')).reports.length === 1, 'DSH background saved report');
         const backgroundHome = join(app.getPath('userData'), 'contact-agents', 'harness');
         const sdkLogs = readdirSync(backgroundHome, { recursive: true }).filter(file => String(file).endsWith('.jsonl'));
         const outputCap = requests.at(-1).max_tokens ?? requests.at(-1).max_completion_tokens;
-        const work = await contactAgentsCall<AgentOverview>(character.id, 'get');
+        const work = await contactAgentsCall(character.id, 'get');
         if (!sdkLogs.length || providerCalls !== beforeWork + 1 || outputCap !== 8192 || work.tokenUsage?.today !== 28 || work.tokenUsage.estimated !== 0) throw new Error(`Background SDK verification failed: ${JSON.stringify({ sessions: sdkLogs.length, calls: providerCalls - beforeWork, outputCap, usage: work.tokenUsage })}`);
         await contactAgentsCall(character.id, 'pause');
         Object.assign(report, { backgroundSelectedInUi: true, backgroundWorkerRestart: true, backgroundSavedReport: true, backgroundSdkSessions: sdkLogs.length });

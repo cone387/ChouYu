@@ -32,6 +32,6 @@ export interface ContactChatPort {
   run(input: HarnessInput, output: (event: HarnessEvent) => void, engine?: HarnessEngine): Promise<HarnessResult>
   cancel(requestId: string): Promise<void>
 }
-export interface ContactWorkPort { request(method: string, args: unknown[]): Promise<unknown> }
+export interface ContactWorkPort { request<M extends import('../../shared/contact-commands').ContactCommandName>(method: M, args: import('../../shared/contact-commands').ContactArgs<M>): Promise<import('../../shared/contact-commands').ContactResult<M>> }
 export interface ContactModuleOwner { readonly id: string; readonly identity: ContactIdentity }
 export type ContactModuleFactory = (owner: ContactModuleOwner) => ContactModule

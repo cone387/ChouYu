@@ -11,10 +11,10 @@ it('keeps periodic reconciliation and request identity sync from blocking anothe
       await Promise.all(['alice', 'bob'].map(id => enqueue(id, async () => { order.push(`sync:${id}`) })))
     },
     syncContact(identity: { id: string }) { order.push(`identity:${identity.id}`) },
-    async request(_method: string, id: string) { order.push(`command:${id}`); if (id === 'alice') await hold },
+    async dispatchUnknown(_method: string, id: string) { order.push(`command:${id}`); if (id === 'alice') await hold },
     async close() { order.push('closed') }
   }
-  const slow = dispatchContactCommand(queue, service, 'deleteTopic', 'alice', [])
+  const slow = dispatchContactCommand(queue, service, 'deleteTopic', 'alice', ['task', 1])
   const periodic = dispatchContactCommand(queue, service, 'sync', '', [[]])
   try {
     await dispatchContactCommand(queue, service, 'syncContact', 'bob', [{ id: 'bob' }])
@@ -25,4 +25,13 @@ it('keeps periodic reconciliation and request identity sync from blocking anothe
     release(); await Promise.all([slow, periodic, closing])
     expect(order.at(-1)).toBe('closed')
   } finally { release() }
+})
+
+it('rejects malformed transport commands before queuing or invoking a host', async () => {
+  const queue = new ContactCommandQueue()
+  const service = { sync: async () => {}, syncContact: async () => {}, dispatchUnknown: async () => {}, close: async () => {} }
+  await expect(dispatchContactCommand(queue, service, 'get', 'alice', {})).rejects.toThrow()
+  await expect(dispatchContactCommand(queue, service, 'madeUp', 'alice', [])).rejects.toThrow()
+  await expect(dispatchContactCommand(queue, service, 'syncContact', 'alice', [{ id: 'bob' }])).rejects.toThrow('不一致')
+  await expect(dispatchContactCommand(queue, service, 'sync', '', [null])).rejects.toThrow()
 })
