@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'vitest'
 
-const read = (name: string): string => readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8')
+const read = (name: string): string => (name === 'TasksView.tsx' ? [name, 'useTaskData.ts', 'useTaskCommands.ts', 'useTaskDrafts.ts', 'taskDraftSubmission.ts', 'TaskList.tsx'] : [name]).map(file => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8')).join('\n')
 
 describe('Tasks 视图源守卫', () => {
   test('键盘与可达性:表单原生提交、Esc 取消、行内按钮 aria-label、列表 role', () => {

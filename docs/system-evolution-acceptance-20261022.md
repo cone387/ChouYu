@@ -44,3 +44,6 @@ IPC/preload 已按域拆分，ChatService 持有请求取消和退出等待；�
 
 ## A2 工作区阶段
 Workspace 已承接页面保活、全局搜索、联系人来源导航、工具确认和唯一会话 hook；ChatPanel 只呈现聊天，聊天命令另有 hook。导航版本守卫覆盖会话选择、联系人来源和助手聚焦，返回复核原会话归属与阅读位置。89 项相关回归、类型检查、构建通过；--navigation（含新增延迟 IPC/草稿/顶层 Esc 场景）及 --chat-close 通过。四张宽窄/明暗截图已查看，位于 artifacts/system-evolution/workspace。首次新增 smoke 选择了上一场景删除但尚留在 UI 的夹具卡片，已修正夹具选取并保留日志。TasksView 分责仍在 A3 实施范围，整体目标尚未完成。
+
+## A3 任务页与依赖检查
+已接入 useTaskData/useTaskCommands/useTaskDrafts/TaskList，原任务视图保留组合、筛选和单任务操作。43 项定向测试通过，覆盖迟到响应、后台失效、跨日、保存失败重试及依赖违例；类型检查、构建、check:boundaries 通过。--task-views、--task-edit、--task-scheduling 真实 Electron 验收通过，相关列表/看板、编辑字段、重复与提醒宽窄/明暗截图已检查。日志位于 artifacts/system-evolution/application-task3-*，截图位于 artifacts/system-evolution/tasks。构建提示保持原有大 chunk；一次无截图 task-edit 记录 UnknownVizError，断言与退出码通过，带截图重跑通过。

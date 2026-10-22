@@ -49,8 +49,8 @@
 
 **Interfaces:** `useTaskData(query, active)` 返回原任务/清单/分组/计数及 `reload()`；`useTaskCommands({ reload, onError })` 包装原单任务 API；`useTaskDrafts()` 拥有原弹窗草稿/保存/取消状态；TaskList 接收任务及单任务事件，不自行读 IPC。边界脚本解析真实 TypeScript import/export/import type/dynamic import/require，返回非零退出码和实际边。
 
-- [ ] 固定迟到查询、后台 invalidation、跨日刷新、保存失败留稿、筛选排序随视图保存测试；新 hook 行为测试实现前失败，原任务回归保持。
-- [ ] 抽取真实职责并接到 TasksView，避免把原整组件换名后仍集中所有状态。保留列表/看板同源与拖动单任务语义，不新增多选。
-- [ ] 为边界脚本提供合法/非法 import 夹具：shared→main/renderer、domain→IPC、TaskCenter→renderer、业务页互导均可识别；旧边若必须过渡，使用精确路径及原因的有限 allowlist，不能用目录通配掩盖。
-- [ ] 运行 `npm test -- src/renderer/src/components/Tasks src/shared/module-boundaries.test.ts`、`npm run check:boundaries`、`npm run typecheck`；构建后 `--task-views`、`--task-edit`、`--task-scheduling`，查看截图。
-- [ ] 提交 `refactor: isolate task view responsibilities and enforce module boundaries`，记录 A2/A3 完成依据。
+- [x] 固定迟到查询、后台 invalidation、跨日刷新、保存失败留稿、筛选排序随视图保存测试；新 hook 行为测试实现前失败，原任务回归保持。
+- [x] 抽取真实职责并接到 TasksView，避免把原整组件换名后仍集中所有状态。保留列表/看板同源与拖动单任务语义，不新增多选。
+- [x] 为边界脚本提供合法/非法 import 夹具：shared→main/renderer、domain→IPC、TaskCenter→renderer、业务页互导均可识别；旧边若必须过渡，使用精确路径及原因的有限 allowlist，不能用目录通配掩盖。
+- [x] 运行 `npm test -- src/renderer/src/components/Tasks src/shared/module-boundaries.test.ts`、`npm run check:boundaries`、`npm run typecheck`；构建后 `--task-views`、`--task-edit`、`--task-scheduling`，查看截图。
+- [x] 提交 `refactor: isolate task view responsibilities and enforce module boundaries`，记录 A2/A3 完成依据。

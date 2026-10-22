@@ -1,12 +1,14 @@
+import TaskList from './TaskList'
+import { useTaskDrafts } from './useTaskDrafts'
+import { emptyDraft, draftFromTask, toInputDate } from './taskDraftSubmission'
+import { useTaskCommands } from './useTaskCommands'
+import { useTaskData } from './useTaskData'
 import { ChecklistDisplayContext } from './TaskCardChecklist'
 import TaskFieldEditor, { type EditableTaskField } from './TaskFieldEditor'
-import { draftDueAt, draftReminderTimes, draftScheduleFromTask } from './taskDraftScheduling'
-import { repeatRuleFor, validateReminderTimes } from '../../../../shared/taskScheduling'
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import type { RemindChoiceId, TaskDueRange, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldUpdateInput, TaskSortMode, TaskView, TaskUpdateInput } from '../../../../shared/tasks'
-import {
-  DUE_RANGE_LABELS, PRIORITY_LABELS, REMIND_CHOICES, TASK_SORT_LABELS, compareTasks, isUnplanned, isOverdue, matchesTaskSchedule, matchesTaskView, remindAtFromChoice, sortTasks, taskScheduleBounds
-} from '../../../../shared/tasks'
+
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import type { TaskDueRange, TaskGroup, TaskPriority, TaskProject, TaskRecord, TaskSelectField, TaskSelectFieldUpdateInput, TaskSortMode, TaskView, TaskUpdateInput } from '../../../../shared/tasks'
+import { DUE_RANGE_LABELS, PRIORITY_LABELS, TASK_SORT_LABELS, compareTasks, isUnplanned, isOverdue, matchesTaskSchedule, matchesTaskView, sortTasks, taskScheduleBounds } from '../../../../shared/tasks'
 import TasksBoard, { groupTasks, type BoardGroupMode } from './TasksBoard'
 import TaskEditorDialog, { type TaskDraft as Draft } from './TaskEditorDialog'
 import TaskFieldsDialog from './TaskFieldsDialog'
@@ -18,7 +20,7 @@ import TaskViewManageDialog from './TaskViewManageDialog'
 import type { TaskConversionDraft } from './taskNavigation'
 import type { TaskSource } from '../../../../shared/tasks'
 import TaskSourceDialog from './TaskSourceDialog'
-import TaskCardMeta, { TaskCardDue } from './TaskCardMeta'
+
 import TaskIcon, { type IconName } from './TaskIcon'
 import useTaskMenus from './useTaskMenus'
 import useTaskLayoutOrder from './useTaskLayoutOrder'
@@ -30,8 +32,7 @@ import { GROUP_LABELS, taskGroupMove, type BoardColumn } from './taskGrouping'
 import { useConfirm } from '../common/ConfirmProvider'
 import './Tasks.css'
 
-type SmartView = 'unplanned' | 'today' | 'tomorrow' | 'week' | 'nextWeek' | 'overdue' | 'all' | 'done'
-type Selection = SmartView | `project:${string}` | `view:${string}`
+import type { TaskSelection as Selection, SmartTaskView as SmartView } from './taskData'
 
 const SMART_VIEWS: { id: SmartView; label: string }[] = [
   { id: 'today', label: '今天' },
@@ -54,9 +55,6 @@ const SMART_DESCRIPTIONS: Record<SmartView, string> = {
   done: '已完成任务保留原有清单与时间安排，可以随时恢复。'
 }
 
-
-const emptyDraft: Draft = { id: '', title: '', note: '', projectId: '', priority: 'medium', startDate: '', startTime: '09:00', dueDate: '', dueTime: '09:00', remind: 'due', recurrence: 'none', customFields: {} }
-
 interface ViewDraft {
   sortMode?: TaskSortMode
   statusFilter?: 'open' | 'done' | 'all'
@@ -71,33 +69,6 @@ interface ViewDraft {
 interface NavEntry { key: Selection; label: string; icon: IconName; custom?: TaskView }
 
 const emptyViewDraft: ViewDraft = { groupId: null, id: '', name: '', projectIds: [], priorities: [], dueRange: 'any' }
-
-const toInputDate = (at: number): string => {
-  const date = new Date(at)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-const remindChoiceFromTask = (task: TaskRecord): RemindChoiceId => {
-  if (task.remindAt === null || task.dueAt === null) return 'none'
-  for (const choice of REMIND_CHOICES) {
-    if (remindAtFromChoice(choice.id, task.dueAt) === task.remindAt) return choice.id
-  }
-  return 'none'
-}
-const draftFromTask = (task: TaskRecord): Draft => ({
-  id: task.id,
-  ...draftScheduleFromTask(task), originalDueAt: task.dueAt, originalStartAt: task.startAt, recurrenceIndex: task.recurrenceIndex, recurrenceAnchorAt: task.recurrenceAnchorAt,
-  title: task.title,
-  note: task.note,
-  projectId: task.projectId ?? '',
-  priority: task.priority,
-  startDate: task.startAt != null ? toInputDate(task.startAt) : '',
-  startTime: task.startAt != null ? new Date(task.startAt).toTimeString().slice(0, 5) : '09:00',
-  dueDate: task.dueAt ? toInputDate(task.dueAt) : '',
-  dueTime: task.dueAt ? new Date(task.dueAt).toTimeString().slice(0, 5) : '09:00',
-  remind: remindChoiceFromTask(task), recurrence: task.recurrence, customFields: { ...task.customFields }, checklist: task.checklist ?? [], source: task.source
-})
-const dueLabel = (at: number): string =>
-  new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at)
 
 export default function TasksView({ active, focusTaskId, searchRequest, conversionRequest, taskOpenRequest, onRequestConsumed, onOpenChat }: { active: boolean; focusTaskId?: string; searchRequest?: { id: string; done: boolean; query: string; nonce: number }; conversionRequest?: { id: number; draft: TaskConversionDraft }; taskOpenRequest?: { id: number; taskId: string }; onRequestConsumed?: () => void; onOpenChat?: (id: string) => Promise<void> }) {
   const consumedTaskOpen = useRef<number>()
@@ -130,16 +101,19 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const weekPeriod = selection === 'nextWeek' ? 'nextWeek' : 'week'
   useEffect(() => { try { localStorage.setItem('chouyu:task-selection', navigationSelection) } catch { /* Preferences report storage errors separately. */ } }, [navigationSelection])
   const [query, setQuery] = useState('')
-  const [tasks, setTasks] = useState<TaskRecord[]>([])
-  const [doneTasks, setDoneTasks] = useState<TaskRecord[]>([])
-  const [matchedDone, setMatchedDone] = useState(0)
-  const [doneLimit, setDoneLimit] = useState(50)
-  const [loading, setLoading] = useState(false)
-  const [hasLoaded, setHasLoaded] = useState(false)
+  const [error, setError] = useState('')
+  const preferences = useTaskViewPreferences(selection)
+  const { mode, listGrouped, groupMode, groupFieldId, sortMode, hiddenFields, taskOrder, customGroups } = preferences.value
+  const [temporaryPriorities, setTemporaryPriorities] = useState<TaskPriority[]>([])
+  const [temporaryProjects, setTemporaryProjects] = useState<string[]>([])
+  const [temporaryDue, setTemporaryDue] = useState<TaskDueRange>('any')
+  const statusFilter = preferences.value.statusFilter
+  const effectiveStatus = selection === 'done' ? 'done' : statusFilter
+  const { tasks, setTasks, doneTasks, setDoneTasks, matchedDone, doneLimit, setDoneLimit, loading, hasLoaded, projects, setProjects,
+    views, setViews, fields, groups, setGroups, quarantineNotice, activeView, filterPriorities, filterProjects,
+    filterDue, doneCounts, reload, reloadRef } = useTaskData({ selection, setSelection, query, groupMode,
+    groupFieldId, customGroups, effectiveStatus, temporaryPriorities, temporaryProjects, temporaryDue, onError: setError }, active)
   const [notice, setNotice] = useState('')
-  const reloadSequence = useRef(0)
-  const [projects, setProjects] = useState<TaskProject[]>([])
-  const [views, setViews] = useState<TaskView[]>([])
   const [navConfig, setNavConfig] = useState<TaskNavConfig>(() => { try { return parseTaskNavConfig(localStorage.getItem(TASK_VIEW_CONFIG_KEY)) } catch { return defaultTaskNavConfig() } })
   const [navStorageError, setNavStorageError] = useState('')
   const nav = normalizeTaskNavConfig(navConfig, views)
@@ -147,13 +121,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     try { localStorage.setItem(TASK_VIEW_CONFIG_KEY, JSON.stringify(nav)); setNavStorageError('') }
     catch { setNavStorageError('视图导航配置暂时无法保存，重启后可能恢复默认。') }
   }, [nav])
-  const [fields, setFields] = useState<TaskSelectField[]>([])
-  const preferences = useTaskViewPreferences(selection)
-  const { mode, listGrouped, groupMode, groupFieldId, sortMode, hiddenFields, taskOrder, customGroups } = preferences.value
   const [displayGroupDraft, setDisplayGroupDraft] = useState<{ id: string; name: string } | null>(null)
-  const [listDraggingTask, setListDraggingTask] = useState<string | null>(null)
-  const [listCardTarget, setListCardTarget] = useState<{ id: string; after: boolean } | null>(null)
-  const [listDropGroup, setListDropGroup] = useState<string | null>(null)
   useEffect(() => { setDisplayGroupDraft(null) }, [selection])
   const setMode = (value: 'list' | 'board') => preferences.set('mode', value)
   const setGroupFieldId = (value: string | null) => preferences.set('groupFieldId', value)
@@ -161,28 +129,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const setHiddenFields = (value: string[] | ((current: string[]) => string[])) => preferences.set('hiddenFields', value)
   const [viewDraft, setViewDraft] = useState<ViewDraft | null>(null)
   const [manageViewsOpen, setManageViewsOpen] = useState(false)
-  const [draft, updateDraft] = useState<Draft | null>(null)
-  const taskOpenerRef = useRef<HTMLElement | null>(null)
-  const restoreTaskFocusRef = useRef(false)
-  const setDraft: typeof updateDraft = value => {
-    if (!draft && value !== null) {
-      const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      taskOpenerRef.current = opener
-      // Capture keyboard focus before the editor autofocuses its title input.
-      restoreTaskFocusRef.current = opener?.matches(':focus-visible') ?? false
-    }
-    updateDraft(value && typeof value !== 'function' && value.displayGroupId === undefined
-      ? { ...value, displayGroupId: customGroups.find(group => group.taskIds.includes(value.id))?.id ?? '' } : value)
-  }
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [temporaryPriorities, setTemporaryPriorities] = useState<TaskPriority[]>([])
-  const [temporaryProjects, setTemporaryProjects] = useState<string[]>([])
-  const [temporaryDue, setTemporaryDue] = useState<TaskDueRange>('any')
-  const activeView = selection.startsWith('view:') ? views.find(view => view.id === selection.slice(5)) : undefined
-  const filterPriorities = activeView?.priorities ?? temporaryPriorities
-  const filterProjects = activeView?.projectIds ?? temporaryProjects
-  const filterDue = activeView?.dueRange ?? temporaryDue
   const [viewFilterSaving, setViewFilterSaving] = useState(false)
   const viewFilterSavePending = useRef(false)
   const saveViewFilters = async (patch: Partial<Pick<TaskView, 'priorities' | 'projectIds' | 'dueRange'>>) => {
@@ -200,25 +146,11 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const setFilterPriorities = (value: TaskPriority[]) => { if (activeView) void saveViewFilters({ priorities: value }); else setTemporaryPriorities(value) }
   const setFilterProjects = (value: string[]) => { if (activeView) void saveViewFilters({ projectIds: value }); else setTemporaryProjects(value) }
   const setFilterDue = (value: TaskDueRange) => { if (activeView) void saveViewFilters({ dueRange: value }); else setTemporaryDue(value) }
-  const statusFilter = preferences.value.statusFilter
   const setStatusFilter = (value: 'open' | 'done' | 'all') => preferences.set('statusFilter', value)
-  const effectiveStatus = selection === 'done' ? 'done' : statusFilter
-  const groupingQuery = JSON.stringify({ mode: groupMode === 'field' && !fields.some(field => field.id === groupFieldId) ? 'priority' : groupMode, fieldId: groupFieldId, groups: customGroups.map(group => ({ id: group.id, taskIds: group.taskIds })) })
-  const countsKey = JSON.stringify([selection, query, filterPriorities, filterProjects, filterDue, groupingQuery])
-  // Open tasks are returned in full and filtered locally. Only completed
-  // tasks need another server page when the selection or filters change.
-  const requestKey = effectiveStatus === 'open' ? JSON.stringify(['open', selection.startsWith('project:') ? selection : '', query, filterPriorities, filterProjects, filterDue]) : JSON.stringify([countsKey, doneLimit])
-  const loadedRequestKey = useRef('')
-  const activeRef = useRef(active)
-  activeRef.current = active
-  const [doneCountsResult, setDoneCountsResult] = useState<{ key: string; counts: Record<string, number> } | null>(null)
-  const doneCounts = effectiveStatus !== 'open' && doneCountsResult?.key === countsKey ? doneCountsResult.counts : undefined
   const filterCount = Number(filterPriorities.length > 0) + Number(filterProjects.length > 0) + Number(filterDue !== 'any')
   const clearFilters = () => { setTemporaryPriorities([]); setTemporaryProjects([]); setTemporaryDue('any') }
   const clearCurrentFilters = () => { if (activeView) void saveViewFilters({ priorities: [], projectIds: [], dueRange: 'any' }); else clearFilters() }
   const displayFields = fields.filter(field => !hiddenFields.includes(field.id))
-  const [quarantineNotice, setQuarantineNotice] = useState('')
-  const [groups, setGroups] = useState<TaskGroup[]>([])
   const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [revealGroupId, setRevealGroupId] = useState<string | null>(null)
   const [groupRenaming, setGroupRenaming] = useState<TaskGroup | null>(null)
@@ -239,92 +171,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     setRevealGroupId(null)
   }, [revealGroupId, sidebarCollapsed, groups])
 
-  const reload = useCallback(() => {
-    const sequence = ++reloadSequence.current
-    loadedRequestKey.current = ''
-    setLoading(true)
-    void Promise.all([window.electronAPI.tasks.list({ doneLimit, doneQuery: query, donePriorities: activeView ? [] : filterPriorities,
-      doneProjectIds: activeView ? [] : filterProjects, doneDueRange: activeView ? 'any' : filterDue,
-      doneSelection: selection, doneGrouping: JSON.parse(groupingQuery) }), window.electronAPI.tasks.projects(), window.electronAPI.tasks.views(), window.electronAPI.tasks.fields(), window.electronAPI.tasks.groups()])
-      .then(([list, projectList, viewList, fieldList, groupList]) => {
-        if (sequence !== reloadSequence.current) return
-        loadedRequestKey.current = requestKey
-        setHasLoaded(true)
-        setTasks(list.open)
-        setDoneTasks(list.done)
-        setMatchedDone(list.matchedDone)
-        setDoneCountsResult({ key: countsKey, counts: list.doneGroupCounts })
-        setProjects(projectList)
-        setViews(viewList)
-        setFields(fieldList)
-        setGroups(groupList)
-        setSelection(current => ((current.startsWith('project:') && !projectList.some(project => project.id === current.slice(8))) ||
-          (current.startsWith('view:') && !viewList.some(view => view.id === current.slice(5)))) ? 'today' : current)
-        window.dispatchEvent(new Event('chouyu:tasks-changed'))
-        setQuarantineNotice(list.quarantinedAt ? '任务数据文件曾无法读取，已重建空库，原文件已隔离保存。' : '')
-      })
-      .catch(reason => { if (sequence === reloadSequence.current) setError(String(reason)) })
-      .finally(() => { if (sequence === reloadSequence.current) setLoading(false) })
-  }, [doneLimit, query, filterPriorities, filterProjects, filterDue, selection, groupingQuery, countsKey, requestKey])
-  const reloadRef = useRef(reload)
-  reloadRef.current = reload
-
-  const calendarDay = useRef(taskScheduleBounds('today', Date.now())[0])
-  useEffect(() => {
-    if (!active) return
-    let timer: ReturnType<typeof setTimeout>
-    const checkDay = () => {
-      const now = Date.now()
-      const [start, end] = taskScheduleBounds('today', now)
-      if (start !== calendarDay.current) {
-        calendarDay.current = start
-        reloadRef.current()
-      }
-      clearTimeout(timer)
-      timer = setTimeout(checkDay, end - now + 100)
-    }
-    checkDay()
-    window.addEventListener('focus', checkDay)
-    return () => { clearTimeout(timer); window.removeEventListener('focus', checkDay) }
-  }, [active])
-
-  const previousQuery = useRef(query)
-  useEffect(() => {
-    const typing = previousQuery.current !== query
-    previousQuery.current = query
-    if (!active || loadedRequestKey.current === requestKey) return
-    if (!typing) {
-      reload()
-      return () => { reloadSequence.current += 1 }
-    }
-    const timer = setTimeout(reload, 100)
-    return () => { clearTimeout(timer); reloadSequence.current += 1 }
-  }, [active, reload, requestKey])
-  // Keep the cached page while navigating. Changes received in the background
-  // invalidate it, so returning still shows edits and reminder updates.
-  useEffect(() => window.electronAPI.tasks.onChanged(() => {
-    loadedRequestKey.current = ''
-    if (activeRef.current) reloadRef.current()
-    else reloadSequence.current += 1
-  }), [])
-  useEffect(() => () => { reloadSequence.current += 1 }, [])
-  useEffect(() => { setDoneLimit(50) }, [query, filterPriorities, filterProjects, filterDue, selection])
-  useEffect(() => {
-    if (!draft && !viewDraft && !fieldsOpen && !manageViewsOpen) return
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || draft) return
-      event.preventDefault()
-      event.stopPropagation()
-      if (!busy && !projectBusy) {
-        if (fieldsOpen) setFieldsOpen(false)
-        else if (manageViewsOpen) setManageViewsOpen(false)
-        else if (viewDraft) setViewDraft(null)
-        // The task editor handles Escape and unsaved changes itself.
-      }
-    }
-    document.addEventListener('keydown', closeOnEscape)
-    return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [draft, viewDraft, fieldsOpen, manageViewsOpen, busy, projectBusy])
   useEffect(() => { if (focusTaskId) { setSelection('all'); setQuery(''); clearFilters(); preferences.update('all', { mode: 'list', statusFilter: 'open' }) } }, [focusTaskId])
   useEffect(() => {
     if (!searchRequest) return
@@ -337,26 +183,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     element.scrollIntoView({ block: 'center' })
     element.focus({ preventScroll: true })
   }, [active, focusTaskId, tasks, doneTasks, selection, searchRequest])
-
-  const taskDialogRef = useRef<HTMLDivElement>(null)
-  const draftOpen = draft !== null
-  useEffect(() => {
-    if (!draftOpen) return
-    const previous = taskOpenerRef.current
-    const restoreFocus = restoreTaskFocusRef.current
-    const trap = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return
-      const controls = Array.from(taskDialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea, summary') ?? []).filter(element => element.getClientRects().length > 0)
-      const first = controls[0], last = controls[controls.length - 1]
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
-    }
-    document.addEventListener('keydown', trap)
-    return () => {
-      document.removeEventListener('keydown', trap)
-      if (restoreFocus) (previous?.isConnected ? previous : menusRef.current?.querySelector<HTMLElement>('.tasks-create'))?.focus()
-    }
-  }, [draftOpen])
 
   const now = Date.now()
   const matchesSelection = (task: TaskRecord, target: Selection): boolean => {
@@ -391,55 +217,28 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   }
   const boardGroupMode: BoardGroupMode = groupMode === 'field' && !fields.some(field => field.id === groupFieldId) ? 'priority' : groupMode
 
-  const submitDraft = (event: FormEvent) => {
-    event.preventDefault()
-    if (!draft || busy || projectBusy) return
-    const title = draft.title.trim()
-    if (!title) { setError('任务标题不能为空。'); return }
-    if (!draft.projectId) { setError('请先选择或创建所属清单。'); return }
-    let startAt = draft.startDate ? new Date(`${draft.startDate}T${draft.startTime || '09:00'}`).getTime() : null
-    if (startAt !== null && draft.originalStartAt != null && Math.floor(startAt / 60000) === Math.floor(draft.originalStartAt / 60000)) startAt = draft.originalStartAt
-    const dueAt = draftDueAt(draft)
-    if (startAt !== null && dueAt !== null && startAt > dueAt) { setError('开始时间不能晚于截止时间。'); return }
-    let reminderTimes: number[]
-    try { reminderTimes = validateReminderTimes(draftReminderTimes(draft)); repeatRuleFor(draft.recurrence, draft.repeatRule) }
-    catch (error) { setError((error as Error).message); return }
-    const repeatRule = draft.recurrence === 'custom' ? draft.repeatRule : null
-    const remindAt = reminderTimes[0] ?? null
-    const customFields = Object.fromEntries(fields.map(field => [field.id, draft.customFields[field.id] ?? null]))
-    setBusy(true); setError('')
-    const request = draft.id
-      ? window.electronAPI.tasks.update(draft.id, { title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, reminderTimes, repeatRule, recurrence: draft.recurrence, customFields, checklist: draft.checklist?.filter(item => item.title.trim()), source: draft.source })
-      : window.electronAPI.tasks.create({ title, note: draft.note, projectId: draft.projectId || null, priority: draft.priority, startAt, dueAt, remindAt, reminderTimes, repeatRule, recurrence: draft.recurrence, customFields, checklist: draft.checklist?.filter(item => item.title.trim()), source: draft.source })
-    void request
-      .then(saved => {
-        if (draft.displayGroupId !== undefined) preferences.update(selection, current => ({ ...current, customGroups: assignTaskToGroup(current.customGroups, saved.id, draft.displayGroupId!) }))
-        setDraft(null)
-        const hidden = !matchesKeywordAndFilter(saved) || (saved.status === 'open'
-          ? effectiveStatus === 'done' || selection === 'done' || !matchesSelection(saved, selection)
-          : effectiveStatus === 'open' || (selection !== 'done' && !matchesSelection(saved, selection)))
-        setNotice(hidden ? '该任务不符合当前视图或筛选条件，暂不在此显示。' : '')
-        reloadRef.current()
-      })
-      .catch(reason => setError(String(reason)))
-      .finally(() => setBusy(false))
-  }
-
-  const actionLock = useRef(false)
-  const [actionPending, setActionPending] = useState(false)
-  const performAction = async (operation: () => Promise<unknown>) => {
-    if (actionLock.current) return
-    actionLock.current = true; setActionPending(true); setError(''); setNotice('')
-    try { await operation(); reloadRef.current() }
-    catch (reason) { setNotice(''); setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { actionLock.current = false; setActionPending(false) }
-  }
-  const complete = (id: string) => { void performAction(() => window.electronAPI.tasks.complete(id)) }
-  const reopen = (id: string) => { void performAction(() => window.electronAPI.tasks.reopen(id)) }
-  const remove = async (id: string) => {
-    if (!await confirm({ title: '删除任务', message: '将这个任务移入回收站？之后可以恢复。' })) return
-    void performAction(() => window.electronAPI.tasks.remove(id))
-  }
+  const { draft, setDraft, busy, setBusy, taskDialogRef, submitDraft } = useTaskDrafts({ preferences, menusRef,
+    fields, projectBusy, selection, effectiveStatus, matchesKeywordAndFilter, matchesSelection,
+    reload: () => reloadRef.current(), onError: setError, onNotice: setNotice })
+  useEffect(() => {
+    if (!draft && !viewDraft && !fieldsOpen && !manageViewsOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || draft) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (!busy && !projectBusy) {
+        if (fieldsOpen) setFieldsOpen(false)
+        else if (manageViewsOpen) setManageViewsOpen(false)
+        else if (viewDraft) setViewDraft(null)
+        // The task editor handles Escape and unsaved changes itself.
+      }
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [draft, viewDraft, fieldsOpen, manageViewsOpen, busy, projectBusy])
+  const { actionLock, actionPending, setActionPending, performAction, complete, reopen, remove } = useTaskCommands({
+    reload: () => reloadRef.current(), onError: setError, onNotice: setNotice, confirm
+  })
   const archiveProject = (project: TaskProject) => {
     void performAction(async () => {
       await window.electronAPI.tasks.archiveProject(project.id, true)
@@ -631,7 +430,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   const groupingValue = (mode === 'list' || selection === 'done') && !listGrouped ? 'none' : boardGroupMode === 'field' ? `field:${groupFieldId ?? ''}` : boardGroupMode
 
   const applyGrouping = (value: string) => {
-    setDisplayGroupDraft(null); setListDropGroup(null)
+    setDisplayGroupDraft(null)
     preferences.update(selection, value === 'none' ? { listGrouped: false } : {
       listGrouped: true,
       groupMode: value.startsWith('field:') ? 'field' : value as BoardGroupMode,
@@ -748,8 +547,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     return () => observer.disconnect()
   }, [active, sidebarCollapsed, sidebarSplit.height, sidebarRef, visibleNavEntries.length])
 
-  const finishListDrag = () => { setListDraggingTask(null); setListCardTarget(null); setListDropGroup(null) }
-  useEffect(finishListDrag, [selection, listGrouped, boardGroupMode, groupFieldId])
   const taskGroupKey = (id: string) => listColumns.find(column => column.tasks.some(task => task.id === id))?.key
   const canMoveToColumn = (id: string, column: BoardColumn) => {
     const task = listTasks.find(item => item.id === id)
@@ -784,66 +581,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   }
   const moveListTask = (id: string, target: string | null, after: boolean, groupId?: string) => {
     void persistTaskMove(id, {}, target, after, listGrouped ? groupId : undefined).catch(reason => setError(`移动失败：${String(reason)}`))
-  }
-
-  const renderTask = (task: TaskRecord) => {
-    return <li key={task.id} data-task-id={task.id} ref={element => { taskRefs.current[task.id] = element }} tabIndex={0} aria-label={`任务：${task.title}，按 Enter 编辑`} className={`tasks-item${task.id === focusTaskId ? ' tasks-item-focused' : ''}`} data-priority={task.priority} data-completed={task.status === 'done' || undefined}
-          draggable={true}
-          data-card-insert={listCardTarget?.id === task.id ? (listCardTarget.after ? 'after' : 'before') : undefined}
-          onDragStart={event => { event.stopPropagation(); event.dataTransfer.setData('application/x-chouyu-list-task', task.id); event.dataTransfer.effectAllowed = 'move'; setListDraggingTask(task.id) }}
-          onDragEnd={finishListDrag}
-          onDragOver={event => {
-            if (!event.dataTransfer.types.includes('application/x-chouyu-list-task')) return
-            event.stopPropagation()
-            if (!listDraggingTask || !canReorderListTask(listDraggingTask, task.id)) return
-            event.preventDefault(); event.dataTransfer.dropEffect = 'move'
-            const rect = event.currentTarget.getBoundingClientRect()
-            const after = event.clientY > rect.top + rect.height / 2
-            setListDropGroup(null)
-            setListCardTarget(current => current?.id === task.id && current.after === after ? current : { id: task.id, after })
-          }}
-          onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setListCardTarget(null) }}
-          onDrop={event => {
-            if (!event.dataTransfer.types.includes('application/x-chouyu-list-task')) return
-            event.preventDefault(); event.stopPropagation()
-            const id = event.dataTransfer.getData('application/x-chouyu-list-task')
-            if (canReorderListTask(id, task.id)) {
-              const rect = event.currentTarget.getBoundingClientRect()
-              moveListTask(id, task.id, event.clientY > rect.top + rect.height / 2, taskGroupKey(task.id))
-            }
-            finishListDrag()
-          }}
-          onClick={event => {
-            if ((event.target as Element).closest('button, .tasks-item-menu, a, input, select, textarea, [role="button"]') || window.getSelection()?.toString()) return
-            event.currentTarget.focus({ preventScroll: true })
-            setDraft(draftFromTask(task))
-          }}
-          onKeyDown={event => {
-            if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return
-            event.preventDefault(); setDraft(draftFromTask(task))
-          }}>
-          <button type="button" className="tasks-complete" disabled={actionPending} data-done={task.status === 'done' || undefined} aria-label={`${task.status === 'done' ? '恢复' : '完成'} ${task.title}`} onClick={() => task.status === 'done' ? reopen(task.id) : complete(task.id)}></button>
-          <div className="tasks-item-body">
-            <div className="tasks-item-head">
-              <button type="button" className="tasks-item-title tasks-title-button" onClick={() => setDraft(draftFromTask(task))}>{task.title}</button>
-            </div>
-            {!hiddenFields.includes('note') && task.note && <p className="tasks-item-note" title={task.note}>{task.note}</p>}
-            <TaskCardMeta onEditField={editField} task={task} projects={projects} fields={displayFields} onOpenProject={openProject} onSource={setSourcePreview} showAllFields />
-            <div className="tasks-card-schedule">
-              {!hiddenFields.includes('start') && task.startAt != null && <span className="tasks-start-cell"><TaskIcon name="today" /><span>开始 <time dateTime={new Date(task.startAt).toISOString()}>{dueLabel(task.startAt)}</time></span></span>}
-              {!hiddenFields.includes('due') && <span className="tasks-due-cell"><span>截止</span><TaskCardDue task={task} onEditField={editField} /></span>}
-              {task.startAt == null && task.dueAt === null && task.status === 'open' && (!hiddenFields.includes('start') || !hiddenFields.includes('due')) && <span className="tasks-card-unplanned"><TaskIcon name="unplanned" />待规划 · 未安排时间</span>}
-              {task.status === 'done' && <span className="tasks-card-completed">已完成{task.completedAt ? ` · ${dueLabel(task.completedAt)}` : ''}</span>}
-            </div>
-          </div>
-              <details className="tasks-item-menu">
-                <summary aria-label={`更多操作 ${task.title}`} title="更多操作"><TaskIcon name="more" /></summary>
-                <div className="tasks-item-menu-popover">
-                  <button type="button" onClick={() => setDraft(draftFromTask(task))}>编辑任务</button>
-                  <button type="button" className="tasks-item-menu-danger" onClick={() => remove(task.id)}>删除任务</button>
-                </div>
-              </details>
-        </li>
   }
 
   return <ChecklistDisplayContext.Provider value={{ scope: selection, expanded: preferences.value.expandChecklist }}><div className="tasks-view" ref={menusRef}>
@@ -1101,7 +838,6 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
         </div>
       </div>}
 
-
       {fieldsOpen && <TaskFieldsDialog fields={fields} busy={busy} error={error} onSave={saveField} onDelete={removeField} onClose={() => setFieldsOpen(false)} />}
       {trashOpen && <TaskTrashDialog onClose={() => setTrashOpen(false)} onChanged={() => reloadRef.current()} />}
       {backupOpen && <TaskBackupDialog onClose={() => setBackupOpen(false)} />}
@@ -1132,31 +868,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
             onReopen={reopen}
             onCreate={(patch, groupId) => { setError(''); setDraft({ ...createDraft(patch), displayGroupId: boardGroupMode === 'custom' ? groupId : '' }) }}
             onEditField={editField} onMove={persistTaskMove} />
-        : listGrouped
-        ? <div className="tasks-grouped-list">{listColumns.map(column => <div className="tasks-content-group-shell" key={column.key || 'none'} data-drop-target={listDropGroup === column.key || undefined}
-            onDragOver={event => { if (listDraggingTask && canMoveToColumn(listDraggingTask, column) && event.dataTransfer.types.includes('application/x-chouyu-list-task')) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setListDropGroup(column.key) } }}
-            onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setListDropGroup(null) }}
-            onDrop={event => {
-              finishListDrag()
-              const id = event.dataTransfer.getData('application/x-chouyu-list-task')
-              if (!canMoveToColumn(id, column)) return
-              event.preventDefault()
-              moveListTask(id, null, true, column.key)
-            }}>
-          <details className="tasks-content-group" data-group-key={column.key}
-            open={!(collapsedGroups[`${columnOrderScope}:${column.key}`] ?? (boardGroupMode === 'status' && column.key === 'done'))}
-            onToggle={event => {
-              const collapsed = !event.currentTarget.open, key = `${columnOrderScope}:${column.key}`
-              setCollapsedGroups(current => current[key] === collapsed ? current : { ...current, [key]: collapsed })
-            }}>
-            <summary {...layoutOrder.handle(columnOrderScope, column.key, columnIds)} {...layoutOrder.drop(columnOrderScope, column.key, columnIds)}><TaskIcon name="chevron" /><span title={boardGroupMode === 'custom' && column.key ? '双击修改分组名称' : undefined} onDoubleClick={event => { event.stopPropagation(); renameDisplayGroup(column.key) }}>{column.label}</span><span className="tasks-count">{column.totalCount}</span></summary>
-            <ul role="list" className={`tasks-list${selection === 'done' ? ' tasks-list-done' : ''}`} aria-label={column.label}>{column.tasks.map(renderTask)}</ul>
-            {column.totalCount > column.tasks.length && <p className="tasks-view-description">已加载 {column.tasks.length} / {column.totalCount}，可在底部加载更多。</p>}
-          </details>{renderDisplayGroupActions(column.key)}</div>)}
-          </div>
-        : <ul role="list" className={`tasks-list${selection === 'done' ? ' tasks-list-done' : ''}`} aria-label={selection === 'done' ? '已完成任务' : '任务列表'}>
-        {listTasks.map(renderTask)}
-      </ul>}
+        : <TaskList model={{ listGrouped, listColumns, listTasks, selection, columnOrderScope, columnIds, layoutOrder, boardGroupMode, groupFieldId, collapsedGroups, setCollapsedGroups, focusTaskId, taskRefs, actionPending, complete, reopen, remove, hiddenFields, projects, displayFields, editField, openProject, setSourcePreview, canMoveToColumn, canReorderListTask, moveListTask, taskGroupKey, renameDisplayGroup, renderDisplayGroupActions, onEdit: task => setDraft(draftFromTask(task)) }} />}
       {effectiveStatus !== 'open' && doneTasks.length < matchedDone && <button className="tasks-load-more" type="button" disabled={loading} onClick={() => setDoneLimit(limit => limit + 50)}>加载更多（已加载 {doneTasks.length} / {matchedDone}）</button>}
     </section>
   </div></ChecklistDisplayContext.Provider>
