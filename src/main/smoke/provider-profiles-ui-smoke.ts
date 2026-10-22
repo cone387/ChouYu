@@ -35,7 +35,7 @@ export async function runProviderProfilesUISmoke(window: BrowserWindow): Promise
     // Another writer reaches capacity after the draft opens; the failed draft must survive.
     saveConfig({ providerProfiles: Array.from({ length: MAX_PROVIDER_PROFILES }, (_, index) => ({ id: `capacity-${index}`, name: `capacity-${index}`, provider: 'openai', baseUrl: 'https://example.invalid/v1', apiKey: '' })) })
     await click('.provider-profile-form button[type="submit"]')
-    await waitForRenderer(window, "document.querySelector('.provider-profiles-card [role=alert]')?.textContent.includes('最多支持')")
+    await waitForRenderer(window, "document.querySelector('.provider-profile-dialog [role=alert]')?.textContent.includes('最多支持')")
     await assert("document.querySelector('[aria-label=档案名称]').value === '保存重试验收' && !document.querySelector('.provider-profile-form button[type=submit]').disabled")
     saveConfig({ providerProfiles: original })
     await click('.provider-profile-form button[type="submit"]')
@@ -51,7 +51,7 @@ export async function runProviderProfilesUISmoke(window: BrowserWindow): Promise
     if (getConfig().providerProfiles.some(profile => profile.name === '保存重试验收')) throw new Error('Confirmed deletion was not persisted')
     await click('[data-workspace-nav="chat"]')
     await click('[aria-label="关闭面板"]')
-    await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+    await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     console.log('CHOUYU_PROVIDER_UI_SMOKE_PASSED load failure/retry, failed-save draft preservation, retry, cancel and confirmed deletion')
   } finally {
     saveConfig({ providerProfiles: original })

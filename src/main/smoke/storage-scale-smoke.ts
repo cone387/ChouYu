@@ -4,6 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import assert from 'node:assert/strict'
 import { performance } from 'node:perf_hooks'
+import Database from 'better-sqlite3'
 import { AttachmentStore } from '../attachment-store'
 import { initDatabase, getSession, getSessions, saveSessionMessages, flushDatabase, searchSessions, getState } from '../database'
 import { DEFAULT_CHARACTER_ID } from '../../shared/characters'
@@ -49,20 +50,25 @@ export async function runStorageScaleSmoke() {
     const search = await sample(() => searchSessions(`needle-${sessions.length - 1}-499`))
     assert.equal(search.value.length, 1)
     const updates = []
+    const sql = fs.existsSync(path.join(dir, 'chouyu-application.db')) ? new Database(path.join(dir, 'chouyu-application.db')) : null
+    sql?.exec(`CREATE TABLE benchmark_writes(id TEXT); CREATE TRIGGER benchmark_update AFTER UPDATE ON messages BEGIN INSERT INTO benchmark_writes VALUES(new.id); END`)
     for (let i = 0; i < 3; i++) {
       const current = getSession(sessions[0].id)!
       current.messages[499].content += ` edit-${i}`
       const result = await sample(() => { saveSessionMessages(current.id, current.messages); assert.equal(flushDatabase().error, null) })
       updates.push({ durationMs: result.durationMs, eventLoopDelayMs: result.eventLoopDelayMs })
     }
-    initDatabase()
+    const updatedRows = sql ? (sql.prepare('SELECT count(*) AS n FROM benchmark_writes').get() as { n: number }).n : null
+    if (sql) { assert.equal(updatedRows, 3); sql.exec('DROP TRIGGER benchmark_update; DROP TABLE benchmark_writes'); sql.close() }
+    const restart = await sample(initDatabase)
     const restored = getSession(sessions[0].id)!
     assert.match(restored.messages[499].content, /edit-0 edit-1 edit-2$/)
     assert.equal(restored.messages[0].imageUrl, 'data:image/png;base64,AQID')
     assert.equal(restored.messages[1].replyReadAt, 2)
     assert.equal(restored.messages[1].communication?.source.kind, 'conversation')
     report.conversations.push({ count, sessions: sessions.length, startup: { durationMs: startup.durationMs, eventLoopDelayMs: startup.eventLoopDelayMs },
-      search: { durationMs: search.durationMs, eventLoopDelayMs: search.eventLoopDelayMs }, updates, fileBytes: bytes(dir), validatedMessages: count, validatedAttachment: true })
+      search: { durationMs: search.durationMs, eventLoopDelayMs: search.eventLoopDelayMs }, restartMs: restart.durationMs, updatedRows,
+      updates, fileBytes: bytes(dir), validatedMessages: count, validatedAttachment: true })
   }
   for (const count of [10, 100, 300]) {
     const dir = path.join(root, `deliveries-${count}`)

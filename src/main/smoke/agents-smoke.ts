@@ -7,7 +7,7 @@ import { app, dialog, type BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { getConfig, saveConfig, listCharacters, getActiveSession, getSession, selectChatSession, flushDatabase, createChatSession } from '../database'
+import { getConfig, saveConfig, listCharacters, getActiveSession, getSession, getSessions, getStorageStatus, selectChatSession, flushDatabase, createChatSession } from '../database'
 import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID } from '../../shared/characters'
 import { restartAgentsForSmoke, agentContext } from '../agents'
 import { waitForRenderer as rendererWait } from './storage-smoke'
@@ -183,9 +183,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     console.log('CHOUYU_SMOKE_AGENTS_STAGE closed-panel')
     await run('window.electronAPI.db.getSessionWorkspace()')
     fixtureSession = createChatSession('联系人 Agent 验收').activeSession.id
+    window.webContents.send('sessions:changed', false)
     await run("window.electronAPI.db.setState('workspace-active-page', 'chat')")
     window.webContents.send('open-chat-panel')
     await waitForRenderer(window, "Boolean(document.querySelector('.chat-panel[data-ready=true]'))")
+    await waitForRenderer(window, "document.querySelector('.conversation-item-main[aria-selected=true]')?.getAttribute('title') === '联系人 Agent 验收'")
     console.log('CHOUYU_SMOKE_AGENTS_STAGE opened-panel')
     await run("document.querySelector('[aria-label=\"窗口模式\"]')?.click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-workspace-mode-option=\"workspace\"]'))")
@@ -379,7 +381,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     }
     const noticeDeadline = Date.now() + 10000
     while (!getSession(fixtureSession)!.messages.some(m => m.agentNotice?.kind === 'question')) {
-      if (Date.now() > noticeDeadline) throw new Error('Proactive question was not delivered')
+      if (Date.now() > noticeDeadline) throw new Error('Proactive question was not delivered ' + JSON.stringify({ fixtureSession, active: getActiveSession().id, storage: getStorageStatus(), sessions: getSessions().map(s => ({ ...s, notices: getSession(s.id)?.messages.filter(m => m.agentNotice).map(m => ({ id: m.id, notice: m.agentNotice })) })) }))
       await new Promise(resolve => setTimeout(resolve, 50))
     }
     const noticesBefore = getSession(fixtureSession)!.messages.filter(m => m.agentNotice).length

@@ -17,7 +17,7 @@ vi.mock('electron', () => ({
 }))
 
 import {
-  appendAgentNotice, appendContactAction, appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase,
+  appendAgentNotice, appendContactAction, appendAssistantMessage, createCharacter, createChatSession, deleteCharacter, deleteChatSession, flushDatabase, closeDatabase, backupDatabase,
   getActiveSession, getAssistantUnreadCount, getAssistantUnreadPreview, getConfig, getSession, getSessionWorkspace, getSessions,
   getStorageStatus, initDatabase, listCharacters, markSessionRead, onStorageStatus, saveConfig, saveSessionMessages,
   selectChatSession, setState, searchSessions, updateCharacter, getContactProfile, updateContactProfile, getState, contactSearchCredential, saveContactSearchCredential
@@ -25,30 +25,93 @@ import {
 import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS } from '../shared/characters'
 import { DEFAULT_APP_CONFIG } from '../shared/config'
 import { AttachmentStore } from './attachment-store'
+import Database from 'better-sqlite3'
+import { openApplicationDatabase } from './storage/application-database'
+import { readApplicationSnapshot } from './storage/legacy-migration'
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aP1kAAAAASUVORK5CYII='
 const message = (id: string, content = id) => ({ id, role: 'user' as const, content, timestamp: 1 })
 const storePath = () => path.join(environment.directory, 'chouyu-data.json')
+const sqlitePath = () => path.join(environment.directory, 'chouyu-application.db')
+const fixtureDirectories: string[] = []
+function persisted() {
+  const db = openApplicationDatabase(environment.directory)
+  try { return readApplicationSnapshot(db) as { config: any; characters: any[]; sessions: any[]; activeSessionId: string; state: Record<string, string> } }
+  finally { db.close() }
+}
+function persistedText() { return JSON.stringify(persisted()) }
+function installLegacy(value: unknown) {
+  closeDatabase(true)
+  environment.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'chouyu-database-test-'))
+  fixtureDirectories.push(environment.directory)
+  fs.writeFileSync(storePath(), JSON.stringify(value))
+}
+function failWrites() {
+  const db = new Database(sqlitePath())
+  for (const table of ['sessions', 'messages', 'metadata', 'state', 'delivery_receipts']) {
+    for (const action of ['INSERT', 'UPDATE', 'DELETE']) db.exec(`CREATE TRIGGER fail_${table}_${action} BEFORE ${action} ON ${table} BEGIN SELECT RAISE(ABORT,'disk full'); END`)
+  }
+  db.close()
+  return { mockRestore() {
+    const db = new Database(sqlitePath())
+    for (const table of ['sessions', 'messages', 'metadata', 'state', 'delivery_receipts']) for (const action of ['INSERT', 'UPDATE', 'DELETE']) db.exec(`DROP TRIGGER IF EXISTS fail_${table}_${action}`)
+    db.close()
+  } }
+}
 
 beforeEach(() => {
   vi.useFakeTimers()
   environment.encryptionAvailable = false
   environment.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'chouyu-database-test-'))
+  fixtureDirectories.push(environment.directory)
   initDatabase()
 })
 
 afterEach(() => {
+  closeDatabase(true)
   vi.restoreAllMocks()
   vi.clearAllTimers()
   vi.useRealTimers()
-  const relative = path.relative(os.tmpdir(), path.resolve(environment.directory))
+  for (const directory of fixtureDirectories.splice(0)) {
+  const relative = path.relative(os.tmpdir(), path.resolve(directory))
   if (path.dirname(relative) !== '.' || !path.basename(relative).startsWith('chouyu-database-test-')) {
     throw new Error('Refusing to clean an unexpected test directory')
   }
-  fs.rmSync(environment.directory, { recursive: true, force: true })
+  fs.rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 describe('durable conversations', () => {
+  it('blocks product writes until the legacy barrier is durable, then retries pending receipts exactly once', () => {
+    installLegacy({ version: 4, ...persisted() })
+    const source = storePath(), rename = fs.renameSync.bind(fs)
+    const failure = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => { if (to === source) throw new Error('marker locked'); rename(from, to) })
+    initDatabase()
+    expect(getStorageStatus().error).toContain('保存失败')
+    const before = persistedText()
+    expect(() => appendAssistantMessage('pending barrier', undefined, 'rest', { receiptIds: ['barrier:1'] })).toThrow('保存失败')
+    expect(persistedText()).toBe(before)
+    failure.mockRestore()
+    expect(flushDatabase().error).toBeNull()
+    initDatabase()
+    appendAssistantMessage('pending barrier', undefined, 'rest', { receiptIds: ['barrier:1'] })
+    expect(getActiveSession().messages.filter(m => m.content === 'pending barrier')).toHaveLength(1)
+    expect(getState('reminder-receipt:barrier:1')).toBe('delivered')
+    expect(JSON.parse(fs.readFileSync(source, 'utf8')).version).toBe(5)
+  })
+  it('keeps unrelated message rows untouched through the real database API', () => {
+    const id = getActiveSession().id
+    saveSessionMessages(id, [message('one'), message('two')]); flushDatabase()
+    const db = new Database(sqlitePath())
+    try {
+      db.exec('CREATE TABLE writes(id TEXT); CREATE TRIGGER count_writes AFTER UPDATE ON messages BEGIN INSERT INTO writes VALUES(new.id); END')
+      saveConfig({ model: 'metadata only' })
+      setState('some-preference', 'value')
+      expect(db.prepare('SELECT * FROM writes').all()).toEqual([])
+      saveSessionMessages(id, [message('one'), message('two', 'changed')]); flushDatabase()
+      expect(db.prepare('SELECT * FROM writes').all()).toEqual([{ id: 'two' }])
+    } finally { db.close() }
+  })
   it('persists an independent background engine and rejects stale or failed changes', () => {
     const other = listCharacters().find(c => !c.builtIn)!, initial = getContactProfile(other.id)
     const selected = updateContactProfile(other.id, { backgroundHarnessEngine: 'dsh' }, initial.revision, '后台使用DSH')
@@ -64,7 +127,7 @@ describe('durable conversations', () => {
     updateContactProfile(other.id, { backgroundHarnessEngine: 'native' }, current.revision, '切回原生')
     expect(getContactProfile(DEFAULT_CHARACTER_ID).profile.backgroundHarnessEngine).toBe('dsh')
     const before = getContactProfile(DEFAULT_CHARACTER_ID)
-    vi.spyOn(fs, 'writeFileSync').mockImplementation(() => { throw new Error('disk full') })
+    failWrites()
     expect(() => updateContactProfile(DEFAULT_CHARACTER_ID, { backgroundHarnessEngine: 'native' }, before.revision, '切回原生')).toThrow('保存失败')
     expect(getContactProfile(DEFAULT_CHARACTER_ID)).toEqual(before)
   })
@@ -92,7 +155,7 @@ describe('durable conversations', () => {
   it.each(['built-in', 'custom'])('does not publish an engine change when persistence fails: %s', kind => {
     const id = kind === 'built-in' ? DEFAULT_CHARACTER_ID : listCharacters().find(c => !c.builtIn)!.id
     const before = getContactProfile(id)
-    vi.spyOn(fs, 'writeFileSync').mockImplementation(() => { throw new Error('disk full') })
+    failWrites()
     expect(() => updateContactProfile(id, { harnessEngine: 'dsh' }, before.revision, '使用 DSH')).toThrow('保存失败')
     expect(getContactProfile(id)).toEqual(before)
   })
@@ -106,7 +169,7 @@ describe('durable conversations', () => {
     expect(contactSearchCredential(owner)).toEqual(saved)
     expect(() => saveContactSearchCredential(owner, 'old-overwrite', 0)).toThrow('变化')
     expect(getState(`agent-search:${owner}:api_key`)).toBe('private-search-value')
-    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => { throw new Error('disk full') })
+    const write = failWrites()
     expect(() => saveContactSearchCredential(owner, 'failed-value', 1)).toThrow('保存失败')
     write.mockRestore()
     expect(contactSearchCredential(owner)).toEqual(saved)
@@ -152,7 +215,7 @@ describe('durable conversations', () => {
   })
   it('rolls back profile, built-in config and receipt in memory when durable storage fails', () => {
     const before = getContactProfile(DEFAULT_CHARACTER_ID), config = getConfig()
-    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => { throw new Error('disk full') })
+    const write = failWrites()
     expect(() => updateContactProfile(DEFAULT_CHARACTER_ID, { name: '未保存的名字', model: 'not-saved' }, before.revision, '修改名字和模型')).toThrow('保存失败')
     expect(getContactProfile(DEFAULT_CHARACTER_ID)).toEqual(before)
     expect(getConfig()).toEqual(config)
@@ -253,7 +316,7 @@ describe('durable conversations', () => {
     const id = getActiveSession().id
     saveSessionMessages(id, [{ ...message('image1'), imageUrl: image }, { ...message('image2'), imageUrl: image }])
     expect(flushDatabase().error).toBeNull()
-    const saved = fs.readFileSync(storePath(), 'utf8')
+    const saved = persistedText()
     expect(saved).not.toContain('base64')
     expect(saved).toContain('chouyu-attachment:')
     expect(fs.readdirSync(path.join(environment.directory, 'attachments'))).toHaveLength(1)
@@ -265,8 +328,10 @@ describe('durable conversations', () => {
     const id = getActiveSession().id
     saveSessionMessages(id, [message('recover-me')])
     flushDatabase()
+    backupDatabase()
     setState('next-change', 'yes')
-    fs.writeFileSync(storePath(), '{broken')
+    closeDatabase(true)
+    fs.writeFileSync(sqlitePath(), '{broken')
     initDatabase()
     expect(getSession(id)?.messages[0].content).toBe('recover-me')
     expect(getStorageStatus().notice).toContain('备份')
@@ -275,6 +340,7 @@ describe('durable conversations', () => {
   })
 
   it('preserves both damaged snapshots when no valid backup is available', () => {
+    installLegacy({ version: 4, sessions: [] })
     fs.writeFileSync(storePath(), '{broken-main')
     fs.writeFileSync(`${storePath()}.bak`, '{broken-backup')
     initDatabase()
@@ -311,17 +377,15 @@ describe('durable conversations', () => {
 
   it('reports delayed save failure and retries without losing runtime changes', () => {
     const id = getActiveSession().id
-    const before = fs.readFileSync(storePath(), 'utf8')
+    const before = persistedText()
     const changes: Array<string | null> = []
     const unsubscribe = onStorageStatus((status) => changes.push(status.error))
-    const spy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
-      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
-    })
+    const spy = failWrites()
     saveSessionMessages(id, [message('still-here')])
     vi.advanceTimersByTime(500)
     expect(getStorageStatus().error).toContain('保存失败')
     expect(getSession(id)?.messages[0].content).toBe('still-here')
-    expect(fs.readFileSync(storePath(), 'utf8')).toBe(before)
+    expect(persistedText()).toBe(before)
     spy.mockRestore()
     expect(flushDatabase().error).toBeNull()
     initDatabase()
@@ -343,54 +407,58 @@ describe('durable conversations', () => {
     loaded.messages[0].content = 'updated text'
     saveSessionMessages(id, loaded.messages)
     flushDatabase()
-    expect(fs.readFileSync(storePath(), 'utf8')).toContain('chouyu-attachment:')
+    expect(persistedText()).toContain('chouyu-attachment:')
   })
 
   it('preserves the conversation snapshot when an image cannot be stored', () => {
     const id = getActiveSession().id
-    const before = fs.readFileSync(storePath(), 'utf8')
+    const before = persistedText()
     saveSessionMessages(id, [{ ...message('bad-image'), imageUrl: 'data:image/png;base64,!' }])
     expect(flushDatabase().error).not.toBeNull()
-    expect(fs.readFileSync(storePath(), 'utf8')).toBe(before)
+    expect(persistedText()).toBe(before)
     expect(getSession(id)?.messages[0].imageUrl).toBe('data:image/png;base64,!')
   })
 
-  it('keeps the original and backup if replacing the final snapshot fails', () => {
-    const before = fs.readFileSync(storePath(), 'utf8')
-    const rename = fs.renameSync.bind(fs)
-    const spy = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
-      if (to === storePath()) throw new Error('File locked')
-      rename(from, to)
-    })
+  it('keeps the original and backup if committing the new state fails', () => {
+    backupDatabase()
+    const before = persistedText(), backup = fs.readFileSync(sqlitePath() + '.bak')
+    const spy = failWrites()
     expect(() => setState('pending', 'value')).toThrow()
-    expect(fs.readFileSync(storePath(), 'utf8')).toBe(before)
-    expect(fs.readFileSync(`${storePath()}.bak`, 'utf8')).toBe(before)
+    expect(persistedText()).toBe(before)
+    expect(fs.readFileSync(sqlitePath() + '.bak')).toEqual(backup)
     spy.mockRestore()
     expect(flushDatabase().error).toBeNull()
   })
 
   it('does not rotate away the previous backup when saving an identical snapshot', () => {
     setState('revision', 'one')
+    backupDatabase()
     setState('revision', 'two')
     flushDatabase()
-    expect(JSON.parse(fs.readFileSync(`${storePath()}.bak`, 'utf8')).state.revision).toBe('one')
+    const backup = new Database(sqlitePath() + '.bak', { readonly: true })
+    try { expect(backup.prepare("SELECT value FROM state WHERE key='revision'").get()).toEqual({ value: 'one' }) }
+    finally { backup.close() }
   })
 
   it('recovers a structurally invalid JSON document instead of silently normalizing it', () => {
     setState('revision', 'one')
-    setState('revision', 'two')
+    const previous = { version: 4, ...persisted() }
+    installLegacy({})
+    fs.writeFileSync(storePath() + '.bak', JSON.stringify(previous))
     fs.writeFileSync(storePath(), '{}')
     initDatabase()
     expect(getStorageStatus().notice).toContain('备份')
-    expect(JSON.parse(fs.readFileSync(storePath(), 'utf8')).state.revision).toBe('one')
+    expect(persisted().state.revision).toBe('one')
   })
 
   it('uses the backup when the primary file is absent', () => {
     const id = getActiveSession().id
     saveSessionMessages(id, [message('recover')])
     flushDatabase()
+    backupDatabase()
     setState('next', 'value')
-    fs.unlinkSync(storePath())
+    closeDatabase(true)
+    fs.unlinkSync(sqlitePath())
     initDatabase()
     expect(getSession(id)?.messages[0].id).toBe('recover')
     expect(getStorageStatus().notice).toContain('原数据文件缺失')
@@ -424,13 +492,13 @@ describe('characters', () => {
   })
 
   it('migrates a v3 store by assigning legacy sessions to the built-in character', () => {
-    fs.writeFileSync(storePath(), JSON.stringify({
+    installLegacy({
       version: 3,
       config: { ...DEFAULT_APP_CONFIG },
       sessions: [{ id: 'legacy-1', title: '旧会话', messages: [], createdAt: 1, updatedAt: 2 }],
       activeSessionId: 'legacy-1',
       state: {}
-    }))
+    })
     initDatabase()
     const workspace = getSessionWorkspace()
     expect(workspace.sessions.find((session) => session.id === 'legacy-1')?.characterId).toBe(DEFAULT_CHARACTER_ID)
@@ -479,9 +547,9 @@ describe('characters', () => {
 
   it('backfills preset categories on legacy stores and keeps manual re-categorization', () => {
     // 旧版本播种的预设没有 category：按 id 幂等补齐。
-    const legacy = JSON.parse(fs.readFileSync(storePath(), 'utf8'))
+    const legacy = persisted()
     for (const character of legacy.characters) delete character.category
-    fs.writeFileSync(storePath(), JSON.stringify(legacy))
+    installLegacy({ version: 4, ...legacy })
     initDatabase()
     let current = listCharacters()
     for (const preset of PRESET_CHARACTERS) {
@@ -490,11 +558,11 @@ describe('characters', () => {
     // 手动改过行业的预设不被回填覆盖。
     const manual = current.find((character) => character.id === PRESET_CHARACTERS[0].id)!
     updateCharacter(manual.id, { name: manual.name, avatar: manual.avatar, soulMd: manual.soulMd, providerProfileId: manual.providerProfileId, model: manual.model, category: 'writing' })
-    const rewritten = JSON.parse(fs.readFileSync(storePath(), 'utf8'))
+    const rewritten = persisted()
     for (const character of rewritten.characters) {
       if (character.id !== manual.id) delete character.category
     }
-    fs.writeFileSync(storePath(), JSON.stringify(rewritten))
+    installLegacy({ version: 4, ...rewritten })
     initDatabase()
     current = listCharacters()
     expect(current.find((character) => character.id === manual.id)?.category).toBe('writing')
@@ -539,10 +607,10 @@ describe('characters', () => {
     updateCharacter(created.id, { ...draft, providerProfileId: 'p1' })
     flushDatabase()
     initDatabase()
-    const persisted = listCharacters().find((character) => character.name === '小猫')
-    expect(persisted?.providerProfileId).toBe('p1')
+    const restoredCharacter = listCharacters().find((character) => character.name === '小猫')
+    expect(restoredCharacter?.providerProfileId).toBe('p1')
     expect(getConfig().providerProfiles[0]).toMatchObject({ id: 'p1', apiKey: 'secret-key' })
-    const raw = JSON.parse(fs.readFileSync(storePath(), 'utf-8'))
+    const raw = persisted()
     expect(raw.config.providerProfiles[0].apiKey).toMatch(/^safe:v1:/)
     expect(Array.isArray(raw.characters)).toBe(true)
   })
@@ -551,12 +619,12 @@ describe('characters', () => {
 describe('assistant messages', () => {
   it('moves former assistant histories to ChouYu without losing IDs, unread receipts or snooze sources', () => {
     flushDatabase()
-    const data = JSON.parse(fs.readFileSync(storePath(), 'utf8'))
+    const data = persisted()
     data.sessions.push({ id: 'legacy-assistant', title: '助手消息', characterId: ASSISTANT_CHARACTER_ID,
       messages: [{ id: 'old-read', role: 'assistant', content: '早上的问候', timestamp: 1000 }, { id: 'old-unread', role: 'assistant', content: '记得休息', timestamp: 3000 }],
       createdAt: 1000, updatedAt: 3000, lastReadAt: 2000 })
     data.state['assistant-snoozes'] = JSON.stringify([{ sessionId: 'legacy-assistant', messageId: 'old-unread' }])
-    fs.writeFileSync(storePath(), JSON.stringify(data))
+    installLegacy({ version: 4, ...data })
     initDatabase()
     expect(getSession('legacy-assistant')).toMatchObject({ characterId: DEFAULT_CHARACTER_ID, lastReadAt: 2000 })
     expect(getSessions().find(s => s.id === 'legacy-assistant')!.unreadCount).toBe(1)
@@ -735,14 +803,14 @@ describe('assistant messages', () => {
       { id: 'blank', message: '   ', createdAt: 4000 },
       'junk'
     ])
-    fs.writeFileSync(storePath(), JSON.stringify({
+    installLegacy({
       version: 4,
       config: { ...DEFAULT_APP_CONFIG },
       characters: [],
       sessions: [],
       activeSessionId: '',
       state: { 'proactive-messages': legacy }
-    }))
+    })
     initDatabase()
     const assistant = getSessions().find((session) => session.characterId === DEFAULT_CHARACTER_ID)
     expect(assistant?.messageCount).toBe(2)

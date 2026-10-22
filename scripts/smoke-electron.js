@@ -94,8 +94,15 @@ const verifyMigration = () => {
     if (!line || JSON.parse(line.slice('CHOUYU_STORAGE_REPORT '.length)).errors.length) throw new Error('Invalid storage benchmark report')
     return
   }
-  const migrated = JSON.parse(fs.readFileSync(legacyStorePath, 'utf8'))
-  if (migrated.version !== 4) throw new Error(`Expected store version 4, received ${migrated.version}`)
+  const marker = JSON.parse(fs.readFileSync(legacyStorePath, 'utf8'))
+  if (marker.version !== 5 || marker.storage !== 'sqlite') throw new Error(`Expected SQLite migration barrier, received ${marker.version}`)
+  const { DatabaseSync } = require('node:sqlite')
+  const db = new DatabaseSync(path.join(smokeUserData, 'chouyu-application.db'), { readOnly: true })
+  let migrated
+  try {
+    const sessions = db.prepare('SELECT id,value FROM sessions ORDER BY position').all().map(row => ({ ...JSON.parse(row.value), messages: db.prepare('SELECT value FROM messages WHERE session_id=? ORDER BY position').all(row.id).map(m => JSON.parse(m.value)) }))
+    migrated = { sessions, activeSessionId: JSON.parse(db.prepare("SELECT value FROM metadata WHERE key='activeSessionId'").get().value) }
+  } finally { db.close() }
   if (!Array.isArray(migrated.sessions) || migrated.sessions.length === 0) throw new Error('Migrated session list is empty')
   const active = migrated.sessions.find((session) => session.id === migrated.activeSessionId)
   if (!active) throw new Error('Migrated active session is missing')

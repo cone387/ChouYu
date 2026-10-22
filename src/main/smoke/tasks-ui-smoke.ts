@@ -8,6 +8,14 @@ import type { TaskBackup } from '../tasks/backup'
 /** 通过真实 IPC 和 React 表单验证任务上下文、字段关联、归档和历史搜索。 */
 export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   const run = (source: string) => window.webContents.executeJavaScript(source).catch(error => { throw new Error(`Tasks UI script failed: ${source.slice(0, 500)} — ${String(error)}`) })
+  await run(`(() => {
+    window.__taskMenuTrace = [];
+    for (const type of ['scroll','focusin','click','toggle']) document.addEventListener(type, event => {
+      const el = event.target;
+      window.__taskMenuTrace.push({ type, at: performance.now(), target: el?.className || el?.nodeName, label: el?.getAttribute?.('aria-label'), open: el?.open, menus: [...document.querySelectorAll('.tasks-view details[open] > summary')].map(s => s.getAttribute('aria-label') || s.textContent.slice(0,30)) });
+      if(window.__taskMenuTrace.length > 30) window.__taskMenuTrace.shift();
+    }, true);
+  })()`)
   const click = (selector: string) => run(`(() => {
     const element = document.querySelector(${JSON.stringify(selector)});
     if (!element || element.disabled) throw new Error('Missing control: ' + ${JSON.stringify(selector)});
@@ -40,6 +48,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     if (!await run(condition)) {
       const layout = await run(`JSON.stringify({
         viewport: [innerWidth, innerHeight],
+        scrollbars: [...document.querySelectorAll('*')].filter(el => /auto|scroll/.test(getComputedStyle(el).overflow)).map(el => ({tag:el.tagName, className:el.className, visible:el.checkVisibility(), thumb:getComputedStyle(el,'::-webkit-scrollbar-thumb').backgroundColor, button:getComputedStyle(el,'::-webkit-scrollbar-button').display})),
         panel: document.querySelector('.tasks-view')?.getBoundingClientRect().toJSON(),
         sidebar: (() => { const side = document.querySelector('.tasks-sidebar'); return side && [side.scrollWidth, side.scrollHeight] })(),
         menus: Array.from(document.querySelectorAll('details[open] > .tasks-item-menu-popover')).map(menu => ({
@@ -102,6 +111,9 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   }
   await click('[data-workspace-nav="tasks"]')
   await waitForRenderer(window, "Boolean(document.querySelector('[aria-label=\"归档 任务界面测试\"]'))")
+  // Global-search acceptance may leave a retained completed-task query selected.
+  await run("document.querySelector('[aria-label=\"清除任务搜索条件\"]')?.click()")
+  await selectView('today')
   // Today's badge excludes unscheduled, past, future and completed tasks.
   const badgeFixture = await run(`(async () => {
     const start = new Date(); start.setHours(0, 0, 0, 0);
@@ -124,6 +136,9 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await run(`Promise.all(${JSON.stringify(badgeFixture.ids)}.map(id => window.electronAPI.tasks.remove(id))).then(() => window.dispatchEvent(new Event('chouyu:tasks-changed')))`)
   await waitForRenderer(window, `Number(document.querySelector('.workspace-nav-badge')?.textContent ?? 0) === ${badgeFixture.baseline}`)
   const originalTheme = await run('document.documentElement.dataset.theme')
+  // Clear the pointer hover left on the previously visible contacts scrollbar.
+  window.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 })
+  await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   for (const theme of ['light', 'dark']) {
     await run(`document.documentElement.dataset.theme = '${theme}'`)
     await assert(`(() => {
@@ -450,10 +465,10 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('[aria-label="筛选优先级"] input')
   await assert("document.querySelector('[aria-label=筛选任务]').parentElement.open")
   await click('[aria-label="筛选优先级"] input')
-  await click('[aria-label="排序方式"]')
-  await assert("!document.querySelector('[aria-label=筛选任务]').parentElement.open && document.querySelector('[aria-label=排序方式]').parentElement.open")
-  await click('[aria-label="排序方式"] + div button')
-  await assert("!document.querySelector('[aria-label=排序方式]').parentElement.open")
+  await click('.tasks-view summary[aria-label="排序方式"]')
+  await assert("!document.querySelector('[aria-label=筛选任务]').parentElement.open && document.querySelector('.tasks-view summary[aria-label=排序方式]').parentElement.open")
+  await click('.tasks-view summary[aria-label="排序方式"] + div button')
+  await assert("!document.querySelector('.tasks-view summary[aria-label=排序方式]').parentElement.open")
   await click('[aria-label="筛选任务"]')
   // The smoke window is hidden, so explicitly dispatch the focus transition.
   await run("document.querySelector('.tasks-create').dispatchEvent(new FocusEvent('focusin', { bubbles: true }))")
@@ -578,7 +593,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   })()`)
   await assert(`document.querySelector('[data-task-id="${manualIds[0]}"]').dataset.cardInsert === 'before'`)
   await run(`document.querySelector('[data-task-id="${manualIds[0]}"]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: window.__taskSmokeDrag })); delete window.__taskSmokeDrag`)
-  await waitForRenderer(window, "document.querySelector('[aria-label=排序方式]').textContent.includes('手动排序')")
+  await waitForRenderer(window, "document.querySelector('.tasks-view summary[aria-label=排序方式]').textContent.includes('手动排序')")
   await assert(`(() => { const ids = Array.from(document.querySelectorAll('[data-column-key="high"] [data-task-id]')).map(item => item.dataset.taskId); return ids.indexOf('${manualIds[1]}') < ids.indexOf('${manualIds[0]}') })()`)
   await assert(`JSON.parse(localStorage.getItem('chouyu:task-view-preferences:v1'))['project:${projectId}'].taskOrder.indexOf('${manualIds[1]}') < JSON.parse(localStorage.getItem('chouyu:task-view-preferences:v1'))['project:${projectId}'].taskOrder.indexOf('${manualIds[0]}')`)
   // Moving to another column updates the grouping field and the insertion order.
@@ -807,7 +822,7 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('[data-workspace-nav="tasks"]')
   await waitForRenderer(window, "document.querySelector('.tasks-page-heading h1')?.textContent === '待规划' && !!document.querySelector('[aria-label=\"归档 任务界面测试\"]')")
   await run("document.querySelector('[aria-label=\"归档 任务界面测试\"]').closest('li').querySelector('button').click()")
-  await assert("!!document.querySelector('.tasks-list') && document.querySelector('[aria-label=排序方式]').textContent.includes('手动排序')")
+  await assert("!!document.querySelector('.tasks-list') && document.querySelector('.tasks-view summary[aria-label=排序方式]').textContent.includes('手动排序')")
   await click('.tasks-grouping-menu > summary')
   await chooseGrouping('custom')
   await click('.tasks-page-heading h1')
@@ -943,6 +958,8 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
     return icon.getBoundingClientRect().width > 0 && getComputedStyle(icon).width === '16px' && getComputedStyle(icon).transform === 'matrix(0, 1, -1, 0, 0, 0)';
   })()`)
   await run("document.querySelector('[aria-label=\"管理已归档清单 排序清单乙\"]').focus()")
+  // Focus scrolls the sidebar; that scroll intentionally dismisses transient menus.
+  await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   await click('[aria-label="管理已归档清单 排序清单乙"]')
   await waitForRenderer(window, "!!document.querySelector('.tasks-archived .tasks-item-menu-popover:popover-open')")
   await captureGrouping('sidebar-archived-menu')
@@ -1065,8 +1082,11 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await waitForRenderer(window, `window.electronAPI.tasks.get('${iterationId}').then(task => task.status === 'done')`)
   await run(`window.dispatchEvent(new CustomEvent('chouyu:task-navigation', { detail: { taskId: '${iterationId}' } }))`)
   await waitForRenderer(window, "document.querySelector('[aria-label=任务标题]')?.value === '迭代快速任务'")
+  await click('[aria-label="新增子项"]')
+  await waitForRenderer(window, "!!document.querySelector('.tasks-subitem-dialog[open]')")
   await fill('[aria-label="新子项名称"]', '验收步骤')
-  await clickNamed('添加子项')
+  await click('.tasks-subitem-dialog button[type=submit]')
+  await waitForRenderer(window, "!document.querySelector('.tasks-subitem-dialog')")
   await click('[aria-label="完成子项 验收步骤"]')
   await click('.tasks-composer button[type=submit]')
   await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
@@ -1130,6 +1150,6 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   })()`)
   await runTaskSchedulingUISmoke(window)
   await click('[aria-label="关闭面板"]')
-  await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+  await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
   console.log('CHOUYU_TASKS_UI_SMOKE_PASSED menus, confirmations, per-view preference restoration, column preview/cancel, manual card order and cross-column moves, groups, fields and history')
 }

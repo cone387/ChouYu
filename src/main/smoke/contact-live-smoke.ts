@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
+import Database from 'better-sqlite3'
 import { createCharacter, createChatSession, deleteCharacter, getActiveSession, getConfig, getContactProfile, getSession, getSessions, saveConfig, saveSessionMessages, selectChatSession, flushDatabase, type Message } from '../database'
 import { contactAgentsCall } from '../agents'
 import { ContactTaskStore } from '../task-center/contact-store'
@@ -196,8 +197,11 @@ export async function runContactLiveSmoke(window: BrowserWindow) {
       assert.ok((completedReply.replyReadAt ?? 0) < completedReply.replyCompletedAt)
       assert.ok(getSessions().find(s => s.id === f.session)?.unreadCount, 'Hidden completion must remain unread')
       assert.ok(!flushDatabase().error)
-      const disk = JSON.parse(readFileSync(join(isolatedPath, 'chouyu-data.json'), 'utf8')).sessions.find((s: { id: string }) => s.id === f.session)
-      assert.deepEqual(disk.messages, JSON.parse(JSON.stringify(saved.messages)), 'Completed conversation must match the actual saved file')
+      const reader = new Database(join(isolatedPath, 'chouyu-application.db'), { readonly: true })
+      try {
+        const messages = (reader.prepare('SELECT value FROM messages WHERE session_id=? ORDER BY position').all(f.session) as { value: string }[]).map(row => JSON.parse(row.value))
+        assert.deepEqual(messages, JSON.parse(JSON.stringify(saved.messages)), 'Completed conversation must match the actual saved database')
+      } finally { reader.close() }
       f.turns.push({ messages: saved.messages, unread: true, diskVerified: true, before, after: await f.snapshot() })
       assert.equal(saved.messages.filter(m => m.role === 'user').length, 1); assert.equal(saved.messages[0].content, '帮我写一段吞噬星空续写看看，约600字。'); assert.ok(!saved.messages.some(m => m.id === 'discarded-reply')); assert.ok(saved.messages.at(-1)!.content.length > 200); assert.match(saved.messages.at(-1)!.content, /罗峰/); assert.ok(saved.messages.filter(m => m.toolData).every(m => m.toolData!.risk === 'read')); assert.deepEqual(await f.snapshot(), before); assert.equal((await f.cards()).length, 0)
       window.webContents.send('open-chat-panel')

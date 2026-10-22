@@ -167,6 +167,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     saveSessionMessages(fixture, messages)
     flushDatabase()
     window.webContents.send('config:changed', getConfig())
+    window.webContents.send('sessions:changed', false)
     await window.webContents.executeJavaScript("window.electronAPI.db.setState('workspace-active-page', 'chat')")
     await window.webContents.executeJavaScript(`(() => {
       window.__chatOpeningFrames = [];
@@ -181,6 +182,7 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
       requestAnimationFrame(observe);
     })()`)
     window.webContents.send('open-chat-panel')
+    await window.webContents.executeJavaScript("document.querySelector('[data-workspace-nav=chat]')?.click()")
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true]') && document.querySelector('.input-textarea') && document.querySelector('table') && document.querySelector('del')")
     console.log('CHOUYU_CHAT_STAGE panel-ready')
     if (process.env.CHOUYU_SMOKE_CHAT_SCROLL_ONLY === '1') {

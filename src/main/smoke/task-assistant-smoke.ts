@@ -11,19 +11,25 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
   const originalMessages = JSON.stringify(getActiveSession().messages)
   const run = (code: string) => window.webContents.executeJavaScript(code)
   // A preceding suite may leave a retained panel bound to its original session.
-  // Unmount and drain its saves before selecting this suite's isolated fixture.
+  // Hide and drain saves; the workspace now remains mounted between suites.
   await run("document.querySelector('[aria-label=\"关闭面板\"]')?.click()")
-  await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+  await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
   await run('window.electronAPI.db.getSessionWorkspace()')
   const fixture = createChatSession('AI任务助手验收').activeSession.id
   let step = 0, scenario = '', target = '', other = '', dueAt = Date.now() + 3 * 86400000
   let responses: string[] = []
+  let previousMessageIds: string[] = []
   const server = createServer((request, response) => {
     if (request.url === '/v1/models') { response.end(JSON.stringify({ data: [{ id: 'task-smoke' }] })); return }
     let body = ''
     request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       const payload = JSON.parse(body)
+      if (payload.messages.some((m: { role: string; content: unknown }) => m.role === 'system' && typeof m.content === 'string' && m.content.startsWith('判断用户最新一句是否在调整当前联系人'))) {
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: '{"kind":"none"}' } }] })}\n\ndata: [DONE]\n\n`)
+        return
+      }
       responses = payload.messages.filter((m: { role: string }) => m.role === 'tool').map((m: { content: string }) => m.content)
       const version = responses.flatMap(value => { try { const data = JSON.parse(value); return data.version ? [data.version] : [] } catch { return [] } }).at(-1)
       let name = '', args: Record<string, unknown> = {}
@@ -46,19 +52,33 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
   if (!address || typeof address === 'string') throw new Error('Task smoke provider failed to start')
   const start = async (name: string) => {
     scenario = name; step = 0; responses = []
-    await run(`window.__taskAssistantResult = null; window.electronAPI.ai.startStream(${JSON.stringify({ requestId: `task_${name}`, sessionId: fixture, systemPrompt: '测试单任务操作', messages: [{ role: 'user', content: '读取任务并修改明确选定的一个任务。' }] })}).then(result => { window.__taskAssistantResult = result }); void 0`)
-    await waitForRenderer(window, "document.querySelector('.tool-approval-preview')")
+    previousMessageIds = getSession(fixture)!.messages.map(m => m.id)
+    await run(`(() => {
+      window.__taskAssistantStopApproval?.();
+      window.__taskAssistantStopApproval = window.electronAPI.ai.onToolApprovalRequest(request => { window.__taskAssistantRequestId = request.requestId });
+      const input = document.querySelector('.input-textarea');
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, ${JSON.stringify('读取任务并修改明确选定的一个任务。')});
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+    })()`)
+    await waitForRenderer(window, "document.querySelector('[aria-label=\"发送消息\"]') && !document.querySelector('[aria-label=\"发送消息\"]').disabled")
+    await run("document.querySelector('[aria-label=\"发送消息\"]').click()")
+    try { await waitForRenderer(window, "document.querySelector('.tool-approval-preview')") }
+    catch (error) { console.error('CHOUYU_TASK_ASSISTANT_DIAGNOSTIC', JSON.stringify({ scenario, step, responses, messages: getSession(fixture)?.messages })); throw error }
   }
   const finish = async () => {
-    await waitForRenderer(window, 'window.__taskAssistantResult !== null')
-    return run('window.__taskAssistantResult')
+    await waitForRenderer(window, "!document.querySelector('[aria-label=\"停止生成\"]')")
+    await waitForRenderer(window, `window.electronAPI.db.getSessionWorkspace().then(w => w.activeSession.id === ${JSON.stringify(fixture)} && w.activeSession.messages.some(m => !${JSON.stringify(previousMessageIds)}.includes(m.id) && (m.replyCompletedAt || m.responseStatus)))`)
+    const message = getSession(fixture)!.messages.filter(m => m.role === 'assistant' && !m.toolData).at(-1)
+    return { ok: !message?.responseStatus, reply: message?.content }
   }
   const get = (id: string) => run(`window.electronAPI.tasks.get(${JSON.stringify(id)})`)
   try {
     saveConfig({ provider: 'openai', baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey: 'isolated-smoke', model: 'task-smoke', memoryEnabled: false, aiToolsEnabled: true, toolPermissionMode: 'full' })
     window.webContents.send('config:changed', getConfig())
+    window.webContents.send('sessions:changed', false)
     await run("window.electronAPI.db.setState('workspace-active-page', 'chat')")
     window.webContents.send('open-chat-panel')
+    await run("document.querySelector('[data-workspace-nav=chat]')?.click()")
     await waitForRenderer(window, "document.querySelector('.chat-panel[data-ready=true]') && document.querySelector('.input-textarea')")
     await waitForRenderer(window, "document.querySelector('.conversation-item-main[aria-selected=true]')?.getAttribute('title')==='AI任务助手验收'")
     target = (await run(`window.electronAPI.tasks.create(${JSON.stringify({ title: '助手验收同名', dueAt, remindAt: dueAt - 3600000, recurrence: 'daily' })})`)).id
@@ -103,7 +123,7 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
     if ((await get(target)).dueAt !== dueAt || !responses.some(value => value.includes('确认期间任务已变化'))) throw new Error('Stale task approval overwrote data')
 
     await start('cancel')
-    await run("window.electronAPI.ai.cancelStream('task_cancel')")
+    await run("window.electronAPI.ai.cancelStream(window.__taskAssistantRequestId)")
     await finish()
     await waitForRenderer(window, "!document.querySelector('.tool-approval-dialog')")
     if ((await get(target)).dueAt !== dueAt) throw new Error('Cancelled task changed data')
@@ -120,7 +140,7 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
     console.log('CHOUYU_APPROVAL_WAIT_STARTED hidden panel, original request retained')
     await new Promise(resolve => setTimeout(resolve, 33_000))
     await new Promise(resolve => setTimeout(resolve, 33_000))
-    if (await run('window.__taskAssistantResult !== null') || (await get(target)).dueAt !== dueAt) throw new Error('Unseen approval expired, resumed or executed without consent')
+    if (await run("!document.querySelector('[aria-label=\"停止生成\"]')") || (await get(target)).dueAt !== dueAt) throw new Error('Unseen approval expired, resumed or executed without consent')
     window.webContents.send('open-chat-panel')
     await waitForRenderer(window, "document.querySelector('.tool-approval-dialog[open]') && document.querySelector('.tool-approval-help').textContent.includes('一直等待')")
     await run("window.__approvalIgnored=null;window.__stopApprovalState=window.electronAPI.onMouseEventsState(v=>window.__approvalIgnored=v);window.electronAPI.setIgnoreMouseEvents(false);window.electronAPI.setIgnoreMouseEvents(true)")
@@ -156,6 +176,7 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
     await waitForRenderer(window, "document.querySelector('.tasks-view')")
     console.log('CHOUYU_TASK_ASSISTANT_SMOKE_PASSED query sources, five-round tools, forced approval in full mode, deny/cancel/stale guards, hidden approval retained beyond 60s, native top layer and pointer routing, late approval resumes, single-task boundary and recurring completion')
   } finally {
+    await run('window.__taskAssistantStopApproval?.(); delete window.__taskAssistantStopApproval')
     server.closeAllConnections()
     await new Promise<void>(resolve => server.close(() => resolve()))
     if (target) await run(`window.electronAPI.tasks.remove(${JSON.stringify(target)})`).catch(() => {})
@@ -167,7 +188,7 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
     // The harness deletes this isolated profile after exit; retain the fixture until
     // renderer persistence settles so closing cannot save into a deleted session.
     await run("document.querySelector('[aria-label=\"关闭面板\"]')?.click()")
-    await waitForRenderer(window, "!document.querySelector('.chat-panel')")
+    await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     await run('window.electronAPI.db.getSessionWorkspace()')
     selectChatSession(originalSession)
     flushDatabase()

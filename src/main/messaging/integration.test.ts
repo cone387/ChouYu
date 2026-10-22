@@ -4,7 +4,7 @@ import path from 'node:path'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 const environment = vi.hoisted(() => ({ directory: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => environment.directory }, safeStorage: { isEncryptionAvailable: () => false } }))
-import { initDatabase, getSession, createChatSession, saveSessionMessages, flushDatabase, markSessionRead, getSessions, deleteChatSession, getState } from '../database'
+import { initDatabase, getSession, createChatSession, saveSessionMessages, flushDatabase, markSessionRead, getSessions, deleteChatSession, getState, closeDatabase } from '../database'
 import { DEFAULT_CHARACTER_ID, PRESET_CHARACTERS } from '../../shared/characters'
 import type { ContactActionInteraction } from '../../shared/contact-actions'
 import { MessageDeliveryService } from './service'
@@ -19,6 +19,7 @@ beforeEach(() => {
   session = createChatSession('投递测试', DEFAULT_CHARACTER_ID).activeSession.id
 })
 afterEach(() => {
+  closeDatabase(true)
   vi.restoreAllMocks(); vi.clearAllTimers(); vi.useRealTimers()
   const target = path.resolve(environment.directory), relative = path.relative(os.tmpdir(), target)
   if (path.dirname(relative) !== '.' || !path.basename(relative).startsWith('chouyu-message-test-')) throw new Error('Unexpected cleanup directory')

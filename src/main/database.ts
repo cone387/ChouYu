@@ -9,7 +9,9 @@ import fs from 'fs'
 import { EventEmitter } from 'events'
 import type { StorageStatus } from '../shared/storage'
 import { AttachmentStore, isAttachmentReference } from './attachment-store'
-import { readStoreFile, writeStoreFile } from './store-file'
+import { readStoreFile } from './store-file'
+import { openApplicationDatabase, type ApplicationDatabase } from './storage/application-database'
+import { migrateLegacyStore, readApplicationSnapshot } from './storage/legacy-migration'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/conversation-search'
 import { AppConfig, DEFAULT_APP_CONFIG, DEFAULT_PROFILE_ID, getProviderProfiles, normalizeConfig } from '../shared/config'
 import {
@@ -30,53 +32,8 @@ import { sanitizeContactCommunication, validateContactMessage, type ContactCommu
 import { applyContactProfilePatch, contactProfileSnapshot, type ContactProfilePatch } from '../shared/contact-profile-settings'
 import { containsSecret } from '../shared/memory'
 
-export interface Message {
-  harnessSource?:import('../shared/harness').HarnessSource
-  communication?: ContactCommunication
-  contactCitations?: import('../shared/contact-content').ContentCitation[]
-  contactContext?: import('../shared/contact-content').ContactContextRecord
-  agentNotice?: AgentMessageRef
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp: number
-  imageUrl?: string
-  snoozeKey?: string
-  taskReminder?: TaskReminderRef
-  assistantKind?: AssistantMessageKind
-  responseStatus?: 'error' | 'stopped'
-  replyCompletedAt?: number
-  replyReadAt?: number
-  toolData?: ToolActivityData
-  memoryRefs?: Array<{ id: string; content: string; type: string; feedback?: MemoryFeedbackValue; sourceIds?: string[]; clusterId?: string; compressedCount?: number }>
-  pluginData?: unknown
-}
-
-export interface ChatSession {
-  id: string
-  title: string
-  messages: Message[]
-  characterId: string
-  createdAt: number
-  updatedAt: number
-  lastReadAt?: number
-}
-
-export interface ChatSessionSummary {
-  id: string
-  title: string
-  preview: string
-  messageCount: number
-  characterId: string
-  createdAt: number
-  updatedAt: number
-  unreadCount: number
-}
-
-export interface SessionWorkspace {
-  sessions: ChatSessionSummary[]
-  activeSession: ChatSession
-}
+import type { Message, ChatSession, ChatSessionSummary, SessionWorkspace } from '../shared/conversations'
+export type { Message, ChatSession, ChatSessionSummary, SessionWorkspace } from '../shared/conversations'
 
 interface StoreData {
   version: number
@@ -98,6 +55,20 @@ let store: StoreData
 let filePath: string
 let attachments: AttachmentStore
 let writesBlocked = false
+let application: ApplicationDatabase | null = null
+let migrationBarrierReady = false
+let backupTimer: ReturnType<typeof setTimeout> | null = null
+let backupChanges = false
+const dirtySessions = new Set<string>()
+const savedSessions = new Map<string, { messages: Message[]; count: number; metadata: string }>()
+function sessionMetadata(session: ChatSession): string {
+  const { messages: _messages, ...metadata } = session
+  return JSON.stringify(metadata)
+}
+function sessionChanged(session: ChatSession): boolean {
+  const previous = savedSessions.get(session.id)
+  return dirtySessions.has(session.id) || !previous || previous.messages !== session.messages || previous.count !== session.messages.length || previous.metadata !== sessionMetadata(session)
+}
 let storageStatus: StorageStatus = { error: null, notice: null, revision: 0 }
 const storageEvents = new EventEmitter()
 
@@ -312,7 +283,18 @@ function parseStore(text: string): PersistedStoreData {
 }
 
 function load(): StoreData {
-  const loaded = readStoreFile(filePath, parseStore)
+  let loaded: ReturnType<typeof readStoreFile<PersistedStoreData>>
+  try {
+    application = openApplicationDatabase(path.dirname(filePath))
+    if (application.metadata.get('migration')) {
+      migrateLegacyStore(path.dirname(filePath), application)
+      migrationBarrierReady = true
+      loaded = { data: readApplicationSnapshot(application) as PersistedStoreData, blocked: false, notice: application.notice }
+    } else loaded = readStoreFile(filePath, parseStore)
+  } catch {
+    application?.close(); application = null
+    loaded = { blocked: true, notice: null }
+  }
   writesBlocked = loaded.blocked
   updateStorageStatus({
     notice: loaded.notice,
@@ -381,10 +363,10 @@ function serializeStore(): StoreData {
       providerProfiles: store.config.providerProfiles.map((profile) => ({ ...profile, apiKey: protect(profile.apiKey) }))
     },
     characters: store.characters,
-    sessions: store.sessions.map((session) => ({
+    sessions: store.sessions.map((session) => sessionChanged(session) ? ({
       ...session,
       messages: session.messages.map((message) => ({ ...message, imageUrl: attachments.persist(message.imageUrl) }))
-    })),
+    }) : session),
     activeSessionId: store.activeSessionId,
     state: Object.fromEntries(
       Object.entries(store.state).map(([key, value]) => [key, isSecretStateKey(key) ? protect(value) : value])
@@ -398,12 +380,34 @@ function persist(throwOnError = true): boolean {
     persistTimer = null
   }
   try {
-    if (writesBlocked) throw new Error('Protected store')
+    if (writesBlocked || !application) throw new Error('Protected store')
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     const serialized = serializeStore()
-    writeStoreFile(filePath, JSON.stringify(serialized, null, 2), parseStore)
+    if (!migrationBarrierReady) {
+      migrateLegacyStore(path.dirname(filePath), application, serialized)
+      migrationBarrierReady = true
+    }
+    {
+      application.transaction(() => {
+        for (const session of serialized.sessions) if (sessionChanged(session)) application!.conversations.saveSession(session)
+        for (const id of savedSessions.keys()) if (!serialized.sessions.some(s => s.id === id)) application!.conversations.deleteSession(id)
+        application!.conversations.orderSessions(serialized.sessions.map(s => s.id))
+        application!.metadata.set('config', serialized.config)
+        application!.metadata.set('characters', serialized.characters)
+        application!.metadata.set('activeSessionId', serialized.activeSessionId)
+        application!.metadata.saveState(serialized.state)
+      })
+    }
     // Retain file references in memory after a successful commit; UI receives data URLs on demand.
     store.sessions = serialized.sessions
+    savedSessions.clear()
+    for (const session of store.sessions) savedSessions.set(session.id, { messages: session.messages, count: session.messages.length, metadata: sessionMetadata(session) })
+    dirtySessions.clear()
+    backupChanges = true
+    if (!backupTimer) {
+      backupTimer = setTimeout(() => { backupTimer = null; backupDatabase() }, 60000)
+      backupTimer.unref()
+    }
     updateStorageStatus({ error: null })
     return true
   } catch {
@@ -480,6 +484,9 @@ function migrateProactiveMessages(): void {
 }
 
 export function initDatabase(): void {
+  application?.close(); application = null
+  if (backupTimer) clearTimeout(backupTimer)
+  backupTimer = null; backupChanges = false; migrationBarrierReady = false; savedSessions.clear(); dirtySessions.clear()
   filePath = path.join(app.getPath('userData'), 'chouyu-data.json')
   if (persistTimer) clearTimeout(persistTimer)
   persistTimer = null
@@ -579,6 +586,7 @@ function appendContactMessage(input: {
   if (!session) { session = createSession([], input.title, at, owner); store.sessions.unshift(session) }
   if (!Number.isFinite(input.timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
   session.messages.push({ id: input.messageId, role: 'assistant', content: input.content, timestamp: at, communication, ...input.metadata })
+  dirtySessions.add(session.id)
   session.updatedAt = at
   for (const key of input.receiptKeys) store.state[key] = 'delivered'
   persist()
@@ -832,6 +840,7 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
     nextMessages = [...nextMessages, ...session.messages.filter(message => previousProactive.has(message.id) && !known.has(message.id))].sort((a, b) => a.timestamp - b.timestamp)
   }
   session.messages = nextMessages
+  dirtySessions.add(session.id)
   // A receipt for this reply must not acknowledge unrelated proactive deliveries.
   const readReply = readMessageId ? session.messages.find(message => message.id === readMessageId) : undefined
   if (readReply?.replyCompletedAt) readReply.replyReadAt = readReply.replyCompletedAt
@@ -889,5 +898,22 @@ export function saveContactSearchCredential(owner: string, secret: string, revis
 
 export function flushDatabase(): StorageStatus {
   if (store && filePath) persist(false)
+  return getStorageStatus()
+}
+
+/** Periodic/exit snapshot; individual message commits never copy the full database. */
+export function backupDatabase(): void {
+  if (!application || !backupChanges || storageStatus.error) return
+  try { application.backup(); backupChanges = false }
+  catch { updateStorageStatus({ notice: '聊天数据已保存，但恢复备份更新失败；上一次备份仍保留。请检查目录权限和剩余空间。' }) }
+}
+
+export function closeDatabase(discardPending = false): StorageStatus {
+  if (!discardPending) flushDatabase()
+  if (storageStatus.error && !discardPending) return getStorageStatus()
+  if (backupTimer) clearTimeout(backupTimer)
+  backupTimer = null
+  if (!discardPending) backupDatabase()
+  application?.close(); application = null
   return getStorageStatus()
 }

@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import Database from 'better-sqlite3'
 import { getStorageStatus, setState } from '../database'
 
 export async function waitForRenderer(window: BrowserWindow, condition: string, timeoutMs = 5000): Promise<void> {
@@ -9,7 +10,7 @@ export async function waitForRenderer(window: BrowserWindow, condition: string, 
     const check = async () => {
       try {
       if (await (${condition})) return resolve(true);
-      if (Date.now() > deadline) return reject(new Error('Storage UI timed out: ' + ${JSON.stringify(condition)}));
+      if (Date.now() > deadline) return reject(new Error('Storage UI timed out: ' + ${JSON.stringify(condition)} + (window.__taskMenuTrace ? '\\nMenu trace: ' + JSON.stringify(window.__taskMenuTrace) : '')));
       setTimeout(check, 25);
       } catch (error) { reject(error); }
     };
@@ -19,10 +20,9 @@ export async function waitForRenderer(window: BrowserWindow, condition: string, 
 
 /** Exercise the actual disk failure -> IPC event -> visible retry -> successful commit path. */
 export async function runStorageRuntimeSmoke(window: BrowserWindow): Promise<void> {
-  const filename = path.join(app.getPath('userData'), 'chouyu-data.json')
-  const temporary = `${filename}.tmp`
-  // An existing directory makes opening the temporary snapshot for writing fail on all platforms.
-  fs.mkdirSync(temporary)
+  const filename = path.join(app.getPath('userData'), 'chouyu-application.db')
+  const database = new Database(filename)
+  database.exec("CREATE TRIGGER storage_smoke_failure BEFORE INSERT ON state BEGIN SELECT RAISE(ABORT,'disk full'); END")
   try {
     try { setState('storage-smoke-retry', 'pending') } catch { /* expected disk failure */ }
     if (!getStorageStatus().error) throw new Error('Storage failure was not reported')
@@ -52,13 +52,14 @@ export async function runStorageRuntimeSmoke(window: BrowserWindow): Promise<voi
       window.webContents.disableDeviceEmulation()
     }
   } finally {
-    // Remove only the empty test directory created above; never recurse.
-    fs.rmdirSync(temporary)
+    database.exec('DROP TRIGGER storage_smoke_failure')
+    database.close()
   }
   await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.storage-notice button')).find(button => button.textContent === '重试保存').click()`)
   await waitForRenderer(window, "!document.querySelector('.storage-notice')")
-  const persisted = JSON.parse(fs.readFileSync(filename, 'utf8'))
-  if (getStorageStatus().error || persisted.state['storage-smoke-retry'] !== 'pending') {
-    throw new Error('Storage UI retry did not commit the pending state')
-  }
+  const reader = new Database(filename, { readonly: true })
+  try {
+    const persisted = reader.prepare("SELECT value FROM state WHERE key='storage-smoke-retry'").get() as { value: string } | undefined
+    if (getStorageStatus().error || persisted?.value !== 'pending') throw new Error('Storage UI retry did not commit the pending state')
+  } finally { reader.close() }
 }

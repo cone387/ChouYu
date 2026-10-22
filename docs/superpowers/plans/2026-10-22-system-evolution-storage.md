@@ -35,15 +35,15 @@
 
 **Interfaces:** `ConversationRepository` 提供 `readSession(id)`、`listSessions()`、`saveSession(session)`、`deleteSession(id)`、`appendDelivered(input)`、`markRead(id, messageId?)`，沿用现有模型及失败语义；实现仅写变化消息和必要会话元数据。`ApplicationMetadataRepository` 拥有 config/characters/state；两者共享同一应用 SQLite 连接，用于角色删除与回执原子提交。`openApplicationDatabase(directory)` 返回两个 repository、`transaction(fn)`、`flush()`、`close()`；`migrateLegacyStore(directory)` 为幂等迁移入口。
 
-- [ ] 添加真实库失败测试：插入部分消息抛错、完成库事务后旧 JSON 阻写标记写入失败、目标库损坏/原文件不可读/较新格式均不能产生半成品权威；重新启动恢复，逐 ID/正文/顺序/引用/已读/回执等价。
-- [ ] 测试内存待保存消息及 receipt 在写入失败后可重试一次，落盘前不给交付成功；测试仅改消息或配置时无关消息行不执行 UPDATE（使用真实 SQL 观测或触发器计数）。先运行新测试见失败。
-- [ ] 建立 `sessions`、`messages`、`metadata/state`、`delivery_receipts` 和迁移元数据表；正文与回执同一事务。元数据独立仓储不重新序列化会话；配置凭据保持 safeStorage 加密，附件仍由 AttachmentStore 存储。
-- [ ] 迁移时先保留已验证的旧快照，再事务写入并校验内容及来源摘要，持久保存迁移身份；提交成功后将旧入口置为 v5 SQLite 指向标记，使旧 v4 代码拒绝写入。启动优先识别有效目标和迁移身份，不重复导入；标记失败须在放行产品写入前重试处理，旧文件保留恢复用途。
-- [ ] 将现有 database API 接入仓储，显式跟踪脏会话/消息及待保存元数据，保留全局保存失败提示/手动重试/退出拦截。关闭时 flush 后释放 SQLite 句柄；初始化失败逐项释放。
-- [ ] 使用 SQLite 一致性快照 API 维护可验证备份，避免直接复制未 checkpoint 的主库；备份失败保留旧备份并记录，不通过每条消息全量同步备份抵消增量收益。坏库恢复遵守隔离原件、拒绝较新格式和保留用户选择的既有原则。断言恢复后最近已承诺持久的数据边界，不能把未知结果报成功。
-- [ ] 运行 `npm test -- src/main/storage src/main/database.test.ts src/main/messaging`、`npm run typecheck`、构建后完整 storage/chat/提醒相关 smoke；附件恢复与缺失场景复用 `database.test.ts` 现有测试。更新原文件写入故障测试为对应存储故障注入，保留原断言目的。
-- [ ] 重跑存储基准，证明编辑未变化历史不增加写入行数，报告完整链路耗时和仍存在的启动/检索成本。查看保存失败 UI、重启恢复及旧数据来源定位。
-- [ ] 提交 `feat: persist conversations incrementally with recoverable legacy migration`，记录 E1。
+- [x] 添加真实库失败测试：插入部分消息抛错、完成库事务后旧 JSON 阻写标记写入失败、目标库损坏/原文件不可读/较新格式均不能产生半成品权威；重新启动恢复，逐 ID/正文/顺序/引用/已读/回执等价。
+- [x] 测试内存待保存消息及 receipt 在写入失败后可重试一次，落盘前不给交付成功；测试仅改消息或配置时无关消息行不执行 UPDATE（使用真实 SQL 观测或触发器计数）。先运行新测试见失败。
+- [x] 建立 `sessions`、`messages`、`metadata/state`、`delivery_receipts` 和迁移元数据表；正文与回执同一事务。元数据独立仓储不重新序列化会话；配置凭据保持 safeStorage 加密，附件仍由 AttachmentStore 存储。
+- [x] 迁移时先保留已验证的旧快照，再事务写入并校验内容及来源摘要，持久保存迁移身份；提交成功后将旧入口置为 v5 SQLite 指向标记，使旧 v4 代码拒绝写入。启动优先识别有效目标和迁移身份，不重复导入；标记失败须在放行产品写入前重试处理，旧文件保留恢复用途。
+- [x] 将现有 database API 接入仓储，显式跟踪脏会话/消息及待保存元数据，保留全局保存失败提示/手动重试/退出拦截。关闭时 flush 后释放 SQLite 句柄；初始化失败逐项释放。
+- [x] 使用 SQLite 一致性快照 API 维护可验证备份，避免直接复制未 checkpoint 的主库；备份失败保留旧备份并记录，不通过每条消息全量同步备份抵消增量收益。坏库恢复遵守隔离原件、拒绝较新格式和保留用户选择的既有原则。断言恢复后最近已承诺持久的数据边界，不能把未知结果报成功。
+- [x] 运行 `npm test -- src/main/storage src/main/database.test.ts src/main/messaging`、`npm run typecheck`、构建后完整 storage/chat/提醒相关 smoke；附件恢复与缺失场景复用 `database.test.ts` 现有测试。更新原文件写入故障测试为对应存储故障注入，保留原断言目的。
+- [x] 重跑存储基准，证明编辑未变化历史不增加写入行数，报告完整链路耗时和仍存在的启动/检索成本。查看保存失败 UI、重启恢复及旧数据来源定位。
+- [x] 提交 `feat: persist conversations incrementally with recoverable legacy migration`，记录 E1。
 
 ### Task 3: 不可变成果正文块
 

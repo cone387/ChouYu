@@ -1,5 +1,6 @@
 import { runDshHarnessSmoke } from './smoke/dsh-harness-smoke'
 import { runStorageScaleSmoke } from './smoke/storage-scale-smoke'
+import { StorageQuitGuard } from './storage/quit-guard'
 import { recoverHarnessModules } from './harness/service'
 import { closeChatHarness } from './ipc'
 import { runContactSoak } from './evaluation/contact-soak'
@@ -30,7 +31,7 @@ import { runTaskViewsUISmoke } from './smoke/task-views-ui-smoke'
 import { runTaskSchedulingUISmoke } from './smoke/task-scheduling-ui-smoke'
 import { setTrayUnread, setupTray } from './tray'
 import { registerHotkey } from './hotkey'
-import { initDatabase, setState, getConfig, flushDatabase, getAssistantUnreadCount, getAssistantUnreadPreview } from './database'
+import { initDatabase, setState, getConfig, flushDatabase, closeDatabase, getStorageStatus, getAssistantUnreadCount, getAssistantUnreadPreview } from './database'
 import { initAutoUpdater } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
@@ -424,24 +425,25 @@ app.on('window-all-closed', () => {
 
 let journalClosed = false
 let journalClosing = false
-app.on('before-quit', (event) => {
-  const storage = flushDatabase()
-  if (storage.error && !isSmokeTest && !journalClosing) {
+const storageQuit = new StorageQuitGuard(flushDatabase, error => {
+    if (isSmokeTest) return true
     const choice = dialog.showMessageBoxSync({
       type: 'warning',
       title: '还有数据尚未保存',
       message: '退出会丢失尚未保存的修改。',
-      detail: storage.error,
+      detail: error,
       buttons: ['返回并处理', '仍然退出'],
       defaultId: 0,
       cancelId: 0,
       noLink: true
     })
-    if (choice === 0) {
-      event.preventDefault()
-      mainWindow?.show()
-      return
-    }
+    return choice !== 0
+})
+app.on('before-quit', (event) => {
+  if (!storageQuit.mayExit()) {
+    event.preventDefault()
+    mainWindow?.show()
+    return
   }
   if (!journalClosed) {
     event.preventDefault()
@@ -456,6 +458,7 @@ app.on('before-quit', (event) => {
   closeReminders()
   closeTasks()
   closeMemory()
+  closeDatabase(Boolean(getStorageStatus().error))
   globalShortcut.unregisterAll()
 })
 

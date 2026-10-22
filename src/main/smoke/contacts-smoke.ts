@@ -241,11 +241,10 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await runGlobalSearchSmoke(window)
     console.log('CHOUYU_GLOBAL_SEARCH_SMOKE_PASSED contacts, open/done task navigation, changed and disabled shortcuts')
 
-    // 9) 关闭并卸载面板，交还与 chat-smoke 单独运行时相同的起点：
-    // 它在主进程直接创建夹具会话，依赖面板挂载时全新加载工作区。
+    // 9) 关闭保活面板；下一场景通过会话变更事件加载自己的夹具。
     await click(window, '[aria-label="关闭面板"]')
-    await waitForRenderer(window, "!document.querySelector('.chat-panel')")
-    // Include the 450 ms autosave and unmount flush after cascade deletion.
+    await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
+    // Include the 450 ms autosave after cascade deletion.
     await new Promise(resolve => setTimeout(resolve, 600))
     const unhandled = await window.webContents.executeJavaScript('window.__contactsUnhandled')
     if (unhandled.length) throw new Error(`Deleting a character and closing chat left unhandled saves: ${JSON.stringify(unhandled)}`)
