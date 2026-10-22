@@ -1,6 +1,6 @@
 # 存储与迁移 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or the user-selected superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or the user-selected superpowers:subagent-driven-development. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 使单条消息保存不再重写所有历史，并消除成果各版本中重复正文的增长。
 
@@ -24,10 +24,10 @@
 
 **Interfaces:** 报告 JSON 包含 baseline commit、平台/Node、数据集大小、操作、样本耗时、事件循环延迟、文件字节、验证计数和错误。只接收脚本创建的隔离数据目录；基准不能接受或推断用户实际 userData。
 
-- [ ] 构造 1,000/10,000/50,000 消息夹具（正文、来源、已读、附件引用、回执均有样例），测实际 database 保存/启动读取/搜索与单条变更；以真实 Electron 路径测主进程延迟，输出合法报告后才退出 0。
-- [ ] 成果夹具为 10/100/300 个逐章增长版本，每章 2,000 字符，满足当前百万字符/300 节容量；核对固定版正文与导出，并记录存储量。
-- [ ] 运行 `npm run build` 后 `node scripts/benchmark-system-storage.cjs`，冻结旧实现结果到 `artifacts/system-evolution/storage-before.json`，明确与已有纯文件预检不同。
-- [ ] 提交 `test: add isolated application storage scale benchmarks`。基准不作为 UI 质量或全天性能证明。
+- [x] 构造 1,000/10,000/50,000 消息夹具（正文、来源、已读、附件引用、回执均有样例），测实际 database 保存/启动读取/搜索与单条变更；以真实 Electron 路径测主进程延迟，输出合法报告后才退出 0。
+- [x] 成果夹具为 10/100/300 个逐章增长版本，每章 2,000 字符，满足当前百万字符/300 节容量；核对固定版正文与导出，并记录存储量。
+- [x] 运行 `npm run build` 后 `node scripts/benchmark-system-storage.cjs`，冻结旧实现结果到 `artifacts/system-evolution/storage-before.json`，明确与已有纯文件预检不同。
+- [x] 提交 `test: add isolated application storage scale benchmarks`。基准不作为 UI 质量或全天性能证明。
 
 ### Task 2: 增量聊天仓储及安全迁移
 

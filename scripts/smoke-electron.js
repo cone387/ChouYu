@@ -33,6 +33,7 @@ const nativeCapture = process.argv.includes('--native-capture')
 const env = {
   ...process.env,
   CHOUYU_SMOKE_TEST: '1',
+  CHOUYU_SMOKE_STORAGE_SCALE: process.argv.includes('--storage-scale') ? '1' : '0',
   CHOUYU_SMOKE_MIGRATION_FIXTURE: path.resolve(__dirname, '../tests/fixtures/ocr-sample.png'),
   CHOUYU_SMOKE_DSH: process.argv.includes('--dsh-harness') ? '1' : '0',
   CHOUYU_SMOKE_CONTACT_LIVE: process.argv.includes('--contact-live') ? '1' : '0',
@@ -88,6 +89,11 @@ const cleanup = () => {
 }
 
 const verifyMigration = () => {
+  if (process.argv.includes('--storage-scale')) {
+    const line = output.split(/\r?\n/).find(s => s.startsWith('CHOUYU_STORAGE_REPORT '))
+    if (!line || JSON.parse(line.slice('CHOUYU_STORAGE_REPORT '.length)).errors.length) throw new Error('Invalid storage benchmark report')
+    return
+  }
   const migrated = JSON.parse(fs.readFileSync(legacyStorePath, 'utf8'))
   if (migrated.version !== 4) throw new Error(`Expected store version 4, received ${migrated.version}`)
   if (!Array.isArray(migrated.sessions) || migrated.sessions.length === 0) throw new Error('Migrated session list is empty')

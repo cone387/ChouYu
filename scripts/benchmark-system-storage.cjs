@@ -1,0 +1,20 @@
+const { spawnSync, execFileSync } = require('node:child_process')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '..')
+const target = path.join(root, 'artifacts/system-evolution', process.argv.includes('--after') ? 'storage-after.json' : 'storage-before.json')
+if (fs.existsSync(target) && !process.argv.includes('--after')) throw new Error('Frozen baseline already exists')
+const result = spawnSync(process.execPath, [path.join(__dirname, 'smoke-electron.js'), '--storage-scale'], {
+  cwd: root, encoding: 'utf8', windowsHide: true, maxBuffer: 10 * 1024 * 1024,
+  env: { ...process.env, CHOUYU_BENCHMARK_COMMIT: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim() }
+})
+process.stdout.write(result.stdout || '')
+process.stderr.write(result.stderr || '')
+if (result.error || result.status !== 0) throw result.error || new Error(`Benchmark exited ${result.status}`)
+const line = result.stdout.split(/\r?\n/).find(s => s.startsWith('CHOUYU_STORAGE_REPORT '))
+if (!line) throw new Error('Missing benchmark report')
+const report = JSON.parse(line.slice('CHOUYU_STORAGE_REPORT '.length))
+if (report.errors.length || report.conversations.length !== 3 || report.deliveries.length !== 3) throw new Error('Incomplete benchmark')
+fs.mkdirSync(path.dirname(target), { recursive: true })
+fs.writeFileSync(target, JSON.stringify(report, null, 2))
+console.log(`Storage report: ${target}`)

@@ -1,4 +1,5 @@
 import { runDshHarnessSmoke } from './smoke/dsh-harness-smoke'
+import { runStorageScaleSmoke } from './smoke/storage-scale-smoke'
 import { recoverHarnessModules } from './harness/service'
 import { closeChatHarness } from './ipc'
 import { runContactSoak } from './evaluation/contact-soak'
@@ -234,6 +235,11 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  if (isSmokeTest && process.env.CHOUYU_SMOKE_STORAGE_SCALE === '1') {
+    try { await runStorageScaleSmoke(); console.log('CHOUYU_SMOKE_READY storage-scale'); app.exit(0) }
+    catch (error) { console.error('CHOUYU_SMOKE_FAILED storage-scale', error); app.exit(1) }
+    return
+  }
   if (process.platform === 'win32') app.setAppUserModelId('com.chouyu.app')
   // Init database first (needed by plugins and IPC handlers)
   initDatabase()
