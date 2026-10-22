@@ -1,5 +1,6 @@
 import { ContactCompletion } from './contact/completion';
 import { FeedbackLedger } from '../agents/feedback-ledger';
+import { DeliveryDependencies } from '../agents/delivery-dependencies';
 import { ContactMutations } from './contact/mutations';
 import { ContactScheduling } from './contact/scheduling';
 import { ContactCallBudget } from './contact/call-budget';
@@ -35,6 +36,7 @@ import { AgentDeliveries } from '../agents/delivery';
 export class ContactTaskStore {
   readonly completion: ContactCompletion
   readonly feedbackLedger: FeedbackLedger
+  readonly dependencies: DeliveryDependencies
   readonly mutations: ContactMutations
   readonly scheduling: ContactScheduling
   readonly callBudget: ContactCallBudget
@@ -123,6 +125,7 @@ export class ContactTaskStore {
       if (version < 9) this.db.transaction(() => { this.portfolio.backfill(); this.db.pragma('user_version = 9') })()
       this.materials = new AgentMaterials(this.db)
       this.handoffs = new AgentHandoffs(this)
+      this.dependencies = new DeliveryDependencies(this)
       this.memoryLibrary = new AgentMemories(this.db)
       if (version < 10) this.db.transaction(() => {
         // Scope is part of the new identity; equal text in different scopes must remain independent.
@@ -171,6 +174,7 @@ export class ContactTaskStore {
         event: this.event.bind(this)
       })
       this.scheduling = new ContactScheduling(this.db, {
+        dependencies: this.dependencies,
         profiles: this.profiles.bind(this),
         topics: this.topics,
         taskFailures: this.taskFailures,
@@ -226,6 +230,7 @@ export class ContactTaskStore {
       })
       this.feedbackLedger = new FeedbackLedger(this)
       this.completion = new ContactCompletion(this.db, {
+        dependencies: this.dependencies,
         feedbackLedger: this.feedbackLedger,
         getRun: this.getRun.bind(this),
         assertLive: this.assertLive.bind(this),
@@ -246,6 +251,7 @@ export class ContactTaskStore {
       })
       this.restoreFailureSchedules()
       if (version < 18) this.db.pragma('user_version = 18')
+      this.dependencies.backfill()
       this.db.exec('COMMIT')
     } catch (error) {
       try { if (this.db.inTransaction) this.db.exec('ROLLBACK') } finally { this.db.close() }

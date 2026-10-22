@@ -70,6 +70,30 @@ export async function runContactHandoffSmoke(window: BrowserWindow, owner: strin
     await waitForRenderer(window, "Boolean(document.querySelector('[data-contact-revision-dialog] [role=alert]'))")
     if (await run("document.querySelector('[data-delivery-feedback]').value") !== '过期评审的草稿必须保留') throw new Error('Stale review erased draft')
     await click('[data-contact-revision-dialog] footer button[type=button]')
+    // A confirmed continuous handoff follows committed prose, survives a hard worker restart,
+    // and waits for the user's automatic-work setting before creating its next round.
+    const dependencyTopic = store.topics.create(owner, { title: '持续交接稿件', goal: 'Write a story', constraints: '' }, 'smoke')
+    const seed = store.createRun(owner, '', Date.now(), dependencyTopic.id)
+    store.finish(seed, { runId: seed, title: '初稿', body: '持续交接初稿', nextStep: 'Continue', evidence: [], createdAt: Date.now() }, [],
+      { status: 'researching', judgement: 'Saved', reason: 'Saved', nextStep: 'Continue', openQuestions: '' },
+      { completionCriteria: 'Finish draft', stages: [{ id: 'write', title: '创作', status: 'active' }], summary: 'Saved', section: { id: 'text', title: '正文', body: '持续交接初稿：潮汐带来一封信，信里藏着很长的故事。' } })
+    const continuous = store.handoffs.commit(owner, store.handoffs.stage(owner, { requestId: 'dependency-smoke', source: { characterId: owner, topicId: dependencyTopic.id, version: 1, sectionId: 'text' }, recipientId: reviewer.id, description: '原文改变后持续评审' }, { description: '原文改变后持续评审', continuous: true, requestLog: '隔离测试中明确确认的持续交接' }))
+    await waitForRenderer(window, `(async()=>{const s=await window.electronAPI.agents.handoffState(${JSON.stringify(owner)},${JSON.stringify(continuous.id)});return s.reviewedVersion===1})()`, 40000)
+    const readerRuns = store.overview(reviewer.id).runs.filter(r => r.topicId === continuous.topicId).length
+    await run(`window.electronAPI.agents.deliveryFeedback(${JSON.stringify(owner)},${JSON.stringify(dependencyTopic.id)},${store.topics.get(owner, dependencyTopic.id).revision},1,'revise','缩短结尾。','dependency-author-revision')`)
+    await waitForRenderer(window, `(async()=>{const a=await window.electronAPI.agents.delivery(${JSON.stringify(owner)},${JSON.stringify(dependencyTopic.id)});return a.version===2})()`, 40000)
+    if (store.dependencies.pending(reviewer.id).filter(d => d.topicId === continuous.topicId).length !== 1) throw Error('Author completion did not persist its dependency update')
+    await restartAgentsForSmoke()
+    await run(`window.electronAPI.agents.get(${JSON.stringify(reviewer.id)})`)
+    if (store.overview(reviewer.id).runs.filter(r => r.topicId === continuous.topicId).length !== readerRuns) throw Error('Dependency bypassed manual work mode')
+    if (store.dependencies.pending(reviewer.id).filter(d => d.topicId === continuous.topicId).length !== 1) throw Error('Dependency was lost on worker restart')
+    await run(`window.electronAPI.agents.save(${JSON.stringify(reviewer.id)},${JSON.stringify({ ...store.overview(reviewer.id).settings, enabled: true, paceWriting: false })})`)
+    await waitForRenderer(window, `(async()=>{const s=await window.electronAPI.agents.handoffState(${JSON.stringify(owner)},${JSON.stringify(continuous.id)});return s.reviewedVersion===2})()`, 40000)
+    if (store.dependencies.pending(reviewer.id).some(d => d.topicId === continuous.topicId) || store.overview(reviewer.id).runs.filter(r => r.topicId === continuous.topicId).length !== readerRuns + 1) throw Error('Dependency did not consume once')
+    const actualReview = store.deliveries.get(continuous.topicId)!
+    const reviewReport = store.detail(reviewer.id, actualReview.runId).report
+    if (!reviewReport?.evidence.some(e => e.url.includes(dependencyTopic.id) && e.url.includes('version=2') && e.text.includes('转身回家'))) throw Error('Dependent review used the wrong source version')
+    console.log('CHOUYU_DEPENDENCY_SMOKE_PASSED actual author worker, durable publication, hard restart, manual hold, one dependent review and exact source v2')
     console.log('CHOUYU_CONTACT_HANDOFF_SMOKE_PASSED two contacts, actual parser/review/source isolation, restart, returned opinion, author revision and stale draft')
   } finally { store.close(); selectChatSession(active); await flushDatabase() }
 }

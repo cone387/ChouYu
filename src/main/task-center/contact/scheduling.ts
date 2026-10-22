@@ -15,6 +15,7 @@ import { withinWorkHours } from '../../../shared/work-settings';
 import { RunRow, failureDelay } from './types';
 import type { ContactStoreOperations } from './operations';
 interface Ports {
+  dependencies: Pick<import('../../agents/delivery-dependencies').DeliveryDependencies, 'pending'>
   profiles: ContactStoreOperations['profiles']
   topics: Pick<AgentTopics, "list" | "get" | "returnToGoal">
   taskFailures: Pick<AgentTaskFailures, "get" | "set" | "clear">
@@ -145,7 +146,8 @@ export class ContactScheduling {
       const failure = this.ports.taskFailures.get(topic.id)
       const recovery = failure && failure.failures >= 3 ? this.ports.providerRecovery(id, topic.id) : undefined
       if (failure && (failure.failures >= 3 && !recovery || Math.max(failure.next_at, recovery?.at ?? 0) > now)) continue
-      if (!calendar && candidate.next_at > now && !(settings.enabled && !settings.paceWriting && !failure && newSources?.(candidate.topic_id))) continue
+      const sourceChanged = () => this.ports.dependencies.pending(id).some(update => update.topicId === candidate.topic_id) || Boolean(newSources?.(candidate.topic_id))
+      if (!calendar && candidate.next_at > now && !(settings.enabled && !settings.paceWriting && !failure && sourceChanged())) continue
       const needed = (agentUsesPlanner(settings) ? 2 : 1) + (candidate.pending ? 1 : 0)
       if (this.ports.callCount(id, now) + needed > settings.dailyCalls) continue
       if (topic.resourceBudget && this.ports.taskCallCount(id, topic.id) + needed > topic.resourceBudget.modelCalls) continue

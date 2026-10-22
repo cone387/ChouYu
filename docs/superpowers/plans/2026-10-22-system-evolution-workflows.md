@@ -36,12 +36,12 @@ accept 不结束任务，revise 不增加权限/预算；未保存不得显示�
 
 **Interfaces:** `DeliveryDependencies.follow({ reader, topicId, sourceOwner, sourceTopicId, sectionId? })`、`published(owner, artifact): void`、`pending(reader): DependencyUpdate[]`、`acknowledge(reader, topicId, fingerprint): void`。`DependencyUpdate` 保存固定 sourceVersion 和正文 fingerprint；每个依赖只保留未处理最新相关版本，原轮次执行快照仍固定。
 
-- [ ] 用真实 SQLite 两联系人测试：持续交接实际来源更新后唤醒；一次性交接和固定版引用不跟随；未授权看不到目录/事件；样式或无关章节变化不执行；重复事件只安排一轮；硬重启恢复待处理事件。
-- [ ] 在暂停/待回复、按需模式、预算不足、工作时段之外及明确日历任务场景验证不抢跑；权限恢复后仍校验当前来源和原状态。上述测试在新实现前失败。
-- [ ] 仅在已确认持续交接或允许跟随的实际读取关系中注册依赖，不能从模型文字猜测。结果保存事务写更新事件，事务外发唤醒信号；任务选择再查当前能力和时间，不能只靠消息中旧快照授权。
-- [ ] 成功消费以固定正文指纹为依据；失败保留事件并遵守原退避，取消/删除清理关系。保留 15 秒补偿检查，事件合并不重复恢复已经完成的一次性任务。
-- [ ] 运行依赖新测试及 `src/main/agents/handoffs.test.ts`、`handoff-review.test.ts`、`contact-sources.test.ts`、`src/main/workloop/background-selection.test.ts`、`src/main/agent-space`；构建后双联系人 smoke 验证真实 worker 交付→评审。
-- [ ] 提交 `feat: wake dependent work from durable delivery updates`，记录 G1。
+- [x] 用真实 SQLite 两联系人测试：持续交接实际来源更新后唤醒；一次性交接和固定版引用不跟随；未授权看不到目录/事件；样式或无关章节变化不执行；重复事件只安排一轮；硬重启恢复待处理事件。
+- [x] 在暂停/待回复、按需模式、预算不足、工作时段之外及明确日历任务场景验证不抢跑；权限恢复后仍校验当前来源和原状态。上述测试在新实现前失败。
+- [x] 仅在已确认持续交接或允许跟随的实际读取关系中注册依赖，不能从模型文字猜测。结果保存事务写更新事件，事务外发唤醒信号；任务选择再查当前能力和时间，不能只靠消息中旧快照授权。
+- [x] 成功消费以固定正文指纹为依据；失败保留事件并遵守原退避，取消/删除清理关系。保留 15 秒补偿检查，事件合并不重复恢复已经完成的一次性任务。
+- [x] 运行依赖新测试及 `src/main/agents/handoffs.test.ts`、`handoff-review.test.ts`、`contact-sources.test.ts`、`src/main/workloop/background-selection.test.ts`、`src/main/agent-space`；构建后双联系人 smoke 验证真实 worker 交付→评审。
+- [x] 提交 `feat: wake dependent work from durable delivery updates`，记录 G1。
 
 ### Task 3: 同任务恢复信息与实际接续
 

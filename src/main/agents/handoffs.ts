@@ -57,6 +57,7 @@ export class AgentHandoffs {
       if (settings.enabled !== enabled) this.store.db.prepare('UPDATE profiles SET settings=? WHERE character_id=?').run(JSON.stringify({ ...settings, enabled }), request.recipientId)
       const value: Handoff = { id: randomUUID(), source: request.source, recipientId: request.recipientId, topicId: topic.id, description: prepared.work.description, createdAt: Date.now(), continuous: prepared.work.continuous }
       this.store.db.prepare('INSERT INTO contact_handoffs VALUES(?,?,?,?,?)').run(value.id, owner, request.requestId, JSON.stringify(request), JSON.stringify(value))
+      if (value.continuous) this.store.dependencies.follow({ reader: value.recipientId, topicId: value.topicId, sourceOwner: owner, sourceTopicId: value.source.topicId, sectionId: value.source.sectionId })
       return value
     })()
   }
@@ -109,6 +110,8 @@ export class AgentHandoffs {
     this.checkRun(runId)
     const run = this.store.getRun(runId)!, pin = JSON.parse(run.input).handoffPin as HandoffPin | undefined
     if (!pin) return []
+    const handoff = this.get(run.character_id, pin.id)
+    if (handoff.continuous) this.store.dependencies.follow({ reader: run.character_id, topicId: run.topic_id!, sourceOwner: pin.source.characterId, sourceTopicId: pin.source.topicId, sectionId: pin.source.sectionId })
     this.store.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify({ ...JSON.parse(run.input), handoffRead: true }), runId)
     const artifact = this.store.deliveries.get(pin.source.topicId, pin.source.version)!, topic = this.store.topics.get(pin.source.characterId, pin.source.topicId)
     return artifact.sections.filter(s => !pin.source.sectionId || s.id === pin.source.sectionId).map(s => ({ url: `contact-delivery://${pin.source.characterId}/${pin.source.topicId}/${s.id}?version=${pin.source.version}`, title: `${topic.title} · ${s.title} · 第 ${pin.source.version} 版`, text: s.body, capturedAt: artifact.createdAt, hash: createHash('sha256').update(s.title + '\n' + s.body).digest('hex') }))
@@ -119,6 +122,7 @@ export class AgentHandoffs {
     if (!JSON.parse(run.input).handoffRead) throw new Error('尚未读取交接原文，不能标为已评审。')
     this.checkRun(runId)
     this.store.db.prepare('INSERT OR IGNORE INTO contact_handoff_reviews VALUES(?,?,?,?)').run(pin.id, runId, JSON.stringify(pin.source), pin.hash)
+    if (this.get(run.character_id, pin.id).continuous) this.store.dependencies.acknowledge(run.character_id, run.topic_id!, pin.hash, pin.source)
     return this.get(run.character_id, pin.id).continuous
   }
   state(owner: string, id: string): HandoffState {

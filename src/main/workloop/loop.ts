@@ -48,7 +48,7 @@ export class WorkLoop implements ContactModule {
         considered.add(topicId)
         const last = this.store.overview(profile.character_id).runs.find(run => run.topicId === topicId)
         const research = last && this.store.research(last.id)
-        if (!this.store.topics.get(profile.character_id, topicId).calendar && last?.status === 'completed' && research?.contactQuery !== undefined && settings.readContactDeliveries) {
+        if (!this.store.handoffs.forTopic(profile.character_id, topicId) && !this.store.topics.get(profile.character_id, topicId).calendar && last?.status === 'completed' && research?.contactQuery !== undefined && settings.readContactDeliveries) {
           const catalog = this.runtime.contactSources.discover(profile.character_id, topicId, research.contactQuery)
           if (catalog.total > 0 && catalog.unprocessedTotal === 0) {
             this.store.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=? AND focus_topic_id=?').run(Date.now() + settings.intervalMinutes * 60000, profile.character_id, topicId)
