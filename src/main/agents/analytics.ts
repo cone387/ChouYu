@@ -19,7 +19,7 @@ export function analyticsRange(query: AnalyticsQuery) {
   return { start: +start, end: +end, boundaries }
 }
 
-export function readAnalytics(db: Database.Database, characterId: string, query: AnalyticsQuery, now = Date.now()): AgentAnalytics {
+export function readAnalytics(db: { prepare(sql: string): Pick<Database.Statement, 'get' | 'all'> }, characterId: string, query: AnalyticsQuery, now = Date.now()): AgentAnalytics {
   const { start, end, boundaries } = analyticsRange(query)
   if (query.topicId !== undefined && (typeof query.topicId !== 'string' || !db.prepare('SELECT 1 FROM topics WHERE character_id=? AND id=?').get(characterId, query.topicId))) throw new Error('统计任务不存在。')
   const tasks = (db.prepare('SELECT id,value FROM topics WHERE character_id=?').all(characterId) as { id: string; value: string }[])

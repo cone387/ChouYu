@@ -48,8 +48,8 @@
 
 **Interfaces:** 查询接收只读 db/必要 repository；额度模块提供 `reserveRunCalls(runId)`、`releaseRunCalls(runId)`、原预算/计费接口；调度模块提供 `nextScheduledTopic(owner, now, newSources?, excluded?)` 与原恢复/轮次接口；`ContactCompletion.finish(runId, report, memories, progress?, delivery?)` 在原连接单事务中协调保存。各模块只注入需要的窄端口；ContactTaskStore 保留兼容方法并委托，不能把整个自己传回每个子模块。
 
-- [ ] 在真实 SQLite 注入结果提交中 reports/delivery/progress/notices 写入失败，断言全部回滚、无对外发送；测试预算预留/取消未退出占位、恢复不重复创建轮次。
-- [ ] 运行新增失败测试；先抽只读查询，再额度，再调度/命令，最后提交协调。每一步跑对应原测试，避免同时改变查询与状态语义。
-- [ ] 确保原材资/记忆失效与 cleanup intent 事务、删除后台日志、日程生成及失败退避仍经过原连接；查询模块无写 SQL。
-- [ ] 运行 `npm test -- src/main/task-center src/main/agents src/main/agent-space src/main/workloop`、`npm run typecheck`、边界检查；构建后 `--agents`，确认真实重启恢复与成果回执。
-- [ ] 提交 `refactor: separate contact queries budgets scheduling and completion`，记录 D1 各事务故障注入结果。
+- [x] 在真实 SQLite 注入结果提交中 reports/delivery/progress/notices 写入失败，断言全部回滚、无对外发送；测试预算预留/取消未退出占位、恢复不重复创建轮次。
+- [x] 运行新增失败测试；先抽只读查询，再额度，再调度/命令，最后提交协调。每一步跑对应原测试，避免同时改变查询与状态语义。
+- [x] 确保原材资/记忆失效与 cleanup intent 事务、删除后台日志、日程生成及失败退避仍经过原连接；查询模块无写 SQL。
+- [x] 运行 `npm test -- src/main/task-center src/main/agents src/main/agent-space src/main/workloop`、`npm run typecheck`、边界检查；构建后 `--agents`，确认真实重启恢复与成果回执。
+- [x] 提交 `refactor: separate contact queries budgets scheduling and completion`，记录 D1 各事务故障注入结果。
