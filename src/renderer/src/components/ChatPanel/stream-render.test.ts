@@ -5,7 +5,7 @@ import { highlightCode, isSupportedLanguage } from '../../core/highlight'
 
 const workspaceSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
 const inputSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/InputArea.tsx'), 'utf8')
-const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.tsx'), 'utf8')
+const panelSource = ['ChatPanel/ChatPanel.tsx', 'ChatPanel/useChatCommands.ts', 'Workspace/Workspace.tsx', 'Workspace/useWorkspaceNavigation.ts', 'Workspace/useWorkspaceOverlays.ts'].map(path => readFileSync(resolve(process.cwd(), 'src/renderer/src/components', path), 'utf8')).join('\n')
 const messageAreaSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/MessageArea.tsx'), 'utf8')
 const chatPanelCssSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.css'), 'utf8')
 

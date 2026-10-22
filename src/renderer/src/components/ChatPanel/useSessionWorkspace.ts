@@ -238,17 +238,23 @@ export function useSessionWorkspace({
     }
   }, [])
 
-  const createSession = useCallback(async (characterId: string = activeCharacterIdRef.current) => {
+  const createSession = useCallback(async (characterId: string = activeCharacterIdRef.current, assertCurrent: () => void = () => {}) => {
     await persistCurrentSession()
+    assertCurrent()
     const workspace = await window.electronAPI.db.createSession(undefined, characterId)
+    assertCurrent()
     applyWorkspace(workspace)
     requestComposerFocus()
   }, [applyWorkspace, persistCurrentSession, requestComposerFocus])
 
-  const selectSession = useCallback(async (id: string) => {
+  const selectSession = useCallback(async (id: string, assertCurrent: () => void = () => {}) => {
+    assertCurrent()
     if (id === activeSessionIdRef.current) return
     await persistCurrentSession(true)
-    applyWorkspace(await window.electronAPI.db.selectSession(id), true)
+    assertCurrent()
+    const workspace = await window.electronAPI.db.selectSession(id)
+    assertCurrent()
+    applyWorkspace(workspace, true)
     requestComposerFocus()
   }, [applyWorkspace, persistCurrentSession, requestComposerFocus])
 

@@ -2,7 +2,7 @@ import type { TaskConversionDraft, TaskNavigation } from './components/Tasks/tas
 import { useState, useEffect, useCallback, useRef } from 'react'
 import StorageNotice from './components/StorageNotice/StorageNotice'
 import Pet from './components/Pet/Pet'
-import ChatPanel from './components/ChatPanel/ChatPanel'
+import Workspace from './components/Workspace/Workspace'
 import type { WorkspacePage } from './components/Workspace/WorkspaceNav'
 import ScreenCapture from './components/ScreenCapture/ScreenCapture'
 import { AppConfig, PetState } from './shared/types'
@@ -558,7 +558,7 @@ function App() {
         </div>
       )}
       {panelInitialized && panelPosition && (
-        <ChatPanel
+        <Workspace
           visible={panelVisible}
           position={panelPosition}
           onPositionChange={handlePanelPositionChange}

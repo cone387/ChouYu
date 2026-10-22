@@ -3,7 +3,7 @@ import { resolve } from 'path'
 import { describe, expect, it } from 'vitest'
 
 const stylesheet = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.css'), 'utf8')
-const panelSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/ChatPanel.tsx'), 'utf8')
+const panelSource = ['ChatPanel/ChatPanel.tsx', 'ChatPanel/useChatCommands.ts', 'Workspace/Workspace.tsx', 'Workspace/useWorkspaceNavigation.ts', 'Workspace/useWorkspaceOverlays.ts'].map(path => readFileSync(resolve(process.cwd(), 'src/renderer/src/components', path), 'utf8')).join('\n')
 const panelResizeSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/usePanelResize.ts'), 'utf8')
 const workspaceSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
 const workspaceHookSource = readFileSync(resolve(process.cwd(), 'src/renderer/src/components/ChatPanel/useSessionWorkspace.ts'), 'utf8')
@@ -92,7 +92,8 @@ describe('chat layout guardrails', () => {
   it('preserves visible session order while switching the active card', () => {
     expect(workspaceSource).toContain('mergeSessionsInCurrentOrder')
     expect(workspaceSource).toContain('await persistCurrentSession(true)')
-    expect(workspaceSource).toContain('db.selectSession(id), true')
+    expect(workspaceSource).toContain('const workspace = await window.electronAPI.db.selectSession(id)')
+    expect(workspaceSource).toContain('applyWorkspace(workspace, true)')
   })
 
   it('persists panel height and explicit sidebar visibility changes', () => {
@@ -210,7 +211,8 @@ describe('contacts presence in the chat surface', () => {
 describe('assistant contact wiring', () => {
   it('focuses the assistant session on demand and follows main-side session updates', () => {
     expect(panelSource).toContain('assistantFocusRequest?: number')
-    expect(panelSource).toContain('openCharacterChat(DEFAULT_CHARACTER_ID)')
+    expect(panelSource).toContain('void focusAssistant().catch')
+    expect(panelSource).toContain('createStoredSession(DEFAULT_CHARACTER_ID, current)')
     expect(panelSource).toContain('onSessionsChanged')
     expect(panelSource).toContain('db.markSessionRead(activeSessionId, messages[messages.length - 1]?.id)')
     expect(workspaceHookSource).toContain('mergeForeignMessages')

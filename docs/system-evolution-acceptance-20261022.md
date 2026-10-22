@@ -41,3 +41,6 @@
 
 ## A1 当前验证
 IPC/preload 已按域拆分，ChatService 持有请求取消和退出等待；技能注册精确注销。24 项定向测试、Node/Web 类型检查、构建通过。此前聊天/harness 回归 165 通过、3 跳过。Electron --chat-edit 通过；--chat-close 首次未在 10 秒内到达模型，增加临时诊断后复测通过（worker init 3265ms），已移除诊断；首次原因尚未确证，保留原始失败日志。构建仍有既有 chunk size 提示。日志位于 artifacts/system-evolution/application-task1-*。
+
+## A2 工作区阶段
+Workspace 已承接页面保活、全局搜索、联系人来源导航、工具确认和唯一会话 hook；ChatPanel 只呈现聊天，聊天命令另有 hook。导航版本守卫覆盖会话选择、联系人来源和助手聚焦，返回复核原会话归属与阅读位置。89 项相关回归、类型检查、构建通过；--navigation（含新增延迟 IPC/草稿/顶层 Esc 场景）及 --chat-close 通过。四张宽窄/明暗截图已查看，位于 artifacts/system-evolution/workspace。首次新增 smoke 选择了上一场景删除但尚留在 UI 的夹具卡片，已修正夹具选取并保留日志。TasksView 分责仍在 A3 实施范围，整体目标尚未完成。

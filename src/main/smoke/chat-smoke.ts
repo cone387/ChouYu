@@ -9,6 +9,7 @@ import {
 import { waitForRenderer } from './storage-smoke'
 import { runNavigationSmoke } from './navigation-smoke'
 import { runChatScrollSmoke } from './chat-scroll-smoke'
+import { runWorkspaceEvolutionSmoke } from './workspace-evolution-smoke'
 
 async function input(window: BrowserWindow, selector: string, value: string): Promise<void> {
   await window.webContents.executeJavaScript(`(() => {
@@ -210,6 +211,8 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
     })()`)
     if (chromeProblem) throw new Error(chromeProblem)
     await runNavigationSmoke(window)
+    await runWorkspaceEvolutionSmoke(window)
+    await snapshots(window, 'workspace-evolution')
     console.log('CHOUYU_CHAT_STAGE navigation-complete')
     if (process.env.CHOUYU_SMOKE_NAVIGATION_ONLY === '1') return
     await runChatScrollSmoke(window)

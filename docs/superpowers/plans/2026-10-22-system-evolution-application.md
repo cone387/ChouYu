@@ -36,12 +36,12 @@
 
 **Interfaces:** `Workspace` 接收原 ChatPanel 的窗口位置/显示和宠物状态端口。导航 hook 返回 `navigate(request: WorkspaceNavigationRequest): Promise<void>`、`returnToOrigin(): Promise<void>`、当前 page/return token；请求联合覆盖聊天、任务、日志、联系人、记忆和设置，复用现有 `ContactNavigationRequest`。弹窗 hook 提供顶层 Esc/返回焦点协调，不复制各业务表单。
 
-- [ ] 添加导航测试：跳转到任务后返回原联系人/会话/阅读位置；来源删除明确失败；迟到结果不能改当前导航；隐藏页面仍保留草稿和进行中请求。
-- [ ] 先运行 `npm test -- src/renderer/src/components/Workspace/workspaceNavigation.test.ts` 见失败，再迁移状态权威；页面保活仍在 Workspace 生命周期内。ChatPanel 不再导入 TasksView、Journal、Settings 等业务页。
-- [ ] 将原来源打开、全局搜索及工具确认渲染接到同一 Workspace；保持同一个会话 hook 实例，避免切页重建生成状态。异步返回使用原 epoch/版本规则。
-- [ ] 运行 `npm test -- src/renderer/src/components/Workspace src/renderer/src/components/Contacts/contactReturnLocation.test.ts src/renderer/src/App.layout.test.ts`，更新路径敏感旧测试时保持原产品断言。
-- [ ] 构建后运行 `--navigation`、`--chat-close` 和新增 smoke 场景，实际查看宽/窄、明/暗截图；确认 Esc 仅关顶层、返回焦点和鼠标穿透。
-- [ ] 提交 `refactor: make workspace own navigation and page lifetime`，记录 A2 的 Workspace 证据。
+- [x] 添加导航测试：跳转到任务后返回原联系人/会话/阅读位置；来源删除明确失败；迟到结果不能改当前导航；隐藏页面仍保留草稿和进行中请求。
+- [x] 先运行 `npm test -- src/renderer/src/components/Workspace/workspaceNavigation.test.ts` 见失败，再迁移状态权威；页面保活仍在 Workspace 生命周期内。ChatPanel 不再导入 TasksView、Journal、Settings 等业务页。
+- [x] 将原来源打开、全局搜索及工具确认渲染接到同一 Workspace；保持同一个会话 hook 实例，避免切页重建生成状态。异步返回使用原 epoch/版本规则。
+- [x] 运行 `npm test -- src/renderer/src/components/Workspace src/renderer/src/components/Contacts/contactReturnLocation.test.ts src/renderer/src/App.layout.test.ts`，更新路径敏感旧测试时保持原产品断言。
+- [x] 构建后运行 `--navigation`、`--chat-close` 和新增 smoke 场景，实际查看宽/窄、明/暗截图；确认 Esc 仅关顶层、返回焦点和鼠标穿透。
+- [x] 提交 `refactor: make workspace own navigation and page lifetime`，记录 A2 的 Workspace 证据。
 
 ### Task 3: TasksView 职责与依赖门禁
 
