@@ -11,6 +11,6 @@ export interface DeliveryFeedbackReceipt {
 }
 export interface DeliveryFeedbackRecord {
   id: number; owner: string; topicId: string; requestId?: string; baseVersion: number; action: 'accept' | 'revise'; reason: string
-  runId?: string; resultVersion?: number; createdAt: number
+  runId?: string; originalRunId?: string; resultVersion?: number; createdAt: number
   status: AgentRunStatus | 'accepted' | 'unlinked' | 'no-result'
 }

@@ -38,7 +38,7 @@ export default function ContactTaskOverview({ topic, data, visible, children, at
     status={state.label}
     statusDescription={state.description}
     values={[elapsed, token(metric?.totalTokens, metric?.totalReported), metric ? `${metric.calls.toLocaleString()} 次` : '—', metric ? `${metric.runs.toLocaleString()} 轮` : '—', token(metric?.inputTokens, metric?.inputReported), token(metric?.outputTokens, metric?.outputReported)]}
-    notices={<>{queued && <p className="agent-caption" role="status">按接单顺序等待，当前任务完成、暂停或等待回复时接续。今日额度不足时保留安排，额度恢复后执行；排队不消耗调用。</p>}
+    notices={<>{state.recovery && <p className="agent-caption" data-task-recovery role="status">{state.recovery.conditions.join(' ')}</p>}{queued && <p className="agent-caption" role="status">按接单顺序等待，当前任务完成、暂停或等待回复时接续。今日额度不足时保留安排，额度恢复后执行；排队不消耗调用。</p>}
       {queued && data.settings.dailyCalls < firstRoundCalls && <p role="status">首轮需要预留 {firstRoundCalls} 次调用，当前每日上限为 {data.settings.dailyCalls} 次。提高上限后才能继续，等待次日不会解决此限制。{onWorkSettings && <button type="button" onClick={onWorkSettings}>调整工作额度</button>}</p>}
       {queued && data.settings.dailyCalls >= firstRoundCalls && data.settings.dailyCalls - data.callsToday < firstRoundCalls && <p role="status">今日剩余额度不足，次日额度恢复后可继续。{onWorkSettings && <button type="button" onClick={onWorkSettings}>调整工作额度</button>}</p>}</>}
     notes={<><p className="agent-caption">累计耗时为本任务所有轮次的起止时间之和，包含失败、重试、排队和等待回复；运行按钮只显示当前这一轮的耗时。调用次数包含失败和重试。</p>

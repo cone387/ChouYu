@@ -49,7 +49,7 @@ return {
     setOutputPreference: (id, scope, revision, patch) => ipcRenderer.invoke('agents:setOutputPreference', id, scope, revision, patch),
     submitInteraction: (id, interactionId, submission) => ipcRenderer.invoke('agents:submitInteraction', id, interactionId, submission),
     setTaskBudget: (id, topicId, revision, budget) => ipcRenderer.invoke('agents:setTaskBudget', id, topicId, revision, budget),
-    continueTopic: (id, topicId, revision, reason) => ipcRenderer.invoke('agents:continueTopic', id, topicId, revision, reason),
+    continueTopic: (id, topicId, revision, reason, requestId) => ipcRenderer.invoke('agents:continueTopic', id, topicId, revision, reason, requestId),
     reviseTopic: (id, topicId, revision, feedback, sectionId, scope, deliveryVersion) => ipcRenderer.invoke('agents:reviseTopic', id, topicId, revision, feedback, sectionId, scope, deliveryVersion),
     searchCredential: (id, key, revision) => ipcRenderer.invoke('agents:searchCredential', id, key, revision),
     get: id => ipcRenderer.invoke('agents:get', id),

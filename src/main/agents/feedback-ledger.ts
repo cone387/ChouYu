@@ -18,6 +18,10 @@ export class FeedbackLedger {
       if (!columns.has(name)) db.exec(`ALTER TABLE contact_delivery_feedback ADD COLUMN ${name} ${type}`)
     }
     db.exec('CREATE UNIQUE INDEX IF NOT EXISTS feedback_request ON contact_delivery_feedback(character_id,request_id) WHERE request_id IS NOT NULL')
+    db.exec(`CREATE TABLE IF NOT EXISTS feedback_attempts (
+      feedback_id INTEGER NOT NULL REFERENCES contact_delivery_feedback(id) ON DELETE CASCADE,
+      run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE);
+      INSERT OR IGNORE INTO feedback_attempts SELECT id,run_id FROM contact_delivery_feedback WHERE run_id IS NOT NULL;`)
   }
   hasRequest(owner: string, requestId: string): boolean {
     return Boolean(this.store.db.prepare('SELECT 1 FROM contact_delivery_feedback WHERE character_id=? AND request_id=?').get(owner, requestId))
@@ -47,6 +51,7 @@ export class FeedbackLedger {
         : this.store.reviseCitation(owner, input.revision, input.citation ?? { ref: { characterId: owner, topicId: input.topicId, version: input.version } }, reason, input.conversation ?? '')
       const inserted = this.store.db.prepare(`INSERT INTO contact_delivery_feedback(character_id,topic_id,version,action,reason,at,request_id,fingerprint,run_id) VALUES(?,?,?,?,?,?,?,?,?)`)
         .run(owner, input.topicId, input.version, input.action, reason, Date.now(), input.requestId, fingerprint, runId)
+      if (runId) this.store.db.prepare('INSERT INTO feedback_attempts VALUES(?,?)').run(inserted.lastInsertRowid, runId)
       return this.receipt(this.store.db.prepare('SELECT * FROM contact_delivery_feedback WHERE id=?').get(inserted.lastInsertRowid) as Row)
     }).immediate()
   }
@@ -54,18 +59,35 @@ export class FeedbackLedger {
     this.store.topics.get(owner, topicId)
     const rows = this.store.db.prepare('SELECT * FROM contact_delivery_feedback WHERE character_id=? AND topic_id=? ORDER BY at DESC,id DESC').all(owner, topicId) as Row[]
     return rows.map(row => {
-      const run = row.run_id ? this.store.getRun(row.run_id) : undefined
+      const latest = this.store.db.prepare('SELECT run_id FROM feedback_attempts WHERE feedback_id=? ORDER BY rowid DESC LIMIT 1').get(row.id) as { run_id: string } | undefined
+      const runId = latest?.run_id ?? row.run_id
+      const run = runId ? this.store.getRun(runId) : undefined
       const status = !row.request_id ? 'unlinked' : row.action === 'accept' ? 'accepted' : row.result_version ? 'completed'
         : !run ? 'unlinked' : run.status === 'completed' ? 'no-result' : run.status
       return { id: row.id, owner, topicId, ...(row.request_id ? { requestId: row.request_id } : {}), baseVersion: row.version,
-        action: row.action, reason: row.reason, createdAt: row.at, ...(row.run_id ? { runId: row.run_id } : {}),
+        action: row.action, reason: row.reason, createdAt: row.at, ...(runId ? { runId, originalRunId: row.run_id! } : {}),
         ...(row.result_version ? { resultVersion: row.result_version } : {}), status }
     })
+  }
+  /** Called only by an explicit continuation or scheduled retry, never by a new feedback request. */
+  resume(previousId: string, nextId: string): void {
+    const previous = this.store.getRun(previousId), next = this.store.getRun(nextId)
+    if (!previous || !next || previous.id === next.id || !['failed', 'cancelled'].includes(previous.status) || next.status !== 'queued' || previous.character_id !== next.character_id || previous.topic_id !== next.topic_id) return
+    const old = JSON.parse(previous.input), input = JSON.parse(next.input)
+    if (old.revisionScope === 'presentation' && input.revisionScope !== 'presentation') return
+    if (old.revisionCitation && this.store.deliveries.get(previous.topic_id!)?.version !== old.revisionCitation.ref.version) throw new Error('原修改依据已有新版，请核对成果后重新提出修改意见。')
+    const fields = ['feedback', 'revisionCitation', 'citationContext', 'revisionSectionId', 'reviewCitation', 'reviewHandoffId', 'revisionBaseVersion', 'handoffPin']
+    for (const key of fields) if (old[key] !== undefined) input[key] = old[key]
+    input.recoveryFrom = previous.id
+    this.store.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), next.id)
+    const feedback = this.store.db.prepare(`SELECT f.id FROM contact_delivery_feedback f JOIN feedback_attempts a ON a.feedback_id=f.id
+      WHERE a.run_id=? AND f.result_version IS NULL`).get(previous.id) as { id: number } | undefined
+    if (feedback) this.store.db.prepare('INSERT OR IGNORE INTO feedback_attempts VALUES(?,?)').run(feedback.id, next.id)
   }
   complete(runId: string, resultVersion: number): void {
     const run = this.store.getRun(runId)
     if (!run?.topic_id || !this.store.db.prepare('SELECT 1 FROM delivery_versions WHERE topic_id=? AND version=? AND run_id=?').get(run.topic_id, resultVersion, runId)) throw new Error('反馈修订尚无对应的正式成果。')
-    this.store.db.prepare('UPDATE contact_delivery_feedback SET result_version=? WHERE run_id=? AND character_id=? AND topic_id=? AND result_version IS NULL')
+    this.store.db.prepare('UPDATE contact_delivery_feedback SET result_version=? WHERE id IN (SELECT feedback_id FROM feedback_attempts WHERE run_id=?) AND character_id=? AND topic_id=? AND result_version IS NULL')
       .run(resultVersion, runId, run.character_id, run.topic_id)
   }
 }

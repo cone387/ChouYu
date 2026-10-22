@@ -15,6 +15,7 @@ import { withinWorkHours } from '../../../shared/work-settings';
 import { RunRow, failureDelay } from './types';
 import type { ContactStoreOperations } from './operations';
 interface Ports {
+  feedbackLedger: Pick<import('../../agents/feedback-ledger').FeedbackLedger, 'resume'>
   dependencies: Pick<import('../../agents/delivery-dependencies').DeliveryDependencies, 'pending'>
   profiles: ContactStoreOperations['profiles']
   topics: Pick<AgentTopics, "list" | "get" | "returnToGoal">
@@ -160,7 +161,9 @@ export class ContactScheduling {
       if (active) { this.ports.topics.get(id, topicId); return active.id }
       const topic = this.ports.topics.get(id, topicId)
       const occurrence = topic.calendar ? this.ports.calendars.claim(topicId, topic.calendar, Date.now()) : undefined
+      const previous = this.db.prepare('SELECT id FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id, topicId) as { id: string } | undefined
       const runId = this.createRun(id, conversation, Date.now(), topicId)
+      if (previous) this.ports.feedbackLedger.resume(previous.id, runId)
       if (occurrence) {
         this.db.prepare("UPDATE runs SET input=json_set(input,'$.calendar',json(?)) WHERE id=?").run(JSON.stringify(occurrence), runId)
         this.ports.event(runId, 'calendar', `计划时间：${new Date(occurrence.dueAt).toLocaleString()}；实际启动：${new Date().toLocaleString()}。${calendarScheduleLabel(occurrence.rule)}`)

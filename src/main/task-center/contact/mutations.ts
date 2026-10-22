@@ -55,7 +55,12 @@ interface Ports {
 }
 
 export class ContactMutations {
-  constructor(private db: Database.Database, private ports: Ports) {}
+  constructor(private db: Database.Database, private ports: Ports) {
+    db.exec(`CREATE TABLE IF NOT EXISTS task_recovery_requests (
+      owner TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, request_id TEXT NOT NULL,
+      topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, payload TEXT NOT NULL,
+      run_id TEXT REFERENCES runs(id) ON DELETE SET NULL, PRIMARY KEY(owner,request_id));`)
+  }
   finishCleanup(characterId: string, requestId: string): void { this.db.prepare('DELETE FROM execution_cleanup WHERE character_id=? AND request_id=?').run(characterId, requestId) }
   ensure(id: string): void { this.db.prepare('INSERT OR IGNORE INTO profiles(character_id,settings,revision,next_at) VALUES(?,?,1,0)').run(id, JSON.stringify(DEFAULT_AGENT_SETTINGS)) }
   save(id: string, raw: unknown, now = Date.now(), createDefaultTopic = true, expectedRevision?: number, requestReason?: string): AgentOverview {
@@ -501,8 +506,15 @@ export class ContactMutations {
     this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topicId, id)
     return this.ports.overview(id)
   }
-  continueTopic(id: string, topicId: string, revision: number, reason: string, conversation: string): string | undefined {
+  continueTopic(id: string, topicId: string, revision: number, reason: string, conversation: string, requestId = `continue:${topicId}:${revision}`): string | undefined {
+    if (typeof requestId !== 'string' || !/^[\w:./-]{1,240}$/.test(requestId)) throw new Error('继续请求标识无效。')
+    const payload = JSON.stringify([topicId, revision, reason])
     return this.db.transaction(() => {
+      const existing = this.db.prepare('SELECT payload,run_id FROM task_recovery_requests WHERE owner=? AND request_id=?').get(id, requestId) as { payload: string; run_id: string | null } | undefined
+      if (existing) {
+        if (existing.payload !== payload) throw new Error('该请求标识已用于另一项继续操作。')
+        return existing.run_id ?? undefined
+      }
       const topic = this.ports.topics.check(id, topicId, revision)
       if (topic.calendar && this.ports.calendars.get(topicId)?.finished_at) throw new Error('这次安排已经执行；请先修改为新的未来时间，再恢复。')
       this.ports.taskFailures.clear(id, topicId)
@@ -510,8 +522,9 @@ export class ContactMutations {
       if (active) throw new Error(active.status === 'waiting' ? '请先回答当前待确认的问题。' : '联系人已有一轮工作未完成。')
       this.ports.topics.status(id, topicId, revision, 'planned', reason)
       this.focusTopic(id, topicId)
-      if (topic.calendar) return
-      return this.ports.startScheduledTopic(id, topicId, conversation)
-    })()
+      const runId = topic.calendar ? undefined : this.ports.startScheduledTopic(id, topicId, conversation)
+      this.db.prepare('INSERT INTO task_recovery_requests VALUES(?,?,?,?,?)').run(id, requestId, topicId, payload, runId ?? null)
+      return runId
+    }).immediate()
   }
 }

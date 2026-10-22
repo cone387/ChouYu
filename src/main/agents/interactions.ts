@@ -1,4 +1,5 @@
 import { contactFailure } from '../../shared/contact-failure'
+import { taskRecovery } from '../../shared/task-recovery'
 import { readStoredDelivery } from './delivery-blocks'
 import { containsSecret } from '../../shared/memory'
 import { createHash } from 'node:crypto'
@@ -200,6 +201,10 @@ export class ContactInteractions {
         v.result = newer.status === 'failed' ? `后续尝试仍受阻：${contactFailure(newer.error).message} 请查看最新的处理事项。` : states[newer.status]
       } else { v.currentState = 'changed'; v.result ??= '任务已变化，此前的操作已失效，请查看当前任务。' }
     }
+    if (v.status === 'pending') v.recovery = taskRecovery({ topicId: v.topicId, revision: v.topicRevision, runId: v.runId,
+      state: { code: v.kind === 'question' ? 'waiting' : v.budgets.length ? v.budgets.some(f => f.key.startsWith('task')) ? 'task-budget' : 'daily-budget' : v.automaticRetryAt === undefined ? 'failed' : 'retry', description: v.recoveryMessage ?? v.question ?? '' },
+      error: sourceRun?.error, retryAt: v.automaticRetryAt, automatic: Boolean(v.automaticRetryAt) })
+    else delete v.recovery
     const { topicRevision: _revision, settingsGuard: _settings, questionEventId: _event, ...view } = v
     view.version = createHash('sha256').update(JSON.stringify([v.id, v.topicRevision, v.settingsGuard, v.budgets.map(f => [f.key, f.limit])])).digest('hex')
     return view
@@ -247,7 +252,8 @@ export class ContactInteractions {
       } else {
         const input = JSON.parse(run.input)
         if (input.revisionScope === 'presentation') {
-          s.revisePresentation(owner, topic.id, topic.revision, input.feedback, conversation, input.revisionBaseVersion)
+          const retry = s.revisePresentation(owner, topic.id, topic.revision, input.feedback, conversation, input.revisionBaseVersion)
+          s.feedbackLedger.resume(run.id, retry)
           record.result = '本次样式修改已排队重试，正文保持不变'
         } else {
           s.continueTopic(owner, topic.id, topic.revision, current.kind === 'budget' ? '用户通过聊天卡片调整额度并继续。' : '用户通过聊天卡片重试本任务。', conversation)

@@ -1,4 +1,4 @@
-import { providerRecoveryDelay } from '../../../shared/contact-failure';
+import { providerRecoveryDelay, contactReadPermissionRestored } from '../../../shared/contact-failure';
 import { ContactCalendars } from '../../agents/calendar';
 import { AgentMemories } from '../../agents/memories';
 import { cardHighlights } from '../../../shared/contact-home';
@@ -181,7 +181,12 @@ export class ContactQueries {
       if (!run || latest?.id !== run.id || run.status !== 'failed' || topic.revision !== run.topic_revision || JSON.parse(run.input).revisionScope === 'presentation') return []
       if (!this.scheduled(id).some(task => task.topic_id === topic.id) && profile.focus_topic_id !== topic.id) return []
       const delay = providerRecoveryDelay(run.error, failure.failures, settings.paceWriting ? settings.intervalMinutes : 0)
-      return delay === undefined ? [] : [{ runId: run.id, topicId: topic.id, at: Math.max(failure.next_at, run.updated_at + delay) }]
+      const input = JSON.parse(run.input)
+      const sourceOwner = input.handoffPin?.source?.characterId as string | undefined
+      const source = sourceOwner ? this.profile(sourceOwner) : undefined
+      const sharedAgain = Boolean(source && settings.readContactDeliveries && JSON.parse(source.settings).shareDeliveries && /成果未共享或已撤回/.test(run.error))
+      const permissionRestored = contactReadPermissionRestored(run.error, input.settings, settings) || sharedAgain
+      return delay === undefined && !permissionRestored ? [] : [{ runId: run.id, topicId: topic.id, at: Math.max(failure.next_at, run.updated_at + (delay ?? 0)) }]
     })
     return recoveries.sort((a, b) => a.at - b.at)[0]
   }

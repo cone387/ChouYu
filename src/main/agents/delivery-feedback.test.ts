@@ -44,7 +44,8 @@ it('carries the same actual tool execution identity across preparation and respo
   const f = fixture(), topic = f.store.topics.get('alice', f.topic.id)
   const tool = createDeliveryFeedbackTools({ owner: () => 'alice', dispatchUnknown: async (method, owner, args = []) => {
     if (method === 'get') return f.store.overview(owner)
-    if (method === 'delivery') return f.store.deliveries.get(String(args[0]))
+    if (method === 'delivery') return f.store.deliveries.get(String(args[0]), args[1] as number | undefined)
+    if (method === 'deliveryFeedbackList') return f.store.feedbackLedger.list(owner, String(args[0]))
     if (method === 'deliveryFeedback') return saveDeliveryFeedback(f.store, owner, String(args[0]), Number(args[1]), Number(args[2]), String(args[3]), String(args[4]), '', args[5] as string)
     throw new Error('Unexpected command')
   } })[0]
@@ -52,6 +53,9 @@ it('carries the same actual tool execution identity across preparation and respo
   const context = { sessionId: 'chat', executionId: 'request:one:tool:two' } as unknown as ToolExecutionContext
   const prepared = await tool.prepareAsync!(args, context), first = await prepared.execute()
   expect(await prepared.execute()).toEqual(first)
+  f.store.setStatus(f.report.runId, 'completed')
+  const newer = f.store.createRun('alice', '', Date.now(), topic.id)
+  f.store.finish(newer, { ...f.report, runId: newer }, [], f.progress)
   expect(await (await tool.prepareAsync!(args, context)).execute()).toEqual(first)
   expect(f.store.feedbackLedger.list('alice', topic.id)).toHaveLength(1)
 })

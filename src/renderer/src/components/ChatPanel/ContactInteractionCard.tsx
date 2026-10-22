@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ContactBudgetKey, ContactInteraction } from '../../../../shared/contact-interactions'
 import './ContactInteractionCard.css'
 import ContactFailureRemedy from './ContactFailureRemedy'
+import { taskRecovery } from '../../../../shared/task-recovery'
 
 export default function ContactInteractionCard({ characterId, interactionId, fallback, onOpen, showOwner = false, active = true }: {
   characterId: string; interactionId: string; fallback: string; showOwner?: boolean; onOpen?: () => void; active?: boolean
@@ -78,7 +79,7 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       <strong className="contact-interaction-title">{view.request.title}</strong>
       <p className="contact-interaction-question">{view.request.body}</p>
       {view.result && <p role="status" className="contact-interaction-result">{view.result}</p>}
-      {view.status === 'failed' && view.retryable === false && <button type="button" disabled={busy} onClick={() => void submitAction(undefined, true)}>我已核对当前状态，关闭此事项</button>}
+      {view.status === 'failed' && view.retryable === false && <><p role="status" data-task-recovery>{taskRecovery({ state: { code: 'failed', description: view.result ?? '' }, unknownExternalResult: true })!.message}</p><button type="button" disabled={busy} onClick={() => void submitAction(undefined, true)}>我已核对当前状态，关闭此事项</button></>}
       {['pending', 'failed'].includes(view.status) && <>
         {view.request.input && <label className="contact-interaction-field"><span>{view.request.input.label}</span>{view.request.input.argument === 'credential'
           ? <><input type="password" autoComplete="off" value={answer} onChange={e => setAnswer(e.target.value)} maxLength={view.request.input.maxLength} required disabled={busy} /><span className="contact-interaction-usage">仅保存到此联系人的凭据设置，不发送给模型。</span></>
@@ -94,7 +95,7 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       {view.kind === 'question' ? <p className="contact-interaction-question">{view.status === 'pending' ? '' : '此前的问题：'}{view.question}</p> : <p>{view.kind === 'budget' ? (view.status === 'pending' ? '下方列出实际不足的额度和继续所需用量。调整后才会继续，不会自动提高上限。' : '此前因额度不足暂停了推进。当前处理结果见下方。') : `${view.status === 'pending' ? '' : '此前中断的原因：'}${view.failure?.message || fallback}`}</p>}
       {view.impact && <p className="contact-interaction-usage">{view.impact}</p>}
       {view.failureDetail && <details className="contact-interaction-diagnostic"><summary>技术诊断</summary><p>{view.failureDetail}</p></details>}
-      {view.status === 'pending' && view.recoveryMessage && <p className="contact-interaction-recovery" role="status">{view.recoveryMessage}</p>}
+      {view.status === 'pending' && (view.recovery?.message || view.recoveryMessage) && <p className="contact-interaction-recovery" data-task-recovery role="status">{view.recovery?.message || view.recoveryMessage}</p>}
       {view.status === 'pending' && view.kind === 'retry' && <ContactFailureRemedy view={view} />}
       {view.status === 'pending' ? <form onSubmit={submit} noValidate>
         {view.budgets.map(field => <label className="contact-interaction-field" key={field.key}>

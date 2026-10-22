@@ -22,7 +22,7 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
   const navigate = (target: unknown) => run(`new Promise((resolve,reject)=>{const detail={target:${JSON.stringify(target)},handled:false,resolve,reject};window.dispatchEvent(new CustomEvent('chouyu:contact-navigation',{detail}));if(!detail.handled)reject(Error('No navigation handler'))})`)
   await run(`window.electronAPI.agents.get(${JSON.stringify(owner)})`)
   const store = new ContactTaskStore(join(app.getPath('userData'), 'contact-agents', 'agents.db')), originalConfig = getConfig(), originalSession = getActiveSession().id
-  let material: { id: string; version: number }, topicId = '', initial = true
+  let material: { id: string; version: number }, topicId = '', initial = true, recoveryUnavailable = false
   let stale: { id: string; revision: number; mode: string; changed: boolean } | undefined
   const requests: { model: string; messages: unknown[] }[] = []
   const prose = '沈青站在雾港，望着周四亮起的蓝色灯光。潮汐带来一封信，她读了很久，才慢慢转身。'
@@ -30,6 +30,9 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
     let body = ''; request.on('data', chunk => { body += chunk }); request.on('end', async () => {
       try {
         const payload = JSON.parse(body), prompt = JSON.stringify(payload.messages); requests.push({ model: payload.model, messages: payload.messages })
+        if (recoveryUnavailable && prompt.includes('RECOVERY_SMOKE')) {
+          response.writeHead(503, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ error: { message: 'Temporary network outage for recovery fixture' } })); return
+        }
         let delta: unknown
         const call = (name: string, args: unknown) => ({ tool_calls: [{ index: 0, id: name, type: 'function', function: { name, arguments: JSON.stringify(args) } }] })
         if (prompt.includes('EXPERIENCE_STALE_CONTEXT') && prompt.includes('你只负责路由')) delta = { content: '{"kind":"none"}' }
@@ -216,6 +219,23 @@ export async function runContactExperienceSmoke(window: BrowserWindow, owner: st
       writeFileSync(join(screenshots, `${theme}-${width}.png`), (await window.webContents.capturePage()).toPNG())
     }
     window.webContents.disableDeviceEmulation(); await run("document.documentElement.dataset.theme='light'")
+    recoveryUnavailable = true
+    await run(`window.electronAPI.agents.deliveryFeedback(${JSON.stringify(owner)},${JSON.stringify(topicId)},${store.topics.get(owner, topicId).revision},3,'revise','RECOVERY_SMOKE：保留引用并修订结尾。','experience-recovery')`)
+    await waitForRenderer(window, `(async()=>{const rows=await window.electronAPI.agents.deliveryFeedbackList(${JSON.stringify(owner)},${JSON.stringify(topicId)});return rows.some(r=>r.requestId==='experience-recovery'&&r.status==='failed'&&!r.resultVersion)})()`, 40000)
+    if (await run("document.querySelector('.contact-work-sheet[open] [data-delivery-version]')?.dataset.deliveryVersion") !== '2') throw Error('Failure moved the fixed-version reader')
+    const failedFeedback = store.feedbackLedger.list(owner, topicId).find(r => r.requestId === 'experience-recovery')!
+    const retryRevision = store.topics.get(owner, topicId).revision, beforeRetry = store.overview(owner).runs.length
+    recoveryUnavailable = false
+    const retryCall = `window.electronAPI.agents.continueTopic(${JSON.stringify(owner)},${JSON.stringify(topicId)},${retryRevision},'重试原修改意见','experience-retry')`
+    await run(retryCall); await run(retryCall)
+    await waitForRenderer(window, `(async()=>{const rows=await window.electronAPI.agents.deliveryFeedbackList(${JSON.stringify(owner)},${JSON.stringify(topicId)});return rows.some(r=>r.requestId==='experience-recovery'&&r.resultVersion===4)})()`, 40000)
+    const recovered = store.feedbackLedger.list(owner, topicId).find(r => r.requestId === 'experience-recovery')!
+    if (store.overview(owner).runs.length !== beforeRetry + 1 || recovered.originalRunId !== failedFeedback.runId || store.deliveries.get(topicId, 4)?.runId !== recovered.runId) throw Error('Recovery lost provenance or duplicated a round')
+    if (JSON.parse(store.getRun(recovered.runId!)!.input).revisionCitation.ref.version !== 3 || await run("document.querySelector('.contact-work-sheet[open] [data-delivery-version]')?.dataset.deliveryVersion") !== '2') throw Error('Recovery drifted the source or current reader')
+    await run(`document.querySelector('${feedbackRoot}').scrollIntoView({block:'center'})`)
+    await new Promise(resolve => setTimeout(resolve, 350))
+    writeFileSync(join(screenshots, 'recovered.png'), (await window.webContents.capturePage()).toPNG())
+    console.log('CHOUYU_RECOVERY_FLOW_SMOKE_PASSED actual network failure, same task/opinion/source v3, stable retry once, result v4, reader retained at v2')
     console.log('CHOUYU_FEEDBACK_LEDGER_SMOKE_PASSED single dialog failure/retry, actual revision, stable replay, fixed base/result, interactions and responsive themes')
     mkdirSync('artifacts/contact-experience', { recursive: true }); writeFileSync('artifacts/contact-experience/receipt.png', (await window.webContents.capturePage()).toPNG())
     writeFileSync('artifacts/contact-experience/result.json', JSON.stringify({ owner, topicId, material, memoryId: memory.id, fileId, handoff, sourceVersion: 1, revisedVersion: 2, requests: requests.length }, null, 2))

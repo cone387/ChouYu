@@ -61,7 +61,7 @@ export default function ContactCurrentTask({ characterId, onOpen }: { characterI
       </select> : current && <button type="button" className="contact-current-task-name" title={`${current.topic.title} · ${current.state.label}：${current.state.description}`} onClick={() => onOpen({ topicId: current.topic.id, runId: current.run?.id ?? current.latestRun?.id ?? '', kind: 'progress', tab: 'work', nonce: Date.now() })} disabled={busy}>{current.topic.title}</button>}
       {current && <>
         {current.action === 'reply' || current.action === 'inspect' ? <button type="button" onClick={open} disabled={busy || Boolean(readError)}>{current.action === 'reply' ? '回复问题' : '处理样式失败'}</button>
-          : <ContactTaskRunButton toolbar pause={current.action === 'pause'} disabled={busy || Boolean(readError)} title={`${current.action === 'pause' ? '暂停' : '继续'}「${current.topic.title}」`}
+          : <ContactTaskRunButton toolbar recovery={current.state.recovery} pause={current.action === 'pause'} disabled={busy || Boolean(readError)} title={`${current.action === 'pause' ? '暂停' : '继续'}「${current.topic.title}」`}
             label={busy ? '处理中…' : current.action === 'pause' ? '暂停' : current.state.code === 'failed' ? '重试' : '继续'} onClick={() => void act()} />}
       </>}
     </div>

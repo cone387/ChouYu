@@ -5,6 +5,7 @@ export interface ContactBudgetField {
   key: ContactBudgetKey; label: string; unit: string; used: number; limit: number; needed: number; max: number
 }
 export interface ContactInteractionDetails {
+  recovery?: import('./task-recovery').TaskRecoveryInfo
   impact?: string
   recoveryMessage?: string
   currentState?: 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'paused' | 'abandoned' | 'deleted' | 'changed' | 'interrupted'

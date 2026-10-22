@@ -88,5 +88,5 @@ export interface ContactStoreOperations {
   editTaskFromChat(id: string, topicId: string, revision: number, patch: import("../../../shared/contact-task-edit").ContactTaskEdit, reason: string, archivedLog?: string): AgentOverview
   changeTopic(id: string, topicId: string, revision: number, change: { input: unknown; reason: string; requestLog?: string; } | { status: AgentTopicStatus; reason: string; }): AgentOverview
   focusTopic(id: string, topicId: string): AgentOverview
-  continueTopic(id: string, topicId: string, revision: number, reason: string, conversation: string): string | undefined
+  continueTopic(id: string, topicId: string, revision: number, reason: string, conversation: string, requestId?: string): string | undefined
 }

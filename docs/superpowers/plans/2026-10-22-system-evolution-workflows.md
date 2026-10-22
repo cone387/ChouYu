@@ -49,11 +49,11 @@ accept 不结束任务，revise 不增加权限/预算；未保存不得显示�
 
 **Interfaces:** `TaskRecoveryInfo` 为原因、可继续条件、retryAt?、来源 revision/runId、允许操作和未知外部结果标记的投影；`taskRecovery(input): TaskRecoveryInfo | undefined` 只读原状态。执行沿用原 `continueTopic`/回答/重试命令，通过当前版本与稳定请求 ID 校验，不另建任务。
 
-- [ ] 测试四类恢复：网络暂时失败→有界重试；权限关闭→恢复后复核；预算等待→恢复后继续原任务；worker/应用重启→原检查点接续。都断言任务 ID/反馈来源保留、交付不重复、用户暂停不解除。
-- [ ] 额外断言外部操作超时结果未知时只提示核对不自动重放；显式重复重试只入队一次；取消未退出不能释放名额开始替代轮次。
-- [ ] 先运行新测试失败，然后把现有分散错误说明收敛到共同投影并接入现有任务按钮/卡片。保留原域状态转换，不用通用枚举覆盖所有执行状态。
-- [ ] 类型检查及相关单测后，扩展 `src/main/smoke/agents-smoke.ts`/contact-experience：当前阅读不被恢复切走，原任务继续、正文来源准确。
-- [ ] 提交 `feat: reconnect task recovery with preserved provenance`，记录 G2。
+- [x] 测试四类恢复：网络暂时失败→有界重试；权限关闭→恢复后复核；预算等待→恢复后继续原任务；worker/应用重启→原检查点接续。都断言任务 ID/反馈来源保留、交付不重复、用户暂停不解除。
+- [x] 额外断言外部操作超时结果未知时只提示核对不自动重放；显式重复重试只入队一次；取消未退出不能释放名额开始替代轮次。
+- [x] 先运行新测试失败，然后把现有分散错误说明收敛到共同投影并接入现有任务按钮/卡片。保留原域状态转换，不用通用枚举覆盖所有执行状态。
+- [x] 类型检查及相关单测后，扩展 `src/main/smoke/agents-smoke.ts`/contact-experience：当前阅读不被恢复切走，原任务继续、正文来源准确。
+- [x] 提交 `feat: reconnect task recovery with preserved provenance`，记录 G2。
 
 ### Task 4: 文档、图册、全量回归与审查
 

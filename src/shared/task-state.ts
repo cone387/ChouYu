@@ -1,10 +1,11 @@
 import { agentUsesPlanner, TOPIC_STATUS, type AgentOverview, type AgentTopic } from './agents'
 import { withinWorkHours } from './work-settings'
 import { calendarScheduleLabel } from './calendar-schedule'
+import { taskRecovery, type TaskRecoveryInfo } from './task-recovery'
 
-export interface TaskState { code: string; label: string; description: string }
+export interface TaskState { code: string; label: string; description: string; recovery?: TaskRecoveryInfo }
 /** Shared projection of lifecycle, actual round and scheduling; never infer completion from a round. */
-export function taskState(data: AgentOverview, topic: AgentTopic, now = Date.now()): TaskState {
+function projectTaskState(data: AgentOverview, topic: AgentTopic, now = Date.now()): TaskState {
   const state = (code: string, label: string, description: string): TaskState => ({ code, label, description })
   if (['paused', 'completed', 'abandoned'].includes(topic.status)) return state(topic.status, TOPIC_STATUS[topic.status], topic.reason || '已有成果保留，不自动继续。')
   const run = data.runs.find(r => r.topicId === topic.id)
@@ -35,4 +36,11 @@ export function taskState(data: AgentOverview, topic: AgentTopic, now = Date.now
   if (schedule?.calendar) return state(nextAt > now ? 'scheduled' : 'ready', nextAt > now ? '等待计划时间' : '等待调度', `${calendarScheduleLabel(schedule.calendar)}；${nextAt > now ? '下次计划' : '已到期，等待可用名额'}：${new Date(nextAt).toLocaleString()}。仍受工作时间和额度限制。`)
   if (nextAt > now) return state('scheduled', '等待下一轮', `下次检查不早于 ${new Date(nextAt).toLocaleString()}；仍受额度和可用名额限制。`)
   return state('ready', '等待调度', '自动推进已安排，等待调度和可用名额；上轮交付不代表任务结束。')
+}
+
+export function taskState(data: AgentOverview, topic: AgentTopic, now = Date.now()): TaskState {
+  const state = projectTaskState(data, topic, now), run = data.runs.find(r => r.topicId === topic.id)
+  const recovery = taskRecovery({ state, topicId: topic.id, revision: topic.revision, runId: run?.id,
+    error: run?.error, retryAt: data.taskFailures?.[topic.id]?.retryAt, automatic: data.settings.enabled })
+  return recovery ? { ...state, recovery } : state
 }

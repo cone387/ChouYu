@@ -73,7 +73,7 @@ export class ContactTaskCommands {
       case 'continueTopic': {
         if (!this.context.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         this.checkSearch(id)
-        this.store.continueTopic(id, String(args[0]), args[1] as number, String(args[2]), this.context.identity(id).conversation); break
+        this.store.continueTopic(id, String(args[0]), args[1] as number, String(args[2]), this.context.identity(id).conversation, args[3] as string | undefined); break
       }
       case 'answerChecked': {
         this.store.topics.check(id, String(args[0]), args[1] as number)

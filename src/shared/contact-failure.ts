@@ -51,3 +51,8 @@ export function providerRecoveryDelay(error: string, failures: number, intervalM
   if (failures < 3 || !['billing', 'network'].includes(contactFailure(error).kind)) return
   return Math.max(Math.min(60, 15 * 2 ** Math.min(2, failures - 3)), intervalMinutes) * 60000
 }
+
+/** A known permission transition, not an inference from a generic failure or a changed setting. */
+export function contactReadPermissionRestored(error: string, before: { readContactDeliveries?: boolean }, after: { readContactDeliveries?: boolean }): boolean {
+  return /未授权读取联系人/.test(error) && before.readContactDeliveries !== true && after.readContactDeliveries === true
+}

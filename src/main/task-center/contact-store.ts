@@ -126,6 +126,7 @@ export class ContactTaskStore {
       this.materials = new AgentMaterials(this.db)
       this.handoffs = new AgentHandoffs(this)
       this.dependencies = new DeliveryDependencies(this)
+      this.feedbackLedger = new FeedbackLedger(this)
       this.memoryLibrary = new AgentMemories(this.db)
       if (version < 10) this.db.transaction(() => {
         // Scope is part of the new identity; equal text in different scopes must remain independent.
@@ -174,6 +175,7 @@ export class ContactTaskStore {
         event: this.event.bind(this)
       })
       this.scheduling = new ContactScheduling(this.db, {
+        feedbackLedger: this.feedbackLedger,
         dependencies: this.dependencies,
         profiles: this.profiles.bind(this),
         topics: this.topics,
@@ -228,7 +230,6 @@ export class ContactTaskStore {
         portfolio: this.portfolio,
         setTaskBudget: this.setTaskBudget.bind(this)
       })
-      this.feedbackLedger = new FeedbackLedger(this)
       this.completion = new ContactCompletion(this.db, {
         dependencies: this.dependencies,
         feedbackLedger: this.feedbackLedger,
