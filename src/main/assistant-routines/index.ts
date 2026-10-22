@@ -2,11 +2,11 @@ import { interactionHref } from '../../shared/contact-interactions'
 import { contactSkillInstruction } from '../skills'
 import { BrowserWindow, ipcMain } from 'electron'
 import { createHash } from 'node:crypto'
-import { appendAssistantMessage, getCharacter, getConfig, saveConfig, getSession, getState, listCharacters, setState } from '../database'
+import { getCharacter, getConfig, saveConfig, getSession, getState, listCharacters, setState } from '../database'
 import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID, resolveCharacterConfig } from '../../shared/characters'
 import { inspectContactWork, inspectContactDelivery, contactAgentsCall } from '../agents'
 import { parseToolArguments } from '../../shared/tools'
-import { notifyReminderChanges } from '../reminder-events'
+import { deliverMessage } from '../messaging'
 import { streamNativeChat } from '../harness/native/runner'
 import { getRegisteredTool, registerTool } from '../tools/registry'
 import { AssistantRoutineService } from './service'
@@ -77,8 +77,7 @@ const companion = new CompanionBriefing({
   },
   delivered: receipt => Boolean(getState(`reminder-receipt:${receipt}`)),
   deliver: item => {
-    appendAssistantMessage(item.content, undefined, item.kind, { receiptIds: [item.receipt] })
-    notifyReminderChanges()
+    deliverMessage({ kind: 'assistant', content: item.content, messageKind: item.kind, receiptIds: [item.receipt] })
   }
 })
 export function appendCompanionBriefing(kind: CompanionKind, deliveryId: string) {
@@ -163,8 +162,7 @@ export function initializeAssistantRoutines() {
     },
     deliver(receipt, content) {
       const messageId = `routine-${createHash('sha256').update(receipt).digest('hex')}`
-      const workspace = appendAssistantMessage(content, undefined, 'notification', { receiptIds: [receipt], messageId })
-      notifyReminderChanges()
+      const { workspace } = deliverMessage({ kind: 'assistant', content, messageKind: 'notification', receiptIds: [receipt], messageId })
       const session = workspace.sessions.find(s => getSession(s.id)?.messages.some(m => m.id === messageId))
       return session ? { sessionId: session.id, messageId } : undefined
     }

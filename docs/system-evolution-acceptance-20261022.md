@@ -35,7 +35,7 @@
 
 ## 待完成范围
 
-设计矩阵 A1–H1 全部仍待实现与验证：IPC/工作区/任务页分责、依赖约束、统一消息交付、任务命令类型、ContactTaskStore 拆分、聊天存储测量与优化、成果正文去重、反馈修订关联、成果依赖事件、失败恢复衔接及文档校准。
+设计矩阵 A1–A3、B1 已完成专项验证；C1–H1 仍待实现与验证：任务命令类型、ContactTaskStore 拆分、聊天存储测量与优化、成果正文去重、反馈修订关联、成果依赖事件、失败恢复衔接及文档校准。整体尚未完成。
 
 后续每批记录实际提交、专项/完整测试、真实 Electron 交互与截图、迁移数据核对和剩余缺口。未执行的检查不标为通过，不用本文件或设计文件的存在代替功能证据。
 
@@ -47,3 +47,11 @@ Workspace 已承接页面保活、全局搜索、联系人来源导航、工具�
 
 ## A3 任务页与依赖检查
 已接入 useTaskData/useTaskCommands/useTaskDrafts/TaskList，原任务视图保留组合、筛选和单任务操作。43 项定向测试通过，覆盖迟到响应、后台失效、跨日、保存失败重试及依赖违例；类型检查、构建、check:boundaries 通过。--task-views、--task-edit、--task-scheduling 真实 Electron 验收通过，相关列表/看板、编辑字段、重复与提醒宽窄/明暗截图已检查。日志位于 artifacts/system-evolution/application-task3-*，截图位于 artifacts/system-evolution/tasks。构建提示保持原有大 chunk；一次无截图 task-edit 记录 UnknownVizError，断言与退出码通过，带截图重跑通过。
+
+## B1 共同消息交付
+
+`messaging` 统一编排持久化和可重试通知；数据库仍负责正文校验、归属、既有 receipt key 与失败写入重试。真实调用链：联系人 notice/action outbox → deliverMessage → 数据库提交 → 源域 ack；晨报 runner、问候/回来 CompanionBriefing、待办 scheduler claim、稍后提醒 SnoozeService、proactive IPC → 同一入口。通知失败不撤销持久结果，不重写正文，独立定时重试并继续通知其他窗口。所有类型沿用统一未读与托盘闪烁。
+
+181 项定向回归通过、5 项按原条件跳过；类型检查、构建、依赖边界通过。三种交付类型均实测磁盘失败后一次插入、重启去重、清空后不复活；另测原会话删除的持久失效回执、错误归属/来源、可见消息已读边界、部分窗口广播失败。四项 Electron 专项 `--agents`、`--assistant-routines`、`--companion`、`--reminders` 通过；日志位于 `artifacts/system-evolution/domains-task1-*`。模型使用既有隔离夹具，并非真实供应商长期运行。
+
+首次 reminders smoke 的直接 scrollTop 赋值后未读被清除；加位置诊断复测未重现，根因未确证。测试现模拟实际向上滚轮以退出自动跟随，并新增 800ms 后原阅读位置断言；复测通过。修改夹具过程中一次重复顶层变量声明报错，已用局部作用域修正。保留全部失败日志；未改已读判定或减弱原未读断言。

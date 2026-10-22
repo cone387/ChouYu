@@ -620,6 +620,15 @@ export function appendContactAction(card: import('../shared/contact-actions').Co
     communication: { version: 1, characterId: card.characterId, intent: 'question', source: { kind: 'interaction', interactionId: card.id } } })
 }
 
+/** Retire an undeliverable card durably before its source outbox is acknowledged. */
+export function retireContactAction(card: import('../shared/contact-actions').ContactActionInteraction): SessionWorkspace {
+  if (card.kind !== 'action' || !card.id.startsWith('action:') || !getCharacter(card.characterId) || card.characterId === ASSISTANT_CHARACTER_ID || !card.request.sessionId) throw new Error('交互事项来源无效。')
+  if (getSession(card.request.sessionId)) throw new Error('交互事项的原会话仍存在，不能丢弃。')
+  store.state[`contact-action:${card.characterId}:${card.id}`] = 'obsolete'
+  persist()
+  return getSessionWorkspace()
+}
+
 function markSessionReadThrough(session: ChatSession, messageId: string): void {
   const index = session.messages.findIndex(m => m.id === messageId)
   if (index < 0) return

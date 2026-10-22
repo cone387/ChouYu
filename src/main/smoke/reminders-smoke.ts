@@ -49,8 +49,11 @@ export async function runRemindersSmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, "document.querySelectorAll('[data-assistant-kind=rest]').length >= 15")
     const unread = await window.webContents.executeJavaScript('window.electronAPI.getAssistantUnread()')
     if (!unread) throw new Error('Background conversation consumed unread')
-    await window.webContents.executeJavaScript("document.querySelector('.message-area').scrollTop = 0; window.__reminderFocused = true; window.dispatchEvent(new Event('focus'))")
+    // Model an actual user scroll; assigning scrollTop alone does not detach
+    // the streaming follow mode from subsequent ResizeObserver measurements.
+    await window.webContents.executeJavaScript("(() => { const area = document.querySelector('.message-area'); area.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true })); area.scrollTop = 0; area.dispatchEvent(new Event('scroll')); window.__reminderFocused = true; window.dispatchEvent(new Event('focus')) })()")
     await window.webContents.executeJavaScript('new Promise(resolve => setTimeout(resolve, 800))')
+    if (await window.webContents.executeJavaScript("document.querySelector('.message-area').scrollTop") !== 0) throw new Error('Scrolled-up viewport did not retain its reading position')
     if (await window.webContents.executeJavaScript('window.electronAPI.getAssistantUnread()') !== unread) throw new Error('Scrolled-up conversation consumed unread')
     await window.webContents.executeJavaScript("const area = document.querySelector('.message-area'); area.scrollTop = area.scrollHeight; area.dispatchEvent(new Event('scroll'))")
     await waitForRenderer(window, "!document.querySelector('.conversation-item-unread')", 8000)

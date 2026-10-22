@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
-import { appendAssistantMessage, getSession, getState, setState } from '../database'
+import { getSession, getState, setState } from '../database'
+import { deliverMessage } from '../messaging'
 import { notifyReminderChanges } from '../reminder-events'
 import { resolveTaskReminder } from '../tasks'
 import { SnoozeService } from './service'
@@ -10,7 +11,7 @@ export function initializeReminders(): void {
     write: value => setState('assistant-snoozes', value),
     message: (sessionId, messageId) => getSession(sessionId)?.messages.find(m => m.id === messageId),
     task: resolveTaskReminder,
-    append: (item, content) => { appendAssistantMessage(content, undefined, 'snooze', { receiptIds: [`snooze:${item.id}`], taskReminder: item.taskRef, snoozeKey: item.key }); notifyReminderChanges() },
+    append: (item, content) => { deliverMessage({ kind: 'assistant', content, messageKind: 'snooze', receiptIds: [`snooze:${item.id}`], taskReminder: item.taskRef, snoozeKey: item.key }) },
     changed: notifyReminderChanges
   })
   ipcMain.handle('reminders:list', () => service.list())

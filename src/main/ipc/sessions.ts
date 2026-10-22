@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { deliverMessage } from '../messaging'
 import { acknowledgeHarnessMessages, purgeHarnessData } from '../harness/service'
 import { contactSkillLibrary } from '../skills'
 import { appendCompanionBriefing } from '../assistant-routines'
@@ -8,7 +10,7 @@ import fs from 'fs'
 import { formatSessionMarkdown } from '../../shared/sessions'
 import { removeContactAgent } from '../agents'
 import { setTrayUnread } from '../tray'
-import { getStorageStatus, onStorageStatus, dismissStorageNotice, flushDatabase, getConfig, getCharacter, listCharacters, createCharacter, updateCharacter, deleteCharacter, getMessages, saveMessages, clearMessages, getSessionWorkspace, searchSessions, getSession, createChatSession, selectChatSession, renameChatSession, deleteChatSession, saveSessionMessages, appendAssistantMessage, getAssistantUnreadCount, getAssistantUnreadPreview, markSessionRead } from '../database'
+import { getStorageStatus, onStorageStatus, dismissStorageNotice, flushDatabase, getConfig, getCharacter, listCharacters, createCharacter, updateCharacter, deleteCharacter, getMessages, saveMessages, clearMessages, getSessionWorkspace, searchSessions, getSession, createChatSession, selectChatSession, renameChatSession, deleteChatSession, saveSessionMessages, getAssistantUnreadCount, getAssistantUnreadPreview, markSessionRead } from '../database'
 import { ipcMain } from 'electron'
 import { registerDomain } from './registration'
 
@@ -67,9 +69,7 @@ export function registerSessionsHandlers(mainWindow: BrowserWindow) {
         await appendCompanionBriefing(kind, deliveryId)
         return
       }
-      appendAssistantMessage(content, at, normalizeAssistantMessageKind(kind) ?? 'notification', typeof deliveryId === 'string' ? { receiptIds: [`companion:${deliveryId}`] } : undefined)
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sessions:changed', true)
-      notifyAssistantUnread()
+      deliverMessage({ kind: 'assistant', content, timestamp: at, messageKind: normalizeAssistantMessageKind(kind) ?? 'notification', receiptIds: [typeof deliveryId === 'string' ? `companion:${deliveryId}` : `proactive:${randomUUID()}`] })
     })
   
     ipc.handle('proactive:get-unread', () => getAssistantUnreadCount())

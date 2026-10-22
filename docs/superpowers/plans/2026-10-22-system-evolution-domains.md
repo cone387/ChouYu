@@ -1,6 +1,6 @@
 # 交付与任务契约 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or the user-selected superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or the user-selected superpowers:subagent-driven-development. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 将所有主动来源接入共同交付服务，补强任务类型契约并拆分联系人 Store 职责。
 
@@ -24,11 +24,11 @@
 
 **Interfaces:** `DeliveryRequest` 为 `{ kind: 'assistant'; content; timestamp?; messageKind?; receiptIds; taskReminder?; snoozeKey?; messageId? } | { kind: 'agent'; notice: AgentNotice } | { kind: 'interaction'; card: ContactActionInteraction }`。`MessageDeliveryService.deliver(request: DeliveryRequest): DeliveryReceipt`；回执至少包含稳定交付键与 `persisted: true`。仓储端口仅在持久成功后返回，通知端口故障单独记录并可补发，不撤销已提交消息或重复插入。
 
-- [ ] 测试保存失败不确认源域、内存待保存消息重试一次、广播失败仍不重复、清空后重启不复活、错 owner/source 拒绝、已读只覆盖可见消息。对三类 DeliveryRequest 分别覆盖。
-- [ ] 先运行 `npm test -- src/main/messaging/service.test.ts src/main/messaging/integration.test.ts` 确认新测试失败；抽取原追加校验与通知编排，避免复制原正文。
-- [ ] 将联系人 outbox、交互卡片、ChouYu 安排/工作检查、待办提醒、稍后提醒与 proactive IPC 全部接入。源域 ack 保持原位置，但只能消费已持久回执；接收端 receipt key 继续兼容旧值。
-- [ ] 运行新测试与 `src/main/database.test.ts`、`src/main/agents/notices.test.ts`、`src/main/assistant-routines`、`src/main/reminders`、`src/main/tasks/index.test.ts`、tray 测试；构建后 `--agents`、`--assistant-routines`、`--companion`、`--reminders` 验证真实投递与未读。
-- [ ] 提交 `refactor: unify durable proactive message delivery`，逐来源记录调用链 B1。
+- [x] 测试保存失败不确认源域、内存待保存消息重试一次、广播失败仍不重复、清空后重启不复活、错 owner/source 拒绝、已读只覆盖可见消息。对三类 DeliveryRequest 分别覆盖。
+- [x] 先运行 `npm test -- src/main/messaging/service.test.ts src/main/messaging/integration.test.ts` 确认新测试失败；抽取原追加校验与通知编排，避免复制原正文。
+- [x] 将联系人 outbox、交互卡片、ChouYu 安排/工作检查、待办提醒、稍后提醒与 proactive IPC 全部接入。源域 ack 保持原位置，但只能消费已持久回执；接收端 receipt key 继续兼容旧值。
+- [x] 运行新测试与 `src/main/database.test.ts`、`src/main/agents/notices.test.ts`、`src/main/assistant-routines`、`src/main/reminders`、`src/main/tasks/index.test.ts`、tray 测试；构建后 `--agents`、`--assistant-routines`、`--companion`、`--reminders` 验证真实投递与未读。
+- [x] 提交 `refactor: unify durable proactive message delivery`，逐来源记录调用链 B1。
 
 ### Task 2: 三域及联系人 RPC 命令契约
 

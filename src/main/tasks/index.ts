@@ -7,8 +7,8 @@ import type { TaskBackup } from './backup'
 import { openTasksStore, type TasksStore } from './store'
 import { startTaskScheduler } from './scheduler'
 import { registerTool, getRegisteredTool } from '../tools/registry'
-import { getSession, appendAssistantMessage, getState, flushDatabase } from '../database'
-import { notifyReminderChanges } from '../reminder-events'
+import { getSession, getState } from '../database'
+import { deliverMessage } from '../messaging'
 import type { TaskReminderRef } from '../../shared/reminders'
 import { createTaskTool } from './task-tool'
 import { createTaskAssistantTools } from './assistant-tools'
@@ -72,17 +72,14 @@ export function initializeTasks(options: TasksModuleOptions): void {
         if (!entries.length) return
         const identified = entries.map(entry => ({ entry, id: JSON.stringify([entry.task.id, entry.itemId ?? '', entry.reminderAt, entry.task.updatedAt]) }))
         const unsent = identified.filter(item => !getState(`reminder-receipt:${item.id}`))
-        if (backlog && unsent.length) {
-          appendAssistantMessage(`错过了 ${unsent.length} 条任务提醒。打开任务查看当前安排。`, undefined, 'task-backlog', { receiptIds: unsent.map(item => item.id) })
-        } else for (const { entry, id } of unsent) {
-          appendAssistantMessage(`任务提醒：${entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title}`, undefined, 'task', {
+        if (backlog) {
+          deliverMessage({ kind: 'assistant', content: `错过了 ${unsent.length} 条任务提醒。打开任务查看当前安排。`, messageKind: 'task-backlog', receiptIds: (unsent.length ? unsent : identified).map(item => item.id) })
+        } else for (const { entry, id } of identified) {
+          deliverMessage({ kind: 'assistant', content: `任务提醒：${entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title}`, messageKind: 'task',
             receiptIds: [id], taskReminder: { taskId: entry.task.id, checklistId: entry.itemId, reminderAt: entry.reminderAt! }
           })
         }
-        // A failed JSON write may have left an in-memory receipt. Flush it before SQL commits.
-        const status = flushDatabase()
-        if (status.error) throw new Error(status.error)
-        notifyReminderChanges()
+        // Every receipt, including a pending in-memory duplicate, is persisted before SQL commits.
       })
     },
     {

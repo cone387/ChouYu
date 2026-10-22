@@ -13,12 +13,12 @@ import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { registerPresentationProtocol } from './presentation-protocol'
 import { deliveryHtmlExport } from '../../shared/delivery-presentation'
-import { notifyReminderChanges } from '../reminder-events'
+import { deliverMessage } from '../messaging'
 import { app, BrowserWindow, dialog, utilityProcess, type UtilityProcess } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
 import { join } from 'node:path'
-import { appendAgentNotice, appendContactAction, getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, getContactProfile, updateContactProfile, contactSearchCredential, saveContactSearchCredential } from '../database'
+import { getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, getContactProfile, updateContactProfile, contactSearchCredential, saveContactSearchCredential } from '../database'
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { createContactProfileTools } from './profile-tools'
@@ -68,13 +68,12 @@ async function deliver(id: string) {
       try {
         const notices = await rpc('notices', characterId) as AgentNotice[]
         for (const notice of notices) {
-          appendAgentNotice(notice)
-          notifyReminderChanges()
+          deliverMessage({ kind: 'agent', notice })
           await rpc('ackNotice', characterId, [notice.id])
         }
         const cards = await rpc('actionNotices', characterId) as import('../../shared/contact-actions').ContactActionInteraction[]
         for (const card of cards) {
-          if (getSession(card.request.sessionId)?.characterId === characterId) { appendContactAction(card); notifyReminderChanges() }
+          deliverMessage({ kind: 'interaction', card })
           await rpc('ackActionNotice', characterId, [card.id])
         }
       } catch { /* Durable outbox is retried by the sync timer after storage/process recovery. */ }
