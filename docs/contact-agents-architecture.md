@@ -1,6 +1,16 @@
-# 联系人持续工作与 24h 实验架构
+# 联系人持续工作与恢复架构
 
-更新：2026-10-20。以下为当前代码实现。产品与 UI 约束统一以 [联系人任务 spec](contact-task-spec.md) 为准；实现差距见该文第 10 节。用户已取消本次模块交付的 24 小时长测门槛，保留既有真实模型与恢复证据；长期运行能力未据此宣称验收通过，最终交付记录见[完整计划](superpowers/plans/2026-10-19-agentspace-complete.md)。
+更新：2026-10-22。以下为当前代码实现。产品与 UI 约束统一以 [联系人任务 spec](contact-task-spec.md) 为准；实现差距见该文第 10 节。用户已取消本次模块交付的 24 小时长测门槛，保留既有真实模型与恢复证据；长期运行能力未据此宣称验收通过，最终交付记录见[完整计划](superpowers/plans/2026-10-19-agentspace-complete.md)。
+
+## 本轮协作与存储边界
+
+反馈记录和修订轮次同事务创建；只有关联轮次真正保存成果才登记结果版本。失败恢复保留原反馈、固定版引用与尝试链，重复请求返回原回执，独立的新反馈不会被混入旧链。接受反馈不结束任务，历史无关联记录不推测因果。
+
+依赖事件只来自已确认的持续交接及其实际读取关系。正文或所关注章节变化才更新未消费指纹；展示变化和无关章节不触发。完成事务保存更新，现有 WorkLoop 唤醒和 15 秒补偿检查读取事件；暂停、待回复、手动模式、日历、工作时段、退避、预算及当前权限仍有效。普通目录发现保留原轮询路径。
+
+`TaskRecoveryInfo` 只投影原状态，继续命令保留稳定请求身份和来源。未知外部操作结果不自动重放；自动权限恢复仅接受可证明的读取授权或共享恢复，其他工具修复仍由用户明确重试。
+
+会话、配置与投递回执进入应用 SQLite；联系人库内的版本正文与检索文本使用不可变共享块。两库没有全局事务，消息先持久化再确认来源。迁移、恢复和测量代价见 [存储恢复](storage-recovery.md) 与 [本轮验收](system-evolution-acceptance-20261022.md)。下文 24h 实验是历史能力说明，不是本轮通过记录或门槛。
 
 ## 模块边界
 
@@ -11,7 +21,11 @@
 | ContactAgent | `src/main/contact-agent/agent.ts` | 独立身份快照、模块注册与装配、卸载和关闭 |
 | WorkLoop | `src/main/workloop/loop.ts` | 本联系人任务激活、下一轮选择、运行和停止；`workflow.ts` 承载原工作策略，`model.ts` 承载工具与逐轮额度 |
 | TaskCenter | `src/main/task-center/service.ts` | 注册联系人工作、用户待办、助手安排三个域，核对归属与能力后分派；卸载使旧入口失效 |
-| ContactTaskStore | `src/main/task-center/contact-store.ts` | 联系人任务、轮次和原数据库事务；`commands.ts` 承载原任务操作及校验 |
+| ContactTaskStore | `src/main/task-center/contact-store.ts` | 同库门面；`contact/queries`、`call-budget`、`scheduling`、`mutations`、`completion` 分责，保持原事务 |
+| ContactCommandMap | `src/shared/contact-commands.ts` | 命令、参数与结果逐项类型化，RPC 入口执行运行时校验 |
+| FeedbackLedger | `src/main/agents/feedback-ledger.ts` | 稳定请求去重、原始反馈及恢复尝试链、正式完成后的结果版关联 |
+| DeliveryDependencies | `src/main/agents/delivery-dependencies.ts` | 确认的持续交接依赖、相关正文指纹、固定版消费水位 |
+| MessagingService | `src/main/messaging/service.ts` | 来源校验、消息与回执持久提交后才确认源域 |
 | Harness | `src/main/harness/background.ts` | worker 可用的模块注册入口；支持后台契约的模块才能执行 |
 
 普通聊天在主进程进入 ContactAgent.Chat，后台工作经同一联系人的远程 WorkLoop 端口交给 WorkLoopHost。主进程持有配置权威，worker 使用执行快照。TaskCenter 统一任务引用 `{domain, owner, id}` 和查询/能力/命令分派；任务 UI、工具与调度的业务入口经实际域绑定调用。用户待办仍使用 TasksStore 的日期生成与事务，助手安排仍使用 AssistantRoutineService 的定时与投递，联系人仍使用 ContactTaskStore 与 WorkLoop。不复制任务、不合并各域状态、不宣称跨库事务。
