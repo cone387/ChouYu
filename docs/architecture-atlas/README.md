@@ -8,6 +8,8 @@
 
 ## 文件与维护
 
+2026-10-22 内容已按模块化单体更新：Workspace/ChatService、分域 IPC/preload、类型化 TaskCenter、同库分责 Store、公共消息投递、SQLite 会话迁移、不可变成果正文、反馈关联、依赖唤醒与恢复来源。运行证据及性能代价见 [本轮验收](../system-evolution-acceptance-20261022.md)。图中保留现有 18 页布局，较细的职责与限制放在各页阅读说明和源码入口中。
+
 | 文件 | 用途 |
 | --- | --- |
 | `build_atlas.py` | 图内容、节点连线、源码入口与页面布局的编辑入口 |

@@ -82,13 +82,13 @@ for x,w,title,sub,detail,href in [
  (784,208,'日志与记忆','活动采集 / 检索 / 总结','长期记忆 / 可选同步','journal.html'),
  (1032,208,'扩展与系统','工具 / 插件 / 采集','配置 / 诊断 / 桌面集成','extensions.html')]:
     b+=node(x,264,w,title,sub,detail,'focal' if x==288 else 'normal',href)
-b+=node(40,488,704,'本地持久化','会话与配置 JSON；任务、联系人、记忆、日志各自的 SQLite；图片独立文件','按职责持有数据，跨存储投递依赖回执与重试',kind='store',href='storage.html')
+b+=node(40,488,704,'本地持久化','应用会话与配置、任务、联系人、记忆、日志各自的 SQLite；图片独立文件','按职责持有数据，跨存储投递依赖回执与重试',kind='store',href='storage.html')
 b+=node(824,488,416,'配置后使用的外部能力','模型 API、网页搜索、Embedding、Mem0、BBTalk','并非全部默认启用，也不共用一个执行通道',kind='optional',href='settings.html')
 b+=finish(note('这是服务职责视图；具体进程位置、网络路径和各模块内部关系在后续图展开。'),dashed='虚线框：可选外部能力')
 add(s,'系统全景','ChouYu 系统架构总览','从界面、业务服务到本地数据与外部能力，先建立完整地图。',b,
  ['当前应用是 Electron + React 的本地桌面应用，preload 暴露类型化 API，主进程注册 IPC 与服务。','图中的五个业务块是为阅读而归组；例如日志和记忆并不是同一个服务。','外部能力由对应模块按配置调用，图中仅保留代表性依赖，不表示只有扩展模块能联网。'],
  '以页脚记录的 Git 版本为静态源码快照。旧 architecture.md 的事件总线、3D 渲染等规划没有当作已实现能力加入。',
- ['src/main/index.ts','src/main/ipc.ts','src/preload/index.ts','src/renderer/src/App.tsx','package.json'],['processes','frontend','storage'])
+ ['src/main/chat/service.ts','src/main/messaging/service.ts','src/main/index.ts','src/main/ipc.ts','src/preload/index.ts','src/renderer/src/App.tsx','package.json'],['processes','frontend','storage'])
 
 # 02. Actual IPC, utility process and worker-thread placement.
 s='processes'
@@ -103,20 +103,20 @@ b+=node(64,120,256,'React Renderer','界面、会话状态、主动触发','node
 b+=node(64,376,256,'preload 桥接层','contextBridge / ipcRenderer','contextIsolation = true','normal','../../src/preload/index.ts')
 b+=node(464,120,280,'Electron 主进程','窗口、IPC、配置和业务服务','注册服务并转发通知','focal','lifecycle.html')
 b+=node(464,376,280,'Journal Worker 线程','journal-worker.js / SQLite','worker_threads，不是独立进程','store','journal.html')
-b+=node(912,120,280,'联系人 UtilityProcess','agent-worker.js / AgentService','联系人共用此执行进程','normal','contacts.html')
+b+=node(912,120,280,'联系人 UtilityProcess','agent-worker.js / WorkLoopHost','联系人共用此执行进程','normal','contacts.html')
 b+=node(912,376,280,'平台采集 / OCR 辅助','原生采集与识别辅助程序','按平台与功能启动','optional','perception.html')
 b+=finish(note('联系人并发不等于每人一个进程；日志 Worker 也不等于独立服务端。'))
 add(s,'系统全景','进程、线程与通信边界','把“模块分开”与“真正的执行隔离”区别开。',b,
  ['主窗口禁用 Node 集成并启用沙箱与上下文隔离；Renderer 通过 preload 与主进程通信。','AgentWorkerRPC 管理 utilityProcess 的请求与响应，执行结果再由主进程投递。','JournalService 在主进程持有一个 worker_threads 工作线程，日志数据库操作由 worker 承担。'],
  '不画成微服务集群，也不将可选 JSONL 能力桥接协议声称为已启动的服务。日志辅助窗口及不同平台辅助进程细节合并。',
- ['src/main/index.ts','src/preload/index.ts','src/main/agents/index.ts','src/main/agents/worker-rpc.ts','src/main/journal/service.ts','src/main/journal/activity-helper.ts'],['system','contacts','journal'])
+ ['src/main/agent-space/service.ts','src/main/agent-space/workloop-host.ts','src/main/index.ts','src/preload/index.ts','src/main/agents/index.ts','src/main/agent-space/worker-rpc.ts','src/main/journal/service.ts','src/main/journal/activity-helper.ts'],['system','contacts','journal'])
 
 # 03. Containment is clearer than dozens of component-import arrows.
 s='frontend'
 b=line(s,[(320,128),(496,128)])+line(s,[(784,128),(928,128)])
 b+=label(408,112,'挂载面板')+label(856,112,'切换页面')
 b+=node(64,80,256,'App 桌面外层','Pet、截图覆盖层、面板状态','窗口位置 / 剪贴板 / 未读','input','perception.html')
-b+=node(496,80,288,'ChatPanel 工作区外壳','会话选择、共享面板与工作区','维护当前阅读与交互状态','focal','chat.html')
+b+=node(496,80,288,'Workspace 工作区','会话选择、共享面板与工作区','页面保留 / 唯一会话状态','focal','chat.html')
 b+=node(928,80,288,'WorkspaceNav','会话 / 通讯录 / 任务等六页','与 GlobalSearch 共同提供导航','normal','search.html')
 b+=zone(40,224,1200,360,'工作区页面 · 包含关系，非顺序执行')
 for x,y,title,sub,detail,href in [
@@ -128,9 +128,9 @@ for x,y,title,sub,detail,href in [
  (928,448,'设置','Settings / 各能力 Tab','模型、人设、工具与系统配置','settings.html')]:b+=node(x,y,288,title,sub,detail,href=href)
 b+=finish(note('同一个工作区容纳多个功能页面；联系人任务详情继续复用一套公共组件。'),dashed='虚线区域：工作区包含范围')
 add(s,'系统全景','前端工作区与模块入口','从 App 到工作区，再到六个主要页面。',b,
- ['上排展示面板外层与导航职责，下排展示工作区包含的六个页面，不是执行流水线。','桌面宠物与采集覆盖层位于 App 外层，业务页面位于 ChatPanel 工作区。','点击下排模块进入相应架构图；页面级的共用状态、搜索与导航不逐个画成节点。'],
+ ['上排展示面板外层与导航职责，下排展示工作区包含的六个页面，不是执行流水线。','桌面宠物与采集覆盖层位于 App 外层，业务页面位于 Workspace；关闭面板隐藏页面，原请求与草稿保留。','点击下排模块进入相应架构图；useSessionWorkspace 持有唯一会话状态，导航请求以版本隔离迟到响应。'],
  '只覆盖主要用户入口，不逐一列出叶子 React 组件或样式文件；设置中的记忆组件被复用到记忆工作区。',
- ['src/renderer/src/App.tsx','src/renderer/src/components/ChatPanel/ChatPanel.tsx','src/renderer/src/components/Workspace/WorkspaceNav.tsx','src/renderer/src/core/workspace-state.ts'],['chat','contacts','todos','settings'])
+ ['src/renderer/src/components/Workspace/Workspace.tsx','src/renderer/src/components/Workspace/useWorkspaceNavigation.ts','src/renderer/src/components/ChatPanel/useSessionWorkspace.ts','src/renderer/src/App.tsx','src/renderer/src/components/ChatPanel/ChatPanel.tsx','src/renderer/src/components/Workspace/WorkspaceNav.tsx','src/renderer/src/core/workspace-state.ts'],['chat','contacts','todos','settings'])
 
 # 04. A concrete sequence with one approval-requiring tool call, not every chat.
 s='chat'
@@ -143,12 +143,12 @@ for a,c,y,txt,ret in messages:
     message=line(s,[(xs[a],y),(xs[c],y)],ret)
     if (a,c) == (1,0):message=message.replace(f'url(#{s}-arrow-normal)',f'url(#{s}-arrow-open)')
     b+=message+label((xs[a]+xs[c])/2,y-14,txt)
-for x,title,sub in zip(xs,['聊天界面','主进程 AI 编排','模型 Provider','工具执行器'],['会话与用户确认','ai:stream / 上下文','OpenAI / Claude 等协议','工具目录 / 参数校验']):b+=node(x-128,44,256,title,sub,kind='focal' if x==480 else 'normal')
+for x,title,sub in zip(xs,['聊天界面','主进程 ChatService','模型 Provider','工具执行器'],['会话与用户确认','请求生命周期 / 工具策略','OpenAI / Claude 等协议','工具目录 / 参数校验']):b+=node(x-128,44,256,title,sub,kind='focal' if x==480 else 'normal')
 b+=legend([('实线：请求或调用','line'),('虚线：响应 / 事件回传','dash'),('本例包含一次需授权工具调用','accent')])
 add(s,'聊天与任务','一次带工具的聊天，经过哪些环节','固定示例：模型提出一个需授权的工具调用，用户同意后继续回答。',b,
- ['Renderer 的 streamChat 通过 IPC 发起请求；主进程校验会话归属并构造可信配置与上下文。','工具名称、参数、启用状态和授权在执行前检查；工具结果参与后续生成。','公共交流规则与角色身份由服务端入口注入，普通流式聊天不再额外调用模型审查每条消息。'],
+ ['Renderer 的 streamChat 经过分域 IPC 进入 ChatService；服务校验会话归属并拥有请求、取消、发送端退出及关闭等待。','工具名称、参数、启用状态和授权在执行前检查；工具结果参与后续生成。','公共交流规则与角色身份由服务端入口注入，普通流式聊天不再额外调用模型审查每条消息。'],
  '不是每次聊天都会调用工具或询问授权；此图只画一个已同意的调用。记忆检索、停止与失败分支合并在注释中，回传箭头表示通道层响应而非精确网络包。',
- ['src/renderer/src/core/ai-engine.ts','src/main/ipc.ts','src/main/ai.ts','src/main/tools/registry.ts','src/main/tool-approval.ts','src/shared/contact-communication.ts'],['extensions','memory','delivery'],kind='SEQUENCE')
+ ['src/main/chat/service.ts','src/main/chat/execution.ts','src/main/ipc/chat.ts','src/preload/bridges/chat.ts','src/renderer/src/core/ai-engine.ts','src/main/ipc.ts','src/main/ai.ts','src/main/tools/registry.ts','src/main/tool-approval.ts','src/shared/contact-communication.ts'],['extensions','memory','delivery'],kind='SEQUENCE')
 
 # 05. Contact task adapter boundaries.
 s='contacts'
@@ -157,15 +157,15 @@ b+=label(416,130,'一个任务描述')+label(856,130,'按能力分流')+label(10
 b+=node(48,96,288,'公共任务 UI','列表卡片、概览、五个标签','新建 / 编辑共用单描述弹窗','input','frontend.html')
 b+=node(496,96,288,'任务解析网关','原话 + 补问 + 版本 / 归属','支持才保存，失败保留输入','focal','../../src/main/assistant-routines/gateway.ts')
 b+=node(928,96,288,'能力与数据适配','普通工作 / 定时安排 / 职责','不要求用户选择内部任务类型','normal','assistant.html')
-b+=node(928,304,288,'联系人执行服务','AgentService / Worker RPC','调度、取消、恢复与进度','normal','scheduling.html')
-b+=node(496,304,288,'AgentStore','任务、轮次、历史、版本成果','交付正文从已保存版本读取','store','storage.html')
+b+=node(928,304,288,'联系人执行服务','AgentSpace / WorkLoopHost','调度、取消、恢复与进度','normal','scheduling.html')
+b+=node(496,304,288,'ContactTaskStore','同库查询、预算、调度与完成','反馈与依赖随正式成果提交','store','storage.html')
 b+=node(48,304,288,'公共任务呈现适配','contactTaskPresentation','真实能力与真实统计','normal','../../src/renderer/src/components/Contacts/contactTaskPresentation.ts')
 b+=node(496,496,288,'公共主动投递','正文 / 来源 / 回执 / 未读','不额外调用模型重写成果','normal','delivery.html')
 b+=finish(note('聊天中的任务修改另有结构化路由；保存成功才可声称已修改原任务。'))
 add(s,'聊天与任务','联系人任务：入口、适配、执行与呈现','UI 统一、能力差异和执行引擎分别承担什么。',b,
- ['共同页面复用 ContactTaskListCard、ContactTaskOverview、ContactTaskDialog 等组件。','自然语言网关验证能力、归属与版本；普通工作进入联系人服务，助手安排进入各自执行通道。','聊天修改通过 chat-changes 等路由处理；原任务和成果保留，取消旧执行后迟到结果不可覆盖。'],
+ ['共同页面复用 ContactTaskListCard、ContactTaskOverview、ContactTaskDialog 等组件。','自然语言网关验证能力、归属与版本；普通工作进入联系人服务，助手安排进入各自执行通道。','类型化任务命令进入同库分责 Store；反馈记录关联实际修订版，原任务、引用与恢复尝试保留，迟到结果不可覆盖。'],
  '此图画普通联系人任务的主链，定时安排另见第 08 张。内部任务字段不是新增 UI 输入项；不恢复标题、预算等多字段表单。',
- ['src/renderer/src/components/Contacts/ContactTopics.tsx','src/renderer/src/components/Contacts/ContactTaskDialog.tsx','src/renderer/src/components/Contacts/contactTaskPresentation.ts','src/main/assistant-routines/gateway.ts','src/main/agents/chat-changes.ts','src/main/agents/service.ts','docs/contact-task-spec.md'],['runtime','scheduling','assistant','delivery'])
+ ['src/main/task-center/contact-store.ts','src/main/task-center/contact/completion.ts','src/shared/contact-commands.ts','src/main/agents/feedback-ledger.ts','src/main/agents/delivery-dependencies.ts','src/renderer/src/components/Contacts/ContactTopics.tsx','src/renderer/src/components/Contacts/ContactTaskDialog.tsx','src/renderer/src/components/Contacts/contactTaskPresentation.ts','src/main/assistant-routines/gateway.ts','src/main/agents/chat-changes.ts','src/main/agent-space/service.ts','docs/contact-task-spec.md'],['runtime','scheduling','assistant','delivery'])
 
 # 06. Exact graph node names, with explicit exceptional branches.
 s='runtime'
@@ -185,24 +185,24 @@ b+=finish(note('图节点对应 runtime.ts 中的 LangGraph；检查点按 runId
 add(s,'聊天与任务','联系人一轮工作的 LangGraph','把真实图节点、条件分支和持久提交摆到同一张图里。',b,
  ['主链是 choose → read → write → review → commit；首版收到回复时先进入 revise。','choose/read 判定需要等待时可以 deferred 提前结束，不等同于任务目标已经完成。','必要问题通过 LangGraph interrupt 与检查点恢复；commit 才提交正式成果与通知。'],
  '这是编排结构，不表示每个节点都调用一次模型。格式修复、正文恢复、权限检查和 Token 预留位于节点或调用封装内部。',
- ['src/main/agents/runtime.ts','src/main/agents/research.ts','src/main/agents/writing-recovery.ts','src/main/agents/store.ts'],['scheduling','delivery'],kind='FLOWCHART')
+ ['src/main/workloop/workflow.ts','src/main/agents/research.ts','src/main/agents/writing-recovery.ts','src/main/task-center/contact-store.ts'],['scheduling','delivery'],kind='FLOWCHART')
 
 # 07. Scheduler overview: current concurrency semantics, not old serial-only docs.
 s='scheduling'
 b=line(s,[(336,136),(496,136)])+line(s,[(784,136),(928,136)])+line(s,[(1072,184),(1072,304)])+line(s,[(928,352),(784,352)])+line(s,[(496,352),(336,352)])+line(s,[(192,400),(192,504)])+line(s,[(336,552),(784,552),(784,448),(1072,448),(1072,400)],True)
 b+=label(416,122,'到期 / 手动触发')+label(856,122,'满足执行边界')+label(1084,248,'有可用名额','start')+label(856,338,'调用前预留')+label(416,338,'落盘 / 释放名额')+label(500,538,'满足恢复条件后再调度')
-b+=node(48,88,288,'已安排任务队列','task_schedule / 原始接单顺序','随后按到期时间轮转','input')
+b+=node(48,88,288,'已安排任务队列','日程 / 持久成果依赖更新','相关正文变化唤醒再校验','input')
 b+=node(496,88,288,'任务可执行性','工作时段、按需 / 自动、暂停','任务自身失败退避与下次时间')
 b+=node(928,88,288,'联系人并发上限','maxConcurrentTasks，默认 1','同一任务仍按轮次串行','focal')
 b+=node(928,304,288,'实际执行名额','已实际启动的执行请求','取消请求未退出前仍占名额')
 b+=node(496,304,288,'共享额度与独立预算','联系人每日上限 + 任务累计','每次调用预留 Token，结束结算','store')
 b+=node(48,304,288,'提交或记录失败','每个任务独立保存退避','一项成功不清空另一项失败','store')
-b+=node(48,504,288,'等待 / 回复 / 恢复','等待回复不占实际执行名额','供应商故障按规则低频重试','optional')
+b+=node(48,504,288,'等待 / 回复 / 恢复','等待回复不占实际执行名额','保留来源与恢复尝试链','optional')
 b+=finish(note('提高上限可补位；降低上限保留当前轮次；未安排的历史任务不会自行复活。'))
 add(s,'聊天与任务','并发、调度与资源边界','当前工作区已支持联系人内配置多任务并发，同一任务保持串行。',b,
- ['工作名额按联系人管理；等待回复、下次执行时间与无法恢复的额度阻塞不占实际执行槽。','启动、修订、继续和回复恢复共用限制；取消请求实际退出前不释放名额，防止同一任务重叠。','失败计数与恢复时间按任务持久化；调用和 Token 仍共享联系人每日额度，累计预算按任务核算。'],
+ ['工作名额按联系人管理；等待回复、下次执行时间与无法恢复的额度阻塞不占实际执行槽。','启动、修订、继续和回复恢复共用限制；取消请求实际退出前不释放名额，防止同一任务重叠。','失败计数与恢复时间按任务持久化；依赖更新复核暂停、权限、日历与退避，调用预算在执行入口预留。已确认持续交接才登记依赖，其他发现仍按原目录轮询。'],
  '这些是当前源码和产品规范描述的控制逻辑，本图不是并发压测报告。供应商余额、网络等故障与格式/权限失败的恢复策略不同，具体阈值见规范。',
- ['src/main/agents/service.ts','src/main/agents/store.ts','src/main/agents/task-failures.ts','src/main/agents/token-budget.ts','src/shared/work-settings.ts','docs/contact-task-spec.md'],['runtime','contacts','delivery'])
+ ['src/main/task-center/contact/scheduling.ts','src/main/task-center/contact/call-budget.ts','src/main/workloop/loop.ts','src/main/agents/delivery-dependencies.ts','src/shared/task-recovery.ts','src/main/agent-space/service.ts','src/main/task-center/contact-store.ts','src/main/agents/task-failures.ts','src/main/agents/token-budget.ts','src/shared/work-settings.ts','docs/contact-task-spec.md'],['runtime','contacts','delivery'])
 
 # 08. Assistant schedules and companionship converge only at checked delivery.
 s='assistant'
@@ -237,25 +237,25 @@ b+=finish(note('用户待办 ≠ 联系人执行任务：数据模型、重复�
 add(s,'聊天与任务','用户待办：重复生成与提醒送达','任务列表背后的持久化、日期生成和通知链。',b,
  ['TasksStore 管理用户自己的待办；日程生成独立各期，不依赖完成上一期。','调度器先生成需要的实例，再认领到期提醒；消息回执先持久化，SQL 认领才提交。','新建、编辑、分组和视图继续用弹窗和现有控件；无快速新建、多选或批量处理。'],
  '本图聚焦按日期重复；按完成时间规则由完成操作驱动。应用离线期间不执行，恢复后实例补齐和提醒合并是两个不同操作。',
- ['src/main/tasks/index.ts','src/main/tasks/store.ts','src/main/tasks/scheduler.ts','src/shared/taskScheduling.ts','src/renderer/src/components/Tasks/TasksView.tsx','docs/task-scheduling.md'],['delivery','storage','frontend'])
+ ['src/renderer/src/components/Tasks/useTaskData.ts','src/renderer/src/components/Tasks/useTaskCommands.ts','src/renderer/src/components/Tasks/useTaskDrafts.ts','src/main/tasks/index.ts','src/main/tasks/store.ts','src/main/tasks/scheduler.ts','src/shared/taskScheduling.ts','src/renderer/src/components/Tasks/TasksView.tsx','docs/task-scheduling.md'],['delivery','storage','frontend'])
 
 # 10. Durable delivery, no fictional distributed transaction.
 s='delivery'
 b=line(s,[(336,144),(496,144)])+line(s,[(784,144),(928,144)])+line(s,[(1072,192),(1072,328)])+line(s,[(928,376),(784,376)])+line(s,[(496,376),(336,376)])+line(s,[(640,424),(640,504)])
 b+=label(416,130,'同一事务')+label(856,130,'读取待投递')+label(1084,270,'先校验来源','start')+label(856,362,'写入成功')+label(416,362,'确认发件箱')
-b+=node(48,96,288,'正式成果版本','AgentStore.finish / 分节正文','与本轮进度一并保存','store')
+b+=node(48,96,288,'正式成果版本','ContactCompletion / 分节正文','与本轮进度一并保存','store')
 b+=node(496,96,288,'持久通知快照','AgentNotices / SQLite','同事务保存待投递正文','focal')
 b+=node(928,96,288,'主进程投递器','读取通知并校验任务归属','失败仍保留待投递通知')
-b+=node(928,328,288,'appendContactMessage','联系人 / 用途 / 来源 / 回执','拒绝空白、超长和来源错配')
-b+=node(496,328,288,'会话与去重回执','chouyu-data.json','保存消息和稳定消息 ID','store','storage.html')
+b+=node(928,328,288,'MessagingService','联系人 / 用途 / 来源 / 回执','拒绝空白、超长和来源错配')
+b+=node(496,328,288,'会话与去重回执','chouyu-application.db','保存消息和稳定消息 ID','store','storage.html')
 b+=node(48,328,288,'已投递确认','重试依回执去重','清空历史不让旧通知复活')
 b+=node(496,504,288,'用户可见消息','正文可读 / 来源可定位','未读提示与托盘闪烁','input','lifecycle.html')
 b+=t(48,514,'正文来源：已保存成果','group-title')+t(48,546,'投递不再调用模型改写。','small')+t(48,570,'后续修订不能覆盖旧快照。','small')
-b+=finish(note('SQLite 与会话 JSON 不是同一数据库事务；可靠送达依靠通知快照、回执和重试。'))
+b+=finish(note('联系人库与应用库没有全局事务；消息与回执持久提交后才确认来源，失败保留重试。'))
 add(s,'聊天与任务','成果如何可靠地进入聊天','从成果事务到发件箱、会话回执，再到未读状态。',b,
- ['成果版本与任务通知快照在 AgentStore 的同一 SQLite 事务内创建；事务失败不能提前交付。','主进程 appendAgentNotice 与 appendAssistantMessage 适配到同一持久投递函数。','跨 SQLite 和 JSON 的重试用稳定回执去重；读消息与处理交互事项是两种状态。'],
+ ['成果、进度、反馈结果版、依赖更新与任务通知在 ContactCompletion 的同一 SQLite 事务内保存；失败不能提前交付。','所有主动来源经过 MessagingService 与 Repository；消息和稳定回执先提交，再执行源域确认，失败依原身份重试。','跨两个 SQLite 库的重试用稳定回执去重；读消息与处理交互事项是两种状态。'],
  '图中主链是任务成果交付；提醒和问候从自己的持久回执接入公共投递。普通聊天沿用流式会话保存，不套用任务发件箱。',
- ['src/main/agents/store.ts','src/main/agents/notices.ts','src/main/agents/index.ts','src/main/database.ts','src/shared/contact-communication.ts','src/main/agents/interactions.ts'],['runtime','assistant','storage'])
+ ['src/main/messaging/service.ts','src/main/messaging/repository.ts','src/main/storage/conversations.ts','src/main/task-center/contact/completion.ts','src/main/task-center/contact-store.ts','src/main/agents/notices.ts','src/main/agents/index.ts','src/main/database.ts','src/shared/contact-communication.ts','src/main/agents/interactions.ts'],['runtime','assistant','storage'])
 
 # 11. Recording and derived knowledge are separate branches.
 s='journal'
@@ -318,7 +318,7 @@ b+=node(496,96,288,'主进程系统采集','desktopCapturer / 原生辅助','隐
 b+=node(928,96,288,'图像与离线 OCR','原图 / 拼接 / 可选文字识别','本地 OCR 能力依平台支持')
 b+=node(928,328,288,'输入区附件','预览图片、拖入文件与文字','用户确认内容后发送','focal')
 b+=node(496,328,288,'会话请求','图片 + 正文 / 提取文字','校验模型是否支持视觉','normal','chat.html')
-b+=node(48,328,288,'回复与持久引用','图片独立保存，不塞满 JSON','会话只保存附件引用','store','storage.html')
+b+=node(48,328,288,'回复与持久引用','图片独立保存，正文存应用库','会话只保存附件引用','store','storage.html')
 b+=node(48,504,288,'AttachmentStore','数据 URL → 文件与稳定引用','损坏与容量边界单独处理','store')
 b+=node(496,504,288,'剪贴板感知','开启后监听文本变化','默认关闭；来源可送到输入区','optional')
 b+=finish(note('工作日志的周期采集由 JournalService 独立控制；不会把手动截图自动当作日志。'))
@@ -330,16 +330,16 @@ add(s,'功能模块','屏幕、OCR、附件与剪贴板','哪些系统输入留�
 # 15. Storage ownership map, no arrow soup and no invented shared SQL database.
 s='storage'
 b=t(48,44,'存储所有权 · 相同根目录不代表相同事务','group-title')
-stores=[(48,96,368,'应用会话与配置','chouyu-data.json','配置 / 联系人 / 会话 / 状态回执','database.ts'),(456,96,368,'联系人工作与恢复','contact-agents/agents.db','contact-agents/checkpoints.db','AgentStore / LangGraph'),(864,96,368,'用户待办','tasks.db','任务 / 清单 / 视图 / 重复标记','TasksStore'),(48,320,368,'长期记忆','chouyu-memory.db','本地记忆、候选与关联索引','MemoryProvider'),(456,320,368,'活动日志','journal/journal.db','journal/media/*.jpg','Journal Worker'),(864,320,368,'会话图片附件','attachments/','稳定引用与独立媒体文件','AttachmentStore')]
+stores=[(48,96,368,'应用会话与配置','chouyu-application.db','会话 / 消息 / 元数据 / 回执','ApplicationDatabase'),(456,96,368,'联系人工作与恢复','contact-agents/agents.db','contact-agents/checkpoints.db','ContactTaskStore / LangGraph'),(864,96,368,'用户待办','tasks.db','任务 / 清单 / 视图 / 重复标记','TasksStore'),(48,320,368,'长期记忆','chouyu-memory.db','本地记忆、候选与关联索引','MemoryProvider'),(456,320,368,'活动日志','journal/journal.db','journal/media/*.jpg','Journal Worker'),(864,320,368,'会话图片附件','attachments/','稳定引用与独立媒体文件','AttachmentStore')]
 for x,y,w,title,a,c,owner in stores:
     b+=node(x,y,w,title,a,c,'focal' if x==456 and y==96 else 'store')+t(x+16,y+126,owner,'mono')
 b+=t(48,520,'凭据保护','group-title')+t(48,552,'API Key / Token 使用 Electron safeStorage；不能据此声称整库已加密。','small')
-b+=t(704,520,'恢复与一致性','group-title')+t(704,552,'JSON 写入备份 / 错误状态；SQLite 事务 / WAL / 检查点。','small')
+b+=t(704,520,'恢复与一致性','group-title')+t(704,552,'SQLite 事务 / WAL / 检查点；应用库校验快照与损坏隔离。','small')
 b+=finish(note('所有路径相对 app.getPath("userData")；不展示本机用户的实际数据或凭据。'),dashed='各模块持有自己的恢复机制')
 add(s,'数据与基础设施','数据分别存在哪里，由谁负责','应用不是一个大 SQLite：会话、任务、联系人、记忆和日志各有存储边界。',b,
- ['database.ts 实际管理 JSON 会话与配置；文件名不能误导成全应用的 SQLite 层。','联系人任务数据与 LangGraph 检查点分别持久化；工作日志的图像和会话图片也是不同目录。','同库操作可用事务；跨 SQLite 与 JSON 的交付必须依赖回执协议，不画成一个全局原子事务。'],
+ ['database.ts 保留兼容 API，ApplicationDatabase 增量保存会话、消息和元数据；旧 JSON 经保留、核对与原子导入，v5 标记阻止旧应用写回。','联系人版本通过哈希共享不可变正文与检索块，重建后保持原阅读与导出 API；任务数据与 LangGraph 检查点分别持久化。','同库操作使用原事务；跨库交付依赖回执协议。应用库备份可能落后于最近提交，启动和搜索仍有全量内存成本。'],
  '图是存储目录与所有权地图，不暗示所有库具有相同备份策略或整库加密。字段级凭据保护与普通正文落盘分别说明。',
- ['src/main/database.ts','src/main/store-file.ts','src/main/agents/service.ts','src/main/agents/store.ts','src/main/capabilities/builtins.ts','src/main/tasks/index.ts','src/main/journal/journal-worker.ts','src/main/attachment-store.ts'],['delivery','memory','journal'])
+ ['src/main/storage/application-database.ts','src/main/storage/legacy-migration.ts','src/main/storage/conversation-recovery.ts','src/main/agents/delivery-blocks.ts','src/main/agents/feedback-ledger.ts','src/main/database.ts','src/main/store-file.ts','src/main/agent-space/service.ts','src/main/task-center/contact-store.ts','src/main/capabilities/builtins.ts','src/main/tasks/index.ts','src/main/journal/journal-worker.ts','src/main/attachment-store.ts'],['delivery','memory','journal'])
 
 # 16. Search federation is a fan-out + result assembly, not a unified index.
 s='search'
@@ -361,7 +361,7 @@ b+=line(s,[(640,424),(640,504)],True)
 b+=label(416,130,'输入与验证')+label(856,130,'实际保存')+label(1084,266,'选取角色配置','start')+label(856,362,'调用前解析')+label(416,362,'分别诊断')
 b+=node(48,96,288,'设置工作区','Provider / 工具 / 记忆 / 插件','主题、热键、日志与系统配置','input')
 b+=node(496,96,288,'共享配置契约','normalizeConfig / 能力校验','角色身份与公共交流规则分开','focal')
-b+=node(928,96,288,'本地配置持久化','JSON + safeStorage 凭据','保存成功后广播配置变化','store','storage.html')
+b+=node(928,96,288,'本地配置持久化','SQLite 元数据 / 凭据保护','保存成功后广播配置变化','store','storage.html')
 b+=node(928,328,288,'按角色解析模型配置','resolveCharacterConfig','Provider profile / model / soul')
 b+=node(496,328,288,'具体能力消费者','聊天 / Agent / 日志 / 记忆','按功能使用对应 Provider')
 b+=node(48,328,288,'诊断与可用性检查','Provider 与 Embedding 分开','缺配置明确阻止相关调用')
@@ -370,7 +370,7 @@ b+=finish(note('图中是配置传播与使用关系，不是设置页面布局�
 add(s,'数据与基础设施','配置、人设、模型与能力诊断','控制平面如何影响各业务模块，而不混淆身份与执行配置。',b,
  ['设置写入共享配置模型；凭据经系统能力保护后保存，服务按配置变化重新配置。','联系人有独立身份和可选择的模型配置，公共交流规则来自共享契约。','模型连接诊断与 Embedding 诊断分开；任务工作参数有版本与权限检查。'],
  '不读取现有 API Key、角色私有正文或远程账户状态。本图说明静态代码组织，不表示某个 Provider 当前可用。',
- ['src/shared/config.ts','src/shared/characters.ts','src/shared/contact-communication.ts','src/main/provider-probe.ts','src/main/ai.ts','src/renderer/src/components/Settings/Settings.tsx','src/main/ipc.ts'],['chat','memory','extensions','lifecycle'])
+ ['src/main/storage/application-metadata.ts','src/main/ipc/config.ts','src/shared/config.ts','src/shared/characters.ts','src/shared/contact-communication.ts','src/main/provider-probe.ts','src/main/ai.ts','src/renderer/src/components/Settings/Settings.tsx','src/main/ipc.ts'],['chat','memory','extensions','lifecycle'])
 
 # 18. Lifecycle and desktop integration, with honest running boundaries.
 s='lifecycle'

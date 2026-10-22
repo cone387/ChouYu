@@ -12,6 +12,8 @@
     ],
     "boundary": "以页脚记录的 Git 版本为静态源码快照。旧 architecture.md 的事件总线、3D 渲染等规划没有当作已实现能力加入。",
     "sources": [
+      "src/main/chat/service.ts",
+      "src/main/messaging/service.ts",
       "src/main/index.ts",
       "src/main/ipc.ts",
       "src/preload/index.ts",
@@ -38,10 +40,12 @@
     ],
     "boundary": "不画成微服务集群，也不将可选 JSONL 能力桥接协议声称为已启动的服务。日志辅助窗口及不同平台辅助进程细节合并。",
     "sources": [
+      "src/main/agent-space/service.ts",
+      "src/main/agent-space/workloop-host.ts",
       "src/main/index.ts",
       "src/preload/index.ts",
       "src/main/agents/index.ts",
-      "src/main/agents/worker-rpc.ts",
+      "src/main/agent-space/worker-rpc.ts",
       "src/main/journal/service.ts",
       "src/main/journal/activity-helper.ts"
     ],
@@ -60,11 +64,14 @@
     "subtitle": "从 App 到工作区，再到六个主要页面。",
     "reading": [
       "上排展示面板外层与导航职责，下排展示工作区包含的六个页面，不是执行流水线。",
-      "桌面宠物与采集覆盖层位于 App 外层，业务页面位于 ChatPanel 工作区。",
-      "点击下排模块进入相应架构图；页面级的共用状态、搜索与导航不逐个画成节点。"
+      "桌面宠物与采集覆盖层位于 App 外层，业务页面位于 Workspace；关闭面板隐藏页面，原请求与草稿保留。",
+      "点击下排模块进入相应架构图；useSessionWorkspace 持有唯一会话状态，导航请求以版本隔离迟到响应。"
     ],
     "boundary": "只覆盖主要用户入口，不逐一列出叶子 React 组件或样式文件；设置中的记忆组件被复用到记忆工作区。",
     "sources": [
+      "src/renderer/src/components/Workspace/Workspace.tsx",
+      "src/renderer/src/components/Workspace/useWorkspaceNavigation.ts",
+      "src/renderer/src/components/ChatPanel/useSessionWorkspace.ts",
       "src/renderer/src/App.tsx",
       "src/renderer/src/components/ChatPanel/ChatPanel.tsx",
       "src/renderer/src/components/Workspace/WorkspaceNav.tsx",
@@ -85,12 +92,16 @@
     "title": "一次带工具的聊天，经过哪些环节",
     "subtitle": "固定示例：模型提出一个需授权的工具调用，用户同意后继续回答。",
     "reading": [
-      "Renderer 的 streamChat 通过 IPC 发起请求；主进程校验会话归属并构造可信配置与上下文。",
+      "Renderer 的 streamChat 经过分域 IPC 进入 ChatService；服务校验会话归属并拥有请求、取消、发送端退出及关闭等待。",
       "工具名称、参数、启用状态和授权在执行前检查；工具结果参与后续生成。",
       "公共交流规则与角色身份由服务端入口注入，普通流式聊天不再额外调用模型审查每条消息。"
     ],
     "boundary": "不是每次聊天都会调用工具或询问授权；此图只画一个已同意的调用。记忆检索、停止与失败分支合并在注释中，回传箭头表示通道层响应而非精确网络包。",
     "sources": [
+      "src/main/chat/service.ts",
+      "src/main/chat/execution.ts",
+      "src/main/ipc/chat.ts",
+      "src/preload/bridges/chat.ts",
       "src/renderer/src/core/ai-engine.ts",
       "src/main/ipc.ts",
       "src/main/ai.ts",
@@ -114,16 +125,21 @@
     "reading": [
       "共同页面复用 ContactTaskListCard、ContactTaskOverview、ContactTaskDialog 等组件。",
       "自然语言网关验证能力、归属与版本；普通工作进入联系人服务，助手安排进入各自执行通道。",
-      "聊天修改通过 chat-changes 等路由处理；原任务和成果保留，取消旧执行后迟到结果不可覆盖。"
+      "类型化任务命令进入同库分责 Store；反馈记录关联实际修订版，原任务、引用与恢复尝试保留，迟到结果不可覆盖。"
     ],
     "boundary": "此图画普通联系人任务的主链，定时安排另见第 08 张。内部任务字段不是新增 UI 输入项；不恢复标题、预算等多字段表单。",
     "sources": [
+      "src/main/task-center/contact-store.ts",
+      "src/main/task-center/contact/completion.ts",
+      "src/shared/contact-commands.ts",
+      "src/main/agents/feedback-ledger.ts",
+      "src/main/agents/delivery-dependencies.ts",
       "src/renderer/src/components/Contacts/ContactTopics.tsx",
       "src/renderer/src/components/Contacts/ContactTaskDialog.tsx",
       "src/renderer/src/components/Contacts/contactTaskPresentation.ts",
       "src/main/assistant-routines/gateway.ts",
       "src/main/agents/chat-changes.ts",
-      "src/main/agents/service.ts",
+      "src/main/agent-space/service.ts",
       "docs/contact-task-spec.md"
     ],
     "related": [
@@ -147,10 +163,10 @@
     ],
     "boundary": "这是编排结构，不表示每个节点都调用一次模型。格式修复、正文恢复、权限检查和 Token 预留位于节点或调用封装内部。",
     "sources": [
-      "src/main/agents/runtime.ts",
+      "src/main/workloop/workflow.ts",
       "src/main/agents/research.ts",
       "src/main/agents/writing-recovery.ts",
-      "src/main/agents/store.ts"
+      "src/main/task-center/contact-store.ts"
     ],
     "related": [
       "scheduling",
@@ -167,12 +183,17 @@
     "reading": [
       "工作名额按联系人管理；等待回复、下次执行时间与无法恢复的额度阻塞不占实际执行槽。",
       "启动、修订、继续和回复恢复共用限制；取消请求实际退出前不释放名额，防止同一任务重叠。",
-      "失败计数与恢复时间按任务持久化；调用和 Token 仍共享联系人每日额度，累计预算按任务核算。"
+      "失败计数与恢复时间按任务持久化；依赖更新复核暂停、权限、日历与退避，调用预算在执行入口预留。已确认持续交接才登记依赖，其他发现仍按原目录轮询。"
     ],
     "boundary": "这些是当前源码和产品规范描述的控制逻辑，本图不是并发压测报告。供应商余额、网络等故障与格式/权限失败的恢复策略不同，具体阈值见规范。",
     "sources": [
-      "src/main/agents/service.ts",
-      "src/main/agents/store.ts",
+      "src/main/task-center/contact/scheduling.ts",
+      "src/main/task-center/contact/call-budget.ts",
+      "src/main/workloop/loop.ts",
+      "src/main/agents/delivery-dependencies.ts",
+      "src/shared/task-recovery.ts",
+      "src/main/agent-space/service.ts",
+      "src/main/task-center/contact-store.ts",
       "src/main/agents/task-failures.ts",
       "src/main/agents/token-budget.ts",
       "src/shared/work-settings.ts",
@@ -224,6 +245,9 @@
     ],
     "boundary": "本图聚焦按日期重复；按完成时间规则由完成操作驱动。应用离线期间不执行，恢复后实例补齐和提醒合并是两个不同操作。",
     "sources": [
+      "src/renderer/src/components/Tasks/useTaskData.ts",
+      "src/renderer/src/components/Tasks/useTaskCommands.ts",
+      "src/renderer/src/components/Tasks/useTaskDrafts.ts",
       "src/main/tasks/index.ts",
       "src/main/tasks/store.ts",
       "src/main/tasks/scheduler.ts",
@@ -245,13 +269,17 @@
     "title": "成果如何可靠地进入聊天",
     "subtitle": "从成果事务到发件箱、会话回执，再到未读状态。",
     "reading": [
-      "成果版本与任务通知快照在 AgentStore 的同一 SQLite 事务内创建；事务失败不能提前交付。",
-      "主进程 appendAgentNotice 与 appendAssistantMessage 适配到同一持久投递函数。",
-      "跨 SQLite 和 JSON 的重试用稳定回执去重；读消息与处理交互事项是两种状态。"
+      "成果、进度、反馈结果版、依赖更新与任务通知在 ContactCompletion 的同一 SQLite 事务内保存；失败不能提前交付。",
+      "所有主动来源经过 MessagingService 与 Repository；消息和稳定回执先提交，再执行源域确认，失败依原身份重试。",
+      "跨两个 SQLite 库的重试用稳定回执去重；读消息与处理交互事项是两种状态。"
     ],
     "boundary": "图中主链是任务成果交付；提醒和问候从自己的持久回执接入公共投递。普通聊天沿用流式会话保存，不套用任务发件箱。",
     "sources": [
-      "src/main/agents/store.ts",
+      "src/main/messaging/service.ts",
+      "src/main/messaging/repository.ts",
+      "src/main/storage/conversations.ts",
+      "src/main/task-center/contact/completion.ts",
+      "src/main/task-center/contact-store.ts",
       "src/main/agents/notices.ts",
       "src/main/agents/index.ts",
       "src/main/database.ts",
@@ -384,16 +412,21 @@
     "title": "数据分别存在哪里，由谁负责",
     "subtitle": "应用不是一个大 SQLite：会话、任务、联系人、记忆和日志各有存储边界。",
     "reading": [
-      "database.ts 实际管理 JSON 会话与配置；文件名不能误导成全应用的 SQLite 层。",
-      "联系人任务数据与 LangGraph 检查点分别持久化；工作日志的图像和会话图片也是不同目录。",
-      "同库操作可用事务；跨 SQLite 与 JSON 的交付必须依赖回执协议，不画成一个全局原子事务。"
+      "database.ts 保留兼容 API，ApplicationDatabase 增量保存会话、消息和元数据；旧 JSON 经保留、核对与原子导入，v5 标记阻止旧应用写回。",
+      "联系人版本通过哈希共享不可变正文与检索块，重建后保持原阅读与导出 API；任务数据与 LangGraph 检查点分别持久化。",
+      "同库操作使用原事务；跨库交付依赖回执协议。应用库备份可能落后于最近提交，启动和搜索仍有全量内存成本。"
     ],
     "boundary": "图是存储目录与所有权地图，不暗示所有库具有相同备份策略或整库加密。字段级凭据保护与普通正文落盘分别说明。",
     "sources": [
+      "src/main/storage/application-database.ts",
+      "src/main/storage/legacy-migration.ts",
+      "src/main/storage/conversation-recovery.ts",
+      "src/main/agents/delivery-blocks.ts",
+      "src/main/agents/feedback-ledger.ts",
       "src/main/database.ts",
       "src/main/store-file.ts",
-      "src/main/agents/service.ts",
-      "src/main/agents/store.ts",
+      "src/main/agent-space/service.ts",
+      "src/main/task-center/contact-store.ts",
       "src/main/capabilities/builtins.ts",
       "src/main/tasks/index.ts",
       "src/main/journal/journal-worker.ts",
@@ -444,6 +477,8 @@
     ],
     "boundary": "不读取现有 API Key、角色私有正文或远程账户状态。本图说明静态代码组织，不表示某个 Provider 当前可用。",
     "sources": [
+      "src/main/storage/application-metadata.ts",
+      "src/main/ipc/config.ts",
       "src/shared/config.ts",
       "src/shared/characters.ts",
       "src/shared/contact-communication.ts",
