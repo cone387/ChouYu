@@ -2,15 +2,18 @@ import type Database from 'better-sqlite3'
 import { validateDeliveryUpdate, type AgentDelivery, type DeliveryUpdate } from '../../shared/agent-delivery'
 import type { AgentReport, AgentTopicProgress } from '../../shared/agents'
 import { AgentPortfolio } from './portfolio'
+import { DeliveryBlockStore, readStoredDelivery } from './delivery-blocks'
 
-/** All writes share the report transaction. Each version is an immutable full snapshot. */
+/** All writes share the report transaction. Immutable versions reference shared body blocks. */
 export class AgentDeliveries {
   readonly portfolio: AgentPortfolio
+  readonly blocks: DeliveryBlockStore
   constructor(private db: Database.Database) {
     db.exec(`CREATE TABLE IF NOT EXISTS delivery_versions (
       topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
       version INTEGER NOT NULL, run_id TEXT NOT NULL UNIQUE REFERENCES runs(id) ON DELETE CASCADE,
       value TEXT NOT NULL, PRIMARY KEY(topic_id, version));`)
+    this.blocks = new DeliveryBlockStore(db)
     this.portfolio = new AgentPortfolio(db)
   }
   get(topicId: string, version?: number): AgentDelivery | null {
@@ -19,7 +22,7 @@ export class AgentDeliveries {
       ? this.db.prepare('SELECT value FROM delivery_versions WHERE topic_id=? ORDER BY version DESC LIMIT 1').get(topicId)
       : this.db.prepare('SELECT value FROM delivery_versions WHERE topic_id=? AND version=?').get(topicId, version)) as { value: string } | undefined
     if (version !== undefined && !row) throw new Error('找不到该成果版本。')
-    return row ? JSON.parse(row.value) : null
+    return row ? readStoredDelivery(this.db, row.value) : null
   }
   summary(topicId: string) {
     const artifact = this.get(topicId)
@@ -64,10 +67,13 @@ export class AgentDeliveries {
     const fileIds = [...new Set([...(previous?.fileIds ?? []), ...(value.fileIds ?? [])])]
     const artifact: AgentDelivery = { ...(fileIds.length ? { fileIds } : {}), version: (previous?.version ?? 0) + 1, runId: report.runId, createdAt: report.createdAt, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, sections, ...(presentation ? { presentation } : {}), ...(inputs ? { inputs } : {}) }
     this.db.transaction(() => {
-      this.db.prepare('INSERT INTO delivery_versions VALUES(?,?,?,?)').run(topicId, artifact.version, report.runId, JSON.stringify(artifact))
+      const manifest = this.blocks.write(artifact)
+      this.db.prepare('INSERT INTO delivery_versions VALUES(?,?,?,?)').run(topicId, artifact.version, report.runId, JSON.stringify(manifest))
+      this.blocks.link(topicId, manifest)
       this.portfolio.index(topicId, artifact)
     })()
   }
+  collectUnreferenced(): void { this.blocks.collectUnreferenced(); this.portfolio.collectUnreferenced() }
   context(topicId: string) {
     const value = this.get(topicId)
     if (!value) {

@@ -98,9 +98,12 @@ export async function runStorageScaleSmoke() {
       const snapshots = store.db.prepare('SELECT SUM(length(CAST(value AS BLOB))) AS n FROM delivery_versions').get() as { n: number }
       const hasBlocks = store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='delivery_blocks'").get()
       const blockBytes = hasBlocks ? (store.db.prepare('SELECT SUM(length(CAST(body AS BLOB))) AS n FROM delivery_blocks').get() as { n: number }).n : null
+      if (hasBlocks) assert.equal(blockBytes, count * 2000)
+      const indexBodyBytes = hasBlocks ? (store.db.prepare('SELECT SUM(length(CAST(text AS BLOB))+length(CAST(search_text AS BLOB))) AS n FROM portfolio_texts').get() as { n: number }).n : null
+      const indexManifestBytes = (store.db.prepare('SELECT SUM(length(CAST(sections AS BLOB))+length(CAST(search_text AS BLOB))) AS n FROM portfolio_versions').get() as { n: number }).n
       report.deliveries.push({ count, write: { durationMs: write.durationMs, eventLoopDelayMs: write.eventLoopDelayMs },
         readMs: read.durationMs, exportMs: exported.durationMs, snapshotOrManifestBytes: snapshots.n, uniqueBodyBytes: count * 2000,
-        storedBlockBytes: blockBytes, fileBytes: bytes(dir), validatedVersions: [1, count], validatedSections: count })
+        storedBlockBytes: blockBytes, indexBodyBytes, indexManifestBytes, fileBytes: bytes(dir), validatedVersions: [1, count], validatedSections: count })
     } finally { store.close() }
   }
   app.setPath('userData', root)

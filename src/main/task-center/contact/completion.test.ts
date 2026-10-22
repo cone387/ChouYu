@@ -7,7 +7,7 @@ import type { DeliveryUpdate } from '../../../shared/agent-delivery'
 const progress: AgentTopicProgress = { status: 'researching', judgement: '已有正文', reason: '继续核对', nextStep: '下一节', openQuestions: '' }
 const delivery: DeliveryUpdate = { completionCriteria: '保存正文', summary: '第一节', stages: [{ id: 'one', title: '正文', status: 'active' }], section: { id: 'one', title: '第一节', body: '这是实际保存的正文。' } }
 
-it.each(['reports', 'delivery_versions', 'topics', 'notices'])('rolls back the entire completion when %s fails, then retries once', table => {
+it.each(['reports', 'delivery_blocks', 'delivery_block_references', 'delivery_versions', 'topics', 'notices'])('rolls back the entire completion when %s fails, then retries once', table => {
   const store = new ContactTaskStore(':memory:')
   try {
     expect(store.completion).toBeInstanceOf(ContactCompletion)
@@ -23,6 +23,8 @@ it.each(['reports', 'delivery_versions', 'topics', 'notices'])('rolls back the e
     expect(store.deliveries.get(before.id)).toBeNull()
     expect(store.notices.pending('alice')).toEqual([])
     expect(store.db.prepare('SELECT * FROM reports').all()).toEqual([])
+    expect(store.db.prepare('SELECT * FROM delivery_blocks').all()).toEqual([])
+    expect(store.db.prepare('SELECT * FROM delivery_block_references').all()).toEqual([])
     store.db.exec('DROP TRIGGER fixture_failure')
     store.finish(run, report, [], progress, delivery)
     store.finish(run, report, [], progress, delivery)

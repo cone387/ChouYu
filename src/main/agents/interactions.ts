@@ -1,4 +1,5 @@
 import { contactFailure } from '../../shared/contact-failure'
+import { readStoredDelivery } from './delivery-blocks'
 import { containsSecret } from '../../shared/memory'
 import { createHash } from 'node:crypto'
 import { agentUsesPlanner, type AgentNotice, type AgentSettings } from '../../shared/agents'
@@ -24,7 +25,7 @@ export class ContactInteractions {
     const s = this.store, run = s.getRun(runId)
     if (!run?.topic_id) return '这次尝试的保存情况无法核实。'
     const row = s.db.prepare("SELECT value FROM delivery_versions WHERE topic_id=? AND json_extract(value,'$.createdAt')<=? ORDER BY version DESC LIMIT 1").get(run.topic_id, run.updated_at) as { value: string } | undefined
-    const saved = row && JSON.parse(row.value).sections?.some((section: { body: string }) => section.body?.trim())
+    const saved = row && readStoredDelivery(s.db, row.value).sections.some(section => section.body.trim())
     const presentation = JSON.parse(run.input).revisionScope === 'presentation'
     const input = JSON.parse(run.input)
     const lengthDraft = input.deliveryLengthRepair?.original?.delivery?.section?.body || input.deliveryCountRepair?.original?.delivery?.section?.body

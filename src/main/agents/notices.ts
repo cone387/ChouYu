@@ -1,4 +1,5 @@
 import { contactResultMessage } from './contact-message'
+import { readStoredDelivery } from './delivery-blocks'
 import { evaluationMarkdown } from '../../shared/agent-evaluation'
 import type { DeliveryUpdate } from '../../shared/agent-delivery'
 import { validateContactMessage } from '../../shared/contact-communication'
@@ -26,7 +27,7 @@ export class AgentNotices {
     if (source.kind !== 'task' || source.topicId !== notice.topicId || source.runId !== notice.runId) throw new Error('任务消息来源不匹配，未发送。')
     if (source.artifact) {
       const row = this.db.prepare('SELECT value FROM delivery_versions WHERE topic_id=? AND version=? AND run_id=?').get(notice.topicId, source.artifact.version, notice.runId) as { value: string } | undefined
-      const saved = row && JSON.parse(row.value).sections.find((s: { id: string; runId: string }) => s.id === source.artifact!.sectionId && s.runId === notice.runId)
+      const saved = row && readStoredDelivery(this.db, row.value).sections.find(s => s.id === source.artifact!.sectionId && s.runId === notice.runId)
       const index = source.artifact.evaluationIndex
       if (index !== undefined) {
         const reportRow = this.db.prepare('SELECT value FROM reports WHERE run_id=? AND character_id=?').get(notice.runId, notice.characterId) as { value: string } | undefined

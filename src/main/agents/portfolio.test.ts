@@ -28,6 +28,24 @@ function fixture() {
 }
 
 describe('formal portfolio and reading', () => {
+  it('preserves Unicode and cross-section search while migrating old indexes without changing sequence', () => {
+    const f = fixture(), topic = f.topic('alice', 'École')
+    f.write(topic.id, 'ÄBC\n末尾')
+    const sql = new Database(f.file)
+    try {
+      // The old index stored normalized prose twice per version.
+      const sections = [{ id: 's', title: '正文', text: 'ÄBC\n末尾', textHash: textHash('ÄBC\n末尾') }]
+      sql.prepare('UPDATE portfolio_versions SET search_text=?,sections=? WHERE topic_id=?').run('école\n正文\näbc\n末尾', JSON.stringify(sections), topic.id)
+    } finally { sql.close() }
+    const before = f.store.db.prepare('SELECT seq FROM portfolio_versions WHERE topic_id=?').get(topic.id)
+    f.reopen()
+    expect(f.store.portfolio.list('alice', { query: '正文\näbc' }).items[0]?.ref.topicId).toBe(topic.id)
+    expect(f.store.portfolio.list('alice', { query: 'ÉCOLE\n正文' }).items[0]?.ref.topicId).toBe(topic.id)
+    const row = f.store.db.prepare('SELECT seq,search_text,sections FROM portfolio_versions WHERE topic_id=?').get(topic.id) as { seq: number; search_text: string; sections: string }
+    expect({ seq: row.seq }).toEqual(before)
+    expect(JSON.parse(row.sections)[0].text).toBeUndefined()
+    expect(row.search_text).not.toContain('末尾')
+  })
   it.each(['updated', 'name'] as const)('pages a stable 31-work snapshot sorted by %s across inserts and updates', sort => {
     const f = fixture(), ids: string[] = []
     for (let n = 0; n < 31; n++) { const t = f.topic(); ids.push(t.id); f.write(t.id, `原稿${n}`) }
@@ -86,7 +104,7 @@ describe('formal portfolio and reading', () => {
     const f = fixture(), topic = f.topic(); f.write(topic.id)
     f.store.db.exec('DROP TABLE portfolio_read_sections; DROP TABLE portfolio_reading; DROP TABLE portfolio_favorites; DROP TABLE portfolio_versions; PRAGMA user_version=8')
     f.reopen()
-    expect(f.store.db.pragma('user_version', { simple: true })).toBe(17)
+    expect(f.store.db.pragma('user_version', { simple: true })).toBe(18)
     expect(f.store.portfolio.list('alice', {}).items).toHaveLength(1)
     expect(f.store.portfolio.reading('alice', topic.id)).toBeNull()
     expect(f.store.portfolio.list('alice', {}).items[0].sections[0].readHash).toBeNull()

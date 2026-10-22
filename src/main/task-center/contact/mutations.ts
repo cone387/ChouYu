@@ -40,7 +40,7 @@ interface Ports {
   nextScheduledTopic: ContactStoreOperations['nextScheduledTopic']
   startScheduledTopic: ContactStoreOperations['startScheduledTopic']
   calendars: Pick<ContactCalendars, "save" | "get">
-  deliveries: Pick<AgentDeliveries, "context" | "get">
+  deliveries: Pick<AgentDeliveries, "context" | "get" | "collectUnreferenced">
   allocateTaskBudget: ContactStoreOperations['allocateTaskBudget']
   notices: Pick<AgentNotices, "enqueue">
   handoffs: Pick<AgentHandoffs, "checkRun">
@@ -182,6 +182,7 @@ export class ContactMutations {
       const runs = (this.db.prepare('SELECT id FROM runs WHERE character_id=?').all(id) as { id: string }[]).map(r => r.id)
       for (const runId of runs) this.db.prepare('INSERT OR IGNORE INTO execution_cleanup VALUES(?,?)').run(id, runId)
       this.db.prepare('DELETE FROM profiles WHERE character_id=?').run(id)
+      this.ports.deliveries.collectUnreferenced()
       this.db.prepare('DELETE FROM token_ledger WHERE character_id=?').run(id)
       for (const runId of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(runId)
       return runs
@@ -418,6 +419,7 @@ export class ContactMutations {
       this.db.prepare('DELETE FROM memories WHERE character_id=? AND run_id IN (SELECT id FROM runs WHERE character_id=? AND topic_id=?)').run(id, id, topicId)
       this.db.prepare('DELETE FROM runs WHERE character_id=? AND topic_id=?').run(id, topicId)
       this.db.prepare('DELETE FROM topics WHERE character_id=? AND id=?').run(id, topicId)
+      this.ports.deliveries.collectUnreferenced()
       this.ports.taskFailures.refresh(id)
       this.db.prepare('UPDATE profiles SET focus_topic_id=NULL WHERE character_id=? AND focus_topic_id=?').run(id, topicId)
       return runs.map(run => run.id)

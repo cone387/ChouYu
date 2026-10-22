@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { readStoredDelivery } from './delivery-blocks'
 import { randomUUID } from 'node:crypto'
 import { validateMemoryInput, type ContactMemory, type MemoryInput } from '../../shared/contact-memories'
 import { validId, type ContactReadContext } from '../../shared/contact-content'
@@ -34,7 +35,7 @@ export class AgentMemories {
     if (source.kind === 'conversation' && !this.db.prepare('SELECT 1 FROM contact_memory_sessions WHERE session_id=? AND owner=?').get(source.sessionId, owner)) throw new Error('对话来源不属于此联系人。')
     if (source.kind === 'delivery') {
       const row = this.db.prepare('SELECT d.value FROM delivery_versions d JOIN topics t ON t.id=d.topic_id WHERE d.topic_id=? AND d.version=? AND t.character_id=?').get(source.ref.topicId, source.ref.version, owner) as { value: string } | undefined
-      if (source.ref.characterId !== owner || !row || (source.ref.sectionId && !JSON.parse(row.value).sections.some((s: { id: string }) => s.id === source.ref.sectionId))) throw new Error('成果来源不存在或不属于此联系人。')
+      if (source.ref.characterId !== owner || !row || (source.ref.sectionId && !readStoredDelivery(this.db, row.value).sections.some(s => s.id === source.ref.sectionId))) throw new Error('成果来源不存在或不属于此联系人。')
     }
   }
   list(owner: string): ContactMemory[] {

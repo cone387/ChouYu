@@ -51,9 +51,9 @@
 
 **Interfaces:** `DeliveryBlockStore.write(artifact: AgentDelivery): StoredDeliveryManifest`、`read(manifest): AgentDelivery`、`collectUnreferenced(): void`。manifest 含版本原元数据以及每章 bodyHash、title、runId、sources；bodyHash 为 UTF-8 正文 SHA-256，读时验证。权限始终由 owner/topic/version 外层校验，不暴露按 hash 任意读取的 IPC。
 
-- [ ] 固定旧快照测试：300 版重建与旧 `AgentDelivery` 深度相等，Markdown/HTML 导出逐字一致；缺块/错误 hash 明确失败；删除一任务不删除其他版本仍引用块；只有样式更新时正文块数不增加。
-- [ ] 先运行新测试失败；在原 agents.db 创建正文块及版本引用表，迁移旧 `delivery_versions.value` 为格式标记+清单，在同一事务中核对重建后替换，不创建第二事实库。
-- [ ] `AgentDeliveries.get/commit/context/inspect/summary` 继续返回相同外部结构；结果提交外层事务仍包住正文块、版本、进度和通知。删除通过引用检查收集孤立块，事务失败完整回滚。
-- [ ] 运行 `npm test -- src/main/agents/delivery src/main/agents/portfolio src/main/agents/citations src/main/agents/handoffs src/main/task-center/contact/completion.test.ts`；构建后 `--agents`、`--presentation` 验证阅读、固定版本与导出。
-- [ ] 重跑 10/100/300 版基准，报告唯一正文块字节和清单开销，证明正文量按唯一内容增长；不得只报告库文件大小而忽略正文重复。
-- [ ] 提交 `feat: deduplicate immutable delivery bodies across versions`，记录 E2。
+- [x] 固定旧快照测试：300 版重建与旧 `AgentDelivery` 深度相等，Markdown/HTML 导出逐字一致；缺块/错误 hash 明确失败；删除一任务不删除其他版本仍引用块；只有样式更新时正文块数不增加。
+- [x] 先运行新测试失败；在原 agents.db 创建正文块及版本引用表，迁移旧 `delivery_versions.value` 为格式标记+清单，在同一事务中核对重建后替换，不创建第二事实库。
+- [x] `AgentDeliveries.get/commit/context/inspect/summary` 继续返回相同外部结构；结果提交外层事务仍包住正文块、版本、进度和通知。删除通过引用检查收集孤立块，事务失败完整回滚。
+- [x] 运行 `npm test -- src/main/agents/delivery src/main/agents/portfolio src/main/agents/citations src/main/agents/handoffs src/main/task-center/contact/completion.test.ts`；构建后 `--agents`、`--presentation` 验证阅读、固定版本与导出。
+- [x] 重跑 10/100/300 版基准，报告唯一正文块字节和清单开销，证明正文量按唯一内容增长；不得只报告库文件大小而忽略正文重复。
+- [x] 提交 `feat: deduplicate immutable delivery bodies across versions`，记录 E2。

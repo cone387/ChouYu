@@ -9,6 +9,7 @@ import { evidenceFromText } from './sources'
 import { DEFAULT_AGENT_SETTINGS, type AgentTopicProgress } from '../../shared/agents'
 import { deliveryMarkdown, validateDeliveryUpdate, type DeliveryUpdate } from '../../shared/agent-delivery'
 import { contactCommunicationRules } from '../../shared/contact-communication'
+import { readStoredDelivery } from './delivery-blocks'
 
 const cleanups: (() => void | Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
@@ -98,7 +99,7 @@ describe('durable deliverables', () => {
       expect(notice.update).toBeUndefined()
       expect(notice.content).not.toMatch(/arc2ch|本轮|active|done|接下来/)
       const saved = f.store.db.prepare('SELECT value FROM delivery_versions WHERE run_id=?').get(notice.runId) as { value: string }
-      expect(notice.content).toContain(JSON.parse(saved.value).sections[0].body)
+      expect(notice.content).toContain(readStoredDelivery(f.store.db, saved.value).sections[0].body)
       f.store.notices.ack('alice', notice.id)
     }
     f.reopen()
