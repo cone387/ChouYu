@@ -5,6 +5,64 @@ import type { Message } from '../shared/types'
 import { joinApiUrl, parseClaudeStreamLine, parseOpenAIStreamLine, streamChat } from './ai-engine'
 
 describe('AI stream parsers', () => {
+  it.each(['events-first', 'result-first'])('keeps the completion barrier scoped to its request (%s)', async order => {
+    let listener: (event: any) => void = () => {}, requestId = '', release!: () => void, settled = false, rendered = ''
+    vi.stubGlobal('window', { electronAPI: { ai: {
+      onStreamEvent: (callback: typeof listener) => { listener = callback; return () => {} }, cancelStream: vi.fn(),
+      startStream: (request: AIStreamRequest) => { requestId = request.requestId; return new Promise(resolve => { release = () => resolve({ ok: true, waitForStreamEnd: true }) }) }
+    } } })
+    const running = streamChat([], '', { ...DEFAULT_APP_CONFIG, apiKey: 'k', model: 'm' }, (text, done) => { if (!done) rendered += text }).then(() => { settled = true })
+    try {
+      listener({ requestId: 'another-request', chunk: 'foreign', done: true })
+      if (order === 'result-first') release()
+      else { listener({ requestId, chunk: 'own', done: false }); listener({ requestId, chunk: '', done: true }) }
+      await Promise.resolve(); await Promise.resolve()
+      expect(settled).toBe(false)
+      if (order === 'result-first') { listener({ requestId, chunk: 'own', done: false }); listener({ requestId, chunk: '', done: true }) }
+      else release()
+      await running
+      expect(rendered).toBe('own')
+    } finally { release(); listener({ requestId, chunk: '', done: true }); await running; vi.unstubAllGlobals() }
+  })
+  it.each([true, false])('drains late text and tool events before settling an IPC result (ok=%s)', async ok => {
+    let listener: (event: any) => void = () => {}, requestId = '', rendered = '', saved = '', toolState = 'waiting'
+    const unsubscribe = vi.fn(), completed = vi.fn()
+    vi.stubGlobal('window', { electronAPI: { ai: {
+      onStreamEvent: (callback: typeof listener) => { listener = callback; return unsubscribe },
+      cancelStream: vi.fn(),
+      startStream: async (request: AIStreamRequest) => { requestId = request.requestId; return { ok, error: ok ? undefined : 'failed after partial text', waitForStreamEnd: true } }
+    } } })
+    const running = streamChat([], '', { ...DEFAULT_APP_CONFIG, apiKey: 'k', model: 'm' }, (text, done) => {
+      if (done) { saved = rendered; completed(toolState) } else rendered += text
+    }).catch(error => error)
+    try {
+      await Promise.resolve(); await Promise.resolve()
+      expect(unsubscribe).not.toHaveBeenCalled()
+      expect(completed).not.toHaveBeenCalled()
+      toolState = 'denied'
+      listener({ requestId, chunk: 'final reply', done: false })
+      listener({ requestId, chunk: '', done: true })
+      const result = await running
+      expect(rendered).toBe('final reply')
+      if (ok) { expect(saved).toBe('final reply'); expect(completed).toHaveBeenCalledExactlyOnceWith('denied') }
+      else { expect(result).toBeInstanceOf(Error); expect(completed).not.toHaveBeenCalled() }
+      expect(unsubscribe).toHaveBeenCalledOnce()
+    } finally { listener({ requestId, chunk: '', done: true }); await running; vi.unstubAllGlobals() }
+  })
+
+  it('cancels while awaiting the stream end without leaving a pending listener', async () => {
+    const controller = new AbortController(), cancelStream = vi.fn(), unsubscribe = vi.fn()
+    vi.stubGlobal('window', { electronAPI: { ai: {
+      onStreamEvent: () => unsubscribe, cancelStream,
+      startStream: async () => ({ ok: true, waitForStreamEnd: true })
+    } } })
+    try {
+      const onChunk = vi.fn(), running = streamChat([], '', { ...DEFAULT_APP_CONFIG, apiKey: 'k', model: 'm' }, onChunk, controller.signal).catch(error => error)
+      await Promise.resolve(); await Promise.resolve(); controller.abort()
+      expect(await running).toMatchObject({ name: 'AbortError' })
+      expect(onChunk).not.toHaveBeenCalled(); expect(cancelStream).toHaveBeenCalledOnce(); expect(unsubscribe).toHaveBeenCalledOnce()
+    } finally { vi.unstubAllGlobals() }
+  })
   it('replaces retried text and the committed reply before saving once',async()=>{
     let listener:(event:any)=>void=()=>{},rendered='',saved=0,sourceSeen=false
     vi.stubGlobal('window',{electronAPI:{ai:{onStreamEvent:(fn:typeof listener)=>{listener=fn;return()=>{}},cancelStream:vi.fn(),startStream:async(request:AIStreamRequest)=>{

@@ -331,6 +331,9 @@ export async function runTasksUISmoke(window: BrowserWindow): Promise<void> {
   await click('[aria-label="关闭任务弹窗"]')
   await waitForRenderer(window, "!document.querySelector('.tasks-composer')")
   // Manual task groups are named sections, independent from sidebar groups and automatic grouping.
+  // Closing the keyboard-opened modal restores focus and queues a sidebar scroll.
+  // Let that scroll paint before opening a menu which correctly dismisses on scroll.
+  await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   await click('.tasks-grouping-menu > summary')
   await chooseGrouping('custom')
   await click('.tasks-page-heading h1')

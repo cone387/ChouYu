@@ -57,17 +57,21 @@ export async function streamChat(
     }))
   }
   let completed = false
+  let endStream!: () => void
+  const streamEnded = new Promise<void>(resolve => { endStream = resolve })
   const unsubscribe = window.electronAPI.ai.onStreamEvent((event) => {
     if (event.requestId !== requestId || signal?.aborted || completed) return
     if (event.operation) onChunk(event.chunk, false,event.operation)
     else if(event.chunk)onChunk(event.chunk,false)
+    if (event.done) endStream()
     // The IPC result carries actual context references; attach them before final persistence.
   })
-  const abortRequest = () => window.electronAPI.ai.cancelStream(requestId)
+  const abortRequest = () => { window.electronAPI.ai.cancelStream(requestId); endStream() }
   signal?.addEventListener('abort', abortRequest, { once: true })
 
   try {
     const result = await window.electronAPI.ai.startStream(request)
+    if (result.waitForStreamEnd) await streamEnded
     if (result.contactContext) onContactContext?.(result.contactContext)
     if (signal?.aborted) throw createAbortError()
     if (!result.ok) throw new Error(result.error || 'AI 请求失败，请稍后重试。')

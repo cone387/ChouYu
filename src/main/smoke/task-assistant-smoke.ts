@@ -19,6 +19,16 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
   let step = 0, scenario = '', target = '', other = '', dueAt = Date.now() + 3 * 86400000
   let responses: string[] = []
   let previousMessageIds: string[] = []
+  // Exercise the separate invoke-result/event transports deterministically:
+  // a fast provider may resolve its IPC call before the final queued events.
+  const send = window.webContents.send
+  const delayedEvents = new Set<ReturnType<typeof setTimeout>>()
+  window.webContents.send = (channel, ...args) => {
+    if (scenario === 'deny' && ['ai:stream-event', 'ai:tool-event'].includes(channel)) {
+      const timer = setTimeout(() => { delayedEvents.delete(timer); send.call(window.webContents, channel, ...args) }, 60)
+      delayedEvents.add(timer)
+    } else send.call(window.webContents, channel, ...args)
+  }
   const server = createServer((request, response) => {
     if (request.url === '/v1/models') { response.end(JSON.stringify({ data: [{ id: 'task-smoke' }] })); return }
     let body = ''
@@ -183,6 +193,8 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
     await waitForRenderer(window, "document.querySelector('.tasks-view')")
     console.log('CHOUYU_TASK_ASSISTANT_SMOKE_PASSED query sources, five-round tools, forced approval in full mode, deny/cancel/stale guards, hidden approval retained beyond 60s, native top layer and pointer routing, late approval resumes, single-task boundary and recurring completion')
   } finally {
+    window.webContents.send = send
+    for (const timer of delayedEvents) clearTimeout(timer)
     await run('window.__taskAssistantStopApproval?.(); delete window.__taskAssistantStopApproval')
     server.closeAllConnections()
     await new Promise<void>(resolve => server.close(() => resolve()))

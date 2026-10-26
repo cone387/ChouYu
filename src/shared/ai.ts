@@ -23,6 +23,9 @@ export interface AIStreamEvent {
 }
 
 export interface AIStreamResult {
+  /** The invoke result and queued send events use separate transports. Drain the
+   * matching terminal stream event before completing or discarding listeners. */
+  waitForStreamEnd?: boolean
   operation?:'append'|'replace'
   harnessSource?:import('./harness').HarnessSource
   contactContext?: import('./contact-content').ContactContextRecord
