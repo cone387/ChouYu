@@ -101,13 +101,15 @@ export class AssistantRoutineService {
   async tick(now = Date.now()) {
     if (this.busy || this.closed) return
     const startedAt = Date.now()
+    const currentTime = () => now + Math.max(0, Date.now() - startedAt)
     this.busy = true
     try {
       for (const item of this.list()) {
         if (this.closed) break
-        if (!item.enabled || item.finishedAt || item.nextAt > now || (item.retryAt ?? 0) > now) continue
-        if (!item.pending && endingState(item.ending, now).stopped) continue
-        const dueAt = item.pending?.dueAt ?? item.attemptAt ?? Math.max(item.nextAt, latestRoutineAt(item, now) ?? item.nextAt)
+        const itemNow = currentTime()
+        if (!item.enabled || item.finishedAt || item.nextAt > itemNow || (item.retryAt ?? 0) > itemNow) continue
+        if (!item.pending && endingState(item.ending, itemNow).stopped) continue
+        const dueAt = item.pending?.dueAt ?? item.attemptAt ?? Math.max(item.nextAt, latestRoutineAt(item, itemNow) ?? item.nextAt)
         const entry: AssistantRoutineExecution = { id: randomUUID(), receipt: `routine:${item.id}:${item.revision}:${dueAt}`, title: item.title, scheduledAt: dueAt, startedAt: now + Math.max(0, Date.now() - startedAt), status: 'running' }
         this.executionId = entry.id
         try {
@@ -120,7 +122,7 @@ export class AssistantRoutineService {
           this.record(item.id, entry)
           this.executions.begin({ taskId: `routine:${item.id}`, executionId: entry.id, startedAt: entry.startedAt, phase: item.pending || item.kind === 'reminder' ? 'delivering' : 'generating' })
           this.controller = new AbortController()
-          if (!item.pending) assertTaskEnding(item.ending, now)
+          if (!item.pending) assertTaskEnding(item.ending, currentTime())
           const content = item.pending?.content ?? (item.kind === 'reminder' ? item.instruction : await this.deps.generate({ ...item, nextAt: dueAt, attemptAt: dueAt }, this.controller.signal))
           if (!content.trim() || content.length > 18000) throw new Error('助手没有生成有效结果。')
           if (this.closed) break

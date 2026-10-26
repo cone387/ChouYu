@@ -6,6 +6,7 @@ export interface RecoveryTaskReview {
 }
 export interface ContactRecoveryOwner {
   scopeReviewedAt?: number
+  scopeEvidence?: string
   tasks: Record<string, RecoveryTaskReview>
   daily: Record<string, RecoveryAllowance>
   allowances: Record<string, RecoveryAllowance>
@@ -23,11 +24,12 @@ export interface RecoveryRequest {
   restoreId: string; requestId: string; owner: string; topicId: string; tokens: number
 }
 export interface RecoveryReview {
-  restoreId: string; requestId: string; owner: string; topicId: string
+  restoreId: string; requestId: string; owner: string; topicId?: string
   scopesReviewed: boolean; externalEffects: 'unresolved' | 'verified'; evidence: string
   daily?: RecoveryAllowance; task?: RecoveryAllowance
 }
 export interface ContactRecoveryIdentity {
+  restoredAt?: number
   restoreId: string; scopeReviewed: boolean; allowedTopics: string[]
   additional?: { day: string; daily: RecoveryAllowance; tasks: Record<string, RecoveryAllowance> }
 }

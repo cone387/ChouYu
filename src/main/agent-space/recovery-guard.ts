@@ -43,7 +43,7 @@ export class ContactRecoveryGuard {
   identity(owner: string): ContactRecoveryIdentity | undefined {
     const value = this.current(), own = value?.owners[owner]
     if (!value || !own) return
-    return { restoreId: value.restoreId, scopeReviewed: Boolean(own.scopeReviewedAt),
+    return { restoreId: value.restoreId, restoredAt: value.at, scopeReviewed: Boolean(own.scopeReviewedAt),
       allowedTopics: Object.entries(own.tasks).filter(([id, review]) => review.externalEffects === 'verified' && own.scopeReviewedAt
         && own.daily[day()]?.calls > 0 && own.daily[day()]?.tokens > 0 && own.allowances[id]?.calls > 0 && own.allowances[id]?.tokens > 0).map(([id]) => id),
       additional: { day: day(), daily: own.daily[day()] ?? { calls: 0, tokens: 0 }, tasks: structuredClone(own.allowances) } }
@@ -55,19 +55,19 @@ export class ContactRecoveryGuard {
   }
   review(input: RecoveryReview) {
     const [value, own] = this.require(input.restoreId, input.owner)
-    if (![input.requestId, input.topicId].every(validId) || typeof input.scopesReviewed !== 'boolean'
+    if (!validId(input.requestId) || input.topicId !== undefined && !validId(input.topicId) || !input.topicId && input.task !== undefined || typeof input.scopesReviewed !== 'boolean'
       || !['verified', 'unresolved'].includes(input.externalEffects) || typeof input.evidence !== 'string' || input.evidence.trim().length < 10 || input.evidence.length > 4000) throw new Error('请记录实际核对的资料、权限和外部操作结果。')
     const daily = allowance(input.daily), task = allowance(input.task)
     const fingerprint = createHash('sha256').update(JSON.stringify({ owner: input.owner, topicId: input.topicId, scopesReviewed: input.scopesReviewed,
       externalEffects: input.externalEffects, evidence: input.evidence, daily, task })).digest('hex')
     const previous = value.grants[input.requestId]
     if (previous) { if (previous !== fingerprint) throw new Error('同一核对请求不能变更授权内容。'); return value }
-    if (input.scopesReviewed) own.scopeReviewedAt = Date.now()
-    own.tasks[input.topicId] = { reviewedAt: Date.now(), externalEffects: input.externalEffects, evidence: input.evidence.trim() }
+    if (input.scopesReviewed) { own.scopeReviewedAt = Date.now(); own.scopeEvidence = input.evidence.trim() }
+    if (input.topicId) own.tasks[input.topicId] = { reviewedAt: Date.now(), externalEffects: input.externalEffects, evidence: input.evidence.trim() }
     const add = (target: Record<string, RecoveryAllowance>, id: string, extra: RecoveryAllowance | undefined) => {
       if (extra) { const before = target[id] ?? { calls: 0, tokens: 0 }; target[id] = { calls: before.calls + extra.calls, tokens: before.tokens + extra.tokens } }
     }
-    add(own.daily, day(), daily); add(own.allowances, input.topicId, task)
+    add(own.daily, day(), daily); if (input.topicId) add(own.allowances, input.topicId, task)
     value.grants[input.requestId] = fingerprint
     this.write(key(value.restoreId), JSON.stringify(value))
     return value

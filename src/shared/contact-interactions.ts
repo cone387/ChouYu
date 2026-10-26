@@ -5,7 +5,7 @@ export interface ContactBudgetField {
   key: ContactBudgetKey; label: string; unit: string; used: number; limit: number; needed: number; max: number
 }
 export interface ContactInteractionDetails {
-  storageRecovery?: { restoreId: string; unknownHistory: true }
+  storageRecovery?: { restoreId: string; unknownHistory: true; contactOnly?: true }
   recovery?: import('./task-recovery').TaskRecoveryInfo
   impact?: string
   recoveryMessage?: string

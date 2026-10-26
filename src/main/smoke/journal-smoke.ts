@@ -283,7 +283,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
           await waitForRenderer(journal, "document.querySelector('.journal-capture-card img')")
           writeFileSync(join(directory, `journal-captures-${theme}-${width}.png`), (await journal.webContents.capturePage()).toPNG())
           await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '活动轨迹').click()")
-          await waitForRenderer(journal, "document.querySelector('.journal-task-card')")
+          await waitForRenderer(journal, "document.querySelector('.journal-view-nav button[aria-current=page]')?.textContent === '活动轨迹' && [...document.querySelectorAll('.journal-task-card')].some(button => button.textContent.includes('手动修正') && button.getClientRects().length)")
           writeFileSync(join(directory, `journal-tasks-${theme}-${width}.png`), (await journal.webContents.capturePage()).toPNG())
           await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-task-card')].find(button => button.textContent.includes('手动修正')).click()")
           await waitForRenderer(journal, "document.querySelector('.journal-detail-panel[open] img') && document.querySelector('.journal-ocr-text pre')")

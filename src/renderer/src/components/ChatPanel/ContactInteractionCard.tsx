@@ -98,7 +98,7 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       {view.failureDetail && <details className="contact-interaction-diagnostic"><summary>技术诊断</summary><p>{view.failureDetail}</p></details>}
       {view.status === 'pending' && (view.recovery?.message || view.recoveryMessage) && <p className="contact-interaction-recovery" data-task-recovery role="status">{view.recovery?.message || view.recoveryMessage}</p>}
       {view.status === 'pending' && view.kind === 'retry' && <ContactFailureRemedy view={view} />}
-      {view.status === 'pending' && view.storageRecovery ? <ContactStorageReview busy={busy} submit={async storageRecovery => {
+      {view.status === 'pending' && view.storageRecovery ? <ContactStorageReview busy={busy} contactOnly={view.storageRecovery.contactOnly} submit={async storageRecovery => {
         if (submitting.current) return
         submitting.current = true; setBusy(true); setError(''); generation.current++
         try { setView(await window.electronAPI.agents.submitInteraction(characterId, interactionId, { version: view.version, storageRecovery })) }

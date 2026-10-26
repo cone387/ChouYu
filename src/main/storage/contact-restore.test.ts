@@ -23,6 +23,20 @@ it('treats a newly empty pair as missing when prior snapshots prove existing his
     expect(inspectContactStorage(directory).kind).toBe('missing')
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
+it('accepts a never-used lazy checkpoint database but rejects loss of previously saved checkpoint tables', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'contact-lazy-checkpoint-'))
+  const tasks = new Database(join(directory, 'agents.db')), checkpoints = new Database(join(directory, 'checkpoints.db'))
+  try {
+    tasks.exec('CREATE TABLE profiles(id TEXT); CREATE TABLE runs(id TEXT)')
+    const backups = new ContactBackups(directory, { tasks, checkpoints })
+    await backups.create()
+    expect(inspectContactStorage(directory).kind).toBe('healthy')
+    checkpoints.exec('CREATE TABLE checkpoints(thread_id TEXT)')
+    await backups.create()
+    checkpoints.exec('DROP TABLE checkpoints')
+    expect(inspectContactStorage(directory).kind).toBe('missing')
+  } finally { tasks.close(); checkpoints.close(); rmSync(directory, { recursive: true, force: true }) }
+})
 it.each(['prepared', 'preserved:agents.db', 'preserved:checkpoints.db', 'publishing', 'published:agents.db', 'published:checkpoints.db'])('resumes an interrupted paired restore at %s while retaining originals', async fault => {
   const { directory, group } = await fixture()
   let protectedGroup = ''

@@ -110,7 +110,7 @@ export interface BackgroundHarnessInput {
         timeoutMs?: number;
         maxOutputTokens?: number;
         beforeRound?(round: number, serializedInput: string): number | undefined | Promise<number | undefined>;
-        afterRound?(): void;
+        afterRound?(): void | Promise<void>;
         onMetadata?(metadata: AIResponseMetadata): void;
     };
 }

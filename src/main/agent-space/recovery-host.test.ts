@@ -8,6 +8,30 @@ import { ContactRecoveryGuard } from './recovery-guard'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { evidenceFromText } from '../agents/sources'
 
+it('offers a contact-level review without tasks and keeps new task spending blocked', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'contact-empty-recovery-')), state = new Map<string, string>()
+  const guard = new ContactRecoveryGuard(key => state.get(key) ?? null, (key, value) => { state.set(key, value) })
+  guard.begin('group', 'restore', ['empty'])
+  const host = new WorkLoopHost(directory, () => {})
+  const identity = () => ({ id: 'empty', soul: '', conversation: '', config: null, recovery: guard.identity('empty') })
+  try {
+    await host.sync([identity()])
+    expect(host.store.topics.list('empty')).toHaveLength(0)
+    const [card] = await host.request('pendingInteractions', 'empty')
+    expect(card?.storageRecovery).toMatchObject({ contactOnly: true })
+    expect(await host.request('getInteraction', 'empty', [card.id])).toEqual(card)
+    await expect(host.request('context', 'empty')).rejects.toThrow()
+    guard.review({ restoreId: 'restore', requestId: 'scope-only', owner: 'empty', scopesReviewed: true,
+      externalEffects: 'unresolved', evidence: 'Reviewed all restored memories and sharing scopes.' })
+    await host.sync([identity()])
+    await expect(host.request('context', 'empty')).resolves.toBeDefined()
+    expect((await host.request('getInteraction', 'empty', [card.id])).status).toBe('resolved')
+    expect(guard.identity('empty')?.allowedTopics).toEqual([])
+    expect(guard.current()?.unknownHistory).toBe(true)
+    expect(() => guard.reserve({ restoreId: 'restore', requestId: 'new-work', owner: 'empty', topicId: 'new', tokens: 1 })).toThrow()
+  } finally { await host.close(); rmSync(directory, { recursive: true, force: true }) }
+})
+
 it('quarantines restored work, sources and outbox; only creates an idempotent new reviewed attempt', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'contact-recovered-'))
   const state = new Map<string, string>()

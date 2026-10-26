@@ -27,7 +27,7 @@ export async function streamNativeChat(messages: AIChatMessage[], systemPrompt: 
     try {
       signal?.throwIfAborted()
       result = await conversation.request(config, chunk, signal, { ...options, maxOutputTokens })
-    } finally { options.afterRound?.() }
+    } finally { await options.afterRound?.() }
     signal?.throwIfAborted()
     if (!result.toolCalls.length || !tools) { chunk('', true); return }
     const results: string[] = []

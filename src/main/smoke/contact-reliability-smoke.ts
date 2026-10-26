@@ -20,6 +20,8 @@ export async function runContactReliabilitySmoke(window: BrowserWindow) {
   const run = (code: string) => window.webContents.executeJavaScript(code)
   const status = () => run('window.electronAPI.agents.runtimeStatus()') as Promise<ContactRuntimeSnapshot>
   const owner = createCharacter({ name: '可靠性验收', avatar: '🧪', category: 'other', soulMd: '独立验收联系人' })
+  const empty = createCharacter({ name: '空联系人恢复验收', avatar: '🧪', category: 'other', soulMd: '独立验收联系人' })
+  await contactAgentsCall(empty.id, 'savePreferences', [{ ...DEFAULT_AGENT_SETTINGS, enabled: false }])
   await contactAgentsCall(owner.id, 'save', [{ ...DEFAULT_AGENT_SETTINGS, enabled: false, goal: '保存的验收任务' }])
   const before = await contactAgentsCall(owner.id, 'get'), first = await status()
   await restartAgentsForSmoke()
@@ -66,6 +68,16 @@ export async function runContactReliabilitySmoke(window: BrowserWindow) {
   assert.ok(!flushDatabase().error)
   await restartAgentsForSmoke()
   await assert.rejects(contactAgentsCall(owner.id, 'assignTopic', ['still protected after restart']))
+  const pending = await run(`window.electronAPI.agents.pendingInteractions(${JSON.stringify(empty.id)})`)
+  const review = pending.find((card: any) => card.storageRecovery?.contactOnly)
+  assert.ok(review); assert.equal(review.topicId, '')
+  const reviewed = await run(`window.electronAPI.agents.submitInteraction(${JSON.stringify(empty.id)},${JSON.stringify(review.id)},${JSON.stringify({ version: review.version,
+    storageRecovery: { requestId: 'smoke-scope-only', scopesReviewed: true, externalEffects: 'unresolved', evidence: '已核对此空联系人的恢复资料、记忆与共享权限，没有授权任何新任务消耗。' } })})`)
+  assert.equal(reviewed.status, 'resolved')
+  await contactAgentsCall(empty.id, 'context')
+  const added = await contactAgentsCall(empty.id, 'assignTopic', ['新任务仍需额度核对'])
+  assert.equal(added.topics.length, 1)
+  await assert.rejects(contactAgentsCall(empty.id, 'run', [added.topics[0].id]))
   writeFileSync(join(artifacts, 'summary.json'), JSON.stringify({ workerCrash: true, preservedTask: true, pairedBackup: true, explicitRestore: true, originalRetained: true,
-    protectionAcrossRestart: true, escCancelled: true, viewports: [375, 1024], themes: ['light', 'dark'], generations: [first.generation, restarted.generation, restored.generation] }, null, 2))
+    protectionAcrossRestart: true, emptyContactReview: true, escCancelled: true, viewports: [375, 1024], themes: ['light', 'dark'], generations: [first.generation, restarted.generation, restored.generation] }, null, 2))
 }

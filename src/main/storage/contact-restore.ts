@@ -8,6 +8,16 @@ import { CONTACT_TASK_SCHEMA_VERSION } from '../../shared/contact-backups'
 export type ContactStorageHealth = { kind: 'new' | 'healthy' | 'damaged' | 'missing' | 'incompatible' | 'unavailable' }
 const files = ['agents.db', 'checkpoints.db'] as const
 const family = files.flatMap(file => [file, file + '-wal', file + '-shm'])
+const hasTables = (db: Database.Database) => Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get())
+function neverUsedCheckpoints(directory: string): boolean {
+  // SqliteSaver creates its tables lazily. A verified empty history is valid;
+  // losing a previously present table is not an unused checkpoint store.
+  const groups = new ContactBackups(directory).list()
+  return groups.length > 0 && groups.every(group => {
+    const db = new Database(join(directory, 'backups', group.id, 'checkpoints.db'), { readonly: true, fileMustExist: true })
+    try { return !hasTables(db) } finally { db.close() }
+  })
+}
 export function inspectContactStorage(directory: string): ContactStorageHealth {
   const present = files.map(file => existsSync(join(directory, file)))
   if (!present.some(Boolean)) {
@@ -23,7 +33,7 @@ export function inspectContactStorage(directory: string): ContactStorageHealth {
       db = new Database(join(directory, file), { readonly: true, fileMustExist: true })
       if ((db.pragma('user_version', { simple: true }) as number) > (file === 'agents.db' ? CONTACT_TASK_SCHEMA_VERSION : 0)) return { kind: 'incompatible' }
       if (db.pragma('quick_check', { simple: true }) !== 'ok') problem ??= 'damaged'
-      if (hasHistory && !(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get())) problem ??= 'missing'
+      if (hasHistory && !hasTables(db) && !(file === 'checkpoints.db' && neverUsedCheckpoints(directory))) problem ??= 'missing'
     } catch (error) {
       const code = (error as { code?: string }).code
       if (code === 'SQLITE_CORRUPT' || code === 'SQLITE_NOTADB') problem ??= 'damaged'

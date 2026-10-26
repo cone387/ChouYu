@@ -58,12 +58,23 @@ export class ContactInteractions {
     const rows = this.store.db.prepare("SELECT id FROM contact_interactions WHERE character_id=? AND json_extract(value,'$.status') IN ('pending','failed')").all(owner) as { id: string }[]
     const pending = rows.map(row => this.get(owner, row.id)).filter(view => ['pending', 'failed'].includes(view.status))
     if (this.store.recovery.identity(owner)) {
+      if (!this.store.topics.list(owner).length && !this.store.recovery.identity(owner)!.scopeReviewed) pending.push(this.recoveryOwnerCard(owner))
       for (const topic of this.store.topics.list(owner)) {
         const card = this.recoveryCard(owner, topic.id)
         if (card.status === 'pending' && !pending.some(item => item.topicId === topic.id && item.storageRecovery)) pending.push(card)
       }
     }
     return pending
+  }
+  private recoveryOwnerCard(owner: string): ContactTaskInteraction {
+    const recovery = this.store.recovery.identity(owner)
+    if (!recovery) throw new Error('恢复记录已变化。')
+    return { id: `restore-owner:${recovery.restoreId}`, characterId: owner, topicId: '', runId: '', topicTitle: '联系人恢复核对',
+      version: `${recovery.restoreId}:${recovery.scopeReviewed}`, createdAt: recovery.restoredAt ?? 0,
+      kind: 'retry', status: recovery.scopeReviewed ? 'resolved' : 'pending', budgets: [],
+      storageRecovery: { restoreId: recovery.restoreId, unknownHistory: true, contactOnly: true },
+      result: recovery.scopeReviewed ? '联系人资料与共享权限已核对；新任务仍需单独核对外部操作与新增额度。' : undefined,
+      failure: { kind: 'storage', message: '此联系人没有可恢复的任务，请先核对恢复资料、记忆与共享权限。历史用量仍不完整。', action: '核对联系人资料', settings: false } }
   }
   private recoveryCard(owner: string, topicId: string, id?: string): ContactTaskInteraction {
     const recovery = this.store.recovery.identity(owner)
@@ -142,6 +153,7 @@ export class ContactInteractions {
   }
   get(owner: string, id: string): ContactInteraction {
     const recovery = this.store.recovery.identity(owner)
+    if (recovery && id === `restore-owner:${recovery.restoreId}`) return this.recoveryOwnerCard(owner)
     const prefix = recovery && `restore:${recovery.restoreId}:`
     if (prefix && id.startsWith(prefix)) return this.recoveryCard(owner, id.slice(prefix.length), id)
     if (id.startsWith('action:')) {

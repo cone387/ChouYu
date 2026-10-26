@@ -9,7 +9,7 @@ export interface NativeStreamOptions {
   maxOutputTokens?: number
   onMetadata?(metadata: AIResponseMetadata): void
   beforeRound?(round: number, input: string): number | undefined | Promise<number | undefined>
-  afterRound?(): void
+  afterRound?(): void | Promise<void>
 }
 export interface NativeRoundResult { text: string; toolCalls: AIToolCall[] }
 export interface NativeConversation {

@@ -11,6 +11,20 @@ function fixture() {
   return { deps, messages, service: new AssistantRoutineService(deps) }
 }
 describe('assistant routine execution', () => {
+  it('checks the current deadline after an earlier serial routine crosses it', async () => {
+    const f = fixture(), start = at(25, 9)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start)
+    try {
+      f.service.save(input, undefined, undefined, at(25, 8))
+      const items = f.service.save({ ...input, kind: 'reminder', title: 'expired' }, undefined, undefined, at(25, 8))
+      items[1].ending = { version: 1, acceptedAt: start, timeZone: 'UTC', occurrences: {}, deadline: { at: start + 500, source: 'fixture', acceptedAt: start, timeZone: 'UTC' } }
+      f.deps.write(JSON.stringify(items))
+      f.deps.generate.mockImplementationOnce(async () => { clock.mockReturnValue(start + 1000); return 'first result' })
+      await f.service.tick(start)
+      expect(f.deps.deliver).toHaveBeenCalledTimes(1)
+      expect(f.service.history(items[1].id).items).toHaveLength(0)
+    } finally { clock.mockRestore() }
+  })
   it('reconciles an actual receipt after a failed atomic completion without generating or delivering twice', async () => {
     const f = fixture(), receipts = new Set<string>()
     const deliver = vi.fn((receipt: string) => { receipts.add(receipt) })

@@ -135,7 +135,7 @@ export async function requestContactTask(target: ContactTaskTarget, message: str
     return { kind: 'question', question: text }
   }
   // Validate an explicit *total*, not a cadence or a content quantity. Never guess the receipt meaning.
-  if (parsed.kind === 'routine' && /(?:总共|总计|一共|只|仅)\s*(?:执行|运行)\s*(?:\d+|[一二三四五六七八九十百]+)\s*次/.test(sourceText)
+  if (target.kind !== 'edit-duty' && /(?:总共|总计|一共|只|仅)\s*(?:执行|运行)\s*(?:\d+|[一二三四五六七八九十百]+)\s*次/.test(sourceText)
     && !/(成功产出|成功生成|成功发送|实际发送|实际送达|发到聊天)/.test(sourceText))
     return question('次数是按成功产出结果，还是按实际发送到聊天计算？本次尚未保存。')
   if (endingRequest) {

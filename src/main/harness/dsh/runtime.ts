@@ -25,6 +25,7 @@ type Active = {
     tools: Set<Promise<unknown>>;
     round: number;
     roundPending: boolean;
+    settlement?: Promise<void>;
     failure?: unknown;
 };
 class DshRuntime {
@@ -52,10 +53,13 @@ class DshRuntime {
             if (method === 'round:after') {
                 if (!input.rounds || !current.roundPending || value.round !== current.round) throw new Error('DSH 后台结算归属无效。');
                 try {
-                    try { input.rounds.onMetadata?.(dshMetadata(value.usage, value.finish)); }
-                    finally { input.rounds.afterRound?.(); }
+                    current.settlement = (async () => {
+                        try { input.rounds!.onMetadata?.(dshMetadata(value.usage, value.finish)); }
+                        finally { await input.rounds!.afterRound?.(); }
+                    })();
+                    await current.settlement;
                 } catch (error) { current.failure ??= error; throw error; }
-                finally { current.roundPending = false; current.round++; }
+                finally { current.roundPending = false; current.settlement = undefined; current.round++; }
                 if (value.finish?.kind === 'error' && typeof value.finish.failure?.message === 'string') current.failure ??= new Error(value.finish.failure.message);
                 return true;
             }
@@ -164,7 +168,7 @@ class DshRuntime {
             input.signal.removeEventListener('abort', abort);
             await cancelling;
             if (input.signal.aborted) await Promise.allSettled([...active.tools]);
-            try { if (active.roundPending) input.rounds?.afterRound?.(); }
+            try { if (active.settlement) await active.settlement; else if (active.roundPending) await input.rounds?.afterRound?.(); }
             finally { this.active.delete(input.attemptId); }
         }
     }

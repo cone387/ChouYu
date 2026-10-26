@@ -40,9 +40,9 @@ describe('contact task gateway', () => {
       ending: { count: { mode: 'delivered', amount: 3, source: '成功发送3次' } }, endingRequest: { patch: { deadline: null }, acceptedAt: 1, text: '取消截止' } } }))
     expect(routineService.list()[0].ending?.count?.target).toBe(3)
   })
-  it('asks about a bare total even when model omitted the ending field', async () => {
+  it.each(['routine', 'work'])('asks about a bare total even when model omitted the ending field (%s)', async (kind) => {
     const { deps, routineService } = fixture()
-    const result = await requestContactTask(createTarget, '每天八点，总共执行3次', deps, async () => JSON.stringify({ kind: 'routine', input: routineInput }))
+    const result = await requestContactTask(createTarget, '每天八点，总共执行3次', deps, async () => JSON.stringify({ kind, input: routineInput }))
     expect(result.kind).toBe('question'); expect(routineService.list()).toHaveLength(0)
   })
   it('asks which success receipt counts instead of saving a guessed bare execution limit', async () => {

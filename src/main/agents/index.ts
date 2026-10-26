@@ -303,10 +303,10 @@ export async function submitContactInteraction(id: string, interactionId: string
   await ensure(); await syncContact(id)
   const card = await rpc('getInteraction', id, [interactionId])
   if (card.storageRecovery) {
-    if (!getCharacter(id) || !submission.storageRecovery || submission.version !== card.version || !card.topicId) throw new Error('恢复记录已变化或缺少核对信息，请重新读取。')
-    recoveryGuard.review({ ...submission.storageRecovery, restoreId: card.storageRecovery.restoreId, owner: id, topicId: card.topicId })
+    if (!getCharacter(id) || !submission.storageRecovery || submission.version !== card.version || !card.topicId && !card.storageRecovery.contactOnly) throw new Error('恢复记录已变化或缺少核对信息，请重新读取。')
+    recoveryGuard.review({ ...submission.storageRecovery, restoreId: card.storageRecovery.restoreId, owner: id, topicId: card.storageRecovery.contactOnly ? undefined : card.topicId })
     await syncContact(id)
-    if (recoveryGuard.identity(id)?.allowedTopics.includes(card.topicId)) {
+    if (card.topicId && recoveryGuard.identity(id)?.allowedTopics.includes(card.topicId)) {
       await rpc('resumeRecovered', id, [card.topicId, card.storageRecovery.restoreId, submission.storageRecovery.requestId])
     }
     broadcastChanged(id)

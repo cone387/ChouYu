@@ -21,9 +21,9 @@ export function ContactRuntimeDetails({ snapshot, onRetry, onRestore, busy = fal
           : snapshot.metrics.backup.phase === 'failed' ? ' · 本次未保存，保留上一份备份' : ''}</p>}
       {snapshot.issue && <p>最近记录：{CONTACT_RUNTIME_ISSUE[snapshot.issue.kind]} · {time(snapshot.issue.at)}</p>}
     </details>
-    {snapshot.storageRecovery && <section role="status"><p>{snapshot.storageRecovery.kind === 'incompatible' ? '数据来自较新版本，请升级应用。' : '联系人存储损坏或缺失，后台工作已停止。'}</p>
+    {snapshot.storageRecovery && <section role="status"><p>{snapshot.storageRecovery.kind === 'incompatible' ? '数据来自较新版本，请升级应用。' : snapshot.storageRecovery.kind === 'unavailable' ? '暂时无法读取联系人存储，请检查文件权限或占用情况；后台工作已停止。' : '联系人存储损坏或缺失，后台工作已停止。'}</p>
       {snapshot.storageRecovery.candidates.length ? snapshot.storageRecovery.candidates.map(group => <button key={group.id} type="button" disabled={busy || !onRestore} onClick={() => onRestore?.(group)}>查看 {time(group.createdAt)} 的恢复备份</button>)
-        : <p>没有可用的兼容备份；原文件保留，尚未创建空任务库。</p>}</section>}
+        : <p>{snapshot.storageRecovery.kind === 'unavailable' ? '读取恢复前不会替换原文件或创建空任务库。' : '没有可用的兼容备份；原文件保留，尚未创建空任务库。'}</p>}</section>}
   </div>
 }
 
