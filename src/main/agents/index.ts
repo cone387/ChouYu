@@ -53,7 +53,9 @@ let failures = 0
 let syncTimer: ReturnType<typeof setInterval> | undefined
 const recoveryGuard = new ContactRecoveryGuard(getState, setContactRecoveryState)
 const contactDirectory = () => join(app.getPath('userData'), 'contact-agents')
-const storageRecovery = new ContactStorageRecovery(contactDirectory, recoveryGuard, () => listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id))
+const storageRecovery = new ContactStorageRecovery(contactDirectory, recoveryGuard, () => listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id), event => {
+  appendRuntimeDiagnostic(join(app.getPath('userData'), 'contact-worker-diagnostics.log'), runtimeDiagnostic({ method: 'preflight', phase: `storage-retry:${event.attempt}`, storage: event.storage }, runtimeState.read().generation))
+})
 const identitySource = contactIdentitySource(id => recoveryGuard.identity(id))
 const identitySync = new ContactIdentitySync(identitySource.revision, identitySource.read)
 const identityRequests = new Map<string, Promise<void>>()
@@ -182,16 +184,18 @@ async function ensure() {
   if (child) return
   const generation = runtimeState.start()
   identitySync.generation(generation); identityRequests.clear(); rosterSync = undefined
+  starting = (async () => {
   try {
     storageRecovery.resume()
-    const recovery = storageRecovery.inspect()
+    const recovery = await storageRecovery.inspect()
     if (recovery) {
+      if (globalThis.process.env.CHOUYU_SMOKE_TEST === '1') console.error('CHOUYU_CONTACT_STORAGE_HEALTH', recovery.kind)
       runtimeState.update(generation, { phase: 'unavailable', storageRecovery: recovery })
       throw new Error('联系人存储需要处理，未启动工作进程。')
     }
     runtimeState.update(generation, { storageRecovery: undefined })
   } catch (error) { runtimeState.update(generation, { phase: 'unavailable', issue: { kind: 'storage', at: Date.now() } }); throw error }
-  starting = (async () => {
+    if (closing) throw new Error('应用正在退出。')
     const process = utilityProcess.fork(join(__dirname, 'agent-worker.js'), [], {
       serviceName: 'ChouYu Contact Agents', stdio: 'pipe',
       env: { ...globalThis.process.env, LANGSMITH_TRACING: 'false', LANGCHAIN_TRACING_V2: 'false', LANGCHAIN_TRACING: 'false' }

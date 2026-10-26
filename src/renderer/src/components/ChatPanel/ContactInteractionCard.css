@@ -9,6 +9,7 @@
 .contact-interaction-input { display: flex; align-items: center; gap: 8px; }
 .contact-interaction input, .contact-interaction textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 10px; font: inherit; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; }
 .contact-interaction textarea { resize: vertical; min-height: 80px; }
+.contact-storage-review input[type="checkbox"] { width: auto; margin-right: 6px; padding: 0; vertical-align: middle; }
 .contact-interaction select { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 10px; font: inherit; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; }
 .contact-interaction select:focus { outline: none; border-color: var(--border); box-shadow: none; }
 .contact-interaction [data-contact-remedy] { margin-top: 12px; }

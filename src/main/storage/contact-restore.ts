@@ -4,8 +4,9 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameS
 import { join } from 'node:path'
 import { ContactBackups } from './contact-backups'
 import { CONTACT_TASK_SCHEMA_VERSION } from '../../shared/contact-backups'
+import type { StorageRetry } from './contact-database'
 
-export type ContactStorageHealth = { kind: 'new' | 'healthy' | 'damaged' | 'missing' | 'incompatible' | 'unavailable' }
+export type ContactStorageHealth = { kind: 'new' | 'healthy' | 'damaged' | 'missing' | 'incompatible' | 'unavailable'; retryableWal?: 'tasks' | 'checkpoints' }
 const files = ['agents.db', 'checkpoints.db'] as const
 const family = files.flatMap(file => [file, file + '-wal', file + '-shm'])
 const hasTables = (db: Database.Database) => Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get())
@@ -25,6 +26,8 @@ export function inspectContactStorage(directory: string): ContactStorageHealth {
     return { kind: previous || existsSync(join(directory, 'restore.json')) ? 'missing' : 'new' }
   }
   let problem: ContactStorageHealth['kind'] | undefined
+  let retryableWal = process.platform === 'win32'
+  let walDatabase: 'tasks' | 'checkpoints' = 'tasks'
   const hasHistory = existsSync(join(directory, 'restore.json')) || existsSync(join(directory, 'backups')) && readdirSync(join(directory, 'backups')).length > 0
   for (const file of files) {
     if (!existsSync(join(directory, file))) continue
@@ -36,11 +39,23 @@ export function inspectContactStorage(directory: string): ContactStorageHealth {
       if (hasHistory && !hasTables(db) && !(file === 'checkpoints.db' && neverUsedCheckpoints(directory))) problem ??= 'missing'
     } catch (error) {
       const code = (error as { code?: string }).code
+      if (process.env.CHOUYU_SMOKE_TEST === '1') console.error('CHOUYU_CONTACT_STORAGE_READ', file, code ?? 'unknown')
       if (code === 'SQLITE_CORRUPT' || code === 'SQLITE_NOTADB') problem ??= 'damaged'
-      else problem = 'unavailable'
+      else { problem = 'unavailable'; retryableWal &&= code === 'SQLITE_IOERR_TRUNCATE'; walDatabase = file === 'agents.db' ? 'tasks' : 'checkpoints' }
     } finally { db?.close() }
   }
-  return { kind: problem ?? (present.every(Boolean) ? 'healthy' : 'missing') }
+  return { kind: problem ?? (present.every(Boolean) ? 'healthy' : 'missing'), ...(problem === 'unavailable' && retryableWal ? { retryableWal: walDatabase } : {}) }
+}
+
+/** Do not let read-only preflight bypass the existing bounded Windows WAL recovery. */
+export async function inspectContactStorageForStartup(directory: string, retry: (event: StorageRetry) => void = () => {}): Promise<ContactStorageHealth> {
+  const delays = [100, 250, 500]
+  for (let attempt = 0; ; attempt++) {
+    const health = inspectContactStorage(directory)
+    if (!health.retryableWal || attempt >= delays.length) return health
+    retry({ attempt: attempt + 1, delayMs: delays[attempt], storage: { database: health.retryableWal, phase: 'wal', code: 'SQLITE_IOERR_TRUNCATE' } })
+    await new Promise(resolve => setTimeout(resolve, delays[attempt]))
+  }
 }
 type Journal = { format: 1; id: string; group: string; phase: 'preserving' | 'publishing' | 'complete' }
 function durable(filename: string) { const fd = openSync(filename, 'r+'); try { fsyncSync(fd) } finally { closeSync(fd) } }

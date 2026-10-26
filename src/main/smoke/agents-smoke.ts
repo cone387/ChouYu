@@ -725,7 +725,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
           window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 900 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 900 }, scale: 1 })
           await run(`Object.assign(document.querySelector('.contact-work-sheet').style,{left:'8px',top:'8px',width:'${width - 16}px',height:'880px',transform:'none'}); window.dispatchEvent(new Event('resize')); document.querySelector('.contact-work-sheet-content').scrollTop=0`)
           await waitForRenderer(window, `innerWidth === ${width} && document.querySelector('.contact-work-sheet').getBoundingClientRect().right <= ${width + 1}`)
-          await waitForRenderer(window, `getComputedStyle(document.querySelector('.work-setting-section h3')).color === '${theme === 'light' ? 'rgb(26, 26, 26)' : 'rgb(240, 240, 240)'}'`)
+          await waitForRenderer(window, `getComputedStyle(document.querySelector('.work-setting-section h3')).color === '${theme === 'light' ? 'rgb(23, 23, 23)' : 'rgb(240, 240, 240)'}'`)
           await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
           if (!await run("(() => { const form=document.querySelector('.contact-work-sheet .work-settings-flat'); return form.scrollWidth <= form.clientWidth + 1 })()")) throw new Error('Work settings overflow at narrow width')
           writeFileSync(join(directory, `work-settings-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())

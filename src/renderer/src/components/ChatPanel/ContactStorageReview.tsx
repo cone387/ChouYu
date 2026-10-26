@@ -7,7 +7,7 @@ export default function ContactStorageReview({ busy, contactOnly = false, submit
   const [evidence, setEvidence] = useState(''), [scopes, setScopes] = useState(false), [verified, setVerified] = useState(false)
   const [limits, setLimits] = useState({ dailyCalls: '', dailyTokens: '', taskCalls: '', taskTokens: '' })
   const request = useRef<{ signature: string; id: string }>()
-  return <form onSubmit={event => {
+  return <form className="contact-storage-review" onSubmit={event => {
     event.preventDefault()
     const value = { evidence, scopesReviewed: scopes, externalEffects: verified ? 'verified' as const : 'unresolved' as const,
       ...(!contactOnly ? { daily: { calls: Number(limits.dailyCalls), tokens: Number(limits.dailyTokens) }, task: { calls: Number(limits.taskCalls), tokens: Number(limits.taskTokens) } } : {}) }

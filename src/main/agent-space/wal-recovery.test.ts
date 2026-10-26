@@ -4,13 +4,15 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { initializeContactStorage, openContactDatabase } from '../storage/contact-database'
+import { inspectContactStorageForStartup } from '../storage/contact-restore'
 
-it.skipIf(process.platform !== 'win32').each([true, false])('bounds recovery of an actual Windows SHM mapping (released=%s)', async released => {
+it.skipIf(process.platform !== 'win32').each([[true, false], [false, false], [true, true], [false, true]])('bounds recovery of an actual Windows SHM mapping (released=%s, preflight=%s)', async (released, preflight) => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-wal-mapping-')), file = join(dir, 'agents.db')
   const seed = openContactDatabase(file, 'tasks')
   seed.exec('CREATE TABLE proof(value TEXT); INSERT INTO proof VALUES(\'saved\')')
   const database = readFileSync(file), wal = readFileSync(file + '-wal')
   seed.close()
+  const checkpoint = openContactDatabase(join(dir, 'checkpoints.db'), 'checkpoints'); checkpoint.close()
   // Preserve the exact consistent main/WAL pair from before close (no concurrent writer).
   writeFileSync(file, database); writeFileSync(file + '-wal', wal)
   writeFileSync(file + '-shm', Buffer.alloc(32768))
@@ -29,9 +31,19 @@ it.skipIf(process.platform !== 'win32').each([true, false])('bounds recovery of 
     try { openContactDatabase(file, 'tasks').close() } catch (error) { failure = error }
     expect(failure).toMatchObject({ code: 'SQLITE_IOERR_TRUNCATE', phase: 'wal', database: 'tasks' })
     const retries: unknown[] = []
-    const recovering = initializeContactStorage(() => openContactDatabase(file, 'tasks'), event => {
+    const retry = (event: unknown) => {
       retries.push(event); if (released) child.stdin!.end('\n')
-    })
+    }
+    if (preflight) {
+      const health = await inspectContactStorageForStartup(dir, retry)
+      expect(health.kind).toBe(released ? 'healthy' : 'unavailable')
+      expect(retries.length).toBe(released ? 1 : 3)
+      child.stdin!.end('\n'); await exited
+      const reopened = openContactDatabase(file, 'tasks')
+      try { expect(reopened.prepare('SELECT * FROM proof').all()).toEqual([{ value: 'saved' }]) } finally { reopened.close() }
+      return
+    }
+    const recovering = initializeContactStorage(() => openContactDatabase(file, 'tasks'), retry)
     if (!released) {
       await expect(recovering).rejects.toMatchObject({ code: 'SQLITE_IOERR_TRUNCATE', phase: 'wal' })
       expect(retries).toHaveLength(3)
