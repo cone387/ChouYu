@@ -140,7 +140,7 @@ ContactTaskStore 保留兼容入口，将查询、额度、调度、变更和结
 
 9 项恢复流测试覆盖自动/显式恢复、失效回执、引用保留、权限、预算门控、重启、样式修订、关联事务回滚、新旧意见隔离、未知执行与取消占位；7 项恢复投影测试通过。扩展回归 734 通过、43 跳过，Node/Web 类型、构建与边界检查通过。Electron contact-experience 注入真实 HTTP 503，失败保留原任务和第 3 版引用；重复继续只新增一轮，生成实际第 4 版，阅读页始终停在第 2 版。recovered.png 已查看，workflows-task3-smoke.log 有 CHOUYU_RECOVERY_FLOW_SMOKE_PASSED。另补工具准备重试跨新版的 RED/GREEN，保存过的请求仍可取得原回执，而新请求的过期版本仍拒绝。
 
-## H1 最终核验（进行中）
+## H1 最终核验（2026-10-26 完成；以下保留完整过程）
 
 2026-10-22 首次最终全量 `npm test`：265 个测试文件通过、15 个跳过；2086 项通过、53 项跳过，退出 0，日志 `final-full-tests-first.log`。Node/Web 类型和 TypeScript 导入图检查通过（`final-typecheck.log`、`final-boundaries.log`），生产构建通过，仍保留既有 renderer 大 chunk 提示。
 
@@ -190,3 +190,11 @@ ChouYu 重新执行 Node/Web 类型、模块边界和生产构建均通过。`fi
 `final-task-edit.log` 的真实键鼠测试通过，包括隐藏草稿不拦截当前搜索弹窗、Ctrl+F、Esc/Tab、返回保留草稿。`task-edit-final/` 的深色窄布局日期弹窗和浅色清单截图已查看。`final-dsh-harness.log` 通过真实固定版 SDK、本地协议模型、原确认卡等待 65954ms、拒绝/重复点击/停止、隐藏未读和切换引擎；后台设置经 UI 保存、worker 重启后完成正式报告，仍验证 8192 输出上限与实际 Token 计费。报告为 `dsh-final/dsh-acceptance.json`，不是在线供应商验收。`final-assistant-routines.log` 与 `final-companion.log` 均退出 0，覆盖实际安排保存/执行/历史来源、只读工作检查及持久去重。
 
 图册基线更新至 `29ad5b2ae25a`，`verify_atlas.py --output artifacts/system-evolution/atlas-final` 检查 19 页、110 个源码文件，静态、桌面、移动和打印检查 issues 为空。生命周期图和工作区窄屏截图已查看。首次失败、原 OOM 与 Windows 间歇诊断继续保留，不以成功复验覆盖。
+
+### 最终结果
+
+2026-10-26 10:11 的默认 `npm test` 全量回归退出 0：266 个测试文件通过、15 个跳过；2091 项通过、53 项跳过、零失败，耗时 55.71 秒，完整日志 `artifacts/system-evolution/final-full-tests-complete.log`。没有调整并发、测试超时或移除断言。Task 4 由计划执行脚本记录完成。首次 DSH 工具启动/清理超时与联系人首次加载超时没有稳定复现；此次完整复验通过不代表已消除这些环境相关波动。
+
+Node/Web 类型、真实导入边界、生产构建、完整 Electron、任务编辑、DSH、助手长期安排、陪伴工作检查、重复日程和自定义视图专项全部通过。完整桌面覆盖聊天关闭/编辑/滚动、导航、Agent 和提醒；反馈恢复、双联系人依赖交接、迁移和性能基准证据见前述各节。额外日程和视图日志为 `final-task-scheduling.log`、`final-task-views.log`，DSH 引擎设置截图已查看。临时诊断移除后代码已重新构建，图册最终基线推进至含产品规范补充的 `680cf34`，继续通过同一验证器。
+
+实现范围 A1–H1 与四个子计划全部完成，独立审查的三项 Important 已修复，没有延期 Minor。最终代码保留在 `feat/system-evolution`；没有合并、推送或发布安装包。首次失败日志、性能取舍和 Windows 间歇限制保留；不声称在线供应商、24 小时/跨日、多屏/睡眠或安装包验收已完成。

@@ -1,6 +1,6 @@
 # ChouYu 完整系统迭代 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans for native execution, or superpowers:subagent-driven-development if the user selects delegation. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans for native execution, or superpowers:subagent-driven-development if the user selects delegation. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 完成已确认的全部系统迭代建议，每项具有真实接入与当前验证证据。
 
@@ -46,18 +46,18 @@
 - [x] 文件保存预检确认 50,000 条合成历史的微小更新仍引起约 258–320 ms 同步保存，范围见验收记录。
 - [x] 用户以“嗯嗯”确认完整计划和原生执行方式。
 - [x] 执行前确认工作区；优先使用已有隔离机制。若当前仍为普通 master checkout，采用当前目录功能分支 `feat/system-evolution` 保留所有现有工作；需要额外 worktree 时遵守 worktree 技能，不复用有其他任务的工作树。
-- [ ] 每个子任务完成后更新本计划勾选状态和 `docs/system-evolution-acceptance-20261022.md`，记录实际命令、退出码、测试数量及遗留问题。
+- [x] 每个子任务完成后更新本计划勾选状态和 `docs/system-evolution-acceptance-20261022.md`，记录实际命令、退出码、测试数量及遗留问题。
 
 ## 最终完成核对
 
-- [ ] 逐项核对设计 A1–H1，检查真实业务调用方，不以接口定义或目录存在认定接入。
-- [ ] `npm test`、`npm run typecheck`、`npm run build` 全部通过；每次失败保留原始日志，任何间歇复测说明范围。
-- [ ] 构建后运行 `node scripts/smoke-electron.js` 完整回归；按涉及场景补 `--chat-close`、`--chat-edit`、`--chat-scroll`、`--agents`、`--assistant-routines`、`--companion`、`--reminders`、`--dsh-harness`、`--navigation`、`--task-scheduling`、`--task-views`、`--task-edit`、`--contact-experience`。同一改动已由完整回归充分覆盖时不重复运行。
-- [ ] 实际交互并查看相关截图：宽窄、明暗、Esc、穿透、草稿失败与返回来源；阅读回执不扩大范围。
-- [ ] 固定旧聊天/成果迁移夹具核对正文、顺序、归属、来源、已读、回执和导出；故障注入及恢复均通过。
-- [ ] 1k/10k/50k 聊天与 10/100/300 成果版本测量有优化前后报告，分别标明纯存储、完整产品路径及 UI 测量范围。
-- [ ] 独立整分支审查，修复 Important/Critical 问题并完成相关回归。
-- [ ] 更新 roadmap/current-status、存储恢复说明、联系人规范/架构及图册源码入口；保留历史记录但不再混作当前待办。
-- [ ] 检查无不相关修改与敏感信息；提交所有工作并给出分支、验证和剩余实际限制。最终集成按届时用户已有授权和仓库状态执行，不擅自发布安装包。
+- [x] 逐项核对设计 A1–H1，检查真实业务调用方，不以接口定义或目录存在认定接入。
+- [x] `npm test`、`npm run typecheck`、`npm run build` 全部通过；每次失败保留原始日志，任何间歇复测说明范围。
+- [x] 构建后运行 `node scripts/smoke-electron.js` 完整回归；按涉及场景补 `--chat-close`、`--chat-edit`、`--chat-scroll`、`--agents`、`--assistant-routines`、`--companion`、`--reminders`、`--dsh-harness`、`--navigation`、`--task-scheduling`、`--task-views`、`--task-edit`、`--contact-experience`。同一改动已由完整回归充分覆盖时不重复运行。
+- [x] 实际交互并查看相关截图：宽窄、明暗、Esc、穿透、草稿失败与返回来源；阅读回执不扩大范围。
+- [x] 固定旧聊天/成果迁移夹具核对正文、顺序、归属、来源、已读、回执和导出；故障注入及恢复均通过。
+- [x] 1k/10k/50k 聊天与 10/100/300 成果版本测量有优化前后报告，分别标明纯存储、完整产品路径及 UI 测量范围。
+- [x] 独立整分支审查，修复 Important/Critical 问题并完成相关回归。
+- [x] 更新 roadmap/current-status、存储恢复说明、联系人规范/架构及图册源码入口；保留历史记录但不再混作当前待办。
+- [x] 检查无不相关修改与敏感信息；提交所有工作并给出分支、验证和剩余实际限制。最终集成按届时用户已有授权和仓库状态执行，不擅自发布安装包。
 
 暂时完成一个子计划不代表整个目标完成。只在完整矩阵证据充分后将目标设为 complete。

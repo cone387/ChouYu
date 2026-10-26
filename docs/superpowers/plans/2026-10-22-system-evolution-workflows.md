@@ -59,8 +59,8 @@ accept 不结束任务，revise 不增加权限/预算；未保存不得显示�
 
 **Files:** 更新 `docs/contact-task-spec.md`、`contact-agents-architecture.md`、`storage-recovery.md`、`current-status.md`、`roadmap.md`、`system-evolution-acceptance-20261022.md`；更新 `docs/architecture-atlas/build_atlas.py`、`source_snapshot.py`、相关图页、manifest 与 README 的实际入口。
 
-- [ ] 逐项查设计 A1–H1 和各子计划勾选项，检查真实调用链、测试断言与迁移结果；缺一项继续实现，不将目录或测试文件存在视为完成。
-- [ ] 运行总计划完整命令和必要 Electron 专项，核对退出码与真实截图。保留初次失败及诊断，修复引入的回归；DSH 间歇失败若重现须调查，不能用单独复测声称全量通过。
-- [ ] 使用 diagram-design 技能维护图册时先读其规范；以实际源码关系更新图页，运行现有 `verify_atlas.py`，核对生成物和入口。文档明确源码、验证、发布各自状态，不声称已发布安装包。
-- [ ] 按 requesting-code-review 技能进行独立整分支审查，修复 Important/Critical 发现并验证；审查不能只读计划或通过数。
-- [ ] 提交最终文档与验收记录，确认 `git diff --check` 与工作区状态，给出分支和验证证据；仅全部完成后更新目标完成状态。
+- [x] 逐项查设计 A1–H1 和各子计划勾选项，检查真实调用链、测试断言与迁移结果；缺一项继续实现，不将目录或测试文件存在视为完成。
+- [x] 运行总计划完整命令和必要 Electron 专项，核对退出码与真实截图。保留初次失败及诊断，修复引入的回归；DSH 间歇失败若重现须调查，不能用单独复测声称全量通过。
+- [x] 使用 diagram-design 技能维护图册时先读其规范；以实际源码关系更新图页，运行现有 `verify_atlas.py`，核对生成物和入口。文档明确源码、验证、发布各自状态，不声称已发布安装包。
+- [x] 按 requesting-code-review 技能进行独立整分支审查，修复 Important/Critical 发现并验证；审查不能只读计划或通过数。
+- [x] 提交最终文档与验收记录，确认 `git diff --check` 与工作区状态，给出分支和验证证据；仅全部完成后更新目标完成状态。
