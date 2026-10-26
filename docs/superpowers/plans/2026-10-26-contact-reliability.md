@@ -1,6 +1,6 @@
 # 联系人可靠性优化 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 在保留共享worker的前提下交付已确认的六项可靠性与持续运行优化。
 
@@ -38,11 +38,11 @@
 
 **Interfaces:** `ContactRuntimeSnapshot` carries phase/generation/revision/timestamps/optional observed metrics; `ContactRuntimeState.start(): number`, `update(generation, patch): void`, `read(): ContactRuntimeSnapshot`; public `runtimeStatus(): Promise<ContactRuntimeSnapshot>`, `retryRuntime(): Promise<ContactRuntimeSnapshot>`, `onRuntimeChanged(callback): () => void` are main-process-only API excluded from worker command map.
 
-- [ ] Write runtime-status tests for old generation rejection, no stale live metrics after exit, recent sync/failure preservation and structured diagnostic redaction.
-- [ ] Run `npm test -- src/main/agent-space/runtime-status.test.ts`; expect missing behavior failure.
-- [ ] Implement state/metrics and wire actual init/exit/sync/delivery/close paths; add UI read/retry with visibility and stale-response guards. Keep existing RPC timeouts.
-- [ ] Run targeted agent-space/preload tests and Node/Web typecheck; expect pass. Verify cold unavailable UI can show status without waiting for worker.
-- [ ] Commit `feat: expose truthful contact worker health` and ledger evidence.
+- [x] Write runtime-status tests for old generation rejection, no stale live metrics after exit, recent sync/failure preservation and structured diagnostic redaction.
+- [x] Run `npm test -- src/main/agent-space/runtime-status.test.ts`; expect missing behavior failure.
+- [x] Implement state/metrics and wire actual init/exit/sync/delivery/close paths; add UI read/retry with visibility and stale-response guards. Keep existing RPC timeouts.
+- [x] Run targeted agent-space/preload tests and Node/Web typecheck; expect pass. Verify cold unavailable UI can show status without waiting for worker.
+- [x] Commit `feat: expose truthful contact worker health` and ledger evidence.
 
 ### Task 2: 成组快照发布与保留
 
@@ -50,11 +50,11 @@
 
 **Interfaces:** `ContactBackupManifest` records id/createdAt/schema/hash/files; `ContactBackups.create(): Promise<ContactBackupManifest>`, `list(): ContactBackupManifest[]`; snapshots use paired task/checkpoint handles and an exclusive safe-boundary callback, return status to Task1.
 
-- [ ] Write real SQLite tests for committed WAL pages, partial publication, corrupt/hash mismatch, retained previous valid group and bounded rotation.
-- [ ] Run `npm test -- src/main/storage/contact-backups.test.ts`; expect missing paired snapshot support.
-- [ ] Implement staging, validation, hashes, complete-manifest publication and three-group retention with scoped paths; failures never overwrite sources.
-- [ ] Run tests; expect all passing and source databases still writable after injected failures.
-- [ ] Commit `feat: publish verified contact backup groups`.
+- [x] Write real SQLite tests for committed WAL pages, partial publication, corrupt/hash mismatch, retained previous valid group and bounded rotation.
+- [x] Run `npm test -- src/main/storage/contact-backups.test.ts`; expect missing paired snapshot support.
+- [x] Implement staging, validation, hashes, complete-manifest publication and three-group retention with scoped paths; failures never overwrite sources.
+- [x] Run tests; expect all passing and source databases still writable after injected failures.
+- [x] Commit `feat: publish verified contact backup groups`.
 
 ### Task 3: 全写入边界与自动备份生命周期
 
@@ -62,11 +62,11 @@
 
 **Interfaces:** `ContactStorageBarrier.operation<T>(fn:()=>Promise<T>):Promise<T>` and `snapshot<T>(fn:()=>Promise<T>,timeoutMs=30000):Promise<T>` coordinate graph-step/checkpoint safe boundaries and synchronous mutation admission; timer tracks dirty generation and reports status.
 
-- [ ] Write tests holding model/tool/checkpoint boundaries during requested backup, delayed return preservation, command write blocking and 30000ms timeout release without cancellation.
-- [ ] Run barrier/host tests; expect missing coordination failures.
-- [ ] Integrate every writer, first backup, 300000ms dirty coalescing and final stopped-writer backup. Avoid readonly queries mutating outside barrier.
-- [ ] Run host/runtime/cleanup/storage tests; expect correct paired state and no duplicate model/tool execution.
-- [ ] Commit `feat: coordinate live contact snapshots at durable boundaries`.
+- [x] Write tests holding model/tool/checkpoint boundaries during requested backup, delayed return preservation, command write blocking and 30000ms timeout release without cancellation.
+- [x] Run barrier/host tests; expect missing coordination failures.
+- [x] Integrate every writer, first backup, 300000ms dirty coalescing and final stopped-writer backup. Avoid readonly queries mutating outside barrier.
+- [x] Run host/runtime/cleanup/storage tests; expect correct paired state and no duplicate model/tool execution.
+- [x] Commit `feat: coordinate live contact snapshots at durable boundaries`.
 
 ### Task 4: 恢复组与核对保护
 
@@ -74,12 +74,12 @@
 
 **Interfaces:** application-state-backed `ContactRecoveryGuard` records group/owner/scope/review/allowance with stable request IDs; `restoreContactGroup(groupId)` runs only after explicit user action and closed handles; runtime API provides candidates and protection, typed review/allowance submission.
 
-- [ ] Write real filesystem tests for staged restore interruption at each replace, mixed-group rejection, permission/newer-schema errors not triggering restore.
-- [ ] Write guard tests for new-task bypass, recalled memory/shared delivery, replayed checkpoint/outbox, unknown daily/cumulative spend, repeated allowance and already-deleted contact.
-- [ ] Run restore/guard tests; expect current absent protection failures.
-- [ ] Implement durable restore journal/original preservation and application-backed scope protection. Resume only new attempts from reviewed outcomes; unknown writes remain blocked; extra budgets are explicit additional authorization.
-- [ ] Test read-only recovered history, confirmation failure retention, no cached model-context leak and protection across worker/application restart; expect pass.
-- [ ] Commit `feat: protect restored contact work and unknown usage`.
+- [x] Write real filesystem tests for staged restore interruption at each replace, mixed-group rejection, permission/newer-schema errors not triggering restore.
+- [x] Write guard tests for new-task bypass, recalled memory/shared delivery, replayed checkpoint/outbox, unknown daily/cumulative spend, repeated allowance and already-deleted contact.
+- [x] Run restore/guard tests; expect current absent protection failures.
+- [x] Implement durable restore journal/original preservation and application-backed scope protection. Resume only new attempts from reviewed outcomes; unknown writes remain blocked; extra budgets are explicit additional authorization.
+- [x] Test read-only recovered history, confirmation failure retention, no cached model-context leak and protection across worker/application restart; expect pass.
+- [x] Commit `feat: protect restored contact work and unknown usage`.
 
 ### Task 5: 身份增量同步
 
@@ -87,10 +87,10 @@
 
 **Interfaces:** `ContactIdentitySync` caches by per-owner revision, confirms only sent revision, resets acknowledgements on generation; source read produces original `ContactIdentity`; config/session/skill changes invalidate affected owners.
 
-- [ ] Test unchanged sync no message scan, failed sync remains dirty, concurrent change not acknowledged, default config affects followers, deleted owner/module state and permission withdrawal.
-- [ ] Run identity tests RED, implement identity source/change notifications and bounded periodic compensation, then run identity/agent-space/chat context tests GREEN.
-- [ ] Record 1/8/24 owner baseline and changed/unchanged transmitted bytes and reads.
-- [ ] Commit `perf: synchronize changed contact identities only`.
+- [x] Test unchanged sync no message scan, failed sync remains dirty, concurrent change not acknowledged, default config affects followers, deleted owner/module state and permission withdrawal.
+- [x] Run identity tests RED, implement identity source/change notifications and bounded periodic compensation, then run identity/agent-space/chat context tests GREEN.
+- [x] Record 1/8/24 owner baseline and changed/unchanged transmitted bytes and reads.
+- [x] Commit `perf: synchronize changed contact identities only`.
 
 ### Task 6: 异步应用库备份
 
@@ -98,10 +98,10 @@
 
 **Interfaces:** `ApplicationDatabase.backup(): Promise<void>`, `backupDatabase(): Promise<void>`, asynchronous close/wait boundary; dirty generation captured before snapshot, never clear later changes.
 
-- [ ] Test live write during backup, failed publication retains prior backup, close waits, second dirty generation remains pending, event loop gets turns.
-- [ ] Run RED; implement driver async paged backup, validation/publish and lifecycle waiting; run storage/quit/application tests GREEN.
-- [ ] Measure consistent baseline against synchronous backup on same fixture.
-- [ ] Commit `perf: back up application storage without full synchronous snapshots`.
+- [x] Test live write during backup, failed publication retains prior backup, close waits, second dirty generation remains pending, event loop gets turns.
+- [x] Run RED; implement driver async paged backup, validation/publish and lifecycle waiting; run storage/quit/application tests GREEN.
+- [x] Measure consistent baseline against synchronous backup on same fixture.
+- [x] Commit `perf: back up application storage without full synchronous snapshots`.
 
 ### Task 7: 会话按需加载与搜索
 
@@ -109,10 +109,10 @@
 
 **Interfaces:** repository metadata list, bounded `readMessages(id,before?,limit)` with stable cursor; bounded cache protects dirty sessions. Database searches preserve `findTextMatch` Unicode/substring semantics and original ordering.
 
-- [ ] Test startup avoids full message read, stable pagination under append/edit, delete/read/edit-replay, attachments and delivery receipts, failed-save eviction safety, Unicode and cross-fragment substring parity.
-- [ ] Run RED; migrate indexed search data transactionally/version guard, implement metadata loading/lazy hydration/cache and adapt consumers without changing recent model context.
-- [ ] Run database/storage/session/search/chat tests GREEN; compare short/long history memory and query measurements.
-- [ ] Commit `perf: load and search conversation history on demand`.
+- [x] Test startup avoids full message read, stable pagination under append/edit, delete/read/edit-replay, attachments and delivery receipts, failed-save eviction safety, Unicode and cross-fragment substring parity.
+- [x] Run RED; migrate indexed search data transactionally/version guard, implement metadata loading/lazy hydration/cache and adapt consumers without changing recent model context.
+- [x] Run database/storage/session/search/chat tests GREEN; compare short/long history memory and query measurements.
+- [x] Commit `perf: load and search conversation history on demand`.
 
 ### Task 8: 助手实际运行状态
 
@@ -120,9 +120,9 @@
 
 **Interfaces:** read-only execution snapshot keyed by routine/duty with real execution ID/phase/start time, event invalidation; adapt to same task presentation, not WorkLoop.
 
-- [ ] Test state during generate/deliver/failure/cancel, restart interrupted history, unrelated routine isolation and read failure clears spinner.
-- [ ] Run RED; implement truthful snapshots and common UI projection with capabilities; run assistant/UI tests GREEN.
-- [ ] Commit `feat: surface assistant task execution through shared task UI`.
+- [x] Test state during generate/deliver/failure/cancel, restart interrupted history, unrelated routine isolation and read failure clears spinner.
+- [x] Run RED; implement truthful snapshots and common UI projection with capabilities; run assistant/UI tests GREEN.
+- [x] Commit `feat: surface assistant task execution through shared task UI`.
 
 ### Task 9: 期限与成功次数
 
@@ -130,10 +130,10 @@
 
 **Interfaces:** persisted `TaskEnding` with exclusive deadline/source/timezone/acceptedAt and optional count mode `produced|delivered`, target/cumulative/occurrence receipt; `endingState(now,ending)` pure projection; programmatic before-request guard independent of model completion judgment.
 
-- [ ] RED tests: explicit deadline relative anchor, date-only/local midnight, ongoing24h not finite, expired pause/restart, late safe result no new correction calls, count idempotence, Nth saved-but-unsent blocks next period, editing preserves total/anchor, old unknown count requires clarification.
-- [ ] Implement typed validators/parser output and same-domain transaction for targets/periods; extend assistant transaction port and delivered receipt reconciliation. Retain original goals, paused state and completion review.
-- [ ] Run deadline/calendar/gateway/assistant/workflow/completion tests GREEN; verify tool/model guards native and DSH.
-- [ ] Commit `feat: enforce explicit task deadlines and successful occurrence limits`.
+- [x] RED tests: explicit deadline relative anchor, date-only/local midnight, ongoing24h not finite, expired pause/restart, late safe result no new correction calls, count idempotence, Nth saved-but-unsent blocks next period, editing preserves total/anchor, old unknown count requires clarification.
+- [x] Implement typed validators/parser output and same-domain transaction for targets/periods; extend assistant transaction port and delivered receipt reconciliation. Retain original goals, paused state and completion review.
+- [x] Run deadline/calendar/gateway/assistant/workflow/completion tests GREEN; verify tool/model guards native and DSH.
+- [x] Commit `feat: enforce explicit task deadlines and successful occurrence limits`.
 
 ### Task 10: 模型矩阵与故障注入验收
 
@@ -141,19 +141,19 @@
 
 **Interfaces:** per-engine report includes source commit/model/scenario/first-pass/corrected/failure/calls/tokens/elapsed/redacted category; no credentials or user source text.
 
-- [ ] Test report unknown usage and engine identity, safe evidence output, end-to-end persistence assertions and bounded scenario attempts.
-- [ ] Implement shared native/DSH scenario coverage from design, run protocol matrix and actual Electron fault/recovery flows; run configured provider bounded samples if available, report unavailable explicitly.
-- [ ] Commit `test: cover contact recovery and semantic behavior across engines`.
+- [x] Test report unknown usage and engine identity, safe evidence output, end-to-end persistence assertions and bounded scenario attempts.
+- [x] Implement shared native/DSH scenario coverage from design, run protocol matrix and actual Electron fault/recovery flows; run configured provider bounded samples if available, report unavailable explicitly.
+- [x] Commit `test: cover contact recovery and semantic behavior across engines`.
 
 ### Task 11: 职责整理、文档与最终验证
 
 **Files:** `src/main/agents/index.ts` composition extraction, `src/main/workloop/workflow.ts` step modules as required by changed features; `scripts/check-module-boundaries.cjs` and tests; contact spec/architecture/storage docs, acceptance log and architecture atlas.
 
-- [ ] Add boundary violation tests for contact-agent/workloop/messaging/storage and concrete runner imports; run RED then enforce permitted ports and run GREEN.
-- [ ] Preserve graph node/checkpoint names; run old-checkpoint recovery and default concurrency regression after extraction.
-- [ ] Update current architecture and evidence; remove already-done dependency wake/body dedup from future backlog. Report real measurements and unresolved Windows cause.
-- [ ] Run full npm test, typecheck, check:boundaries, build; affected full Electron and 375/1024 dark/light/Esc flows, native/DSH, archive evidence.
-- [ ] Fresh whole-branch review against approved spec; fix important findings with RED→GREEN; commit verified work. No merge/push/publish unless separately authorized.
+- [x] Add boundary violation tests for contact-agent/workloop/messaging/storage and concrete runner imports; run RED then enforce permitted ports and run GREEN.
+- [x] Preserve graph node/checkpoint names; run old-checkpoint recovery and default concurrency regression after extraction.
+- [x] Update current architecture and evidence; remove already-done dependency wake/body dedup from future backlog. Report real measurements and unresolved Windows cause.
+- [x] Run full npm test, typecheck, check:boundaries, build; affected full Electron and 375/1024 dark/light/Esc flows, native/DSH, archive evidence.
+- [x] Fresh whole-branch review against approved spec; fix important findings with RED→GREEN; commit verified work. No merge/push/publish unless separately authorized.
 
 ## Self-review and execution record
 

@@ -163,9 +163,9 @@ b+=node(48,304,288,'公共任务呈现适配','contactTaskPresentation','真实�
 b+=node(496,496,288,'公共主动投递','正文 / 来源 / 回执 / 未读','不额外调用模型重写成果','normal','delivery.html')
 b+=finish(note('聊天中的任务修改另有结构化路由；保存成功才可声称已修改原任务。'))
 add(s,'聊天与任务','联系人任务：入口、适配、执行与呈现','UI 统一、能力差异和执行引擎分别承担什么。',b,
- ['共同页面复用 ContactTaskListCard、ContactTaskOverview、ContactTaskDialog 等组件。','自然语言网关验证能力、归属与版本；普通工作进入联系人服务，助手安排进入各自执行通道。','类型化任务命令进入同库分责 Store；反馈记录关联实际修订版，原任务、引用与恢复尝试保留，迟到结果不可覆盖。'],
+ ['共同页面复用 ContactTaskListCard、ContactTaskOverview、ContactTaskDialog 等组件；助手运行状态来自真实执行租约，不从历史推测。','自然语言网关验证能力、归属、版本及结束条件来源；普通工作和助手安排保留各自引擎。截止或成功期次结束不等于目标验收完成。','类型化任务命令进入同库分责 Store；成功产出与通知同事务，实际送达按原回执计数；最后一期待送达阻止下一期。'],
  '此图画普通联系人任务的主链，定时安排另见第 08 张。内部任务字段不是新增 UI 输入项；不恢复标题、预算等多字段表单。',
- ['src/main/task-center/contact-store.ts','src/main/task-center/contact/completion.ts','src/shared/contact-commands.ts','src/main/agents/feedback-ledger.ts','src/main/agents/delivery-dependencies.ts','src/renderer/src/components/Contacts/ContactTopics.tsx','src/renderer/src/components/Contacts/ContactTaskDialog.tsx','src/renderer/src/components/Contacts/contactTaskPresentation.ts','src/main/assistant-routines/gateway.ts','src/main/agents/chat-changes.ts','src/main/agent-space/service.ts','docs/contact-task-spec.md'],['runtime','scheduling','assistant','delivery'])
+ ['src/main/task-center/contact-store.ts','src/main/task-center/contact/completion.ts','src/main/task-center/contact/endings.ts','src/shared/task-ending.ts','src/shared/contact-commands.ts','src/main/agents/feedback-ledger.ts','src/main/agents/delivery-dependencies.ts','src/renderer/src/components/Contacts/ContactTopics.tsx','src/renderer/src/components/Contacts/ContactTaskDialog.tsx','src/renderer/src/components/Contacts/contactTaskPresentation.ts','src/main/assistant-routines/gateway.ts','src/main/assistant-routines/execution.ts','src/main/agents/chat-changes.ts','src/main/agent-space/service.ts','docs/contact-task-spec.md'],['runtime','scheduling','assistant','delivery'])
 
 # 06. Exact graph node names, with explicit exceptional branches.
 s='runtime'
@@ -200,7 +200,7 @@ b+=node(48,304,288,'提交或记录失败','每个任务独立保存退避','一
 b+=node(48,504,288,'等待 / 回复 / 恢复','等待回复不占实际执行名额','保留来源与恢复尝试链','optional')
 b+=finish(note('提高上限可补位；降低上限保留当前轮次；未安排的历史任务不会自行复活。'))
 add(s,'聊天与任务','并发、调度与资源边界','当前工作区已支持联系人内配置多任务并发，同一任务保持串行。',b,
- ['工作名额按联系人管理；等待回复、下次执行时间与无法恢复的额度阻塞不占实际执行槽。','启动、修订、继续和回复恢复共用限制；取消请求实际退出前不释放名额，防止同一任务重叠。','失败计数与恢复时间按任务持久化；依赖更新复核暂停、权限、日历与退避，调用预算在执行入口预留。已确认持续交接才登记依赖，其他发现仍按原目录轮询。'],
+ ['共享 worker 总名额默认 8，按联系人轮转；等待回复、到期时间与无法恢复的额度阻塞不占实际执行槽。','启动、修订、继续和回复恢复共用限制；取消请求实际退出前不释放名额，同任务保持串行。到截止时间阻止新模型/工具请求，安全返回的有效正文仍可保存。','失败计数与恢复时间按任务持久化；依赖更新复核暂停、权限、日历与退避，调用预算在执行入口预留。已确认持续交接才登记依赖，其他发现仍按原目录轮询。'],
  '这些是当前源码和产品规范描述的控制逻辑，本图不是并发压测报告。供应商余额、网络等故障与格式/权限失败的恢复策略不同，具体阈值见规范。',
  ['src/main/task-center/contact/scheduling.ts','src/main/task-center/contact/call-budget.ts','src/main/workloop/loop.ts','src/main/agents/delivery-dependencies.ts','src/shared/task-recovery.ts','src/main/agent-space/service.ts','src/main/task-center/contact-store.ts','src/main/agents/task-failures.ts','src/main/agents/token-budget.ts','src/shared/work-settings.ts','docs/contact-task-spec.md'],['runtime','contacts','delivery'])
 
@@ -334,12 +334,12 @@ stores=[(48,96,368,'应用会话与配置','chouyu-application.db','会话 / 消
 for x,y,w,title,a,c,owner in stores:
     b+=node(x,y,w,title,a,c,'focal' if x==456 and y==96 else 'store')+t(x+16,y+126,owner,'mono')
 b+=t(48,520,'凭据保护','group-title')+t(48,552,'API Key / Token 使用 Electron safeStorage；不能据此声称整库已加密。','small')
-b+=t(704,520,'恢复与一致性','group-title')+t(704,552,'SQLite 事务 / WAL / 检查点；应用库校验快照与损坏隔离。','small')
+b+=t(704,520,'恢复与一致性','group-title')+t(704,552,'联系人两库成组快照；应用库保存独立恢复保护。','small')
 b+=finish(note('所有路径相对 app.getPath("userData")；不展示本机用户的实际数据或凭据。'),dashed='各模块持有自己的恢复机制')
 add(s,'数据与基础设施','数据分别存在哪里，由谁负责','应用不是一个大 SQLite：会话、任务、联系人、记忆和日志各有存储边界。',b,
- ['database.ts 保留兼容 API，ApplicationDatabase 增量保存会话、消息和元数据；旧 JSON 经保留、核对与原子导入，v5 标记阻止旧应用写回。','联系人版本通过哈希共享不可变正文与检索块，重建后保持原阅读与导出 API；任务数据与 LangGraph 检查点分别持久化。','同库操作使用原事务；跨库交付依赖回执协议。应用库备份可能落后于最近提交，启动和搜索仍有全量内存成本。'],
+ ['应用库 schema 2 保存元数据投影和检索文本，正文按需缓存、脏数据不淘汰；异步备份保留脏代际，校验/fsync 仍有同步成本。v5 标记阻止旧应用写回。','联系人版本共享不可变正文；任务库和检查点共用持久快照边界，发布验证后的同组清单，保留三组。进程崩溃恢复与旧备份恢复分别处理。','恢复先写应用保护，再保留原文件并安装配对文件。未知外部操作/消耗/历史成功次数不补零或重放。跨库投递依原回执重试；活动聊天仍可读取完整正文，大库搜索仍有扫描成本。'],
  '图是存储目录与所有权地图，不暗示所有库具有相同备份策略或整库加密。字段级凭据保护与普通正文落盘分别说明。',
- ['src/main/storage/application-database.ts','src/main/storage/legacy-migration.ts','src/main/storage/conversation-recovery.ts','src/main/agents/delivery-blocks.ts','src/main/agents/feedback-ledger.ts','src/main/database.ts','src/main/store-file.ts','src/main/agent-space/service.ts','src/main/task-center/contact-store.ts','src/main/capabilities/builtins.ts','src/main/tasks/index.ts','src/main/journal/journal-worker.ts','src/main/attachment-store.ts'],['delivery','memory','journal'])
+ ['src/main/storage/application-database.ts','src/main/storage/legacy-migration.ts','src/main/storage/conversation-recovery.ts','src/main/storage/conversation-cache.ts','src/main/storage/contact-backups.ts','src/main/storage/contact-restore.ts','src/main/agent-space/storage-barrier.ts','src/main/agent-space/recovery-guard.ts','src/main/agent-space/identity-sync.ts','src/main/agents/delivery-blocks.ts','src/main/agents/feedback-ledger.ts','src/main/database.ts','src/main/store-file.ts','src/main/agent-space/service.ts','src/main/task-center/contact-store.ts','src/main/capabilities/builtins.ts','src/main/tasks/index.ts','src/main/journal/journal-worker.ts','src/main/attachment-store.ts'],['delivery','memory','journal'])
 
 # 16. Search federation is a fan-out + result assembly, not a unified index.
 s='search'
