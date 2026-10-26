@@ -6,6 +6,7 @@ import { assignTaskToGroup } from './taskViewPreferences'
 import { saveTaskDraft } from './taskDraftSubmission'
 import type { TaskSelection as Selection } from './taskData'
 interface Options {
+  active: boolean
   preferences: ReturnType<typeof useTaskViewPreferences>
   menusRef: RefObject<HTMLDivElement>
   fields: TaskSelectField[]
@@ -18,7 +19,7 @@ interface Options {
   onError(message: string): void
   onNotice(message: string): void
 }
-export function useTaskDrafts({ preferences, menusRef, fields, projectBusy, selection, effectiveStatus,
+export function useTaskDrafts({ active, preferences, menusRef, fields, projectBusy, selection, effectiveStatus,
   matchesKeywordAndFilter, matchesSelection, reload, onError, onNotice }: Options) {
   const customGroups = preferences.value.customGroups
   const [draft, updateDraft] = useState<Draft | null>(null)
@@ -39,12 +40,14 @@ export function useTaskDrafts({ preferences, menusRef, fields, projectBusy, sele
   const [busy, setBusy] = useState(false)
   const taskDialogRef = useRef<HTMLDivElement>(null)
   const draftOpen = draft !== null
+  const activeRef = useRef(active)
+  activeRef.current = active
   useEffect(() => {
-    if (!draftOpen) return
+    if (!draftOpen || !active) return
     const previous = taskOpenerRef.current
     const restoreFocus = restoreTaskFocusRef.current
     const trap = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return
+      if (event.key !== 'Tab' || document.querySelector('dialog:modal')) return
       const controls = Array.from(taskDialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea, summary') ?? []).filter(element => element.getClientRects().length > 0)
       const first = controls[0], last = controls[controls.length - 1]
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
@@ -53,9 +56,10 @@ export function useTaskDrafts({ preferences, menusRef, fields, projectBusy, sele
     document.addEventListener('keydown', trap)
     return () => {
       document.removeEventListener('keydown', trap)
-      if (restoreFocus) (previous?.isConnected ? previous : menusRef.current?.querySelector<HTMLElement>('.tasks-create'))?.focus()
+      const target = previous?.isConnected ? previous : menusRef.current?.querySelector<HTMLElement>('.tasks-create')
+      if (activeRef.current && restoreFocus && target?.getClientRects().length && !document.querySelector('dialog:modal')) target.focus()
     }
-  }, [draftOpen])
+  }, [draftOpen, active])
 
   const submitDraft = (event: FormEvent) => {
     event.preventDefault()

@@ -23,3 +23,15 @@ it('remembers an explicit discard choice while still attempting the final flush'
   expect(flush).toHaveBeenCalledTimes(2)
   expect(ask).toHaveBeenCalledTimes(1)
 })
+
+it('keeps the post-drain recovery loop open across failed retries until explicit discard', async () => {
+  const flush = vi.fn(() => ({ error: 'disk full', notice: null, revision: 1 }))
+  const drain = vi.fn(async () => {})
+  const recover = vi.fn<() => Promise<'retry' | 'discard'>>()
+    .mockResolvedValueOnce('retry').mockResolvedValueOnce('retry').mockResolvedValueOnce('discard')
+  const guard = new StorageQuitGuard(flush, () => false)
+  await guard.finish(drain, recover)
+  expect(drain).toHaveBeenCalledOnce()
+  expect(recover).toHaveBeenCalledTimes(3)
+  expect(flush).toHaveBeenCalledTimes(3)
+})

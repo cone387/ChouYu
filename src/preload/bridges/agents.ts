@@ -54,7 +54,7 @@ return {
     searchCredential: (id, key, revision) => ipcRenderer.invoke('agents:searchCredential', id, key, revision),
     get: id => ipcRenderer.invoke('agents:get', id),
     save: (id, settings) => ipcRenderer.invoke('agents:save', id, settings),
-    run: (id, topicId) => ipcRenderer.invoke('agents:run', id, topicId),
+    run: (id, topicId, failedRunId) => ipcRenderer.invoke('agents:run', id, topicId, failedRunId),
     createTopic: (id, input) => ipcRenderer.invoke('agents:createTopic', id, input),
     assignTopic: (id, description) => ipcRenderer.invoke('agents:assignTopic', id, description),
     deleteTopic: (id, topicId, revision) => ipcRenderer.invoke('agents:deleteTopic', id, topicId, revision),

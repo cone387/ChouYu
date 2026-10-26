@@ -217,13 +217,13 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
   }
   const boardGroupMode: BoardGroupMode = groupMode === 'field' && !fields.some(field => field.id === groupFieldId) ? 'priority' : groupMode
 
-  const { draft, setDraft, busy, setBusy, taskDialogRef, submitDraft } = useTaskDrafts({ preferences, menusRef,
+  const { draft, setDraft, busy, setBusy, taskDialogRef, submitDraft } = useTaskDrafts({ active, preferences, menusRef,
     fields, projectBusy, selection, effectiveStatus, matchesKeywordAndFilter, matchesSelection,
     reload: () => reloadRef.current(), onError: setError, onNotice: setNotice })
   useEffect(() => {
-    if (!draft && !viewDraft && !fieldsOpen && !manageViewsOpen) return
+    if (!active || (!draft && !viewDraft && !fieldsOpen && !manageViewsOpen)) return
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || draft) return
+      if (event.key !== 'Escape' || event.defaultPrevented || draft || document.querySelector('dialog:modal')) return
       event.preventDefault()
       event.stopPropagation()
       if (!busy && !projectBusy) {
@@ -235,7 +235,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
     }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [draft, viewDraft, fieldsOpen, manageViewsOpen, busy, projectBusy])
+  }, [active, draft, viewDraft, fieldsOpen, manageViewsOpen, busy, projectBusy])
   const { actionLock, actionPending, setActionPending, performAction, complete, reopen, remove } = useTaskCommands({
     reload: () => reloadRef.current(), onError: setError, onNotice: setNotice, confirm
   })
@@ -789,7 +789,7 @@ export default function TasksView({ active, focusTaskId, searchRequest, conversi
         setDoneTasks(current => current.map(task => task.id === saved.id ? saved : task))
         setNotice(matchesKeywordAndFilter(saved) && matchesSelection(saved, selection) ? '修改已保存。' : '修改已保存，该任务已移出当前视图。')
       }} />}
-      {draft && <TaskEditorDialog draft={draft} projects={projects} groups={groups} displayGroups={customGroups} fields={fields} busy={busy || projectBusy} error={error} dialogRef={taskDialogRef} onChange={setDraft} onCreateProject={createDraftProject} onClose={() => { if (!busy && !projectBusy) setDraft(null) }} onSubmit={submitDraft} />}
+      {draft && <TaskEditorDialog active={active} draft={draft} projects={projects} groups={groups} displayGroups={customGroups} fields={fields} busy={busy || projectBusy} error={error} dialogRef={taskDialogRef} onChange={setDraft} onCreateProject={createDraftProject} onClose={() => { if (!busy && !projectBusy) setDraft(null) }} onSubmit={submitDraft} />}
 
       {viewDraft && <div className="tasks-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setViewDraft(null) }}>
         <div className="tasks-dialog tasks-view-dialog" role="dialog" aria-modal="true" aria-labelledby="tasks-view-dialog-title" onMouseDown={event => event.stopPropagation()}>

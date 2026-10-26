@@ -20,7 +20,7 @@ interface Options {
 export function useWorkspaceOverlays({ visible, toolApprovalRequest, config, isChat, showMessageSearch, confirmClear, onClose, requestComposerFocus, setShowGlobalSearch, setShowMessageSearch, setConfirmClear }: Options) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!visible || toolApprovalRequest || event.defaultPrevented || isOverlayEscape(event) || document.querySelector('dialog[open]:not([aria-modal="false"]), [aria-modal="true"]')) return
+      if (!visible || toolApprovalRequest || event.defaultPrevented || isOverlayEscape(event) || Array.from(document.querySelectorAll('dialog[open]:not([aria-modal="false"]), [aria-modal="true"]')).some(element => element.getClientRects().length > 0)) return
       if (matchesSearchShortcut(event, config.searchHotkey, navigator.platform.includes('Mac'))) {
         event.preventDefault(); setShowGlobalSearch(true); return
       }

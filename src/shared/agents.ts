@@ -144,7 +144,7 @@ export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, Contact
   searchCredential(characterId: string, key?: string, revision?: number): Promise<{ configured: boolean; revision: number }>
   get(characterId: string): Promise<AgentOverview>
   save(characterId: string, settings: AgentSettings): Promise<AgentOverview>
-  run(characterId: string, topicId?: string): Promise<AgentOverview>
+  run(characterId: string, topicId?: string, failedRunId?: string): Promise<AgentOverview>
   createTopic(characterId: string, input: AgentTopicInput): Promise<AgentOverview>
   assignTopic(characterId: string, description: string): Promise<AgentOverview>
   deleteTopic(characterId: string, topicId: string, revision: number): Promise<AgentOverview>

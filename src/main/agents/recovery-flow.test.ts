@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 import { RunScheduler } from '../agent-space/scheduler'
+import { ContactTaskCommands } from '../task-center/commands'
+import { DEFAULT_APP_CONFIG } from '../../shared/config'
 
 const cleanup: (() => void)[] = []
 afterEach(() => cleanup.splice(0).reverse().forEach(fn => fn()))
@@ -21,6 +23,48 @@ function fixture() {
   const receipt = store.feedbackLedger.submit('alice', { topicId: topic.id, revision: store.topics.get('alice', topic.id).revision, version: 1, requestId: 'recovery-feedback', action: 'revise', reason: 'Preserve this opinion', citation: { ref: { characterId: 'alice', topicId: topic.id, version: 1, sectionId: 'text' } } })
   return { get store() { return store }, topic, receipt, finish, restart() { store.close(); store = new ContactTaskStore(path); store.recover() } }
 }
+it.each(['content', 'presentation'] as const)('recovers %s feedback through the work-log run command and keeps duplicate clicks idempotent', async scope => {
+  const f = fixture()
+  f.store.fail(f.receipt.runId!, 'network timeout')
+  const receipt = scope === 'content' ? f.receipt : f.store.feedbackLedger.submit('alice', {
+    topicId: f.topic.id, revision: f.store.topics.get('alice', f.topic.id).revision, version: 1,
+    requestId: 'work-log-style', action: 'revise', reason: 'Change presentation', scope: 'presentation'
+  })
+  if (scope === 'presentation') f.store.fail(receipt.runId!, 'network timeout')
+  const commands = new ContactTaskCommands({ store: f.store,
+    identity: id => ({ id, soul: '', conversation: '', config: DEFAULT_APP_CONFIG }), changed() {}, tick() {},
+    remove: async () => {}, activeFor: () => [], abort() {}, activeRun: () => undefined, cleanupThread: async () => {} })
+  // Exact existing work-log command path, not a direct store continuation.
+  await commands.request('run', 'alice', [f.topic.id])
+  const next = f.store.overview('alice').runs[0].id
+  const input = JSON.parse(f.store.getRun(next)!.input)
+  expect(input).toMatchObject({ recoveryFrom: receipt.runId })
+  if (scope === 'content') expect(input.revisionCitation.ref).toMatchObject({ version: 1, sectionId: 'text' })
+  else expect(input).toMatchObject({ revisionScope: 'presentation', revisionBaseVersion: 1, feedback: 'Change presentation' })
+  expect(f.store.feedbackLedger.list('alice', f.topic.id).find(row => row.requestId === receipt.requestId)).toMatchObject({ runId: next, originalRunId: receipt.runId })
+  await commands.dispatchUnknown('run', 'alice', [f.topic.id, receipt.runId])
+  expect(f.store.overview('alice').runs[0].id).toBe(next)
+  if (scope === 'content') {
+    f.finish(next)
+    await commands.dispatchUnknown('run', 'alice', [f.topic.id, receipt.runId])
+    expect(f.store.overview('alice').runs[0].id).toBe(next)
+    expect(f.store.feedbackLedger.list('alice', f.topic.id)[0].resultVersion).toBe(2)
+  }
+})
+it('retries a task whose failed attempt is outside the contact overview history window', async () => {
+  const f = fixture()
+  f.store.fail(f.receipt.runId!, 'network timeout')
+  const other = f.store.createTopic('alice', { title: 'Other', goal: 'Other', constraints: '' }).topics.find(topic => topic.title === 'Other')!
+  for (let i = 0; i < 31; i++) f.store.fail(f.store.createRun('alice', '', Date.now(), other.id), 'network timeout')
+  expect(f.store.overview('alice').runs.some(run => run.id === f.receipt.runId)).toBe(false)
+  const commands = new ContactTaskCommands({ store: f.store,
+    identity: id => ({ id, soul: '', conversation: '', config: DEFAULT_APP_CONFIG }), changed() {}, tick() {},
+    remove: async () => {}, activeFor: () => [], abort() {}, activeRun: () => undefined, cleanupThread: async () => {} })
+  await commands.request('run', 'alice', [f.topic.id, f.receipt.runId])
+  const next = f.store.feedbackLedger.list('alice', f.topic.id)[0].runId!
+  expect(next).not.toBe(f.receipt.runId)
+  expect(JSON.parse(f.store.getRun(next)!.input).revisionCitation.ref).toMatchObject({ version: 1, sectionId: 'text' })
+})
 it('links bounded automatic network retries to the original opinion and exact citation, committing a result only once', () => {
   const f = fixture(), first = f.receipt.runId!
   f.store.fail(first, 'network timeout')

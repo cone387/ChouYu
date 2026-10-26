@@ -200,7 +200,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       </section>}
         {tab === 'work' && logRun && logRun.topicId === topicId && <details className="topic-secondary"><summary>本轮工作日志</summary><ContactWorkLog active={visible} key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} data={data} busy={busy} canRetry={logRun.revisionScope === 'presentation' ? !dirty && !active && data.callsToday < data.settings.dailyCalls : !blocked}
           onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
-          onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!))}
+          onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!, logRun.id))}
           onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} /></details>}
         </>}}
         onReport={runId => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, runId))) }} />

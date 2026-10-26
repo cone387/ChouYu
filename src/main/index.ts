@@ -2,7 +2,7 @@ import { runDshHarnessSmoke } from './smoke/dsh-harness-smoke'
 import { runStorageScaleSmoke } from './smoke/storage-scale-smoke'
 import { StorageQuitGuard } from './storage/quit-guard'
 import { recoverHarnessModules } from './harness/service'
-import { closeChatHarness } from './ipc'
+import { closeChatHarness, disposeIpcHandlers } from './ipc'
 import { runContactSoak } from './evaluation/contact-soak'
 import { runContactCardLinksSmoke } from './smoke/contact-card-links-smoke'
 import { runContactPerformanceSmoke } from './smoke/contact-performance-smoke'
@@ -440,7 +440,8 @@ const storageQuit = new StorageQuitGuard(flushDatabase, error => {
     return choice !== 0
 })
 app.on('before-quit', (event) => {
-  if (!storageQuit.mayExit()) {
+  if (journalClosing && !journalClosed) { event.preventDefault(); return }
+  if (!journalClosed && !storageQuit.mayExit()) {
     event.preventDefault()
     mainWindow?.show()
     return
@@ -450,10 +451,30 @@ app.on('before-quit', (event) => {
     if (!journalClosing) {
       journalClosing = true
       closeAssistantRoutines()
-      void Promise.allSettled([closeChatHarness().finally(()=>closeAgents()), closeJournal()]).finally(() => { journalClosed = true; app.quit() })
+      // Stop every producer before the final flush; the recovery dialog remains usable.
+      stopClipboardWatcher()
+      closeReminders()
+      mainWindow?.setEnabled(false)
+      mainWindow?.hide()
+      void storageQuit.finish(
+        () => Promise.allSettled([closeChatHarness(false).finally(() => closeAgents()), closeJournal()]),
+        async error => {
+          if (isSmokeTest) return 'discard'
+          const { response } = await dialog.showMessageBox({
+            type: 'warning', title: '退出前保存失败',
+            message: '后台工作已停止，还有修改尚未保存。',
+            detail: `${error}\n可处理磁盘或目录问题后重试保存。保存成功后将退出；再次打开应用即可继续使用。`,
+            buttons: ['重试保存', '打开数据目录', '放弃未保存修改并退出'],
+            defaultId: 0, cancelId: 0, noLink: true
+          })
+          if (response === 1) await shell.openPath(app.getPath('userData'))
+          return response === 2 ? 'discard' : 'retry'
+        }
+      ).then(() => { journalClosed = true; app.quit() })
     }
     return
   }
+  disposeIpcHandlers()
   stopClipboardWatcher()
   closeReminders()
   closeTasks()

@@ -32,6 +32,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): () => void {
   } catch (error) { dispose(); throw error }
 }
 
-export async function closeChatHarness(): Promise<void> {
-  try { await runtime?.service.close() } finally { releaseHandlers?.() }
+export async function closeChatHarness(disposeHandlers = true): Promise<void> {
+  try { await runtime?.service.close() } finally { if (disposeHandlers) disposeIpcHandlers() }
 }
+
+export function disposeIpcHandlers(): void { releaseHandlers?.() }

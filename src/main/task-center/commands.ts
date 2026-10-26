@@ -224,21 +224,28 @@ export class ContactTaskCommands {
       case 'run': {
         if (!this.context.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         const overview = this.store.overview(id), topicId = args[0] === undefined ? overview.focusTopicId : String(args[0])
-        const last = overview.runs.find(r => r.topicId === topicId)
-        const previous = last?.status === 'failed' ? this.store.getRun(last.id) : undefined
+        const last = this.store.db.prepare('SELECT id,status FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id, topicId ?? null) as { id: string; status: string } | undefined
+        const requested = args[1] === undefined ? undefined : this.store.getRun(String(args[1]))
+        if (args[1] !== undefined && (!requested || requested.character_id !== id || requested.topic_id !== topicId || requested.status !== 'failed')) throw new Error('重试记录与任务不匹配。')
+        if (requested && this.store.db.prepare("SELECT 1 FROM runs WHERE character_id=? AND topic_id=? AND json_extract(input,'$.recoveryFrom')=?").get(id, topicId, requested.id)) break
+        if (requested && last?.id !== requested.id) throw new Error('任务已有新的工作，请重新读取。')
+        const previous = requested ?? (last?.status === 'failed' ? this.store.getRun(last.id) : undefined)
         const input = previous ? JSON.parse(previous.input) : undefined
-        if (input?.revisionScope === 'presentation' && topicId) {
-          const topic = this.store.topics.get(id, topicId)
-          this.store.revisePresentation(id, topicId, topic.revision, input.feedback, this.context.identity(id).conversation, input.revisionBaseVersion)
-          break
-        }
-        this.checkSearch(id)
-        const calendar = topicId && this.store.calendars.get(topicId)
-        if (topicId && input?.calendar && calendar && calendar.revision === input.calendar.revision && calendar.attempt_at === input.calendar.dueAt) {
-          this.store.startScheduledTopic(id, topicId, this.context.identity(id).conversation)
-          break
-        }
-        this.store.createRun(id, this.context.identity(id).conversation, Date.now(), args[0] === undefined ? undefined : String(args[0])); break
+        this.store.db.transaction(() => {
+          let next: string
+          if (input?.revisionScope === 'presentation' && topicId) {
+            const topic = this.store.topics.get(id, topicId)
+            next = this.store.revisePresentation(id, topicId, topic.revision, input.feedback, this.context.identity(id).conversation, input.revisionBaseVersion)
+          } else {
+            this.checkSearch(id)
+            const calendar = topicId && this.store.calendars.get(topicId)
+            next = topicId && input?.calendar && calendar && calendar.revision === input.calendar.revision && calendar.attempt_at === input.calendar.dueAt
+              ? this.store.startScheduledTopic(id, topicId, this.context.identity(id).conversation)
+              : this.store.createRun(id, this.context.identity(id).conversation, Date.now(), args[0] === undefined ? undefined : String(args[0]))
+          }
+          if (previous) this.store.feedbackLedger.resume(previous.id, next)
+        })()
+        break
       }
       case 'answer': this.store.answer(id, String(args[0]), args[1] as string, args[2]); break
       case 'remember': this.store.remember(id, args[0] as string); break

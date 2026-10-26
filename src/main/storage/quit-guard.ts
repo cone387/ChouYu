@@ -10,4 +10,14 @@ export class StorageQuitGuard {
     this.discard = this.confirmDiscard(status.error)
     return this.discard
   }
+  /** After draining, keep an explicit recovery surface until saved or discarded.
+   * Returning to the normal UI here would expose services already closed. */
+  async finish(drain: () => Promise<unknown>, recover: (error: string) => Promise<'retry' | 'discard'>): Promise<void> {
+    await drain()
+    for (;;) {
+      const status = this.flush()
+      if (!status.error || this.discard) return
+      if (await recover(status.error) === 'discard') { this.discard = true; return }
+    }
+  }
 }

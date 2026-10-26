@@ -36,7 +36,8 @@ export interface TaskDraft {
   displayGroupId?: string
 }
 
-export default function TaskEditorDialog({ draft, projects, groups, displayGroups, fields, busy, error, dialogRef, onChange, onCreateProject, onClose, onSubmit }: {
+export default function TaskEditorDialog({ active = true, draft, projects, groups, displayGroups, fields, busy, error, dialogRef, onChange, onCreateProject, onClose, onSubmit }: {
+  active?: boolean
   draft: TaskDraft
   projects: TaskProject[]
   groups: TaskGroup[]
@@ -63,7 +64,7 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
   const itemDialogRef = useRef<HTMLDialogElement>(null)
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [dropItem, setDropItem] = useState<{ id: string; after: boolean } | null>(null)
-  useEffect(() => { if (itemDialogOpen) itemDialogRef.current?.showModal() }, [itemDialogOpen])
+  useEffect(() => { if (active && itemDialogOpen) itemDialogRef.current?.showModal() }, [active, itemDialogOpen])
   const closeItemDialog = () => { setItemDialogOpen(false); setNewItem(''); setNewItemDue(''); setNewItemRemind('none') }
   const original = useRef(JSON.stringify(draft))
   const confirm = useConfirm()
@@ -77,8 +78,9 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
     } finally { closing.current = false }
   }
   useEffect(() => {
+    if (!active) return
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (event.key !== 'Escape' || event.defaultPrevented || !dialogRef.current?.getClientRects().length || document.querySelector('dialog:modal')) return
       event.preventDefault()
       event.stopPropagation()
       void requestClose()
@@ -219,7 +221,7 @@ export default function TaskEditorDialog({ draft, projects, groups, displayGroup
           <button type="submit" disabled={busy || !draft.title.trim() || !hasSelectedProject}>{busy ? '保存中…' : draft.id ? '保存' : '创建'}</button>
         </div>
           </form>
-          {itemDialogOpen && <dialog ref={itemDialogRef} className="tasks-dialog tasks-subitem-dialog" aria-labelledby="tasks-subitem-title" onCancel={event => { event.preventDefault(); closeItemDialog() }} onKeyDown={event => event.stopPropagation()}>
+          {active && itemDialogOpen && <dialog ref={itemDialogRef} className="tasks-dialog tasks-subitem-dialog" aria-labelledby="tasks-subitem-title" onCancel={event => { event.preventDefault(); closeItemDialog() }} onKeyDown={event => event.stopPropagation()}>
             <header className="tasks-dialog-header"><h2 id="tasks-subitem-title">新增子项</h2></header>
             <form className="tasks-form" onSubmit={addItem}>
               <label>子项名称<input aria-label="新子项名称" autoFocus required maxLength={200} value={newItem} onChange={event => setNewItem(event.target.value)} /></label>
