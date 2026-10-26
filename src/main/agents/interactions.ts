@@ -56,7 +56,27 @@ export class ContactInteractions {
   }
   pending(owner: string): ContactInteraction[] {
     const rows = this.store.db.prepare("SELECT id FROM contact_interactions WHERE character_id=? AND json_extract(value,'$.status') IN ('pending','failed')").all(owner) as { id: string }[]
-    return rows.map(row => this.get(owner, row.id)).filter(view => ['pending', 'failed'].includes(view.status))
+    const pending = rows.map(row => this.get(owner, row.id)).filter(view => ['pending', 'failed'].includes(view.status))
+    if (this.store.recovery.identity(owner)) {
+      for (const topic of this.store.topics.list(owner)) {
+        const card = this.recoveryCard(owner, topic.id)
+        if (card.status === 'pending' && !pending.some(item => item.topicId === topic.id && item.storageRecovery)) pending.push(card)
+      }
+    }
+    return pending
+  }
+  private recoveryCard(owner: string, topicId: string, id?: string): ContactTaskInteraction {
+    const recovery = this.store.recovery.identity(owner)
+    if (!recovery) throw new Error('恢复记录已变化。')
+    const topic = this.store.topics.get(owner, topicId)
+    const run = this.store.db.prepare('SELECT id,status FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(owner, topicId) as { id: string; status: string } | undefined
+    const started = recovery.allowedTopics.includes(topicId) && run && !this.store.recovery.oldRun(owner, run.id) && ['running', 'completed', 'waiting'].includes(run.status)
+    return { id: id ?? `restore:${recovery.restoreId}:${topicId}`, characterId: owner, topicId, runId: run?.id ?? '', topicTitle: topic.title,
+      version: `${recovery.restoreId}:${topic.revision}`, createdAt: topic.createdAt, kind: 'retry', status: started ? 'resolved' : 'pending',
+      budgets: [], storageRecovery: { restoreId: recovery.restoreId, unknownHistory: true },
+      result: started ? '已从核对后的正式成果开始新尝试；历史消耗仍不完整。' : undefined,
+      impact: '旧轮次、检查点和待投递消息不会重放。恢复之后的新工作也须核对资料与额度。',
+      failure: { kind: 'storage', message: '任务由备份恢复，资料、权限、外部操作和缺失用量需要核对。', action: '核对并开始新尝试', settings: false } }
   }
   /** Upgrade only a still-current blocker/question, once. Historical messages are never rewritten. */
   publishOutstanding(owner: string, visibleNoticeIds?: ReadonlySet<string>) {
@@ -121,8 +141,18 @@ export class ContactInteractions {
     return fields
   }
   get(owner: string, id: string): ContactInteraction {
-    if (id.startsWith('action:')) return this.store.actions.get(owner, id)
+    const recovery = this.store.recovery.identity(owner)
+    const prefix = recovery && `restore:${recovery.restoreId}:`
+    if (prefix && id.startsWith(prefix)) return this.recoveryCard(owner, id.slice(prefix.length), id)
+    if (id.startsWith('action:')) {
+      const card = this.store.actions.get(owner, id)
+      if (recovery && this.store.recovery.original(owner).interactions.includes(id)) return {
+        ...card, status: 'failed', retryable: false, result: '恢复前的外部操作结果可能不完整，原操作不会重放。请核对实际结果，再提出新的要求。'
+      }
+      return card
+    }
     const v = this.read(owner, id), s = this.store
+    if (recovery) return this.recoveryCard(owner, v.topicId, id)
     const sourceRun = s.getRun(v.runId)
     const presentation = sourceRun && JSON.parse(sourceRun.input).revisionScope === 'presentation'
     if (v.kind === 'retry') {

@@ -10,7 +10,7 @@ import { providerRecoveryDelay } from '../../shared/contact-failure'
 const cleanups: (() => void | Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close(); vi.useRealTimers() })
 function fixture(error = 'API error 429: 余额不足或无可用资源包') {
-  vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 10, 10))
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }); vi.setSystemTime(new Date(2026, 9, 10, 10))
   const dir = mkdtempSync(join(tmpdir(), 'provider-recovery-')), path = join(dir, 'agents.db')
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
   const store = new ContactTaskStore(path); cleanups.push(() => store.close())

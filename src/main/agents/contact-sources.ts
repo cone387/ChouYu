@@ -7,6 +7,7 @@ export class ContactSources {
   names = new Map<string, string>()
   constructor(private store: ContactTaskStore) {}
   allowed(reader: string, owner: string) {
+    this.store.recovery.assertSources(reader); this.store.recovery.assertSources(owner)
     if (!this.store.overview(reader).settings.readContactDeliveries) throw new Error('未授权读取联系人的共享成果。')
     if (reader === owner || !this.store.profile(owner) || !this.store.overview(owner).settings.shareDeliveries) throw new Error('该联系人的成果未共享或已撤回。')
   }
@@ -25,12 +26,15 @@ export class ContactSources {
     return new Set(rows.flatMap(row => (JSON.parse(row.value).evidence as AgentEvidence[]).filter(e => e.url.startsWith('contact-delivery://')).map(e => `${e.url.split('?')[0]}:${e.hash}`)))
   }
   discover(reader: string, topicId: string, query: string) {
+    this.store.recovery.assertSources(reader)
     if (!this.store.overview(reader).settings.readContactDeliveries) throw new Error('未授权读取联系人的共享成果。')
     const consumed = this.consumed(reader, topicId)
     const normalize = (value: string) => value.normalize('NFKC').toLowerCase().replace(/[\s\p{P}]/gu, '')
     const terms = query.split(/\s+/).map(normalize).filter(Boolean)
     const results: { ref: ContactDeliveryRef; contact: string; task: string; title: string; processed: boolean }[] = []
     for (const profile of this.store.profiles()) {
+      if (!this.store.recovery.present(profile.character_id)) continue
+      if (this.store.recovery.identity(profile.character_id)?.scopeReviewed === false) continue
       if (profile.character_id === reader || !JSON.parse(profile.settings).shareDeliveries) continue
       for (const topic of this.store.topics.list(profile.character_id)) {
         const delivery = this.store.deliveries.get(topic.id)

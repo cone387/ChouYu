@@ -19,13 +19,14 @@ export class WorkLoop implements ContactModule {
     private scheduler: RunScheduler, private skillRunner: SkillRunner, private changed: (id: string) => void,
     private wake: () => void, private request: ContactRequest,
     private modelFactory: ((identity: ContactIdentity) => AgentModel) | undefined, private readSkills: ((id: string) => SkillSnapshot) | undefined,
-    private harnesses: HarnessRegistry) {}
+    private harnesses: HarnessRegistry, private recoveryBudget?: import('../agent-space/recovery-port').RecoveryBudgetPort) {}
   private identity(id: string) {
     if (id !== this.owner.id) throw new Error('工作模块不能访问其他联系人身份。')
     return this.owner.identity
   }
   prepare() {
     if (this.closed) return
+    if (this.store.recovery.identity(this.owner.id) && !this.store.recovery.identity(this.owner.id)!.scopeReviewed) return
     const ownProfile = this.store.profile(this.owner.id)
     if (!ownProfile) return
     for (const profile of [ownProfile]) {
@@ -35,6 +36,7 @@ export class WorkLoop implements ContactModule {
       if (!this.owner.identity?.config) continue
       this.store.decisions.checkScheduledResources(profile.character_id)
       const considered = new Set(this.scheduler.activeFor(profile.character_id).map(run => run.topicId).filter((id): id is string => id !== null))
+      for (const topic of this.store.topics.list(profile.character_id)) if (!this.store.recovery.allowed(profile.character_id, topic.id)) considered.add(topic.id)
       while (true) {
         const topicId = this.store.nextScheduledTopic(profile.character_id, Date.now(), topicId => {
           if (!settings.readContactDeliveries) return false
@@ -64,6 +66,7 @@ export class WorkLoop implements ContactModule {
     if (this.closed) return false
     for (const run of this.store.runnable()) {
       if (run.character_id !== this.owner.id || this.scheduler.get(run.id)) continue
+      if (this.store.recovery.oldRun(run.character_id, run.id) || !this.store.recovery.allowed(run.character_id, run.topic_id)) continue
       if (!this.owner.identity?.config || JSON.parse(run.input).revisionScope !== 'presentation' && JSON.parse(run.input).settings.searchEnabled && !this.owner.identity?.searchKey) continue
       const settings = JSON.parse(this.store.profile(run.character_id)!.settings) as AgentSettings
       const active = this.scheduler.activeFor(run.character_id)
@@ -100,7 +103,7 @@ export class WorkLoop implements ContactModule {
       this.store.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify(input), run.id)
     }
     const model = createWorkModel({ store: this.store, identity, run, input, skillRunner: this.skillRunner,
-      modelFactory: this.modelFactory, changed: this.changed, request: this.request, harnesses: this.harnesses })
+      modelFactory: this.modelFactory, changed: this.changed, request: this.request, harnesses: this.harnesses, recoveryBudget: this.recoveryBudget })
     return this.scheduler.launch({ id: run.id, characterId: run.character_id, topicId: run.topic_id }, limit, async signal => {
       try { signal.throwIfAborted(); await this.runtime.execute(run.id, identity.soul, model, signal, () => this.changed(run.character_id), identity.searchKey) }
       catch (error) {

@@ -59,6 +59,7 @@ export interface AgentInteractionPage { items: AgentInteraction[]; nextCursor?: 
 export interface AgentMemory { id: string; content: string; runId: string | null; createdAt: number }
 export interface AgentReport { evaluations?: import('./agent-evaluation').AgentEvaluation[]; runId: string; title: string; body: string; nextStep: string; evidence: AgentEvidence[]; createdAt: number }
 export interface AgentOverview {
+  recovery?: import('./contact-recovery').ContactRecoveryIdentity
   taskSchedule?: Record<string, { nextAt: number; waitingForUpdates?: boolean; calendar?: import('./calendar-schedule').CalendarSchedule; finishedAt?: number; lastDueAt?: number }>
   taskResources?: Record<string, { callsNeeded: number; tokensNeeded?: number }>
   taskFailures?: Record<string, { failures: number; retryAt?: number }>
@@ -126,6 +127,7 @@ export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: A
 export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, ContactMaterialAPI, ContactHandoffAPI, ContactFileAPI {
   runtimeStatus(): Promise<import('./contact-runtime').ContactRuntimeSnapshot>
   retryRuntime(): Promise<import('./contact-runtime').ContactRuntimeSnapshot>
+  restoreRuntime(groupId: string): Promise<import('./contact-runtime').ContactRuntimeSnapshot>
   onRuntimeChanged(callback: (state: import('./contact-runtime').ContactRuntimeSnapshot) => void): () => void
   contactHome(characterId: string): Promise<import('./contact-home').ContactHomeData>
   pendingInteractions(characterId: string): Promise<(import('./contact-interactions').ContactInteraction & { characterName: string })[]>

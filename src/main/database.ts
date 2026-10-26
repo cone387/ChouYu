@@ -881,6 +881,13 @@ export function setState(key: string, value: string): void {
   store.state[key] = value
   persist()
 }
+/** Recovery authorization must reach the application database before it is acknowledged. */
+export function setContactRecoveryState(key: string, value: string): void {
+  if (!key.startsWith('contact-recovery:') || !application || storageStatus.error) throw new Error('应用存储不可用，不能保存联系人恢复授权。')
+  application.metadata.setState(key, value)
+  store.state[key] = value
+  backupChanges = true
+}
 
 export function contactSearchCredential(owner: string) {
   if (!getCharacter(owner) || owner === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')

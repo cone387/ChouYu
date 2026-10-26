@@ -29,6 +29,16 @@ function fixture() {
   return { store, runtime, topic, publish }
 }
 describe('agent-planned contact deliverable tools', () => {
+  it('withholds recovered shared deliveries until their owner reviews the restored scopes', () => {
+    const f = fixture(); f.publish()
+    f.store.recovery.sync('writer', { restoreId: 'restore', scopeReviewed: false, allowedTopics: [] })
+    expect(f.runtime.contactSources.discover('reviewer', f.topic('reviewer'), '').total).toBe(0)
+    expect(() => f.runtime.contactSources.allowed('reviewer', 'writer')).toThrow(/核对/)
+    f.store.recovery.sync('writer', { restoreId: 'restore', scopeReviewed: true, allowedTopics: [] })
+    expect(f.runtime.contactSources.discover('reviewer', f.topic('reviewer'), '').total).toBe(1)
+    f.store.recovery.setRoster(['reviewer'])
+    expect(f.runtime.contactSources.discover('reviewer', f.topic('reviewer'), '').total).toBe(0)
+  })
   it('uses the authorized shared catalog when accepting a new review task without asking for an upload', async () => {
     const f = fixture(); f.publish(); f.publish('private', '私有正文')
     const topic = f.store.assignTopic('reviewer', '持续评审阿想的已共享成果，不需要我上传正文', '')
@@ -412,7 +422,7 @@ it('continuously reviews new shared sections, idles without model calls, and wak
   expect(count).toBe(4)
   for (let i = 0; i < 3; i++) service.tick()
   expect(model).toHaveBeenCalledTimes(count)
-  expect(service.store.overview('reviewer').nextAt).toBeGreaterThan(Date.now())
+  await vi.waitFor(() => expect(service.store.overview('reviewer').nextAt).toBeGreaterThan(Date.now()))
   publish('idea3'); service.tick()
   await vi.waitFor(() => expect(service.store.overview('reviewer').reports).toHaveLength(3))
   expect(model).toHaveBeenCalledTimes(count + 2)

@@ -5,6 +5,7 @@ import type { ContactBudgetKey, ContactInteraction } from '../../../../shared/co
 import './ContactInteractionCard.css'
 import ContactFailureRemedy from './ContactFailureRemedy'
 import { taskRecovery } from '../../../../shared/task-recovery'
+import ContactStorageReview from './ContactStorageReview'
 
 export default function ContactInteractionCard({ characterId, interactionId, fallback, onOpen, showOwner = false, active = true }: {
   characterId: string; interactionId: string; fallback: string; showOwner?: boolean; onOpen?: () => void; active?: boolean
@@ -97,7 +98,13 @@ export default function ContactInteractionCard({ characterId, interactionId, fal
       {view.failureDetail && <details className="contact-interaction-diagnostic"><summary>技术诊断</summary><p>{view.failureDetail}</p></details>}
       {view.status === 'pending' && (view.recovery?.message || view.recoveryMessage) && <p className="contact-interaction-recovery" data-task-recovery role="status">{view.recovery?.message || view.recoveryMessage}</p>}
       {view.status === 'pending' && view.kind === 'retry' && <ContactFailureRemedy view={view} />}
-      {view.status === 'pending' ? <form onSubmit={submit} noValidate>
+      {view.status === 'pending' && view.storageRecovery ? <ContactStorageReview busy={busy} submit={async storageRecovery => {
+        if (submitting.current) return
+        submitting.current = true; setBusy(true); setError(''); generation.current++
+        try { setView(await window.electronAPI.agents.submitInteraction(characterId, interactionId, { version: view.version, storageRecovery })) }
+        catch (e) { setError(e instanceof Error ? e.message : '核对保存失败，请重试。') }
+        finally { submitting.current = false; setBusy(false) }
+      }} /> : view.status === 'pending' ? <form onSubmit={submit} noValidate>
         {view.budgets.map(field => <label className="contact-interaction-field" key={field.key}>
           <span>{field.label}</span>
           <span className="contact-interaction-usage">已用 {field.used.toLocaleString()} / {field.limit.toLocaleString()} {field.unit} · 继续至少需要 {field.needed.toLocaleString()} {field.unit}</span>

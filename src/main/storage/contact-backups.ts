@@ -21,7 +21,7 @@ export class ContactBackups {
   readonly directory: string
   private lastCreatedAt = 0
   private inFlight?: Promise<ContactBackupManifest>
-  constructor(directory: string, private databases: Databases, private exclusive: Exclusive) {
+  constructor(directory: string, private databases?: Databases, private exclusive: Exclusive = operation => operation()) {
     this.directory = resolve(directory, 'backups')
   }
   private path(id: string): string {
@@ -70,6 +70,7 @@ export class ContactBackups {
     }).sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
   }
   create(): Promise<ContactBackupManifest> {
+    if (!this.databases) return Promise.reject(new Error('备份源数据库未打开。'))
     if (this.inFlight) return this.inFlight
     this.inFlight = this.exclusive(async () => {
       mkdirSync(this.directory, { recursive: true })
@@ -80,7 +81,7 @@ export class ContactBackups {
       try {
         for (const role of roles) {
           const filename = join(staging, role + '.db')
-          await this.databases[role].backup(filename)
+          await this.databases![role].backup(filename)
           durableFile(filename)
         }
         const manifest: ContactBackupManifest = { format: 1, id, createdAt, files: this.inspect(staging) }

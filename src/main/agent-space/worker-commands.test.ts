@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { ContactCommandQueue } from './command-queue'
 import { dispatchContactCommand } from './worker-commands'
 
@@ -34,4 +34,15 @@ it('rejects malformed transport commands before queuing or invoking a host', asy
   await expect(dispatchContactCommand(queue, service, 'madeUp', 'alice', [])).rejects.toThrow()
   await expect(dispatchContactCommand(queue, service, 'syncContact', 'alice', [{ id: 'bob' }])).rejects.toThrow('不一致')
   await expect(dispatchContactCommand(queue, service, 'sync', '', [null])).rejects.toThrow()
+})
+it('keeps storage admission waiting in the queue phase instead of consuming execution timeout', async () => {
+  let release!: () => void
+  const hold = new Promise<void>(resolve => { release = resolve }), started = vi.fn()
+  const service = { sync: async () => {}, syncContact: async () => {}, dispatchUnknown: async () => {}, close: async () => {},
+    admitCommand: vi.fn(async (_method: string, work: () => Promise<unknown>) => { await hold; return work() }) }
+  const request = dispatchContactCommand(new ContactCommandQueue(), service, 'get', 'alice', [], started)
+  await vi.waitFor(() => expect(service.admitCommand).toHaveBeenCalledOnce())
+  expect(started).not.toHaveBeenCalled()
+  release(); await request
+  expect(started).toHaveBeenCalledOnce()
 })

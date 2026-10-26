@@ -4,6 +4,7 @@ import type { HarnessEngine } from '../../shared/harness'
 import type { HarnessInput, HarnessEvent, HarnessResult } from '../harness/contracts'
 
 export interface ContactIdentity {
+  recovery?: import('../../shared/contact-recovery').ContactRecoveryIdentity
   /** Authoritative application module state carried into worker reconstruction. */
   workLoopEnabled?: boolean
   backgroundHarnessEngine?: HarnessEngine

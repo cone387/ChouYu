@@ -19,6 +19,7 @@ export function createWorkModel(context: {
   modelFactory?: (identity: ContactIdentity) => AgentModel
   changed(id: string): void
   request: import('../../shared/contact-commands').ContactRequest
+  recoveryBudget?: import('../agent-space/recovery-port').RecoveryBudgetPort
 }): AgentModel {
   const { store, identity, run, input, skillRunner, modelFactory, changed, request } = context
     const skills = input.skills as SkillSnapshot
@@ -32,22 +33,38 @@ export function createWorkModel(context: {
       let output = ''
       let callId: number | undefined, reservation: { key: string; maxOutputTokens: number } | undefined
       let metadata: AIResponseMetadata = { model: identity.config!.model }
-      const beforeRound = (round: number, serializedInput: string) => {
+      let recoveryRequestId: string | undefined
+      const beforeRound = async (round: number, serializedInput: string) => {
         signal.throwIfAborted()
+        store.recovery.assertRun(run.character_id, run.topic_id, run.id)
+        metadata = { model: identity.config!.model }; output = ''
         if (round > 0) store.charge(run.id)
         callId = store.latestCallId(run.id)
         if (callId === undefined) throw new Error('Missing model call record')
         const next = store.tokens.reserve(run.id, callId, run.character_id, run.topic_id, serializedInput, AGENT_OUTPUT_TOKENS)
         if ('error' in next) { store.db.prepare('DELETE FROM calls WHERE id=?').run(callId); callId = undefined; throw new TokenBudgetError(next.error) }
         reservation = { key: next.key!, maxOutputTokens: next.maxOutputTokens! }
+        if (identity.recovery) {
+          if (!context.recoveryBudget || !run.topic_id) throw new Error('恢复额度核对服务不可用，本次未发起请求。')
+          const tokens = (store.db.prepare('SELECT tokens FROM token_ledger WHERE id=?').get(reservation.key) as { tokens: number }).tokens
+          const requestId = identity.recovery.restoreId + ':' + reservation.key
+          await context.recoveryBudget.reserve({ restoreId: identity.recovery.restoreId, requestId, owner: identity.id, topicId: run.topic_id, tokens })
+          recoveryRequestId = requestId
+        }
         metadata = { model: identity.config!.model }; output = ''
         return reservation.maxOutputTokens
       }
-      const afterRound = () => {
+      const afterRound = async () => {
         if (!reservation || callId === undefined) return
         store.recordCallMetadata(callId, metadata)
         store.tokens.settle(reservation.key, metadata)
         reservation = undefined; changed(run.character_id)
+        if (identity.recovery && recoveryRequestId) {
+          const usage = metadata.usage
+          const tokens = metadata.finishReason ? usage?.totalTokens ?? (usage?.inputTokens !== undefined && usage.outputTokens !== undefined ? usage.inputTokens + usage.outputTokens : undefined) : undefined
+          await context.recoveryBudget!.settle(identity.recovery.restoreId, recoveryRequestId, tokens)
+          recoveryRequestId = undefined
+        }
       }
       const skillRuntime = skillToolRuntime(identity.id, skills, skillRunner, signal, async (skillId, files) => {
         signal.throwIfAborted(); store.assertLive(run.id)
@@ -64,6 +81,7 @@ export function createWorkModel(context: {
       } })
       const tools = options?.tools !== false && identity.skillToolsEnabled ? { definitions: [...skillRuntime.definitions, ...materialTools], execute: withMaterialReferenceRepair(async (call: import('../../shared/tools').AIToolCall) => {
         signal.throwIfAborted(); store.assertLive(run.id)
+        store.recovery.assertRun(run.character_id, run.topic_id, run.id)
         const material = materialTools.find(t => t.name === call.name)
         if (!material) return skillRuntime.execute(call)
         const result = await material.execute({ ...JSON.parse(call.arguments), topicId: run.topic_id || undefined }, {} as ToolExecutionContext)
@@ -83,14 +101,14 @@ export function createWorkModel(context: {
         }
       }
       try {
-        if (testModel) { beforeRound(0, prompt); const result = await testModel(prompt, signal, options); if (options?.suppliesMemories) recordMemoryContext(); return result }
+        if (testModel) { await beforeRound(0, prompt); const result = await testModel(prompt, signal, options); if (options?.suppliesMemories) recordMemoryContext(); return result }
         await context.harnesses.background(input.backgroundHarnessEngine).run({ characterId: identity.id, requestId: run.id, messages: [{ role: 'user', content: prompt }],
           systemPrompt: options?.plainText ? 'Output the requested plain text, without JSON.' : 'Follow the work instruction and return JSON. Distinguish facts, assumptions, and sources.',
           config: { ...DEFAULT_APP_CONFIG, ...identity.config! }, signal, tools,
           onChunk: chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) },
           options: { timeoutMs: 180000, maxOutputTokens: AGENT_OUTPUT_TOKENS, beforeRound, afterRound, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model }; if (options?.suppliesMemories) recordMemoryContext() } } })
         if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError(output)
-      } finally { afterRound() }
+      } finally { await afterRound() }
       return output
     }
   return model

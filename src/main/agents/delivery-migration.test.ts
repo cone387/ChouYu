@@ -71,6 +71,6 @@ it('commits the incompatible format guard with schema migration, never before or
     expect(check.prepare('SELECT * FROM delivery_blocks').all()).toEqual([])
     check.exec('DROP TRIGGER schema_failure'); check.close()
     const resumed = new ContactTaskStore(file)
-    try { expect(resumed.db.pragma('user_version', { simple: true })).toBe(18) } finally { resumed.close() }
+    try { expect(resumed.db.pragma('user_version', { simple: true })).toBe(19) } finally { resumed.close() }
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

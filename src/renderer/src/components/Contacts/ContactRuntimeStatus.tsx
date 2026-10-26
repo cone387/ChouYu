@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { CONTACT_RUNTIME_ISSUE, CONTACT_RUNTIME_LABEL, type ContactRuntimeSnapshot } from '../../../../shared/contact-runtime'
+import ContactRestoreDialog from './ContactRestoreDialog'
+import type { ContactBackupManifest } from '../../../../shared/contact-backups'
 
 const time = (at: number) => new Date(at).toLocaleString()
-export function ContactRuntimeDetails({ snapshot, onRetry, busy = false }: {
-  snapshot: ContactRuntimeSnapshot; onRetry: () => void; busy?: boolean
+export function ContactRuntimeDetails({ snapshot, onRetry, onRestore, busy = false }: {
+  snapshot: ContactRuntimeSnapshot; onRetry: () => void; onRestore?: (group: ContactBackupManifest) => void; busy?: boolean
 }) {
   const unavailable = snapshot.phase !== 'ready'
   return <div className={unavailable ? 'agent-error' : 'agent-caption'} data-contact-runtime={snapshot.phase}>
@@ -19,11 +21,15 @@ export function ContactRuntimeDetails({ snapshot, onRetry, busy = false }: {
           : snapshot.metrics.backup.phase === 'failed' ? ' · 本次未保存，保留上一份备份' : ''}</p>}
       {snapshot.issue && <p>最近记录：{CONTACT_RUNTIME_ISSUE[snapshot.issue.kind]} · {time(snapshot.issue.at)}</p>}
     </details>
+    {snapshot.storageRecovery && <section role="status"><p>{snapshot.storageRecovery.kind === 'incompatible' ? '数据来自较新版本，请升级应用。' : '联系人存储损坏或缺失，后台工作已停止。'}</p>
+      {snapshot.storageRecovery.candidates.length ? snapshot.storageRecovery.candidates.map(group => <button key={group.id} type="button" disabled={busy || !onRestore} onClick={() => onRestore?.(group)}>查看 {time(group.createdAt)} 的恢复备份</button>)
+        : <p>没有可用的兼容备份；原文件保留，尚未创建空任务库。</p>}</section>}
   </div>
 }
 
 export default function ContactRuntimeStatus({ active }: { active: boolean }) {
   const [snapshot, setSnapshot] = useState<ContactRuntimeSnapshot>()
+  const [restoreGroup, setRestoreGroup] = useState<ContactBackupManifest>()
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   useEffect(() => {
     if (!active) return
@@ -45,5 +51,9 @@ export default function ContactRuntimeStatus({ active }: { active: boolean }) {
   }
   if (!active) return null
   return <>{error && <p className="agent-error" role="alert">{error}<button type="button" disabled={busy} onClick={() => void retry()}>重试连接</button></p>}
-    {snapshot && <ContactRuntimeDetails snapshot={snapshot} busy={busy} onRetry={() => void retry()} />}</>
+    {snapshot && <ContactRuntimeDetails snapshot={snapshot} busy={busy} onRetry={() => void retry()} onRestore={setRestoreGroup} />}
+    {restoreGroup && <ContactRestoreDialog group={restoreGroup} close={() => setRestoreGroup(undefined)} restore={async () => {
+      const result = await window.electronAPI.agents.restoreRuntime(restoreGroup.id)
+      setSnapshot(previous => !previous || result.revision >= previous.revision ? result : previous); setRestoreGroup(undefined)
+    }} />}</>
 }

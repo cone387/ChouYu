@@ -7,6 +7,7 @@ return {
   agents: {
     runtimeStatus: () => ipcRenderer.invoke('agents:runtime-status'),
     retryRuntime: () => ipcRenderer.invoke('agents:retry-runtime'),
+    restoreRuntime: (groupId: string) => ipcRenderer.invoke('agents:restore-runtime', groupId),
     onRuntimeChanged: callback => {
       const listener = (_event: unknown, state: import('../../shared/contact-runtime').ContactRuntimeSnapshot) => callback(state)
       ipcRenderer.on('agents:runtime-changed', listener)

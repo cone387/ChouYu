@@ -26,7 +26,11 @@ export class WritingRecovery {
   private get topicId() { return this.store.getRun(this.runId)!.topic_id! }
   read(): Scratch | undefined {
     const row = this.store.db.prepare('SELECT value FROM writing_drafts WHERE topic_id=? AND context_key=?').get(this.topicId, this.key) as { value: string } | undefined
-    return row ? JSON.parse(row.value) : undefined
+    if (!row) return
+    const value = JSON.parse(row.value)
+    const run = this.store.getRun(this.runId)!
+    if (this.store.recovery.identity(run.character_id) && (!value.sourceRunId || this.store.recovery.oldRun(run.character_id, value.sourceRunId))) return
+    return value
   }
   private save(value: Scratch) {
     this.store.assertLive(this.runId)

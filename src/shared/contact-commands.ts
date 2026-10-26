@@ -12,7 +12,7 @@ import type { ContactWorkSettingsPatch } from './contact-work-settings'
 type Command<A extends unknown[], R> = { args: A; result: R }
 type FromAPI<T> = { [K in keyof T]: T[K] extends (owner: string, ...args: infer A) => Promise<infer R> ? Command<A, R> : never }
 type PublicCommands = Omit<FromAPI<AgentAPI>,
-  'onChanged' | 'runtimeStatus' | 'retryRuntime' | 'onRuntimeChanged' | 'dashboard' | 'profile' | 'searchCredential' | 'exportDelivery' | 'exportContactFile' |
+  'onChanged' | 'runtimeStatus' | 'retryRuntime' | 'restoreRuntime' | 'onRuntimeChanged' | 'dashboard' | 'profile' | 'searchCredential' | 'exportDelivery' | 'exportContactFile' |
   'prepareHandoff' | 'importMaterial' | 'cancelMaterialImport' | 'assignTopic' | 'save' | 'editTopic' | 'setOutputPreference' | 'pendingInteractions'>
 
 export type DeliveryInspection = {
@@ -26,6 +26,7 @@ export type DeliveryInspection = {
 export type ContactCommandMap = PublicCommands & {
   dashboard: Command<[owners: string[]], AgentDashboard>
   remove: Command<[], null>
+  resumeRecovered: Command<[topicId: string, restoreId: string, requestId: string], AgentOverview>
   attachModule: Command<[module: string], null>
   detachModule: Command<[module: string], null>
   spaceDiagnostics: Command<[], { activeRuns: number; capacity: number; metrics: import('./contact-runtime').ContactRuntimeMetrics; faults: { characterId: string; error: string }[] }>
@@ -78,6 +79,7 @@ export interface ContactRequest {
 // Arity is checked at the transport boundary. Object/business rules remain in
 // the domain repositories, including ownership and optimistic concurrency.
 const arities: Record<ContactCommandName, readonly [number, number]> = {
+  resumeRecovered: [3, 3],
   contactHome: [0, 0], pendingInteractions: [0, 0], getInteraction: [1, 1], outputPreferences: [0, 2], setOutputPreference: [3, 4], submitInteraction: [2, 2],
   dashboard: [1, 1], summary: [0, 0], continueTopic: [3, 4], setTaskBudget: [3, 3], delivery: [1, 2], reviseTopic: [3, 6], savePreferences: [1, 2], get: [0, 0], save: [1, 2], run: [0, 2],
   createTopic: [1, 1], assignTopic: [1, 3], deleteTopic: [2, 2], editTopic: [4, 5], topicStatus: [4, 4], focusTopic: [1, 1], topicDetail: [1, 2], interactions: [1, 2], analytics: [1, 1], pause: [0, 0], detail: [1, 1], answer: [2, 3], remember: [1, 1], forget: [1, 1],

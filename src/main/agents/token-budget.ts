@@ -13,7 +13,7 @@ const reported = (metadata: AIResponseMetadata) => {
 
 /** Independent ledger: deleting a task must not refund today's consumption. */
 export class AgentTokenBudget {
-  constructor(private db: Database.Database) {
+  constructor(private db: Database.Database, private recoveryLimits?: import('../task-center/recovery').ContactStoreRecovery['limits']) {
     db.exec(`CREATE TABLE IF NOT EXISTS token_ledger (
       id TEXT PRIMARY KEY, character_id TEXT NOT NULL, topic_id TEXT, at INTEGER NOT NULL,
       tokens INTEGER NOT NULL, estimated INTEGER NOT NULL);
@@ -41,7 +41,9 @@ export class AgentTokenBudget {
     const profile = this.db.prepare('SELECT settings FROM profiles WHERE character_id=?').get(id) as { settings: string }
     const settings = JSON.parse(profile.settings) as AgentSettings
     const row = topicId && this.db.prepare('SELECT value FROM topics WHERE character_id=? AND id=?').get(id, topicId) as { value: string } | undefined
-    const taskLimit = row ? JSON.parse(row.value).tokenLimit as number | undefined : undefined
+    const recovery = this.recoveryLimits?.(id, topicId)
+    const taskLimit = recovery?.taskTokens ?? (row ? JSON.parse(row.value).tokenLimit as number | undefined : undefined)
+    if (recovery) settings.dailyTokenLimit = recovery.dailyTokens
     const usage = this.usage(id, now)
     return { dailyLimit: settings.dailyTokenLimit ?? Infinity, daily: settings.dailyTokenLimit === undefined ? Infinity : settings.dailyTokenLimit - usage.today,
       task: taskLimit === undefined ? Infinity : taskLimit - (usage.tasks[topicId!] ?? 0) }

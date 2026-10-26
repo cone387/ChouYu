@@ -32,8 +32,10 @@ import { AgentTopics } from '../agents/topics';
 import { AgentNotices } from '../agents/notices';
 
 import { AgentDeliveries } from '../agents/delivery';
+import { ContactStoreRecovery } from './recovery'
 
 export class ContactTaskStore {
+  readonly recovery: ContactStoreRecovery
   readonly completion: ContactCompletion
   readonly feedbackLedger: FeedbackLedger
   readonly dependencies: DeliveryDependencies
@@ -63,7 +65,8 @@ export class ContactTaskStore {
       // Schema, legacy bodies and the old-application barrier commit together.
       this.db.exec('BEGIN IMMEDIATE')
       const version = this.db.pragma('user_version', { simple: true }) as number
-      if (version > 18) throw new Error('Agent 数据版本较新，请升级应用。')
+      if (version > 19) throw new Error('Agent 数据版本较新，请升级应用。')
+      this.recovery = new ContactStoreRecovery(this.db)
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, revision INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', input TEXT NOT NULL);
@@ -117,7 +120,7 @@ export class ContactTaskStore {
       })()
       // Retire legacy contact deadlines without changing modes, revisions or live checkpoints.
       this.db.prepare("UPDATE profiles SET settings=json_remove(settings, '$.workUntil') WHERE json_type(settings, '$.workUntil') IS NOT NULL").run()
-      this.tokens = new AgentTokenBudget(this.db)
+      this.tokens = new AgentTokenBudget(this.db, this.recovery.limits.bind(this.recovery))
       this.decisions = new ContactInteractions(this)
       this.actions = new ContactActions(this)
       this.outputs = new ContactOutputPreferences(this)
@@ -167,6 +170,7 @@ export class ContactTaskStore {
         memoryLibrary: this.memoryLibrary
       })
       this.callBudget = new ContactCallBudget(this.db, {
+        recoveryLimits: this.recovery.limits.bind(this.recovery),
         getRun: this.getRun.bind(this),
         profile: this.profile.bind(this),
         callsNeededToResume: this.callsNeededToResume.bind(this),
@@ -175,6 +179,8 @@ export class ContactTaskStore {
         event: this.event.bind(this)
       })
       this.scheduling = new ContactScheduling(this.db, {
+        recoveryLimits: this.recovery.limits.bind(this.recovery),
+        isRestoredRun: this.recovery.oldRun.bind(this.recovery),
         feedbackLedger: this.feedbackLedger,
         dependencies: this.dependencies,
         profiles: this.profiles.bind(this),
@@ -252,6 +258,7 @@ export class ContactTaskStore {
       })
       this.restoreFailureSchedules()
       if (version < 18) this.db.pragma('user_version = 18')
+      if (version < 19) this.db.pragma('user_version = 19')
       this.dependencies.backfill()
       this.db.exec('COMMIT')
     } catch (error) {
@@ -283,7 +290,7 @@ export class ContactTaskStore {
   recordMemoryContext(...args: Parameters<ContactStoreOperations['recordMemoryContext']>): ReturnType<ContactStoreOperations['recordMemoryContext']> { return this.mutations.recordMemoryContext(...args) }
   invalidateMaterial(...args: Parameters<ContactStoreOperations['invalidateMaterial']>): ReturnType<ContactStoreOperations['invalidateMaterial']> { return this.mutations.invalidateMaterial(...args) }
   remove(...args: Parameters<ContactStoreOperations['remove']>): ReturnType<ContactStoreOperations['remove']> { return this.mutations.remove(...args) }
-  overview(...args: Parameters<ContactStoreOperations['overview']>): ReturnType<ContactStoreOperations['overview']> { return this.queries.overview(...args) }
+  overview(...args: Parameters<ContactStoreOperations['overview']>): ReturnType<ContactStoreOperations['overview']> { return { ...this.queries.overview(...args), recovery: this.recovery.identity(args[0]) } }
   latestCallId(...args: Parameters<ContactStoreOperations['latestCallId']>): ReturnType<ContactStoreOperations['latestCallId']> { return this.queries.latestCallId(...args) }
   interactions(...args: Parameters<ContactStoreOperations['interactions']>): ReturnType<ContactStoreOperations['interactions']> { return this.queries.interactions(...args) }
   analytics(...args: Parameters<ContactStoreOperations['analytics']>): ReturnType<ContactStoreOperations['analytics']> { return this.queries.analytics(...args) }

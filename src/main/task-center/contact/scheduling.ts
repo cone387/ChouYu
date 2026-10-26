@@ -15,6 +15,8 @@ import { withinWorkHours } from '../../../shared/work-settings';
 import { RunRow, failureDelay } from './types';
 import type { ContactStoreOperations } from './operations';
 interface Ports {
+  recoveryLimits?: import('../recovery').ContactStoreRecovery['limits']
+  isRestoredRun?: import('../recovery').ContactStoreRecovery['oldRun']
   feedbackLedger: Pick<import('../../agents/feedback-ledger').FeedbackLedger, 'resume'>
   dependencies: Pick<import('../../agents/delivery-dependencies').DeliveryDependencies, 'pending'>
   profiles: ContactStoreOperations['profiles']
@@ -98,6 +100,8 @@ export class ContactScheduling {
       if (!canResearch(topic.status) && revisionScope !== 'presentation') throw new Error('当前事项已暂停或结束，请继续此事项或选择其他事项。')
       // Task goals replace the removed work-direction field, including legacy profiles.
       const settings = validateAgentSettings({ ...JSON.parse(profile.settings), goal: topic.goal })
+      const recovery = this.ports.recoveryLimits?.(id, topic.id)
+      if (recovery) settings.dailyCalls = recovery.dailyCalls
       if (this.ports.callCount(id, now) >= settings.dailyCalls) throw new Error('今日模型调用已达上限，明天再试或调整上限。')
       const scheduled = this.ports.scheduled(id).find(task => task.topic_id === topic.id)
       const assignment = Boolean(scheduled?.pending && revisionScope !== 'presentation')
@@ -108,7 +112,8 @@ export class ContactScheduling {
       const selectedMemories = this.ports.memoryLibrary.select({ characterId: id, topicId: topic.id, query: `${topic.goal}\n${context}` })
       const previous = (this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? ORDER BY reports.rowid DESC LIMIT 3').all(topic.id, id) as { value: string }[]).map(row => JSON.parse(row.value) as AgentReport)
       const baselineRun = this.db.prepare('SELECT topic_revision FROM runs WHERE id=?').get(previous[0]?.runId ?? '') as { topic_revision: number } | undefined
-      const last = this.db.prepare('SELECT * FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id, topic.id) as RunRow | undefined
+      const candidate = this.db.prepare('SELECT * FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id, topic.id) as RunRow | undefined
+      const last = candidate && !this.ports.isRestoredRun?.(id, candidate.id) ? candidate : undefined
       const feedback = last?.status === 'failed' && JSON.parse(last.input).revisionScope !== 'presentation' ? [JSON.parse(last.input).feedback, last.answer ? `对问题「${last.question}」的回复：${last.answer}` : ''].filter(Boolean).join('\n').slice(0, 4000) : undefined
       const input = JSON.stringify({ revisionScope, revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.ports.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: selectedMemories.items, contextReferences: { memories: selectedMemories.items.map(m => ({ id: m.id, revision: m.revision })) }, memoriesTruncated: selectedMemories.truncated, previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(-4000) })
       const runInput = assignment ? JSON.stringify({ ...JSON.parse(input), assignment: true, conversation: scheduled!.conversation || context.slice(-4000) }) : input
@@ -126,6 +131,8 @@ export class ContactScheduling {
     const profile = this.ports.profile(id)
     if (!profile) return
     const settings = JSON.parse(profile.settings) as AgentSettings
+    const restored = this.ports.recoveryLimits?.(id)
+    if (restored) settings.dailyCalls = restored.dailyCalls
     if (settings.enabled && !withinWorkHours(settings, now)) return
     const unfinished = this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(id) as RunRow[]
     const runnable = unfinished.filter(run => run.status === 'running' || run.status !== 'waiting' &&
@@ -151,7 +158,8 @@ export class ContactScheduling {
       if (!calendar && candidate.next_at > now && !(settings.enabled && !settings.paceWriting && !failure && sourceChanged())) continue
       const needed = (agentUsesPlanner(settings) ? 2 : 1) + (candidate.pending ? 1 : 0)
       if (this.ports.callCount(id, now) + needed > settings.dailyCalls) continue
-      if (topic.resourceBudget && this.ports.taskCallCount(id, topic.id) + needed > topic.resourceBudget.modelCalls) continue
+      const taskLimit = this.ports.recoveryLimits?.(id, topic.id)?.taskCalls ?? topic.resourceBudget?.modelCalls
+      if (taskLimit !== undefined && this.ports.taskCallCount(id, topic.id) + needed > taskLimit) continue
       return candidate.topic_id
     }
   }

@@ -24,6 +24,7 @@ export interface ContactRuntimeSnapshot {
   observedAt?: number
   issue?: ContactRuntimeIssue
   metrics?: ContactRuntimeMetrics
+  storageRecovery?: { kind: 'damaged' | 'missing' | 'incompatible' | 'unavailable'; candidates: import('./contact-backups').ContactBackupManifest[] }
 }
 export const CONTACT_RUNTIME_LABEL: Record<ContactRuntimePhase, string> = {
   idle: '后台工作尚未启动', starting: '正在连接后台工作', ready: '后台工作已连接',

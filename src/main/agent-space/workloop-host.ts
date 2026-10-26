@@ -25,7 +25,7 @@ import { ContactBackups } from '../storage/contact-backups'
 import type { ContactBackupStatus } from '../../shared/contact-backups'
 
 export type { ContactIdentity } from '../contact-agent/contracts'
-export interface WorkLoopHostOptions { capacity?: number; modules?: readonly string[]; harnesses?: HarnessRegistry; dshRuntime?: DshRuntimeOptions }
+export interface WorkLoopHostOptions { capacity?: number; modules?: readonly string[]; harnesses?: HarnessRegistry; dshRuntime?: DshRuntimeOptions; recoveryBudget?: import('./recovery-port').RecoveryBudgetPort }
 const signature = (identity: ContactIdentity) => createHash('sha256').update(JSON.stringify({ soul: identity.soul,
   config: identity.config, searchKey: identity.searchKey, skillToolsEnabled: identity.skillToolsEnabled,
   disabledSkillTools: identity.disabledSkillTools })).digest('hex')
@@ -89,7 +89,7 @@ export class WorkLoopHost {
         activeFor: (id, topicId) => this.scheduler.activeFor(id, topicId), abort: (id, topicId) => this.scheduler.abort(id, topicId),
         activeRun: id => this.scheduler.get(id), cleanupThread: id => this.cleanupThread(id) })
       this.modules.register('workloop', owner => new WorkLoop(owner, this.store, this.runtime, this.scheduler,
-        this.skillRunner, id => this.notify(id), () => this.wake(), (method, id, args) => this.request(method, id, args), modelFactory, readSkills, this.harnesses))
+        this.skillRunner, id => this.notify(id), () => this.wake(), (method, id, args) => this.request(method, id, args), modelFactory, readSkills, this.harnesses, options.recoveryBudget))
       this.modules.resolve(options.modules ?? ['workloop'])
       this.store.recover()
       this.eventLoop.enable()
@@ -101,6 +101,10 @@ export class WorkLoopHost {
     }
   }
   private assertOpen() { if (this.closed) throw new Error('联系人空间已关闭。') }
+  admitCommand(method: string, work: () => Promise<unknown>): Promise<unknown> {
+    return ['pause', 'remove', 'detachModule', 'deleteTopic', 'topicStatus'].includes(method)
+      ? this.storage.controlOperation(work) : this.storage.operation(work)
+  }
   private identity(id: string) {
     const contact = this.contacts.get(id)
     if (!contact || this.deleting.has(id)) throw new Error('联系人不存在。')
@@ -109,7 +113,12 @@ export class WorkLoopHost {
   private notify(id: string) {
     this.changed(id); if (!this.closed) this.events.publish(id)
     if (!this.closed && !this.backupStatus.lastSuccessAt && !this.backupStatus.lastAttemptAt && !this.firstBackupTimer) {
-      this.firstBackupTimer = setTimeout(() => { this.firstBackupTimer = undefined; void this.backupNow() }, 0)
+      this.firstBackupTimer = setTimeout(() => {
+        this.firstBackupTimer = undefined
+        // Do not put the initial burst of user requests behind a just-started model call.
+        // Idle notification/close retries this first snapshot; the periodic timer still uses the bounded drain.
+        if (!this.scheduler.size) void this.backupNow()
+      }, 0)
     }
   }
   backupNow(): Promise<void> {
@@ -124,7 +133,7 @@ export class WorkLoopHost {
       } catch (error) {
         this.backupStatus = { ...this.backupStatus, phase: 'failed', failures: this.backupStatus.failures + 1, reason: error instanceof StorageBoundaryTimeout ? 'busy' : 'storage' }
       }
-    }).finally(() => { this.backupTask = undefined })
+    }).finally(() => { this.backupTask = undefined; this.wake() })
     return this.backupTask
   }
   private storageRevision() {
@@ -138,6 +147,8 @@ export class WorkLoopHost {
     this.assertOpen()
     if (identities.some(identity => !identity.id) || new Set(identities.map(identity => identity.id)).size !== identities.length) throw new Error('联系人身份重复或无效。')
     const liveIds = new Set(identities.map(identity => identity.id))
+    this.store.recovery.setRoster([...liveIds])
+    await this.storage.operation(() => { for (const identity of identities) this.store.recovery.sync(identity.id, identity.recovery) })
     const knownIds = new Set([...this.store.profiles().map(profile => profile.character_id), ...queuedOwners])
     const removed = [...knownIds].filter(id => !liveIds.has(id))
     await Promise.all([
@@ -152,6 +163,7 @@ export class WorkLoopHost {
   private syncContactAdmitted(identity: ContactIdentity) {
     this.assertOpen()
     if (!identity?.id || this.deleting.has(identity.id)) throw new Error('联系人身份无效或正在删除。')
+    this.store.recovery.sync(identity.id, identity.recovery)
     let contact = this.contacts.get(identity.id)
     if (contact && signature(contact.identity) !== signature(identity)) {
       this.scheduler.abort(identity.id)
@@ -169,7 +181,7 @@ export class WorkLoopHost {
     this.store.actions.reconcile(identity.id, identity.configurationVersions ?? {})
     this.store.memoryLibrary.registerSessions(identity.id, identity.sessionIds ?? [])
     this.runtime.contactSources.names.set(identity.id, identity.name || identity.id)
-    if (!this.recoveredContacts.has(identity.id)) {
+    if (!this.recoveredContacts.has(identity.id) && !identity.recovery) {
       this.store.decisions.publishOutstanding(identity.id, new Set(identity.visibleNoticeIds ?? []))
       this.recoveredContacts.add(identity.id)
     }
@@ -244,6 +256,29 @@ export class WorkLoopHost {
     validateContactCommand(rawMethod, owner, rawArgs)
     const method = rawMethod, id = owner as string, args = rawArgs as unknown[]
     this.assertOpen()
+    const recovery = this.store.recovery.identity(id)
+    if (recovery) {
+      if (method === 'notices') return this.store.notices.pending(id).filter(notice => !this.store.recovery.original(id).notices.includes(notice.id))
+      if (method === 'actionNotices') return this.store.actions.notices(id).filter(card => !this.store.recovery.original(id).interactions.includes(card.id))
+      const historical = new Set(['get', 'dashboard', 'spaceDiagnostics', 'detail', 'topicDetail', 'delivery', 'portfolio', 'analytics', 'summary', 'interactions', 'pendingInteractions', 'getInteraction', 'materialList', 'readMaterial', 'readContactFile', 'materialHistory', 'materialInventory', 'memoryList', 'memoryHistory', 'handoffs', 'handoffState', 'fileList', 'contactHome', 'outputPreferences', 'pause', 'remove', 'detachModule', 'deleteTopic', 'withdrawMaterial', 'forgetMemory', 'forget', 'savePreferences', 'save', 'editTopic', 'setOutputPreference'])
+      if (!historical.has(method) && !recovery.scopeReviewed) throw new Error('备份恢复后需要核对资料、权限与未知用量，暂不执行新工作。')
+      const oldInteraction = ['submitInteraction', 'claimAction', 'startActionExecution', 'acknowledgeAction', 'finishAction'].includes(method)
+        && this.store.recovery.original(id).interactions.includes(String(args[0]))
+      const oldAnswer = method === 'answer' && this.store.recovery.oldRun(id, String(args[0]))
+        || method === 'answerChecked' && this.store.recovery.oldRun(id, String(args[2]))
+      if (oldInteraction || oldAnswer || ['continueTopic', 'reviseTopic'].includes(method)) throw new Error('恢复前的尝试和交互不能重放，请在原任务中核对后开始新的尝试。')
+      if (method === 'run') {
+        const topicId = typeof args[0] === 'string' ? args[0] : this.store.overview(id).focusTopicId
+        if (!topicId || !this.store.recovery.allowed(id, topicId)) throw new Error('此任务尚未完成恢复核对。')
+        this.store.createRun(id, this.identity(id).conversation, Date.now(), topicId)
+        this.notify(id); this.tick(); return this.store.overview(id)
+      }
+      if (method === 'resumeRecovered') {
+        const [topicId, restoreId, requestId] = args.map(String)
+        this.store.recovery.start(id, topicId, restoreId, requestId, () => this.store.createRun(id, this.identity(id).conversation, Date.now(), topicId))
+        this.notify(id); this.tick(); return this.store.overview(id)
+      }
+    }
     if (method === 'attachModule') {
       this.identity(id)
       const contact = this.contacts.get(id)!, moduleId = String(args[0])

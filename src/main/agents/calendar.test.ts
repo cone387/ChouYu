@@ -11,7 +11,7 @@ const at = (day: number, hour: number) => new Date(2026, 9, day, hour).getTime()
 const input = { title: '每日想法', instruction: '每天给一个新的想法', cadence: 'daily', times: ['09:00'], kind: 'contact-summary', enabled: true }
 let store: ContactTaskStore, directory: string
 beforeEach(() => {
-  vi.useFakeTimers(); vi.setSystemTime(at(13, 8))
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }); vi.setSystemTime(at(13, 8))
   directory = mkdtempSync(join(tmpdir(), 'chouyu-calendar-')); store = new ContactTaskStore(join(directory, 'agents.db'))
   store.save('alice', { ...DEFAULT_AGENT_SETTINGS, goal: '独立研究', enabled: true, dailyCalls: 100 }, Date.now(), false)
 })

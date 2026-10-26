@@ -7,6 +7,7 @@ import type { AIResponseMetadata } from '../../../shared/ai-usage';
 import { dayStart } from './types';
 import type { ContactStoreOperations } from './operations';
 interface Ports {
+  recoveryLimits?: import('../recovery').ContactStoreRecovery['limits']
   getRun: ContactStoreOperations['getRun']
   profile: ContactStoreOperations['profile']
   callsNeededToResume: ContactStoreOperations['callsNeededToResume']
@@ -33,7 +34,7 @@ export class ContactCallBudget {
   reserveRunCalls(runId: string): boolean {
     const run = this.ports.getRun(runId)!, settings = JSON.parse(this.ports.profile(run.character_id)!.settings) as AgentSettings
     const needed = this.ports.callsNeededToResume(runId)
-    if (this.callCount(run.character_id) + this.reservedCalls(run.character_id) + needed > settings.dailyCalls) return false
+    if (this.callCount(run.character_id) + this.reservedCalls(run.character_id) + needed > (this.ports.recoveryLimits?.(run.character_id, run.topic_id)?.dailyCalls ?? settings.dailyCalls)) return false
     this.callReservations.set(runId, { owner: run.character_id, topicId: run.topic_id, callsAtStart: this.runCalls(runId), needed })
     return true
   }
@@ -43,21 +44,24 @@ export class ContactCallBudget {
   }
   resourceContext(id: string, topicId: string, now = Date.now()): { contactDailyLimit: number; dailyRemaining: number; taskUsed: number; taskBudget: TaskResourceBudget | undefined; allocatableCalls: number; otherTasks: { title: string; remaining: number; }[]; } {
     const settings = JSON.parse(this.ports.profile(id)!.settings) as AgentSettings
+    const recovery = this.ports.recoveryLimits?.(id, topicId)
+    if (recovery) settings.dailyCalls = recovery.dailyCalls
     const topics = this.ports.topics.list(id)
     const allocations = topics.filter(t => t.id !== topicId && t.resourceBudget && !['completed', 'abandoned'].includes(t.status))
       .map(t => ({ title: t.title, remaining: Math.max(0, t.resourceBudget!.modelCalls - this.taskCallCount(id, t.id)) }))
     const dailyRemaining = Math.max(0, settings.dailyCalls - this.callCount(id, now) - this.reservedCalls(id, topicId))
     return { contactDailyLimit: settings.dailyCalls, dailyRemaining, taskUsed: this.taskCallCount(id, topicId),
-      taskBudget: topics.find(t => t.id === topicId)?.resourceBudget,
+      taskBudget: recovery ? { modelCalls: recovery.taskCalls, reason: '恢复后新增授权；历史用量仍不完整。' } : topics.find(t => t.id === topicId)?.resourceBudget,
       // Automatic initial budgets stay within one configured day's allowance;
       // lifetime budgets never reserve today's execution capacity.
       allocatableCalls: Math.max(0, Math.min(10000, settings.dailyCalls) - this.taskCallCount(id, topicId)), otherTasks: allocations }
   }
   assertTaskBudget(id: string, topicId: string, needed: number): void {
     const topic = this.ports.topics.get(id, topicId)
-    if (!topic.resourceBudget) return
+    const limit = this.ports.recoveryLimits?.(id, topicId)?.taskCalls ?? topic.resourceBudget?.modelCalls
+    if (limit === undefined) return
     const used = this.taskCallCount(id, topicId)
-    if (used + needed > topic.resourceBudget.modelCalls) throw new Error(`本任务调用预算不足：已用 ${used}/${topic.resourceBudget.modelCalls} 次，本轮需预留 ${needed} 次。已有成果保留，请在本任务设置中调整资源预算。`)
+    if (used + needed > limit) throw new Error(`本任务调用预算不足：可核对已用 ${used}/${limit} 次，本轮需预留 ${needed} 次。已有成果保留，请核对本任务额度。`)
   }
   setTaskBudget(id: string, topicId: string, revision: number, raw: unknown): { resourceBudget: TaskResourceBudget; revision: number; updatedAt: number; reason: string; calendar?: import("../../../shared/calendar-schedule").CalendarSchedule; separateEvaluations?: boolean; tokenLimit?: number; initialPlan?: import("../../../shared/agent-delivery").DeliveryPlan; requestLog?: string; id: string; characterId: string; status: AgentTopicStatus; judgement: string; openQuestions: string; nextStep: string; createdAt: number; title: string; goal: string; constraints: string; } {
     return this.db.transaction(() => {
@@ -87,7 +91,7 @@ export class ContactCallBudget {
   charge(runId: string, now = Date.now()): void {
     this.db.transaction(() => {
       const run = this.ports.assertLive(runId), settings = JSON.parse(this.ports.profile(run.character_id)!.settings) as AgentSettings
-      if (this.callCount(run.character_id, now) + this.reservedCalls(run.character_id, run.topic_id) >= settings.dailyCalls) throw new Error('今日模型调用已达上限（含其他执行任务的预留）。')
+      if (this.callCount(run.character_id, now) + this.reservedCalls(run.character_id, run.topic_id) >= (this.ports.recoveryLimits?.(run.character_id, run.topic_id)?.dailyCalls ?? settings.dailyCalls)) throw new Error('今日模型调用已达上限（含其他执行任务的预留）。')
       if (run.topic_id) this.assertTaskBudget(run.character_id, run.topic_id, 1)
       this.db.prepare('INSERT INTO calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
     })()

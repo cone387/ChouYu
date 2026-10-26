@@ -106,11 +106,13 @@ export class WorkStrategyRuntime {
   }
   private async executeAdmitted(runId: string, soul: string, model: AgentModel, signal: AbortSignal, changed: () => void, searchKey: string, lease: StorageLease) {
     const run = this.store.assertLive(runId)
+    this.store.recovery.assertRun(run.character_id, run.topic_id, runId)
     const deliveryInstruction = baseDeliveryInstruction + contactOutputInstruction + '\n实际阅读偏好（联系人到当前任务，后者优先，仅影响表达与排版）：' + JSON.stringify(this.store.outputs.list(run.character_id, run.topic_id ?? undefined).map(item => item.preference))
     if (JSON.parse(run.input).revisionScope === 'presentation') return revisePresentation(this.store, runId, soul, model, signal, changed)
     let input = JSON.parse(run.input) as { handoffPin?: import('../agents/handoffs').HandoffPin; citationContext?: string; revisionSectionId?: string; deliveryVersion?: number; delivery?: Pick<AgentDelivery, 'version' | 'summary' | 'stages' | 'completionCriteria' | 'sections' | 'inputs' | 'presentation'> & { directory: { id: string; title: string }[] }; feedback?: string; assignment?: boolean; brief?: Brief; briefAnswer?: string; researchVersion?: number; baseline?: { evidence: { url: string; hash: string }[]; topicRevision: number }; settings: AgentSettings; topic?: AgentTopic; memories: unknown[]; previous: unknown[]; conversation: string }
     const live = () => {
       signal.throwIfAborted(); this.store.assertLive(runId)
+      this.store.recovery.assertRun(run.character_id, run.topic_id, runId)
       for (const ref of this.store.research(runId)?.plan.contactRefs ?? []) this.contactSources.allowed(run.character_id, ref.characterId)
     }
     // Intake and planning describe actions. The host validates and performs reads

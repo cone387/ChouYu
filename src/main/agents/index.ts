@@ -20,7 +20,10 @@ import { app, BrowserWindow, dialog, utilityProcess, type UtilityProcess } from 
 import { writeFile } from 'node:fs/promises'
 import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
 import { join } from 'node:path'
-import { getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, getContactProfile, updateContactProfile, contactSearchCredential, saveContactSearchCredential } from '../database'
+import { getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, setContactRecoveryState, getContactProfile, updateContactProfile, contactSearchCredential, saveContactSearchCredential } from '../database'
+import { ContactRecoveryGuard } from '../agent-space/recovery-guard'
+import { ContactRestore, inspectContactStorage } from '../storage/contact-restore'
+import { ContactBackups } from '../storage/contact-backups'
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { createContactProfileTools } from './profile-tools'
@@ -47,6 +50,11 @@ let starting: Promise<void> | undefined
 let closing = false
 let failures = 0
 let syncTimer: ReturnType<typeof setInterval> | undefined
+const recoveryGuard = new ContactRecoveryGuard(getState, setContactRecoveryState)
+const contactDirectory = () => join(app.getPath('userData'), 'contact-agents')
+const contactRestore = () => new ContactRestore(contactDirectory(),
+  (group, restoreId) => recoveryGuard.begin(group, restoreId, listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id)),
+  undefined, (group, restoreId) => { const current = recoveryGuard.current(); if (current?.restoreId !== restoreId || current.group !== group) throw new Error('应用库恢复保护不匹配，未打开联系人数据。') })
 const generations = new WeakMap<object, number>()
 const runtimeState = new ContactRuntimeState(state => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -120,6 +128,7 @@ async function dispatchAgentCommand(method: unknown, owner: unknown, values: unk
   return contactSpace.dispatchUnknown(method, id, args)
 }
 export function runContactChat(input: HarnessInput, output: (event: HarnessEvent) => void, engine?: HarnessEngine) {
+  recoveryGuard.assertContext(input.characterId ?? '')
   return contactSpace.runChat(input, output, engine)
 }
 export function cancelContactChat(requestId: string) { return contactSpace.cancelChat(requestId) }
@@ -132,7 +141,7 @@ function identities(onlyId?: string): ContactIdentity[] {
     try { skillsRevision = contactSkillLibrary().list(character.id).revision } catch { /* The skill snapshot carries its own error; keep unrelated contacts readable. */ }
     const conversation = contactConversation(sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages ?? []))
     return { backgroundHarnessEngine: character.backgroundHarnessEngine ?? 'native', configurationVersions: { profile: getContactProfile(character.id).revision, skills: skillsRevision, credential: contactSearchCredential(character.id).revision }, sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: [...SKILL_TOOLS.map(tool => tool.name), ...MATERIAL_TOOL_NAMES].filter(name => getState(`tool:${name}:enabled`) === 'false'), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
-  })
+  }).map(identity => ({ ...identity, recovery: recoveryGuard.identity(identity.id) }))
 }
 async function syncContact(id: string) {
   const identity = identities(id)[0]
@@ -154,6 +163,16 @@ async function ensure() {
   if (starting) return starting
   if (child) return
   const generation = runtimeState.start()
+  try {
+    contactRestore().resume()
+    const health = inspectContactStorage(contactDirectory())
+    if (health.kind === 'damaged' || health.kind === 'missing' || health.kind === 'incompatible') {
+      runtimeState.update(generation, { phase: 'unavailable', storageRecovery: { kind: health.kind,
+        candidates: health.kind === 'incompatible' ? [] : new ContactBackups(contactDirectory()).list().filter(group => group.files.tasks.schema <= 19) } })
+      throw new Error('联系人存储需要处理，未启动工作进程。')
+    }
+    runtimeState.update(generation, { storageRecovery: undefined })
+  } catch (error) { runtimeState.update(generation, { phase: 'unavailable', issue: { kind: 'storage', at: Date.now() } }); throw error }
   starting = (async () => {
     const process = utilityProcess.fork(join(__dirname, 'agent-worker.js'), [], {
       serviceName: 'ChouYu Contact Agents', stdio: 'pipe',
@@ -167,6 +186,18 @@ async function ensure() {
     const born = Date.now()
     process.on('message', message => {
       if (child !== process) return
+      if (message.recoveryRequest) {
+        const request = message.recoveryRequest as import('../agent-space/recovery-port').RecoveryBudgetMessage
+        try {
+          if (request.operation === 'reserve') {
+            if (!getCharacter(request.input.owner)) throw new Error('联系人已删除，未授权请求。')
+            recoveryGuard.reserve(request.input)
+          } else if (request.operation === 'settle') recoveryGuard.settle(request.restoreId, request.requestId, request.tokens)
+          else throw new Error('恢复额度操作无效。')
+          process.postMessage({ recoveryReceipt: request.sequence })
+        } catch (error) { process.postMessage({ recoveryReceipt: request.sequence, error: error instanceof Error ? error.message : '恢复额度保存失败。' }) }
+        return
+      }
       if (message.changed) { broadcastChanged(message.changed); return }
       requests.receive(process, message)
     })
@@ -202,9 +233,10 @@ async function ensure() {
   }).finally(() => { starting = undefined; for (const id of dirty) void deliver(id); void refreshRuntimeMetrics() })
   return starting
 }
-export async function agentContext(characterId: string, context: import('../../shared/contact-content').ContactReadContext) { await ensure(); await syncContact(characterId); return await rpc('contextSnapshot', characterId, [context]) as { text: string; memories: { id: string; revision: number }[]; truncated: boolean } }
+export async function agentContext(characterId: string, context: import('../../shared/contact-content').ContactReadContext) { recoveryGuard.assertContext(characterId); await ensure(); await syncContact(characterId); return await rpc('contextSnapshot', characterId, [context]) as { text: string; memories: { id: string; revision: number }[]; truncated: boolean } }
 /** Read-only access for ChouYu's assistant; no contact mutations are exposed. */
 export async function inspectContactWork(characterId: string) {
+  recoveryGuard.assertContext(characterId)
   if (!getCharacter(characterId) || characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
   await ensure()
   await syncContact(characterId)
@@ -212,6 +244,7 @@ export async function inspectContactWork(characterId: string) {
   return { ...overview, pendingInteractions: await rpc('pendingInteractions', characterId) as import('../../shared/contact-interactions').ContactInteraction[] }
 }
 export async function inspectContactDelivery(characterId: string, topicId: string) {
+  recoveryGuard.assertContext(characterId, topicId)
   if (!getCharacter(characterId) || characterId === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
   await ensure()
   return rpc('inspectDelivery', characterId, [topicId])
@@ -223,6 +256,7 @@ async function purgeWithdrawnContext(id:string,method:string){if(['withdrawMater
 export function contactAgentsCall<M extends EmptyContactCommand>(id: string, method: M): Promise<ContactResult<M>>
 export function contactAgentsCall<M extends ContactCommandName>(id: string, method: M, args: ContactArgs<M>): Promise<ContactResult<M>>
 export async function contactAgentsCall(id: string, method: ContactCommandName, args: unknown[] = []): Promise<unknown> {
+  recoveryGuard.assertContext(id)
   return dispatchContactCall(id, method, args)
 }
 export async function dispatchContactCall(id: string, method: unknown, args: unknown = []): Promise<unknown> {
@@ -246,7 +280,18 @@ function validateMemoryBoundary(owner: string, method: string, args: unknown[]) 
   }
 }
 export async function submitContactInteraction(id: string, interactionId: string, submission: import('../../shared/contact-interactions').ContactInteractionSubmission, window: BrowserWindow) {
-  const card = await contactAgentsCall(id, 'getInteraction', [interactionId])
+  await ensure(); await syncContact(id)
+  const card = await rpc('getInteraction', id, [interactionId])
+  if (card.storageRecovery) {
+    if (!getCharacter(id) || !submission.storageRecovery || submission.version !== card.version || !card.topicId) throw new Error('恢复记录已变化或缺少核对信息，请重新读取。')
+    recoveryGuard.review({ ...submission.storageRecovery, restoreId: card.storageRecovery.restoreId, owner: id, topicId: card.topicId })
+    await syncContact(id)
+    if (recoveryGuard.identity(id)?.allowedTopics.includes(card.topicId)) {
+      await rpc('resumeRecovered', id, [card.topicId, card.storageRecovery.restoreId, submission.storageRecovery.requestId])
+    }
+    broadcastChanged(id)
+    return rpc('getInteraction', id, [interactionId])
+  }
   if (card.kind !== 'action') return contactAgentsCall(id, 'submitInteraction', [interactionId, submission])
   await executeContactAction({
     read: () => readContactAction(id, interactionId), claim: (version, response) => contactAgentsCall(id, 'claimAction', [interactionId, version, response]),
@@ -290,6 +335,13 @@ export async function restartAgentsForSmoke() {
 }
 export function initializeAgents() {
   contactHandle('agents:runtime-status', () => runtimeState.read())
+  contactHandle('agents:restore-runtime', async (_event, groupId: string) => {
+    if (closing || child || starting) throw new Error('请等待联系人进程停止后再恢复。')
+    contactRestore().restore(groupId)
+    failures = 0
+    await ensure(); await refreshRuntimeMetrics()
+    return runtimeState.read()
+  })
   contactHandle('agents:retry-runtime', async () => {
     if (!child && !starting) failures = 0
     try { await ensure(); await refreshRuntimeMetrics() } catch { /* Return truthful state rather than claim the retry succeeded. */ }

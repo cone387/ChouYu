@@ -214,7 +214,7 @@ it.each(['remove', 'deleteTopic'] as const)('does not stop scheduling other cont
 })
 
 it('does not impose a two-minute whole-run deadline and can still pause a long-running contact', async () => {
-  vi.useFakeTimers()
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
   const f = await fixture()
   const run = await f.start('alice')
   await vi.advanceTimersByTimeAsync(180_000)
