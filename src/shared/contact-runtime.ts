@@ -11,6 +11,7 @@ export interface ContactRuntimeMetrics {
   pendingDeliveries: number
   oldestPendingAt?: number
   eventLoopDelayMs?: number
+  backup?: import('./contact-backups').ContactBackupStatus
 }
 export interface ContactRuntimeSnapshot {
   phase: ContactRuntimePhase

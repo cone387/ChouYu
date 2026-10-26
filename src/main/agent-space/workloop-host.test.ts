@@ -13,6 +13,23 @@ afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn()
 const config = { provider: 'openai' as const, baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] }
 const identities = ['alice', 'bob'].map(id => ({ id, soul: id, conversation: '', config }))
 const report = JSON.stringify({ title: 'Saved', body: 'Evidence [1].', nextStep: 'Continue', memories: [], question: '', progress: { judgement: 'Saved', openQuestions: '', nextStep: 'Continue', reason: 'Evidence [1].', status: 'researching' } })
+it('automatically creates the first group, coalesces clean snapshots and saves final dirty work', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chouyu-host-backups-'))
+  const host = new WorkLoopHost(dir, () => {})
+  try {
+    await host.sync([{ id: 'alice', soul: '', conversation: '', config, workLoopEnabled: false }])
+    expect(host.backups.list()).toHaveLength(0)
+    await host.request('assignTopic', 'alice', ['Read a book'])
+    await vi.waitFor(() => expect(host.backups.list()).toHaveLength(1))
+    await host.backupNow()
+    const first = host.backups.list()[0].id
+    await host.backupNow()
+    expect(host.backups.list()[0].id).toBe(first)
+    host.store.db.prepare("UPDATE profiles SET next_at=123 WHERE character_id='alice'").run()
+    await host.close()
+    expect(host.backups.list()[0].id).not.toBe(first)
+  } finally { await host.close(); rmSync(dir, { recursive: true, force: true }) }
+})
 it('observes persisted pending notices and action cards without acknowledging them', async () => {
   const { space } = await fixture(2)
   space.store.db.prepare('INSERT INTO notices(id,character_id,value,state) VALUES(?,?,?,?)').run('pending', 'alice', JSON.stringify({ createdAt: 100 }), 'pending')

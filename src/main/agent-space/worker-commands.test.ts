@@ -10,7 +10,7 @@ it('keeps periodic reconciliation and request identity sync from blocking anothe
     async sync(_identities: unknown[], enqueue: (id: string, operation: () => Promise<void>) => Promise<void>) {
       await Promise.all(['alice', 'bob'].map(id => enqueue(id, async () => { order.push(`sync:${id}`) })))
     },
-    syncContact(identity: { id: string }) { order.push(`identity:${identity.id}`) },
+    async syncContact(identity: { id: string }) { order.push(`identity:${identity.id}`) },
     async dispatchUnknown(_method: string, id: string) { order.push(`command:${id}`); if (id === 'alice') await hold },
     async close() { order.push('closed') }
   }

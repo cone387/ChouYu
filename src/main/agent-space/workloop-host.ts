@@ -20,6 +20,9 @@ import { ContactEvents } from './events'
 import { createBackgroundHarnesses } from '../harness/background'
 import type { HarnessRegistry } from '../harness/registry'
 import type { DshRuntimeOptions } from '../harness/dsh/runtime'
+import { ContactStorageBarrier, StorageBoundaryTimeout } from './storage-barrier'
+import { ContactBackups } from '../storage/contact-backups'
+import type { ContactBackupStatus } from '../../shared/contact-backups'
 
 export type { ContactIdentity } from '../contact-agent/contracts'
 export interface WorkLoopHostOptions { capacity?: number; modules?: readonly string[]; harnesses?: HarnessRegistry; dshRuntime?: DshRuntimeOptions }
@@ -31,6 +34,13 @@ const signature = (identity: ContactIdentity) => createHash('sha256').update(JSO
 export class WorkLoopHost {
   readonly store: ContactTaskStore
   readonly runtime: WorkStrategyRuntime
+  readonly storage = new ContactStorageBarrier()
+  readonly backups: ContactBackups
+  private backupStatus: ContactBackupStatus = { phase: 'idle', failures: 0 }
+  private backupTask?: Promise<void>
+  private backupChanges = ''
+  private backupTimer: ReturnType<typeof setInterval>
+  private firstBackupTimer?: ReturnType<typeof setTimeout>
   private readonly skillRunner: SkillRunner
   private readonly scheduler: RunScheduler
   private readonly events = new ContactEvents()
@@ -64,7 +74,16 @@ export class WorkLoopHost {
     this.store = new ContactTaskStore(join(directory, 'agents.db'))
     let runtime: WorkStrategyRuntime | undefined
     try {
-      this.runtime = runtime = new WorkStrategyRuntime(this.store, join(directory, 'checkpoints.db'), reader, searcher)
+      this.runtime = runtime = new WorkStrategyRuntime(this.store, join(directory, 'checkpoints.db'), reader, searcher, this.storage)
+      this.backups = new ContactBackups(directory, { tasks: this.store.db, checkpoints: this.runtime.checkpointDatabase },
+        operation => this.storage.snapshot(async () => {
+          this.backupStatus.phase = 'saving'
+          const revision = this.storageRevision()
+          const result = await operation()
+          this.backupChanges = revision
+          return result
+        }))
+      this.backupStatus.lastSuccessAt = this.backups.list()[0]?.createdAt
       this.commands = new ContactTaskCommands({ store: this.store, identity: id => this.identity(id),
         changed: id => this.notify(id), tick: () => this.tick(), remove: id => this.remove(id),
         activeFor: (id, topicId) => this.scheduler.activeFor(id, topicId), abort: (id, topicId) => this.scheduler.abort(id, topicId),
@@ -75,6 +94,7 @@ export class WorkLoopHost {
       this.store.recover()
       this.eventLoop.enable()
       this.timer = setInterval(() => this.tick(), 15000)
+      this.backupTimer = setInterval(() => { void this.backupNow() }, 300000)
     } catch (error) {
       try { runtime?.close() } finally { this.store.close() }
       throw error
@@ -86,7 +106,30 @@ export class WorkLoopHost {
     if (!contact || this.deleting.has(id)) throw new Error('联系人不存在。')
     return contact.identity
   }
-  private notify(id: string) { this.changed(id); if (!this.closed) this.events.publish(id) }
+  private notify(id: string) {
+    this.changed(id); if (!this.closed) this.events.publish(id)
+    if (!this.closed && !this.backupStatus.lastSuccessAt && !this.backupStatus.lastAttemptAt && !this.firstBackupTimer) {
+      this.firstBackupTimer = setTimeout(() => { this.firstBackupTimer = undefined; void this.backupNow() }, 0)
+    }
+  }
+  backupNow(): Promise<void> {
+    if (this.backupTask) return this.backupTask
+    if (!this.store.db.prepare('SELECT 1 FROM runs LIMIT 1').get() && !this.store.db.prepare('SELECT 1 FROM topics LIMIT 1').get()) return Promise.resolve()
+    if (this.storageRevision() === this.backupChanges) return Promise.resolve()
+    this.backupStatus = { ...this.backupStatus, phase: 'waiting', lastAttemptAt: Date.now(), reason: undefined }
+    this.backupTask = this.storage.detached(async () => {
+      try {
+        const group = await this.backups.create()
+        this.backupStatus = { phase: 'idle', failures: 0, lastAttemptAt: this.backupStatus.lastAttemptAt, lastSuccessAt: group.createdAt }
+      } catch (error) {
+        this.backupStatus = { ...this.backupStatus, phase: 'failed', failures: this.backupStatus.failures + 1, reason: error instanceof StorageBoundaryTimeout ? 'busy' : 'storage' }
+      }
+    }).finally(() => { this.backupTask = undefined })
+    return this.backupTask
+  }
+  private storageRevision() {
+    return [this.store.db, this.runtime.checkpointDatabase].map(db => (db.prepare('SELECT total_changes() AS count').get() as { count: number }).count).join(':')
+  }
   private wake() {
     if (this.closed || this.wakeTimer) return
     this.wakeTimer = setTimeout(() => { this.wakeTimer = undefined; this.tick() }, 0)
@@ -98,12 +141,15 @@ export class WorkLoopHost {
     const knownIds = new Set([...this.store.profiles().map(profile => profile.character_id), ...queuedOwners])
     const removed = [...knownIds].filter(id => !liveIds.has(id))
     await Promise.all([
-      ...identities.map(identity => enqueue(identity.id, async () => { this.syncContact(identity) })),
+      ...identities.map(identity => enqueue(identity.id, () => this.syncContact(identity))),
       ...removed.map(id => enqueue(id, () => this.remove(id)))
     ])
     await this.recoverCleanup()
   }
-  syncContact(identity: ContactIdentity) {
+  syncContact(identity: ContactIdentity): Promise<void> {
+    return this.storage.operation(() => this.syncContactAdmitted(identity))
+  }
+  private syncContactAdmitted(identity: ContactIdentity) {
     this.assertOpen()
     if (!identity?.id || this.deleting.has(identity.id)) throw new Error('联系人身份无效或正在删除。')
     let contact = this.contacts.get(identity.id)
@@ -131,6 +177,9 @@ export class WorkLoopHost {
     this.wake()
   }
   async remove(id: string) {
+    return this.storage.controlOperation(() => this.removeAdmitted(id))
+  }
+  private async removeAdmitted(id: string) {
     this.assertOpen()
     this.deleting.add(id)
     this.subscriptions.get(id)?.(); this.subscriptions.delete(id)
@@ -146,6 +195,9 @@ export class WorkLoopHost {
     } finally { this.deleting.delete(id) }
   }
   async detachModule(id: string, moduleId: string) {
+    return this.storage.controlOperation(() => this.detachAdmitted(id, moduleId))
+  }
+  private async detachAdmitted(id: string, moduleId: string) {
     this.assertOpen(); this.identity(id)
     await this.contacts.get(id)!.detach(moduleId)
     this.notify(id)
@@ -155,7 +207,7 @@ export class WorkLoopHost {
     if (existing) return existing
     const intent = this.store.pendingCleanup().find(item => item.requestId === runId)
     if (!intent) return Promise.resolve()
-    const work = (async () => {
+    const work = this.storage.operation(async () => {
       try {
         await this.scheduler.get(runId)?.promise
         await Promise.all(this.harnesses.all().map(module => module.lifecycle?.purge?.({ characterId: intent.characterId, requestIds: [runId] })))
@@ -167,7 +219,7 @@ export class WorkLoopHost {
         this.cleanupFaults.set(runId, { characterId: intent.characterId, error: safeAgentFailure(error) })
         throw error
       }
-    })().finally(() => this.cleaning.delete(runId))
+    }).finally(() => this.cleaning.delete(runId))
     this.cleaning.set(runId, work)
     return work
   }
@@ -185,6 +237,10 @@ export class WorkLoopHost {
     return this.dispatchUnknown(method, id, args)
   }
   async dispatchUnknown(rawMethod: unknown, owner: unknown, rawArgs: unknown = []): Promise<unknown> {
+    const operation = () => this.dispatchAdmitted(rawMethod, owner, rawArgs)
+    return ['remove', 'detachModule', 'pause'].includes(String(rawMethod)) ? this.storage.controlOperation(operation) : this.storage.operation(operation)
+  }
+  private async dispatchAdmitted(rawMethod: unknown, owner: unknown, rawArgs: unknown): Promise<unknown> {
     validateContactCommand(rawMethod, owner, rawArgs)
     const method = rawMethod, id = owner as string, args = rawArgs as unknown[]
     this.assertOpen()
@@ -206,7 +262,7 @@ export class WorkLoopHost {
         WHERE json_extract(value,'$.kind')='action' AND COALESCE(json_extract(value,'$.delivered'),0)=0
       )`).get() as { count: number; oldest: number | null }
       return { activeRuns: this.scheduler.size, capacity: this.scheduler.capacity,
-        metrics: { observedAt: Date.now(), activeRuns: this.scheduler.size, capacity: this.scheduler.capacity, pendingDeliveries: pending.count,
+        metrics: { observedAt: Date.now(), activeRuns: this.scheduler.size, capacity: this.scheduler.capacity, pendingDeliveries: pending.count, backup: { ...this.backupStatus },
           ...(pending.oldest !== null ? { oldestPendingAt: pending.oldest } : {}),
           ...(Number.isFinite(this.eventLoop.mean) ? { eventLoopDelayMs: this.eventLoop.mean / 1e6 } : {}) },
         faults: [...this.faults].map(([characterId, error]) => ({ characterId, error })).concat([...this.cleanupFaults.values()]) }
@@ -214,7 +270,10 @@ export class WorkLoopHost {
     return this.commands.dispatchUnknown(method, id, args)
   }
   tick() {
-    if (!this.ready || this.closed || this.ticking) return
+    if (!this.ready || this.closed || this.ticking || this.storage.blocked) return
+    void this.storage.operation(() => this.tickAdmitted()).catch(error => this.faults.set('', safeAgentFailure(error)))
+  }
+  private tickAdmitted() {
     if (Date.now() >= this.nextCleanupAt) { this.nextCleanupAt = Date.now() + 15000; void this.recoverCleanup() }
     this.ticking = true
     try {
@@ -240,13 +299,15 @@ export class WorkLoopHost {
   }
   close(): Promise<void> {
     if (this.closing) return this.closing
-    this.closed = true; clearInterval(this.timer); clearTimeout(this.wakeTimer)
+    this.closed = true; clearInterval(this.timer); clearTimeout(this.wakeTimer); clearInterval(this.backupTimer); clearTimeout(this.firstBackupTimer)
     this.eventLoop.disable()
     this.events.clear(); this.subscriptions.clear(); this.skillRunner.cancel()
     this.closing = Promise.all([...this.contacts.values()].map(contact => contact.close())).then(async () => {
       await this.scheduler.drain()
       await Promise.allSettled([...this.cleaning.values()])
       await Promise.all(this.harnesses.all().map(module => module.lifecycle?.close?.()))
+      await this.backupTask
+      await this.backupNow()
       this.runtime.close(); this.store.close(); this.contacts.clear()
     })
     return this.closing

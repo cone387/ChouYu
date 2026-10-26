@@ -104,9 +104,11 @@ export class WorkLoop implements ContactModule {
     return this.scheduler.launch({ id: run.id, characterId: run.character_id, topicId: run.topic_id }, limit, async signal => {
       try { signal.throwIfAborted(); await this.runtime.execute(run.id, identity.soul, model, signal, () => this.changed(run.character_id), identity.searchKey) }
       catch (error) {
-        if (this.closed) { if (this.store.getRun(run.id)?.status === 'running') this.store.setStatus(run.id, 'interrupted') }
-        else this.store.fail(run.id, signal.aborted ? '本轮已停止，可检查设置后重新运行。' : safeAgentFailure(error))
-      } finally { this.store.releaseRunCalls(run.id); this.changed(run.character_id); this.wake() }
+        await this.runtime.storage.controlOperation(() => {
+          if (this.closed) { if (this.store.getRun(run.id)?.status === 'running') this.store.setStatus(run.id, 'interrupted') }
+          else this.store.fail(run.id, signal.aborted ? '本轮已停止，可检查设置后重新运行。' : safeAgentFailure(error))
+        })
+      } finally { await this.runtime.storage.controlOperation(() => { this.store.releaseRunCalls(run.id); this.changed(run.character_id); this.wake() }) }
     })
   }
   close(): Promise<void> {

@@ -25,6 +25,8 @@ import { ChapterContinuationError, chapterContinuationPrompt, chapterInstruction
 import { calculateEvaluations, evaluationInstruction, evaluationMarkdown, evaluationSummary, type AgentEvaluation } from '../../shared/agent-evaluation'
 import { validateDeliveryUpdate, validateDeliveryPlan, type DeliveryPlan, type DeliveryUpdate, type AgentDelivery } from '../../shared/agent-delivery'
 import { contactOutputInstruction } from '../../shared/contact-output'
+import { ContactStorageBarrier, type StorageLease } from '../agent-space/storage-barrier'
+import { invokeDurableGraph } from './durable-graph'
 
 type Draft = { evaluations?: AgentEvaluation[]; resourceBudget?: TaskResourceBudget; title: string; body: string; nextStep: string; memories: string[]; question: string; progress?: AgentTopicProgress; delivery?: DeliveryUpdate }
 const baseDeliveryInstruction = fileDeliveryInstruction + taskCompletionInstruction + taskInputInstruction + presentationInstruction + `\n同时输出 delivery（仅修改排版或需求且已有正文时省略 section，保留阶段进度）：{"completionCriteria":"整个任务的具体完成条件，不扩大用户目标","stages":[{"id":"稳定英文ID","title":"阶段名称","status":"pending|active|done"}],"summary":"累积摘要：固定设定、关键结论、已完成内容及采用的反馈，最多1000字","section":{"id":"稳定英文ID","title":"分节标题","body":"本轮实际交付正文"}}。第一轮按目标拆分阶段，后续保留稳定ID。阶段优先表示卷或里程碑，不必每个正文分节都新增阶段；长期任务最多300个阶段，不能为压缩输出删除旧阶段。有正文更新时每轮只新增或替换一个分节；修改已有内容必须复用原分节ID，完整输出该分节，其他分节由系统保留。body 字段用于本轮变化说明，实际正文放 delivery.section.body，不重复长正文。阶段全部 done 且满足完成条件才能把事项设为 completed。研究正文引用本轮资料编号；无新增资料不编造。旧正文若不在上下文中不要凭空重写；下一步明确需要处理的分节。`
@@ -89,7 +91,8 @@ export class WorkStrategyRuntime {
   readonly contactSources: ContactSources
   readonly checkpoints: SqliteSaver
   private db: Database.Database
-  constructor(readonly store: ContactTaskStore, checkpointPath: string, private reader = readSource, private searcher: AgentSearcher = searchBrave) {
+  constructor(readonly store: ContactTaskStore, checkpointPath: string, private reader = readSource, private searcher: AgentSearcher = searchBrave,
+    readonly storage = new ContactStorageBarrier()) {
     this.contactSources = new ContactSources(store)
     this.db = openContactDatabase(checkpointPath, 'checkpoints')
     try {
@@ -97,7 +100,11 @@ export class WorkStrategyRuntime {
     } catch (error) { this.db.close(); throw contactStorageFailure(error, 'checkpoints', 'schema') }
   }
   close() { this.db.close() }
-  async execute(runId: string, soul: string, model: AgentModel, signal: AbortSignal, changed: () => void = () => {}, searchKey = '') {
+  get checkpointDatabase(): Database.Database { return this.db }
+  execute(runId: string, soul: string, model: AgentModel, signal: AbortSignal, changed: () => void = () => {}, searchKey = '') {
+    return this.storage.detached(() => this.storage.operation(lease => this.executeAdmitted(runId, soul, model, signal, changed, searchKey, lease)))
+  }
+  private async executeAdmitted(runId: string, soul: string, model: AgentModel, signal: AbortSignal, changed: () => void, searchKey: string, lease: StorageLease) {
     const run = this.store.assertLive(runId)
     const deliveryInstruction = baseDeliveryInstruction + contactOutputInstruction + '\n实际阅读偏好（联系人到当前任务，后者优先，仅影响表达与排版）：' + JSON.stringify(this.store.outputs.list(run.character_id, run.topic_id ?? undefined).map(item => item.preference))
     if (JSON.parse(run.input).revisionScope === 'presentation') return revisePresentation(this.store, runId, soul, model, signal, changed)
@@ -489,7 +496,8 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
     live(); this.store.setStatus(runId, 'running'); changed()
     try {
       const waiting = snapshot.tasks.some(task => task.interrupts?.length)
-      await graph.invoke(run.answer && waiting ? new Command({ resume: run.answer }) : snapshot.createdAt ? null : {}, config)
+      const initial = run.answer && waiting ? new Command({ resume: run.answer }) : snapshot.createdAt ? null : {}
+      await invokeDurableGraph(lease, (control, resume) => graph.invoke(resume ? null : initial, { ...config, control, durability: 'sync' }))
       if (this.store.getRun(runId)?.status !== 'completed') {
         live(); const state = await graph.getState(config)
         const question = state.tasks.flatMap(t => t.interrupts || [])[0]?.value

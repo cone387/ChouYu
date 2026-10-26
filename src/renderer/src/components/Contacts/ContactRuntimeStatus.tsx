@@ -14,6 +14,9 @@ export function ContactRuntimeDetails({ snapshot, onRetry, busy = false }: {
       {snapshot.syncedAt !== undefined && <p>最近同步：{time(snapshot.syncedAt)}</p>}
       {snapshot.metrics && <p>运行中 {snapshot.metrics.activeRuns} / {snapshot.metrics.capacity} · 待投递 {snapshot.metrics.pendingDeliveries}（{time(snapshot.metrics.observedAt)}读取）</p>}
       {snapshot.metrics?.oldestPendingAt !== undefined && <p>最早待投递：{time(snapshot.metrics.oldestPendingAt)}</p>}
+      {snapshot.metrics?.backup && <p>最近联系人备份：{snapshot.metrics.backup.lastSuccessAt ? time(snapshot.metrics.backup.lastSuccessAt) : '尚无成功记录'}
+        {snapshot.metrics.backup.phase === 'waiting' ? ' · 等待安全保存' : snapshot.metrics.backup.phase === 'saving' ? ' · 正在保存'
+          : snapshot.metrics.backup.phase === 'failed' ? ' · 本次未保存，保留上一份备份' : ''}</p>}
       {snapshot.issue && <p>最近记录：{CONTACT_RUNTIME_ISSUE[snapshot.issue.kind]} · {time(snapshot.issue.at)}</p>}
     </details>
   </div>
