@@ -1,10 +1,10 @@
 {
   "reviewed_at": "2026-10-26",
-  "reviewed_commit": "9d3557d1b26465da3d6cae1710c995efbedde7d8",
+  "reviewed_commit": "3ae6596354bf9e8f2a528976d88e9da6b4d376bb",
   "sources": {
-    "docs/contact-task-spec.md": "bfd4bca7c186ade76ff320cca861d7bd796c9577cde0a0e3691b608a2afced40",
+    "docs/contact-task-spec.md": "d21c82f3429a82f235429607ada588e004c101ae6a8a0308d1efed5f80e8e786",
     "docs/task-scheduling.md": "8f25d7a9836d7874272327e5f6177e239c2bec4eaf98430e7c1b22556112a50d",
-    "package.json": "b950b222fe9517b89210ceb8800b64fd6a3a5130dae67f02a93bccbe78b4f700",
+    "package.json": "a61956dbf5cd05a1d72a5b6076f73f96ed1b398d17ec5cac67f64a30c0c8096c",
     "src/main/agent-space/identity-sync.ts": "fbc99afca89aedf317de6bf4542d3615d8feabdc7ffc4dac4b1565f1db25f6c8",
     "src/main/agent-space/recovery-guard.ts": "f4f5f27caa81026de302c9bb81317368891facb3dfef932c2402bb3e95b6e847",
     "src/main/agent-space/service.ts": "b4ffe033ab17db38793b12a29be4b79d67c78d8d519a3f5006f46523549befb0",
@@ -91,7 +91,7 @@
     "src/preload/bridges/chat.ts": "1b3869074cd73639d82355dc264f8fa7a7d3e3bfec8972e338ad60c6bbf96cc1",
     "src/preload/index.ts": "7e194c8ef034e55a6c20fe81b8c420128cdf2f059faea628073762e454a2e9e5",
     "src/renderer/src/App.tsx": "92107a7ccb1c9c64a2bb875a47ab801dea74d1ddaded0f769d10eef593d0622b",
-    "src/renderer/src/components/ChatPanel/ChatPanel.tsx": "923d48f22f7a6fb3f71a0c3e0924fc212506613c55b7b7e327f8911927f1d7a3",
+    "src/renderer/src/components/ChatPanel/ChatPanel.tsx": "608fb08d61faad2871a535fb92bb20ba3aa0105e566b379f0a454d3656ed4748",
     "src/renderer/src/components/ChatPanel/useSessionWorkspace.ts": "67766d5702e3cb8de09de534307a5b030e73bfb4fcb60dfea8058731f9ef60eb",
     "src/renderer/src/components/Contacts/ContactTaskDialog.tsx": "d1dfb025887a3b12f2d34c1eac72f572d4eccd4f4ed3fa17b156473b9f2624a9",
     "src/renderer/src/components/Contacts/ContactTopics.tsx": "f2b98be5a6c49f94cdd08960a86e48bb75de6848c9fd91966f201fdc1b119dff",
