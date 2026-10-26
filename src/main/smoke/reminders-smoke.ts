@@ -22,7 +22,12 @@ export async function runRemindersSmoke(window: BrowserWindow): Promise<void> {
     notifyReminderChanges()
     window.webContents.send('open-assistant-chat')
     await waitForRenderer(window, "document.querySelector('[data-assistant-kind=task] .reminder-actions')")
-    const click = (text: string) => window.webContents.executeJavaScript(`(() => { const button = [...document.querySelectorAll('[data-assistant-kind=task] .reminder-actions button')].find(b => b.textContent === ${JSON.stringify(text)}); if (!button || button.disabled) throw new Error('missing reminder action'); button.click() })()`)
+    const click = async (text: string) => {
+      // The changed event updates the receipt before the mutation promise clears
+      // busy. Wait for an actionable button, not merely its new status text.
+      await waitForRenderer(window, `[...document.querySelectorAll('[data-assistant-kind=task] .reminder-actions button')].some(b => b.textContent === ${JSON.stringify(text)} && !b.disabled)`)
+      await window.webContents.executeJavaScript(`(() => { const button = [...document.querySelectorAll('[data-assistant-kind=task] .reminder-actions button')].find(b => b.textContent === ${JSON.stringify(text)}); if (!button || button.disabled) throw new Error('Reminder action unavailable: ' + ${JSON.stringify(text)}); button.click() })()`)
+    }
     await click('稍后提醒')
     await waitForRenderer(window, "document.querySelector('.reminder-actions')?.textContent.includes('已安排')")
     await window.webContents.executeJavaScript(`(() => { const select = document.querySelector('[aria-label="稍后提醒间隔"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, '30'); select.dispatchEvent(new Event('change', { bubbles: true })) })()`)
