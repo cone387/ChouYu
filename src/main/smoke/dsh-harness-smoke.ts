@@ -210,14 +210,22 @@ export async function runDshHarnessSmoke(window: BrowserWindow) {
         await until(() => getSession(session)!.messages.filter(message => message.role === 'assistant' && message.replyCompletedAt && !message.harnessSource).length === nativeBefore + 1, 'saved native reply');
         const nativeReply = getSession(session)!.messages.filter(message => message.role === 'assistant' && message.replyCompletedAt && !message.harnessSource).at(-1)!;
         if (nativeReply.content !== 'DSH 普通对话验收通过。' || dshService().store.all().length !== attempts) throw new Error('Native UI duplicated text or started DSH');
-        const events = await run('window.__harnessEvents') as Array<{requestId: string; attemptId: string; operation: string; sequence: number}>;
+        const events = await run('window.__harnessEvents') as Array<{requestId: string; attemptId: string; operation: string; sequence: number; chunk: string; done: boolean}>;
         if (!events.some(event => event.requestId === 'native-after-switch') || !events.some(event => event.operation === 'replace')) throw new Error('Missing native/DSH stream coverage');
         const seen = new Map<string, { attemptId: string; sequence: number }>();
+        const ended = new Set<string>();
         for (const event of events) {
+            if (ended.has(event.requestId)) throw new Error('Stream event arrived after its terminal barrier');
+            if (event.done) {
+                if (event.chunk !== '') throw new Error('Terminal stream barrier contained text');
+                ended.add(event.requestId);
+                continue;
+            }
             const previous = seen.get(event.requestId);
             if (!event.attemptId || !['append','replace'].includes(event.operation) || !Number.isSafeInteger(event.sequence) || previous && (event.attemptId !== previous.attemptId || event.sequence <= previous.sequence)) throw new Error('Invalid common harness stream identity or order');
             seen.set(event.requestId, event);
         }
+        if ([...seen.keys()].some(requestId => !ended.has(requestId))) throw new Error('Missing terminal stream barrier');
         const report = { dshVersion: record.version, commonStream: true, nativeUiSaved: true, handledRouteBypassesHarness: true, nativeLeavesDshUninitialized: true, perContactSettings: true, builtInSettings: true, inFlightEngineStable: true, nativeSwitchBack: true, ordinaryChat: true, readMaterial: true, originalCard: pending.id, waitMs: Date.now() - started, providerCalls, routeCalls, hiddenUnread: true, source, originalPreference: true, rejection: true, duplicateClick: true, stopInvalidatesCard: true };
         // Real editor -> persisted contact -> restarted utility process -> DSH SDK -> saved report.
         await openEngineForm(character.id);
