@@ -17,7 +17,10 @@ export function routineTimesLabel(routine: Pick<AssistantRoutine, 'finishedAt' |
 }
 export function contactTaskItems(data: AgentOverview, scheduled: AssistantTaskEntry[]): ContactTaskItem[] {
   return [
-    ...scheduled.map(item => ({ id: item.id, title: item.title, status: item.status, canDelete: !!item.routine, scheduled: item,
+    ...scheduled.map(item => ({ id: item.id, title: item.title,
+      status: item.execution ? ({ checking: '正在检查', generating: '正在整理', delivering: '正在投递', cancelling: '正在停止' } as const)[item.execution.phase] : item.status,
+      running: Boolean(item.execution), enabled: item.routine ? item.routine.enabled && !item.routine.finishedAt : item.duty ? item.status === '已启用' : false,
+      canDelete: !!item.routine, scheduled: item,
       template: !item.routine && !item.duty,
       createdAt: item.routine?.createdAt, updatedAt: item.routine?.updatedAt,
       summary: item.routine ? item.routine.finishedAt ? '已完成'

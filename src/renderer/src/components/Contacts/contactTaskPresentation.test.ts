@@ -10,4 +10,8 @@ it('counts enabled waiting tasks and removes stale reply summaries after a real 
   data.topics[0].status = 'paused'
   data.runs = [{ topicId: 'ideas', status: 'waiting', question: '过期问题' }] as AgentOverview['runs']
   expect(contactTaskItems(data, [])[0]).toMatchObject({ enabled: false, running: false, status: '已暂停', summary: '用户暂停' })
+  const entry = { id: 'duty:proactiveGreeting', title: '问候', status: '已启用', description: '早上检查', duty: 'proactiveGreeting' as const,
+    execution: { taskId: 'duty:proactiveGreeting', executionId: 'live', startedAt: 1, phase: 'generating' as const } }
+  expect(contactTaskItems(data, [entry])[0]).toMatchObject({ running: true, status: '正在整理' })
+  expect(contactTaskItems(data, [{ ...entry, execution: undefined }])[0]).toMatchObject({ running: false, status: '已启用' })
 })

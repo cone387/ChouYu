@@ -11,6 +11,24 @@ function fixture() {
   return { deps, messages, service: new AssistantRoutineService(deps) }
 }
 describe('assistant routine execution', () => {
+  it('reports only real live executions, delivery and cancellation without reviving restart history', async () => {
+    const f = fixture(), [item] = f.service.save(input, undefined, undefined, at(25, 8))
+    f.service.save({ ...input, times: ['10:00'] }, undefined, undefined, at(25, 8))
+    let finish!: (text: string) => void
+    f.deps.generate.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = f.service.tick(at(25, 9))
+    expect(f.service.executionSnapshot().executions).toEqual([expect.objectContaining({ taskId: `routine:${item.id}`, phase: 'generating', executionId: f.service.history(item.id).items[0].id })])
+    expect(new AssistantRoutineService(f.deps).executionSnapshot().executions).toEqual([])
+    f.deps.deliver.mockImplementationOnce(() => { expect(f.service.executionSnapshot().executions[0].phase).toBe('delivering') })
+    finish('saved'); await pending
+    expect(f.service.executionSnapshot().executions).toEqual([])
+    f.deps.generate.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const next = f.service.tick(at(26, 9))
+    f.service.close()
+    expect(f.service.executionSnapshot().executions[0].phase).toBe('cancelling')
+    finish('unused'); await next
+    expect(f.service.executionSnapshot().executions).toEqual([])
+  })
   it('rebases unclaimed local times after timezone travel and keeps failed receipts frozen', async () => {
     const original = process.env.TZ
     try {

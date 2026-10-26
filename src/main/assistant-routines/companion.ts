@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { AssistantExecutions } from './execution'
 import { contactTaskHref } from '../../shared/contact-links'
 import { TOPIC_STATUS } from '../../shared/agents'
 import type { TaskState } from '../../shared/task-state'
@@ -16,6 +17,7 @@ export interface CompanionFact {
 interface Pending { receipt: string; kind: CompanionKind; content: string; hashes: Record<string, string>; checkedAt?: string }
 interface Checkpoint { hashes: Record<string, string>; checkedAt?: string; pending?: Pending }
 interface Dependencies {
+  changed?(): void
   read(): string | undefined | null
   write(value: string): void
   enabled(kind: CompanionKind): boolean
@@ -45,14 +47,24 @@ export function companionFacts(evidence: Evidence): CompanionFact[] {
 /** One durable outbox and shared baseline for greetings and returns. */
 export class CompanionBriefing {
   private queue: Promise<unknown> = Promise.resolve()
-  constructor(private deps: Dependencies) {}
+  private executions: AssistantExecutions
+  private executionId?: string
+  constructor(private deps: Dependencies) { this.executions = new AssistantExecutions(deps.changed) }
+  executionSnapshot() { return this.executions.snapshot() }
+  private async executing(kind: CompanionKind, work: () => Promise<void>) {
+    const executionId = randomUUID()
+    this.executionId = executionId
+    this.executions.begin({ executionId, taskId: kind === 'greeting' ? 'duty:proactiveGreeting' : 'duty:proactiveReturn', startedAt: Date.now(), phase: 'checking' })
+    try { await work() } finally { this.executions.end(executionId); this.executionId = undefined }
+  }
+  private phase(phase: 'checking' | 'generating' | 'delivering') { if (this.executionId) this.executions.phase(this.executionId, phase) }
   send(kind: CompanionKind, receipt: string): Promise<void> {
-    const work = this.queue.then(() => this.run(kind, receipt))
+    const work = this.queue.then(() => this.executing(kind, () => this.run(kind, receipt)))
     this.queue = work.catch(() => {})
     return work
   }
   retryPending(): Promise<void> {
-    const work = this.queue.then(async () => { await this.restore(this.load()) })
+    const work = this.queue.then(async () => { const state = this.load(); if (state.pending) await this.executing(state.pending.kind, async () => { await this.restore(state) }) })
     this.queue = work.catch(() => {})
     return work
   }
@@ -70,6 +82,7 @@ export class CompanionBriefing {
   }
   private save(state: Checkpoint) { this.deps.write(JSON.stringify(state)) }
   private async current(hashes: Record<string, string>): Promise<boolean> {
+    this.phase('checking')
     if (!Object.keys(hashes).length) return true
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -83,6 +96,7 @@ export class CompanionBriefing {
     finally { clearTimeout(timer); controller.abort() }
   }
   private flush(state: Checkpoint) {
+    this.phase('delivering')
     const pending = state.pending!
     // appendAssistantMessage retries the underlying disk write even for an existing receipt.
     this.deps.deliver(pending)
@@ -139,6 +153,7 @@ export class CompanionBriefing {
           content += state.checkedAt ? '我检查了联系人工作。' : '我查看了当前联系人工作；以下是现状，不代表今天新增。'
           if (selected.length) {
             try {
+              this.phase('generating')
               const summary = await this.deps.summarize(selected, controller.signal)
               controller.signal.throwIfAborted()
               if (!summary.trim()) throw new Error('empty summary')

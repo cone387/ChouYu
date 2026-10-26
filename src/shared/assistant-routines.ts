@@ -24,12 +24,18 @@ export interface AssistantRoutine extends AssistantRoutineInput {
   requestLog?: string
 }
 export interface AssistantRoutinesAPI {
+  executionSnapshot(): Promise<AssistantExecutionSnapshot>
   history(id: string, before?: number): Promise<AssistantRoutineHistoryPage>
   onChanged(callback: () => void): () => void
   list(): Promise<AssistantRoutine[]>
   save(input: AssistantRoutineInput, id?: string, revision?: number): Promise<AssistantRoutine[]>
   remove(id: string, revision: number): Promise<AssistantRoutine[]>
 }
+export interface AssistantExecution {
+  taskId: string; executionId: string; startedAt: number
+  phase: 'checking' | 'generating' | 'delivering' | 'cancelling'
+}
+export interface AssistantExecutionSnapshot { observedAt: number; executions: AssistantExecution[] }
 export interface AssistantRoutineExecution {
   id: string
   receipt: string

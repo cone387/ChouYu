@@ -2,12 +2,13 @@ import { useContactVisible } from './useContactVisible'
 import { useEffect, useRef, useState } from 'react'
 import { ASSISTANT_DUTIES, type AssistantDutyKey } from '../../../../shared/assistant-duties'
 import type { AppConfig } from '../../../../shared/config'
-import type { AssistantRoutine } from '../../../../shared/assistant-routines'
+import type { AssistantRoutine, AssistantExecution } from '../../../../shared/assistant-routines'
 
-export type AssistantTaskEntry = { id: string; title: string; status: string; description: string; duty?: AssistantDutyKey; routine?: AssistantRoutine }
+export type AssistantTaskEntry = { id: string; title: string; status: string; description: string; duty?: AssistantDutyKey; routine?: AssistantRoutine; execution?: AssistantExecution }
 export function useAssistantTasks(isAssistant: boolean, surfaceActive: boolean) {
   const active = useContactVisible(isAssistant && surfaceActive)
   const [routines, setRoutines] = useState<AssistantRoutine[]>([])
+  const [executions, setExecutions] = useState<AssistantExecution[]>([])
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
@@ -15,13 +16,13 @@ export function useAssistantTasks(isAssistant: boolean, surfaceActive: boolean) 
   const refresh = async () => {
     const request = ++epoch.current
     try {
-      const [items, settings] = await Promise.all([window.electronAPI.assistantRoutines.list(), window.electronAPI.db.getConfig()])
+      const [items, settings, snapshot] = await Promise.all([window.electronAPI.assistantRoutines.list(), window.electronAPI.db.getConfig(), window.electronAPI.assistantRoutines.executionSnapshot()])
       if (!alive.current || request !== epoch.current) return
-      setRoutines(items); setConfig(settings); setLoaded(true); setError('')
-    } catch (e) { if (alive.current && request === epoch.current) setError(e instanceof Error ? e.message : String(e)) }
+      setRoutines(items); setConfig(settings); setExecutions(snapshot.executions); setLoaded(true); setError('')
+    } catch (e) { if (alive.current && request === epoch.current) { setExecutions([]); setError(e instanceof Error ? e.message : String(e)) } }
   }
   useEffect(() => {
-    if (!active) return
+    if (!active) { setExecutions([]); return }
     alive.current = true
     void refresh()
     const off = window.electronAPI.assistantRoutines.onChanged(() => { void refresh() })
@@ -34,5 +35,5 @@ export function useAssistantTasks(isAssistant: boolean, surfaceActive: boolean) 
     ...routines.map(routine => ({ id: `routine:${routine.id}`, title: routine.title, status: routine.enabled ? '已启用' : '已暂停', description: routine.instruction, routine })),
     ...(loaded && !routines.some(item => item.kind === 'contact-summary') ? [{ id: 'morning-summary', title: '联系人晨间总结', status: '未配置', description: '告诉我希望几点检查各联系人的进展，我会按时汇总需要你关注的事情。' }] : [])
   ]
-  return { entries, config, error, refresh }
+  return { entries: entries.map(entry => ({ ...entry, execution: executions.find(execution => execution.taskId === entry.id) })), config, error, refresh }
 }

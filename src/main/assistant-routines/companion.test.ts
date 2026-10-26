@@ -23,6 +23,17 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers())
 describe('companion work checks', () => {
+  it('exposes the actual duty only while checking, summarizing and delivering', async () => {
+    const f = fixture()
+    let resolve!: (text: string) => void
+    f.deps.summarize.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const pending = f.service.send('greeting', 'live-duty')
+    await vi.waitFor(() => expect(f.service.executionSnapshot().executions[0]?.phase).toBe('generating'))
+    expect(f.service.executionSnapshot().executions[0]).toMatchObject({ taskId: 'duty:proactiveGreeting', executionId: expect.any(String), startedAt: expect.any(Number) })
+    f.deps.deliver.mockImplementationOnce(() => { expect(f.service.executionSnapshot().executions[0].phase).toBe('delivering') })
+    resolve('checked'); await pending
+    expect(f.service.executionSnapshot().executions).toEqual([])
+  })
   it('uses the shared execution state for an ongoing task between successful rounds', async () => {
     const f = fixture()
     Object.assign(f.evidence.contacts[0].topics[0], { workState: { code: 'updates', label: '等待新内容', description: '持续任务保持启用' } })

@@ -5,6 +5,7 @@ export function createRemindersBridge(ipcRenderer: IpcRenderer) {
 
 return {
   assistantRoutines: {
+    executionSnapshot: () => ipcRenderer.invoke('assistant-routines:execution-snapshot'),
     history: (id: string, before?: number) => ipcRenderer.invoke('assistant-routines:history', id, before),
     onChanged: (callback: () => void) => {
       const handler = () => callback()

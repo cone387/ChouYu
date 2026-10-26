@@ -30,6 +30,11 @@ let service: AssistantTaskCommands | undefined
 let engine: AssistantRoutineService | undefined
 let disposeDomain: (() => void) | undefined
 let timer: ReturnType<typeof setInterval> | undefined
+function notifyAssistantExecution() {
+  for (const window of BrowserWindow.getAllWindows()) {
+    try { if (!window.isDestroyed()) window.webContents.send('assistant-routines:changed') } catch { /* Closing observers cannot fail work. */ }
+  }
+}
 export async function readContactsForAssistant(signal?: AbortSignal) {
   const contacts = listCharacters().filter(c => c.id !== DEFAULT_CHARACTER_ID && c.id !== ASSISTANT_CHARACTER_ID)
   const results = []
@@ -52,6 +57,7 @@ export async function readContactsForAssistant(signal?: AbortSignal) {
 }
 
 const companion = new CompanionBriefing({
+  changed: notifyAssistantExecution,
   read: () => getState('companion-work-check-v1'),
   write: value => setState('companion-work-check-v1', value),
   enabled: kind => kind === 'greeting' ? getConfig().proactiveGreeting : getConfig().proactiveReturn,
@@ -118,6 +124,7 @@ export function summaryTaskLinks(evidence: Awaited<ReturnType<typeof readContact
 export function initializeAssistantRoutines() {
   if (service) return
   engine = new AssistantRoutineService({
+    changed: notifyAssistantExecution,
     readHistory: id => getState(`assistant-routine-history:${id}`),
     writeHistory: (id, value) => setState(`assistant-routine-history:${id}`, value),
     read: () => getState('assistant-routines-v1'), write: value => {
@@ -171,6 +178,7 @@ export function initializeAssistantRoutines() {
   service = registration.bind(DEFAULT_CHARACTER_ID)
   disposeDomain = registration.dispose
   ipcMain.handle('assistant-routines:list', () => service!.list())
+  ipcMain.handle('assistant-routines:execution-snapshot', () => ({ observedAt: Date.now(), executions: [...(engine?.executionSnapshot().executions ?? []), ...companion.executionSnapshot().executions] }))
   ipcMain.handle('assistant-routines:history', (_event, id, before) => service!.history(id, before))
   ipcMain.handle('assistant-routines:save', (_event, input, id, revision) => service!.save(input, id, revision))
   ipcMain.handle('assistant-routines:remove', (_event, id, revision) => service!.remove(id, revision))
