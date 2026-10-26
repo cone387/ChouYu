@@ -1,3 +1,4 @@
+import { CONTACT_TASK_SCHEMA_VERSION } from '../../shared/contact-backups'
 import { ContactCompletion } from './contact/completion';
 import { ContactEndings } from './contact/endings'
 import { FeedbackLedger } from '../agents/feedback-ledger';
@@ -67,7 +68,7 @@ export class ContactTaskStore {
       // Schema, legacy bodies and the old-application barrier commit together.
       this.db.exec('BEGIN IMMEDIATE')
       const version = this.db.pragma('user_version', { simple: true }) as number
-      if (version > 20) throw new Error('Agent 数据版本较新，请升级应用。')
+      if (version > CONTACT_TASK_SCHEMA_VERSION) throw new Error('Agent 数据版本较新，请升级应用。')
       this.endings = new ContactEndings(this.db)
       this.recovery = new ContactStoreRecovery(this.db)
       this.db.exec(`
@@ -262,7 +263,7 @@ export class ContactTaskStore {
       })
       this.restoreFailureSchedules()
       if (version < 18) this.db.pragma('user_version = 18')
-      if (version < 20) this.db.pragma('user_version = 20')
+      if (version < CONTACT_TASK_SCHEMA_VERSION) this.db.pragma(`user_version = ${CONTACT_TASK_SCHEMA_VERSION}`)
       this.dependencies.backfill()
       this.db.exec('COMMIT')
     } catch (error) {

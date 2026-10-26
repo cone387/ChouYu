@@ -1,5 +1,5 @@
 import { contactCommunicationInstructions } from '../../shared/contact-communication'
-import { streamNativeChat } from '../harness/native/runner'
+import { streamSystemModel as streamNativeChat } from '../harness/model-service'
 import type { AppConfig } from '../../shared/config'
 import type { AgentDelivery } from '../../shared/agent-delivery'
 import { contactExpressionInstruction, type ContactOutputPreference } from '../../shared/contact-output'

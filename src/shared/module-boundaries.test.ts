@@ -10,6 +10,12 @@ it.each([
   ['src/shared/a.ts', "export { x } from '../renderer/src/App'"],
   ['src/shared/a.ts', "import type { BrowserWindow } from 'electron'"],
   ['src/main/agents/a.ts', "const ipc = require('../ipc')"],
+  ['src/main/contact-agent/a.ts', "import '../ipc/agents'"],
+  ['src/main/workloop/a.ts', "import '../../renderer/src/App'"],
+  ['src/main/messaging/a.ts', "export * from '../ipc/sessions'"],
+  ['src/main/storage/a.ts', "import '../ipc'"],
+  ['src/main/workloop/a.ts', "import '../harness/native/runner'"],
+  ['src/main/task-center/a.ts', "import '../harness/dsh/runtime'"],
   ['src/main/task-center/a.ts', "const view = import('../../renderer/src/App')"],
   ['src/renderer/src/components/Tasks/a.ts', "type Page = import('../Settings/Settings').default"],
   ['src/renderer/src/components/Tasks/a.ts', "import Settings from '@/components/Settings/Settings'"]

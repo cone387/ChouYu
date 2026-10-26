@@ -115,3 +115,4 @@ export interface BackgroundHarnessInput {
     };
 }
 export interface BackgroundHarness { run(input: BackgroundHarnessInput): Promise<void> }
+export interface DshRuntimeOptions { home: string; node: string; helper: string; startupTimeoutMs?: number }

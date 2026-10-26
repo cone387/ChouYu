@@ -21,6 +21,44 @@ function fixture(agentsImpl?: (id: string, method: string, args: unknown[]) => P
 const createTarget = { kind: 'create' as const, characterId: 'chouyu' }
 
 describe('contact task gateway', () => {
+  it('cannot save an unlimited schedule when an explicit sent-count was omitted by the model', async () => {
+    const { deps, routineService } = fixture()
+    const model = vi.fn(async () => JSON.stringify({ kind: 'routine', input: routineInput }))
+    await expect(requestContactTask(createTarget, '每天八点，成功发送3次后停止', deps, model)).rejects.toThrow()
+    expect(routineService.list()).toHaveLength(0); expect(model).toHaveBeenCalledTimes(2)
+  })
+  it('corrects malformed JSON once and treats null new limits as absent, without erasing old limits', async () => {
+    const { deps, routineService } = fixture()
+    const model = vi.fn().mockResolvedValueOnce('not JSON').mockResolvedValueOnce(JSON.stringify({ kind: 'routine', input: routineInput,
+      ending: { deadline: null, count: { mode: 'delivered', amount: 3, source: '成功发送3次' } } }))
+    await requestContactTask(createTarget, '每天八点，成功发送3次后停止', deps, model)
+    expect(model).toHaveBeenCalledTimes(2); expect(routineService.list()[0].ending?.count?.target).toBe(3)
+  })
+  it('validates nested model ending data and never trusts model-supplied provenance', async () => {
+    const { deps, routineService } = fixture()
+    await requestContactTask(createTarget, '每天成功发送3次后停止', deps, async () => JSON.stringify({ kind: 'routine', input: { ...routineInput,
+      ending: { count: { mode: 'delivered', amount: 3, source: '成功发送3次' } }, endingRequest: { patch: { deadline: null }, acceptedAt: 1, text: '取消截止' } } }))
+    expect(routineService.list()[0].ending?.count?.target).toBe(3)
+  })
+  it('asks about a bare total even when model omitted the ending field', async () => {
+    const { deps, routineService } = fixture()
+    const result = await requestContactTask(createTarget, '每天八点，总共执行3次', deps, async () => JSON.stringify({ kind: 'routine', input: routineInput }))
+    expect(result.kind).toBe('question'); expect(routineService.list()).toHaveLength(0)
+  })
+  it('asks which success receipt counts instead of saving a guessed bare execution limit', async () => {
+    const { deps, routineService } = fixture()
+    const result = await requestContactTask(createTarget, '每天八点总共执行3次', deps, async () => JSON.stringify({ kind: 'routine', input: routineInput,
+      ending: { count: { mode: 'delivered', amount: 3, source: '执行3次' } } }))
+    expect(result.kind).toBe('question'); expect(routineService.list()).toHaveLength(0)
+  })
+  it('repairs only malformed ending metadata once before any write', async () => {
+    const { deps, routineService } = fixture()
+    const model = vi.fn().mockResolvedValueOnce(JSON.stringify({ kind: 'routine', input: routineInput,
+      ending: { deadline: { kind: 'duration', value: '86400000', source: '只工作24小时后结束' } } }))
+      .mockResolvedValueOnce(JSON.stringify({ ending: { deadline: { kind: 'duration', value: 86400000, source: '只工作24小时后结束' } } }))
+    await requestContactTask(createTarget, '每天八点只工作24小时后结束', deps, model)
+    expect(model).toHaveBeenCalledTimes(2); expect(routineService.list()).toHaveLength(1)
+  })
   it('keeps a first accepted relative deadline across a failed save retry and unrelated edits', async () => {
     const { deps, routineService } = fixture()
     const text = '每天提醒我，只工作24小时后结束'

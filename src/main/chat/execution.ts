@@ -15,7 +15,7 @@ import { dispatchContactCall, agentContext, contactAgentsCall, onContactContextC
 import { routeContactChange } from '../agents/chat-changes'
 import { readContactConfiguration, submitContactInteraction, pendingContactInteractions } from '../agents'
 import { type ContactActionInteraction } from '../../shared/contact-actions'
-import { streamNativeChat } from '../harness/native/runner'
+import { streamSystemModel as streamNativeChat } from '../harness/model-service'
 import { prepareRegisteredToolAsync, getRegisteredTool, getToolDefinitions } from '../tools/registry'
 import { type ToolExecutionEvent } from '../../shared/tools'
 import { getConfig, getCharacter, getSession, setState } from '../database'

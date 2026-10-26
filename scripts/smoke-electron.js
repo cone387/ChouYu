@@ -36,6 +36,7 @@ const env = {
   CHOUYU_SMOKE_STORAGE_SCALE: process.argv.includes('--storage-scale') ? '1' : '0',
   CHOUYU_SMOKE_MIGRATION_FIXTURE: path.resolve(__dirname, '../tests/fixtures/ocr-sample.png'),
   CHOUYU_SMOKE_DSH: process.argv.includes('--dsh-harness') ? '1' : '0',
+  CHOUYU_SMOKE_CONTACT_RELIABILITY: process.argv.includes('--contact-reliability') ? '1' : '0',
   CHOUYU_SMOKE_CONTACT_LIVE: process.argv.includes('--contact-live') ? '1' : '0',
   CHOUYU_SMOKE_CAPTURE_ONLY: nativeCapture ? '1' : '0',
   CHOUYU_SMOKE_NAVIGATION_ONLY: process.argv.includes('--navigation') ? '1' : '0',

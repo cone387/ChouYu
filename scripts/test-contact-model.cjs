@@ -16,7 +16,16 @@ if (!process.versions.electron) {
   app.setPath('userData', directory)
   const finish = code => { try { rmSync(directory, { recursive: true, force: true }) } finally { app.exit(code) } }
   app.whenReady().then(() => {
-    const source = JSON.parse(readFileSync(join(process.env.APPDATA, 'chouyu', 'chouyu-data.json'), 'utf8'))
+    const realHome = join(process.env.APPDATA, 'chouyu')
+    let source = JSON.parse(readFileSync(join(realHome, 'chouyu-data.json'), 'utf8'))
+    if (source.version >= 5) {
+      const { DatabaseSync } = require('node:sqlite')
+      const db = new DatabaseSync(join(realHome, 'chouyu-application.db'), { readOnly: true })
+      try {
+        const read = key => JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get(key).value)
+        source = { config: read('config'), characters: read('characters') }
+      } finally { db.close() }
+    }
     const prefix = 'safe:v1:'
     const unprotect = value => { try { return typeof value === 'string' && value.startsWith(prefix) ? safeStorage.decryptString(Buffer.from(value.slice(prefix.length), 'base64')) : value } catch { return '' } }
     const config = { ...source.config, apiKey: unprotect(source.config.apiKey), providerProfiles: source.config.providerProfiles?.map(profile => ({ ...profile, apiKey: unprotect(profile.apiKey) })) }
@@ -33,6 +42,15 @@ if (!process.versions.electron) {
     const counts = process.argv.includes('--counts')
     const conversation = process.argv.includes('--conversation')
     const matrix = process.argv.includes('--matrix')
+    if (process.argv.includes('--reliability')) {
+      const child = spawn(process.argv[2], ['node_modules/vitest/vitest.mjs', 'run', 'src/main/assistant-routines/reliability-model.acceptance.test.ts'], {
+        stdio: 'inherit', windowsHide: true, env: { ...process.env, CHOUYU_RELIABILITY_ACCEPTANCE: '1', CHOUYU_ACCEPTANCE_CONFIG: JSON.stringify({ config, characters }) }
+      })
+      const timer = setTimeout(() => { child.kill(); finish(1) }, 295000)
+      child.on('error', () => { clearTimeout(timer); finish(1) })
+      child.on('exit', code => { clearTimeout(timer); finish(code ?? 1) })
+      return
+    }
     if (matrix) {
       const child = spawn(process.argv[2], ['scripts/smoke-electron.js', '--contact-live'], {
         stdio: 'inherit', windowsHide: true,

@@ -8,7 +8,7 @@ import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID, resolveCharacterConfig } 
 import { inspectContactWork, inspectContactDelivery, contactAgentsCall } from '../agents'
 import { parseToolArguments } from '../../shared/tools'
 import { deliverMessage } from '../messaging'
-import { streamNativeChat } from '../harness/native/runner'
+import { streamSystemModel as streamNativeChat } from '../harness/model-service'
 import { getRegisteredTool, registerTool } from '../tools/registry'
 import { AssistantRoutineService } from './service'
 import { createAssistantTools } from './tools'

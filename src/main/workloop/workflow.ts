@@ -1,3 +1,5 @@
+import { parseBrief, parseDraft, type Brief, type Draft } from './result-contracts'
+export { parseDraft } from './result-contracts'
 const fileDeliveryInstruction = '\nFormal delivery may include fileIds, but only IDs returned by successful skill tools in this run. Inputs and temporary work files are not completed deliverables; include only files that actually fulfil the requested output. Never invent IDs or infer success from a filename.\n'
 import { contactMessageInstruction } from '../agents/contact-message'
 import { reviewTaskQuestion, taskBoundaryInstruction } from '../agents/task-boundary'
@@ -7,7 +9,6 @@ import { taskInputInstruction, presentationInstruction } from '../../shared/agen
 import { revisePresentation } from '../agents/presentation-revision'
 import type Database from 'better-sqlite3'
 import { openContactDatabase, contactStorageFailure } from '../storage/contact-database'
-import { validateTaskResourceBudget, type TaskResourceBudget } from '../../shared/agent-resources'
 import { Annotation, StateGraph, START, END, interrupt, Command } from '@langchain/langgraph'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { agentUsesPlanner, validateTopicProgress, type AgentEvidence, type AgentReport, type AgentSettings, type AgentTopic, type AgentTopicProgress } from '../../shared/agents'
@@ -23,29 +24,16 @@ import { safeAgentFailure } from '../agents/failure'
 import { deliveryLengthInstruction, enforceDeliveryLength } from '../agents/delivery-length'
 import { correctDeliveryCounts, textCountFacts, textCountInstruction } from '../agents/delivery-counts'
 import { ChapterContinuationError, chapterContinuationPrompt, chapterInstruction, planChapterContinuation, validateChapterContinuation } from '../agents/chapter-continuation'
-import { calculateEvaluations, evaluationInstruction, evaluationMarkdown, evaluationSummary, type AgentEvaluation } from '../../shared/agent-evaluation'
-import { validateDeliveryUpdate, validateDeliveryPlan, type DeliveryPlan, type DeliveryUpdate, type AgentDelivery } from '../../shared/agent-delivery'
+import { evaluationInstruction } from '../../shared/agent-evaluation'
+import { type DeliveryUpdate, type AgentDelivery } from '../../shared/agent-delivery'
 import { contactOutputInstruction } from '../../shared/contact-output'
 import { ContactStorageBarrier, type StorageLease } from '../agent-space/storage-barrier'
 import { invokeDurableGraph } from './durable-graph'
 
-type Draft = { evaluations?: AgentEvaluation[]; resourceBudget?: TaskResourceBudget; title: string; body: string; nextStep: string; memories: string[]; question: string; progress?: AgentTopicProgress; delivery?: DeliveryUpdate }
 const baseDeliveryInstruction = fileDeliveryInstruction + taskCompletionInstruction + taskInputInstruction + presentationInstruction + `\n同时输出 delivery（仅修改排版或需求且已有正文时省略 section，保留阶段进度）：{"completionCriteria":"整个任务的具体完成条件，不扩大用户目标","stages":[{"id":"稳定英文ID","title":"阶段名称","status":"pending|active|done"}],"summary":"累积摘要：固定设定、关键结论、已完成内容及采用的反馈，最多1000字","section":{"id":"稳定英文ID","title":"分节标题","body":"本轮实际交付正文"}}。第一轮按目标拆分阶段，后续保留稳定ID。阶段优先表示卷或里程碑，不必每个正文分节都新增阶段；长期任务最多300个阶段，不能为压缩输出删除旧阶段。有正文更新时每轮只新增或替换一个分节；修改已有内容必须复用原分节ID，完整输出该分节，其他分节由系统保留。body 字段用于本轮变化说明，实际正文放 delivery.section.body，不重复长正文。阶段全部 done 且满足完成条件才能把事项设为 completed。研究正文引用本轮资料编号；无新增资料不编造。旧正文若不在上下文中不要凭空重写；下一步明确需要处理的分节。`
 const deliveryIntegrityInstruction = `\n成果目录是已保存正文的唯一依据，阶段计划、历史摘要或 judgement 中声称“已写完”不能替代正文。若历史声称已交付但目录中缺少相应章节，应先补交该章并纠正摘要，不跳到下一章。有正文更新时每轮只保存一个 section；summary、progress.judgement 和报告只能声称已保存的分节及本轮 section 已交付，不能声称同时交付其他未输出章节。完成条件必须保持用户原目标，不得把“整本小说”擅自缩减为几章或提纲。输出预算有限，新增正文每轮不超过800字，较长章节拆成有独立标题的分节逐轮写完，未写完的章保持 active。修改已有分节时保留完整原稿，不为凑字数删减原文。顶层 body 只写简短变化说明，不重复正文；摘要不超过300字，优先保证 section 正文与 JSON 完整。`
 
 const resourceInstruction = `\n资源规划：resources 是系统提供的真实额度。若 taskBudget 尚未分配，必须在顶层输出 resourceBudget：{"modelCalls":整数,"reason":"按阶段估算的分配理由及额度不足时的交付范围"}。modelCalls 为本任务跨天累计调用上限，包含 taskUsed 已消耗的规划、执行、重试和修订；不得超过 taskUsed + allocatableCalls。根据任务复杂度按需分配，不默认占满额度。dailyRemaining 只限制今天执行，其他任务的跨天预算不占用今天的额度。自动首次预算最多为联系人配置的一日调用上限（最多10000次）；更大的跨天预算由用户在本任务设置中指定。每个后续自主执行轮次通常需两次调用，格式修复与回复修订也消耗调用。若不能覆盖完整任务，明确阶段性资源缺口，不缩减用户原目标或声称任务完成。已有 taskBudget 时省略 resourceBudget，只能在剩余额度内推进，不能自行追加。`
-type Brief = { title: string; nextStep: string; question: string; plan: DeliveryPlan; resourceBudget?: TaskResourceBudget }
-function parseBrief(raw: string, budgetAllocated = false): Brief {
-  const value = researchPlanValue(raw)
-  for (const [key, max] of [['title', 160], ['nextStep', 1000], ['question', 1000]] as const) {
-    if (!value || typeof value[key] !== 'string' || value[key].length > max || key !== 'question' && !value[key].trim()) throw new Error('任务方向格式无效，请重试。')
-  }
-  const plan = validateDeliveryPlan(value.plan)
-  const missing = plan.inputs?.filter(field => field.required && !field.value) ?? []
-  if (missing.length && !value.question.trim()) value.question = `请补充：${missing.map(field => field.label).join('、')}`
-  if (plan.stages.some(stage => stage.status !== 'pending')) throw new Error('接单时的阶段尚未执行，不能标为进行中或完成。')
-  return { title: value.title.trim(), nextStep: value.nextStep.trim(), question: value.question.trim(), plan, ...(!budgetAllocated && value.resourceBudget ? { resourceBudget: validateTaskResourceBudget(value.resourceBudget) } : {}) }
-}
 async function reviewBrief(store: ContactTaskStore, runId: string, topic: AgentTopic | undefined, model: AgentModel, signal: AbortSignal, live: () => void, raw: string): Promise<Brief> {
   live()
   const budgetAllocated = !!topic?.resourceBudget
@@ -60,34 +48,6 @@ async function reviewBrief(store: ContactTaskStore, runId: string, topic: AgentT
 }
 const State = Annotation.Root({ evidence: Annotation<AgentEvidence[]>(), draft: Annotation<Draft>(), answer: Annotation<string>(), plan: Annotation<AgentResearchPlan>(), boundaryPrompt: Annotation<string>(), deferred: Annotation<boolean>() })
 export type AgentModel = (prompt: string, signal: AbortSignal, options?: { tools?: false; plainText?: boolean; onPartial?: (text: string) => void; suppliesMemories?: boolean }) => Promise<string>
-export function parseDraft(raw: string, evidenceCount?: number, evaluationRequired = false, budgetAllocated = false): Draft {
-  let value: Record<string, unknown>
-  try { value = researchPlanValue(raw); if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error() } catch { throw new AgentOutputFormatError(`模型未返回有效的结构化成果：需要完整、唯一的 JSON 对象（${raw.length} 字符），本轮未写入记忆。`) }
-  const optionalText = (v: unknown) => v == null ? '' : Array.isArray(v) && v.every(item => typeof item === 'string') ? v.join('\n') : v
-  value.question = optionalText(value.question)
-  if (value.progress && typeof value.progress === 'object' && !Array.isArray(value.progress)) {
-    value.progress = { ...value.progress, openQuestions: optionalText((value.progress as Record<string, unknown>).openQuestions) }
-  }
-  // Task progress owns continuation. The report field is a compatibility alias,
-  // not a second independent requirement (nor a product's validation advice).
-  const progress = value.progress === undefined ? undefined : validateTopicProgress(value.progress)
-  if (progress) value.nextStep = progress.nextStep
-  if (value.title == null && value.delivery && typeof value.delivery === 'object') value.title = (value.delivery as DeliveryUpdate).section?.title
-  if (evaluationRequired && !value?.evaluations) throw new Error('本轮计划要求评分，但未提供结构化 evaluations，不能保存未经计算校验的分数。')
-  const evaluations = value?.evaluations === undefined ? undefined : calculateEvaluations(value.evaluations, evidenceCount)
-  if (evaluations) {
-    value.body = evaluationSummary(evaluations)
-    if (value.delivery && typeof value.delivery === 'object') {
-      const delivery = value.delivery as DeliveryUpdate
-      if (!delivery.section) throw new Error('评分成果必须包含正文。')
-      value.delivery = { ...delivery, section: { ...delivery.section, body: evaluationMarkdown(evaluations) } }
-    } else value.body = evaluationMarkdown(evaluations)
-  }
-  const delivery = value.delivery === undefined ? undefined : validateDeliveryUpdate(value.delivery)
-  if (value.body == null && delivery?.section) value.body = delivery.section.body
-  const field = (key: string, max: number, required = false) => { const text = value && value[key]; if (typeof text !== 'string' || text.length > max || required && !text.trim()) throw new Error(`成果字段 ${key} 无效（${text == null ? '缺失或为空值' : typeof text !== 'string' ? '类型应为字符串' : text.length > max ? `长度 ${text.length} 超过 ${max}` : '不得为空字符串'}）。`); return text.trim() }
-  return { evaluations, resourceBudget: budgetAllocated || value.resourceBudget === undefined ? undefined : validateTaskResourceBudget(value.resourceBudget), title: field('title', 160, true), body: field('body', 10000, true), nextStep: field('nextStep', 1000), question: field('question', 1000), progress, delivery, memories: Array.isArray(value.memories) ? value.memories.filter((m): m is string => typeof m === 'string' && m.length > 0 && m.length <= 2000).slice(0, 3) : [] }
-}
 export class WorkStrategyRuntime {
   readonly contactSources: ContactSources
   readonly checkpoints: SqliteSaver

@@ -3,6 +3,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, openSync, fsyncSync, closeSync } from 'node:fs'
 import { join } from 'node:path'
 import { ContactBackups } from './contact-backups'
+import { CONTACT_TASK_SCHEMA_VERSION } from '../../shared/contact-backups'
 
 export type ContactStorageHealth = { kind: 'new' | 'healthy' | 'damaged' | 'missing' | 'incompatible' | 'unavailable' }
 const files = ['agents.db', 'checkpoints.db'] as const
@@ -14,13 +15,15 @@ export function inspectContactStorage(directory: string): ContactStorageHealth {
     return { kind: previous || existsSync(join(directory, 'restore.json')) ? 'missing' : 'new' }
   }
   let problem: ContactStorageHealth['kind'] | undefined
+  const hasHistory = existsSync(join(directory, 'restore.json')) || existsSync(join(directory, 'backups')) && readdirSync(join(directory, 'backups')).length > 0
   for (const file of files) {
     if (!existsSync(join(directory, file))) continue
     let db: Database.Database | undefined
     try {
       db = new Database(join(directory, file), { readonly: true, fileMustExist: true })
-      if ((db.pragma('user_version', { simple: true }) as number) > (file === 'agents.db' ? 20 : 0)) return { kind: 'incompatible' }
+      if ((db.pragma('user_version', { simple: true }) as number) > (file === 'agents.db' ? CONTACT_TASK_SCHEMA_VERSION : 0)) return { kind: 'incompatible' }
       if (db.pragma('quick_check', { simple: true }) !== 'ok') problem ??= 'damaged'
+      if (hasHistory && !(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get())) problem ??= 'missing'
     } catch (error) {
       const code = (error as { code?: string }).code
       if (code === 'SQLITE_CORRUPT' || code === 'SQLITE_NOTADB') problem ??= 'damaged'
@@ -46,7 +49,7 @@ export class ContactRestore {
     const health = inspectContactStorage(this.directory)
     if (health.kind !== 'damaged' && health.kind !== 'missing') throw new Error('只有确认损坏或缺失的联系人数据库可以恢复备份。')
     const backup = new ContactBackups(this.directory).verify(group)
-    if (backup.files.tasks.schema > 20 || backup.files.checkpoints.schema > 0) throw new Error('备份数据版本较新，请升级应用。')
+    if (backup.files.tasks.schema > CONTACT_TASK_SCHEMA_VERSION || backup.files.checkpoints.schema > 0) throw new Error('备份数据版本较新，请升级应用。')
     const journal: Journal = { format: 1, id: randomUUID(), group, phase: 'preserving' }
     const target = join(this.directory, 'recovery', journal.id)
     mkdirSync(join(target, 'original'), { recursive: true })

@@ -5,7 +5,7 @@ import { AgentSpace } from '../agent-space/service'
 import { taskCenter } from '../task-center/service'
 import { createContactDomain, isContactTaskMethod } from '../task-center/contact-domain'
 import { chatHarness } from '../harness/service'
-import { resolveDshRuntimePaths } from '../harness/dsh/runtime'
+import { resolveDshRuntimePaths } from '../harness/runtime-paths'
 import type { HarnessInput, HarnessEvent } from '../harness/contracts'
 import type { HarnessEngine } from '../../shared/harness'
 import { AgentWorkerRPC } from '../agent-space/worker-rpc'
@@ -21,8 +21,7 @@ import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-deliver
 import { join } from 'node:path'
 import { getCharacter, getConfig, getSession, listCharacters, getState, setState, setContactRecoveryState, getContactProfile, updateContactProfile, contactSearchCredential, saveContactSearchCredential } from '../database'
 import { ContactRecoveryGuard } from '../agent-space/recovery-guard'
-import { ContactRestore, inspectContactStorage } from '../storage/contact-restore'
-import { ContactBackups } from '../storage/contact-backups'
+import { ContactStorageRecovery } from '../agent-space/storage-recovery'
 import { ContactIdentitySync } from '../agent-space/identity-sync'
 import { onContactIdentityChanged } from '../database'
 import { contactIdentitySource } from '../agent-space/identity-source'
@@ -54,9 +53,7 @@ let failures = 0
 let syncTimer: ReturnType<typeof setInterval> | undefined
 const recoveryGuard = new ContactRecoveryGuard(getState, setContactRecoveryState)
 const contactDirectory = () => join(app.getPath('userData'), 'contact-agents')
-const contactRestore = () => new ContactRestore(contactDirectory(),
-  (group, restoreId) => recoveryGuard.begin(group, restoreId, listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id)),
-  undefined, (group, restoreId) => { const current = recoveryGuard.current(); if (current?.restoreId !== restoreId || current.group !== group) throw new Error('应用库恢复保护不匹配，未打开联系人数据。') })
+const storageRecovery = new ContactStorageRecovery(contactDirectory, recoveryGuard, () => listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id))
 const identitySource = contactIdentitySource(id => recoveryGuard.identity(id))
 const identitySync = new ContactIdentitySync(identitySource.revision, identitySource.read)
 const identityRequests = new Map<string, Promise<void>>()
@@ -186,11 +183,10 @@ async function ensure() {
   const generation = runtimeState.start()
   identitySync.generation(generation); identityRequests.clear(); rosterSync = undefined
   try {
-    contactRestore().resume()
-    const health = inspectContactStorage(contactDirectory())
-    if (health.kind === 'damaged' || health.kind === 'missing' || health.kind === 'incompatible') {
-      runtimeState.update(generation, { phase: 'unavailable', storageRecovery: { kind: health.kind,
-        candidates: health.kind === 'incompatible' ? [] : new ContactBackups(contactDirectory()).list().filter(group => group.files.tasks.schema <= 19) } })
+    storageRecovery.resume()
+    const recovery = storageRecovery.inspect()
+    if (recovery) {
+      runtimeState.update(generation, { phase: 'unavailable', storageRecovery: recovery })
       throw new Error('联系人存储需要处理，未启动工作进程。')
     }
     runtimeState.update(generation, { storageRecovery: undefined })
@@ -351,10 +347,12 @@ export async function pendingContactInteractions(owner: string) {
   }
   return result
 }
-export async function restartAgentsForSmoke() {
+export async function restartAgentsForSmoke(afterClosed?: () => void) {
   if (process.env.CHOUYU_SMOKE_TEST !== '1') throw new Error('Smoke only')
   const previous = child
+  if (previous && afterClosed) await rpc('close')
   if (previous) await new Promise<void>(resolve => { previous.once('exit', () => resolve()); previous.kill() })
+  afterClosed?.()
   await ensure()
 }
 export function initializeAgents() {
@@ -369,7 +367,7 @@ export function initializeAgents() {
   contactHandle('agents:runtime-status', () => runtimeState.read())
   contactHandle('agents:restore-runtime', async (_event, groupId: string) => {
     if (closing || child || starting) throw new Error('请等待联系人进程停止后再恢复。')
-    contactRestore().restore(groupId)
+    storageRecovery.restore(groupId)
     failures = 0
     await ensure(); await refreshRuntimeMetrics()
     return runtimeState.read()

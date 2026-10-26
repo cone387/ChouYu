@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
 const slash = value => value.replaceAll('\\', '/')
-const domains = /^src\/main\/(agents|agent-space|task-center|assistant-routines|tasks|reminders|memory|journal|chat|harness|skills)\//
+const domains = /^src\/main\/(agents|agent-space|contact-agent|workloop|messaging|storage|task-center|assistant-routines|tasks|reminders|memory|journal|chat|harness|skills)\//
 const pages = /^src\/renderer\/src\/components\/(Tasks|Journal|Settings|Contacts|ChatPanel)\//
 const entrypoints = new Set(['Tasks/TasksView', 'Journal/Journal', 'Settings/Settings', 'Contacts/ContactsView', 'ChatPanel/ChatPanel'])
 // Exact legacy edges may be listed here with a reason; never exempt a whole directory.
@@ -35,6 +35,7 @@ function checkSource(file, source) {
     else if (from.startsWith('src/shared/') && to === 'electron') reason = 'shared contracts must not depend on Electron'
     else if (domains.test(from) && /^src\/main\/ipc(\/|$)/.test(to)) reason = 'domain must not import IPC registration'
     else if (domains.test(from) && /^src\/renderer(\/|$)/.test(to)) reason = 'main domain must not depend on renderer'
+    else if (domains.test(from) && !from.startsWith('src/main/harness/') && /^src\/main\/harness\/(native\/runner|dsh\/(runtime|adapter|background|module|service))(\/|$)/.test(to)) reason = 'business domains must use harness contracts or public service ports'
     else if (pages.test(from)) {
       const target = to.replace('src/renderer/src/components/', '')
       if (entrypoints.has(target) && from.split('/')[4] !== target.split('/')[0]) reason = 'business pages are composed by Workspace'

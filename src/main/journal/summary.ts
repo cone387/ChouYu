@@ -1,5 +1,5 @@
 import type { AIResponseMetadata } from '../../shared/ai-usage'
-import { streamNativeChat } from '../harness/native/runner'
+import { streamSystemModel as streamNativeChat } from '../harness/model-service'
 import type { AppConfig } from '../../shared/config'
 import type { JournalAnswer, JournalEvidence, JournalSummary, JournalSummaryItem } from '../../shared/journal'
 

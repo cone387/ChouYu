@@ -16,12 +16,8 @@ export interface DshRuntimeLease {
     flush(key: RunKey): Promise<boolean>;
     release(): void | Promise<void>;
 }
-export interface DshRuntimeOptions {
-    home: string;
-    node: string;
-    helper: string;
-    startupTimeoutMs?: number;
-}
+import type { DshRuntimeOptions } from '../contracts';
+export type { DshRuntimeOptions } from '../contracts';
 type Active = {
     input: DshRunInput;
     emit: HarnessSink;
@@ -206,7 +202,7 @@ class DshRuntime {
         })();
     }
 }
-export function resolveDshRuntimePaths(resourcesPath: string, packaged: boolean) { const root = packaged ? join(resourcesPath, 'dsh-runtime') : join(resourcesPath, 'out', 'dsh-runtime'); return { node: join(root, 'node.exe'), helper: join(root, 'helper.mjs'), profile: join(root, 'profile.yml') }; }
+export { resolveDshRuntimePaths } from '../runtime-paths';
 export class DshRuntimePool {
     private groups = new Map<string, Promise<DshRuntime>>();
     private closed = false;

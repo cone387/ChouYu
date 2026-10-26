@@ -1,4 +1,5 @@
 import { runDshHarnessSmoke } from './smoke/dsh-harness-smoke'
+import { runContactReliabilitySmoke } from './smoke/contact-reliability-smoke'
 import { runStorageScaleSmoke } from './smoke/storage-scale-smoke'
 import { StorageQuitGuard } from './storage/quit-guard'
 import { recoverHarnessModules } from './harness/service'
@@ -137,7 +138,9 @@ function createWindow(): void {
         console.log(`CHOUYU_SMOKE_STAGE_PASSED name=${name} durationMs=${Date.now() - started}`)
       }
       try {
-        if(process.env.CHOUYU_SMOKE_DSH==='1'){
+        if (process.env.CHOUYU_SMOKE_CONTACT_RELIABILITY === '1') {
+          await stage('contact-reliability', () => runContactReliabilitySmoke(mainWindow!))
+        } else if(process.env.CHOUYU_SMOKE_DSH==='1'){
           await stage('dsh-harness',()=>runDshHarnessSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_CONTACT_LIVE === '1') {
           await stage('contact-live', () => runContactLiveSmoke(mainWindow!))

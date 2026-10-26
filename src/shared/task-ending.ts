@@ -8,6 +8,7 @@ export interface TaskEnding {
 export interface TaskEndingRequest { patch: unknown; text: string; acceptedAt: number; timeZone: string }
 interface EndingContext { text: string; acceptedAt: number; timeZone: string; isNew: boolean; calendar: boolean }
 export class TaskEndingError extends Error { constructor(message: string) { super(message); this.name = 'TaskEndingError' } }
+export class TaskEndingClarification extends Error { constructor(message: string) { super(message); this.name = 'TaskEndingClarification' } }
 function source(value: unknown, text: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 1000 || !text.includes(value)) throw new Error('结束条件缺少用户原话依据，尚未保存。')
   return value
@@ -36,7 +37,7 @@ export function applyTaskEnding(previous: TaskEnding | undefined, raw: unknown, 
   if (Object.keys(patch).some(key => !['deadline', 'count'].includes(key))) throw new Error('任务结束条件包含未知字段。')
   const next: TaskEnding = previous ? structuredClone(previous) : { version: 1, acceptedAt: context.acceptedAt, timeZone: context.timeZone, occurrences: {} }
   if (patch.deadline === null) {
-    if (!/(取消|移除|解除|不要|不设).{0,12}(截止|期限|限期)|(?:remove|cancel).{0,20}deadline/i.test(context.text)) throw new Error('请明确是否取消截止时间。')
+    if (previous?.deadline && !/(取消|移除|解除|不要|不设).{0,12}(截止|期限|限期)|(?:remove|cancel).{0,20}deadline/i.test(context.text)) throw new Error('请明确是否取消截止时间。')
     delete next.deadline
   } else if (patch.deadline !== undefined) {
     const value = patch.deadline as { kind?: string; value?: unknown; source?: unknown }, original = source(value?.source, context.text)
@@ -53,11 +54,13 @@ export function applyTaskEnding(previous: TaskEnding | undefined, raw: unknown, 
     next.deadline = { at, source: original, acceptedAt: context.acceptedAt, timeZone: context.timeZone }
   }
   if (patch.count === null) {
-    if (!/(取消|移除|解除|不要|不设).{0,12}(次数|期数|上限)|(?:remove|cancel).{0,20}(count|limit)/i.test(context.text)) throw new Error('请明确是否取消成功次数限制。')
+    if (previous?.count && !/(取消|移除|解除|不要|不设).{0,12}(次数|期数|上限)|(?:remove|cancel).{0,20}(count|limit)/i.test(context.text)) throw new Error('请明确是否取消成功次数限制。')
     delete next.count
   } else if (patch.count !== undefined) {
     const value = patch.count as { mode?: string; amount?: number; fromNow?: boolean; source?: unknown }, original = source(value?.source, context.text)
     if (!context.calendar) throw new Error('成功次数用于日历期次；章节、想法数量仍属于内容目标。')
+    if (value.mode === 'delivered' ? !/(发送|送达|发到|发给|send|sent|deliver.{0,20}chat)/i.test(original) : !/(产出|生成|完成.{0,10}(期|次)|produce|generat)/i.test(original))
+      throw new TaskEndingClarification('次数是按成功产出结果，还是按实际发送到聊天计算？本次尚未保存。')
     if (!['produced', 'delivered'].includes(value.mode ?? '') || !Number.isSafeInteger(value.amount) || value.amount! < 1 || value.amount! > 10000 || value.fromNow !== undefined && typeof value.fromNow !== 'boolean') throw new Error('请明确成功产出还是实际送达，以及 1–10000 次的上限。')
     if ((!context.isNew && !previous?.count || previous?.historyUnknown) && !value.fromNow) throw new Error('历史成功次数尚无可靠记录，请明确从现在再做多少次。')
     if (value.fromNow && !/(再|从现在|从本次|from now|another)/i.test(original)) throw new Error('请明确从现在再做多少次，不能自行重置计数起点。')

@@ -2,6 +2,7 @@ import { app, type BrowserWindow } from 'electron'
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
 import Database from 'better-sqlite3'
 import { createCharacter, createChatSession, deleteCharacter, getActiveSession, getConfig, getContactProfile, getSession, getSessions, saveConfig, saveSessionMessages, selectChatSession, flushDatabase, type Message } from '../database'
@@ -23,7 +24,9 @@ export async function runContactLiveSmoke(window: BrowserWindow) {
   const resolved = resolveCharacterConfig(writer, supplied.config)
   if (!resolved.ok) throw new Error('Configured writer model is unavailable')
   const original = getConfig(), originalSession = getActiveSession().id
-  const directory = process.env.CHOUYU_LIVE_ARTIFACTS || 'artifacts/contact-live-matrix'
+  const engine = process.env.CHOUYU_LIVE_ENGINE === 'dsh' ? 'dsh' : 'native'
+  const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true }).trim()
+  const directory = process.env.CHOUYU_LIVE_ARTIFACTS || `artifacts/contact-live-matrix/${engine}`
   mkdirSync(directory, { recursive: true })
   const run = (code: string) => window.webContents.executeJavaScript(code)
   const results: { name: string; passed: boolean; error?: string; turns: unknown[] }[] = []
@@ -33,7 +36,7 @@ export async function runContactLiveSmoke(window: BrowserWindow) {
 
   type Fixture = Awaited<ReturnType<typeof fixture>>
   async function fixture(name: string, tasks = true, emptyPersona = false) {
-    const character = createCharacter({ name: emptyPersona ? '小岚' : '阿笔验收', avatar: '✍️', category: 'other', soulMd: emptyPersona ? '' : resolved.ok ? resolved.config.soulMd : '', model: resolved.ok ? resolved.config.model : '', providerProfileId: DEFAULT_PROFILE_ID })
+    const character = createCharacter({ name: emptyPersona ? '小岚' : '阿笔验收', avatar: '✍️', category: 'other', soulMd: emptyPersona ? '' : resolved.ok ? resolved.config.soulMd : '', model: resolved.ok ? resolved.config.model : '', providerProfileId: DEFAULT_PROFILE_ID, harnessEngine: engine, backgroundHarnessEngine: engine })
     const session = createChatSession(name, character.id).activeSession.id
     await contactAgentsCall(character.id, 'get')
     const store = new ContactTaskStore(join(app.getPath('userData'), 'contact-agents', 'agents.db'))
@@ -86,13 +89,16 @@ export async function runContactLiveSmoke(window: BrowserWindow) {
     const filter = process.env.CHOUYU_LIVE_CASE_FILTER
     if (filter && !new RegExp(filter).test(name)) return
     console.log(`CONTACT_LIVE_START ${name}`)
+    const started = Date.now()
     const f = await fixture(name, tasks, emptyPersona)
     const result = { name, passed: false, error: undefined as string | undefined, turns: f.turns }
     try { await test(f); result.passed = true }
-    catch (error) { result.error = error instanceof Error ? error.message : String(error) }
+    catch (error) { result.error = error instanceof Error && error.name === 'AssertionError' ? 'semantic' : 'execution' }
     finally {
       results.push(result)
-      writeFileSync(join(directory, `${name}.json`), JSON.stringify(result, null, 2))
+      // The IPC scenario does not expose per-router/provider rounds; never invent zero usage or first-pass claims.
+      writeFileSync(join(directory, `${name}.json`), JSON.stringify({ sourceCommit, engine, model: resolved.ok ? resolved.config.model : 'unavailable', scenario: name, passed: result.passed,
+        category: result.error, elapsedMs: Date.now() - started, calls: null, tokens: null, usageComplete: false, firstPass: null }, null, 2))
       console.log(`CONTACT_LIVE_${result.passed ? 'PASS' : 'FAIL'} ${name}${result.error ? ': ' + result.error : ''}`)
       // No production data lives in this process. Remove the synthetic identity to keep below contact limits.
       deleteCharacter(f.character.id)
@@ -209,7 +215,7 @@ export async function runContactLiveSmoke(window: BrowserWindow) {
     })
   } finally {
     selectChatSession(originalSession); saveConfig(original); flushDatabase()
-    writeFileSync(join(directory, 'summary.json'), JSON.stringify({ model: resolved.config.model, passed: results.filter(r => r.passed).length, failed: results.filter(r => !r.passed).length, results: results.map(({ name, passed, error }) => ({ name, passed, error })) }, null, 2))
+    writeFileSync(join(directory, 'summary.json'), JSON.stringify({ sourceCommit, engine, model: resolved.config.model, passed: results.filter(r => r.passed).length, failed: results.filter(r => !r.passed).length, results: results.map(({ name, passed, error }) => ({ name, passed, category: error })) }, null, 2))
   }
   assert.ok(results.length, 'No cases selected')
   assert.equal(results.filter(r => !r.passed).length, 0, 'Live scenarios failed; see saved per-case evidence')

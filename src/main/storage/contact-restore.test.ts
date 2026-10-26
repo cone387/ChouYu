@@ -16,6 +16,13 @@ async function fixture() {
   writeFileSync(join(directory, 'agents.db'), 'damaged original')
   return { directory, group }
 }
+it('treats a newly empty pair as missing when prior snapshots prove existing history', async () => {
+  const { directory } = await fixture()
+  try {
+    writeFileSync(join(directory, 'agents.db'), ''); writeFileSync(join(directory, 'checkpoints.db'), '')
+    expect(inspectContactStorage(directory).kind).toBe('missing')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
 it.each(['prepared', 'preserved:agents.db', 'preserved:checkpoints.db', 'publishing', 'published:agents.db', 'published:checkpoints.db'])('resumes an interrupted paired restore at %s while retaining originals', async fault => {
   const { directory, group } = await fixture()
   let protectedGroup = ''
