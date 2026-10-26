@@ -1,10 +1,10 @@
 {
   "reviewed_at": "2026-10-26",
-  "reviewed_commit": "eb64b16aa859fde6eeb37014504d9029d95a37e1",
+  "reviewed_commit": "9d3557d1b26465da3d6cae1710c995efbedde7d8",
   "sources": {
     "docs/contact-task-spec.md": "bfd4bca7c186ade76ff320cca861d7bd796c9577cde0a0e3691b608a2afced40",
     "docs/task-scheduling.md": "8f25d7a9836d7874272327e5f6177e239c2bec4eaf98430e7c1b22556112a50d",
-    "package.json": "bb0083d8344ab076784af79795ce1946e1ac1ad56d82168b3a11b2dec8ee32a4",
+    "package.json": "b950b222fe9517b89210ceb8800b64fd6a3a5130dae67f02a93bccbe78b4f700",
     "src/main/agent-space/identity-sync.ts": "fbc99afca89aedf317de6bf4542d3615d8feabdc7ffc4dac4b1565f1db25f6c8",
     "src/main/agent-space/recovery-guard.ts": "f4f5f27caa81026de302c9bb81317368891facb3dfef932c2402bb3e95b6e847",
     "src/main/agent-space/service.ts": "b4ffe033ab17db38793b12a29be4b79d67c78d8d519a3f5006f46523549befb0",
