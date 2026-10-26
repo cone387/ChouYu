@@ -48,6 +48,10 @@ export async function runContactReliabilitySmoke(window: BrowserWindow) {
   await run("window.electronAPI.db.setState('workspace-active-page','contacts')")
   window.webContents.send('open-chat-panel')
   await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-card-detail="${owner.id}"]'))`, 15000)
+  // Floating workspaces deliberately preserve their dimensions beyond the
+  // display. Exercise narrow content in the real viewport-filling mode.
+  await run("document.querySelector('[aria-label=\"最大化窗口\"]')?.click()")
+  await waitForRenderer(window, "Boolean(document.querySelector('[data-panel-window=main][data-maximized=true]'))")
   await run(`document.querySelector('[data-contacts-card-detail="${owner.id}"]').click()`)
   await waitForRenderer(window, "Boolean(document.querySelector('[data-contact-runtime=unavailable]'))", 15000)
   await run("Array.from(document.querySelectorAll('[data-contact-runtime] button')).find(b=>b.textContent.includes('恢复备份')).click()")
@@ -92,7 +96,13 @@ export async function runContactReliabilitySmoke(window: BrowserWindow) {
     await run(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
     // Device emulation, ResizeObserver and React updates do not share one frame.
     // Await the actual constrained layout before taking the evidence screenshot.
-    await waitForRenderer(window, `innerWidth === ${width} && (()=>{const f=document.querySelector(${JSON.stringify(selector)}),r=f.getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1&&f.scrollWidth<=f.clientWidth+1})()`)
+    try {
+      await waitForRenderer(window, `innerWidth === ${width} && (()=>{const f=document.querySelector(${JSON.stringify(selector)}),r=f.getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1&&f.scrollWidth<=f.clientWidth+1})()`)
+    } catch (error) {
+      console.error('RECOVERY_LAYOUT_DIAGNOSTIC', JSON.stringify(await run(`(()=>{const f=document.querySelector(${JSON.stringify(selector)}); return {theme:${JSON.stringify(theme)},width:innerWidth,forms:[...document.querySelectorAll(${JSON.stringify(selector)})].map(e=>({rect:e.getBoundingClientRect().toJSON(),scroll:e.scrollWidth,client:e.clientWidth})),ancestors:[f,...(function*(e){while(e=e.parentElement)yield e})(f)].map(e=>({tag:e.tagName,cls:e.className,rect:e.getBoundingClientRect().toJSON(),scrollLeft:e.scrollLeft,scroll:e.scrollWidth,client:e.clientWidth,style:e.getAttribute('style'),display:getComputedStyle(e).display}))}})()`)))
+      writeFileSync(join(artifacts, 'scope-review-failed.png'), await screenshot())
+      throw error
+    }
     writeFileSync(join(artifacts, `scope-review-${theme}-${width}.png`), await screenshot())
     const layout = await run(`(()=>{const f=document.querySelector(${JSON.stringify(selector)}),r=f.getBoundingClientRect();return {left:r.left,right:r.right,viewport:innerWidth,scroll:f.scrollWidth,client:f.clientWidth}})()`)
     assert.ok(layout.left >= -1 && layout.right <= layout.viewport + 1 && layout.scroll <= layout.client + 1, JSON.stringify(layout))

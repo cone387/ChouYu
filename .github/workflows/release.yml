@@ -59,6 +59,9 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run build && npx electron-builder --mac --publish always
 
+      - name: Verify packaged SQLite checkpoint persistence
+        run: node scripts/verify-sqlite-runtime.cjs dist/mac-universal/ChouYu.app/Contents/MacOS/ChouYu dist/mac-universal/ChouYu.app/Contents/Resources/app.asar
+
   build-windows:
     needs: prepare-release
     runs-on: windows-latest
@@ -78,6 +81,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build && npm run build:dsh-runtime && npx electron-builder --win --publish always
+
+      - name: Verify packaged SQLite checkpoint persistence
+        run: node scripts/verify-sqlite-runtime.cjs dist/win-unpacked/ChouYu.exe dist/win-unpacked/resources/app.asar
 
       - name: Verify packaged application and legacy migration
         run: npm run test:smoke:packaged

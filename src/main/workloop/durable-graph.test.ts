@@ -3,6 +3,7 @@ import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import { Annotation, StateGraph, START, END } from '@langchain/langgraph'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { ContactStorageBarrier } from '../agent-space/storage-barrier'
@@ -10,6 +11,20 @@ import { invokeDurableGraph } from './durable-graph'
 import { ContactBackups } from '../storage/contact-backups'
 
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r }); return { promise, resolve } }
+it('shares the app SQLite binding with the checkpoint saver and persists its own connection', async () => {
+  const require = createRequire(import.meta.url)
+  const checkpointRequire = createRequire(require.resolve('@langchain/langgraph-checkpoint-sqlite'))
+  expect(checkpointRequire.resolve('better-sqlite3')).toBe(require.resolve('better-sqlite3'))
+  const saver = SqliteSaver.fromConnString(':memory:')
+  try {
+    const state = Annotation.Root({ value: Annotation<string>() })
+    const graph = new StateGraph(state).addNode('write', () => ({ value: 'persisted' }))
+      .addEdge(START, 'write').addEdge('write', END).compile({ checkpointer: saver })
+    const config = { configurable: { thread_id: 'native-binding' } }
+    await graph.invoke({}, { ...config, durability: 'sync' })
+    expect((await saver.getTuple(config))?.checkpoint.channel_values.value).toBe('persisted')
+  } finally { saver.db.close() }
+})
 it('waits for delayed checkpoint persistence and resumes without replaying a completed model/tool step', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'contact-durable-'))
   const tasks = new Database(join(directory, 'agents.db')), checkpoints = new Database(join(directory, 'checkpoints.db'))
