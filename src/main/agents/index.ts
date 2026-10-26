@@ -10,8 +10,7 @@ import type { HarnessInput, HarnessEvent } from '../harness/contracts'
 import type { HarnessEngine } from '../../shared/harness'
 import { AgentWorkerRPC } from '../agent-space/worker-rpc'
 import { ContactRuntimeState, appendRuntimeDiagnostic, runtimeDiagnostic } from '../agent-space/runtime-status'
-import { configureContactSkill, contactSkillLibrary, getContactSkills, findContactSkills, installContactSkill, contactSkillRunner } from '../skills'
-import { SKILL_TOOLS } from '../skills/tools'
+import { configureContactSkill, contactSkillLibrary, findContactSkills, installContactSkill, contactSkillRunner } from '../skills'
 import { randomUUID } from 'node:crypto'
 import { registerPresentationProtocol } from './presentation-protocol'
 import { deliveryHtmlExport } from '../../shared/delivery-presentation'
@@ -20,10 +19,14 @@ import { app, BrowserWindow, dialog, utilityProcess, type UtilityProcess } from 
 import { writeFile } from 'node:fs/promises'
 import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
 import { join } from 'node:path'
-import { getCharacter, getConfig, getSession, getSessions, listCharacters, getState, setState, setContactRecoveryState, getContactProfile, updateContactProfile, contactSearchCredential, saveContactSearchCredential } from '../database'
+import { getCharacter, getConfig, getSession, listCharacters, getState, setState, setContactRecoveryState, getContactProfile, updateContactProfile, contactSearchCredential, saveContactSearchCredential } from '../database'
 import { ContactRecoveryGuard } from '../agent-space/recovery-guard'
 import { ContactRestore, inspectContactStorage } from '../storage/contact-restore'
 import { ContactBackups } from '../storage/contact-backups'
+import { ContactIdentitySync } from '../agent-space/identity-sync'
+import { onContactIdentityChanged } from '../database'
+import { contactIdentitySource } from '../agent-space/identity-source'
+import { onSkillLibraryChanged } from '../skills/library'
 import type { AgentNotice } from '../../shared/agents'
 import { createContactTools } from './tools'
 import { createContactProfileTools } from './profile-tools'
@@ -31,16 +34,15 @@ import { createOutputTools } from './output-tools'
 import { createDeliveryFeedbackTools } from './delivery-feedback'
 import { notifyJournalConfig } from '../journal'
 import { createMemoryTools } from './memory-tools'
-import { createMaterialTools, MATERIAL_TOOL_NAMES } from './material-tools'
+import { createMaterialTools } from './material-tools'
 import { loadMaterialImport } from './material-import'
 import { readSource } from './sources'
 import { readFile, stat } from 'node:fs/promises'
-import { contactConversation } from './conversation'
 import { getRegisteredTool, registerTool, prepareRegisteredToolAsync } from '../tools/registry'
 import { executeContactAction } from './action-executor'
 import { createInteractionTools } from './interaction-tools'
 import { createContactSupportTools } from './support-tools'
-import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, resolveCharacterConfig, resolveCharacterSoul } from '../../shared/characters'
+import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID } from '../../shared/characters'
 import type { ContactIdentity } from '../agent-space/workloop-host'
 import { setupIdeaLab } from './idea-lab'
 import { validateMemoryInput } from '../../shared/contact-memories'
@@ -55,6 +57,12 @@ const contactDirectory = () => join(app.getPath('userData'), 'contact-agents')
 const contactRestore = () => new ContactRestore(contactDirectory(),
   (group, restoreId) => recoveryGuard.begin(group, restoreId, listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id)),
   undefined, (group, restoreId) => { const current = recoveryGuard.current(); if (current?.restoreId !== restoreId || current.group !== group) throw new Error('应用库恢复保护不匹配，未打开联系人数据。') })
+const identitySource = contactIdentitySource(id => recoveryGuard.identity(id))
+const identitySync = new ContactIdentitySync(identitySource.revision, identitySource.read)
+const identityRequests = new Map<string, Promise<void>>()
+let rosterSync: Promise<void> | undefined
+let stopIdentityChanges: (() => void) | undefined
+let stopSkillChanges: (() => void) | undefined
 const generations = new WeakMap<object, number>()
 const runtimeState = new ContactRuntimeState(state => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -119,7 +127,7 @@ function rpc<M extends WorkerCommandName>(method: M, id = '', args: WorkerArgs<M
 async function dispatchAgentCommand(method: unknown, owner: unknown, values: unknown = []): Promise<unknown> {
   if (typeof method !== 'string' || typeof owner !== 'string' || !Array.isArray(values)) throw new Error('联系人操作参数无效。')
   const id = owner, args = values
-  if (!['init', 'sync', 'syncContact', 'close'].includes(method)) validateContactCommand(method, id, args)
+  if (!['init', 'sync', 'syncChanged', 'syncContact', 'close'].includes(method)) validateContactCommand(method, id, args)
   if (!id || ['syncContact', 'detachModule', 'remove'].includes(method)) {
     if (!child) throw new Error('Agent 执行进程不可用，请稍后重试。')
     return requests.dispatchUnknown(child, method, id, args)
@@ -133,22 +141,35 @@ export function runContactChat(input: HarnessInput, output: (event: HarnessEvent
 }
 export function cancelContactChat(requestId: string) { return contactSpace.cancelChat(requestId) }
 export function closeContactSpace() { return contactSpace.close() }
+function rosterIds() { return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id) }
 function identities(onlyId?: string): ContactIdentity[] {
-  const config = getConfig(), sessions = getSessions()
-  return listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID && (!onlyId || c.id === onlyId)).map(character => {
-    const resolved = resolveCharacterConfig(character, config)
-    let skillsRevision: number | undefined
-    try { skillsRevision = contactSkillLibrary().list(character.id).revision } catch { /* The skill snapshot carries its own error; keep unrelated contacts readable. */ }
-    const conversation = contactConversation(sessions.filter(s => s.characterId === character.id).slice(0, 2).flatMap(s => getSession(s.id)?.messages ?? []))
-    return { backgroundHarnessEngine: character.backgroundHarnessEngine ?? 'native', configurationVersions: { profile: getContactProfile(character.id).revision, skills: skillsRevision, credential: contactSearchCredential(character.id).revision }, sessionIds: sessions.filter(s => s.characterId === character.id).map(s => s.id), skillToolsEnabled: config.aiToolsEnabled, disabledSkillTools: [...SKILL_TOOLS.map(tool => tool.name), ...MATERIAL_TOOL_NAMES].filter(name => getState(`tool:${name}:enabled`) === 'false'), skills: getContactSkills(character.id), visibleNoticeIds: sessions.filter(s => s.characterId === character.id).flatMap(s => (getSession(s.id)?.messages ?? []).filter(m => m.agentNotice && m.id.startsWith('agent:')).map(m => m.id.slice(6))), id: character.id, name: character.name, soul: resolveCharacterSoul(character, config), conversation, searchKey: getState(`agent-search:${character.id}:api_key`) || '', config: resolved.ok ? { provider: resolved.config.provider, baseUrl: resolved.config.baseUrl, apiKey: resolved.config.apiKey, model: resolved.config.model, thinkingDisabledModels: config.thinkingDisabledModels } : null }
-  }).map(identity => ({ ...identity, recovery: recoveryGuard.identity(identity.id) }))
+  return rosterIds().filter(id => !onlyId || id === onlyId).map(id => identitySync.read(id))
 }
-async function syncContact(id: string) {
-  const identity = identities(id)[0]
-  if (!identity) throw new Error('联系人不存在。')
-  const generation = runtimeState.read().generation
-  try { await rpc('syncContact', id, [contactSpace.workerIdentity(identity)]) }
-  catch (error) { runtimeState.update(generation, { issue: { kind: 'sync', at: Date.now() } }); throw error }
+async function syncContact(id: string): Promise<void> {
+  if (!getCharacter(id)) throw new Error('???????')
+  const pending = identityRequests.get(id)
+  if (pending) { await pending; return syncContact(id) }
+  const capture = identitySync.capture([id], false)
+  if (!capture.items.length) return
+  const request = (async () => {
+    try {
+      await rpc('syncContact', id, [contactSpace.workerIdentity(capture.items[0].identity)])
+      identitySync.confirm(capture)
+    } catch (error) { runtimeState.update(capture.generation, { issue: { kind: 'sync', at: Date.now() } }); throw error }
+  })().finally(() => { if (identityRequests.get(id) === request) identityRequests.delete(id) })
+  identityRequests.set(id, request)
+  await request
+}
+async function syncRoster(): Promise<void> {
+  if (rosterSync) return rosterSync
+  const capture = identitySync.capture(rosterIds())
+  if (!capture.items.length && !capture.rosterChanged) return
+  const request = (async () => {
+    await rpc('syncChanged', '', [capture.roster!, capture.items.map(item => contactSpace.workerIdentity(item.identity))])
+    identitySync.confirm(capture)
+  })().finally(() => { if (rosterSync === request) rosterSync = undefined })
+  rosterSync = request
+  return request
 }
 async function refreshRuntimeMetrics() {
   const generation = runtimeState.read().generation
@@ -163,6 +184,7 @@ async function ensure() {
   if (starting) return starting
   if (child) return
   const generation = runtimeState.start()
+  identitySync.generation(generation); identityRequests.clear(); rosterSync = undefined
   try {
     contactRestore().resume()
     const health = inspectContactStorage(contactDirectory())
@@ -218,8 +240,10 @@ async function ensure() {
         ...resolveDshRuntimePaths(app.isPackaged ? globalThis.process.resourcesPath : app.getAppPath(), app.isPackaged),
         home: join(app.getPath('userData'), 'contact-agents', 'harness')
       }])
-      const current = identities().map(identity => contactSpace.workerIdentity(identity))
+      const captured = identitySync.capture(rosterIds())
+      const current = captured.items.map(item => contactSpace.workerIdentity(item.identity))
       await rpc('sync', '', [current])
+      identitySync.confirm(captured)
       runtimeState.update(generation, { phase: 'ready', readyAt: Date.now(), syncedAt: Date.now() })
       // In-flight UI reads may have been rejected during the exit. A restored
       // waiting run emits no new graph event, so explicitly invalidate the UI.
@@ -334,6 +358,14 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  stopSkillChanges = onSkillLibraryChanged(root => {
+    if (!child || starting || closing || root !== contactSkillLibrary().root) return
+    void syncRoster().catch(() => {})
+  })
+  stopIdentityChanges = onContactIdentityChanged(id => {
+    if (!child || starting || closing) return
+    void (getCharacter(id) ? syncContact(id) : syncRoster()).catch(() => {})
+  })
   contactHandle('agents:runtime-status', () => runtimeState.read())
   contactHandle('agents:restore-runtime', async (_event, groupId: string) => {
     if (closing || child || starting) throw new Error('请等待联系人进程停止后再恢复。')
@@ -489,15 +521,17 @@ export function initializeAgents() {
   syncTimer = setInterval(() => {
     if (!child || starting || closing) return
     const generation = runtimeState.read().generation
-    void rpc('sync', '', [identities().map(identity => contactSpace.workerIdentity(identity))]).then(() => {
+    void syncRoster().then(() => {
       runtimeState.update(generation, { syncedAt: Date.now() })
-      for (const identity of identities()) void deliver(identity.id)
+      for (const id of rosterIds()) void deliver(id)
       void refreshRuntimeMetrics()
     }).catch(() => { runtimeState.update(generation, { issue: { kind: 'sync', at: Date.now() } }) })
   }, 30000)
 }
 export async function closeAgents() {
   closing = true; clearInterval(syncTimer)
+  stopIdentityChanges?.(); stopIdentityChanges = undefined
+  stopSkillChanges?.(); stopSkillChanges = undefined
   runtimeState.update(runtimeState.read().generation, { phase: 'closing' })
   try { await starting; await contactSpace.close(); if (child) await rpc('close') } catch { /* killed processes recover from their checkpoints */ }
   child?.kill(); child = undefined

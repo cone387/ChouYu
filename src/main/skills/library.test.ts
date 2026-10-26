@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +13,17 @@ function fixture(text = '先给结论，再给依据。') {
   return { root, source, library: new SkillLibrary(join(root, 'data')) }
 }
 describe('contact skill library', () => {
+  it('detects permission and file changes without reading skill bodies for an unchanged identity', () => {
+    const { source, library } = fixture()
+    const skill = library.publish('careful-review', source)
+    library.configure('alice', skill.id, 'enable', 0)
+    const before = library.identityRevision('alice'), inspect = vi.spyOn(library, 'detail')
+    expect(library.identityRevision('alice')).toBe(before)
+    expect(inspect).not.toHaveBeenCalled()
+    library.configure('alice', skill.id, 'disable', 1)
+    expect(library.identityRevision('alice')).not.toBe(before)
+    expect(library.revision('alice')).toBe(2)
+  })
   it('persists independent contact assignments and rejects stale writes', () => {
     const { root, source, library } = fixture()
     const skill = library.publish('careful-review', source)

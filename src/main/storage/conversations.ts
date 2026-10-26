@@ -4,6 +4,10 @@ import { ApplicationMetadataRepository } from './application-metadata'
 
 export class ConversationRepository {
   constructor(private db: Database.Database, private metadata: ApplicationMetadataRepository) {}
+  noticeIds(owner: string): string[] {
+    return (this.db.prepare(`SELECT m.id FROM messages m JOIN sessions s ON s.id=m.session_id
+      WHERE json_extract(s.value,'$.characterId')=? AND m.id LIKE 'agent:%' AND json_extract(m.value,'$.agentNotice') IS NOT NULL`).all(owner) as { id: string }[]).map(row => row.id.slice(6))
+  }
   readSession(id: string): ChatSession | null {
     const row = this.db.prepare('SELECT value FROM sessions WHERE id=?').get(id) as { value: string } | undefined
     if (!row) return null

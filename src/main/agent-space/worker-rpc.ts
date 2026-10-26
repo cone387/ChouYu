@@ -5,6 +5,7 @@ import type { ContactIdentity } from '../contact-agent/contracts'
 export type WorkerCommandMap = ContactCommandMap & {
   init: { args: [directory: string, runtime?: import('../harness/dsh/runtime').DshRuntimeOptions]; result: void }
   sync: { args: [identities: ContactIdentity[]]; result: void }
+  syncChanged: { args: [owners: string[], identities: ContactIdentity[]]; result: void }
   syncContact: { args: [identity: ContactIdentity]; result: void }
   close: { args: []; result: void }
 }

@@ -7,6 +7,10 @@ import { writeStoreFile } from '../store-file'
 import { skillCompatibility, capabilityInstruction } from './compatibility'
 
 const sha = (content: string | Buffer) => createHash('sha256').update(content).digest('hex')
+const changeListeners = new Set<(root: string) => void>()
+export function onSkillLibraryChanged(listener: (root: string) => void): () => void {
+  changeListeners.add(listener); return () => { changeListeners.delete(listener) }
+}
 type StoredSkill = InstalledSkill & { directory: string }
 type State = { version: 1; skills: StoredSkill[]; contacts: Record<string, { revision: number; skills: Record<string, boolean>; scripts?: Record<string, boolean> }> }
 function parseState(raw: string): State {
@@ -84,7 +88,21 @@ export class SkillLibrary {
     if (!existsSync(this.filename)) return { version: 1, skills: [], contacts: {} }
     try { return parseState(readFileSync(this.filename, 'utf8')) } catch { throw new Error('技能库无法读取，原文件已保留。请检查数据目录或恢复备份。') }
   }
-  private write(state: State) { writeStoreFile(this.filename, JSON.stringify(state), parseState) }
+  private write(state: State) {
+    writeStoreFile(this.filename, JSON.stringify(state), parseState)
+    for (const listener of changeListeners) { try { listener(this.root) } catch { /* Keep the successful library commit. */ } }
+  }
+  revision(characterId: string) { return this.read().contacts[characterId]?.revision ?? 0 }
+  identityRevision(characterId: string): string {
+    const state = this.read(), config = state.contacts[characterId]
+    const assigned = state.skills.filter(skill => config?.skills[skill.id]).map(skill => ({
+      id: skill.id, digest: skill.digest, files: skill.files.map(file => {
+        const value = lstatSync(join(this.directory(skill), file))
+        return [file, value.size, value.mtimeMs, value.ctimeMs]
+      })
+    }))
+    return sha(JSON.stringify([config, assigned]))
+  }
   private directory(skill: StoredSkill) {
     const directory = resolve(this.packages, skill.directory)
     inside(this.packages, directory)

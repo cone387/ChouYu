@@ -143,7 +143,17 @@ export class WorkLoopHost {
     if (this.closed || this.wakeTimer) return
     this.wakeTimer = setTimeout(() => { this.wakeTimer = undefined; this.tick() }, 0)
   }
-  async sync(identities: ContactIdentity[], enqueue: (id: string, operation: () => Promise<void>) => Promise<void> = (_id, operation) => operation(), queuedOwners: string[] = []) {
+  async syncChanged(owners: string[], changed: ContactIdentity[], enqueue?: (id: string, operation: () => Promise<void>) => Promise<void>, queuedOwners: string[] = []) {
+    if (new Set(owners).size !== owners.length || changed.some(identity => !owners.includes(identity.id)) || new Set(changed.map(identity => identity.id)).size !== changed.length) throw new Error('联系人增量归属无效。')
+    const updates = new Map(changed.map(identity => [identity.id, identity]))
+    const identities = owners.map(owner => {
+      const value = updates.get(owner) ?? this.contacts.get(owner)?.identity
+      if (!value) throw new Error('新联系人缺少身份快照。')
+      return value
+    })
+    return this.sync(identities, enqueue, queuedOwners, new Set(updates.keys()))
+  }
+  async sync(identities: ContactIdentity[], enqueue: (id: string, operation: () => Promise<void>) => Promise<void> = (_id, operation) => operation(), queuedOwners: string[] = [], changed?: ReadonlySet<string>) {
     this.assertOpen()
     if (identities.some(identity => !identity.id) || new Set(identities.map(identity => identity.id)).size !== identities.length) throw new Error('联系人身份重复或无效。')
     const liveIds = new Set(identities.map(identity => identity.id))
@@ -152,7 +162,7 @@ export class WorkLoopHost {
     const knownIds = new Set([...this.store.profiles().map(profile => profile.character_id), ...queuedOwners])
     const removed = [...knownIds].filter(id => !liveIds.has(id))
     await Promise.all([
-      ...identities.map(identity => enqueue(identity.id, () => this.syncContact(identity))),
+      ...identities.filter(identity => !changed || changed.has(identity.id)).map(identity => enqueue(identity.id, () => this.syncContact(identity))),
       ...removed.map(id => enqueue(id, () => this.remove(id)))
     ])
     await this.recoverCleanup()

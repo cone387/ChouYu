@@ -16,7 +16,7 @@ import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/c
 import { AppConfig, DEFAULT_APP_CONFIG, DEFAULT_PROFILE_ID, getProviderProfiles, normalizeConfig } from '../shared/config'
 import {
   ASSISTANT_CHARACTER_ID, Character, CharacterStats, DEFAULT_CHARACTER_ID, MAX_CHARACTER_COUNT, PRESET_CHARACTERS,
-  isAssistantCharacter, normalizeCharacters, sanitizeCharacterDraft
+  isAssistantCharacter, normalizeCharacters, sanitizeCharacterDraft, resolveCharacterConfig, resolveCharacterSoul
 } from '../shared/characters'
 import {
   DEFAULT_SESSION_TITLE,
@@ -71,6 +71,41 @@ function sessionChanged(session: ChatSession): boolean {
 }
 let storageStatus: StorageStatus = { error: null, notice: null, revision: 0 }
 const storageEvents = new EventEmitter()
+const identityListeners = new Set<(owner: string) => void>()
+const identityPublished = new Map<string, string>()
+const messageArrays = new WeakMap<Message[], number>()
+let messageArraySequence = 0
+let toolPolicyRevision = 0
+export function onContactIdentityChanged(listener: (owner: string) => void): () => void {
+  identityListeners.add(listener); return () => { identityListeners.delete(listener) }
+}
+/** No message body traversal: edits replace the message array; appends change its length. */
+export function getContactIdentityRevision(owner: string): string {
+  const character = store.characters.find(value => value.id === owner)
+  if (!character) return 'missing'
+  const sessions = store.sessions.filter(session => session.characterId === owner).map(session => {
+    if (!messageArrays.has(session.messages)) messageArrays.set(session.messages, ++messageArraySequence)
+    return [session.id, session.updatedAt, messageArrays.get(session.messages), session.messages.length]
+  })
+  return JSON.stringify([character, contactProfileSnapshot(character, store.config).revision, resolveCharacterConfig(character, store.config), resolveCharacterSoul(character, store.config),
+    store.config.aiToolsEnabled, store.config.thinkingDisabledModels, sessions, toolPolicyRevision,
+    store.state[`agent-search:${owner}:api_key`], store.state[`agent-search:${owner}:revision`]])
+}
+function publishIdentityChanges() {
+  const owners = new Set([...identityPublished.keys(), ...store.characters.map(character => character.id)])
+  for (const owner of owners) {
+    const revision = getContactIdentityRevision(owner)
+    if (identityPublished.get(owner) === revision) continue
+    identityPublished.set(owner, revision)
+    for (const listener of identityListeners) { try { listener(owner) } catch { /* A committed save cannot be undone by an observer. */ } }
+  }
+}
+export function getContactIdentityConversation(owner: string) {
+  const sessions = store.sessions.filter(session => session.characterId === owner).sort((a, b) => b.updatedAt - a.updatedAt)
+  return { sessionIds: sessions.map(session => session.id),
+    messages: sessions.slice(0, 2).flatMap(session => session.messages.map(message => ({ ...message }))),
+    visibleNoticeIds: application?.conversations.noticeIds(owner) ?? [] }
+}
 
 export function getStorageStatus(): StorageStatus { return { ...storageStatus } }
 
@@ -409,6 +444,7 @@ function persist(throwOnError = true): boolean {
       backupTimer.unref()
     }
     updateStorageStatus({ error: null })
+    publishIdentityChanges()
     return true
   } catch {
     const message = writesBlocked
@@ -878,6 +914,7 @@ export function getState(key: string): string | null {
 }
 
 export function setState(key: string, value: string): void {
+  if (key.startsWith('tool:') && key.endsWith(':enabled') && store.state[key] !== value) toolPolicyRevision++
   store.state[key] = value
   persist()
 }

@@ -39,6 +39,17 @@ it('observes persisted pending notices and action cards without acknowledging th
   expect(result.metrics).toMatchObject({ pendingDeliveries: 2, oldestPendingAt: 100, activeRuns: 0, capacity: 2 })
   expect(space.store.db.prepare("SELECT state FROM notices WHERE id='pending'").get()).toEqual({ state: 'pending' })
 })
+it('applies only changed identities while reconciling removed owners', async () => {
+  const { space } = await fixture(2)
+  const sync = vi.spyOn(space, 'syncContact')
+  await space.syncChanged(['alice', 'bob'], [])
+  expect(sync).not.toHaveBeenCalled()
+  await space.syncChanged(['alice', 'bob'], [{ ...identities[0], conversation: 'new message' }])
+  expect(sync).toHaveBeenCalledTimes(1)
+  await space.syncChanged(['bob'], [])
+  expect(space.store.profile('alice')).toBeUndefined()
+  expect(space.store.profile('bob')).toBeDefined()
+})
 async function fixture(capacity: number) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-space-'))
   const pending: { owner: string; signal: AbortSignal; resolve: (text: string) => void }[] = []

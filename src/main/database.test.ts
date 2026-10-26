@@ -28,8 +28,32 @@ import { AttachmentStore } from './attachment-store'
 import Database from 'better-sqlite3'
 import { openApplicationDatabase } from './storage/application-database'
 import { readApplicationSnapshot } from './storage/legacy-migration'
+import { getContactIdentityRevision, getContactIdentityConversation, onContactIdentityChanged } from './database'
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aP1kAAAAASUVORK5CYII='
+it('invalidates only the changed identity for message edits and default-model followers', () => {
+  saveConfig({ baseUrl: 'https://example.com', apiKey: 'identity-test-key', model: 'old-default-model' })
+  const alice = createCharacter({ name: 'Alice', providerProfileId: 'default', model: 'fixed-model', soulMd: '' })
+  const beforeAlice = getContactIdentityRevision(alice.id), beforeDefault = getContactIdentityRevision(DEFAULT_CHARACTER_ID)
+  saveConfig({ model: 'new-default-model' })
+  expect(getContactIdentityRevision(alice.id)).toBe(beforeAlice)
+  expect(getContactIdentityRevision(DEFAULT_CHARACTER_ID)).not.toBe(beforeDefault)
+  const changed = vi.fn(), off = onContactIdentityChanged(changed)
+  try {
+    const session = getActiveSession()
+    const before = getContactIdentityRevision(session.characterId!)
+    saveSessionMessages(session.id, [message('edit', 'before')]); flushDatabase()
+    expect(getContactIdentityRevision(session.characterId!)).not.toBe(before)
+    const edited = getContactIdentityRevision(session.characterId!)
+    saveSessionMessages(session.id, [message('edit', 'after!')]); flushDatabase()
+    expect(getContactIdentityRevision(session.characterId!)).not.toBe(edited)
+    expect(changed.mock.calls.every(([owner]) => owner === session.characterId)).toBe(true)
+    expect(getContactIdentityConversation(session.characterId!).messages[0].content).toBe('after!')
+    const policy = getContactIdentityRevision(alice.id)
+    setState('tool:read_contact_material:enabled', 'false')
+    expect(getContactIdentityRevision(alice.id)).not.toBe(policy)
+  } finally { off() }
+})
 const message = (id: string, content = id) => ({ id, role: 'user' as const, content, timestamp: 1 })
 const storePath = () => path.join(environment.directory, 'chouyu-data.json')
 const sqlitePath = () => path.join(environment.directory, 'chouyu-application.db')
