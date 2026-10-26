@@ -166,6 +166,6 @@ describe('contact task presentation', () => {
     ] as never)
     expect(items[0].summary).toContain('08:30')
     expect(items[0].summary).toContain('20:00')
-    expect(items[1].summary).toBe('已完成')
+    expect(items[1].summary).toBe('本次安排已执行')
   })
 })

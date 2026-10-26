@@ -1,4 +1,5 @@
 export interface ContactTaskEdit {
+  endingRequest?: import('./task-ending').TaskEndingRequest
   separateEvaluations?: boolean
   goal?: string
   constraints?: string

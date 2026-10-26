@@ -2,11 +2,14 @@ import { agentUsesPlanner, TOPIC_STATUS, type AgentOverview, type AgentTopic } f
 import { withinWorkHours } from './work-settings'
 import { calendarScheduleLabel } from './calendar-schedule'
 import { taskRecovery, type TaskRecoveryInfo } from './task-recovery'
+import { endingState } from './task-ending'
 
 export interface TaskState { code: string; label: string; description: string; recovery?: TaskRecoveryInfo }
 /** Shared projection of lifecycle, actual round and scheduling; never infer completion from a round. */
 function projectTaskState(data: AgentOverview, topic: AgentTopic, now = Date.now()): TaskState {
   const state = (code: string, label: string, description: string): TaskState => ({ code, label, description })
+  const ending = endingState(topic.ending, now)
+  if (ending.stopped) return state(`ending-${ending.reason}`, ending.label!, `已产出 ${ending.produced} 期，已送达 ${ending.delivered} 期。${topic.status === 'paused' ? '原暂停记录保留。' : ''}已有成果保留；停止后续调度不表示目标已达成或成果已验收。`)
   if (['paused', 'completed', 'abandoned'].includes(topic.status)) return state(topic.status, TOPIC_STATUS[topic.status], topic.reason || '已有成果保留，不自动继续。')
   const run = data.runs.find(r => r.topicId === topic.id)
   const status = run?.status ?? data.topicMetrics?.[topic.id]?.latestRun?.status

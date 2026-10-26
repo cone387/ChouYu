@@ -86,6 +86,7 @@ export const TOPIC_STATUS = { planned: '待开始', researching: '推进中', ne
 export type AgentTopicStatus = keyof typeof TOPIC_STATUS
 export interface AgentTopicInput { title: string; goal: string; constraints: string }
 export interface AgentTopic extends AgentTopicInput {
+  ending?: import('./task-ending').TaskEnding
   calendar?: import('./calendar-schedule').CalendarSchedule
   /** Delivery grouping only; does not limit research/read batches. */
   separateEvaluations?: boolean

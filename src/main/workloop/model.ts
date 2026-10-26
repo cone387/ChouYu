@@ -37,6 +37,7 @@ export function createWorkModel(context: {
       const beforeRound = async (round: number, serializedInput: string) => {
         signal.throwIfAborted()
         store.recovery.assertRun(run.character_id, run.topic_id, run.id)
+        store.endings.assertRun(run.id)
         metadata = { model: identity.config!.model }; output = ''
         if (round > 0) store.charge(run.id)
         callId = store.latestCallId(run.id)
@@ -52,6 +53,7 @@ export function createWorkModel(context: {
           recoveryRequestId = requestId
         }
         metadata = { model: identity.config!.model }; output = ''
+        store.endings.assertRun(run.id)
         return reservation.maxOutputTokens
       }
       const afterRound = async () => {
@@ -82,6 +84,7 @@ export function createWorkModel(context: {
       const tools = options?.tools !== false && identity.skillToolsEnabled ? { definitions: [...skillRuntime.definitions, ...materialTools], execute: withMaterialReferenceRepair(async (call: import('../../shared/tools').AIToolCall) => {
         signal.throwIfAborted(); store.assertLive(run.id)
         store.recovery.assertRun(run.character_id, run.topic_id, run.id)
+        store.endings.assertRun(run.id)
         const material = materialTools.find(t => t.name === call.name)
         if (!material) return skillRuntime.execute(call)
         const result = await material.execute({ ...JSON.parse(call.arguments), topicId: run.topic_id || undefined }, {} as ToolExecutionContext)

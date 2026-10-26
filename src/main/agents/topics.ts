@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
+import { applyTaskEnding, type TaskEndingRequest } from '../../shared/task-ending'
 import { containsSecret } from '../../shared/memory'
 import { validateTaskResourceBudget } from '../../shared/agent-resources'
 import { validateTopicInput, validateTopicProgress, type AgentTopic, type AgentTopicChange, type AgentTopicDetail, type AgentTopicProgress, type AgentTopicStatus } from '../../shared/agents'
@@ -47,6 +48,13 @@ export class AgentTopics {
     const before = this.check(characterId, id, revision)
     const after = { ...before, separateEvaluations, revision: before.revision + 1, updatedAt: Date.now(), reason: '用户调整评审交付方式。' }
     this.record(before, after, 'edited', after.reason)
+    return after
+  }
+  ending(characterId: string, id: string, revision: number, request: TaskEndingRequest, isNew = false) {
+    const before = this.check(characterId, id, revision)
+    const ending = applyTaskEnding(before.ending, request?.patch, { ...request, isNew, calendar: Boolean(before.calendar) })
+    const after = { ...before, ending, revision: before.revision + 1, updatedAt: Date.now() }
+    this.record(before, after, 'ending', '用户修改任务结束条件。')
     return after
   }
   calendar(characterId: string, id: string, revision: number, calendar: import('../../shared/calendar-schedule').CalendarSchedule) {

@@ -1,3 +1,4 @@
+import { assertTaskEnding, type TaskEndingRequest } from '../../../shared/task-ending'
 import { providerRecoveryDelay } from '../../../shared/contact-failure';
 import { ContactCalendars } from '../../agents/calendar';
 import { validateRoutine } from '../../../shared/assistant-routines';
@@ -30,7 +31,7 @@ interface Ports {
   heartbeatRows: Map<string, { id: number; topicId: string; at: number; }>
   profile: ContactStoreOperations['profile']
   tokens: Pick<AgentTokenBudget, "usage">
-  topics: Pick<AgentTopics, "get" | "list" | "create" | "status" | "tokenBudget" | "calendar" | "check" | "plan" | "edit" | "evaluationDelivery">
+  topics: Pick<AgentTopics, "ending" | "get" | "list" | "create" | "status" | "tokenBudget" | "calendar" | "check" | "plan" | "edit" | "evaluationDelivery">
   scheduled: ContactStoreOperations['scheduled']
   research: ContactStoreOperations['research']
   overview: ContactStoreOperations['overview']
@@ -201,7 +202,7 @@ export class ContactMutations {
   }
   forget(id: string, memoryId: string): void { const memory = this.ports.memoryLibrary.get(id, memoryId); this.ports.memoryLibrary.forget(id, memoryId, memory.revision) }
   event(runId: string, kind: string, text: string, now = Date.now()): void { this.db.prepare('INSERT INTO events(run_id,kind,text,at) VALUES(?,?,?,?)').run(runId, kind, text.slice(0, 6000), now) }
-  assignTopic(id: string, description: unknown, conversation: string, requestLog?: string, tokenLimit?: number): import("../../../shared/agents").AgentTopic {
+  assignTopic(id: string, description: unknown, conversation: string, requestLog?: string, tokenLimit?: number, endingRequest?: TaskEndingRequest): import("../../../shared/agents").AgentTopic {
     if (typeof description !== 'string' || !description.trim() || description.length > 2000 || containsSecret(description)) throw new Error('请描述需要联系人完成的任务（1–2000 字），不要包含密钥。')
     return this.db.transaction(() => {
       this.ensure(id)
@@ -217,6 +218,7 @@ export class ContactMutations {
         this.db.prepare('INSERT OR IGNORE INTO task_schedule(topic_id,next_at) VALUES(?,?)').run(profile.focus_topic_id, profile.next_at)
       }
       let topic = this.ports.topics.create(id, { title: description.trim().slice(0, 80), goal: description.trim(), constraints: '' }, '用户交付任务，等待联系人整理方向。', Date.now(), requestLog)
+      if (endingRequest !== undefined) topic = this.ports.topics.ending(id, topic.id, topic.revision, endingRequest, true)
       if (tokenLimit !== undefined) topic = this.ports.topics.tokenBudget(id, topic.id, topic.revision, tokenLimit)
       this.db.prepare('INSERT INTO task_schedule(topic_id,conversation,pending) VALUES(?,?,1)').run(topic.id, conversation.slice(-4000))
       if (!profile.focus_topic_id || !hasCurrentWork && !this.ports.scheduled(id).some(task => task.topic_id === profile.focus_topic_id)) this.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(topic.id, id)
@@ -234,6 +236,7 @@ export class ContactMutations {
         .run(JSON.stringify({ ...settings, goal: '根据用户交付的任务独立工作。', enabled: true }), id)
       let topic = this.ports.topics.create(id, { title: input.title, goal: input.instruction, constraints: '' }, '用户交付定时任务。', Date.now(), requestLog)
       topic = this.ports.topics.calendar(id, topic.id, topic.revision, rule)
+      if (input.endingRequest !== undefined) topic = this.ports.topics.ending(id, topic.id, topic.revision, input.endingRequest, true)
       this.ports.calendars.save(topic.id, rule, Date.now())
       if (!input.enabled) topic = this.ports.topics.status(id, topic.id, topic.revision, 'paused', '用户暂停定时任务。')
       this.db.prepare('INSERT INTO task_schedule(topic_id,conversation,pending,next_at) VALUES(?,?,1,?)').run(topic.id, conversation.slice(-4000), this.ports.calendars.get(topic.id)!.next_at)
@@ -250,6 +253,7 @@ export class ContactMutations {
         requestLog: appendTaskRequestLog(previous.requestLog, `用户：${reason}`) })
       let topic = this.ports.topics.get(id, topicId)
       topic = this.ports.topics.calendar(id, topicId, topic.revision, rule)
+      if (input.endingRequest !== undefined) topic = this.ports.topics.ending(id, topicId, topic.revision, input.endingRequest)
       this.ports.calendars.save(topicId, rule, Date.now())
       // Editing an ended task never revives it. Explicit continue remains a separate operation.
       if (!input.enabled && canResearch(topic.status)) this.ports.topics.status(id, topicId, topic.revision, 'paused', '用户暂停定时任务。')
@@ -321,6 +325,7 @@ export class ContactMutations {
     if (run.status !== 'waiting') throw new Error('这项工作已不在等待回复。')
     if (typeof text !== 'string' || !text.trim() || text.length > 2000 || containsSecret(text)) throw new Error('请填写 1–2000 字的回复，不要包含密钥。')
     this.assertLive(id)
+    if (run.topicId) assertTaskEnding(this.ports.topics.get(characterId, run.topicId).ending)
     const input = JSON.parse(this.ports.getRun(id)!.input)
     if (answers !== undefined) {
       const fields = input.questionInputs as import('../../../shared/agent-delivery').TaskInputField[] | undefined
@@ -476,12 +481,13 @@ export class ContactMutations {
   editTaskFromChat(id: string, topicId: string, revision: number, patch: import('../../../shared/contact-task-edit').ContactTaskEdit, reason: string, archivedLog?: string): AgentOverview {
     return this.db.transaction(() => {
       const before = this.ports.topics.check(id, topicId, revision)
-      if (!patch || !Object.keys(patch).length || Object.keys(patch).some(k => !['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations', 'clearTokenLimit'].includes(k))) throw new Error('任务修改字段无效。')
+      if (!patch || !Object.keys(patch).length || Object.keys(patch).some(k => !['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations', 'clearTokenLimit', 'endingRequest'].includes(k))) throw new Error('任务修改字段无效。')
       if (patch.clearTokenLimit !== undefined && (patch.clearTokenLimit !== true || patch.tokens !== undefined)) throw new Error('解除任务Token上限不能同时设置新上限。')
       if (!reason?.trim() || reason.length > 2000) throw new Error('请保留有效的用户修改要求。')
       const requestLog = archivedLog ?? appendTaskRequestLog(before.requestLog, `用户：${reason.trim()}`)
       this.changeTopic(id, topicId, revision, { input: { title: patch.title ?? before.title, goal: patch.goal ?? before.goal, constraints: patch.constraints ?? before.constraints }, reason, requestLog })
       let topic = this.ports.topics.get(id, topicId)
+      if (patch.endingRequest !== undefined) topic = this.ports.topics.ending(id, topicId, topic.revision, patch.endingRequest)
       if (patch.separateEvaluations !== undefined) topic = this.ports.topics.evaluationDelivery(id, topicId, topic.revision, patch.separateEvaluations)
       if (patch.modelCalls !== undefined) topic = this.ports.setTaskBudget(id, topicId, topic.revision, { modelCalls: patch.modelCalls })
       if (patch.tokens !== undefined) {
@@ -516,6 +522,7 @@ export class ContactMutations {
         return existing.run_id ?? undefined
       }
       const topic = this.ports.topics.check(id, topicId, revision)
+      assertTaskEnding(topic.ending)
       if (topic.calendar && this.ports.calendars.get(topicId)?.finished_at) throw new Error('这次安排已经执行；请先修改为新的未来时间，再恢复。')
       this.ports.taskFailures.clear(id, topicId)
       const active = this.db.prepare("SELECT status FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted') AND topic_id=?").get(id, topicId) as { status: string } | undefined

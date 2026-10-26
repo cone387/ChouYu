@@ -1,3 +1,4 @@
+import { endingState } from '../../shared/task-ending'
 import { safeAgentFailure } from '../agents/failure'
 import { SkillRunner } from '../skills/runner'
 import type { SkillSnapshot } from '../../shared/skills'
@@ -66,6 +67,7 @@ export class WorkLoop implements ContactModule {
     if (this.closed) return false
     for (const run of this.store.runnable()) {
       if (run.character_id !== this.owner.id || this.scheduler.get(run.id)) continue
+      if (run.topic_id && endingState(this.store.topics.get(run.character_id, run.topic_id).ending).stopped) continue
       if (this.store.recovery.oldRun(run.character_id, run.id) || !this.store.recovery.allowed(run.character_id, run.topic_id)) continue
       if (!this.owner.identity?.config || JSON.parse(run.input).revisionScope !== 'presentation' && JSON.parse(run.input).settings.searchEnabled && !this.owner.identity?.searchKey) continue
       const settings = JSON.parse(this.store.profile(run.character_id)!.settings) as AgentSettings

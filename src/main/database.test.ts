@@ -28,6 +28,7 @@ import { AttachmentStore } from './attachment-store'
 import Database from 'better-sqlite3'
 import { openApplicationDatabase } from './storage/application-database'
 import { ConversationRepository } from './storage/conversations'
+import { commitApplicationState } from './database'
 import { readApplicationSnapshot } from './storage/legacy-migration'
 import { getContactIdentityRevision, getContactIdentityConversation, onContactIdentityChanged } from './database'
 
@@ -115,6 +116,17 @@ beforeEach(() => {
   environment.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'chouyu-database-test-'))
   fixtureDirectories.push(environment.directory)
   initDatabase()
+})
+
+it('commits assistant occurrence and history together without publishing memory on a partial failure', () => {
+  const connection = new Database(sqlitePath())
+  connection.exec("CREATE TRIGGER fail_history BEFORE INSERT ON state WHEN new.key='assistant-routine-history:test' BEGIN SELECT RAISE(ABORT,'history disk failure'); END")
+  connection.close()
+  expect(() => commitApplicationState({ 'assistant-routines-v1': 'new occurrence', 'assistant-routine-history:test': 'completed' })).toThrow('history disk failure')
+  expect(getState('assistant-routines-v1')).toBeNull()
+  const saved = new Database(sqlitePath())
+  try { expect(saved.prepare("SELECT value FROM state WHERE key='assistant-routines-v1'").get()).toBeUndefined() }
+  finally { saved.close() }
 })
 
 afterEach(async () => {

@@ -1,8 +1,10 @@
 import type { AgentOverview, AgentTopic } from '../../../../shared/agents'
 import { taskState } from '../../../../shared/task-state'
+import { endingState } from '../../../../shared/task-ending'
 
 /** The same single-task execution semantics serve detail and chat controls. */
 export function contactTaskExecution(data: AgentOverview, topic: AgentTopic) {
+  const cutoff = endingState(topic.ending).stopped
   const ended = ['completed', 'abandoned'].includes(topic.status) || Boolean(data.taskSchedule?.[topic.id]?.finishedAt)
   const available = !ended && topic.status !== 'paused'
   const run = available ? data.runs.find(run => run.topicId === topic.id && ['queued', 'running', 'waiting', 'interrupted'].includes(run.status)) : undefined
@@ -10,7 +12,7 @@ export function contactTaskExecution(data: AgentOverview, topic: AgentTopic) {
   const canPause = Boolean(available && (run || queued || data.settings.enabled && (data.focusTopicId === topic.id || data.taskSchedule?.[topic.id])))
   const state = taskState(data, topic)
   const latestRun = data.runs.find(run => run.topicId === topic.id)
-  const action = latestRun?.status === 'failed' && latestRun.revisionScope === 'presentation' ? 'inspect'
+  const action = cutoff ? undefined : latestRun?.status === 'failed' && latestRun.revisionScope === 'presentation' ? 'inspect'
     : ended ? undefined : run?.status === 'waiting' ? 'reply' : canPause ? 'pause' : 'continue'
   return { topic, state, run, latestRun, canPause, action }
 }

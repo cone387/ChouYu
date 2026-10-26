@@ -954,6 +954,14 @@ export function setContactRecoveryState(key: string, value: string): void {
   markBackupDirty()
 }
 
+/** Domain state commits publish memory only after their SQLite transaction succeeds. */
+export function commitApplicationState(values: Record<string, string>): void {
+  if (!application || writesBlocked || storageStatus.error) throw new Error('应用存储不可用，状态尚未保存。')
+  application.transaction(() => { for (const [key, value] of Object.entries(values)) application!.metadata.setState(key, value) })
+  Object.assign(store.state, values)
+  markBackupDirty()
+}
+
 export function contactSearchCredential(owner: string) {
   if (!getCharacter(owner) || owner === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
   return { configured: Boolean(getState(`agent-search:${owner}:api_key`)), revision: Number(getState(`agent-search:${owner}:revision`) || 0) }

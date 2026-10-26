@@ -1,4 +1,5 @@
 import { ContactCompletion } from './contact/completion';
+import { ContactEndings } from './contact/endings'
 import { FeedbackLedger } from '../agents/feedback-ledger';
 import { DeliveryDependencies } from '../agents/delivery-dependencies';
 import { ContactMutations } from './contact/mutations';
@@ -35,6 +36,7 @@ import { AgentDeliveries } from '../agents/delivery';
 import { ContactStoreRecovery } from './recovery'
 
 export class ContactTaskStore {
+  readonly endings: ContactEndings
   readonly recovery: ContactStoreRecovery
   readonly completion: ContactCompletion
   readonly feedbackLedger: FeedbackLedger
@@ -65,7 +67,8 @@ export class ContactTaskStore {
       // Schema, legacy bodies and the old-application barrier commit together.
       this.db.exec('BEGIN IMMEDIATE')
       const version = this.db.pragma('user_version', { simple: true }) as number
-      if (version > 19) throw new Error('Agent 数据版本较新，请升级应用。')
+      if (version > 20) throw new Error('Agent 数据版本较新，请升级应用。')
+      this.endings = new ContactEndings(this.db)
       this.recovery = new ContactStoreRecovery(this.db)
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS profiles (character_id TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL, next_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0);
@@ -104,7 +107,7 @@ export class ContactTaskStore {
         const view = this.decisions.get(owner, id)
         if (view.kind !== 'retry') return undefined
         return [`关于「${view.topicTitle}」：${view.failure?.message}`, view.impact, view.recoveryMessage].filter(Boolean).join('\n\n')
-      })
+      }, (owner, noticeId) => this.endings.acknowledge(owner, noticeId))
       this.db.exec(`CREATE TABLE IF NOT EXISTS search_calls (id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,at INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS search_calls_character ON search_calls(character_id,at);
         CREATE TABLE IF NOT EXISTS research (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,value TEXT NOT NULL);
@@ -237,6 +240,7 @@ export class ContactTaskStore {
         setTaskBudget: this.setTaskBudget.bind(this)
       })
       this.completion = new ContactCompletion(this.db, {
+        endings: this.endings,
         dependencies: this.dependencies,
         feedbackLedger: this.feedbackLedger,
         getRun: this.getRun.bind(this),
@@ -258,7 +262,7 @@ export class ContactTaskStore {
       })
       this.restoreFailureSchedules()
       if (version < 18) this.db.pragma('user_version = 18')
-      if (version < 19) this.db.pragma('user_version = 19')
+      if (version < 20) this.db.pragma('user_version = 20')
       this.dependencies.backfill()
       this.db.exec('COMMIT')
     } catch (error) {

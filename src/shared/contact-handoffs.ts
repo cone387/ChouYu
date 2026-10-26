@@ -2,7 +2,7 @@ import type { ContentCitation, DeliveryRef } from './contact-content'
 import type { AgentOverview } from './agents'
 export type HandoffRequest = { requestId: string; source: DeliveryRef; recipientId: string; description: string }
 export type Handoff = { id: string; source: DeliveryRef; recipientId: string; topicId: string; description: string; createdAt: number; continuous: boolean }
-export type HandoffWork = { description: string; requestLog: string; tokens?: number; continuous: boolean }
+export type HandoffWork = { description: string; requestLog: string; tokens?: number; continuous: boolean; endingRequest?: import('./task-ending').TaskEndingRequest }
 export type HandoffPreparation = { kind: 'ready'; token: string; request: HandoffRequest; work: HandoffWork } | { kind: 'question'; question: string } | { kind: 'committed'; handoff: Handoff }
 export type HandoffState = { handoff: Handoff; status: string; state?: import('./task-state').TaskState; reviewedVersion?: number; latestVersion: number }
 export interface ContactHandoffAPI {

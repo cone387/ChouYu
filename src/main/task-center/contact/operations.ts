@@ -52,7 +52,7 @@ export interface ContactStoreOperations {
   setTaskBudget(id: string, topicId: string, revision: number, raw: unknown): { resourceBudget: TaskResourceBudget; revision: number; updatedAt: number; reason: string; calendar?: import("../../../shared/calendar-schedule").CalendarSchedule; separateEvaluations?: boolean; tokenLimit?: number; initialPlan?: import("../../../shared/agent-delivery").DeliveryPlan; requestLog?: string; id: string; characterId: string; status: AgentTopicStatus; judgement: string; openQuestions: string; nextStep: string; createdAt: number; title: string; goal: string; constraints: string; }
   allocateTaskBudget(runId: string, raw?: TaskResourceBudget): import("../../../shared/agents").AgentTopic
   createRun(id: string, context: string, now?: number, topicId?: string, revisionScope?: "presentation"): string
-  assignTopic(id: string, description: unknown, conversation: string, requestLog?: string, tokenLimit?: number): import("../../../shared/agents").AgentTopic
+  assignTopic(id: string, description: unknown, conversation: string, requestLog?: string, tokenLimit?: number, endingRequest?: import('../../../shared/task-ending').TaskEndingRequest): import("../../../shared/agents").AgentTopic
   assignCalendarTopic(id: string, raw: unknown, conversation: string, requestLog?: string): import("../../../shared/agents").AgentTopic
   editCalendarTopic(id: string, topicId: string, revision: number, raw: unknown, reason: string): AgentOverview
   scheduled(id: string): { topic_id: string; conversation: string; pending: number; next_at: number; }[]

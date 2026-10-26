@@ -2,7 +2,8 @@ import { interactionHref } from '../../shared/contact-interactions'
 import { contactSkillInstruction } from '../skills'
 import { BrowserWindow, ipcMain } from 'electron'
 import { createHash } from 'node:crypto'
-import { getCharacter, getConfig, saveConfig, getSession, getState, listCharacters, setState } from '../database'
+import { getCharacter, getConfig, saveConfig, getSession, getState, listCharacters, setState, commitApplicationState } from '../database'
+import { assertTaskEnding } from '../../shared/task-ending'
 import { DEFAULT_CHARACTER_ID, ASSISTANT_CHARACTER_ID, resolveCharacterConfig } from '../../shared/characters'
 import { inspectContactWork, inspectContactDelivery, contactAgentsCall } from '../agents'
 import { parseToolArguments } from '../../shared/tools'
@@ -35,10 +36,11 @@ function notifyAssistantExecution() {
     try { if (!window.isDestroyed()) window.webContents.send('assistant-routines:changed') } catch { /* Closing observers cannot fail work. */ }
   }
 }
-export async function readContactsForAssistant(signal?: AbortSignal) {
+export async function readContactsForAssistant(signal?: AbortSignal, beforeRead?: () => void) {
   const contacts = listCharacters().filter(c => c.id !== DEFAULT_CHARACTER_ID && c.id !== ASSISTANT_CHARACTER_ID)
   const results = []
   for (const contact of contacts) {
+    beforeRead?.()
     signal?.throwIfAborted()
     if (signal && (!getConfig().aiToolsEnabled || getState('tool:inspect_contacts:enabled') === 'false')) throw new Error('联系人检查权限已关闭。')
     try {
@@ -125,6 +127,11 @@ export function initializeAssistantRoutines() {
   if (service) return
   engine = new AssistantRoutineService({
     changed: notifyAssistantExecution,
+    delivered: receipt => Boolean(getState(`reminder-receipt:${receipt}`)),
+    commit: (value, history) => {
+      commitApplicationState({ 'assistant-routines-v1': value, [`assistant-routine-history:${history.id}`]: history.value })
+      notifyAssistantExecution()
+    },
     readHistory: id => getState(`assistant-routine-history:${id}`),
     writeHistory: (id, value) => setState(`assistant-routine-history:${id}`, value),
     read: () => getState('assistant-routines-v1'), write: value => {
@@ -137,7 +144,8 @@ export function initializeAssistantRoutines() {
       const config = getConfig()
       if (!config.aiToolsEnabled) throw new Error('AI 工具已关闭；开启后可继续联系人总结。')
       if (getState('tool:inspect_contacts:enabled') === 'false') throw new Error('检查联系人状态工具已被关闭。')
-      const evidence = await readContactsForAssistant()
+      assertTaskEnding(item.ending)
+      const evidence = await readContactsForAssistant(signal, () => assertTaskEnding(item.ending))
       if (signal.aborted) throw new Error('已取消。')
       let output = ''
       let calls = 0
@@ -148,6 +156,7 @@ export function initializeAssistantRoutines() {
             description: '核实某个联系人的正式保存版本、目录与累计字符数。不会读取正文，也不执行篇幅、质量或完成条件验收。使用工作证据中的真实 ID。仅查看，不修改。最多调用八次。',
             inputSchema: { type: 'object', properties: { characterId: { type: 'string' }, topicId: { type: 'string' } }, required: ['characterId', 'topicId'], additionalProperties: false } }],
           async execute(call) {
+            assertTaskEnding(item.ending)
             if (signal.aborted) throw new Error('已取消。')
             if (getState('tool:inspect_contacts:enabled') === 'false') throw new Error('检查联系人状态工具已被关闭。')
             if (call.name !== 'read_contact_delivery' || ++calls > 8) return '工具不可用或已达到本次读取上限。请依据已有证据总结。'
@@ -162,7 +171,7 @@ export function initializeAssistantRoutines() {
             }
             catch { return '正式成果暂时无法读取，不能声称已核实交付。' }
           }
-        }, { timeoutMs: 120000, maxOutputTokens: 2500 })
+        }, { timeoutMs: 120000, maxOutputTokens: 2500, beforeRound: () => { assertTaskEnding(item.ending); return undefined } })
       if (!output.trim()) throw new Error('这次没有生成总结正文，未发送空白汇报。')
       if (signal.aborted || !getConfig().aiToolsEnabled || getState('tool:inspect_contacts:enabled') === 'false') throw new Error('工作检查已取消或权限已关闭，未发送。')
       return `${output}${summaryTaskLinks(evidence, item.lastAt)}`

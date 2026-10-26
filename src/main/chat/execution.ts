@@ -27,6 +27,11 @@ function getErrorMessage(error: unknown): string { return error instanceof Error
 function sendToolEvent(sender: ChatExecution['sender'], event: ToolExecutionEvent) { if (!sender.isDestroyed()) sender.send('ai:tool-event', event) }
 
 export async function executeChat({ sender, request, requestKey, controller }: ChatExecution, mainWindow: BrowserWindow, approvals: ChatToolApprovals): Promise<AIStreamResult> {
+  const acceptedAt = Date.now()
+  const savedUsers = request.sessionId ? getSession(request.sessionId)?.messages.filter(message => message.role === 'user') ?? [] : []
+  const userTurns = request.messages.filter(message => message.role === 'user').map(message => ({ text: message.content,
+    at: savedUsers.findLast(saved => saved.content === message.content)?.timestamp ?? acceptedAt }))
+  const taskSource = { text: userTurns.map(turn => turn.text).join('\n').slice(-16000), turns: userTurns, acceptedAt: userTurns.at(-1)?.at ?? acceptedAt }
   const owner = request.sessionId ? getSession(request.sessionId)?.characterId : request.characterId || DEFAULT_CHARACTER_ID
 
   if (request.sessionId && !owner) return { ok: false, error: '会话已不存在，请重新打开对话。' }
@@ -101,7 +106,7 @@ export async function executeChat({ sender, request, requestKey, controller }: C
           && (!SKILL_TOOLS.some(skill => skill.name === tool.name) || skillTools.definitions.some(skill => skill.name === tool.name))
           && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
         getDefinition: getRegisteredTool, getConfig, isToolEnabled, assertContext,
-        prepare: async (call, args) => SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : prepareRegisteredToolAsync(call.name, args, mainWindow, request.sessionId, undefined, `chat:${request.requestId}:${call.id}`),
+        prepare: async (call, args) => SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : prepareRegisteredToolAsync(call.name, args, mainWindow, request.sessionId, undefined, `chat:${request.requestId}:${call.id}`, taskSource),
         contactPolicy: async () => owner ? (await contactAgentsCall(owner, 'get') as import('../../shared/agents').AgentOverview).settings.toolPermissionMode : undefined,
         offerAction: (key, action) => contactAgentsCall(owner!, 'offerAction', [key, validateContactActionRequest(action)]),
         approve: (call, preview) => approvals.request(sender, request.requestId, call, signal, preview),

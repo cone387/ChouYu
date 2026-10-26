@@ -15,6 +15,13 @@ function fixture(plan: unknown) {
   return { data, read, model, execute, run }
 }
 describe('contact chat routing and receipts', () => {
+  it('passes a deadline edit through the real task tool without changing the goal', async () => {
+    const ending = { deadline: { kind: 'date', value: '2026-10-28', source: '截至10月28日' } }
+    const f = fixture({ kind: 'action', topicId: 't', action: 'edit', patch: { ending } })
+    await expect(f.run('这项任务截至10月28日')).resolves.toBe('新要求已保存')
+    expect(JSON.parse(f.execute.mock.calls[0][0].arguments)).toMatchObject({ ending: JSON.stringify(ending) })
+    expect(JSON.parse(f.execute.mock.calls[0][0].arguments).goal).toBeUndefined()
+  })
   it('repairs a truncated task id from a clarified multi-turn request without guessing a target', async () => {
     const topicId = '9f0c7cda-fabf-4c6a-8ece-a0ab37198a01'
     const plan = { kind: 'action', topicId: topicId.slice(0, -3), action: 'edit', patch: { tokens: 300000 } }

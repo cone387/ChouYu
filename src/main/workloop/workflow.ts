@@ -13,6 +13,7 @@ import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { agentUsesPlanner, validateTopicProgress, type AgentEvidence, type AgentReport, type AgentSettings, type AgentTopic, type AgentTopicProgress } from '../../shared/agents'
 import { ContactTaskStore } from '../task-center/contact-store'
 import { readSource } from '../agents/sources'
+import { endingState } from '../../shared/task-ending'
 import { InvalidContactReferenceError, ResearchPlanFormatError, researchPlanValue, validateContactSelection, InvalidSectionReferenceError, parseResearchPlan, researchUrl, searchBrave, type AgentSearcher } from '../agents/research'
 import type { AgentResearchPlan, AgentResearch } from '../../shared/agents'
 import { ContactSources } from '../agents/contact-sources'
@@ -146,7 +147,7 @@ export class WorkStrategyRuntime {
     const defaultPlan: AgentResearchPlan = { action: 'read', urls: input.settings.sources, query: '', reason: '读取用户提供的来源，继续核对事项。', checkAfterMinutes: input.settings.intervalMinutes }
     const graph = new StateGraph(State)
       .addNode('choose', async () => {
-        live()
+        live(); this.store.endings.assertRun(runId)
         if (input.handoffPin) {
           const pin = input.handoffPin, artifact = this.store.deliveries.get(pin.source.topicId, pin.source.version)!
           const plan: AgentResearchPlan = { action: 'read_contacts', urls: [], query: '', reason: '读取用户指定的交接版本进行评审。', checkAfterMinutes: input.settings.intervalMinutes, contactRefs: artifact.sections.filter(s => !pin.source.sectionId || s.id === pin.source.sectionId).map(s => ({ ...pin.source, sectionId: s.id })) }
@@ -290,6 +291,7 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
         return { plan, deferred: false }
       })
       .addNode('read', async state => {
+        this.store.endings.assertRun(runId)
         if (state.plan?.action === 'read_contacts') {
           live()
           const evidence = input.handoffPin ? this.store.handoffs.evidence(runId) : this.contactSources.read(run.character_id, run.topic_id!, state.plan.contactRefs!)
@@ -325,7 +327,7 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
         const evidence: AgentEvidence[] = []
         research.reads = []
         for (const url of urls) {
-          live()
+          live(); this.store.endings.assertRun(runId)
           try { const item = await this.reader(url, signal); live(); evidence.push(item); research.reads.push({ url, status: 'read', hash: item.hash }); this.store.event(runId, 'source', `已读取 ${item.title}\n${item.url}`) }
           catch { live(); research.reads.push({ url, status: 'failed' }); this.store.event(runId, 'source-failed', `无法读取 ${url}；本轮不会将它列为证据。`) }
         }
@@ -412,6 +414,7 @@ ${resourceInstruction}\n${JSON.stringify({ resources: (run.topic_id ? this.store
             else throw new Error(safeAgentFailure(error))
           }
         }
+        if (run.topic_id && endingState(this.store.topics.get(run.character_id, run.topic_id).ending).stopped) this.store.endings.retainCandidate(runId, output)
         let draft: Draft
         try { draft = validate(output) } catch (error) {
           live()

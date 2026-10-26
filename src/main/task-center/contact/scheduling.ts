@@ -1,3 +1,4 @@
+import { assertTaskEnding, endingState } from '../../../shared/task-ending'
 import { ContactCalendars, type CalendarOccurrence } from '../../agents/calendar';
 import { calendarScheduleLabel } from '../../../shared/calendar-schedule';
 import { AgentMemories } from '../../agents/memories';
@@ -72,7 +73,7 @@ export class ContactScheduling {
       const settings = JSON.parse(profile.settings) as AgentSettings
       if (!settings.enabled || !profile.focus_topic_id) continue
       const topic = this.ports.topics.get(profile.character_id, profile.focus_topic_id)
-      if (!canResearch(topic.status)) continue
+      if (!canResearch(topic.status) || endingState(topic.ending, now).stopped) continue
       if (this.db.prepare("SELECT 1 FROM runs WHERE character_id=? AND status IN ('running','waiting','queued','interrupted')").get(profile.character_id)) continue
       seen.add(profile.character_id)
       const previous = this.ports.heartbeatRows.get(profile.character_id)
@@ -91,6 +92,7 @@ export class ContactScheduling {
       const profile = this.ports.profile(id)
       if (!profile) throw new Error('请先在聊天中交付任务。')
       const selected = topicId ?? profile.focus_topic_id
+      if (selected) assertTaskEnding(this.ports.topics.get(id, selected).ending, now)
       const existing = this.db.prepare("SELECT * FROM runs WHERE character_id=? AND topic_id=? AND status IN ('queued','running','waiting','interrupted') LIMIT 1").get(id, selected) as RunRow | undefined
       if (existing) {
         return existing.id
@@ -135,8 +137,8 @@ export class ContactScheduling {
     if (restored) settings.dailyCalls = restored.dailyCalls
     if (settings.enabled && !withinWorkHours(settings, now)) return
     const unfinished = this.db.prepare("SELECT * FROM runs WHERE character_id=? AND status IN ('queued','running','waiting','interrupted')").all(id) as RunRow[]
-    const runnable = unfinished.filter(run => run.status === 'running' || run.status !== 'waiting' &&
-      this.ports.tokens.canResume(run.id, id, run.topic_id, now) && this.ports.callCount(id, now) + this.ports.callsNeededToResume(run.id) <= settings.dailyCalls)
+    const runnable = unfinished.filter(run => (!run.topic_id || !endingState(this.ports.topics.get(id, run.topic_id).ending, now).stopped) && ( run.status === 'running' || run.status !== 'waiting' &&
+      this.ports.tokens.canResume(run.id, id, run.topic_id, now) && this.ports.callCount(id, now) + this.ports.callsNeededToResume(run.id) <= settings.dailyCalls))
     if (runnable.length >= (settings.maxConcurrentTasks ?? 1)) return
     const busy = new Set(unfinished.map(run => run.topic_id))
     const tasks = this.ports.scheduled(id)
@@ -147,7 +149,7 @@ export class ContactScheduling {
     for (const candidate of tasks) {
       if (busy.has(candidate.topic_id) || excluded.has(candidate.topic_id) || !candidate.pending && !settings.enabled) continue
       const topic = this.ports.topics.get(id, candidate.topic_id)
-      if (!canResearch(topic.status)) continue
+      if (!canResearch(topic.status) || endingState(topic.ending, now).stopped) continue
       const calendar = topic.calendar && this.ports.calendars.get(topic.id)
       if (topic.calendar && (!settings.enabled || !calendar || calendar.finished_at || calendar.next_at > now)) continue
       if (!this.ports.handoffs.needsReview(id, topic.id)) continue

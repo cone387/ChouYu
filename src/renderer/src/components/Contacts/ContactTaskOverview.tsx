@@ -4,6 +4,7 @@ import ContactDailyOverview from './ContactDailyOverview'
 import { AGENT_STATUS, agentUsesPlanner, type AgentOverview, type AgentTopic } from '../../../../shared/agents'
 import { taskState } from '../../../../shared/task-state'
 import { calendarScheduleLabel } from '../../../../shared/calendar-schedule'
+import { taskEndingFacts } from '../../../../shared/task-ending'
 
 const time = (value: number) => new Date(value).toLocaleString('zh-CN', { hour12: false })
 function duration(ms: number) {
@@ -44,6 +45,7 @@ export default function ContactTaskOverview({ topic, data, visible, children, at
     notes={<><p className="agent-caption">累计耗时为本任务所有轮次的起止时间之和，包含失败、重试、排队和等待回复；运行按钮只显示当前这一轮的耗时。调用次数包含失败和重试。</p>
       {metric && metric.calls > metric.totalReported && <p className="agent-caption">Token 已记录 {metric.totalReported} / {metric.calls} 次调用，历史缺失或供应商未返回的用量未计入。</p>}</>}
     fields={[
+      ...taskEndingFacts(topic.ending),
       ...(topic.calendar ? [['日历安排', calendarScheduleLabel(topic.calendar)] as [string, string]] : []),
       ['任务目标', topic.goal], ['约束与边界', topic.constraints || '未设置'], ['当前判断', topic.judgement || '尚未形成判断'], ['下一步', topic.nextStep || '尚未安排'],
       ['使用模型', metric?.models.join('、') || '未记录'], ['搜索调用', metric ? `${metric.searches.toLocaleString()} 次` : '—'],

@@ -21,6 +21,20 @@ function fixture(agentsImpl?: (id: string, method: string, args: unknown[]) => P
 const createTarget = { kind: 'create' as const, characterId: 'chouyu' }
 
 describe('contact task gateway', () => {
+  it('keeps a first accepted relative deadline across a failed save retry and unrelated edits', async () => {
+    const { deps, routineService } = fixture()
+    const text = '每天提醒我，只工作24小时后结束'
+    const model = vi.fn(async () => JSON.stringify({ kind: 'routine', input: routineInput, ending: { deadline: { kind: 'duration', value: 86400000, source: '只工作24小时后结束' } } }))
+    const save = vi.spyOn(routineService, 'save').mockImplementationOnce(() => { throw new Error('disk unavailable') })
+    await expect(requestContactTask(createTarget, text, deps, model)).rejects.toThrow('disk unavailable')
+    const firstAccepted = deps.drafts.get('create:chouyu')?.acceptedAt ?? deps.drafts.list()[0].acceptedAt!
+    await requestContactTask(createTarget, text, deps, model)
+    const item = routineService.list()[0]
+    expect(item.ending!.deadline!.at).toBe(firstAccepted + 86400000)
+    save.mockRestore()
+    routineService.save({ ...item, title: '改名' }, item.id, item.revision)
+    expect(routineService.list()[0].ending).toEqual(item.ending)
+  })
   it('asks the model once for a missing schedule kind before saving, preserving the other fields', async () => {
     const { deps, routineService } = fixture()
     const { kind: _kind, ...input } = routineInput

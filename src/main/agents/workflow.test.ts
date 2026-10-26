@@ -6,6 +6,36 @@ import { WorkLoopHost } from '../agent-space/workloop-host'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 const cleanups: (() => Promise<void>)[] = []
+it.each([true, false])('keeps a late returned candidate and makes no repair request after cutoff (valid=%s)', async valid => {
+  const directory = mkdtempSync(join(tmpdir(), 'chouyu-ending-flow-')), acceptedAt = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(acceptedAt)
+  let finish!: (value: string) => void
+  const model = vi.fn(async (prompt: string) => {
+    if (prompt.startsWith('你是联系人，刚收到')) return JSON.stringify(brief)
+    if (prompt.startsWith('为联系人')) return JSON.stringify({ action: 'write', reason: '写正文', query: '', urls: [], checkAfterMinutes: 180 })
+    return new Promise<string>(resolve => { finish = resolve })
+  })
+  const host = new WorkLoopHost(directory, () => {}, () => model)
+  try {
+    await host.sync([{ id: 'a', soul: '', conversation: '', config: { provider: 'openai', baseUrl: 'https://example.com', apiKey: 'test', model: 'fixture', thinkingDisabledModels: [] } }])
+    await host.request('savePreferences', 'a', [{ ...DEFAULT_AGENT_SETTINGS, goal: '写文章', enabled: false, dailyCalls: 100 }])
+    await host.request('assignTopic', 'a', ['写一篇短文', undefined, undefined, { text: '只工作一分钟后结束', acceptedAt, timeZone: 'Asia/Shanghai', patch: { deadline: { kind: 'duration', value: 60000, source: '只工作一分钟后结束' } } }])
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    clock.mockReturnValue(acceptedAt + 60000)
+    const output = valid ? JSON.stringify({ title: '本轮正文', body: '实际保存', nextStep: '后续', memories: [], question: '',
+      progress: { judgement: '保存正文', reason: '实际交付', openQuestions: '', nextStep: '后续', status: 'researching' },
+      delivery: { ...brief.plan, summary: '正文', stages: stages.map(stage => ({ ...stage, status: 'active' })), section: { id: 'one', title: '正文', body: '已返回的短文正文。' } } }) : '{"unfinished":'
+    finish(output)
+    await vi.waitFor(() => expect(host.store.overview('a').runs[0].status).toBe(valid ? 'completed' : 'failed'))
+    const run = host.store.overview('a').runs[0]
+    expect(model).toHaveBeenCalledTimes(3)
+    if (valid) expect(host.store.deliveries.get(run.topicId!)?.sections[0].body).toBe('已返回的短文正文。')
+    else {
+      expect(host.store.deliveries.get(run.topicId!)).toBeNull()
+      expect(JSON.parse(host.store.getRun(run.id)!.input).endingCandidate.raw).toBe(output)
+    }
+  } finally { await host.close(); clock.mockRestore(); rmSync(directory, { recursive: true, force: true }) }
+})
 afterEach(async () => { for (const close of cleanups.splice(0)) await close() })
 const stages = [{ id: 'draft', title: '撰写正文', status: 'pending' }, { id: 'review', title: '检查并完成', status: 'pending' }]
 const brief = { title: '写一篇短文', nextStep: '撰写正文', question: '', plan: { completionCriteria: '交付完整短文并检查一致性', stages } }

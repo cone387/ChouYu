@@ -32,7 +32,7 @@ export type ContactCommandMap = PublicCommands & {
   spaceDiagnostics: Command<[], { activeRuns: number; capacity: number; metrics: import('./contact-runtime').ContactRuntimeMetrics; faults: { characterId: string; error: string }[] }>
   enableContinuous: Command<[], AgentOverview>
   save: Command<[settings: AgentSettings, revision?: number], AgentOverview>
-  assignTopic: Command<[description: string, requestLog?: string, tokens?: number], AgentOverview>
+  assignTopic: Command<[description: string, requestLog?: string, tokens?: number, endingRequest?: import('./task-ending').TaskEndingRequest], AgentOverview>
   assignCalendarTopic: Command<[input: unknown, requestLog?: string], AgentOverview>
   editCalendarTopic: Command<[topicId: string, revision: number, input: unknown, reason: string], AgentOverview>
   editTaskFromChat: Command<[topicId: string, revision: number, patch: ContactTaskEdit, reason: string], AgentOverview>
@@ -82,7 +82,7 @@ const arities: Record<ContactCommandName, readonly [number, number]> = {
   resumeRecovered: [3, 3],
   contactHome: [0, 0], pendingInteractions: [0, 0], getInteraction: [1, 1], outputPreferences: [0, 2], setOutputPreference: [3, 4], submitInteraction: [2, 2],
   dashboard: [1, 1], summary: [0, 0], continueTopic: [3, 4], setTaskBudget: [3, 3], delivery: [1, 2], reviseTopic: [3, 6], savePreferences: [1, 2], get: [0, 0], save: [1, 2], run: [0, 2],
-  createTopic: [1, 1], assignTopic: [1, 3], deleteTopic: [2, 2], editTopic: [4, 5], topicStatus: [4, 4], focusTopic: [1, 1], topicDetail: [1, 2], interactions: [1, 2], analytics: [1, 1], pause: [0, 0], detail: [1, 1], answer: [2, 3], remember: [1, 1], forget: [1, 1],
+  createTopic: [1, 1], assignTopic: [1, 4], deleteTopic: [2, 2], editTopic: [4, 5], topicStatus: [4, 4], focusTopic: [1, 1], topicDetail: [1, 2], interactions: [1, 2], analytics: [1, 1], pause: [0, 0], detail: [1, 1], answer: [2, 3], remember: [1, 1], forget: [1, 1],
   validateCitation: [1, 1], reviseCitation: [3, 3], portfolio: [1, 1], setDeliveryFavorite: [2, 2], saveDeliveryReading: [1, 1], deliveryReading: [1, 1],
   memoryList: [0, 0], createMemory: [1, 1], updateMemory: [3, 3], memoryHistory: [1, 1], forgetMemory: [2, 2],
   materialList: [1, 1], saveMaterial: [1, 3], readMaterial: [2, 3], materialHistory: [1, 1], withdrawMaterial: [2, 2], materialInventory: [0, 0], purgeMaterial: [2, 2],

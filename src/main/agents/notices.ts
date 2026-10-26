@@ -8,7 +8,7 @@ import type { AgentNotice, AgentReport, AgentTopic } from '../../shared/agents'
 
 /** The outbox shares the report transaction; delivery acknowledgement is separate. */
 export class AgentNotices {
-  constructor(private db: Database.Database, private offerInteraction?: (notice: AgentNotice) => string | undefined, private describeInteraction?: (owner: string, id: string) => string | undefined) {
+  constructor(private db: Database.Database, private offerInteraction?: (notice: AgentNotice) => string | undefined, private describeInteraction?: (owner: string, id: string) => string | undefined, private acknowledged?: (owner: string, id: string) => void) {
     db.exec(`CREATE TABLE IF NOT EXISTS notices (
       id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE,
       value TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', sent_at INTEGER);
@@ -88,6 +88,9 @@ export class AgentNotices {
       .filter(n => n.kind === 'question' || n.purpose === 'resources' || n.purpose === 'presentation' || n.purpose === 'failure' || notifyProgress).slice(0, 32)
   }
   ack(id: string, noticeId: string, now = Date.now()) {
-    this.db.prepare("UPDATE notices SET state='sent',sent_at=? WHERE id=? AND character_id=? AND state='pending'").run(now, noticeId, id)
+    this.db.transaction(() => {
+      this.db.prepare("UPDATE notices SET state='sent',sent_at=? WHERE id=? AND character_id=? AND state='pending'").run(now, noticeId, id)
+      this.acknowledged?.(id, noticeId)
+    })()
   }
 }

@@ -1,4 +1,5 @@
 import { DEFAULT_CHARACTER_ID } from '../../shared/characters'
+import { endingRequestFromTool, taskEndingToolSchema } from '../tools/task-ending-source'
 import type { RegisteredTool } from '../tools/registry'
 import type { AssistantRoutineService } from './service'
 
@@ -15,6 +16,7 @@ export function createAssistantTools(service: Pick<AssistantRoutineService, 'lis
     { ...base, risk: 'write', name: 'save_assistant_routine', displayName: '保存助手长期安排',
       description: '仅在用户明确交代长期安排时使用。支持定时提醒和读取各联系人状态后调用模型总结。使用设备本地时间。修改、暂停须先读取真实 ID/revision 并传入完整内容；不重复新建。时间不明确时先询问。',
       inputSchema: { type: 'object', properties: {
+        ending: taskEndingToolSchema,
         id: { type: 'string', description: '修改已有安排时填写真实 ID' }, revision: { type: 'number', description: '修改已有安排时填写版本' },
         title: { type: 'string', maxLength: 100 }, instruction: { type: 'string', maxLength: 2000, description: '保留用户的安排与关注重点；仅支持提醒或联系人状态总结' },
         time: { type: 'string', description: 'HH:mm，本地时间；多个时刻用英文逗号分隔，最多5个，一次性只能1个' }, cadence: { type: 'string', description: 'daily / weekdays / weekly / once / monthly / interval' }, weekday: { type: 'number', description: 'weekly 时必填，0 周日至 6 周六' },
@@ -22,6 +24,6 @@ export function createAssistantTools(service: Pick<AssistantRoutineService, 'lis
         intervalDays: { type: 'number', description: 'interval 的间隔日历日数，1–36500' }, anchorDate: { type: 'string', description: 'interval 必填的起始日期YYYY-MM-DD；缺少起点先询问' },
         kind: { type: 'string', description: 'reminder 直接提醒；contact-summary 先查联系人再由模型总结' }, enabled: { type: 'boolean', description: 'false 暂停，true 启用' }
       }, required: ['title', 'instruction', 'time', 'cadence', 'kind', 'enabled'], additionalProperties: false },
-      execute(args, context) { check(context.sessionId); const items = service.save({ ...args, times: typeof args.time === 'string' ? args.time.split(',').map(t => t.trim()) : undefined, monthDay: args.monthDay === 'last' ? 'last' : args.monthDay === undefined ? undefined : Number(args.monthDay) }, args.id as string | undefined, args.revision as number | undefined); return { content: JSON.stringify({ saved: true, routines: items }), summary: '助手安排已保存' } } }
+      execute(args, context) { check(context.sessionId); const items = service.save({ ...args, endingRequest: endingRequestFromTool(args.ending, context), times: typeof args.time === 'string' ? args.time.split(',').map(t => t.trim()) : undefined, monthDay: args.monthDay === 'last' ? 'last' : args.monthDay === undefined ? undefined : Number(args.monthDay) }, args.id as string | undefined, args.revision as number | undefined); return { content: JSON.stringify({ saved: true, routines: items }), summary: '助手安排已保存' } } }
   ]
 }

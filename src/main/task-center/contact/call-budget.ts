@@ -1,3 +1,4 @@
+import { assertTaskEnding } from '../../../shared/task-ending'
 import type Database from 'better-sqlite3';
 import type { AgentSettings, AgentTopicStatus } from '../../../shared/agents';
 import { validateTaskResourceBudget, type TaskResourceBudget } from '../../../shared/agent-resources';
@@ -91,6 +92,7 @@ export class ContactCallBudget {
   charge(runId: string, now = Date.now()): void {
     this.db.transaction(() => {
       const run = this.ports.assertLive(runId), settings = JSON.parse(this.ports.profile(run.character_id)!.settings) as AgentSettings
+    if (run.topic_id) assertTaskEnding(this.ports.topics.get(run.character_id, run.topic_id).ending, now)
       if (this.callCount(run.character_id, now) + this.reservedCalls(run.character_id, run.topic_id) >= (this.ports.recoveryLimits?.(run.character_id, run.topic_id)?.dailyCalls ?? settings.dailyCalls)) throw new Error('今日模型调用已达上限（含其他执行任务的预留）。')
       if (run.topic_id) this.assertTaskBudget(run.character_id, run.topic_id, 1)
       this.db.prepare('INSERT INTO calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
@@ -100,6 +102,7 @@ export class ContactCallBudget {
   chargeSearch(runId: string, now = Date.now()): void {
     this.db.transaction(() => {
       const run = this.ports.assertLive(runId), settings = JSON.parse(this.ports.profile(run.character_id)!.settings) as AgentSettings
+    if (run.topic_id) assertTaskEnding(this.ports.topics.get(run.character_id, run.topic_id).ending, now)
       if (!settings.searchEnabled || this.searchCount(run.character_id, now) >= (settings.dailySearches ?? 8)) throw new Error('搜索未开启或今日搜索已达上限。')
       this.db.prepare('INSERT INTO search_calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
     })()

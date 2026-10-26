@@ -22,6 +22,8 @@ export class ContactStoreRecovery {
       const date = new Date(), start = new Date(date); start.setHours(0, 0, 0, 0)
       const count = (sql: string, ...args: (string | number)[]) => (this.db.prepare(sql).get(...args) as { n: number }).n
       const topics = ids('topics')
+      // A backup cannot prove how many periods completed after its snapshot.
+      this.db.prepare("UPDATE topics SET value=json_set(value,'$.ending.historyUnknown',json('true')) WHERE character_id=? AND json_type(value,'$.ending.count')='object'").run(owner)
       original.baseline = { day: [date.getFullYear(), date.getMonth() + 1, date.getDate()].join('-'),
         calls: count('SELECT count(*) AS n FROM calls WHERE character_id=? AND at>=?', owner, start.getTime()),
         tokens: count('SELECT COALESCE(sum(tokens),0) AS n FROM token_ledger WHERE character_id=? AND at>=?', owner, start.getTime()),

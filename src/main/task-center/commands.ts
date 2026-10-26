@@ -166,7 +166,7 @@ export class ContactTaskCommands {
       case 'assignTopic': {
         if (!this.context.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
         this.checkSearch(id)
-        this.store.assignTopic(id, args[0], this.context.identity(id).conversation, args[1] as string | undefined, args[2] as number | undefined); break
+        this.store.assignTopic(id, args[0], this.context.identity(id).conversation, args[1] as string | undefined, args[2] as number | undefined, args[3] as import('../../shared/task-ending').TaskEndingRequest | undefined); break
       }
       case 'assignCalendarTopic': {
         if (!this.context.identity(id).config) throw new Error('请先为联系人配置可用的模型。')

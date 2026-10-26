@@ -12,6 +12,7 @@ import { AgentDeliveries } from '../../agents/delivery';
 import { type DeliveryUpdate } from '../../../shared/agent-delivery';
 import type { ContactStoreOperations } from './operations';
 interface Ports {
+  endings: Pick<import('./endings').ContactEndings, 'produced'>
   dependencies: Pick<import('../../agents/delivery-dependencies').DeliveryDependencies, 'published'>
   feedbackLedger: Pick<import('../../agents/feedback-ledger').FeedbackLedger, 'complete'>
   getRun: ContactStoreOperations['getRun']
@@ -98,6 +99,7 @@ export class ContactCompletion {
         try { this.ports.remember(run.character_id, memory, runId) } catch { this.ports.event(runId, 'memory-skipped', '一条记忆未保存：内容含敏感信息或记忆库已满；成果仍保留。') }
       }
       this.db.prepare("UPDATE runs SET status='completed',summary=?,updated_at=? WHERE id=?").run(report.title, Date.now(), runId)
+      this.db.prepare("UPDATE runs SET input=json_remove(input,'$.endingCandidate') WHERE id=?").run(runId)
       if (!presentationOnly) this.ports.taskFailures.clear(run.character_id, run.topic_id)
       if (run.topic_id) this.db.prepare('DELETE FROM research_idle WHERE topic_id=?').run(run.topic_id)
       const research = this.ports.research(runId)
@@ -117,6 +119,7 @@ export class ContactCompletion {
         else if (research.plan.action === 'write' && !changedSection) this.ports.event(runId, 'deferred', '本轮没有新增或修改正文，按工作间隔再检查，避免重复消耗额度。')
       }
       this.ports.event(runId, 'completed', report.nextStep || '本轮工作完成。')
+      if (!presentationOnly && committed?.runId === runId) this.ports.endings.produced(run)
       if (!presentationOnly) this.ports.completeCalendar(run)
       if (!presentationOnly) this.ports.pauseForTaskBudget(runId)
     })()

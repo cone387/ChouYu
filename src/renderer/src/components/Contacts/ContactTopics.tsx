@@ -1,4 +1,5 @@
 import { contactQueries } from './contactQueries'
+import { endingState, taskEndingFacts } from '../../../../shared/task-ending'
 import ContactInteractionCard from '../ChatPanel/ContactInteractionCard'
 import { calendarScheduleLabel } from '../../../../shared/calendar-schedule'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
@@ -96,10 +97,12 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const scheduleFields: [string, ReactNode][] = routine ? [
     ['执行时间', routine.finishedAt ? '已完成，不再执行' : `${routineTimesLabel(routine)}${routine.cadence === 'once' ? '，电脑本地时间' : '（电脑本地时间）'}`],
     ...(routine.enabled && !routine.finishedAt ? [[routine.retryAt ? '下次重试' : '下次执行', time(routine.retryAt ?? routine.nextAt)] as [string, ReactNode]] : []),
-    ['最近完成', routine.lastAt ? `${time(routine.lastAt)} · 已发到聊天` : '尚未执行']
+    ['最近完成', routine.lastAt ? `${time(routine.lastAt)} · 已发到聊天` : '尚未执行'],
+    ...taskEndingFacts(routine.ending)
   ] : [['触发规则', assistantTask?.description ?? '']]
 
   const execution = topic ? contactTaskExecution(data, topic) : undefined
+  const schedulingEnded = endingState(topic?.ending ?? routine?.ending).stopped
   const calendarFinished = topic && data.taskSchedule?.[topic.id]?.finishedAt
   const calendarNeedsSettings = Boolean(topic?.calendar && !data.settings.enabled)
   const currentRun = execution?.run
@@ -191,11 +194,12 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
         {!selectedItem && <div className="topic-content-scroll"><header className="topic-content-header"><div className="topic-title-group">{stageToggle}<h4>任务详情</h4></div></header><p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '选择或新建任务，在这里查看进度与成果。'}</p></div>}
     {selectedItem && <>
       <div className="topic-floating-action" data-running={selectedItem.running || undefined}>
-          <ContactTaskRunButton pause={pauseAvailable} recovery={execution?.state.recovery}
-            label={execution?.action === 'inspect' ? '处理样式失败' : runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '处理中…' : assistantTask ? pauseAvailable ? '暂停' : routine ? '启用定时' : assistantTask.duty ? '启用提醒' : '安排时间' : executionLabel}
+          <ContactTaskRunButton pause={!schedulingEnded && pauseAvailable} recovery={execution?.state.recovery}
+            label={schedulingEnded ? '修改结束条件' : execution?.action === 'inspect' ? '处理样式失败' : runAction === 'pause' ? '暂停中…' : runAction === 'start' ? '处理中…' : assistantTask ? pauseAvailable ? '暂停' : routine ? '启用定时' : assistantTask.duty ? '启用提醒' : '安排时间' : executionLabel}
             title={execution?.action === 'inspect' ? '打开本次样式失败记录，保留原修改范围重试' : assistantTask ? (pauseAvailable ? '暂停此任务的自动触发' : '启用此任务的自动触发') : activeRun?.status === 'running' ? '本轮从开始到现在的耗时（含排队和等待回复），点击暂停；累计耗时见概览统计。' : canPause ? '点击暂停当前任务' : topic?.calendar ? calendarFinished ? '修改为新的未来时间后再启用' : calendarNeedsSettings ? '查看联系人自动工作设置' : '恢复日历安排，到期后按工作时间和额度执行' : '启动本任务一轮工作'}
             disabled={busy || Boolean(runAction) || Boolean(topic && !canPause && settingsDirty)}
             onClick={() => {
+              if (schedulingEnded) { setShowSettings(true); return }
               if (topic?.calendar && !canPause && execution?.action !== 'inspect') {
                 if (calendarFinished) { setShowSettings(true); return }
                 if (calendarNeedsSettings && onWorkSettings) { onWorkSettings(); return }

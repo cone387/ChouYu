@@ -1,6 +1,6 @@
 import { appendTaskRequestLog } from '../../shared/task-request-log'
 export interface ContactTaskDraftTurn { role: 'user' | 'assistant'; text: string }
-export interface ContactTaskDraft { targetKey: string; turns: ContactTaskDraftTurn[]; updatedAt: number; truncated?: boolean }
+export interface ContactTaskDraft { targetKey: string; turns: ContactTaskDraftTurn[]; updatedAt: number; truncated?: boolean; acceptedAt?: number; requestText?: string }
 interface DraftDeps {
   read(): string | undefined | null
   write(value: string): void
@@ -28,6 +28,12 @@ export class ContactTaskDraftStore {
   }
   list(): ContactTaskDraft[] { return this.parse() }
   get(targetKey: string): ContactTaskDraft | undefined { return this.parse().find(d => d.targetKey === targetKey) }
+  accept(targetKey: string, text: string, now = Date.now()): number {
+    const previous = this.get(targetKey)
+    if (previous?.acceptedAt !== undefined && Number.isFinite(previous.acceptedAt) && (previous.requestText === text || previous.turns.length)) return previous.acceptedAt
+    this.save([...this.parse().filter(d => d.targetKey !== targetKey), { ...previous, targetKey, turns: previous?.turns ?? [], requestText: text, acceptedAt: now, updatedAt: now }])
+    return now
+  }
   append(targetKey: string, turn: ContactTaskDraftTurn) {
     if (typeof targetKey !== 'string' || !targetKey || typeof turn.text !== 'string' || !turn.text.trim() || turn.text.length > 8000) throw new Error('草稿内容无效。')
     const drafts = this.parse().filter(d => d.targetKey !== targetKey)
@@ -35,7 +41,7 @@ export class ContactTaskDraftStore {
     const turns = [...(previous?.turns ?? []), { role: turn.role, text: turn.text.trim() }]
     let truncated = previous?.truncated ?? false
     while (JSON.stringify(turns).length > MAX_TURN_CHARS && turns.length > 1) { turns.shift(); truncated = true }
-    const next = [...drafts, { targetKey, turns, updatedAt: Date.now(), ...(truncated ? { truncated: true } : {}) }]
+    const next = [...drafts, { ...previous, targetKey, turns, updatedAt: Date.now(), ...(truncated ? { truncated: true } : {}) }]
     this.save(next)
   }
   clear(targetKey: string) { this.save(this.parse().filter(d => d.targetKey !== targetKey)) }

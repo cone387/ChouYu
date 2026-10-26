@@ -19,7 +19,7 @@ export function inspectContactStorage(directory: string): ContactStorageHealth {
     let db: Database.Database | undefined
     try {
       db = new Database(join(directory, file), { readonly: true, fileMustExist: true })
-      if ((db.pragma('user_version', { simple: true }) as number) > (file === 'agents.db' ? 19 : 0)) return { kind: 'incompatible' }
+      if ((db.pragma('user_version', { simple: true }) as number) > (file === 'agents.db' ? 20 : 0)) return { kind: 'incompatible' }
       if (db.pragma('quick_check', { simple: true }) !== 'ok') problem ??= 'damaged'
     } catch (error) {
       const code = (error as { code?: string }).code
@@ -46,7 +46,7 @@ export class ContactRestore {
     const health = inspectContactStorage(this.directory)
     if (health.kind !== 'damaged' && health.kind !== 'missing') throw new Error('只有确认损坏或缺失的联系人数据库可以恢复备份。')
     const backup = new ContactBackups(this.directory).verify(group)
-    if (backup.files.tasks.schema > 19 || backup.files.checkpoints.schema > 0) throw new Error('备份数据版本较新，请升级应用。')
+    if (backup.files.tasks.schema > 20 || backup.files.checkpoints.schema > 0) throw new Error('备份数据版本较新，请升级应用。')
     const journal: Journal = { format: 1, id: randomUUID(), group, phase: 'preserving' }
     const target = join(this.directory, 'recovery', journal.id)
     mkdirSync(join(target, 'original'), { recursive: true })

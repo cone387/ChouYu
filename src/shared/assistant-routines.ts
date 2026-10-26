@@ -1,11 +1,13 @@
 import { validateCalendarSchedule, nextCalendarAt, latestCalendarAt, type CalendarSchedule } from './calendar-schedule'
 export interface AssistantRoutineInput extends CalendarSchedule {
+  endingRequest?: import('./task-ending').TaskEndingRequest
   title: string
   instruction: string
   kind: 'reminder' | 'contact-summary'
   enabled: boolean
 }
 export interface AssistantRoutine extends AssistantRoutineInput {
+  ending?: import('./task-ending').TaskEnding
   id: string
   revision: number
   createdAt?: number
@@ -55,7 +57,8 @@ export function validateRoutine(raw: unknown, titleLimit: 100 | 160 = 100): Assi
   const v = raw as AssistantRoutineInput & { time?: string }
   if (typeof v.title !== 'string' || !v.title.trim() || v.title.length > titleLimit || typeof v.instruction !== 'string' || !v.instruction.trim() || v.instruction.length > 2000) throw new Error(`请填写标题和具体安排（最多 ${titleLimit} / 2000 字）。`)
   if (!['reminder', 'contact-summary'].includes(v.kind) || typeof v.enabled !== 'boolean') throw new Error('安排类型无效。')
-  return { ...validateCalendarSchedule(v), title: v.title.trim(), instruction: v.instruction.trim(), kind: v.kind, enabled: v.enabled }
+  return { ...validateCalendarSchedule(v), title: v.title.trim(), instruction: v.instruction.trim(), kind: v.kind, enabled: v.enabled,
+    ...(v.endingRequest !== undefined ? { endingRequest: v.endingRequest } : {}) }
 }
 export const nextRoutineAt = nextCalendarAt
 export const latestRoutineAt = latestCalendarAt

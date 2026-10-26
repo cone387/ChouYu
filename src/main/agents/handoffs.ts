@@ -52,7 +52,7 @@ export class AgentHandoffs {
       if (existing) return existing
       const request = this.validate(owner, prepared.request)
       const enabled = this.store.overview(request.recipientId).settings.enabled
-      const topic = this.store.assignTopic(request.recipientId, prepared.work.description, '', prepared.work.requestLog, prepared.work.tokens)
+      const topic = this.store.assignTopic(request.recipientId, prepared.work.description, '', prepared.work.requestLog, prepared.work.tokens, prepared.work.endingRequest)
       const profile = this.store.profile(request.recipientId)!, settings = JSON.parse(profile.settings)
       if (settings.enabled !== enabled) this.store.db.prepare('UPDATE profiles SET settings=? WHERE character_id=?').run(JSON.stringify({ ...settings, enabled }), request.recipientId)
       const value: Handoff = { id: randomUUID(), source: request.source, recipientId: request.recipientId, topicId: topic.id, description: prepared.work.description, createdAt: Date.now(), continuous: prepared.work.continuous }

@@ -1,3 +1,4 @@
+import { endingRequestFromTool, taskEndingToolSchema } from '../tools/task-ending-source'
 import { contactCommandDispatcher, type UnknownContactDispatch } from '../task-center/command-boundary'
 import type { AgentOverview, AgentRunDetail } from '../../shared/agents'
 import { TOPIC_STATUS } from '../../shared/agents'
@@ -121,12 +122,13 @@ export function createContactTools(access: Access): RegisteredTool[] {
     { source: 'builtin', risk: 'write', requiresConfirmation: false, alwaysConfirm: false,
       name: 'assign_contact_task', displayName: '接下联系人任务',
       description: '用户明确把一项需要执行、研究或持续跟进的任务交给当前联系人时使用。普通问答、讨论想法、引用他人话语不创建任务。保留原始描述；明确指定钟点/日历周期必须填写schedule保存真实安排，不得仅写进description后立即执行；时间或起点不明确先询问。不写入个人待办。已有事项的回复或调整使用对应工具。',
-      inputSchema: { type: 'object', properties: { description: { type: 'string', description: '用户交付的单个任务，保留目标和明确约束，不自行添加要求', maxLength: 2000 },
+      inputSchema: { type: 'object', properties: { ending: taskEndingToolSchema, description: { type: 'string', description: '用户交付的单个任务，保留目标和明确约束，不自行添加要求', maxLength: 2000 },
         schedule: { type: 'string', description: '仅用户指定日历时间时填写JSON：times=[HH:mm]，cadence=daily/weekdays/weekly/once/monthly/interval；weekly附weekday(0–6)，once附date且只1个时刻，monthly附monthDay(1–31或last)，interval附intervalDays和anchorDate(YYYY-MM-DD)。最多5个时刻，缺必要信息先询问。' }
       }, required: ['description'], additionalProperties: false },
       async prepareAsync(args, context) {
         const id = owner(context), description = typeof args.description === 'string' ? args.description.trim() : ''
         if (!description || description.length > 2000 || containsSecret(description)) throw new Error('请提供有效的任务描述，不要包含密钥。')
+        const endingRequest = endingRequestFromTool(args.ending, context)
         const schedule = args.schedule === undefined ? undefined : validateCalendarSchedule(JSON.parse(String(args.schedule)))
         const overview = await request('get', id) as AgentOverview
         let consumed = false
@@ -134,7 +136,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
           if (consumed) throw new Error('此任务已经提交，请勿重复创建。')
           consumed = true
           if (owner(context) !== id) throw new Error('聊天归属已变化，请重新发起。')
-          const result = await request('feedback', id, [overview.revision, schedule ? 'assignCalendarTopic' : 'assignTopic', schedule ? [{ ...schedule, title: description.slice(0, 100), instruction: description, kind: 'contact-summary', enabled: true }, `用户：${description}`] : [description]]) as AgentOverview
+          const result = await request('feedback', id, [overview.revision, schedule ? 'assignCalendarTopic' : 'assignTopic', schedule ? [{ ...schedule, ...(endingRequest ? { endingRequest } : {}), title: description.slice(0, 100), instruction: description, kind: 'contact-summary', enabled: true }, `用户：${description}`] : endingRequest ? [description, undefined, undefined, endingRequest] : [description]]) as AgentOverview
           const topic = result.topics.find(topic => !overview.topics.some(previous => previous.id === topic.id))
           if (schedule) {
             if (!topic?.calendar || !result.taskSchedule?.[topic.id]) throw new Error('未能确认日历安排已保存。')
@@ -150,6 +152,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
       name: 'edit_contact_task', displayName: '保存任务新要求',
       description: '用户明确调整现有任务的目标、范围、长期要求、汇报方式、标题或任务额度时使用。先读取真实任务。仅传用户要求修改的字段，goal/constraints 是该字段的完整新内容，保留未撤销的要求。汇报数量不是研究数量，不能擅自改工作批次。不用于一次性正文或样式修订；联系人级设置使用edit_contact_work_settings，定点时间不能冒充普通约束。保存成功才可答应以后照做。',
       inputSchema: { type: 'object', properties: { ...topicProperties,
+        ending: taskEndingToolSchema,
         reason: { type: 'string', description: '用户本次修改的原话', maxLength: 2000 },
         separateEvaluations: { type: 'boolean', description: '用户要求每条只汇报一个评价时为true，明确恢复合并汇报时false；不改变研究批次' },
         goal: { type: 'string', description: '需要修改时提供完整新目标', maxLength: 2000 },
@@ -164,7 +167,9 @@ export function createContactTools(access: Access): RegisteredTool[] {
         const topic = data.topics.find(t => t.id === args.topicId)
         if (!topic || topic.revision !== args.revision) throw new Error('任务已变化，请重新读取。')
         if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('修改要求无效。')
-        const patch = Object.fromEntries(['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations', 'clearTokenLimit'].filter(k => args[k] !== undefined).map(k => [k, args[k]]))
+        const patch: Record<string, unknown> = Object.fromEntries(['goal', 'constraints', 'title', 'modelCalls', 'tokens', 'separateEvaluations', 'clearTokenLimit'].filter(k => args[k] !== undefined).map(k => [k, args[k]]))
+        const endingRequest = endingRequestFromTool(args.ending, context)
+        if (endingRequest) patch.endingRequest = endingRequest
         if (!Object.keys(patch).length || containsSecret(JSON.stringify(patch))) throw new Error('没有有效修改。')
         let consumed = false
         return { preview: `任务：${topic.title}\n修改要求：${args.reason}\n旧轮次会停止；已保存成果保留，暂停状态不会自动恢复。`, execute: async () => {
@@ -181,6 +186,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
     { ...common, name: 'set_contact_schedule', displayName: '保存任务日历安排',
       description: '为当前联系人的现有任务保存或修改真实日历安排。保留目标、约束与暂停/结束状态。必须先读取任务版本；不能仅在普通任务描述中写时间冒充保存。',
       inputSchema: { type: 'object', properties: { ...topicProperties,
+        ending: taskEndingToolSchema,
         schedule: { type: 'string', description: 'JSON字符串：times为1–5个HH:mm，cadence为daily/weekdays/weekly/once/monthly/interval；weekly须weekday(0–6)，once须date且仅一个时刻，monthly须monthDay(1–31或last)，interval须intervalDays和anchorDate。日期YYYY-MM-DD，缺必要信息先询问。' },
         reason: { type: 'string', maxLength: 2000, description: '本次用户原话' }
       }, required: ['topicId', 'revision', 'schedule', 'reason'], additionalProperties: false },
@@ -190,7 +196,8 @@ export function createContactTools(access: Access): RegisteredTool[] {
         if (!topic || topic.revision !== args.revision) throw new Error('任务已变化，请重新读取。')
         if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('安排修改要求无效。')
         const rule = validateCalendarSchedule(JSON.parse(String(args.schedule)))
-        const input = { ...rule, title: topic.title, instruction: topic.goal, enabled: !['paused', 'completed', 'abandoned'].includes(topic.status), kind: 'contact-summary' }
+        const endingRequest = endingRequestFromTool(args.ending, context)
+        const input = { ...rule, ...(endingRequest ? { endingRequest } : {}), title: topic.title, instruction: topic.goal, enabled: !['paused', 'completed', 'abandoned'].includes(topic.status), kind: 'contact-summary' }
         let consumed = false
         return { preview: `任务：${topic.title}\n安排：${calendarScheduleLabel(rule)}\n由本联系人到期执行，仍受工作时间和额度限制；暂停/结束不会自动恢复。`, execute: async () => {
           if (consumed) throw new Error('此安排已经提交。')

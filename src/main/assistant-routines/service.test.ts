@@ -11,6 +11,23 @@ function fixture() {
   return { deps, messages, service: new AssistantRoutineService(deps) }
 }
 describe('assistant routine execution', () => {
+  it('reconciles an actual receipt after a failed atomic completion without generating or delivering twice', async () => {
+    const f = fixture(), receipts = new Set<string>()
+    const deliver = vi.fn((receipt: string) => { receipts.add(receipt) })
+    const commit = vi.fn((value: string, history: { id: string; value: string }) => { f.deps.write(value); f.deps.writeHistory(history.id, history.value) })
+      .mockImplementationOnce(() => { throw new Error('disk full at completion') })
+    const deps = { ...f.deps, deliver, delivered: (receipt: string) => receipts.has(receipt), commit }
+    const service = new AssistantRoutineService(deps)
+    const [item] = service.save({ ...input, endingRequest: { patch: { count: { mode: 'delivered', amount: 1, source: '发送1次' } }, text: '发送1次', acceptedAt: at(25, 8), timeZone: 'Asia/Shanghai' } }, undefined, undefined, at(25, 8))
+    await service.tick(at(25, 9))
+    expect(service.list()[0].pending).toBeDefined()
+    const restarted = new AssistantRoutineService(deps)
+    await restarted.tick(at(26, 9)); await restarted.tick(at(27, 9))
+    expect(deliver).toHaveBeenCalledTimes(1)
+    expect(f.deps.generate).toHaveBeenCalledTimes(1)
+    expect(Object.values(restarted.list()[0].ending!.occurrences)).toEqual([expect.objectContaining({ deliveredAt: expect.any(Number) })])
+    expect(restarted.history(item.id).items[0].status).toBe('completed')
+  })
   it('reports only real live executions, delivery and cancellation without reviving restart history', async () => {
     const f = fixture(), [item] = f.service.save(input, undefined, undefined, at(25, 8))
     f.service.save({ ...input, times: ['10:00'] }, undefined, undefined, at(25, 8))
