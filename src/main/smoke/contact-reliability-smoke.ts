@@ -19,6 +19,13 @@ export async function runContactReliabilitySmoke(window: BrowserWindow) {
   const directory = join(home, 'contact-agents'), artifacts = process.env.CHOUYU_SMOKE_ARTIFACTS || 'artifacts/contact-reliability/electron'
   mkdirSync(artifacts, { recursive: true })
   const run = (code: string) => window.webContents.executeJavaScript(code)
+  const screenshot = async () => {
+    // Hidden-window capture may return the surface from before a device/theme change.
+    window.webContents.invalidate()
+    await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+    await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+    return (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG()
+  }
   const status = () => run('window.electronAPI.agents.runtimeStatus()') as Promise<ContactRuntimeSnapshot>
   const owner = createCharacter({ name: '可靠性验收', avatar: '🧪', category: 'other', soulMd: '独立验收联系人' })
   const empty = createCharacter({ name: '空联系人恢复验收', avatar: '🧪', category: 'other', soulMd: '独立验收联系人' })
@@ -50,7 +57,7 @@ export async function runContactReliabilitySmoke(window: BrowserWindow) {
     window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
     await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
     assert.equal(await run("(()=>{const d=document.querySelector('dialog[open]'),r=d.getBoundingClientRect();return r.left<0||r.right>innerWidth||d.scrollWidth>d.clientWidth})()"), false)
-    writeFileSync(join(artifacts, `restore-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+    writeFileSync(join(artifacts, `restore-${theme}-${width}.png`), await screenshot())
   }
   window.webContents.disableDeviceEmulation()
   window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
@@ -82,7 +89,7 @@ export async function runContactReliabilitySmoke(window: BrowserWindow) {
     await run(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`)
     window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
     await run(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
-    writeFileSync(join(artifacts, `scope-review-${theme}-${width}.png`), (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG())
+    writeFileSync(join(artifacts, `scope-review-${theme}-${width}.png`), await screenshot())
     const layout = await run(`(()=>{const f=document.querySelector(${JSON.stringify(selector)}),r=f.getBoundingClientRect();return {left:r.left,right:r.right,viewport:innerWidth,scroll:f.scrollWidth,client:f.clientWidth}})()`)
     assert.ok(layout.left >= -1 && layout.right <= layout.viewport + 1 && layout.scroll <= layout.client + 1, JSON.stringify(layout))
   }

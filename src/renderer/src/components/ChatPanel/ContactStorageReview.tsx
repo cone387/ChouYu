@@ -19,8 +19,8 @@ export default function ContactStorageReview({ busy, contactOnly = false, submit
     <label className="contact-interaction-field"><span>实际核对结果</span>
       <textarea required minLength={10} maxLength={4000} rows={4} value={evidence} disabled={busy} onChange={e => setEvidence(e.target.value)}
         placeholder="记录已核对的资料、记忆、共享权限，以及外部操作是否实际完成；仍不确定的内容请明确写出。" /></label>
-    <label><input type="checkbox" checked={scopes} disabled={busy} onChange={e => setScopes(e.target.checked)} />已逐项核对此联系人的恢复资料、记忆与共享权限，可以再次用于模型上下文</label>
-    {!contactOnly && <label><input type="checkbox" checked={verified} disabled={busy} onChange={e => setVerified(e.target.checked)} />本任务的外部操作结果已核实，没有仍未知的操作</label>}
+    <label className="agent-toggle"><input type="checkbox" checked={scopes} disabled={busy} onChange={e => setScopes(e.target.checked)} />已逐项核对此联系人的恢复资料、记忆与共享权限，可以再次用于模型上下文</label>
+    {!contactOnly && <label className="agent-toggle"><input type="checkbox" checked={verified} disabled={busy} onChange={e => setVerified(e.target.checked)} />本任务的外部操作结果已核实，没有仍未知的操作</label>}
     {!contactOnly && ([['dailyCalls', '今日额外调用次数'], ['dailyTokens', '今日额外 Token'], ['taskCalls', '本任务额外调用次数'], ['taskTokens', '本任务额外 Token']] as const).map(([key, label]) =>
       <label key={key} className="contact-interaction-field"><span>{label}</span><input aria-label={label} type="number" min={0} step={1}
         max={key.endsWith('Calls') ? 10000 : 1000000000} value={limits[key]} disabled={busy} onChange={e => setLimits(previous => ({ ...previous, [key]: e.target.value }))} placeholder="留空表示不追加" /></label>)}

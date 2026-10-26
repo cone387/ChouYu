@@ -74,7 +74,7 @@ export class ContactInteractions {
       kind: 'retry', status: recovery.scopeReviewed ? 'resolved' : 'pending', budgets: [],
       storageRecovery: { restoreId: recovery.restoreId, unknownHistory: true, contactOnly: true },
       result: recovery.scopeReviewed ? '联系人资料与共享权限已核对；新任务仍需单独核对外部操作与新增额度。' : undefined,
-      failure: { kind: 'storage', message: '此联系人没有可恢复的任务，请先核对恢复资料、记忆与共享权限。历史用量仍不完整。', action: '核对联系人资料', settings: false } }
+      failure: { title: '联系人资料待核对', kind: 'storage', message: '此联系人没有可恢复的任务，请先核对恢复资料、记忆与共享权限。历史用量仍不完整。', action: '核对联系人资料', settings: false } }
   }
   private recoveryCard(owner: string, topicId: string, id?: string): ContactTaskInteraction {
     const recovery = this.store.recovery.identity(owner)
