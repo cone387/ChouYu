@@ -55,6 +55,7 @@ export async function runContactReliabilitySmoke(window: BrowserWindow) {
   for (const theme of ['light', 'dark']) for (const width of [375, 1024]) {
     await run(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`)
     window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
+    await waitForRenderer(window, `innerWidth === ${width} && (()=>{const d=document.querySelector('dialog[open]'),r=d.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&d.scrollWidth<=d.clientWidth})()`)
     await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
     assert.equal(await run("(()=>{const d=document.querySelector('dialog[open]'),r=d.getBoundingClientRect();return r.left<0||r.right>innerWidth||d.scrollWidth>d.clientWidth})()"), false)
     writeFileSync(join(artifacts, `restore-${theme}-${width}.png`), await screenshot())
@@ -89,6 +90,9 @@ export async function runContactReliabilitySmoke(window: BrowserWindow) {
     await run(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`)
     window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 1, viewSize: { width, height: 768 }, scale: 1 })
     await run(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
+    // Device emulation, ResizeObserver and React updates do not share one frame.
+    // Await the actual constrained layout before taking the evidence screenshot.
+    await waitForRenderer(window, `innerWidth === ${width} && (()=>{const f=document.querySelector(${JSON.stringify(selector)}),r=f.getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1&&f.scrollWidth<=f.clientWidth+1})()`)
     writeFileSync(join(artifacts, `scope-review-${theme}-${width}.png`), await screenshot())
     const layout = await run(`(()=>{const f=document.querySelector(${JSON.stringify(selector)}),r=f.getBoundingClientRect();return {left:r.left,right:r.right,viewport:innerWidth,scroll:f.scrollWidth,client:f.clientWidth}})()`)
     assert.ok(layout.left >= -1 && layout.right <= layout.viewport + 1 && layout.scroll <= layout.client + 1, JSON.stringify(layout))
