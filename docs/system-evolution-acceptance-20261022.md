@@ -2,7 +2,7 @@
 
 设计：[完整系统迭代](superpowers/specs/2026-10-22-system-evolution-design.md)。
 
-当前阶段：用户以“ok”确认书面设计；[完整实施计划](superpowers/plans/2026-10-22-system-evolution.md)及四个子计划已写入，用户以“嗯嗯”批准原生执行；已在 `feat/system-evolution` 开始 A1 实施。以下是改动前基线，不是本轮功能完成证据。
+当前阶段：用户以“ok”确认书面设计、以“嗯嗯”批准原生执行。`feat/system-evolution` 已实现 A1–G2，H1 正在完成整分支审查与最终桌面回归；各阶段证据在下文，基线数据单独保留。源码验证不等于发布安装包。
 
 ## 基线
 
@@ -33,9 +33,9 @@
 
 代码边界复核：`database.ts` 的 `appendContactMessage` 在写入失败时保留内存消息及 receipt，重试先尝试持久化而不再次插入。现有 `database.test.ts` 已分别覆盖普通联系人与助手消息的这种行为。迁移必须区分“内存待保存”和“已持久提交”，既不能丢失待保存正文，也不能在落盘成功前确认源域。
 
-## 待完成范围
+## 范围与完成判据
 
-设计矩阵 A1–A3、B1、C1、D1、E1–E2 已完成专项验证；F1–H1 仍待实现与验证：反馈修订关联、成果依赖事件、失败恢复衔接及文档校准。整体尚未完成。
+设计矩阵 A1–G2 已完成真实调用链与专项验证；H1 的文档与图册已更新，全量单测通过，最终桌面回归与独立审查仍需收尾。以下按阶段保留测试与诊断记录，不能将某阶段尚未实施后续项的描述当作当前总状态。
 
 后续每批记录实际提交、专项/完整测试、真实 Electron 交互与截图、迁移数据核对和剩余缺口。未执行的检查不标为通过，不用本文件或设计文件的存在代替功能证据。
 
@@ -139,3 +139,54 @@ ContactTaskStore 保留兼容入口，将查询、额度、调度、变更和结
 网络沿用有界退避；共享读取权限的明确恢复和交接来源重新共享会重新具备原调度资格，仍检查任务暂停、时间和额度；通用工具配置变化不能凭猜测自动授权，保留原显式重试路径。预算等待和进程中断继续原轮次检查点；未知外部操作沿用原确认卡保护，先核对实际结果，不自动重放。恢复信息为现有状态的只读投影，接入任务概览、运行按钮和处理卡。
 
 9 项恢复流测试覆盖自动/显式恢复、失效回执、引用保留、权限、预算门控、重启、样式修订、关联事务回滚、新旧意见隔离、未知执行与取消占位；7 项恢复投影测试通过。扩展回归 734 通过、43 跳过，Node/Web 类型、构建与边界检查通过。Electron contact-experience 注入真实 HTTP 503，失败保留原任务和第 3 版引用；重复继续只新增一轮，生成实际第 4 版，阅读页始终停在第 2 版。recovered.png 已查看，workflows-task3-smoke.log 有 CHOUYU_RECOVERY_FLOW_SMOKE_PASSED。另补工具准备重试跨新版的 RED/GREEN，保存过的请求仍可取得原回执，而新请求的过期版本仍拒绝。
+
+## H1 最终核验（进行中）
+
+2026-10-22 首次最终全量 `npm test`：265 个测试文件通过、15 个跳过；2086 项通过、53 项跳过，退出 0，日志 `final-full-tests-first.log`。Node/Web 类型和 TypeScript 导入图检查通过（`final-typecheck.log`、`final-boundaries.log`），生产构建通过，仍保留既有 renderer 大 chunk 提示。
+
+图册按当前职责更新，18 张图与目录共 19 页引用 110 个实际源文件；修正原图指向已删除 AgentService/AgentStore/runtime 的链接。`verify_atlas.py` 的静态、桌面、移动宽度及打印检查全部通过，issues 为空；存储/消息桌面和工作区窄屏截图已查看。源码基线为 e8ad84e，说明更新不代表模型或安装包验收。当前状态、路线、联系人规范与架构、存储恢复说明均同步；历史批次保留日期并明确为存档。
+
+真实入口复核：
+
+| 设计项 | 当前调用链与断言依据 |
+| --- | --- |
+| A1 | preload/chat → ipc/chat → ChatService → ContactAgent.Chat；请求、显式停止、发送端结束与退出等待均有生命周期测试 |
+| A2/A3 | App → Workspace → 单一 useSessionWorkspace；保活页面与导航版本守卫，Tasks 数据/命令/草稿模块，真实 AST 边界检查 |
+| B1 | notice/action、routine/companion、todo/snooze/proactive → MessagingService → 应用库持久提交 → 源域确认；SQL 故障和清空重试断言 |
+| C1/D1 | 三域 TaskCenter 与共享命令映射 → ContactTaskStore 门面 → queries/call-budget/scheduling/mutations/completion；真实 SQL 触发器验证完成回滚 |
+| E1 | database 兼容入口 → ApplicationDatabase 会话/元数据仓储；旧文件身份核对、目标事务、v5 指向屏障及持久回执 |
+| E2 | AgentDeliveries/Portfolio → 哈希正文块/版本清单；300 版内容、Markdown/HTML 相等及共享删除/损坏测试 |
+| F1 | 原反馈工具/确认卡/单意见弹窗 → FeedbackLedger → 实际轮次 → ContactCompletion 关联结果；UI 打开固定基准/结果版本 |
+| G1 | 已确认持续交接 → DeliveryDependencies → 完成事务更新 → 原 WorkLoop/Host 唤醒 → 当前调度权限复核 → 实际固定来源确认消费 |
+| G2 | 原 continue/retry → 稳定请求回执和反馈 attempt 链；原状态投影进入共用概览/按钮，保留预算/暂停/未知操作保护 |
+
+最终完整桌面流程的初次运行在阅读偏好 Esc 关闭断言失败；单独 conversation 与 agents 流程通过，不能据此宣布完整回归通过。诊断运行还出现统计视图等待及聊天滚动跟随超时，原始日志保留在 `final-full-smoke*.log`，继续核对真实焦点、可见状态和输入事件，不通过删除断言掩盖问题。独立整分支审查已完成，修复及后续验证状态见下。
+
+
+### 最终审查修复与环境阻塞（2026-10-22）
+
+独立审查覆盖 `ef40294..a6b1440`，有 3 项 Important，无 Critical/Minor。按一次修复流程处理，未派发重复审查：
+
+1. 工作记录的 `agents.run` 重试此前绕过反馈恢复链。现在内容与样式修订都在原事务中恢复来源、意见及反馈关联，界面传入失败轮次身份，重复点击不会新增轮次；过时且已有独立新工作的重试拒绝。`review-recovery-red.log` 的两项缺少 recoveryFrom 失败转为 `review-recovery-green.log` 的 11 项通过。另补失败记录超出联系人最近 30 条历史的测试，重试依据查询原任务最新轮次，不依赖概览截断结果。
+2. 保活的隐藏待办弹窗此前仍监听全局 Esc。现在按 active/可见性暂停监听与焦点恢复，原生子弹窗拥有自己的 Esc/Tab，工作区只把可见模态层作为快捷键阻挡。真实 Electron `--task-edit` 先复现隐藏草稿拦截搜索弹窗 Esc，再通过且草稿保留，见 `review-overlay-red.log`、`review-overlay-green.log`。随后追加的 Ctrl+F 断言仍待最终重跑。
+3. 后台结束后的最后一次保存失败此前允许返回已注销 IPC、已关闭服务的界面。现在保留恢复 IPC 到最终退出，首次失败仍可正常返回；后台关闭后的失败使用明确的保存恢复对话框，允许重试、打开目录或明确放弃。普通窗口暂停操作，成功保存后退出再重开。IPC 生命周期回归先失败、修复后通过，见 `review-shutdown-red.log`、`review-shutdown-green.log`；另补多次失败直至明确放弃测试。
+
+修复后的 Node/Web 类型、依赖边界和构建通过；大 chunk 提示仍存在。全量 `final-tests-review-fixes.log` 有 2087 项通过、3 项失败、52 项跳过，另有 1 个测试 worker 无法启动；不能称全量通过。失败包括 DSH SDK `VirtualAlloc failed`、等待工具启动和回收进程断言，Vitest 报 `spawn UNKNOWN`。`final-full-smoke-review-fixes.log` 通过导航、保活、Esc 和滚动后以 `renderer=oom` 结束。
+
+同机只读诊断发现 `D:\codespace\AgentTrace\dist\cli.js worker` 共 582 个，随后增至 591 个；Windows 提交内存仅余约 916–1113 MB，物理可用内存约 11.5 GB。此信息证明环境存在内存分配限制，不单凭它认定所有历史间歇失败都已解释。已请求用户确认是否停止另一项目的 worker/watch，未擅自终止。完整测试、完整 Electron、DSH 以及相关最终专项尚待可用环境完成。
+
+DSH 另一个确定的问题是本机 `out/dsh-runtime` 旧产物：原 plugin 哈希不一致且缺 budget.mjs。已运行 `npm run build:dsh-runtime`（Node 24.15.0），新产物与源码 plugin/budget SHA-256 均一致；保留原 8192 输出上限断言。新运行时 smoke 随后受上述环境故障中断，不能宣称 DSH 最终验收通过。
+
+### 环境修复与继续验收（2026-10-26，进行中）
+
+用户随后明确授权清理并修复 AgentTrace。已停止核对命令行后的失控同步进程，未删除会话或队列。根因是每次采集都创建独立进程，而每个进程又持续等待全局重试队列。AgentTrace 分支 `fix/bounded-sync-worker` 的 `eb19914` 改为每库一个后台同步 worker，覆盖并发启动、队列唤醒、退出竞态、崩溃/PID 复用恢复及持久配置更新。282 项完整测试在并发 2 下全部通过；首次默认并发有 1 项导入子进程超时，单独复测通过，原日志保留。已构建并重启原有 Codex 常驻采集器，保留 5 秒间隔、20 条限额与登录启动设置。可用提交内存恢复到 36 GB 以上，观察到同步 worker 为 0–1 个。
+
+ChouYu 重新执行 Node/Web 类型、模块边界和生产构建均通过。`final-tests-after-worker-fix.log` 为 2090 项通过、1 项 DSH 工具启动等待失败、53 项跳过，另有该项清理超时；同文件独立复测 3 项通过，不能据此称全量通过。`final-full-smoke-after-worker-fix.log` 在联系人记忆页等待数据超时，退出时仍有待完成 IPC，尚无 worker 初始化完成记录。正在检查启动与可见性链路，未提高超时或移除断言，完整桌面与 DSH 最终验收仍未完成。
+
+### 2026-10-26 桌面与图册复验
+
+审查修复已提交为 `29ad5b2`。完整 `node scripts/smoke-electron.js` 在 `final-full-smoke-diagnostic.log` 中退出 0，覆盖存储故障恢复、联系人/记忆、待办、Provider 编辑、聊天、日志、助手任务、Agent 和提醒。首个联系人 worker 初始化实测 11555ms，随后强制重启为 348ms；初次失败的启动耗时波动尚未确定根因，不称其已消除。本次临时诊断只在失败分支收集可见性及现有 IPC，未改变成功路径、断言或等待期限；诊断已移除并重新构建。
+
+`final-task-edit.log` 的真实键鼠测试通过，包括隐藏草稿不拦截当前搜索弹窗、Ctrl+F、Esc/Tab、返回保留草稿。`task-edit-final/` 的深色窄布局日期弹窗和浅色清单截图已查看。`final-dsh-harness.log` 通过真实固定版 SDK、本地协议模型、原确认卡等待 65954ms、拒绝/重复点击/停止、隐藏未读和切换引擎；后台设置经 UI 保存、worker 重启后完成正式报告，仍验证 8192 输出上限与实际 Token 计费。报告为 `dsh-final/dsh-acceptance.json`，不是在线供应商验收。`final-assistant-routines.log` 与 `final-companion.log` 均退出 0，覆盖实际安排保存/执行/历史来源、只读工作检查及持久去重。
+
+图册基线更新至 `29ad5b2ae25a`，`verify_atlas.py --output artifacts/system-evolution/atlas-final` 检查 19 页、110 个源码文件，静态、桌面、移动和打印检查 issues 为空。生命周期图和工作区窄屏截图已查看。首次失败、原 OOM 与 Windows 间歇诊断继续保留，不以成功复验覆盖。

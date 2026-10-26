@@ -386,7 +386,7 @@ b+=node(48,504,288,'刷新数据并退出','保存失败可见，不假报落盘
 b+=t(496,518,'运行边界','group-title')+t(496,552,'关闭聊天面板仍可工作；退出应用、关机或休眠时不能声称持续执行。','small')
 b+=finish(note('托盘、提醒、未读和待处理是相互关联的机制，但“已读”不等于“已解决”。'))
 add(s,'数据与基础设施','启动、桌面陪伴与退出恢复','窗口之外的托盘、热键、更新和后台服务如何组成桌面应用。',b,
- ['入口先注册必要服务，再创建窗口和 IPC，异步初始化插件，最后接入托盘、热键和剪贴板。','主进程驱动托盘未读闪烁，Renderer 的状态机控制宠物显示与主动触发。','退出时关闭各服务并刷新持久数据；后台工作需要应用保持运行。'],
+ ['入口先注册必要服务，再创建窗口和 IPC，异步初始化插件，最后接入托盘、热键和剪贴板。','主进程驱动托盘未读闪烁，Renderer 的状态机控制宠物显示与主动触发。','退出前后均刷新持久数据；首次失败可返回，后台关闭后的失败进入保存恢复对话框，保留重试直至保存或明确放弃。后台工作需要应用保持运行。'],
  '图合并了服务初始化顺序中的独立步骤，不能当作每个 await 的精确时序。更新与自启动行为受打包状态、平台及用户配置控制。',
  ['src/main/index.ts','src/main/tray.ts','src/main/tray-flasher.ts','src/main/hotkey.ts','src/main/updater.ts','src/renderer/src/core/state-machine.ts','src/renderer/src/core/proactive.ts','src/main/reminders/service.ts'],['processes','assistant','delivery','settings'])
 
