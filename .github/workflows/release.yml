@@ -15,8 +15,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run setup:dsh-runtime
       - run: npx install-electron --no
       - run: npm audit --audit-level=high
+      - run: npm audit --prefix runtime/dsh --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:memory-eval
@@ -75,7 +77,19 @@ jobs:
       - name: Build & Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run build && npx electron-builder --win --publish always
+        run: npm run build && npm run build:dsh-runtime && npx electron-builder --win --publish always
+
+      - name: Verify packaged application and legacy migration
+        run: npm run test:smoke:packaged
+
+      - name: Verify packaged DSH runtime
+        run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --dsh-harness
+
+      - name: Verify v1.3.4 data upgrade
+        run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --navigation --upgrade-v134
+
+      - name: Verify packaged contact recovery
+        run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --contact-reliability
 
   publish-release:
     needs: [build-macos, build-windows]

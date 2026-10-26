@@ -29,6 +29,9 @@ fs.writeFileSync(legacyStorePath, JSON.stringify({
   ],
   state: {}
 }), 'utf8')
+if (process.argv.includes('--upgrade-v134')) {
+  require('./release-upgrade-fixture.cjs').seed(smokeUserData, JSON.parse(fs.readFileSync(legacyStorePath, 'utf8')))
+}
 const nativeCapture = process.argv.includes('--native-capture')
 const env = {
   ...process.env,
@@ -151,6 +154,7 @@ child.on('exit', (code) => {
   }
   try {
     verifyMigration()
+    if (process.argv.includes('--upgrade-v134')) require('./release-upgrade-fixture.cjs').verify(smokeUserData)
   } catch (error) {
     finish(1, `Session migration smoke test failed: ${error.message}\n${output}`)
     return

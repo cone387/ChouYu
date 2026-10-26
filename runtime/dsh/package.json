@@ -4,6 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "engines": { "node": ">=24 <25" },
+  "overrides": {
+    "zod": "4.6.7",
+    "undici": "8.12.2",
+    "fast-uri": "3.1.9",
+    "fflate": "0.8.3",
+    "@modelcontextprotocol/client": "2.3.0"
+  },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.1-alpha.3",
     "@deepseek-ai/dsh-sdk-client": "0.2.1-alpha.3",
