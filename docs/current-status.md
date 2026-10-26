@@ -12,7 +12,7 @@
 
 联系人 Agent 最新迭代增加阶段计划、累积成果与版本、单成果 Markdown 导出，以及用户答复和修改意见后的实际修订。源码与验收边界见 [持续交付计划](agent-delivery-plan.md)；仍需应用运行，不代表已发布安装包或全天验收完成。
 
-代码版本为 `1.4.0`（以 `package.json` 为准），包含联系人持续事项、聊天交付、持续成果迭代与本轮可靠性优化。发布内容见 [v1.4.0 说明](releases/v1.4.0.md)，安装包是否正式公开以 [GitHub Release](https://github.com/cone387/ChouYu/releases/tag/v1.4.0) 为准；源码验证结果不能替代安装包验收。此前结果见 [稳定性验收](stability-acceptance-20260923.md)。
+代码版本为 `1.4.1`（以 `package.json` 为准），包含联系人持续事项、聊天交付、持续成果迭代与本轮可靠性优化。发布内容见 [v1.4.1 说明](releases/v1.4.1.md)，安装包是否正式公开以 [GitHub Release](https://github.com/cone387/ChouYu/releases/tag/v1.4.1) 为准；源码验证结果不能替代安装包验收。此前结果见 [稳定性验收](stability-acceptance-20260923.md)。
 
 ## 已有能力
 

@@ -39,8 +39,11 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
   console.log('CHOUYU_NAVIGATION_STAGE initial-frames-complete')
   const chat = await run(`(() => {
     window.__navigationComposer = document.querySelector('.input-textarea');
+    window.__navigationWorkTools = document.querySelector('.contact-work-tools');
     const area = document.querySelector('.message-area');
-    return { top: area.scrollTop, height: window.__navigationComposer.getBoundingClientRect().height };
+    return { top: area.scrollTop, height: window.__navigationComposer.getBoundingClientRect().height,
+      viewport: [innerWidth, innerHeight], style: window.__navigationComposer.style.cssText,
+      panel: document.querySelector('.chat-panel-main').getBoundingClientRect().toJSON() };
   })()`)
   const fixture: string = await run("window.electronAPI.tasks.create({ title: 'Navigation cache fixture', dueAt: Date.now() }).then(task => task.id)")
   let completedFixture = ''
@@ -92,8 +95,9 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
       await click('[data-workspace-nav=chat]')
       const chatFrames = await frames(`(() => {
         const area = document.querySelector('.message-area'), input = document.querySelector('.input-textarea');
-        return { top: area.scrollTop, height: input.getBoundingClientRect().height,
-          retained: input === window.__navigationComposer,
+        return { top: area.scrollTop, height: input.getBoundingClientRect().height, style: input.style.cssText,
+          panel: document.querySelector('.chat-panel-main').getBoundingClientRect().toJSON(),
+          retained: input === window.__navigationComposer && document.querySelector('.contact-work-tools') === window.__navigationWorkTools,
           animated: [...document.querySelectorAll('.message, .conversation-sidebar')].some(el => el.getAnimations().some(a => a.playState === 'running')) };
       })()`)
       if (chatFrames.some((frame: any) => !frame.retained || frame.animated || Math.abs(frame.top - chat.top) > 1 || Math.abs(frame.height - chat.height) > 1)) {
@@ -177,7 +181,15 @@ export async function runNavigationSmoke(window: BrowserWindow): Promise<void> {
     if (wasDisabled || switchFrames.some((frame: any) => frame.disabled || frame.cursor !== 'pointer' || Math.abs(frame.top - beforeSwitch.top) > 1 || Math.abs(frame.height - beforeSwitch.height) > 1 || Math.abs(frame.width - beforeSwitch.width) > 1)) {
       throw new Error('Conversation click disabled the card or shifted its geometry: ' + JSON.stringify({ beforeSwitch, switchFrames, wasDisabled }))
     }
-    console.log('CHOUYU_NAVIGATION_SMOKE_PASSED retained chat geometry, stable conversation clicks, cached board, journal views/drafts, settings and memory animations')
+    await click('[data-contact-work-tab=work]')
+    await waitForRenderer(window, "!!document.querySelector('.contact-work-sheet[open] [data-topic-create]')")
+    await click('.contact-work-sheet[open] [data-topic-create]')
+    await waitForRenderer(window, "!!document.querySelector('.contact-task-dialog:modal')")
+    window.webContents.send('hide-panel')
+    await waitForRenderer(window, "getComputedStyle(document.querySelector('.app-workspace')).display === 'none' && !document.querySelector('dialog[open]')")
+    window.webContents.send('open-chat-panel')
+    await waitForRenderer(window, "getComputedStyle(document.querySelector('.app-workspace')).display !== 'none' && !document.querySelector('.contact-work-sheet') && !document.querySelector('.contact-task-dialog')")
+    console.log('CHOUYU_NAVIGATION_SMOKE_PASSED retained chat geometry, stable conversation clicks, cached board, journal views/drafts, settings and memory animations, hidden nested dialogs')
   } finally {
     if (conversationFixture) await run(`window.electronAPI.db.deleteSession('${conversationFixture}')`)
     if (spanningFixture) await run(`window.electronAPI.tasks.remove('${spanningFixture}')`)

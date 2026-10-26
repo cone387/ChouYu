@@ -102,7 +102,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     await journal.webContents.executeJavaScript("document.querySelector('[aria-label=记录设置]').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-settings-dialog:modal') && document.querySelector('[aria-label=保留期限]')")
     await journal.webContents.executeJavaScript("document.querySelector('[aria-label=关闭记录设置]').click()")
-    await waitForRenderer(journal, "!document.querySelector('dialog')")
+    await waitForRenderer(journal, "!document.querySelector('.journal-settings-dialog') && !document.querySelector('dialog[open]')")
     journal.show(); journal.focus()
     await journal.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     // UI/data regression is permission-independent; native acceptance has its own command.
@@ -141,7 +141,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     }
     await journal.webContents.executeJavaScript("document.querySelector('.journal-capture-card').click()")
     await waitForRenderer(journal, "document.querySelector('dialog[open] img') && document.querySelector('dialog pre')")
-    await journal.webContents.executeJavaScript("document.querySelector('dialog header button').click()")
+    await journal.webContents.executeJavaScript("document.querySelector('dialog[open] header button').click()")
     await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志总结').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-summary-items li')")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-summary-intro button').click()")
@@ -151,7 +151,7 @@ export async function runJournalSmoke(main: BrowserWindow): Promise<void> {
     if (overview.activityCount !== 2 || overview.captureCount !== 1 || overview.ocrReady !== 1) throw new Error('Journal day overview was incorrect')
     await journal.webContents.executeJavaScript("document.querySelector('.journal-source-links button').click()")
     await waitForRenderer(journal, "document.querySelector('dialog[open] img')")
-    await journal.webContents.executeJavaScript("document.querySelector('dialog header button').click()")
+    await journal.webContents.executeJavaScript("document.querySelector('dialog[open] header button').click()")
     await journal.webContents.executeJavaScript("[...document.querySelectorAll('.journal-view-nav button')].find((button) => button.textContent === '日志问答').click()")
     await waitForRenderer(journal, "document.querySelector('.journal-question-examples button')")
     await journal.webContents.executeJavaScript("document.querySelector('.journal-question-examples button').click()")

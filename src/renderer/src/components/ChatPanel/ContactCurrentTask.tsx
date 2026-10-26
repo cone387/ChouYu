@@ -3,17 +3,23 @@ import type { AgentFocusRequest, AgentOverview } from '../../../../shared/agents
 import { contactTaskExecution, currentTaskChoices, selectCurrentTask } from '../Contacts/contactTaskExecution'
 import ContactTaskRunButton from '../Contacts/ContactTaskRunButton'
 import ContactTaskStatusIcon from './ContactTaskStatusIcon'
+import { useContactVisible } from '../Contacts/useContactVisible'
 
-export default function ContactCurrentTask({ characterId, onOpen }: { characterId: string; onOpen: (focus: AgentFocusRequest) => void }) {
+export default function ContactCurrentTask({ characterId, active: surfaceActive = true, onOpen }: { characterId: string; active?: boolean; onOpen: (focus: AgentFocusRequest) => void }) {
+  const active = useContactVisible(surfaceActive)
   const [data, setData] = useState<AgentOverview>()
   const [selected, setSelected] = useState('')
   const [readError, setReadError] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const submitting = useRef(false), refreshRef = useRef<() => Promise<void>>(async () => {})
   useEffect(() => {
+    setData(undefined); setSelected(''); setError(''); setReadError('')
+  }, [characterId])
+  useEffect(() => {
+    if (!active) return
     let alive = true, sequence = 0
     let pending: ReturnType<typeof setTimeout> | undefined
-    setData(undefined); setSelected(''); setError(''); setReadError('')
     const refresh = async () => {
+      if (!alive) return
       const ticket = ++sequence
       try {
         const next = await window.electronAPI.agents.get(characterId)
@@ -28,7 +34,7 @@ export default function ContactCurrentTask({ characterId, onOpen }: { characterI
     })
     const timer = setInterval(() => { void refresh() }, 30000)
     return () => { alive = false; off(); clearTimeout(pending); clearInterval(timer) }
-  }, [characterId])
+  }, [characterId, active])
   const choices = data ? currentTaskChoices(data) : []
   const current = selectCurrentTask(choices, selected)
   useEffect(() => { if (!selected && current) setSelected(current.topic.id) }, [selected, current?.topic.id])

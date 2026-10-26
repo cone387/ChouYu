@@ -67,7 +67,14 @@ export async function runTaskAssistantSmoke(window: BrowserWindow): Promise<void
   }
   const finish = async () => {
     await waitForRenderer(window, "!document.querySelector('[aria-label=\"停止生成\"]')")
-    await waitForRenderer(window, `window.electronAPI.db.getSessionWorkspace().then(w => w.activeSession.id === ${JSON.stringify(fixture)} && w.activeSession.messages.some(m => !${JSON.stringify(previousMessageIds)}.includes(m.id) && (m.replyCompletedAt || m.responseStatus)))`)
+    try {
+      await waitForRenderer(window, `window.electronAPI.db.getSessionWorkspace().then(w => w.activeSession.id === ${JSON.stringify(fixture)} && w.activeSession.messages.some(m => !${JSON.stringify(previousMessageIds)}.includes(m.id) && (m.replyCompletedAt || m.responseStatus)))`)
+    } catch (error) {
+      console.error('CHOUYU_TASK_ASSISTANT_FINISH_DIAGNOSTIC', JSON.stringify({ scenario, step, fixture, active: getActiveSession().id,
+        messages: getSession(fixture)?.messages.slice(-8).map(({ id, role, content, replyCompletedAt, responseStatus }) => ({ id, role, content: content.slice(0, 120), replyCompletedAt, responseStatus })),
+        renderer: await run("({ selected: document.querySelector('.conversation-item-main[aria-selected=true]')?.title, streaming: !!document.querySelector('[aria-label=\"停止生成\"]'), text: document.querySelector('.message-area')?.textContent.slice(-600) })") }))
+      throw error
+    }
     const message = getSession(fixture)!.messages.filter(m => m.role === 'assistant' && !m.toolData).at(-1)
     return { ok: !message?.responseStatus, reply: message?.content }
   }

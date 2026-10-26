@@ -112,9 +112,10 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
   }, [focusRequest])
   useEffect(() => {
     const dialog = sheet.current
+    if (suspended && !standalone) { setOpen(false); setVisited(false) }
     if (open && !suspended && dialog && !dialog.open) { positioned.current = false; dialog.show(); keepInView(); activatePanel(dialog) }
     return () => { if (dialog?.open) dialog.close() }
-  }, [open, suspended])
+  }, [open, suspended, standalone])
   useEffect(() => {
     window.addEventListener('resize', keepInView)
     return () => window.removeEventListener('resize', keepInView)
@@ -149,7 +150,9 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
         <button type="button" aria-label="关闭联系人工作弹窗" onClick={close}>关闭</button>
       </header>
       <div className="contact-work-sheet-content" ref={content}>
-        <ContactAgentPanel visible={open && !suspended} characterId={characterId} name={name} profile={profile} deliveryFocus={deliveryFocus} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={taskFocus ?? focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={() => { close(); onChat?.() }} />
+        {/* Keep the inline strip stable; hidden chat details still unmount so
+            their nested body portals and subscriptions cannot outlive it. */}
+        {(!suspended || standalone) && <ContactAgentPanel visible={open && !suspended} characterId={characterId} name={name} profile={profile} deliveryFocus={deliveryFocus} analyticsReset={analyticsReset} compact selectedTab={tab} onTabChange={select} focusRequest={taskFocus ?? focusRequest} onDiscuss={onDiscuss ? reference => { onDiscuss(reference); close() } : undefined} onChat={() => { close(); onChat?.() }} />}
       </div>
       {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const).map(edge => <div key={edge} className={`contact-work-resize contact-work-resize-${edge}`} data-resize-edge={edge} aria-label={`调整窗口大小 ${edge}`} role="separator" tabIndex={0}
         onPointerDown={event => beginGesture(event, edge)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}
@@ -163,8 +166,8 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
         }} />)}
     </dialog>, document.body)}
     <div className="contact-work-buttons" role="group" aria-label="联系人快捷工具" hidden={standalone}>
-      {!standalone && <ContactPending characterId={characterId} />}
-      {!standalone && <ContactCurrentTask key={characterId} characterId={characterId} onOpen={focus => { setTaskFocus(focus); setTab(focus.tab); setVisited(true); setOpen(true); if (open) activatePanel(sheet.current) }} />}
+      {!standalone && <ContactPending characterId={characterId} active={!suspended} />}
+      {!standalone && <ContactCurrentTask key={characterId} characterId={characterId} active={!suspended} onOpen={focus => { setTaskFocus(focus); setTab(focus.tab); setVisited(true); setOpen(true); if (open) activatePanel(sheet.current) }} />}
       {entries.map(entry => <button key={entry.id} type="button" data-contact-work-tab={entry.id}
         aria-haspopup="dialog" aria-expanded={open && tab === entry.id} aria-controls={visited ? id : undefined}
         title={`查看${name}的${entry.label}。${hint(entry.id)}`} onClick={() => {

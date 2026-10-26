@@ -128,7 +128,7 @@ for x,y,title,sub,detail,href in [
  (928,448,'设置','Settings / 各能力 Tab','模型、人设、工具与系统配置','settings.html')]:b+=node(x,y,288,title,sub,detail,href=href)
 b+=finish(note('同一个工作区容纳多个功能页面；联系人任务详情继续复用一套公共组件。'),dashed='虚线区域：工作区包含范围')
 add(s,'系统全景','前端工作区与模块入口','从 App 到工作区，再到六个主要页面。',b,
- ['上排展示面板外层与导航职责，下排展示工作区包含的六个页面，不是执行流水线。','桌面宠物与采集覆盖层位于 App 外层，业务页面位于 Workspace；关闭面板隐藏页面，原请求与草稿保留。','点击下排模块进入相应架构图；useSessionWorkspace 持有唯一会话状态，导航请求以版本隔离迟到响应。'],
+ ['上排展示面板外层与导航职责，下排展示工作区包含的六个页面，不是执行流水线。','桌面宠物与采集覆盖层位于 App 外层，业务页面位于 Workspace；关闭面板保留聊天请求、输入草稿和工作栏状态，暂停工作栏查询，并卸载聊天内任务详情及其子弹窗。独立工作窗口继续保留原有草稿。','点击下排模块进入相应架构图；useSessionWorkspace 持有唯一会话状态，导航请求以版本隔离迟到响应。'],
  '只覆盖主要用户入口，不逐一列出叶子 React 组件或样式文件；设置中的记忆组件被复用到记忆工作区。',
  ['src/renderer/src/components/Workspace/Workspace.tsx','src/renderer/src/components/Workspace/useWorkspaceNavigation.ts','src/renderer/src/components/ChatPanel/useSessionWorkspace.ts','src/renderer/src/App.tsx','src/renderer/src/components/ChatPanel/ChatPanel.tsx','src/renderer/src/components/Workspace/WorkspaceNav.tsx','src/renderer/src/core/workspace-state.ts'],['chat','contacts','todos','settings'])
 

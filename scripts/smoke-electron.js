@@ -27,7 +27,9 @@ fs.writeFileSync(legacyStorePath, JSON.stringify({
     { id: 'legacy-user', role: 'user', content: '迁移测试对话', timestamp: 1 },
     { id: 'legacy-assistant', role: 'assistant', content: '迁移成功', timestamp: 2 }
   ],
-  state: {}
+  // Exercise constrained composer geometry on every display, including large
+  // developer monitors. The full suite keeps its normal window defaults.
+  state: process.argv.includes('--navigation') ? { 'chat-panel-height': '418' } : {}
 }), 'utf8')
 if (process.argv.includes('--upgrade-v134')) {
   require('./release-upgrade-fixture.cjs').seed(smokeUserData, JSON.parse(fs.readFileSync(legacyStorePath, 'utf8')))

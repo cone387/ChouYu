@@ -138,8 +138,8 @@ export default function ChatPanel({ model }: { model: ChatPanelModel }) {
             )}
             {memoryCandidateError && <div className="memory-candidate-error" role="alert">{memoryCandidateError}</div>}
             {memoryWriteNotice && <div className="memory-write-notice" role="status">{memoryWriteNotice}</div>}
-            {visible && isChat && workspaceLoaded && activeCharacter && activeCharacterId !== ASSISTANT_CHARACTER_ID &&
-              <ContactWorkToolbar key={`${activeSessionId}:${activeCharacter.id}`} characterId={activeCharacter.id} focusRequest={agentFocus?.sessionId === activeSessionId ? agentFocus : undefined}
+            {workspaceLoaded && activeCharacter && activeCharacterId !== ASSISTANT_CHARACTER_ID &&
+              <ContactWorkToolbar key={`${activeSessionId}:${activeCharacter.id}`} characterId={activeCharacter.id} suspended={!visible || !isChat} focusRequest={agentFocus?.sessionId === activeSessionId ? agentFocus : undefined}
                 onDiscuss={reference => setAgentDiscussion({ ...reference, sessionId: activeSessionId })}
                 name={activeCharacter.name} onClose={() => { setAgentFocus(null); requestComposerFocus() }} />}
             <InputArea

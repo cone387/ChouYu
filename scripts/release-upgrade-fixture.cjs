@@ -12,7 +12,7 @@ function seed(directory, legacy) {
     createdAt: 1, updatedAt: 3, lastReadAt: 1,
     messages: [{ id: 'upgrade-message', role: 'assistant', content: 'Saved unread body', timestamp: 3 }] }
   const snapshot = { version: 4, config: legacy.config, characters: [], sessions: [active, unread],
-    activeSessionId: active.id, state: { 'upgrade-saved-receipt': 'delivered' } }
+    activeSessionId: active.id, state: { ...legacy.state, 'upgrade-saved-receipt': 'delivered' } }
   fs.writeFileSync(path.join(directory, 'chouyu-data.json'), JSON.stringify(snapshot))
   const db = new DatabaseSync(path.join(directory, 'tasks.db'))
   try { db.exec(fs.readFileSync(path.join(__dirname, '../tests/fixtures/upgrade-v1.3.4-tasks.sql'), 'utf8')) }
