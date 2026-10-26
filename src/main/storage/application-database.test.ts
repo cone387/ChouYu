@@ -7,8 +7,8 @@ import { openApplicationDatabase } from './application-database'
 import { migrateLegacyStore } from './legacy-migration'
 import type { ChatSession } from '../../shared/conversations'
 
-const disposals: (() => void)[] = []
-afterEach(() => { vi.restoreAllMocks(); for (const dispose of disposals.splice(0).reverse()) dispose() })
+const disposals: (() => void | Promise<void>)[] = []
+afterEach(async () => { vi.restoreAllMocks(); for (const dispose of disposals.splice(0).reverse()) await dispose() })
 function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chouyu-application-'))
   disposals.push(() => fs.rmSync(dir, { recursive: true, force: true }))
@@ -83,16 +83,16 @@ it('retries the old-version barrier after DB commit without importing twice or o
   expect(JSON.parse(fs.readFileSync(source, 'utf8')).version).toBe(5)
 })
 
-it('keeps a consistent verified backup and recovers the exact saved boundary with a visible notice', () => {
+it('keeps a consistent verified backup and recovers the exact saved boundary with a visible notice', async () => {
   const { app, dir } = fixture()
   app.conversations.saveSession(session())
-  app.backup()
+  await app.backup()
   const backup = fs.readFileSync(path.join(dir, 'chouyu-application.db.bak'))
   const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw new Error('locked') })
   app.metadata.set('config', { model: 'later' })
-  expect(() => app.backup()).toThrow('locked')
+  await expect(app.backup()).rejects.toThrow('locked')
   expect(fs.readFileSync(path.join(dir, 'chouyu-application.db.bak'))).toEqual(backup)
-  rename.mockRestore(); app.close()
+  rename.mockRestore(); await app.close()
   fs.writeFileSync(path.join(dir, 'chouyu-application.db'), 'broken')
   const restored = openApplicationDatabase(dir)
   disposals.push(() => restored.close())
@@ -100,6 +100,27 @@ it('keeps a consistent verified backup and recovers the exact saved boundary wit
   expect(restored.conversations.readSession('s')).toEqual(session())
   expect(restored.metadata.get('config')).toBeNull()
   expect(fs.readdirSync(dir).some(name => name.includes('.corrupt-'))).toBe(true)
+})
+
+it('yields during a paged backup, accepts live writes, coalesces calls and closes after publication', async () => {
+  const { app, dir } = fixture()
+  app.metadata.set('large', 'x'.repeat(4 * 1024 * 1024))
+  let turns = 0
+  const tick = () => { turns++; if (app.db.open) setImmediate(tick) }
+  setImmediate(tick)
+  const pending = app.backup()
+  expect(pending).toBeInstanceOf(Promise)
+  expect(app.backup()).toBe(pending)
+  app.metadata.set('during', 'committed')
+  const closing = app.close()
+  expect(app.db.open).toBe(true)
+  await closing
+  await pending
+  expect(turns).toBeGreaterThan(1)
+  expect(app.db.open).toBe(false)
+  const copy = new Database(path.join(dir, 'chouyu-application.db.bak'), { readonly: true })
+  try { expect(copy.prepare("SELECT value FROM metadata WHERE key='during'").get()).toEqual({ value: '"committed"' }) }
+  finally { copy.close() }
 })
 
 it('refuses newer SQLite formats and releases a partially initialized handle', () => {

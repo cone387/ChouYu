@@ -470,7 +470,8 @@ app.on('before-quit', (event) => {
           if (response === 1) await shell.openPath(app.getPath('userData'))
           return response === 2 ? 'discard' : 'retry'
         }
-      ).then(() => { journalClosed = true; app.quit() })
+      ).then(() => closeDatabase(Boolean(getStorageStatus().error)))
+        .then(() => { journalClosed = true; app.quit() })
     }
     return
   }
@@ -479,7 +480,6 @@ app.on('before-quit', (event) => {
   closeReminders()
   closeTasks()
   closeMemory()
-  closeDatabase(Boolean(getStorageStatus().error))
   globalShortcut.unregisterAll()
 })
 

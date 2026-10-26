@@ -58,7 +58,20 @@ let writesBlocked = false
 let application: ApplicationDatabase | null = null
 let migrationBarrierReady = false
 let backupTimer: ReturnType<typeof setTimeout> | null = null
-let backupChanges = false
+let backupRevision = 0
+let backedUpRevision = 0
+let backupFlight: Promise<void> | null = null
+let databaseClosing = false
+function markBackupDirty(): void {
+  backupRevision++
+  scheduleBackup()
+}
+function scheduleBackup(): void {
+  if (!backupTimer && !databaseClosing) {
+    backupTimer = setTimeout(() => { backupTimer = null; void backupDatabase() }, 60000)
+    backupTimer.unref()
+  }
+}
 const dirtySessions = new Set<string>()
 const savedSessions = new Map<string, { messages: Message[]; count: number; metadata: string }>()
 function sessionMetadata(session: ChatSession): string {
@@ -438,11 +451,7 @@ function persist(throwOnError = true): boolean {
     savedSessions.clear()
     for (const session of store.sessions) savedSessions.set(session.id, { messages: session.messages, count: session.messages.length, metadata: sessionMetadata(session) })
     dirtySessions.clear()
-    backupChanges = true
-    if (!backupTimer) {
-      backupTimer = setTimeout(() => { backupTimer = null; backupDatabase() }, 60000)
-      backupTimer.unref()
-    }
+    markBackupDirty()
     updateStorageStatus({ error: null })
     publishIdentityChanges()
     return true
@@ -520,9 +529,10 @@ function migrateProactiveMessages(): void {
 }
 
 export function initDatabase(): void {
-  application?.close(); application = null
+  if (backupFlight) throw new Error('Wait for the application backup before reopening storage')
+  void application?.close(); application = null
   if (backupTimer) clearTimeout(backupTimer)
-  backupTimer = null; backupChanges = false; migrationBarrierReady = false; savedSessions.clear(); dirtySessions.clear()
+  backupTimer = null; backupRevision = 0; backedUpRevision = 0; databaseClosing = false; migrationBarrierReady = false; savedSessions.clear(); dirtySessions.clear()
   filePath = path.join(app.getPath('userData'), 'chouyu-data.json')
   if (persistTimer) clearTimeout(persistTimer)
   persistTimer = null
@@ -923,7 +933,7 @@ export function setContactRecoveryState(key: string, value: string): void {
   if (!key.startsWith('contact-recovery:') || !application || storageStatus.error) throw new Error('应用存储不可用，不能保存联系人恢复授权。')
   application.metadata.setState(key, value)
   store.state[key] = value
-  backupChanges = true
+  markBackupDirty()
 }
 
 export function contactSearchCredential(owner: string) {
@@ -946,18 +956,29 @@ export function flushDatabase(): StorageStatus {
 }
 
 /** Periodic/exit snapshot; individual message commits never copy the full database. */
-export function backupDatabase(): void {
-  if (!application || !backupChanges || storageStatus.error) return
-  try { application.backup(); backupChanges = false }
-  catch { updateStorageStatus({ notice: '聊天数据已保存，但恢复备份更新失败；上一次备份仍保留。请检查目录权限和剩余空间。' }) }
+export function backupDatabase(): Promise<void> {
+  if (backupFlight) return backupFlight
+  if (!application || backupRevision === backedUpRevision || storageStatus.error) return Promise.resolve()
+  const revision = backupRevision
+  backupFlight = application.backup().then(() => { backedUpRevision = revision }, () => {
+    updateStorageStatus({ notice: '聊天数据已保存，但恢复备份更新失败；上一次备份仍保留。请检查目录权限和剩余空间。' })
+  }).finally(() => {
+    backupFlight = null
+    if (backupRevision !== backedUpRevision) scheduleBackup()
+  })
+  return backupFlight
 }
 
-export function closeDatabase(discardPending = false): StorageStatus {
+export async function closeDatabase(discardPending = false): Promise<StorageStatus> {
   if (!discardPending) flushDatabase()
   if (storageStatus.error && !discardPending) return getStorageStatus()
+  databaseClosing = true
   if (backupTimer) clearTimeout(backupTimer)
   backupTimer = null
-  if (!discardPending) backupDatabase()
-  application?.close(); application = null
+  if (backupFlight) await backupFlight
+  if (!discardPending) await backupDatabase()
+  const current = application
+  application = null
+  await current?.close()
   return getStorageStatus()
 }

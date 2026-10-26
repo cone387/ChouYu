@@ -84,15 +84,15 @@ function failWrites() {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers()
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
   environment.encryptionAvailable = false
   environment.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'chouyu-database-test-'))
   fixtureDirectories.push(environment.directory)
   initDatabase()
 })
 
-afterEach(() => {
-  closeDatabase(true)
+afterEach(async () => {
+  await closeDatabase(true)
   vi.restoreAllMocks()
   vi.clearAllTimers()
   vi.useRealTimers()
@@ -348,11 +348,11 @@ describe('durable conversations', () => {
     expect(getSession(id)?.messages.map((item) => item.imageUrl)).toEqual([image, image])
   })
 
-  it('preserves the original file and restores the previous valid snapshot', () => {
+  it('preserves the original file and restores the previous valid snapshot', async () => {
     const id = getActiveSession().id
     saveSessionMessages(id, [message('recover-me')])
     flushDatabase()
-    backupDatabase()
+    await backupDatabase()
     setState('next-change', 'yes')
     closeDatabase(true)
     fs.writeFileSync(sqlitePath(), '{broken')
@@ -443,8 +443,8 @@ describe('durable conversations', () => {
     expect(getSession(id)?.messages[0].imageUrl).toBe('data:image/png;base64,!')
   })
 
-  it('keeps the original and backup if committing the new state fails', () => {
-    backupDatabase()
+  it('keeps the original and backup if committing the new state fails', async () => {
+    await backupDatabase()
     const before = persistedText(), backup = fs.readFileSync(sqlitePath() + '.bak')
     const spy = failWrites()
     expect(() => setState('pending', 'value')).toThrow()
@@ -454,9 +454,37 @@ describe('durable conversations', () => {
     expect(flushDatabase().error).toBeNull()
   })
 
-  it('does not rotate away the previous backup when saving an identical snapshot', () => {
+  it('retains a later dirty generation and waits for an active backup before close', async () => {
+    const original = Database.prototype.backup
+    let copied!: () => void, release!: () => void
+    const ready = new Promise<void>(resolve => { copied = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const spy = vi.spyOn(Database.prototype, 'backup').mockImplementationOnce(async function (this: Database.Database, ...args) {
+      const result = await original.apply(this, args)
+      copied()
+      await gate
+      return result
+    })
     setState('revision', 'one')
-    backupDatabase()
+    const first = backupDatabase()
+    await ready
+    setState('revision', 'two')
+    let closed = false
+    const closing = closeDatabase().then(() => { closed = true })
+    await Promise.resolve()
+    expect(closed).toBe(false)
+    release()
+    await first
+    await closing
+    expect(spy).toHaveBeenCalledTimes(2)
+    const backup = new Database(sqlitePath() + '.bak', { readonly: true })
+    try { expect(backup.prepare("SELECT value FROM state WHERE key='revision'").get()).toEqual({ value: 'two' }) }
+    finally { backup.close() }
+  })
+
+  it('does not rotate away the previous backup when saving an identical snapshot', async () => {
+    setState('revision', 'one')
+    await backupDatabase()
     setState('revision', 'two')
     flushDatabase()
     const backup = new Database(sqlitePath() + '.bak', { readonly: true })
@@ -475,11 +503,11 @@ describe('durable conversations', () => {
     expect(persisted().state.revision).toBe('one')
   })
 
-  it('uses the backup when the primary file is absent', () => {
+  it('uses the backup when the primary file is absent', async () => {
     const id = getActiveSession().id
     saveSessionMessages(id, [message('recover')])
     flushDatabase()
-    backupDatabase()
+    await backupDatabase()
     setState('next', 'value')
     closeDatabase(true)
     fs.unlinkSync(sqlitePath())

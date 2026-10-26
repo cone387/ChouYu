@@ -41,11 +41,11 @@ export function recoverApplicationFile(filename: string): string | null {
   return null
 }
 
-/** VACUUM INTO is a consistent SQLite snapshot, including committed WAL pages. */
-export function backupApplicationFile(db: Database.Database, filename: string): void {
+/** The driver yields between page batches and includes committed WAL pages. */
+export async function backupApplicationFile(db: Database.Database, filename: string): Promise<void> {
   const temporary = `${filename}.snapshot-${randomUUID()}`
   try {
-    db.prepare('VACUUM INTO ?').run(temporary)
+    await db.backup(temporary, { progress: () => 100 })
     validateApplicationFile(temporary)
     const fd = fs.openSync(temporary, 'r+')
     try { fs.fsyncSync(fd) } finally { fs.closeSync(fd) }

@@ -11,8 +11,8 @@ export interface ApplicationDatabase {
   notice: string | null; filename: string
   transaction<T>(fn: () => T): T
   flush(): void
-  backup(): void
-  close(): void
+  backup(): Promise<void>
+  close(): Promise<void>
 }
 export function openApplicationDatabase(directory: string): ApplicationDatabase {
   fs.mkdirSync(directory, { recursive: true })
@@ -28,11 +28,23 @@ export function openApplicationDatabase(directory: string): ApplicationDatabase 
       CREATE TABLE IF NOT EXISTS delivery_receipts(key TEXT PRIMARY KEY,value TEXT NOT NULL);
       PRAGMA user_version = 1;`)
     const metadata = new ApplicationMetadataRepository(db), conversations = new ConversationRepository(db, metadata)
+    let backingUp: Promise<void> | null = null
+    let closing = false
     return { db, metadata, conversations, notice, filename,
       transaction<T>(fn: () => T): T { return db.transaction(fn)() },
       flush(): void { db.pragma('wal_checkpoint(PASSIVE)') },
-      backup(): void { backupApplicationFile(db, filename) },
-      close(): void { if (db.open) db.close() }
+      backup(): Promise<void> {
+        if (backingUp) return backingUp
+        if (closing || !db.open) return Promise.reject(new Error('Application database is closing'))
+        backingUp = backupApplicationFile(db, filename).finally(() => { backingUp = null })
+        return backingUp
+      },
+      async close(): Promise<void> {
+        closing = true
+        // A failed backup must still release its handle before closing the authority.
+        if (backingUp) await backingUp.catch(() => {})
+        if (db.open) db.close()
+      }
     }
   } catch (error) { db.close(); throw error }
 }
