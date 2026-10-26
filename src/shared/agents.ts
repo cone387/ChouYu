@@ -124,6 +124,9 @@ export function validateTopicProgress(raw: unknown): AgentTopicProgress {
 }
 export interface AgentRunDetail { run: AgentRun; events: AgentEvent[]; report: AgentReport | null; research?: AgentResearch }
 export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, ContactMaterialAPI, ContactHandoffAPI, ContactFileAPI {
+  runtimeStatus(): Promise<import('./contact-runtime').ContactRuntimeSnapshot>
+  retryRuntime(): Promise<import('./contact-runtime').ContactRuntimeSnapshot>
+  onRuntimeChanged(callback: (state: import('./contact-runtime').ContactRuntimeSnapshot) => void): () => void
   contactHome(characterId: string): Promise<import('./contact-home').ContactHomeData>
   pendingInteractions(characterId: string): Promise<(import('./contact-interactions').ContactInteraction & { characterName: string })[]>
   getInteraction(characterId: string, interactionId: string): Promise<import('./contact-interactions').ContactInteraction>

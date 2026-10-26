@@ -3,6 +3,7 @@ import { useContactVisible } from './useContactVisible'
 import ContactContextReferences from './ContactContextReferences'
 import ContactMaterialLink from './ContactMaterialLink'
 import ContactWorkSettings from './ContactWorkSettings'
+import ContactRuntimeStatus from './ContactRuntimeStatus'
 import ContactSkills from './ContactSkills'
 import ContactTaskInputForm from './ContactTaskInputForm'
 import ContactAnalytics from './ContactAnalytics'
@@ -171,6 +172,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
   const discuss = (runId: string, topicId: string, text: string) => onDiscuss?.({ runId, topicId, text,
     title: data?.topics.find(topic => topic.id === topicId)?.title || '工作记录' })
   return <section ref={panel} className={`contact-agent${compact ? ' contact-agent-compact' : ''}`} aria-label={`${name}的持续工作`} data-contact-agent={characterId} data-selected-tab={tab}>
+    <ContactRuntimeStatus active={visible && tab !== 'profile' && tab !== 'skills'} />
     {!compact && <div className="agent-tabs" aria-label="工作内容">
       {CONTACT_TAB_GROUPS.map(group => <div key={group.label} className="agent-tab-group" role="group" aria-label={group.label}><span className="agent-tab-group-label">{group.label}</span>{group.tabs.filter(([id]) => id !== 'profile' || profile).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-label={`${name}的${label}`} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}</div>)}
       {onExpand && <button type="button" className="agent-expand" data-agent-expand aria-label="在大窗口中打开" title="在大窗口中打开" onClick={() => onExpand(tab)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg></button>}

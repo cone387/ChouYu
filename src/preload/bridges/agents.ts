@@ -5,6 +5,13 @@ export function createAgentsBridge(ipcRenderer: IpcRenderer) {
 
 return {
   agents: {
+    runtimeStatus: () => ipcRenderer.invoke('agents:runtime-status'),
+    retryRuntime: () => ipcRenderer.invoke('agents:retry-runtime'),
+    onRuntimeChanged: callback => {
+      const listener = (_event: unknown, state: import('../../shared/contact-runtime').ContactRuntimeSnapshot) => callback(state)
+      ipcRenderer.on('agents:runtime-changed', listener)
+      return () => { ipcRenderer.removeListener('agents:runtime-changed', listener) }
+    },
     dashboard: () => ipcRenderer.invoke('agents:dashboard'),
     summary: id => ipcRenderer.invoke('agents:summary', id),
     analytics: (id, query) => ipcRenderer.invoke('agents:analytics', id, query),

@@ -24,7 +24,7 @@ it('bounds a slow request without killing a responsive worker or rejecting its p
   expect(await peer).toBe('peer is alive')
   await vi.advanceTimersByTimeAsync(5000)
   expect(w.kill).not.toHaveBeenCalled()
-  expect(log).toHaveBeenCalledWith({ method: 'getInteraction', phase: 'running', elapsedMs: 35000 })
+  expect(log).toHaveBeenCalledWith({ method: 'getInteraction', phase: 'running', elapsedMs: 35000, queueMs: 20000, executionMs: 15000 }, w)
 })
 it('an old generation timeout cannot kill or resolve the new worker', async () => {
   vi.useFakeTimers(); const old = worker(), next = worker(), rpc = new AgentWorkerRPC()

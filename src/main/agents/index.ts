@@ -9,9 +9,9 @@ import { resolveDshRuntimePaths } from '../harness/dsh/runtime'
 import type { HarnessInput, HarnessEvent } from '../harness/contracts'
 import type { HarnessEngine } from '../../shared/harness'
 import { AgentWorkerRPC } from '../agent-space/worker-rpc'
+import { ContactRuntimeState, appendRuntimeDiagnostic, runtimeDiagnostic } from '../agent-space/runtime-status'
 import { configureContactSkill, contactSkillLibrary, getContactSkills, findContactSkills, installContactSkill, contactSkillRunner } from '../skills'
 import { SKILL_TOOLS } from '../skills/tools'
-import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { registerPresentationProtocol } from './presentation-protocol'
 import { deliveryHtmlExport } from '../../shared/delivery-presentation'
@@ -47,14 +47,19 @@ let starting: Promise<void> | undefined
 let closing = false
 let failures = 0
 let syncTimer: ReturnType<typeof setInterval> | undefined
-const requests = new AgentWorkerRPC(event => {
+const generations = new WeakMap<object, number>()
+const runtimeState = new ContactRuntimeState(state => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    try { if (!window.isDestroyed()) window.webContents.send('agents:runtime-changed', state) } catch { /* Closed windows cannot affect the runtime. */ }
+  }
+})
+const requests = new AgentWorkerRPC((event, worker) => {
   if (process.env.CHOUYU_SMOKE_TEST === '1') console.error('CHOUYU_AGENT_RPC', JSON.stringify(event))
-  // Only protocol metadata; never persist credentials, prompts or provider responses.
-  try {
-    const path = join(app.getPath('userData'), 'contact-worker-diagnostics.log')
-    if (existsSync(path) && statSync(path).size > 65536) writeFileSync(path, '')
-    appendFileSync(path, JSON.stringify({ at: new Date().toISOString(), ...event }) + '\n')
-  } catch { /* Diagnostic storage must not block recovery. */ }
+  const generation = generations.get(worker) ?? 0
+  appendRuntimeDiagnostic(join(app.getPath('userData'), 'contact-worker-diagnostics.log'), runtimeDiagnostic(event, generation))
+  if (event.storage || event.phase === 'unresponsive') runtimeState.update(generation, {
+    issue: { kind: event.storage ? 'storage' : 'health', at: Date.now(), ...(event.storage ? { storage: event.storage } : {}) }
+  })
 })
 let delivering = false
 const dirty = new Set<string>()
@@ -67,6 +72,7 @@ async function deliver(id: string) {
       const characterId = dirty.values().next().value!
       dirty.delete(characterId)
       if (!getCharacter(characterId)) continue
+      const generation = runtimeState.read().generation
       try {
         const notices = await rpc('notices', characterId) as AgentNotice[]
         for (const notice of notices) {
@@ -78,7 +84,7 @@ async function deliver(id: string) {
           deliverMessage({ kind: 'interaction', card })
           await rpc('ackActionNotice', characterId, [card.id])
         }
-      } catch { /* Durable outbox is retried by the sync timer after storage/process recovery. */ }
+      } catch { runtimeState.update(generation, { issue: { kind: 'delivery', at: Date.now() } }) }
     }
   } finally { delivering = false }
 }
@@ -131,18 +137,30 @@ function identities(onlyId?: string): ContactIdentity[] {
 async function syncContact(id: string) {
   const identity = identities(id)[0]
   if (!identity) throw new Error('联系人不存在。')
-  await rpc('syncContact', id, [contactSpace.workerIdentity(identity)])
+  const generation = runtimeState.read().generation
+  try { await rpc('syncContact', id, [contactSpace.workerIdentity(identity)]) }
+  catch (error) { runtimeState.update(generation, { issue: { kind: 'sync', at: Date.now() } }); throw error }
+}
+async function refreshRuntimeMetrics() {
+  const generation = runtimeState.read().generation
+  if (!child || starting || closing) return
+  try {
+    const observation = await rpc('spaceDiagnostics', '', [])
+    runtimeState.update(generation, { metrics: observation.metrics })
+  } catch { /* The actual RPC path records timeout, storage and process failures. */ }
 }
 async function ensure() {
   if (closing) throw new Error('应用正在退出。')
   if (starting) return starting
   if (child) return
+  const generation = runtimeState.start()
   starting = (async () => {
     const process = utilityProcess.fork(join(__dirname, 'agent-worker.js'), [], {
       serviceName: 'ChouYu Contact Agents', stdio: 'pipe',
       env: { ...globalThis.process.env, LANGSMITH_TRACING: 'false', LANGCHAIN_TRACING_V2: 'false', LANGCHAIN_TRACING: 'false' }
     })
     child = process
+    generations.set(process, generation)
     process.stdout?.resume()
     if (globalThis.process.env.CHOUYU_SMOKE_TEST === '1') process.stderr?.on('data', chunk => console.error('CHOUYU_AGENT_WORKER', String(chunk)))
     else process.stderr?.resume()
@@ -158,7 +176,10 @@ async function ensure() {
       child = undefined
       if (!closing) {
         failures = Date.now() - born > 60000 ? 1 : failures + 1
-        if (failures <= 3) setTimeout(() => { void ensure().catch(() => {}) }, failures * 2000)
+        const previous = runtimeState.read().issue
+        runtimeState.update(generation, { phase: failures <= 3 ? 'recovering' : 'unavailable',
+          issue: previous?.kind === 'storage' ? previous : { kind: 'exit', at: Date.now() } })
+        if (failures <= 3) setTimeout(() => { if (runtimeState.read().generation === generation) void ensure().catch(() => {}) }, failures * 2000)
       }
     })
     try {
@@ -168,12 +189,17 @@ async function ensure() {
       }])
       const current = identities().map(identity => contactSpace.workerIdentity(identity))
       await rpc('sync', '', [current])
+      runtimeState.update(generation, { phase: 'ready', readyAt: Date.now(), syncedAt: Date.now() })
       // In-flight UI reads may have been rejected during the exit. A restored
       // waiting run emits no new graph event, so explicitly invalidate the UI.
       for (const identity of current) broadcastChanged(identity.id)
     }
     catch (error) { process.kill(); throw error }
-  })().finally(() => { starting = undefined; for (const id of dirty) void deliver(id) })
+  })().catch(error => {
+    const previous = runtimeState.read().issue
+    runtimeState.update(generation, { phase: 'unavailable', issue: previous?.kind === 'storage' ? previous : { kind: 'startup', at: Date.now() } })
+    throw error
+  }).finally(() => { starting = undefined; for (const id of dirty) void deliver(id); void refreshRuntimeMetrics() })
   return starting
 }
 export async function agentContext(characterId: string, context: import('../../shared/contact-content').ContactReadContext) { await ensure(); await syncContact(characterId); return await rpc('contextSnapshot', characterId, [context]) as { text: string; memories: { id: string; revision: number }[]; truncated: boolean } }
@@ -263,6 +289,12 @@ export async function restartAgentsForSmoke() {
   await ensure()
 }
 export function initializeAgents() {
+  contactHandle('agents:runtime-status', () => runtimeState.read())
+  contactHandle('agents:retry-runtime', async () => {
+    if (!child && !starting) failures = 0
+    try { await ensure(); await refreshRuntimeMetrics() } catch { /* Return truthful state rather than claim the retry succeeded. */ }
+    return runtimeState.read()
+  })
   contactHandle('agents:profile', async (_event, id: string) => getContactProfile(id))
   for (const tool of createContactSupportTools({
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
@@ -402,10 +434,19 @@ export function initializeAgents() {
     })
   }
   void ensure().catch(() => {})
-  syncTimer = setInterval(() => { if (child && !starting && !closing) void rpc('sync', '', [identities().map(identity => contactSpace.workerIdentity(identity))]).then(() => { for (const identity of identities()) void deliver(identity.id) }).catch(() => {}) }, 30000)
+  syncTimer = setInterval(() => {
+    if (!child || starting || closing) return
+    const generation = runtimeState.read().generation
+    void rpc('sync', '', [identities().map(identity => contactSpace.workerIdentity(identity))]).then(() => {
+      runtimeState.update(generation, { syncedAt: Date.now() })
+      for (const identity of identities()) void deliver(identity.id)
+      void refreshRuntimeMetrics()
+    }).catch(() => { runtimeState.update(generation, { issue: { kind: 'sync', at: Date.now() } }) })
+  }, 30000)
 }
 export async function closeAgents() {
   closing = true; clearInterval(syncTimer)
+  runtimeState.update(runtimeState.read().generation, { phase: 'closing' })
   try { await starting; await contactSpace.close(); if (child) await rpc('close') } catch { /* killed processes recover from their checkpoints */ }
   child?.kill(); child = undefined
   contactTasks.dispose()

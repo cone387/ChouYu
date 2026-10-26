@@ -12,7 +12,7 @@ import type { ContactWorkSettingsPatch } from './contact-work-settings'
 type Command<A extends unknown[], R> = { args: A; result: R }
 type FromAPI<T> = { [K in keyof T]: T[K] extends (owner: string, ...args: infer A) => Promise<infer R> ? Command<A, R> : never }
 type PublicCommands = Omit<FromAPI<AgentAPI>,
-  'onChanged' | 'dashboard' | 'profile' | 'searchCredential' | 'exportDelivery' | 'exportContactFile' |
+  'onChanged' | 'runtimeStatus' | 'retryRuntime' | 'onRuntimeChanged' | 'dashboard' | 'profile' | 'searchCredential' | 'exportDelivery' | 'exportContactFile' |
   'prepareHandoff' | 'importMaterial' | 'cancelMaterialImport' | 'assignTopic' | 'save' | 'editTopic' | 'setOutputPreference' | 'pendingInteractions'>
 
 export type DeliveryInspection = {
@@ -28,7 +28,7 @@ export type ContactCommandMap = PublicCommands & {
   remove: Command<[], null>
   attachModule: Command<[module: string], null>
   detachModule: Command<[module: string], null>
-  spaceDiagnostics: Command<[], { activeRuns: number; capacity: number; faults: { characterId: string; error: string }[] }>
+  spaceDiagnostics: Command<[], { activeRuns: number; capacity: number; metrics: import('./contact-runtime').ContactRuntimeMetrics; faults: { characterId: string; error: string }[] }>
   enableContinuous: Command<[], AgentOverview>
   save: Command<[settings: AgentSettings, revision?: number], AgentOverview>
   assignTopic: Command<[description: string, requestLog?: string, tokens?: number], AgentOverview>

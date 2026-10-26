@@ -2,6 +2,7 @@ import { validateContactCommand, type ContactCommandName, type ContactArgs, type
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { monitorEventLoopDelay } from 'node:perf_hooks'
 import { ContactTaskStore } from '../task-center/contact-store'
 import { ContactTaskCommands } from '../task-center/commands'
 import { WorkStrategyRuntime, type AgentModel } from '../workloop/workflow'
@@ -49,6 +50,7 @@ export class WorkLoopHost {
   private ticking = false
   private closing?: Promise<void>
   private lastStarted?: string
+  private eventLoop = monitorEventLoopDelay({ resolution: 20 })
   private timer: ReturnType<typeof setInterval>
   private wakeTimer?: ReturnType<typeof setTimeout>
   constructor(directory: string, private changed: (id: string) => void,
@@ -71,6 +73,7 @@ export class WorkLoopHost {
         this.skillRunner, id => this.notify(id), () => this.wake(), (method, id, args) => this.request(method, id, args), modelFactory, readSkills, this.harnesses))
       this.modules.resolve(options.modules ?? ['workloop'])
       this.store.recover()
+      this.eventLoop.enable()
       this.timer = setInterval(() => this.tick(), 15000)
     } catch (error) {
       try { runtime?.close() } finally { this.store.close() }
@@ -196,7 +199,18 @@ export class WorkLoopHost {
       if (this.contacts.has(id)) await this.detachModule(id, String(args[0]))
       return null
     }
-    if (method === 'spaceDiagnostics') return { activeRuns: this.scheduler.size, capacity: this.scheduler.capacity, faults: [...this.faults].map(([characterId, error]) => ({ characterId, error })).concat([...this.cleanupFaults.values()]) }
+    if (method === 'spaceDiagnostics') {
+      const pending = this.store.db.prepare(`SELECT count(*) AS count, min(created_at) AS oldest FROM (
+        SELECT json_extract(value,'$.createdAt') AS created_at FROM notices WHERE state='pending'
+        UNION ALL SELECT json_extract(value,'$.createdAt') FROM contact_interactions
+        WHERE json_extract(value,'$.kind')='action' AND COALESCE(json_extract(value,'$.delivered'),0)=0
+      )`).get() as { count: number; oldest: number | null }
+      return { activeRuns: this.scheduler.size, capacity: this.scheduler.capacity,
+        metrics: { observedAt: Date.now(), activeRuns: this.scheduler.size, capacity: this.scheduler.capacity, pendingDeliveries: pending.count,
+          ...(pending.oldest !== null ? { oldestPendingAt: pending.oldest } : {}),
+          ...(Number.isFinite(this.eventLoop.mean) ? { eventLoopDelayMs: this.eventLoop.mean / 1e6 } : {}) },
+        faults: [...this.faults].map(([characterId, error]) => ({ characterId, error })).concat([...this.cleanupFaults.values()]) }
+    }
     return this.commands.dispatchUnknown(method, id, args)
   }
   tick() {
@@ -227,6 +241,7 @@ export class WorkLoopHost {
   close(): Promise<void> {
     if (this.closing) return this.closing
     this.closed = true; clearInterval(this.timer); clearTimeout(this.wakeTimer)
+    this.eventLoop.disable()
     this.events.clear(); this.subscriptions.clear(); this.skillRunner.cancel()
     this.closing = Promise.all([...this.contacts.values()].map(contact => contact.close())).then(async () => {
       await this.scheduler.drain()

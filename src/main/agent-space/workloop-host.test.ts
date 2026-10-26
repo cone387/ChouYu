@@ -13,6 +13,15 @@ afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn()
 const config = { provider: 'openai' as const, baseUrl: 'https://example.com', apiKey: 'test', model: 'test', thinkingDisabledModels: [] }
 const identities = ['alice', 'bob'].map(id => ({ id, soul: id, conversation: '', config }))
 const report = JSON.stringify({ title: 'Saved', body: 'Evidence [1].', nextStep: 'Continue', memories: [], question: '', progress: { judgement: 'Saved', openQuestions: '', nextStep: 'Continue', reason: 'Evidence [1].', status: 'researching' } })
+it('observes persisted pending notices and action cards without acknowledging them', async () => {
+  const { space } = await fixture(2)
+  space.store.db.prepare('INSERT INTO notices(id,character_id,value,state) VALUES(?,?,?,?)').run('pending', 'alice', JSON.stringify({ createdAt: 100 }), 'pending')
+  space.store.db.prepare('INSERT INTO notices(id,character_id,value,state) VALUES(?,?,?,?)').run('sent', 'alice', JSON.stringify({ createdAt: 50 }), 'sent')
+  space.store.db.prepare('INSERT INTO contact_interactions(id,character_id,value) VALUES(?,?,?)').run('card', 'bob', JSON.stringify({ kind: 'action', delivered: false, createdAt: 200 }))
+  const result = await space.request('spaceDiagnostics', '')
+  expect(result.metrics).toMatchObject({ pendingDeliveries: 2, oldestPendingAt: 100, activeRuns: 0, capacity: 2 })
+  expect(space.store.db.prepare("SELECT state FROM notices WHERE id='pending'").get()).toEqual({ state: 'pending' })
+})
 async function fixture(capacity: number) {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-space-'))
   const pending: { owner: string; signal: AbortSignal; resolve: (text: string) => void }[] = []
