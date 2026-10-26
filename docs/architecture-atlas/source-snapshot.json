@@ -1,8 +1,8 @@
 {
   "reviewed_at": "2026-10-26",
-  "reviewed_commit": "3ae6596354bf9e8f2a528976d88e9da6b4d376bb",
+  "reviewed_commit": "632d2e0c267217ea73cb477a04f004c7e6ce17da",
   "sources": {
-    "docs/contact-task-spec.md": "d21c82f3429a82f235429607ada588e004c101ae6a8a0308d1efed5f80e8e786",
+    "docs/contact-task-spec.md": "6a754bac8f053951e1982a76714dcb1d9daeda65639cb6d9cfdf41eabe11b447",
     "docs/task-scheduling.md": "8f25d7a9836d7874272327e5f6177e239c2bec4eaf98430e7c1b22556112a50d",
     "package.json": "a61956dbf5cd05a1d72a5b6076f73f96ed1b398d17ec5cac67f64a30c0c8096c",
     "src/main/agent-space/identity-sync.ts": "fbc99afca89aedf317de6bf4542d3615d8feabdc7ffc4dac4b1565f1db25f6c8",
@@ -40,7 +40,7 @@
     "src/main/hotkey.ts": "0f634bf578c39720bd5adf47435ee078dda63310889304a7c3d965a932db11df",
     "src/main/index.ts": "0abf4a0bca03c60abbde50a2b8cf81a9e97a5e22048d88a72e1bf8356c4dd425",
     "src/main/ipc.ts": "fa74be49a084c44fd569a5c007f62751f5f0574b26616ac481c765119412e768",
-    "src/main/ipc/chat.ts": "91c1c519d84deb9c2cffe42d60dfd44b904ee341145bb491a96ba4c4db88b35d",
+    "src/main/ipc/chat.ts": "6b6788a37eed027a7028a03aba49b0c04147d610e7fd972783d36aa3af1be392",
     "src/main/ipc/config.ts": "e67bd3188a0da444bc139fc363195921b5f6f3761e9a757752da92514be7b5db",
     "src/main/journal/activity-helper.ts": "84a03f32bfc8c78a156878b48144821e8e050c763481045f199555aba91bba73",
     "src/main/journal/journal-worker.ts": "bc6d6940d47ea22405239632e646c704ab08ab884420cf6631158e4ff0b34152",
@@ -106,7 +106,7 @@
     "src/renderer/src/components/Workspace/Workspace.tsx": "3e3314f0aba0b1d0acf2455f748d0afb07ce2c9f4b99a60134b1f6985f49d6a8",
     "src/renderer/src/components/Workspace/WorkspaceNav.tsx": "6a305116dfb7aa034c9892b8bf4ec2434a211c426b073a3978aedd6e247aafd9",
     "src/renderer/src/components/Workspace/useWorkspaceNavigation.ts": "7ed09a130b1a6392439c9d55a97b25ff9ed6433ba5db700f117c412eb16aa529",
-    "src/renderer/src/core/ai-engine.ts": "9357f39e21c21fa17081af763b8dadaca82ba9c7bcd44969f209d6c053d26dd5",
+    "src/renderer/src/core/ai-engine.ts": "cbe71c999980ca718daa2b9e13a7c04cf2f33da7790256016731ef28bbe7a955",
     "src/renderer/src/core/journal-search.ts": "4127ee3f6904500a2ef4baabad05068774c6fcc62f1c14126dd59e3a38444019",
     "src/renderer/src/core/proactive.ts": "98a2775aab312b3b20cc62128acae9d1ff0c990f2fa2aa77798d6de03b188650",
     "src/renderer/src/core/state-machine.ts": "7bed19decfae6a2e9b3661ff58eef7462dbbd2f2a3c381250459b9713bd0ee2c",

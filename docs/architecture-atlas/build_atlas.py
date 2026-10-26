@@ -146,7 +146,7 @@ for a,c,y,txt,ret in messages:
 for x,title,sub in zip(xs,['聊天界面','主进程 ChatService','模型 Provider','工具执行器'],['会话与用户确认','请求生命周期 / 工具策略','OpenAI / Claude 等协议','工具目录 / 参数校验']):b+=node(x-128,44,256,title,sub,kind='focal' if x==480 else 'normal')
 b+=legend([('实线：请求或调用','line'),('虚线：响应 / 事件回传','dash'),('本例包含一次需授权工具调用','accent')])
 add(s,'聊天与任务','一次带工具的聊天，经过哪些环节','固定示例：模型提出一个需授权的工具调用，用户同意后继续回答。',b,
- ['Renderer 的 streamChat 经过分域 IPC 进入 ChatService；服务校验会话归属并拥有请求、取消、发送端退出及关闭等待。','工具名称、参数、启用状态和授权在执行前检查；工具结果参与后续生成。','公共交流规则与角色身份由服务端入口注入，普通流式聊天不再额外调用模型审查每条消息。'],
+ ['Renderer 的 streamChat 经过分域 IPC 进入 ChatService；服务校验会话归属并拥有请求、取消、发送端退出及关闭等待。界面同时收到调用结果和该请求的事件流结束标记后，才保存最终回复并结束监听。','工具名称、参数、启用状态和授权在执行前检查；工具结果参与后续生成。','公共交流规则与角色身份由服务端入口注入，普通流式聊天不再额外调用模型审查每条消息。'],
  '不是每次聊天都会调用工具或询问授权；此图只画一个已同意的调用。记忆检索、停止与失败分支合并在注释中，回传箭头表示通道层响应而非精确网络包。',
  ['src/main/chat/service.ts','src/main/chat/execution.ts','src/main/ipc/chat.ts','src/preload/bridges/chat.ts','src/renderer/src/core/ai-engine.ts','src/main/ipc.ts','src/main/ai.ts','src/main/tools/registry.ts','src/main/tool-approval.ts','src/shared/contact-communication.ts'],['extensions','memory','delivery'],kind='SEQUENCE')
 
