@@ -53,3 +53,6 @@ export interface SessionWorkspace {
   activeSession: ChatSession
 }
 
+export interface MessageCursor { position: number; id: string }
+export interface MessagePage { messages: Message[]; before: MessageCursor | null }
+

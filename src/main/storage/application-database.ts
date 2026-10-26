@@ -25,9 +25,13 @@ export function openApplicationDatabase(directory: string): ApplicationDatabase 
       CREATE INDEX IF NOT EXISTS message_order ON messages(session_id,position);
       CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS delivery_receipts(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-      PRAGMA user_version = 1;`)
+      CREATE TABLE IF NOT EXISTS delivery_receipts(key TEXT PRIMARY KEY,value TEXT NOT NULL);`)
     const metadata = new ApplicationMetadataRepository(db), conversations = new ConversationRepository(db, metadata)
+    if ((db.pragma('user_version', { simple: true }) as number) < 2) db.transaction(() => {
+      db.exec("ALTER TABLE sessions ADD COLUMN projection TEXT NOT NULL DEFAULT '{}'; ALTER TABLE messages ADD COLUMN search_text TEXT NOT NULL DEFAULT '';")
+      for (const row of db.prepare('SELECT id FROM sessions ORDER BY position').all() as { id: string }[]) conversations.saveSession(conversations.readSession(row.id)!)
+      db.pragma('user_version = 2')
+    })()
     let backingUp: Promise<void> | null = null
     let closing = false
     return { db, metadata, conversations, notice, filename,

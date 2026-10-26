@@ -189,6 +189,7 @@ export interface ElectronAPI {
     clearMessages: () => Promise<void>
     getSessionWorkspace: () => Promise<SessionWorkspace>
     searchSessions: (query: string) => Promise<ChatSessionSummary[]>
+    readSessionMessages: (id: string, before?: import('../../../shared/conversations').MessageCursor, limit?: number) => Promise<import('../../../shared/conversations').MessagePage>
     createSession: (title?: string, characterId?: string) => Promise<SessionWorkspace>
     selectSession: (id: string) => Promise<SessionWorkspace>
     renameSession: (id: string, title: string) => Promise<ChatSessionSummary[]>

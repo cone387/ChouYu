@@ -3,6 +3,7 @@ import { createPendingEvent } from '../pending-event'
 import type { AppConfig } from '../../shared/config'
 import type { AIModelListResult } from '../../shared/ai'
 import type { IpcRenderer } from 'electron'
+import type { MessageCursor, MessagePage } from '../../shared/conversations'
 
 export function createSessionsBridge(ipcRenderer: IpcRenderer) {
 
@@ -60,6 +61,7 @@ return {
     clearMessages: () => ipcRenderer.invoke('db:clear-messages'),
     getSessionWorkspace: () => ipcRenderer.invoke('db:get-session-workspace'),
     searchSessions: (query: string) => ipcRenderer.invoke('db:search-sessions', query),
+    readSessionMessages: (id: string, before?: MessageCursor, limit?: number) => ipcRenderer.invoke('db:read-session-messages', id, before, limit) as Promise<MessagePage>,
     createSession: (title?: string, characterId?: string) => ipcRenderer.invoke('db:create-session', title, characterId),
     selectSession: (id: string) => ipcRenderer.invoke('db:select-session', id),
     renameSession: (id: string, title: string) => ipcRenderer.invoke('db:rename-session', id, title),

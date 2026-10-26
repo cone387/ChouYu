@@ -11,7 +11,9 @@ import type { StorageStatus } from '../shared/storage'
 import { AttachmentStore, isAttachmentReference } from './attachment-store'
 import { readStoreFile } from './store-file'
 import { openApplicationDatabase, type ApplicationDatabase } from './storage/application-database'
-import { migrateLegacyStore, readApplicationSnapshot } from './storage/legacy-migration'
+import { migrateLegacyStore } from './storage/legacy-migration'
+import { ConversationCache } from './storage/conversation-cache'
+import { projectConversation, messageReadTimestamp, type ConversationProjection } from '../shared/conversation-projection'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/conversation-search'
 import { AppConfig, DEFAULT_APP_CONFIG, DEFAULT_PROFILE_ID, getProviderProfiles, normalizeConfig } from '../shared/config'
 import {
@@ -32,8 +34,8 @@ import { sanitizeContactCommunication, validateContactMessage, type ContactCommu
 import { applyContactProfilePatch, contactProfileSnapshot, type ContactProfilePatch } from '../shared/contact-profile-settings'
 import { containsSecret } from '../shared/memory'
 
-import type { Message, ChatSession, ChatSessionSummary, SessionWorkspace } from '../shared/conversations'
-export type { Message, ChatSession, ChatSessionSummary, SessionWorkspace } from '../shared/conversations'
+import type { Message, ChatSession, ChatSessionSummary, SessionWorkspace, MessageCursor, MessagePage } from '../shared/conversations'
+export type { Message, ChatSession, ChatSessionSummary, SessionWorkspace, MessageCursor, MessagePage } from '../shared/conversations'
 
 interface StoreData {
   version: number
@@ -73,21 +75,28 @@ function scheduleBackup(): void {
   }
 }
 const dirtySessions = new Set<string>()
-const savedSessions = new Map<string, { messages: Message[]; count: number; metadata: string }>()
+const savedSessions = new Map<string, string>()
+const sessionProjections = new Map<string, ConversationProjection>()
+const messageRevisions = new Map<string, number>()
+function markMessagesDirty(id: string): void {
+  dirtySessions.add(id)
+  messageRevisions.set(id, (messageRevisions.get(id) ?? 0) + 1)
+}
+let conversationCache: ConversationCache
 function sessionMetadata(session: ChatSession): string {
-  const { messages: _messages, ...metadata } = session
-  return JSON.stringify(metadata)
+  return JSON.stringify({ id: session.id, title: session.title, characterId: session.characterId,
+    createdAt: session.createdAt, updatedAt: session.updatedAt, ...(session.lastReadAt !== undefined ? { lastReadAt: session.lastReadAt } : {}) })
 }
 function sessionChanged(session: ChatSession): boolean {
-  const previous = savedSessions.get(session.id)
-  return dirtySessions.has(session.id) || !previous || previous.messages !== session.messages || previous.count !== session.messages.length || previous.metadata !== sessionMetadata(session)
+  return dirtySessions.has(session.id) || savedSessions.get(session.id) !== sessionMetadata(session)
+}
+function projection(session: ChatSession): ConversationProjection {
+  return !sessionChanged(session) && sessionProjections.has(session.id) ? sessionProjections.get(session.id)! : projectConversation(session)
 }
 let storageStatus: StorageStatus = { error: null, notice: null, revision: 0 }
 const storageEvents = new EventEmitter()
 const identityListeners = new Set<(owner: string) => void>()
 const identityPublished = new Map<string, string>()
-const messageArrays = new WeakMap<Message[], number>()
-let messageArraySequence = 0
 let toolPolicyRevision = 0
 export function onContactIdentityChanged(listener: (owner: string) => void): () => void {
   identityListeners.add(listener); return () => { identityListeners.delete(listener) }
@@ -96,10 +105,8 @@ export function onContactIdentityChanged(listener: (owner: string) => void): () 
 export function getContactIdentityRevision(owner: string): string {
   const character = store.characters.find(value => value.id === owner)
   if (!character) return 'missing'
-  const sessions = store.sessions.filter(session => session.characterId === owner).map(session => {
-    if (!messageArrays.has(session.messages)) messageArrays.set(session.messages, ++messageArraySequence)
-    return [session.id, session.updatedAt, messageArrays.get(session.messages), session.messages.length]
-  })
+  const sessions = store.sessions.filter(session => session.characterId === owner).map(session =>
+    [session.id, session.updatedAt, messageRevisions.get(session.id) ?? 0, projection(session).summary.messageCount])
   return JSON.stringify([character, contactProfileSnapshot(character, store.config).revision, resolveCharacterConfig(character, store.config), resolveCharacterSoul(character, store.config),
     store.config.aiToolsEnabled, store.config.thinkingDisabledModels, sessions, toolPolicyRevision,
     store.state[`agent-search:${owner}:api_key`], store.state[`agent-search:${owner}:revision`]])
@@ -286,28 +293,7 @@ function cloneSession(session: ChatSession): ChatSession {
   }) }
 }
 
-function messageReadTimestamp(message: Message): number {
-  return Math.max(message.timestamp, message.replyCompletedAt ?? 0)
-}
-
-function isUnreadMessage(session: ChatSession, message: Message): boolean {
-  return message.role === 'assistant' && (Boolean(message.assistantKind) || Boolean(message.agentNotice) || message.communication?.source.kind === 'interaction'
-    || Boolean(message.replyCompletedAt && message.replyCompletedAt > (message.replyReadAt ?? 0)))
-    && messageReadTimestamp(message) > (session.lastReadAt ?? 0)
-}
-
-function toSummary(session: ChatSession): ChatSessionSummary {
-  return {
-    id: session.id,
-    title: session.title,
-    preview: buildSessionPreview(session.messages),
-    messageCount: session.messages.length,
-    characterId: session.characterId,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    unreadCount: session.messages.filter(message => isUnreadMessage(session, message)).length
-  }
-}
+function toSummary(session: ChatSession): ChatSessionSummary { return { ...projection(session).summary } }
 
 function getActiveSessionInternal(): ChatSession {
   let session = store.sessions.find((candidate) => candidate.id === store.activeSessionId)
@@ -337,7 +323,16 @@ function load(): StoreData {
     if (application.metadata.get('migration')) {
       migrateLegacyStore(path.dirname(filePath), application)
       migrationBarrierReady = true
-      loaded = { data: readApplicationSnapshot(application) as PersistedStoreData, blocked: false, notice: application.notice }
+      const records = application.conversations.listMetadata()
+      const sessions = records.map(({ summary, unread, ...metadata }) => {
+        const session = conversationCache.attach(metadata)
+        sessionProjections.set(session.id, { summary, unread })
+        savedSessions.set(session.id, sessionMetadata(session))
+        return session
+      })
+      loaded = { data: { sessions, config: application.metadata.get('config'), characters: application.metadata.get('characters'),
+        activeSessionId: application.metadata.get<string>('activeSessionId') ?? '', state: application.metadata.readState() } as PersistedStoreData,
+        blocked: false, notice: application.notice }
     } else loaded = readStoreFile(filePath, parseStore)
   } catch {
     application?.close(); application = null
@@ -352,7 +347,7 @@ function load(): StoreData {
     const data = loaded.data
     const persistedConfig: Partial<AppConfig> = data.config && typeof data.config === 'object' ? data.config : {}
     const persistedState = data.state && typeof data.state === 'object' ? data.state : {}
-    let sessions = normalizeSessions(data.sessions)
+    let sessions = migrationBarrierReady ? data.sessions! : normalizeSessions(data.sessions)
 
     // Version 2 stored one global messages array. Preserve it as the first session.
     if (sessions.length === 0) {
@@ -447,10 +442,17 @@ function persist(throwOnError = true): boolean {
       })
     }
     // Retain file references in memory after a successful commit; UI receives data URLs on demand.
-    store.sessions = serialized.sessions
+    const liveIds = new Set(serialized.sessions.map(session => session.id))
+    for (const id of savedSessions.keys()) if (!liveIds.has(id)) { conversationCache.remove(id); sessionProjections.delete(id); messageRevisions.delete(id) }
+    store.sessions = serialized.sessions.map(session => {
+      if (!sessionChanged(session)) return session
+      sessionProjections.set(session.id, projectConversation(session))
+      return conversationCache.attach(JSON.parse(sessionMetadata(session)), session.messages)
+    })
     savedSessions.clear()
-    for (const session of store.sessions) savedSessions.set(session.id, { messages: session.messages, count: session.messages.length, metadata: sessionMetadata(session) })
+    for (const session of store.sessions) savedSessions.set(session.id, sessionMetadata(session))
     dirtySessions.clear()
+    conversationCache.trim()
     markBackupDirty()
     updateStorageStatus({ error: null })
     publishIdentityChanges()
@@ -533,6 +535,8 @@ export function initDatabase(): void {
   void application?.close(); application = null
   if (backupTimer) clearTimeout(backupTimer)
   backupTimer = null; backupRevision = 0; backedUpRevision = 0; databaseClosing = false; migrationBarrierReady = false; savedSessions.clear(); dirtySessions.clear()
+  sessionProjections.clear(); messageRevisions.clear()
+  conversationCache = new ConversationCache(id => application?.conversations.readSession(id)?.messages ?? [], id => dirtySessions.has(id), markMessagesDirty)
   filePath = path.join(app.getPath('userData'), 'chouyu-data.json')
   if (persistTimer) clearTimeout(persistTimer)
   persistTimer = null
@@ -565,11 +569,27 @@ export function getActiveSession(): ChatSession {
 
 export function searchSessions(query: string): ChatSessionSummary[] {
   if (!query.trim()) return getSessions()
+  const saved = new Map((application?.conversations.search(query) ?? []).map(summary => [summary.id, summary]))
   return store.sessions.flatMap((session) => {
+    if (!sessionChanged(session)) return saved.has(session.id) ? [saved.get(session.id)!] : []
     const message = session.messages.find((item) => findTextMatch(searchableMessageText(item), query))
     if (!message && !findTextMatch(session.title, query)) return []
     return [{ ...toSummary(session), preview: message ? searchExcerpt(searchableMessageText(message), query) : buildSessionPreview(session.messages) }]
   }).sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+export function readSessionMessages(id: string, before?: MessageCursor, limit = 100): MessagePage {
+  const session = store.sessions.find(candidate => candidate.id === id)
+  if (!session) throw new Error('会话不存在或已被删除。')
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new Error('Invalid page limit')
+  let page: MessagePage
+  if (sessionChanged(session)) {
+    const messages = session.messages
+    if (before && (!Number.isSafeInteger(before.position) || before.position < 0 || messages[before.position]?.id !== before.id)) throw new Error('Conversation changed; reload history')
+    const end = before?.position ?? messages.length, start = Math.max(0, end - limit)
+    page = { messages: messages.slice(start, end), before: start > 0 ? { position: start, id: messages[start].id } : null }
+  } else page = application!.conversations.readMessages(id, before, limit)
+  return { ...page, messages: cloneSession({ ...JSON.parse(sessionMetadata(session)), messages: page.messages }).messages }
 }
 
 export function getSession(id: string): ChatSession | null {
@@ -586,7 +606,7 @@ export function createChatSession(title?: string, characterId: string = DEFAULT_
   // Interactive new-chat requests are idempotent while a default blank exists.
   // Named sessions are intentional workspaces and must not be repurposed.
   if (title === undefined) {
-    const blanks = store.sessions.filter(candidate => candidate.characterId === owner && candidate.messages.length === 0 && candidate.title === DEFAULT_SESSION_TITLE)
+    const blanks = store.sessions.filter(candidate => candidate.characterId === owner && toSummary(candidate).messageCount === 0 && candidate.title === DEFAULT_SESSION_TITLE)
     const reusable = blanks.find(candidate => candidate.id === store.activeSessionId)
       ?? blanks.sort((a, b) => b.updatedAt - a.updatedAt)[0]
     if (reusable) return selectChatSession(reusable.id)
@@ -632,7 +652,7 @@ function appendContactMessage(input: {
   if (!session) { session = createSession([], input.title, at, owner); store.sessions.unshift(session) }
   if (!Number.isFinite(input.timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
   session.messages.push({ id: input.messageId, role: 'assistant', content: input.content, timestamp: at, communication, ...input.metadata })
-  dirtySessions.add(session.id)
+  markMessagesDirty(session.id)
   session.updatedAt = at
   for (const key of input.receiptKeys) store.state[key] = 'delivered'
   persist()
@@ -706,16 +726,14 @@ export function getAssistantUnreadCount(): number {
 }
 
 export function getAssistantUnreadPreview(): string {
-  let latest: { session: ChatSession; message: Message } | undefined
+  let latest: { session: ChatSession; unread: NonNullable<ConversationProjection['unread']> } | undefined
   for (const session of store.sessions) {
-    for (const message of session.messages) {
-      if (!isUnreadMessage(session, message)) continue
-      if (!latest || messageReadTimestamp(message) > messageReadTimestamp(latest.message)) latest = { session, message }
-    }
+    const unread = projection(session).unread
+    if (unread && (!latest || unread.at > latest.unread.at)) latest = { session, unread }
   }
   if (!latest) return ''
   const name = getCharacter(latest.session.characterId)?.name || '助手'
-  return `${name.slice(0, 24)}：${buildSessionPreview([latest.message])}`
+  return `${name.slice(0, 24)}：${latest.unread.preview}`
 }
 
 export function renameChatSession(id: string, title: string): ChatSessionSummary[] {
@@ -886,7 +904,7 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
     nextMessages = [...nextMessages, ...session.messages.filter(message => previousProactive.has(message.id) && !known.has(message.id))].sort((a, b) => a.timestamp - b.timestamp)
   }
   session.messages = nextMessages
-  dirtySessions.add(session.id)
+  markMessagesDirty(session.id)
   // A receipt for this reply must not acknowledge unrelated proactive deliveries.
   const readReply = readMessageId ? session.messages.find(message => message.id === readMessageId) : undefined
   if (readReply?.replyCompletedAt) readReply.replyReadAt = readReply.replyCompletedAt

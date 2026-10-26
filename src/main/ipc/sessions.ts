@@ -13,6 +13,8 @@ import { setTrayUnread } from '../tray'
 import { getStorageStatus, onStorageStatus, dismissStorageNotice, flushDatabase, getConfig, getCharacter, listCharacters, createCharacter, updateCharacter, deleteCharacter, getMessages, saveMessages, clearMessages, getSessionWorkspace, searchSessions, getSession, createChatSession, selectChatSession, renameChatSession, deleteChatSession, saveSessionMessages, getAssistantUnreadCount, getAssistantUnreadPreview, markSessionRead } from '../database'
 import { ipcMain } from 'electron'
 import { registerDomain } from './registration'
+import { readSessionMessages } from '../database'
+import type { MessageCursor } from '../../shared/conversations'
 
 export function registerSessionsHandlers(mainWindow: BrowserWindow) {
   return registerDomain(ipcMain, ipc => {  
@@ -42,6 +44,11 @@ export function registerSessionsHandlers(mainWindow: BrowserWindow) {
     ipc.handle('db:clear-messages', () => clearMessages())
   
     ipc.handle('db:get-session-workspace', () => getSessionWorkspace())
+    ipc.handle('db:read-session-messages', (_event, id: string, before?: MessageCursor, limit?: number) => {
+      if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid session id')
+      if (before !== undefined && (!before || typeof before !== 'object' || typeof before.id !== 'string' || before.id.length > 128 || !Number.isSafeInteger(before.position))) throw new Error('Invalid history cursor')
+      return readSessionMessages(id, before, limit)
+    })
   
     ipc.handle('db:search-sessions', (_event, query: string) => {
       if (typeof query !== 'string' || query.length > 500) throw new Error('Invalid search query')

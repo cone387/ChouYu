@@ -6,13 +6,13 @@ export function validateApplicationFile(filename: string, allowEmptyInitializati
   const db = new Database(filename, { readonly: true, fileMustExist: true })
   try {
     const version = db.pragma('user_version', { simple: true }) as number
-    if (version > 1) throw new Error('NEWER_STORE_VERSION')
+    if (version > 2) throw new Error('NEWER_STORE_VERSION')
     if (version === 0 && allowEmptyInitialization && db.pragma('quick_check', { simple: true }) === 'ok') {
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
       if (tables.every(t => ['sessions', 'messages', 'metadata', 'state', 'delivery_receipts'].includes(t.name)
         && (db.prepare(`SELECT count(*) AS n FROM "${t.name}"`).get() as { n: number }).n === 0)) return
     }
-    if (version !== 1 || db.pragma('quick_check', { simple: true }) !== 'ok') throw new Error('Invalid application database')
+    if (![1, 2].includes(version) || db.pragma('quick_check', { simple: true }) !== 'ok') throw new Error('Invalid application database')
     for (const table of ['sessions', 'messages', 'metadata', 'state', 'delivery_receipts']) db.prepare(`SELECT * FROM ${table} LIMIT 0`).all()
   } finally { db.close() }
 }

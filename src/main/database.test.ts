@@ -27,6 +27,7 @@ import { DEFAULT_APP_CONFIG } from '../shared/config'
 import { AttachmentStore } from './attachment-store'
 import Database from 'better-sqlite3'
 import { openApplicationDatabase } from './storage/application-database'
+import { ConversationRepository } from './storage/conversations'
 import { readApplicationSnapshot } from './storage/legacy-migration'
 import { getContactIdentityRevision, getContactIdentityConversation, onContactIdentityChanged } from './database'
 
@@ -82,6 +83,31 @@ function failWrites() {
     db.close()
   } }
 }
+
+it('starts, lists, searches and computes unread summaries without loading historical bodies', () => {
+  for (let i = 0; i < 12; i++) {
+    const workspace = createChatSession(`history ${i}`)
+    saveSessionMessages(workspace.activeSession.id, [message(`body${i}`)])
+    flushDatabase()
+  }
+  const read = vi.spyOn(ConversationRepository.prototype, 'readSession')
+  initDatabase(); getSessions(); getAssistantUnreadCount(); getAssistantUnreadPreview(); searchSessions('body11')
+  expect(read).not.toHaveBeenCalled()
+  getActiveSession()
+  expect(read).toHaveBeenCalledTimes(1)
+})
+
+it('keeps a failed save through reads of more sessions than the clean cache limit', () => {
+  const ids: string[] = []
+  for (let i = 0; i < 12; i++) ids.push(createChatSession(`cache ${i}`).activeSession.id)
+  const failed = failWrites()
+  saveSessionMessages(ids[0], [message('only unsaved copy')])
+  expect(flushDatabase().error).not.toBeNull()
+  for (const id of ids.slice(1)) getSession(id)
+  expect(getSession(ids[0])!.messages[0].content).toBe('only unsaved copy')
+  failed.mockRestore(); flushDatabase(); initDatabase()
+  expect(getSession(ids[0])!.messages[0].content).toBe('only unsaved copy')
+})
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
