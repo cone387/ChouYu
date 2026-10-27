@@ -129,6 +129,72 @@ it('continues truncated prose and assembles metadata without regenerating the bo
   expect(f.store.overview('writer').reports).toEqual([])
 })
 
+it('does not publish the saved prefix twice when the continuation echoes the full prefix', async () => {
+  const f = fixture(), prefix = '沈青抵达雾港，望着灯塔记下当晚的经过。'.repeat(6)
+  let calls = 0
+  const model: AgentModel = async (_prompt, _signal, options) => {
+    if (!options?.plainText) return metadata
+    if (++calls === 1) return prefix
+    options.onPartial?.(prefix.slice(0, 50))
+    options.onPartial?.(prefix + '她决定次日再来。')
+    return prefix + '她决定次日再来。[[SECTION_END]]'
+  }
+  expect(parseDraft(await generate(f, model)).delivery?.section?.body).toBe(prefix + '她决定次日再来。')
+})
+
+it('retains an echoed continuation only once across interruption and database reopen', async () => {
+  const f = fixture(), prefix = '沈青抵达雾港，望着灯塔记下当晚的经过。'.repeat(6)
+  let calls = 0
+  await expect(generate(f, async (_prompt, _signal, options) => {
+    if (++calls === 1) return prefix
+    options?.onPartial?.(prefix + '她决定')
+    throw new Error('network failure')
+  })).rejects.toThrow('network failure')
+  expect(f.recovery().read()?.body).toBe(prefix + '她决定')
+  f.reopen()
+  const result = await generate(f, async (_prompt, _signal, options) => options?.plainText ? '次日再来。[[SECTION_END]]' : metadata)
+  expect(parseDraft(result).delivery?.section?.body).toBe(prefix + '她决定次日再来。')
+})
+
+it('keeps a short interrupted continuation that happens to start like the saved prefix', async () => {
+  const f = fixture(), prefix = '沈青抵达雾港，望着灯塔记下当晚的经过。'.repeat(6)
+  let calls = 0
+  await expect(generate(f, async (_prompt, _signal, options) => {
+    if (++calls === 1) return prefix
+    options?.onPartial?.('沈青')
+    throw new Error('network failure')
+  })).rejects.toThrow('network failure')
+  expect(f.recovery().read()?.body).toBe(prefix + '沈青')
+})
+
+it('flushes the corrected draft when a streamed prefix replay ends in an interruption', async () => {
+  const f = fixture(), prefix = '沈青抵达雾港，望着灯塔记下当晚的经过。'.repeat(6)
+  let calls = 0
+  const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now())
+  try {
+    await expect(generate(f, async (_prompt, _signal, options) => {
+      if (++calls === 1) return prefix
+      options?.onPartial?.(prefix.slice(0, 50))
+      options?.onPartial?.(prefix)
+      throw new Error('network failure')
+    })).rejects.toThrow('network failure')
+    expect(f.recovery().read()?.body).toBe(prefix)
+  } finally { now.mockRestore() }
+})
+
+it('does not charge a partially replayed long prefix against the section size limit twice', async () => {
+  const f = fixture(), prefix = '沈青抵达雾港，望着灯塔记下当晚的经过。'.repeat(350)
+  let calls = 0
+  const result = await generate(f, async (_prompt, _signal, options) => {
+    if (!options?.plainText) return metadata
+    if (++calls === 1) return prefix
+    options.onPartial?.(prefix.slice(0, 4000))
+    options.onPartial?.(prefix + '她决定次日再来。')
+    return prefix + '她决定次日再来。[[SECTION_END]]'
+  })
+  expect(parseDraft(result).delivery?.section?.body).toBe(prefix + '她决定次日再来。')
+})
+
 it('bounds continuous truncation and resumes the persisted prefix after reopening the database', async () => {
   const f = fixture()
   const truncated = vi.fn<AgentModel>(async () => { throw new AgentOutputTruncatedError('接续') })

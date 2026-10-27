@@ -93,3 +93,9 @@
 - 日志：`artifacts/agent-autonomy/implementation-full-tests-final.log`、`implementation-typecheck-final.log`、`implementation-build-final.log`。原诊断夹具保留为修复前观测，其旧期望不作为修复后的验收测试；正式回归已纳入 `src/main/agents/task-context.test.ts` 与 `src/main/workloop/task-context.test.ts`。
 
 Native/DSH 使用本地 HTTP 协议模型夹具，证明工具真实可达、权限隔离、读取与保存链路成立。它不证明真实模型会主动选择合适记录、避免重复、正确判断商业价值或长期自主纠偏。下一步应使用同一能力入口，分别对开放点子、研究、写作与评审进行真实模型场景评估；不得以新增专用模式代替能力验证。
+
+## 后续真实模型演练与可靠性补正
+
+使用配置中的 `as-glm-5.2`，在重开数据库的合成任务中实测“从早期否定反馈、反证与候选假设构思下一步”。记录见 [真实模型实测](agent-autonomy-model-acceptance-20261027.md)。发现并修复多词检索不命中、候选/旧反馈难以发现、错误引用导致整轮失败、DSH 吞掉致命工具错误，以及正文恢复重复拼接等问题。独立审查另复现失败通知读取损坏正文导致失败事务回滚，已改为如实报告无法核实并持久保存失败；Native/DSH 均有真实正文损坏的确定性回归。
+
+最新实测中 Native 机器判据通过但人工发现重复正文，DSH 超出验收等待时间；修复后的正文恢复已通过中断与持久化回归，尚未再做付费抽测。因此当前结论是回查可用性和失败处理增强，真实模型交付质量仍未整体验收通过，不能用较早成功样本或本地合成回复替代。

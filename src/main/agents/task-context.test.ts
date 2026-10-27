@@ -53,6 +53,17 @@ it('paginates without dropping sections or repeating entries', () => {
   expect(second.nextCursor).toBeUndefined()
 })
 
+it('matches any space-separated keyword and identifies complete versus truncated search text', () => {
+  const { context, research } = fixture()
+  const deliveries = context.search({ kind: 'deliveries', query: '没有匹配 EARLY_BODY' }).items
+  expect(deliveries).toHaveLength(1)
+  expect(deliveries[0]).toMatchObject({ truncated: true })
+  const memories = context.search({ kind: 'memories', query: '没有匹配 尚待' }).items
+  expect(memories[0]).toMatchObject({ ref: { id: research.id }, truncated: false })
+  expect(context.search({ kind: 'feedback', query: '没有匹配 成本' }).items[0]).toMatchObject({ truncated: false })
+  expect(context.search({ kind: 'deliveries', query: '正文8' }).items[0]).toMatchObject({ truncated: false })
+})
+
 it('can search a specific historical version without mixing revisions or future versions', () => {
   const { context } = fixture()
   const older = context.search({ kind: 'deliveries', version: 1, query: 'EARLY_BODY' })
@@ -140,18 +151,46 @@ it('exposes current-task candidates honestly and excludes other tasks, owners an
   expect(items.map(item => item.ref.id)).toEqual([research.id])
   expect(items[0].status).toBe('candidate')
   expect(items[0].source).toEqual(research.source)
+  expect(context.promptContext().memoryCounts).toEqual({ active: 0, candidate: 1 })
+  expect(context.promptContext().candidateReferences).toEqual([{ kind: 'memories', id: research.id, version: research.revision, status: 'candidate' }])
   for (const memory of hidden) expect(() => context.read({ ref: { kind: 'memories', id: memory.id, version: 1 } })).toThrow()
   expect(store.memoryLibrary.get('alice', research.id).status).toBe('candidate')
   expect(store.memoryLibrary.select({ characterId: 'alice', query: '' }).items).toEqual([])
 })
 
+it('bounds candidate discovery and does not record a directory as supplied memory content', () => {
+  const { store, context, research, run } = fixture()
+  for (let index = 0; index < 8; index++) store.memoryLibrary.create('alice', { ...preference(`另一条待验证想法${index}`), kind: 'research', source: research.source })
+  const overview = context.promptContext()
+  expect(overview.memoryCounts.candidate).toBe(9)
+  expect(overview.candidateReferences).toHaveLength(6)
+  expect(JSON.stringify(overview)).not.toContain(research.content)
+  expect(JSON.parse(store.getRun(run)!.input).recallReferences).toBeUndefined()
+  const first = context.search({ kind: 'memories' })
+  const second = context.search({ kind: 'memories', cursor: first.nextCursor })
+  expect([...first.items, ...second.items]).toHaveLength(9)
+})
+
 it('returns feedback with its target version and does not incorporate later feedback', () => {
-  const { store, context, topic } = fixture()
+  const { store, context, topic, run } = fixture()
   const first = context.search({ kind: 'feedback' }).items[0]
   expect(context.read({ ref: first.ref })).toMatchObject({ text: '保留这个方向，重点核实成本', action: 'accept', ref: { version: 8 } })
   const later = store.feedbackLedger.submit('alice', { topicId: topic, revision: store.topics.get('alice', topic).revision, version: 8, action: 'accept', reason: '下一轮意见', requestId: 'feedback:two' })
   expect(context.search({ kind: 'feedback' }).items).toHaveLength(1)
   expect(() => context.read({ ref: { kind: 'feedback', id: String(later.feedbackId), version: 8 } })).toThrow()
+  store.db.prepare("UPDATE runs SET input=json_remove(input,'$.taskContext.feedbackCount') WHERE id=?").run(run)
+  expect(context.promptContext()).toMatchObject({ feedbackCount: 1, olderFeedbackCount: 0 })
+})
+
+it('tells the planner when older feedback is omitted from its initial context', () => {
+  const { store, run, topic } = fixture()
+  store.setStatus(run, 'failed')
+  for (let index = 0; index < 3; index++) store.feedbackLedger.submit('alice', { topicId: topic, revision: store.topics.get('alice', topic).revision, version: 8, action: 'accept', reason: `较新的排版反馈${index}`, requestId: `recent:${index}` })
+  const next = store.createRun('alice', '', Date.now(), topic)
+  const context = new TaskContext(store.db, next, () => store.assertLive(next))
+  expect(context.promptContext()).toMatchObject({ feedbackCount: 4, olderFeedbackCount: 1 })
+  expect(context.promptContext().recentFeedback).toHaveLength(3)
+  expect(context.search({ kind: 'feedback' }).items).toHaveLength(4)
 })
 
 it('invalidates even a memory search excerpt after correction or forgetting', () => {
@@ -168,6 +207,7 @@ it('refuses reads after pause and rejects malformed pagination', () => {
   const { store, context } = fixture()
   for (const offset of [-1, 0.5, Infinity]) expect(() => context.read({ ref: { kind: 'deliveries', id: 'entry1', version: 8 }, offset })).toThrow()
   expect(() => context.search({ kind: 'memories', query: 'x'.repeat(501) })).toThrow()
+  expect(() => context.search({ kind: 'memories', query: 'a b c d e f g h i' })).toThrow('8')
   store.pause('alice')
   expect(() => context.read({ ref: { kind: 'deliveries', id: 'entry1', version: 8 } })).toThrow()
 })

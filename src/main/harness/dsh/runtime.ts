@@ -1,5 +1,6 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { MAX_TOOL_ROUNDS } from '../limits';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DshTransport } from './transport';
@@ -73,7 +74,7 @@ class DshRuntime {
             if (method === 'round:before') {
                 return this.trackHostWork(current, async () => { try {
                     if (!input.rounds || current.roundPending || value.round !== current.round || typeof value.serializedInput !== 'string') throw new Error('DSH 后台请求归属无效。');
-                    if (current.round >= 6) throw new Error('工具调用次数超过安全上限。');
+                    if (current.round >= MAX_TOOL_ROUNDS) throw new Error('工具调用次数超过安全上限。');
                     await input.assertContext();
                     this.assertExecuting(current);
                     const cap = await input.rounds.beforeRound?.(current.round, value.serializedInput) ?? input.rounds.maxOutputTokens ?? 16384;

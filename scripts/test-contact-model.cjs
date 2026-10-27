@@ -6,15 +6,24 @@ const { tmpdir } = require('node:os')
 
 if (!process.versions.electron) {
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
-  const child = spawn(require('electron'), [__filename, process.execPath, ...process.argv.slice(2)], { stdio: 'inherit', windowsHide: true, env })
-  child.on('exit', code => process.exit(code ?? 1))
+  const directory = mkdtempSync(join(tmpdir(), 'chouyu-model-acceptance-'))
+  const finish = code => {
+    // Delete only the directory this parent created, after Electron has released it.
+    try { rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) }
+    catch (error) { console.error('Temporary acceptance profile cleanup failed:', error.code || error.name) }
+    process.exit(code)
+  }
+  const child = spawn(require('electron'), [__filename, process.execPath, `--acceptance-profile=${directory}`, ...process.argv.slice(2)], { stdio: 'inherit', windowsHide: true, env })
+  child.on('error', () => finish(1))
+  child.on('exit', code => finish(code ?? 1))
 } else {
   const { app, safeStorage } = require('electron')
-  const directory = mkdtempSync(join(tmpdir(), 'chouyu-model-acceptance-'))
+  const directory = process.argv.find(value => value.startsWith('--acceptance-profile='))?.slice('--acceptance-profile='.length)
+  if (!directory) throw new Error('Run this acceptance through the Node launcher')
   const localState = join(process.env.APPDATA, 'chouyu', 'Local State')
   if (existsSync(localState)) copyFileSync(localState, join(directory, 'Local State'))
   app.setPath('userData', directory)
-  const finish = code => { try { rmSync(directory, { recursive: true, force: true }) } finally { app.exit(code) } }
+  const finish = code => app.exit(code)
   app.whenReady().then(() => {
     const realHome = join(process.env.APPDATA, 'chouyu')
     let source = JSON.parse(readFileSync(join(realHome, 'chouyu-data.json'), 'utf8'))
@@ -42,6 +51,18 @@ if (!process.versions.electron) {
     const counts = process.argv.includes('--counts')
     const conversation = process.argv.includes('--conversation')
     const matrix = process.argv.includes('--matrix')
+    if (process.argv.includes('--autonomy')) {
+      const engine = process.argv.find(value => value.startsWith('--engine='))?.slice('--engine='.length)
+      if (engine && !['native', 'dsh'].includes(engine)) throw new Error('Invalid autonomy acceptance engine')
+      const child = spawn(process.argv[2], ['node_modules/vitest/vitest.mjs', 'run', 'src/main/agents/autonomy-model.acceptance.test.ts', '--maxWorkers=1'], {
+        stdio: 'inherit', windowsHide: true,
+        env: { ...process.env, CHOUYU_AUTONOMY_ACCEPTANCE: '1', ...(engine ? { CHOUYU_AUTONOMY_ENGINE: engine } : {}), CHOUYU_ACCEPTANCE_CONFIG: JSON.stringify({ config, characters }) }
+      })
+      const timer = setTimeout(() => { child.kill(); finish(1) }, 570000)
+      child.on('error', () => { clearTimeout(timer); finish(1) })
+      child.on('exit', code => { clearTimeout(timer); finish(code ?? 1) })
+      return
+    }
     if (process.argv.includes('--reliability')) {
       const child = spawn(process.argv[2], ['node_modules/vitest/vitest.mjs', 'run', 'src/main/assistant-routines/reliability-model.acceptance.test.ts'], {
         stdio: 'inherit', windowsHide: true, env: { ...process.env, CHOUYU_RELIABILITY_ACCEPTANCE: '1', CHOUYU_ACCEPTANCE_CONFIG: JSON.stringify({ config, characters }) }

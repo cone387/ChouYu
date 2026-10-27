@@ -4,6 +4,7 @@ import type { HarnessToolRuntime } from '../tool-runtime'
 import type { NativeRoundResult, NativeStreamCallback, NativeStreamOptions } from './types'
 import { createOpenAIConversation } from './providers/openai'
 import { createClaudeConversation } from './providers/claude'
+import { MAX_TOOL_ROUNDS } from '../limits'
 
 export async function streamNativeChat(messages: AIChatMessage[], systemPrompt: string, config: AppConfig, onChunk: NativeStreamCallback,
   signal?: AbortSignal, tools?: HarnessToolRuntime, options: NativeStreamOptions = {}): Promise<void> {
@@ -20,7 +21,7 @@ export async function streamNativeChat(messages: AIChatMessage[], systemPrompt: 
 
   const conversation = (config.provider === 'claude' ? createClaudeConversation : createOpenAIConversation)(messages, systemPrompt, tools?.definitions)
   const chunk: NativeStreamCallback = (text, done) => { signal?.throwIfAborted(); onChunk(text, done) }
-  for (let round = 0; round < 6; round++) {
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     signal?.throwIfAborted()
     const maxOutputTokens = await options.beforeRound?.(round, conversation.serialize()) ?? options.maxOutputTokens
     let result: NativeRoundResult

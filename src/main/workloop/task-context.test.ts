@@ -8,7 +8,7 @@ import { createBackgroundHarnesses } from '../harness/background'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
 
 const OLD = 'EARLY_BODY_COBALT_739', MEMORY = 'TASK_MEMORY_LARCH_286', FEEDBACK = 'ACCEPTED_COMMENT_EMBER_451', RESEARCH = 'RESEARCH_HYPOTHESIS_ORCHID_628'
-it.each(['native', 'dsh'] as const)('%s plans and delivers using actual task-context tool results with script tools disabled', async engine => {
+it.each((['native', 'dsh'] as const).flatMap(engine => [false, true].map(corrupt => ({ engine, corrupt }))))('$engine scoped recall repairs input errors and stops corruption=$corrupt', async ({ engine, corrupt }) => {
   const dir = mkdtempSync(join(tmpdir(), 'chouyu-task-context-'))
   const calls: { prompt: string; tools: string[]; results: any[] }[] = []
   const refs: { kind: string; id: string; version: number }[] = []
@@ -26,8 +26,11 @@ it.each(['native', 'dsh'] as const)('%s plans and delivers using actual task-con
     if (tools.includes('search_task_context')) {
       if (plan && !results.length) toolCalls = [{ kind: 'deliveries', query: OLD }, { kind: 'memories', query: RESEARCH }, { kind: 'feedback', query: FEEDBACK }].map(args => ({ name: 'search_task_context', args }))
       else if (plan && results.length === 3 && results.every(result => result.items?.length)) {
+        if (corrupt) host.store.db.prepare('UPDATE delivery_blocks SET body=? WHERE body=?').run('corrupt body', OLD)
         refs.splice(0, refs.length, ...results.map(result => result.items[0].ref))
-        toolCalls = refs.map(ref => ({ name: 'read_task_context', args: ref }))
+        toolCalls = refs.map(ref => ({ name: 'read_task_context', args: ref.kind === 'feedback' ? { ...ref, id: `feedback_${ref.id}` } : ref }))
+      } else if (plan && results.length === 6) {
+        toolCalls = refs.filter(ref => ref.kind === 'feedback').map(ref => ({ name: 'read_task_context', args: ref }))
       } else if (!plan && !results.length && refs.length) toolCalls = refs.map(ref => ({ name: 'read_task_context', args: ref }))
     }
     const actual = results.filter(result => typeof result.text === 'string' && 'total' in result)
@@ -64,14 +67,27 @@ it.each(['native', 'dsh'] as const)('%s plans and delivers using actual task-con
     host.store.feedbackLedger.submit('alice', { requestId: 'context-feedback', topicId, revision: host.store.topics.get('alice', topicId).revision, version: 5, action: 'accept', reason: FEEDBACK })
     await host.close(); host = open(); await host.sync([identity])
     await host.request('run', 'alice', [topicId])
-    await vi.waitFor(() => expect(host.store.overview('alice').runs[0].status).toBe('completed'), { timeout: 30000 })
+    const latestRunId = host.store.overview('alice').runs[0].id
+    await vi.waitFor(() => expect(['completed', 'failed', 'waiting', 'cancelled']).toContain(host.store.getRun(latestRunId)?.status), { timeout: 30000 })
+    if (corrupt) {
+      const run = host.store.getRun(latestRunId)!
+      expect(run.status).toBe('failed')
+      expect(run.error).toContain('损坏')
+      expect(calls).toHaveLength(2)
+      expect(host.store.db.prepare('SELECT MAX(version) AS version FROM delivery_versions WHERE topic_id=?').get(topicId)).toEqual({ version: 5 })
+      return
+    }
+    expect(host.store.overview('alice').runs[0].status).toBe('completed')
     const planCalls = calls.filter(call => call.prompt.startsWith('为联系人的同一个事项'))
     const writeCalls = calls.filter(call => !call.prompt.startsWith('为联系人的同一个事项'))
     expect(planCalls[0].prompt).toContain(MEMORY)
     expect(planCalls[0].prompt).toContain(FEEDBACK)
     expect(planCalls[0].prompt).not.toContain(OLD)
     expect(planCalls[0].prompt).not.toContain(RESEARCH)
-    expect(planCalls).toHaveLength(3)
+    expect(planCalls).toHaveLength(4)
+    expect(planCalls[1].results.every(result => result.remainingResponses === 5)).toBe(true)
+    expect(planCalls[2].results.slice(3).every(result => result.remainingResponses === 4)).toBe(true)
+    expect(planCalls[2].results.at(-1)).toMatchObject({ error: { code: 'invalid_task_context_request' } })
     expect(writeCalls).toHaveLength(2)
     expect(writeCalls[0].prompt).toContain('entry1')
     expect(writeCalls[0].prompt).toContain(FEEDBACK)

@@ -46,6 +46,23 @@ it('states the failure impact and recovery separately and follows newer work wit
   expect(store.decisions.get('alice', card.id)).toMatchObject({ currentState: 'failed' })
   expect(store.decisions.get('alice', card.id).result).toContain('模型服务')
 })
+it('persists failure and an honest notice even when an older delivery body is corrupt', () => {
+  const { store } = fixture(), prior = store.createRun('alice', '')
+  store.finish(prior, { runId: prior, title: '第一节', body: '此前已保存正文', nextStep: '继续', evidence: [], createdAt: Date.now() }, [],
+    { judgement: '已写第一节', reason: '实际交付', nextStep: '继续', openQuestions: '', status: 'researching' })
+  const run = store.createRun('alice', '')
+  store.setStatus(run, 'running')
+  store.db.prepare('UPDATE delivery_blocks SET body=?').run('corrupt body')
+  expect(() => store.fail(run, '成果正文块损坏，无法读取此版本。')).not.toThrow()
+  expect(store.getRun(run)).toMatchObject({ status: 'failed', error: '成果正文块损坏，无法读取此版本。' })
+  const card = store.decisions.pending('alice').find(card => card.runId === run)!
+  expect(card.impact).toContain('无法核实')
+  expect(card.impact).not.toContain('仍可在任务中查看')
+  expect(card.impact).not.toContain('还没有已保存')
+  expect(store.notices.pending('alice').find(notice => notice.runId === run)?.content).toContain('无法核实')
+  expect(store.db.prepare('SELECT body FROM delivery_blocks').all()).toEqual([{ body: 'corrupt body' }])
+})
+
 it('keeps failed-attempt impact and original notification immutable when a later delivery succeeds', () => {
   const { store } = fixture(), run = store.createRun('alice', '')
   store.fail(run, '本轮分段恢复次数已用完')

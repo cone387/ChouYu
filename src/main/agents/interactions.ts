@@ -26,14 +26,20 @@ export class ContactInteractions {
     const s = this.store, run = s.getRun(runId)
     if (!run?.topic_id) return '这次尝试的保存情况无法核实。'
     const row = s.db.prepare("SELECT value FROM delivery_versions WHERE topic_id=? AND json_extract(value,'$.createdAt')<=? ORDER BY version DESC LIMIT 1").get(run.topic_id, run.updated_at) as { value: string } | undefined
-    const saved = row && readStoredDelivery(s.db, row.value).sections.some(section => section.body.trim())
+    let saved: boolean | undefined = false
+    if (row) {
+      try { saved = readStoredDelivery(s.db, row.value).sections.some(section => section.body.trim()) }
+      // Failure reporting must not roll back the failed state because old prose
+      // cannot be read. Keep the data intact and report its availability as unknown.
+      catch { saved = undefined }
+    }
     const presentation = JSON.parse(run.input).revisionScope === 'presentation'
     const input = JSON.parse(run.input)
     const lengthDraft = input.deliveryLengthRepair?.original?.delivery?.section?.body || input.deliveryCountRepair?.original?.delivery?.section?.body
     const hasDraftTable = s.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='writing_drafts'").get()
     const draft = hasDraftTable && s.db.prepare("SELECT 1 FROM writing_drafts WHERE topic_id=? AND json_extract(value,'$.sourceRunId')=? AND updated_at<=? AND length(json_extract(value,'$.body'))>0 LIMIT 1").get(run.topic_id, run.id, run.updated_at)
     return (presentation ? '本次只修改阅读样式，未改动正文。' : '这次尝试没有保存新的正式正文。')
-      + (saved ? '之前已保存的正文仍可在任务中查看。' : '截至这次中断，还没有已保存的正文。')
+      + (saved === undefined ? '之前的正文暂时无法读取，保存情况无法核实，请检查存储记录。' : saved ? '之前已保存的正文仍可在任务中查看。' : '截至这次中断，还没有已保存的正文。')
       + (lengthDraft ? '本轮未交付草稿已保留；再次尝试仍须满足原要求。' : draft ? '任务中另有未交付草稿；相同任务范围下继续时会尝试恢复。' : '')
   }
   offer(notice: AgentNotice): string | undefined {
