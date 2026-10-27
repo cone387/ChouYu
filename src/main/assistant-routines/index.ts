@@ -31,6 +31,9 @@ let service: AssistantTaskCommands | undefined
 let engine: AssistantRoutineService | undefined
 let disposeDomain: (() => void) | undefined
 let timer: ReturnType<typeof setInterval> | undefined
+let closing: Promise<void> | undefined
+let requestController = new AbortController()
+const requests = new Set<Promise<unknown>>()
 function notifyAssistantExecution() {
   for (const window of BrowserWindow.getAllWindows()) {
     try { if (!window.isDestroyed()) window.webContents.send('assistant-routines:changed') } catch { /* Closing observers cannot fail work. */ }
@@ -58,7 +61,7 @@ export async function readContactsForAssistant(signal?: AbortSignal, beforeRead?
   return { checkedAt: new Date().toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, contacts: results }
 }
 
-const companion = new CompanionBriefing({
+function createCompanion() { return new CompanionBriefing({
   changed: notifyAssistantExecution,
   read: () => getState('companion-work-check-v1'),
   write: value => setState('companion-work-check-v1', value),
@@ -87,7 +90,8 @@ const companion = new CompanionBriefing({
   deliver: item => {
     deliverMessage({ kind: 'assistant', content: item.content, messageKind: item.kind, receiptIds: [item.receipt] })
   }
-})
+}) }
+let companion = createCompanion()
 export function appendCompanionBriefing(kind: CompanionKind, deliveryId: string) {
   return companion.send(kind, `companion:${deliveryId}`)
 }
@@ -125,6 +129,16 @@ export function summaryTaskLinks(evidence: Awaited<ReturnType<typeof readContact
 }
 export function initializeAssistantRoutines() {
   if (service) return
+  closing = undefined
+  companion = createCompanion()
+  requestController = new AbortController()
+  const requestSignal = requestController.signal
+  const trackRequest = <T>(run: () => Promise<T>): Promise<T> => {
+    const request = Promise.resolve().then(() => { requestSignal.throwIfAborted(); return run() })
+    requests.add(request)
+    void request.then(() => requests.delete(request), () => requests.delete(request))
+    return request
+  }
   engine = new AssistantRoutineService({
     changed: notifyAssistantExecution,
     delivered: receipt => Boolean(getState(`reminder-receipt:${receipt}`)),
@@ -197,22 +211,26 @@ export function initializeAssistantRoutines() {
     quarantine: value => setState(`contact-task-drafts-v1.quarantined:${Date.now()}`, value)
   })
   const modelForRequest = async (instruction: string, content: string) => {
+    requestSignal.throwIfAborted()
     const character = getCharacter(DEFAULT_CHARACTER_ID)
     if (!character) throw new Error('ChouYu 联系人不存在。')
     const config = getConfig()
     const resolved = resolveCharacterConfig(character, config)
     if (!resolved.ok) throw new Error('请先配置 ChouYu 使用的模型。')
     let output = ''
+    const signal = AbortSignal.any([requestSignal, AbortSignal.timeout(120000)])
     await streamNativeChat([{ role: 'user', content }], instruction, { ...config, ...resolved.config }, chunk => {
+      signal.throwIfAborted()
       output += chunk
       if (output.length > 16000) throw new Error('任务解析结果过长。')
-    }, AbortSignal.timeout(120000), undefined, { timeoutMs: 120000, maxOutputTokens: 1800 })
+    }, signal, undefined, { timeoutMs: 120000, maxOutputTokens: 1800 })
+    signal.throwIfAborted()
     return output
   }
-  ipcMain.handle('contact-task:request', (_event, target, message) => requestContactTask(target, message, {
+  ipcMain.handle('contact-task:request', (_event, target, message) => trackRequest(() => requestContactTask(target, message, {
     routineService: service!, drafts, agents: contactAgentsCall, config: getConfig, saveConfig: patch => { saveConfig(patch) }, defaultCharacterId: DEFAULT_CHARACTER_ID
-  }, modelForRequest))
-  ipcMain.handle('agents:prepareHandoff', async (_event, owner: string, request: import('../../shared/contact-handoffs').HandoffRequest) => {
+  }, modelForRequest)))
+  ipcMain.handle('agents:prepareHandoff', (_event, owner: string, request: import('../../shared/contact-handoffs').HandoffRequest) => trackRequest(async () => {
     const existing = await contactAgentsCall(owner, 'checkHandoff', [request])
     if (existing) return { kind: 'committed', handoff: existing }
     const key = `contact-handoff-draft:${owner}:${request.requestId}`
@@ -220,7 +238,7 @@ export function initializeAssistantRoutines() {
     const result = await prepareHandoffWork(request.recipientId, request.description, { routineService: service!, drafts: draft, agents: contactAgentsCall, config: getConfig, saveConfig: patch => { saveConfig(patch) }, defaultCharacterId: DEFAULT_CHARACTER_ID }, modelForRequest)
     if (result.kind === 'question') return result
     return contactAgentsCall(owner, 'stageHandoff', [request, result.work])
-  })
+  }))
   ipcMain.handle('contact-task:drafts', () => drafts.list())
   for (const tool of createAssistantTools(service, id => id ? getSession(id)?.characterId : undefined, readContactsForAssistant)) if (!getRegisteredTool(tool.name)) registerTool(tool)
   const tick = () => {
@@ -229,7 +247,12 @@ export function initializeAssistantRoutines() {
   }
   timer = setInterval(tick, 15000); tick()
 }
-export function closeAssistantRoutines() {
-  clearInterval(timer); engine?.close(); disposeDomain?.()
+export function closeAssistantRoutines(): Promise<void> {
+  if (closing) return closing
+  clearInterval(timer)
+  requestController.abort(new Error('联系人任务服务已关闭。'))
+  const pending = [engine?.close(), companion.close(), ...requests]
+  disposeDomain?.()
   service = undefined; engine = undefined; disposeDomain = undefined
+  return closing = Promise.allSettled(pending).then(() => {})
 }

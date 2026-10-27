@@ -32,5 +32,13 @@ export class ConversationCache {
       this.entries.delete(id); bytes -= entry.bytes
     }
   }
+  /** A committed append updates a warm cache without hydrating a cold conversation. */
+  append(id: string, message: Message): void {
+    const entry = this.entries.get(id)
+    if (!entry) return
+    entry.messages.push(message)
+    entry.bytes += JSON.stringify(message).length * 2 + 2
+    this.trim(id)
+  }
   remove(id: string): void { this.entries.delete(id) }
 }

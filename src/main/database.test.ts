@@ -110,6 +110,128 @@ it('keeps a failed save through reads of more sessions than the clean cache limi
   expect(getSession(ids[0])!.messages[0].content).toBe('only unsaved copy')
 })
 
+it.each([[1000, 'assistant'], [10000, 'assistant'], [1000, 'contact'], [10000, 'contact']] as const)('appends one proactive message without visiting %i historical message rows (%s)', (count, kind) => {
+  const owner = kind === 'assistant' ? DEFAULT_CHARACTER_ID : createCharacter({ name: 'Writer', soulMd: '' }).id
+  const id = kind === 'assistant' ? getActiveSession().id : createChatSession('work', owner).activeSession.id
+  saveSessionMessages(id, Array.from({ length: count }, (_, i) => message(`history-${i}`))); flushDatabase()
+  const other = createCharacter({ name: 'Other', soulMd: '' })
+  createChatSession('foreground', other.id)
+  initDatabase(); getActiveSession()
+  const read = vi.spyOn(ConversationRepository.prototype, 'readSession')
+  const db = new Database(sqlitePath())
+  try {
+    db.exec(`CREATE TABLE append_attempts(id TEXT);
+      CREATE TRIGGER observe_append BEFORE INSERT ON messages BEGIN INSERT INTO append_attempts VALUES(new.id); END;`)
+    if (kind === 'assistant') appendAssistantMessage('one new delivery', undefined, 'rest', { receiptIds: ['incremental'], messageId: 'new-delivery' })
+    else appendAgentNotice({ id: 'new-delivery', characterId: owner, topicId: 'topic', runId: 'run', kind: 'progress', topicRevision: 1, content: 'one new delivery', createdAt: Date.now() })
+    expect(db.prepare('SELECT count(*) AS count FROM append_attempts').get()).toEqual({ count: 1 })
+    expect(db.prepare('SELECT id FROM append_attempts').get()).toEqual({ id: kind === 'assistant' ? 'new-delivery' : 'agent:new-delivery' })
+    expect(read.mock.calls.some(([sessionId]) => sessionId === id)).toBe(false)
+    expect(getSessions().find(s => s.id === id)).toMatchObject({ messageCount: count + 1, unreadCount: 1, preview: 'one new delivery' })
+    expect(getSession(id)!.messages).toHaveLength(count + 1)
+    initDatabase()
+    expect(getSessions().find(s => s.id === id)!.messageCount).toBe(count + 1)
+  } finally { db.close() }
+})
+
+it('retries a failed read watermark without rewriting message bodies', () => {
+  appendAssistantMessage('unread', 1000, 'rest', { receiptIds: ['read-retry'], messageId: 'read-retry' })
+  const id = getActiveSession().id, db = new Database(sqlitePath())
+  try {
+    db.exec(`CREATE TRIGGER fail_read BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT,'disk full'); END`)
+    markSessionRead(id, 'read-retry')
+    expect(getStorageStatus().error).not.toBeNull()
+    db.exec(`DROP TRIGGER fail_read; CREATE TABLE watermark_writes(id TEXT);
+      CREATE TRIGGER watch_watermark BEFORE INSERT ON messages BEGIN INSERT INTO watermark_writes VALUES(new.id); END`)
+    expect(flushDatabase().error).toBeNull()
+    expect(db.prepare('SELECT * FROM watermark_writes').all()).toEqual([])
+    initDatabase()
+    expect(getAssistantUnreadCount()).toBe(0)
+  } finally { db.close() }
+})
+
+it('rejects reused delivery IDs without leaving an unsavable duplicate or changing delivered content', () => {
+  appendAssistantMessage('original', 1000, 'rest', { receiptIds: ['original'], messageId: 'same-id' })
+  expect(() => appendAssistantMessage('replacement', 2000, 'rest', { receiptIds: ['other-event'], messageId: 'same-id' })).toThrow()
+  expect(flushDatabase().error).toBeNull()
+  expect(getState('reminder-receipt:other-event')).toBeNull()
+  expect(getActiveSession().messages.filter(m => m.id === 'same-id').map(m => m.content)).toEqual(['original'])
+  initDatabase()
+  expect(getActiveSession().messages.filter(m => m.id === 'same-id').map(m => m.content)).toEqual(['original'])
+})
+
+it('rolls back a delivery when its receipt fails, then retries the pinned body exactly once', () => {
+  appendAssistantMessage('original', 1000, 'rest')
+  const id = getActiveSession().id, db = new Database(sqlitePath())
+  try {
+    db.exec(`CREATE TRIGGER fail_receipt BEFORE INSERT ON delivery_receipts WHEN new.key='reminder-receipt:atomic' BEGIN SELECT RAISE(ABORT,'disk full'); END`)
+    expect(() => appendAssistantMessage('pending', 2000, 'rest', { receiptIds: ['atomic'], messageId: 'atomic' })).toThrow('保存失败')
+    expect(db.prepare("SELECT id FROM messages WHERE id='atomic'").get()).toBeUndefined()
+    expect(db.prepare("SELECT key FROM delivery_receipts WHERE key='reminder-receipt:atomic'").get()).toBeUndefined()
+    expect(getSession(id)!.messages.filter(m => m.id === 'atomic')).toHaveLength(1)
+    db.exec('DROP TRIGGER fail_receipt')
+    appendAssistantMessage('pending', 2000, 'rest', { receiptIds: ['atomic'], messageId: 'atomic' })
+    initDatabase()
+    expect(getSession(id)!.messages.filter(m => m.id === 'atomic')).toHaveLength(1)
+    expect(getState('reminder-receipt:atomic')).toBe('delivered')
+  } finally { db.close() }
+})
+
+it('preserves an earlier failed ordinary edit and attachment when a delivery arrives before retry', () => {
+  const id = getActiveSession().id
+  saveSessionMessages(id, [{ ...message('edited', 'before'), imageUrl: image }]); flushDatabase()
+  const failed = failWrites()
+  saveSessionMessages(id, [{ ...message('edited', 'after'), imageUrl: image }])
+  expect(flushDatabase().error).not.toBeNull()
+  expect(() => appendAssistantMessage('delivery', 2000, 'rest', { receiptIds: ['after-edit'], messageId: 'after-edit' })).toThrow('保存失败')
+  failed.mockRestore()
+  expect(flushDatabase().error).toBeNull()
+  initDatabase()
+  expect(getSession(id)!.messages.map(m => m.content)).toEqual(['after', 'delivery'])
+  expect(getSession(id)!.messages[0].imageUrl).toBe(image)
+  appendAssistantMessage('duplicate', 2000, 'rest', { receiptIds: ['after-edit'], messageId: 'after-edit' })
+  expect(getSession(id)!.messages).toHaveLength(2)
+})
+
+it('flushes an unrelated pending edit without resaving the clean delivery history', () => {
+  const id = getActiveSession().id
+  saveSessionMessages(id, Array.from({ length: 1000 }, (_, i) => message(`history-${i}`))); flushDatabase()
+  const other = createCharacter({ name: 'Other', soulMd: '' })
+  const foreground = createChatSession('foreground', other.id).activeSession.id
+  saveSessionMessages(foreground, [message('pending-foreground')])
+  const db = new Database(sqlitePath())
+  try {
+    db.exec(`CREATE TABLE pending_append_attempts(id TEXT);
+      CREATE TRIGGER observe_pending_append BEFORE INSERT ON messages BEGIN INSERT INTO pending_append_attempts VALUES(new.id); END`)
+    appendAssistantMessage('new', 2000, 'rest', { receiptIds: ['pending-edit'], messageId: 'new' })
+    expect(db.prepare("SELECT count(*) AS count FROM pending_append_attempts WHERE id LIKE 'history-%'").get()).toEqual({ count: 0 })
+    expect(getSession(foreground)!.messages[0].content).toBe('pending-foreground')
+    expect(getSession(id)!.messages).toHaveLength(1001)
+  } finally { db.close() }
+})
+
+it('persists a read watermark without rewriting or loading historical message bodies', () => {
+  appendAssistantMessage('first', 1000, 'rest', { receiptIds: ['first'], messageId: 'first' })
+  appendAssistantMessage('later', 2000, 'rest', { receiptIds: ['later'], messageId: 'later' })
+  const id = getActiveSession().id
+  const other = createCharacter({ name: 'Other', soulMd: '' })
+  createChatSession('foreground', other.id)
+  initDatabase(); getActiveSession()
+  const read = vi.spyOn(ConversationRepository.prototype, 'readSession')
+  const db = new Database(sqlitePath())
+  try {
+    db.exec(`CREATE TABLE read_attempts(id TEXT);
+      CREATE TRIGGER observe_read BEFORE INSERT ON messages BEGIN INSERT INTO read_attempts VALUES(new.id); END;`)
+    markSessionRead(id, 'first')
+    expect(db.prepare('SELECT * FROM read_attempts').all()).toEqual([])
+    expect(read.mock.calls.some(([sessionId]) => sessionId === id)).toBe(false)
+    expect(getSessions().find(s => s.id === id)!.unreadCount).toBe(1)
+    initDatabase()
+    expect(getSession(id)!.lastReadAt).toBe(1000)
+    expect(getSessions().find(s => s.id === id)!.unreadCount).toBe(1)
+  } finally { db.close() }
+})
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
   environment.encryptionAvailable = false

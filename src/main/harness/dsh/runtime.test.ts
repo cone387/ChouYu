@@ -13,6 +13,17 @@ import { startMockProvider } from './fixtures/mock-provider.mjs';
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse())
     await cleanup(); });
+it('releases an unused acquired SDK lease without trying to dispose a nonexistent session', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'chouyu-dsh-unused-'));
+    const pool = new DshRuntimePool({ home, node: process.execPath, helper: resolve('runtime/dsh/helper.mjs') });
+    cleanups.push(() => rmSync(home, { recursive: true, force: true }), () => pool.close());
+    const input = await prepareHarnessInput({ requestId: 'unused', characterId: 'c', sessionId: 's', systemPrompt: 'persona', messages: [{ role: 'user', content: 'unused' }] }, {
+        config: { ...DEFAULT_APP_CONFIG, provider: 'openai', baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'fixture', model: 'fixture' },
+        signal: new AbortController().signal, assertContext: async () => {}, citationContext: async () => '', privateContext: '', skillContext: '', communication: ''
+    });
+    const lease = await pool.acquire(input);
+    await expect(Promise.all([lease.release(), lease.release()])).resolves.toEqual([undefined, undefined]);
+}, 60000);
 it('waits for a delayed original offer to become obsolete before stop settles',async()=>{
     const home=mkdtempSync(join(tmpdir(),'chouyu-dsh-late-offer-')),mock=await startMockProvider('openai');
     const pool=new DshRuntimePool({home,node:process.execPath,helper:resolve('runtime/dsh/helper.mjs')}),store=new HarnessStore(':memory:');

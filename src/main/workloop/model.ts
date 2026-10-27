@@ -27,6 +27,8 @@ export function createWorkModel(context: {
     let recordedMemoryContext = false
     const recordMemoryContext = () => { if (!recordedMemoryContext) { store.recordMemoryContext(run.id); recordedMemoryContext = true } }
     const model: AgentModel = async (prompt, signal, options) => {
+      const toolsAbort = new AbortController()
+      signal = AbortSignal.any([signal, toolsAbort.signal])
       if (skills.error) throw new Error(`联系人技能不可用：${skills.error}`)
       prompt = skills.instruction ? `${skills.instruction}\n${prompt}` : prompt
       if (input.materialDirectory.length) prompt += `\n本轮资料目录（尚未读取正文；需使用 read_contact_material 工具读取实际版本后引用）：${JSON.stringify(input.materialDirectory)}`
@@ -43,7 +45,7 @@ export function createWorkModel(context: {
         callId = store.latestCallId(run.id)
         if (callId === undefined) throw new Error('Missing model call record')
         const next = store.tokens.reserve(run.id, callId, run.character_id, run.topic_id, serializedInput, AGENT_OUTPUT_TOKENS)
-        if ('error' in next) { store.db.prepare('DELETE FROM calls WHERE id=?').run(callId); callId = undefined; throw new TokenBudgetError(next.error) }
+        if ('error' in next) { store.callBudget.cancelUnstartedCall(run.id, callId); callId = undefined; throw new TokenBudgetError(next.error) }
         reservation = { key: next.key!, maxOutputTokens: next.maxOutputTokens! }
         if (identity.recovery) {
           if (!context.recoveryBudget || !run.topic_id) throw new Error('恢复额度核对服务不可用，本次未发起请求。')
@@ -107,7 +109,7 @@ export function createWorkModel(context: {
         if (testModel) { await beforeRound(0, prompt); const result = await testModel(prompt, signal, options); if (options?.suppliesMemories) recordMemoryContext(); return result }
         await context.harnesses.background(input.backgroundHarnessEngine).run({ characterId: identity.id, requestId: run.id, messages: [{ role: 'user', content: prompt }],
           systemPrompt: options?.plainText ? 'Output the requested plain text, without JSON.' : 'Follow the work instruction and return JSON. Distinguish facts, assumptions, and sources.',
-          config: { ...DEFAULT_APP_CONFIG, ...identity.config! }, signal, tools,
+          config: { ...DEFAULT_APP_CONFIG, ...identity.config! }, signal, tools, cancelTools: reason => toolsAbort.abort(reason),
           onChunk: chunk => { output += chunk; options?.onPartial?.(output.slice(0, 24000)); if (output.length > 24000) throw new AgentOutputTruncatedError(output.slice(0, 24000)) },
           options: { timeoutMs: 180000, maxOutputTokens: AGENT_OUTPUT_TOKENS, beforeRound, afterRound, onMetadata: value => { metadata = { ...value, model: value.model || identity.config!.model }; if (options?.suppliesMemories) recordMemoryContext() } } })
         if (metadata.finishReason === 'length' || metadata.finishReason === 'max_tokens') throw new AgentOutputTruncatedError(output)

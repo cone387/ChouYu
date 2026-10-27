@@ -22,7 +22,7 @@ import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
 import { initializeAssistantRoutines, closeAssistantRoutines } from './assistant-routines'
 import { initializeAgents, closeAgents, startIdeaLab } from './agents'
-import { initializeTasks, closeTasks } from './tasks'
+import { initializeTasks, closeTasks, stopTaskScheduling } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
 import { runTaskAssistantSmoke } from './smoke/task-assistant-smoke'
 import { runAgentsSmoke } from './smoke/agents-smoke'
@@ -453,14 +453,15 @@ app.on('before-quit', (event) => {
     event.preventDefault()
     if (!journalClosing) {
       journalClosing = true
-      closeAssistantRoutines()
+      const assistantClosing = closeAssistantRoutines()
       // Stop every producer before the final flush; the recovery dialog remains usable.
       stopClipboardWatcher()
       closeReminders()
+      stopTaskScheduling()
       mainWindow?.setEnabled(false)
       mainWindow?.hide()
       void storageQuit.finish(
-        () => Promise.allSettled([closeChatHarness(false).finally(() => closeAgents()), closeJournal()]),
+        () => Promise.allSettled([assistantClosing, closeChatHarness(false).finally(() => closeAgents()), closeJournal()]),
         async error => {
           if (isSmokeTest) return 'discard'
           const { response } = await dialog.showMessageBox({

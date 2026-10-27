@@ -4,7 +4,8 @@ vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] }, ipcMain
 vi.mock('../database', () => ({
   commitApplicationState: (values: Record<string, string>) => { for (const [key, value] of Object.entries(values)) state.values.set(key, value) },
   getState: (key: string) => state.values.get(key), setState: (key: string, value: string) => state.values.set(key, value),
-  appendAssistantMessage: state.sent, getConfig: () => ({ aiToolsEnabled: true, soulMd: 'ChouYu' }),
+  appendAssistantMessage: state.sent, getConfig: () => ({ aiToolsEnabled: true, soulMd: 'ChouYu', proactiveReturn: true, provider: 'openai', model: 'test', apiKey: 'test', baseUrl: 'https://test.invalid' }),
+  getCharacter: () => ({ id: 'chouyu', name: 'ChouYu', builtIn: true, soulMd: '' }),
   getSession: () => ({ characterId: 'chouyu' }), listCharacters: () => [{ id: 'chouyu', name: '丑鱼' }, { id: 'alice', name: '阿笔' }, { id: 'bob', name: '老周' }]
 }))
 vi.mock('../agents', () => ({ inspectContactWork: state.inspect, inspectContactDelivery: state.delivery, contactAgentsCall: async () => [{ scope: { kind: 'contact' }, revision: 1, preference: { instruction: '先给待处理事项' } }] }))
@@ -12,12 +13,13 @@ vi.mock('../harness/native/runner', () => ({ streamNativeChat: state.model }))
 vi.mock('../skills', () => ({ contactSkillInstruction: () => '已配置技能：核对依据后简要总结。' }))
 vi.mock('../reminder-events', () => ({ notifyReminderChanges: vi.fn() }))
 vi.mock('../tools/registry', () => ({ getRegisteredTool: () => null, registerTool: vi.fn() }))
-import { initializeAssistantRoutines, closeAssistantRoutines, readContactsForAssistant, summaryTaskLinks } from './index'
+import { initializeAssistantRoutines, closeAssistantRoutines, appendCompanionBriefing, readContactsForAssistant, summaryTaskLinks } from './index'
 import { contactCommunicationRules } from '../../shared/contact-communication'
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 8, 30, 8))
   state.values.clear(); state.handlers.clear(); vi.clearAllMocks()
+  state.model.mockReset()
   state.sent.mockReturnValue({ sessions: [] })
   state.inspect.mockImplementation(async (id: string) => {
     if (id === 'bob') throw new Error('worker unavailable')
@@ -25,8 +27,51 @@ beforeEach(() => {
   })
   state.delivery.mockResolvedValue({ version: 2, sections: [{ title: '初稿' }] })
 })
-afterEach(() => { closeAssistantRoutines(); vi.useRealTimers() })
+afterEach(async () => { await closeAssistantRoutines(); vi.useRealTimers() })
 describe('assistant routine integration', () => {
+  it('cancels and drains task parsing before storage closes, preserving its original draft', async () => {
+    initializeAssistantRoutines()
+    let finish!: () => void
+    let signal!: AbortSignal
+    const deferred = new Promise<void>(resolve => { finish = resolve })
+    state.model.mockImplementationOnce(async (_messages, _prompt, _config, chunk, current) => {
+      signal = current
+      await deferred
+      chunk(JSON.stringify({ kind: 'question', question: '晚到的追问' }))
+    })
+    const result = state.handlers.get('contact-task:request')!({}, { kind: 'create', characterId: 'chouyu' }, '每天提醒我休息').then(() => 'saved', () => 'cancelled')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(signal).toBeDefined()
+    const saved = state.values.get('contact-task-drafts-v1')
+    let drained = false
+    const closing = closeAssistantRoutines().then(() => { drained = true })
+    try {
+      expect(signal.aborted).toBe(true)
+      await Promise.resolve()
+      expect(drained).toBe(false)
+    } finally { finish() }
+    expect(await result).toBe('cancelled')
+    await closing
+    expect(state.values.get('contact-task-drafts-v1')).toBe(saved)
+  })
+  it('module shutdown waits for companion work and leaves no late delivery or checkpoint', async () => {
+    initializeAssistantRoutines()
+    let finish!: () => void
+    const deferred = new Promise<void>(resolve => { finish = resolve })
+    state.inspect.mockImplementationOnce(async () => { await deferred; return { topics: [], runs: [], reports: [] } })
+    const pending = appendCompanionBriefing('return', 'shutdown')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.inspect).toHaveBeenCalled()
+    let drained = false
+    const closing = closeAssistantRoutines().then(() => { drained = true })
+    await Promise.resolve()
+    expect(drained).toBe(false)
+    finish()
+    await Promise.all([pending, closing])
+    expect(state.sent).not.toHaveBeenCalled()
+    expect(state.values.has('companion-work-check-v1')).toBe(false)
+    await expect(appendCompanionBriefing('return', 'after-close')).rejects.toThrow('关闭')
+  })
   it('includes contact-level cards with no task in inspected facts and actual briefing links', async () => {
     state.inspect.mockResolvedValue({ topics: [], runs: [], reports: [], pendingInteractions: [{ id: 'action:credential', characterId: 'alice', version: 'v1', kind: 'action', status: 'pending', request: { title: '配置搜索密钥', body: '请安全填写新密钥', purpose: 'configuration', subject: { kind: 'contact' }, actions: [{ id: 'save', label: '保存密钥', arguments: { private: 'DO_NOT_COPY' } }] } }] })
     const evidence = await readContactsForAssistant(), text = JSON.stringify(evidence)

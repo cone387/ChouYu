@@ -23,6 +23,48 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers())
 describe('companion work checks', () => {
+  it.each(['inspect', 'summarize'] as const)('drains %s on close without delivering or saving late work', async stage => {
+    const f = fixture()
+    let finish!: () => void
+    let signal!: AbortSignal
+    const deferred = new Promise<void>(resolve => { finish = resolve })
+    if (stage === 'inspect') f.deps.inspect.mockImplementationOnce(async current => { signal = current; await deferred; return structuredClone(f.evidence) })
+    else f.deps.summarize.mockImplementationOnce(async (_facts, current) => { signal = current; await deferred; return 'late summary' })
+    const pending = f.service.send('return', 'closing')
+    await vi.waitFor(() => expect(signal).toBeDefined())
+    const queued = f.service.send('greeting', 'queued')
+    let drained = false
+    const closing = f.service.close().then(() => { drained = true })
+    expect(signal.aborted).toBe(true)
+    await Promise.resolve()
+    expect(drained).toBe(false)
+    finish()
+    await Promise.all([pending, queued, closing])
+    await expect(f.service.send('greeting', 'after-close')).rejects.toThrow('关闭')
+    await f.service.close()
+    expect(f.receipts.size).toBe(0)
+    expect(f.deps.read()).toBeUndefined()
+    expect(f.service.executionSnapshot().executions).toEqual([])
+  })
+  it('keeps pending delivery intact when close interrupts its source recheck', async () => {
+    const f = fixture()
+    f.deps.deliver.mockImplementationOnce(() => { throw new Error('disk full') })
+    await expect(f.service.send('greeting', 'retry')).rejects.toThrow('disk full')
+    const saved = f.deps.read()
+    let finish!: () => void
+    const deferred = new Promise<void>(resolve => { finish = resolve })
+    let entered = false
+    f.deps.inspect.mockImplementationOnce(async () => { entered = true; await deferred; return structuredClone(f.evidence) })
+    const retry = f.service.retryPending()
+    await vi.waitFor(() => expect(entered).toBe(true))
+    const closing = f.service.close()
+    finish()
+    await Promise.all([retry, closing])
+    expect(f.deps.read()).toBe(saved)
+    expect(f.receipts.size).toBe(0)
+    await new CompanionBriefing(f.deps).retryPending()
+    expect(f.receipts.has('retry')).toBe(true)
+  })
   it('exposes the actual duty only while checking, summarizing and delivering', async () => {
     const f = fixture()
     let resolve!: (text: string) => void

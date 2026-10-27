@@ -3,6 +3,26 @@ import { AssistantRoutineService } from './service'
 import { nextRoutineAt, type AssistantRoutineInput } from '../../shared/assistant-routines'
 const input: AssistantRoutineInput = { title: '晨间总结', instruction: '检查各联系人', times: ['09:00'], cadence: 'daily', kind: 'contact-summary', enabled: true }
 const at = (day: number, hour: number) => new Date(2026, 8, day, hour).getTime()
+
+it('close waits for in-flight generation and prevents later schedule writes or delivery', async () => {
+  const f = fixture()
+  f.service.save(input, undefined, undefined, at(25, 8))
+  let finish!: (text: string) => void
+  f.deps.generate.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const tick = f.service.tick(at(25, 9))
+  await vi.waitFor(() => expect(finish).toBeDefined())
+  let drained = false
+  const closing = f.service.close().then(() => { drained = true })
+  await Promise.resolve()
+  expect(drained).toBe(false)
+  const before = f.deps.read()
+  finish('late result')
+  await Promise.all([tick, closing])
+  expect(f.deps.read()).toBe(before)
+  expect(f.messages).toHaveLength(0)
+  await f.service.tick(at(26, 9))
+  expect(f.deps.generate).toHaveBeenCalledTimes(1)
+})
 function fixture() {
   let raw = ''
   const receipts = new Set<string>(), messages: string[] = []

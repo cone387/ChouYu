@@ -33,6 +33,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): () => void {
 }
 
 export async function closeChatHarness(disposeHandlers = true): Promise<void> {
+  // Hidden renderers still sample rest reminders; seal that producer before any drain awaits.
+  ipcMain.removeHandler('proactive:append')
   try { await runtime?.service.close() } finally { if (disposeHandlers) disposeIpcHandlers() }
 }
 

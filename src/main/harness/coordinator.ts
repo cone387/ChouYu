@@ -28,8 +28,9 @@ export class HarnessCoordinator {
     try {
       try {
         signal.throwIfAborted()
-        const bound = { ...input, signal }
-        if (input.bindTools) bound.tools = input.bindTools(bound)
+        const toolAbort = new AbortController()
+        const bound = { ...input, signal, cancelTools: (reason: Error) => { toolAbort.abort(reason); input.cancelTools?.(reason) } }
+        if (input.bindTools) bound.tools = input.bindTools({ ...bound, signal: AbortSignal.any([signal, toolAbort.signal]) })
         const prepared = this.registry.prepare(engine, bound, this.platform)
         adapter = this.registry.get(engine).adapter
         releaseTools = prepared.tools?.subscribe?.(event => emit({

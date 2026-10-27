@@ -49,9 +49,26 @@ export class CompanionBriefing {
   private queue: Promise<unknown> = Promise.resolve()
   private executions: AssistantExecutions
   private executionId?: string
+  private closed = false
+  private closing?: Promise<void>
+  private shutdown = new AbortController()
+  private operations = new Set<Promise<unknown>>()
   constructor(private deps: Dependencies) { this.executions = new AssistantExecutions(deps.changed) }
   executionSnapshot() { return this.executions.snapshot() }
+  close(): Promise<void> {
+    if (this.closing) return this.closing
+    this.closed = true
+    if (this.executionId) this.executions.phase(this.executionId, 'cancelling')
+    this.shutdown.abort()
+    return this.closing = this.queue.then(async () => { await Promise.allSettled([...this.operations]) })
+  }
+  private track<T>(operation: Promise<T>): Promise<T> {
+    this.operations.add(operation)
+    void operation.then(() => this.operations.delete(operation), () => this.operations.delete(operation))
+    return operation
+  }
   private async executing(kind: CompanionKind, work: () => Promise<void>) {
+    if (this.closed) return
     const executionId = randomUUID()
     this.executionId = executionId
     this.executions.begin({ executionId, taskId: kind === 'greeting' ? 'duty:proactiveGreeting' : 'duty:proactiveReturn', startedAt: Date.now(), phase: 'checking' })
@@ -59,12 +76,14 @@ export class CompanionBriefing {
   }
   private phase(phase: 'checking' | 'generating' | 'delivering') { if (this.executionId) this.executions.phase(this.executionId, phase) }
   send(kind: CompanionKind, receipt: string): Promise<void> {
+    if (this.closed) return Promise.reject(new Error('主动工作检查已关闭。'))
     const work = this.queue.then(() => this.executing(kind, () => this.run(kind, receipt)))
     this.queue = work.catch(() => {})
     return work
   }
   retryPending(): Promise<void> {
-    const work = this.queue.then(async () => { const state = this.load(); if (state.pending) await this.executing(state.pending.kind, async () => { await this.restore(state) }) })
+    if (this.closed) return Promise.resolve()
+    const work = this.queue.then(async () => { if (this.closed) return; const state = this.load(); if (state.pending) await this.executing(state.pending.kind, async () => { await this.restore(state) }) })
     this.queue = work.catch(() => {})
     return work
   }
@@ -82,14 +101,17 @@ export class CompanionBriefing {
   }
   private save(state: Checkpoint) { this.deps.write(JSON.stringify(state)) }
   private async current(hashes: Record<string, string>): Promise<boolean> {
+    if (this.closed) return false
     this.phase('checking')
     if (!Object.keys(hashes).length) return true
     const controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, this.shutdown.signal])
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const evidence = await Promise.race([this.deps.inspect(controller.signal), new Promise<never>((_, reject) => {
+      const evidence = await Promise.race([this.track(this.deps.inspect(signal)), new Promise<never>((_, reject) => {
         timer = setTimeout(() => { controller.abort(); reject(new Error('状态复核超时')) }, 10000)
       })])
+      signal.throwIfAborted()
       const actual = new Map(companionFacts(evidence).map(f => [f.key, f.hash]))
       return Object.entries(hashes).every(([key, hash]) => actual.get(key) === hash)
     } catch { return false }
@@ -108,6 +130,7 @@ export class CompanionBriefing {
     if (!state.pending) return state
     const delivered = this.deps.delivered(state.pending.receipt)
     const current = delivered || this.deps.enabled(state.pending.kind) && this.deps.allowed() && await this.current(state.pending.hashes)
+    if (this.closed) return state
     if (delivered || current && this.deps.enabled(state.pending.kind) && this.deps.allowed()) return this.flush(state)
     delete state.pending
     this.save(state)
@@ -122,8 +145,9 @@ export class CompanionBriefing {
       return
     }
     state = await this.restore(state)
-    if (this.deps.delivered(receipt) || !this.deps.enabled(kind)) return
+    if (this.closed || this.deps.delivered(receipt) || !this.deps.enabled(kind)) return
     const controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, this.shutdown.signal])
     let timer: ReturnType<typeof setTimeout> | undefined
     const bounded = <T>(operation: Promise<T>): Promise<T> => Promise.race([operation, new Promise<never>((_, reject) => {
       timer = setTimeout(() => { controller.abort(); reject(new Error('工作检查超时')) }, 45_000)
@@ -135,8 +159,8 @@ export class CompanionBriefing {
       if (!wasAllowed) content += '这次没有检查工作：联系人状态工具或 AI 工具已关闭，可在能力设置中开启。'
       else {
         await bounded((async () => {
-          const evidence = await this.deps.inspect(controller.signal)
-          controller.signal.throwIfAborted()
+          const evidence = await this.track(this.deps.inspect(signal))
+          signal.throwIfAborted()
           checkedAt = evidence.checkedAt
           const facts = companionFacts(evidence)
           const changed = facts.filter(f => state.hashes[f.key] !== f.hash)
@@ -154,13 +178,13 @@ export class CompanionBriefing {
           if (selected.length) {
             try {
               this.phase('generating')
-              const summary = await this.deps.summarize(selected, controller.signal)
-              controller.signal.throwIfAborted()
+              const summary = await this.track(this.deps.summarize(selected, signal))
+              signal.throwIfAborted()
               if (!summary.trim()) throw new Error('empty summary')
               // Model text never supplies task links; checked IDs below are the only navigation.
               content += `\n\n${escape(summary.trim().slice(0, 1600))}`
             } catch {
-              controller.signal.throwIfAborted()
+              signal.throwIfAborted()
               content += '\n\n这次模型整理失败，下面直接列出已读取的任务状态。'
             }
             content += '\n\n' + selected.map(f => {
@@ -191,13 +215,13 @@ export class CompanionBriefing {
       checkedAt = state.checkedAt
       content = `${opening}这次工作检查失败或超时，暂时无法确认最新进展；下次检查会重试。`
     } finally { clearTimeout(timer) }
-    if (!this.deps.enabled(kind) || wasAllowed && !this.deps.allowed()) return
+    if (this.closed || !this.deps.enabled(kind) || wasAllowed && !this.deps.allowed()) return
     if (!await this.current(hashes)) {
       content = `${opening}工作状态在整理期间发生变化或暂时无法复核，这次没有发送旧进展；下次检查会重试。`
       hashes = {}
       checkedAt = state.checkedAt
     }
-    if (!this.deps.enabled(kind) || wasAllowed && !this.deps.allowed()) return
+    if (this.closed || !this.deps.enabled(kind) || wasAllowed && !this.deps.allowed()) return
     state.pending = { receipt, kind, content, hashes, checkedAt }
     this.save(state) // Generation is durable before delivery; no second model call on retry.
     this.flush(state)

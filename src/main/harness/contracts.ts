@@ -17,6 +17,8 @@ export interface HarnessInput extends RunKey {
     tools?: HarnessToolRuntime;
     /** Bind host tools after the coordinator composes the effective cancellation signal. */
     bindTools?(input: HarnessInput): HarnessToolRuntime | undefined;
+    /** Stop host tools when their remote runtime fails; does not mark the caller as user-cancelled. */
+    cancelTools?(reason: Error): void;
     signal: AbortSignal;
     assertContext(): Promise<void>;
     onMetadata?(metadata: AIResponseMetadata): void;
@@ -105,6 +107,7 @@ export interface BackgroundHarnessInput {
     config: AppConfig;
     signal: AbortSignal;
     tools?: HarnessToolRuntime;
+    cancelTools?(reason: Error): void;
     onChunk(chunk: string, done: boolean): void;
     options?: {
         timeoutMs?: number;
@@ -115,4 +118,10 @@ export interface BackgroundHarnessInput {
     };
 }
 export interface BackgroundHarness { run(input: BackgroundHarnessInput): Promise<void> }
-export interface DshRuntimeOptions { home: string; node: string; helper: string; startupTimeoutMs?: number }
+export interface DshRuntimeOptions {
+  home: string; node: string; helper: string; startupTimeoutMs?: number
+  /** Applies only after explicit cancellation, never to human confirmation waits. */
+  cancelTimeoutMs?: number
+  maxRuntimeGroups?: number
+  idleTimeoutMs?: number
+}

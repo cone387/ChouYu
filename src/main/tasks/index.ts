@@ -177,6 +177,12 @@ export function initializeTasks(options: TasksModuleOptions): void {
   })
 }
 
+/** Stop autonomous writes before draining tools; keep their task domain alive until they settle. */
+export function stopTaskScheduling(): void {
+  scheduler?.stop()
+  scheduler = undefined
+}
+
 export function closeTasks(): void {
   shuttingDown = true
   ipcMain.removeHandler('tasks:setChecklistItemDone')
@@ -187,8 +193,7 @@ export function closeTasks(): void {
   storeRebuilt = false
   pendingBacklog = 0
   readyDelivered = false
-  scheduler?.stop()
-  scheduler = undefined
+  stopTaskScheduling()
   disposeDomain?.(); disposeDomain = undefined
   try { database?.close() } catch { /* 退出路径上尽力关闭 */ }
   database = undefined

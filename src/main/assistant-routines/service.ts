@@ -19,6 +19,7 @@ export class AssistantRoutineService {
   private busy = false
   private controller?: AbortController
   private closed = false
+  private pending?: Promise<void>
   private executionId?: string
   private executions: AssistantExecutions
   constructor(private deps: Dependencies) { this.executions = new AssistantExecutions(deps.changed) }
@@ -97,8 +98,19 @@ export class AssistantRoutineService {
     const next = items.filter(i => i.id !== id)
     this.deps.write(JSON.stringify(next)); return next
   }
-  close() { this.closed = true; if (this.executionId) this.executions.phase(this.executionId, 'cancelling'); this.controller?.abort() }
-  async tick(now = Date.now()) {
+  close(): Promise<void> {
+    this.closed = true
+    if (this.executionId) this.executions.phase(this.executionId, 'cancelling')
+    this.controller?.abort()
+    return this.pending?.then(() => {}, () => {}) ?? Promise.resolve()
+  }
+  tick(now = Date.now()): Promise<void> {
+    if (this.busy || this.closed) return Promise.resolve()
+    const pending = this.runTick(now).finally(() => { if (this.pending === pending) this.pending = undefined })
+    this.pending = pending
+    return pending
+  }
+  private async runTick(now: number) {
     if (this.busy || this.closed) return
     const startedAt = Date.now()
     const currentTime = () => now + Math.max(0, Date.now() - startedAt)

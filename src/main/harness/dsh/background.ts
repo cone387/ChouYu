@@ -31,7 +31,7 @@ class DshBackground implements BackgroundHarness {
     const version = createHash('sha256').update(JSON.stringify([input.config.provider, input.config.baseUrl, input.config.apiKey, input.config.model])).digest('hex')
     const request: DshRunInput = { requestId: input.requestId ?? randomUUID(), attemptId: randomUUID(), characterId: input.characterId,
       messages: input.messages, systemPrompt: input.systemPrompt, config: input.config, configVersion: version, snapshotFingerprint: version,
-      signal, assertContext: async () => { signal.throwIfAborted() }, tools: input.tools, rounds: input.options ?? {} }
+      signal, assertContext: async () => { signal.throwIfAborted() }, tools: input.tools, cancelTools: input.cancelTools, rounds: input.options ?? {} }
     let lease: Awaited<ReturnType<DshRuntimePool['acquire']>> | undefined
     try {
       signal.throwIfAborted()

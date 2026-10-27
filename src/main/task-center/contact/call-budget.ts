@@ -17,10 +17,28 @@ interface Ports {
   event: ContactStoreOperations['event']
 }
 
+/** Consumption outlives task/run history; deleting the contact still erases its data. */
+export function initializeDailyConsumption(db: Database.Database, migrate: boolean): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS daily_consumption (
+    kind TEXT NOT NULL CHECK(kind IN ('model','search')), run_id TEXT NOT NULL, call_id INTEGER NOT NULL,
+    character_id TEXT NOT NULL REFERENCES profiles(character_id) ON DELETE CASCADE, at INTEGER NOT NULL,
+    PRIMARY KEY(kind,run_id,call_id));
+    CREATE INDEX IF NOT EXISTS daily_consumption_owner_time ON daily_consumption(character_id,kind,at);`)
+  if (migrate) {
+    // Only retained history is knowable. Never invent consumption erased by older versions.
+    db.exec(`INSERT OR IGNORE INTO daily_consumption SELECT 'model',run_id,id,character_id,at FROM calls;
+      INSERT OR IGNORE INTO daily_consumption SELECT 'search',run_id,id,character_id,at FROM search_calls;`)
+  }
+}
+
 export class ContactCallBudget {
   private callReservations = new Map<string, { owner: string; topicId: string | null; callsAtStart: number; needed: number }>()
   constructor(private db: Database.Database, private ports: Ports) {}
-  callCount(id: string, now = Date.now()): number { return (this.db.prepare('SELECT count(*) AS n FROM calls WHERE character_id=? AND at>=?').get(id, dayStart(now)) as { n: number }).n }
+  private dailyCount(id: string, kind: 'model' | 'search', now: number): number {
+    const end = new Date(now); end.setHours(24, 0, 0, 0)
+    return (this.db.prepare('SELECT count(*) AS n FROM daily_consumption WHERE character_id=? AND kind=? AND at>=? AND at<?').get(id, kind, dayStart(now), end.getTime()) as { n: number }).n
+  }
+  callCount(id: string, now = Date.now()): number { return this.dailyCount(id, 'model', now) }
   runCalls(runId: string): number { return (this.db.prepare('SELECT COUNT(*) AS n FROM calls WHERE run_id=?').get(runId) as { n: number }).n }
   reservedCalls(owner: string, exceptTopicId?: string | null): number {
     let reserved = 0
@@ -95,16 +113,26 @@ export class ContactCallBudget {
     if (run.topic_id) assertTaskEnding(this.ports.topics.get(run.character_id, run.topic_id).ending, now)
       if (this.callCount(run.character_id, now) + this.reservedCalls(run.character_id, run.topic_id) >= (this.ports.recoveryLimits?.(run.character_id, run.topic_id)?.dailyCalls ?? settings.dailyCalls)) throw new Error('今日模型调用已达上限（含其他执行任务的预留）。')
       if (run.topic_id) this.assertTaskBudget(run.character_id, run.topic_id, 1)
-      this.db.prepare('INSERT INTO calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
+      const call = this.db.prepare('INSERT INTO calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
+      this.db.prepare("INSERT INTO daily_consumption VALUES('model',?,?,?,?)").run(runId, call.lastInsertRowid, run.character_id, now)
     })()
   }
-  searchCount(id: string, now = Date.now()): number { return (this.db.prepare('SELECT count(*) AS n FROM search_calls WHERE character_id=? AND at>=?').get(id, dayStart(now)) as { n: number }).n }
+  /** Called only when Token admission rejected a request before any provider invocation. */
+  cancelUnstartedCall(runId: string, callId: number): void {
+    this.db.transaction(() => {
+      if (this.db.prepare('SELECT 1 FROM token_ledger WHERE id=?').get(`${runId}:${callId}`)) throw new Error('已预留 Token 的请求不能释放调用次数。')
+      const removed = this.db.prepare('DELETE FROM calls WHERE id=? AND run_id=? AND metadata IS NULL').run(callId, runId)
+      if (removed.changes) this.db.prepare("DELETE FROM daily_consumption WHERE kind='model' AND run_id=? AND call_id=?").run(runId, callId)
+    })()
+  }
+  searchCount(id: string, now = Date.now()): number { return this.dailyCount(id, 'search', now) }
   chargeSearch(runId: string, now = Date.now()): void {
     this.db.transaction(() => {
       const run = this.ports.assertLive(runId), settings = JSON.parse(this.ports.profile(run.character_id)!.settings) as AgentSettings
     if (run.topic_id) assertTaskEnding(this.ports.topics.get(run.character_id, run.topic_id).ending, now)
       if (!settings.searchEnabled || this.searchCount(run.character_id, now) >= (settings.dailySearches ?? 8)) throw new Error('搜索未开启或今日搜索已达上限。')
-      this.db.prepare('INSERT INTO search_calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
+      const call = this.db.prepare('INSERT INTO search_calls(character_id,run_id,at) VALUES(?,?,?)').run(run.character_id, runId, now)
+      this.db.prepare("INSERT INTO daily_consumption VALUES('search',?,?,?,?)").run(runId, call.lastInsertRowid, run.character_id, now)
     })()
   }
   recordCallMetadata(callId: number, metadata: AIResponseMetadata, now = Date.now()): void {

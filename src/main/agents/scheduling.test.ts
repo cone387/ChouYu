@@ -130,13 +130,18 @@ describe('persistent contact task scheduling', () => {
     // Keep the answer queued, without starting a doomed planning request.
     expect(service.store.getRun(first.id)!.status).toBe('queued')
     expect(service.store.callCount('alice')).toBe(5)
-    service.store.db.prepare('UPDATE calls SET at=?').run(Date.now() - 86400000)
-    service.tick()
-    await vi.waitFor(() => expect(service.store.overview('alice').topics.every(topic => topic.status === 'completed')).toBe(true))
-    expect(service.store.overview('alice').reports).toHaveLength(2)
-    expect(service.store.getRun(first.id)!.answer).toBe('Adults')
-    expect(peak).toBe(1)
-    expect(service.store.overview('alice').queuedTopicIds).toEqual([])
+    const realNow = Date.now, today = realNow(), tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const offset = tomorrow.getTime() - today
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + offset)
+    try {
+      service.tick()
+      await vi.waitFor(() => expect(service.store.overview('alice').topics.every(topic => topic.status === 'completed')).toBe(true))
+      expect(service.store.overview('alice').reports).toHaveLength(2)
+      expect(service.store.getRun(first.id)!.answer).toBe('Adults')
+      expect(peak).toBe(1)
+      expect(service.store.overview('alice').queuedTopicIds).toEqual([])
+    } finally { clock.mockRestore() }
   })
 })
 

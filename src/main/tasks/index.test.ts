@@ -8,10 +8,23 @@ vi.mock('electron', () => ({ app: { getPath: () => state.dir }, BrowserWindow: {
 vi.mock('../database', () => ({ getState: () => null, getSession: (id: string) => id === 'chat' ? { id, title: 'Work chat' } : undefined, appendAssistantMessage: () => {}, flushDatabase: () => ({}) }))
 vi.mock('../reminder-events', () => ({ notifyReminderChanges: () => {} }))
 vi.mock('../tools/registry', () => ({ getRegisteredTool: (name: string) => state.tools.get(name), registerTool: (tool: any) => state.tools.set(tool.name, tool) }))
-import { initializeTasks, closeTasks } from './index'
+import { initializeTasks, closeTasks, stopTaskScheduling } from './index'
 import { taskCenter } from '../task-center/service'
 
 afterEach(() => { closeTasks(); vi.useRealTimers(); if (state.dir) rmSync(state.dir, { recursive: true, force: true }); state.dir = ''; state.handlers.clear(); state.tools.clear() })
+it('stops scheduled generation before storage shutdown while keeping task commands available to draining tools', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 27, 8))
+  state.dir = mkdtempSync(join(tmpdir(), 'chouyu-todo-stop-'))
+  initializeTasks({ notificationsEnabled: () => false, openTasksWorkspace: () => {} })
+  const task = state.handlers.get('tasks:create')!({}, { title: 'Daily', recurrence: 'daily', dueAt: new Date(2026, 9, 27, 9).getTime() })
+  stopTaskScheduling()
+  stopTaskScheduling()
+  vi.setSystemTime(new Date(2026, 9, 28, 10)); await vi.advanceTimersByTimeAsync(60000)
+  expect(taskCenter.list({ domain: 'todo', owner: 'user' }).open).toHaveLength(1)
+  expect(taskCenter.read({ domain: 'todo', owner: 'user', id: task.id })).toMatchObject({ title: 'Daily' })
+  closeTasks()
+  expect(() => taskCenter.read({ domain: 'todo', owner: 'user', id: task.id })).toThrow(/卸载/)
+})
 it('uses one domain for real IPC, tools and date scheduling, and unregisters it on shutdown', async () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 19, 8))
   state.dir = mkdtempSync(join(tmpdir(), 'chouyu-todo-entry-'))

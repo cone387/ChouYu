@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { StorageQuitGuard } from '../storage/quit-guard'
 
 const state = vi.hoisted(() => ({ handlers: new Set<string>(), close: vi.fn(async () => {}) }))
-vi.mock('electron', () => ({ ipcMain: {} }))
+vi.mock('electron', () => ({ ipcMain: { removeHandler: (channel: string) => state.handlers.delete(channel) } }))
 vi.mock('../chat/runtime', () => ({ createChatRuntime: () => ({ service: { close: state.close } }) }))
 vi.mock('../skills', () => ({ registerSkillHandlers: () => () => {} }))
 vi.mock('./registration', () => ({ registerDomain: () => () => {} }))

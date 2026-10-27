@@ -13,6 +13,7 @@ import { readStoreFile } from './store-file'
 import { openApplicationDatabase, type ApplicationDatabase } from './storage/application-database'
 import { migrateLegacyStore } from './storage/legacy-migration'
 import { ConversationCache } from './storage/conversation-cache'
+import { DeliveryMessageConflictError } from './storage/conversations'
 import { projectConversation, messageReadTimestamp, type ConversationProjection } from '../shared/conversation-projection'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/conversation-search'
 import { AppConfig, DEFAULT_APP_CONFIG, DEFAULT_PROFILE_ID, getProviderProfiles, normalizeConfig } from '../shared/config'
@@ -89,6 +90,21 @@ function sessionMetadata(session: ChatSession): string {
 }
 function sessionChanged(session: ChatSession): boolean {
   return dirtySessions.has(session.id) || savedSessions.get(session.id) !== sessionMetadata(session)
+}
+function sessionBodyChanged(session: ChatSession): boolean {
+  return dirtySessions.has(session.id) || !savedSessions.has(session.id)
+}
+function canPersistConversationIncrementally(): boolean {
+  return Boolean(application && migrationBarrierReady && !writesBlocked && !storageStatus.error
+    && !store.sessions.some(sessionChanged))
+}
+function publishConversationCommit(session: ChatSession, committed: { session: Omit<ChatSession, 'messages'>; projection: ConversationProjection }): void {
+  Object.assign(session, committed.session)
+  savedSessions.set(session.id, sessionMetadata(session))
+  sessionProjections.set(session.id, committed.projection)
+  markBackupDirty()
+  updateStorageStatus({ error: null })
+  publishIdentityChanges()
 }
 function projection(session: ChatSession): ConversationProjection {
   return !sessionChanged(session) && sessionProjections.has(session.id) ? sessionProjections.get(session.id)! : projectConversation(session)
@@ -406,7 +422,7 @@ function serializeStore(): StoreData {
       providerProfiles: store.config.providerProfiles.map((profile) => ({ ...profile, apiKey: protect(profile.apiKey) }))
     },
     characters: store.characters,
-    sessions: store.sessions.map((session) => sessionChanged(session) ? ({
+    sessions: store.sessions.map((session) => sessionBodyChanged(session) ? ({
       ...session,
       messages: session.messages.map((message) => ({ ...message, imageUrl: attachments.persist(message.imageUrl) }))
     }) : session),
@@ -426,13 +442,17 @@ function persist(throwOnError = true): boolean {
     if (writesBlocked || !application) throw new Error('Protected store')
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     const serialized = serializeStore()
+    const metadataProjections = new Map<string, ConversationProjection>()
     if (!migrationBarrierReady) {
       migrateLegacyStore(path.dirname(filePath), application, serialized)
       migrationBarrierReady = true
     }
     {
       application.transaction(() => {
-        for (const session of serialized.sessions) if (sessionChanged(session)) application!.conversations.saveSession(session)
+        for (const session of serialized.sessions) if (sessionChanged(session)) {
+          if (sessionBodyChanged(session)) application!.conversations.saveSession(session)
+          else metadataProjections.set(session.id, application!.conversations.saveMetadata(JSON.parse(sessionMetadata(session))).projection)
+        }
         for (const id of savedSessions.keys()) if (!serialized.sessions.some(s => s.id === id)) application!.conversations.deleteSession(id)
         application!.conversations.orderSessions(serialized.sessions.map(s => s.id))
         application!.metadata.set('config', serialized.config)
@@ -446,6 +466,10 @@ function persist(throwOnError = true): boolean {
     for (const id of savedSessions.keys()) if (!liveIds.has(id)) { conversationCache.remove(id); sessionProjections.delete(id); messageRevisions.delete(id) }
     store.sessions = serialized.sessions.map(session => {
       if (!sessionChanged(session)) return session
+      if (!sessionBodyChanged(session)) {
+        sessionProjections.set(session.id, metadataProjections.get(session.id)!)
+        return session
+      }
       sessionProjections.set(session.id, projectConversation(session))
       return conversationCache.attach(JSON.parse(sessionMetadata(session)), session.messages)
     })
@@ -645,13 +669,44 @@ function appendContactMessage(input: {
     return getSessionWorkspace()
   }
   const communication = validateContactMessage(input.content, input.communication, owner)
+  // Drain pending ordinary edits first so they cannot force a clean delivery target
+  // back through full-history replacement. A failed drain keeps the existing retry path.
+  if (application && migrationBarrierReady && !writesBlocked && (storageStatus.error || store.sessions.some(sessionChanged))) persist(false)
   let at = Number.isFinite(input.timestamp) ? Number(input.timestamp) : Date.now()
   let session = input.sessionId ? store.sessions.find(candidate => candidate.id === input.sessionId && candidate.characterId === owner) ?? null : store.sessions.filter(candidate => owner === DEFAULT_CHARACTER_ID
     ? isAssistantCharacter(candidate.characterId) : candidate.characterId === owner)
     .reduce<ChatSession | null>((latest, candidate) => !latest || candidate.updatedAt > latest.updatedAt ? candidate : latest, null)
   if (!session) { session = createSession([], input.title, at, owner); store.sessions.unshift(session) }
-  if (!Number.isFinite(input.timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1, ...session.messages.slice(-1).map(m => m.timestamp + 1))
-  session.messages.push({ id: input.messageId, role: 'assistant', content: input.content, timestamp: at, communication, ...input.metadata })
+  const incremental = canPersistConversationIncrementally()
+  if (!Number.isFinite(input.timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1,
+    incremental ? application!.conversations.lastMessageTimestamp(session.id) + 1 : (session.messages.at(-1)?.timestamp ?? 0) + 1)
+  const message: Message = { id: input.messageId, role: 'assistant', content: input.content, timestamp: at, communication, ...input.metadata }
+  if (incremental) {
+    let committed: ReturnType<NonNullable<typeof application>['conversations']['appendDelivered']>
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      committed = application!.conversations.appendDelivered({ sessionId: session.id, message, receiptKeys: input.receiptKeys })
+    } catch (failure) {
+      if (failure instanceof DeliveryMessageConflictError) throw failure
+      // Preserve the failed delivery in the same pinned dirty state used by ordinary edits.
+      session.messages.push(message)
+      markMessagesDirty(session.id)
+      session.updatedAt = at
+      for (const key of input.receiptKeys) store.state[key] = 'delivered'
+      const error = '聊天数据保存失败，最新修改尚未写入磁盘。请检查剩余空间和目录权限后重试；恢复前请勿退出。'
+      updateStorageStatus({ error })
+      throw new Error(error)
+    }
+    if (committed.appended) {
+      conversationCache.append(session.id, message)
+      messageRevisions.set(session.id, (messageRevisions.get(session.id) ?? 0) + 1)
+    }
+    for (const key of input.receiptKeys) store.state[key] = 'delivered'
+    publishConversationCommit(session, committed)
+    return getSessionWorkspace()
+  }
+  if (session.messages.some(previous => previous.id === message.id)) throw new DeliveryMessageConflictError('消息 ID 已存在，不能覆盖已投递正文。')
+  session.messages.push(message)
   markMessagesDirty(session.id)
   session.updatedAt = at
   for (const key of input.receiptKeys) store.state[key] = 'delivered'
@@ -688,7 +743,7 @@ export function appendAgentNotice(notice: AgentNotice): SessionWorkspace {
 
 /** A durable action can belong directly to a contact; it has no invented task/run. */
 export function appendContactAction(card: import('../shared/contact-actions').ContactActionInteraction): SessionWorkspace {
-  if (card.kind !== 'action' || !card.id.startsWith('action:') || getSession(card.request.sessionId)?.characterId !== card.characterId) throw new Error('交互事项会话来源不匹配。')
+  if (card.kind !== 'action' || !card.id.startsWith('action:') || store.sessions.find(session => session.id === card.request.sessionId)?.characterId !== card.characterId) throw new Error('交互事项会话来源不匹配。')
   return appendContactMessage({ content: `${card.request.title}\n\n${card.request.body}`, title: '待你回应', messageId: card.id, sessionId: card.request.sessionId,
     receiptKeys: [`contact-action:${card.characterId}:${card.id}`],
     communication: { version: 1, characterId: card.characterId, intent: 'question', source: { kind: 'interaction', interactionId: card.id } } })
@@ -713,6 +768,12 @@ function markSessionReadThrough(session: ChatSession, messageId: string): void {
 export function markSessionRead(id: string, messageId?: string): SessionWorkspace {
   const session = store.sessions.find((candidate) => candidate.id === id)
   if (!session) throw new Error('会话不存在或已被删除。')
+  if (canPersistConversationIncrementally()) {
+    try {
+      publishConversationCommit(session, application!.conversations.markRead(id, messageId))
+      return getSessionWorkspace()
+    } catch { /* Retain the pending read watermark for the normal failed-save retry. */ }
+  }
   if (messageId) {
     markSessionReadThrough(session, messageId)
   } else markSessionReadUpToNow(session)

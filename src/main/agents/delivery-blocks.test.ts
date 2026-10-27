@@ -19,7 +19,7 @@ function fixture() {
 }
 it('marks the incompatible body format newer than the old application accepts', () => {
   const f = fixture()
-  expect(f.store.db.pragma('user_version', { simple: true })).toBe(20)
+  expect(f.store.db.pragma('user_version', { simple: true })).toBe(21)
 })
 it('shares immutable prose across versions and owners without sharing access, and collects only unreferenced blocks', () => {
   const f = fixture(), a = f.topic('alice'), b = f.topic('bob')

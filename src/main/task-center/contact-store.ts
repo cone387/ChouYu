@@ -5,7 +5,7 @@ import { FeedbackLedger } from '../agents/feedback-ledger';
 import { DeliveryDependencies } from '../agents/delivery-dependencies';
 import { ContactMutations } from './contact/mutations';
 import { ContactScheduling } from './contact/scheduling';
-import { ContactCallBudget } from './contact/call-budget';
+import { ContactCallBudget, initializeDailyConsumption } from './contact/call-budget';
 import { ContactQueries } from './contact/queries';
 import type { ContactStoreOperations } from './contact/operations';
 import { Profile } from './contact/types';
@@ -113,6 +113,7 @@ export class ContactTaskStore {
         CREATE INDEX IF NOT EXISTS search_calls_character ON search_calls(character_id,at);
         CREATE TABLE IF NOT EXISTS research (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS research_idle (topic_id TEXT PRIMARY KEY REFERENCES topics(id) ON DELETE CASCADE,streak INTEGER NOT NULL);`)
+      initializeDailyConsumption(this.db, version < 21)
       if (version < 5) this.db.transaction(() => {
         this.db.exec('DROP INDEX IF EXISTS changes_run; CREATE UNIQUE INDEX changes_run ON topic_changes(run_id,kind) WHERE run_id IS NOT NULL;')
         this.db.pragma('user_version = 5')

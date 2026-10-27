@@ -600,7 +600,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (floatingResized.width > 660 && Math.abs(await run("document.querySelector('.contact-work-sheet .topic-list').getBoundingClientRect().width") - listWidthBefore) > 1) throw new Error('Task list width changed with dialog resize')
     await pointerDrag(floatingResized.left + 2, floatingResized.top + floatingResized.height / 2, 24, 0)
     const leftResized = await run("document.querySelector('.contact-work-sheet').getBoundingClientRect().toJSON()")
-    if (Math.abs(leftResized.left - floatingResized.left - 24) > 2 || Math.abs(leftResized.right - floatingResized.right) > 2) throw new Error('Left edge resize did not preserve the opposite edge')
+    if (Math.abs(leftResized.left - floatingResized.left - 24) > 2 || Math.abs(leftResized.right - floatingResized.right) > 2) throw new Error('Left edge resize did not preserve the opposite edge: ' + JSON.stringify({ floatingBefore, floatingMoved, floatingResized, leftResized, viewport: await run('({ width: innerWidth, height: innerHeight })') }))
     await pointerDrag(leftResized.left + leftResized.width / 2, leftResized.top + 2, 0, 20)
     const topResized = await run("document.querySelector('.contact-work-sheet').getBoundingClientRect().toJSON()")
     if (Math.abs(topResized.top - leftResized.top - 20) > 2 || Math.abs(topResized.bottom - leftResized.bottom) > 2) throw new Error('Top edge resize did not preserve the opposite edge')
