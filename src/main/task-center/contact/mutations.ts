@@ -1,4 +1,5 @@
 import { assertTaskEnding, type TaskEndingRequest } from '../../../shared/task-ending'
+import { assertTaskContextReferences } from '../../agents/task-context'
 import { providerRecoveryDelay } from '../../../shared/contact-failure';
 import { ContactCalendars } from '../../agents/calendar';
 import { validateRoutine } from '../../../shared/assistant-routines';
@@ -140,7 +141,7 @@ export class ContactMutations {
       const affected: string[] = []
       for (const run of this.db.prepare('SELECT * FROM runs WHERE character_id=?').all(owner) as RunRow[]) {
         const input = JSON.parse(run.input)
-        if (!(input.contextReferences?.memories ?? input.memories ?? []).some((m: { id: string }) => m.id === memoryId)) continue
+        if (!(input.contextReferences?.memories ?? input.memories ?? []).some((m: { id: string }) => m.id === memoryId) && !(input.recallReferences ?? []).some((m: { kind: string; id: string }) => m.kind === 'memories' && m.id === memoryId)) continue
         this.db.prepare('INSERT OR IGNORE INTO execution_cleanup VALUES(?,?)').run(owner, run.id)
         affected.push(run.id)
         if (['queued', 'running', 'waiting', 'interrupted'].includes(run.status)) {
@@ -292,6 +293,7 @@ export class ContactMutations {
     this.ports.handoffs.checkRun(runId)
     const refs = JSON.parse(run.input).contextReferences as ContextReferences | undefined
     if (refs) this.assertContextCurrent(run.character_id, refs)
+    assertTaskContextReferences(this.db, run)
     if (run.topic_id) {
       const topic = this.ports.topics.check(run.character_id, run.topic_id, run.topic_revision!)
       if (!canResearch(topic.status) && JSON.parse(run.input).revisionScope !== 'presentation') throw new Error('此事项已暂停或结束。')
@@ -420,9 +422,13 @@ export class ContactMutations {
     return this.db.transaction(() => {
       this.ports.topics.check(id, topicId, revision)
       const runs = this.db.prepare('SELECT id FROM runs WHERE character_id=? AND topic_id=?').all(id, topicId) as { id: string }[]
+      const affected = new Set(runs.map(run => run.id))
       for (const run of runs) this.db.prepare('INSERT OR IGNORE INTO execution_cleanup VALUES(?,?)').run(id, run.id)
       for (const memory of this.ports.memoryLibrary.list(id)) {
-        if ((memory.scope.kind === 'task' && memory.scope.topicId === topicId) || (memory.source.kind === 'research' && runs.some(run => memory.source.kind === 'research' && run.id === memory.source.runId))) this.ports.memoryLibrary.forget(id, memory.id, memory.revision)
+        if ((memory.scope.kind === 'task' && memory.scope.topicId === topicId) || (memory.source.kind === 'research' && runs.some(run => memory.source.kind === 'research' && run.id === memory.source.runId))) {
+          this.ports.memoryLibrary.forget(id, memory.id, memory.revision)
+          for (const runId of this.invalidateMemory(id, memory.id)) affected.add(runId)
+        }
       }
       for (const run of runs) this.db.prepare('DELETE FROM token_blocks WHERE run_id=?').run(run.id)
       this.db.prepare("DELETE FROM notices WHERE character_id=? AND json_extract(value,'$.topicId')=?").run(id, topicId)
@@ -432,7 +438,7 @@ export class ContactMutations {
       this.ports.deliveries.collectUnreferenced()
       this.ports.taskFailures.refresh(id)
       this.db.prepare('UPDATE profiles SET focus_topic_id=NULL WHERE character_id=? AND focus_topic_id=?').run(id, topicId)
-      return runs.map(run => run.id)
+      return [...affected]
     })()
   }
   revisePresentation(id: string, topicId: string, revision: number, feedback: unknown, conversation: string, baseVersion: number): string {

@@ -152,8 +152,8 @@ export class ContactTaskCommands {
       case 'createTopic': this.store.createTopic(id, args[0]); break
       case 'deleteTopic': {
         const topicId = String(args[0])
-        const active = this.context.activeFor(id, topicId)
         const runs = this.store.deleteTopic(id, topicId, args[1] as number)
+        const active = runs.flatMap(runId => { const run = this.context.activeRun(runId); return run ? [run] : [] })
         {
           for (const run of active) run.controller.abort()
           await Promise.all(active.map(run => run.promise))

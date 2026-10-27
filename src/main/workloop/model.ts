@@ -1,5 +1,6 @@
 import { TokenBudgetError } from '../agents/token-budget'
 import { createMaterialTools } from '../agents/material-tools'
+import { TaskContext, taskContextInstruction, taskContextTools } from '../agents/task-context'
 import { MaterialReferenceError, withMaterialReferenceRepair } from '../agents/material-reference-repair'
 import type { ToolExecutionContext } from '../tools/registry'
 import { SkillRunner } from '../skills/runner'
@@ -29,6 +30,12 @@ export function createWorkModel(context: {
     const model: AgentModel = async (prompt, signal, options) => {
       const toolsAbort = new AbortController()
       signal = AbortSignal.any([signal, toolsAbort.signal])
+      const taskContext = new TaskContext(store.db, run.id, () => {
+        signal.throwIfAborted(); store.assertLive(run.id)
+        store.recovery.assertRun(run.character_id, run.topic_id, run.id)
+        store.endings.assertRun(run.id)
+      })
+      if (options?.tools !== false && run.topic_id) prompt += taskContextInstruction + `\n本轮已回查的引用与用户成果反馈（历史数据；引用仅标记读过哪些记录，需要正文时可再次读取）：${JSON.stringify(taskContext.promptContext())}`
       if (skills.error) throw new Error(`联系人技能不可用：${skills.error}`)
       prompt = skills.instruction ? `${skills.instruction}\n${prompt}` : prompt
       if (input.materialDirectory.length) prompt += `\n本轮资料目录（尚未读取正文；需使用 read_contact_material 工具读取实际版本后引用）：${JSON.stringify(input.materialDirectory)}`
@@ -83,10 +90,17 @@ export function createWorkModel(context: {
         if (method !== 'readMaterial') throw new Error('后台资料工具操作无效。')
         return request('readMaterial', owner, [{ query: '', topicId: run.topic_id || undefined }, reference, args[2] as number | undefined])
       } })
-      const tools = options?.tools !== false && identity.skillToolsEnabled ? { definitions: [...skillRuntime.definitions, ...materialTools], execute: withMaterialReferenceRepair(async (call: import('../../shared/tools').AIToolCall) => {
+      const executionEnabled = options?.tools !== false && options?.tools !== 'context' && identity.skillToolsEnabled
+      const tools = options?.tools !== false ? { definitions: [...(run.topic_id ? taskContextTools : []), ...(executionEnabled ? [...skillRuntime.definitions, ...materialTools] : [])], execute: withMaterialReferenceRepair(async (call: import('../../shared/tools').AIToolCall) => {
         signal.throwIfAborted(); store.assertLive(run.id)
         store.recovery.assertRun(run.character_id, run.topic_id, run.id)
         store.endings.assertRun(run.id)
+        if (call.name === 'search_task_context' || call.name === 'read_task_context') {
+          const args = JSON.parse(call.arguments)
+          const result = call.name === 'search_task_context' ? taskContext.search(args) : taskContext.read({ ref: args, offset: args.offset })
+          signal.throwIfAborted(); store.assertLive(run.id)
+          return JSON.stringify(result)
+        }
         const material = materialTools.find(t => t.name === call.name)
         if (!material) return skillRuntime.execute(call)
         const result = await material.execute({ ...JSON.parse(call.arguments), topicId: run.topic_id || undefined }, {} as ToolExecutionContext)

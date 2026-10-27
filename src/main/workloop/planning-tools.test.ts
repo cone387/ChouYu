@@ -63,7 +63,7 @@ it.each(['native', 'dsh'] as const)('%s plans before executing tools and reviews
     expect(host.store.deliveries.get(data.focusTopicId!)?.sections[0].body).toContain('灯塔蓝光的线索明确')
     expect(requests.map(item => item.stage)).toEqual(['brief', 'plan', 'write'])
     expect(requests[0].tools).toEqual([])
-    expect(requests[1].tools).toEqual([])
+    expect(requests[1].tools.toSorted()).toEqual(['read_task_context', 'search_task_context'])
     expect(requests[2].tools).toContain('read_contact_material')
   } finally {
     await host?.close()

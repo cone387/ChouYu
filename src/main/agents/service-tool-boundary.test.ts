@@ -16,7 +16,8 @@ it.each([true, false])('distinguishes plan actions and disabled tools with share
   const sharedRead = vi.spyOn(service.runtime.contactSources, 'read')
   vi.mocked(streamNativeChat).mockImplementation(async (_messages, _system, _config, onChunk, _signal, tools) => {
     if (++rounds === 1) {
-      expect(tools).toBeUndefined()
+      expect(tools!.definitions.map(tool => tool.name).toSorted()).toEqual(['read_task_context', 'search_task_context'])
+      expect(await tools!.execute({ id: 'planning-upload', name: 'read_contact_material', arguments: '{}' })).toBe('工具已被用户禁用。')
       onChunk(JSON.stringify({ action: 'write', reason: '创作虚构故事', query: '', urls: [], checkAfterMinutes: 180 }), false)
       return
     }

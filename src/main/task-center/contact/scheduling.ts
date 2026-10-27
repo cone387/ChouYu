@@ -1,4 +1,5 @@
 import { assertTaskEnding, endingState } from '../../../shared/task-ending'
+import { taskFeedbackSnapshot } from '../../agents/task-context'
 import { ContactCalendars, type CalendarOccurrence } from '../../agents/calendar';
 import { calendarScheduleLabel } from '../../../shared/calendar-schedule';
 import { AgentMemories } from '../../agents/memories';
@@ -118,7 +119,8 @@ export class ContactScheduling {
       const last = candidate && !this.ports.isRestoredRun?.(id, candidate.id) ? candidate : undefined
       const feedback = last?.status === 'failed' && JSON.parse(last.input).revisionScope !== 'presentation' ? [JSON.parse(last.input).feedback, last.answer ? `对问题「${last.question}」的回复：${last.answer}` : ''].filter(Boolean).join('\n').slice(0, 4000) : undefined
       const input = JSON.stringify({ revisionScope, revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.ports.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: selectedMemories.items, contextReferences: { memories: selectedMemories.items.map(m => ({ id: m.id, revision: m.revision })) }, memoriesTruncated: selectedMemories.truncated, previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(-4000) })
-      const runInput = assignment ? JSON.stringify({ ...JSON.parse(input), assignment: true, conversation: scheduled!.conversation || context.slice(-4000) }) : input
+      const withContext = { ...JSON.parse(input), taskContext: taskFeedbackSnapshot(this.db, id, topic.id) }
+      const runInput = JSON.stringify(assignment ? { ...withContext, assignment: true, conversation: scheduled!.conversation || context.slice(-4000) } : withContext)
       this.db.prepare('INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input,topic_id,topic_revision) VALUES(?,?,?,\'queued\',?,?,?,?,?)').run(runId, id, profile.revision, now, now, runInput, topic.id, topic.revision)
       this.ports.handoffs.bindRun(runId)
       if (assignment) this.db.prepare("UPDATE task_schedule SET pending=0,conversation='' WHERE topic_id=?").run(topic.id)
