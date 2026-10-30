@@ -286,8 +286,9 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "(() => { const el=document.querySelector('.agent-work-log-scroll'); return el.clientHeight === 216 && el.scrollHeight-el.clientHeight-el.scrollTop < 17 })()")
     await waitForRenderer(window, "document.querySelectorAll('[data-agent-work-log] li[data-kind=heartbeat]').length === 1")
     if (!await run("document.querySelector('.agent-log-live strong').textContent === 'WAITING'")) throw new Error('Waiting work must keep a live heartbeat without claiming to be running')
-    // The sidebar runs automatically; metric buttons sort cards without filtering them.
+    // The activity feed now lives in the global dashboard.
     await run("document.querySelector('[data-contacts-close]').click()")
+    await run("document.querySelector('[data-workspace-nav=dashboard]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-contacts-activity] li[data-kind=waiting]'))")
     await waitForRenderer(window, "document.querySelectorAll('[data-contacts-activity] li[data-kind=heartbeat]').length === 1")
     await run("window.__heartbeatRow = document.querySelector('[data-contacts-activity] li[data-kind=heartbeat]')")
@@ -308,6 +309,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, atLatest)
     await run("window.__logBurst.remove()")
     await waitForRenderer(window, atLatest)
+    await run("document.querySelector('[data-workspace-nav=contacts]').click()")
     const cardCount = await run("document.querySelectorAll('[data-contacts-item]').length")
     for (const metric of ['tokens', 'tasks']) {
       await run(`document.querySelector('[data-contacts-sort-key=${metric}]').click()`)
@@ -333,6 +335,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       await run(`document.querySelector('.chat-panel').setAttribute('style', ${JSON.stringify(panelStyle ?? '')})`)
     }
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    await run("document.querySelector('[data-workspace-nav=dashboard]').click()")
     await run("document.querySelector('[data-contacts-activity] li[data-kind=waiting] button').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-agent-tab=work]'))")
     await run("document.querySelector('[data-agent-tab=work]').click()")

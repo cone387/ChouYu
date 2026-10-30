@@ -48,11 +48,11 @@ export class ContactQueries {
     }
     // Only return existing contacts. The bounded window includes every run and topic,
     // rather than just the latest event of each contact.
-    const rows = this.db.prepare(`SELECT e.*,r.character_id,COALESCE(json_extract(t.value,'$.title'),'') AS topic_title
+    const rows = this.db.prepare(`SELECT e.*,r.character_id,r.topic_id,COALESCE(json_extract(t.value,'$.title'),'') AS topic_title
       FROM events e JOIN runs r ON r.id=e.run_id LEFT JOIN topics t ON t.id=r.topic_id
       WHERE r.character_id IN (SELECT value FROM json_each(?)) ORDER BY e.id DESC LIMIT 120`)
-      .all(JSON.stringify(characterIds)) as { id: number; run_id: string; character_id: string; topic_title: string; kind: string; text: string; at: number }[]
-    return { contacts, events: rows.reverse().map(e => ({ id: e.id, runId: e.run_id, characterId: e.character_id, topicTitle: e.topic_title, kind: e.kind, text: e.text, at: e.at })) }
+      .all(JSON.stringify(characterIds)) as { id: number; run_id: string; character_id: string; topic_id: string | null; topic_title: string; kind: string; text: string; at: number }[]
+    return { contacts, events: rows.reverse().map(e => ({ id: e.id, runId: e.run_id, characterId: e.character_id, topicId: e.topic_id, topicTitle: e.topic_title, kind: e.kind, text: e.text, at: e.at })) }
   }
   summary(characterId: string): import('../../../shared/agents').AgentSummary {
     const topics = this.ports.topics.list(characterId)

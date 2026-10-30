@@ -57,7 +57,7 @@ export async function apply(ctx) {
                 sessionId: value.sessionId, seed, agentOptions: { provider: 'chouyu', model: value.model },
                 meta: { cwd: process.env.CHOUYU_DSH_WORKDIR },
                 setup(scope) {
-                    if (value.rounds) installBudget(scope, peer, key, value.sessionId, value.maxOutputTokens);
+                    installBudget(scope, peer, key, value.sessionId, value.maxOutputTokens, Boolean(value.rounds), () => { committed.usageIncomplete = true; });
                     scope.on('session/event', (_session, event) => {
                         if (event.type === 'user/message' && event.data.source?.kind === 'user')
                             committed.input = event;
@@ -104,11 +104,11 @@ export async function apply(ctx) {
                 throw new Error('DSH 流传输未完成。');
             const { input, turn, assistant } = handle.committed;
             if (turn?.data.reason?.kind === 'aborted')
-                return { state: 'cancelled', error: 'AI 请求已取消。' };
+                return { state: 'cancelled', error: 'AI 请求已取消。', usageIncomplete: handle.committed.usageIncomplete };
             if (!(turn?.data.reason?.kind === 'completed' || handle.budgeted && turn?.data.reason?.kind === 'max-tokens') || input?.data.id !== message.id || !assistant || assistant.seq <= input.seq)
-                return { state: 'failed', error: 'DSH 未提交本次请求的正式回复。' };
+                return { state: 'failed', error: 'DSH 未提交本次请求的正式回复。', usageIncomplete: handle.committed.usageIncomplete };
             const text = assistant.data.message.content.filter(b => b.type === 'text').map(b => b.text).join('');
-            return { state: 'completed', text, committedSeq: assistant.seq, inputMessageId: message.id };
+            return { state: 'completed', text, committedSeq: assistant.seq, inputMessageId: message.id, usageIncomplete: handle.committed.usageIncomplete };
         }
         if (method === 'cancel') {
             handle.agent.cancel({ kind: 'user' });

@@ -12,6 +12,7 @@ import { AgentWorkerRPC } from '../agent-space/worker-rpc'
 import { ContactRuntimeState, appendRuntimeDiagnostic, runtimeDiagnostic } from '../agent-space/runtime-status'
 import { configureContactSkill, contactSkillLibrary, findContactSkills, installContactSkill, contactSkillRunner } from '../skills'
 import { randomUUID } from 'node:crypto'
+import { markUsageCollectionIssue } from '../usage'
 import { registerPresentationProtocol } from './presentation-protocol'
 import { deliveryHtmlExport } from '../../shared/delivery-presentation'
 import { deliverMessage } from '../messaging'
@@ -207,6 +208,7 @@ async function ensure() {
     else process.stderr?.resume()
     const born = Date.now()
     process.on('message', message => {
+      if (message.usageCollectionIssue === true) { markUsageCollectionIssue(); return }
       if (child !== process) return
       if (message.recoveryRequest) {
         const request = message.recoveryRequest as import('../agent-space/recovery-port').RecoveryBudgetMessage

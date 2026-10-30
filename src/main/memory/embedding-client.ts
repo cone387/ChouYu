@@ -1,4 +1,6 @@
 import { joinApiUrl } from '../../shared/ai'
+import { readAIUsage } from '../../shared/ai-usage'
+import { beginUsageCall } from '../usage'
 
 export interface EmbeddingClientConfig {
   baseUrl: string
@@ -46,6 +48,7 @@ export class OpenAIEmbeddingClient {
     requestSignal.throwIfAborted()
     for (const endpoint of endpointCandidates(this.config.baseUrl)) {
       requestSignal.throwIfAborted()
+      const usageCall = beginUsageCall(this.config.model)
       const response = await this.request(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.config.apiKey}` },
@@ -55,6 +58,7 @@ export class OpenAIEmbeddingClient {
       if ([404, 405].includes(response.status)) { await response.body?.cancel(); continue }
       if (!response.ok) throw new Error(`Embedding API error ${response.status}: ${(await response.text()).slice(0, 1000)}`)
       const data = await response.json()
+      usageCall.update(readAIUsage(data, 'openai'))
       requestSignal.throwIfAborted()
       return validateVectors(data, input.length)
     }

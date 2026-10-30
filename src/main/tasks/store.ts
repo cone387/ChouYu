@@ -7,6 +7,7 @@ import type {
 } from '../../shared/tasks'
 import { DUE_RANGE_LABELS, taskScheduleBounds, validateTaskChecklist, validateTaskSource } from '../../shared/tasks'
 import { countDoneGroups } from './group-counts'
+import { dashboardDays, type DashboardRange, type TaskStatistics } from '../../shared/dashboard'
 import { captureDeleted, listTrash, restoreTrash } from './recovery'
 import { createTaskBackup, restoreTaskBackup, validateTaskBackup } from './backup'
 import { type TaskUISettings } from '../../shared/tasks'
@@ -816,6 +817,15 @@ export class TasksStore {
     const row = this.database.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow
     if (!row) throw new Error('任务不存在。')
     return toTask(row)
+  }
+
+  statistics(range: DashboardRange, now = Date.now()): TaskStatistics {
+    const days = dashboardDays(range, now)
+    const scope = '(project_id IS NULL OR project_id NOT IN (SELECT id FROM task_projects WHERE archived_at IS NOT NULL))'
+    const totals = this.database.prepare(`SELECT COALESCE(SUM(status='open'),0) AS open, COALESCE(SUM(status='done'),0) AS done FROM tasks WHERE ${scope}`).get() as { open: number; done: number }
+    const rows = this.database.prepare(`SELECT strftime('%Y-%m-%d',completed_at/1000,'unixepoch','localtime') AS date, COUNT(*) AS completed FROM tasks
+      WHERE ${scope} AND status='done' AND completed_at>=? AND completed_at<? GROUP BY date`).all(days[0].from, days.at(-1)!.to) as { date: string; completed: number }[]
+    return { ...totals, completed: rows.reduce((total, row) => total + row.completed, 0), days: days.map(day => ({ date: day.date, completed: rows.find(row => row.date === day.date)?.completed ?? 0 })) }
   }
 
   listTasks(options: TaskListOptions = {}): TaskListResult {

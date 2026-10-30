@@ -1,6 +1,8 @@
 import type { AppConfig } from '../shared/config'
 import { isAIConfigured } from '../shared/config'
 import { joinApiUrl, type ConversationDiagnostics } from '../shared/ai'
+import { readAIUsage, type AIResponseMetadata } from '../shared/ai-usage'
+import { beginUsageCall } from './usage'
 
 /** Explicit diagnostic: synthetic text only, no user history or tools. */
 export async function probeConversation(config: AppConfig, request: typeof fetch = fetch): Promise<ConversationDiagnostics> {
@@ -15,23 +17,35 @@ export async function probeConversation(config: AppConfig, request: typeof fetch
     const claude = config.provider === 'claude'
     const body: Record<string, unknown> = { model: config.model, stream: true, max_tokens: 512, messages: [{ role: 'user', content: 'Reply with only OK.' }] }
     if (!claude && config.thinkingDisabledModels?.includes(config.model)) body.thinking = { type: 'disabled' }
-    const response = await request(joinApiUrl(config.baseUrl, claude ? 'messages' : 'chat/completions'), {
+    if (!claude) body.stream_options = { include_usage: true }
+    let usageCall = beginUsageCall(config.model)
+    const send = () => request(joinApiUrl(config.baseUrl, claude ? 'messages' : 'chat/completions'), {
       method: 'POST', signal: controller.signal,
       headers: claude ? { 'Content-Type': 'application/json', 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' }
         : { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
       body: JSON.stringify(body)
     })
+    let response = await send()
+    if (!response.ok && body.stream_options && [400, 422].includes(response.status) && /stream_options|include_usage/i.test(await response.clone().text())) {
+      await response.text()
+      delete body.stream_options
+      usageCall = beginUsageCall(config.model)
+      response = await send()
+    }
     result.httpStatus = response.status
     if (!response.ok) throw new Error(`API error ${response.status}: ${redact(await response.text()).slice(0, 2000)}`)
     if (!response.body) throw new Error('接口返回空响应。')
     reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = '', bytes = 0, reply = '', finish = ''
+    let metadata: AIResponseMetadata = {}
     const line = (raw: string) => {
       if (!raw.startsWith('data:')) return
       const value = raw.slice(5).trim()
       if (value === '[DONE]') { result.completed = true; return }
       const event = JSON.parse(value)
+      metadata = readAIUsage(event, config.provider, metadata)
+      usageCall.update(metadata)
       if (event.error || event.type === 'error') throw new Error(JSON.stringify(event.error ?? event))
       result.returnedModel = event.model ?? event.message?.model ?? result.returnedModel
       if (claude) {

@@ -2,8 +2,28 @@
  * A lower host cap is applied through the documented request/config waterfall.
  * The local retry never calls the provider, and must preserve the reserved input.
  */
-export function installBudget(scope, peer, key, sessionId, maxTokens) {
+export function installBudget(scope, peer, key, sessionId, maxTokens, budgeted = true, onUsageFailure = () => {}) {
     let round = 0, reserved, negotiating = false;
+    let usageRound = 0;
+    const reportUsage = async (method, value) => {
+        try { await peer.request(method, value, { timeoutMs: 15000 }); }
+        catch { onUsageFailure(); console.warn('[Usage] DSH usage reporting unavailable.'); }
+    };
+    async function* tracked(next) {
+        const call = usageRound++;
+        await reportUsage('usage:before', { ...key, sessionId, call });
+        for await (const chunk of next()) {
+            if (chunk.type === 'usage') await reportUsage('usage:update', { ...key, sessionId, call, usage: chunk.usage });
+            yield chunk;
+        }
+    }
+    if (!budgeted) {
+        scope.on('llm/stream', async function* (options, next) {
+            if (options.sessionId !== sessionId) { yield* next(); return; }
+            yield* tracked(next);
+        });
+        return;
+    }
     scope.on('agent/request', async (_payload, next) => ({ ...await next(), maxTokens: reserved?.cap ?? maxTokens }));
     scope.on('agent/request-error', async (_payload, next) => {
         if (!negotiating) return next();
@@ -27,7 +47,7 @@ export function installBudget(scope, peer, key, sessionId, maxTokens) {
         }
         let usage, finish;
         try {
-            for await (const chunk of next()) {
+            for await (const chunk of tracked(next)) {
                 if (chunk.type === 'usage') usage = chunk.usage;
                 if (chunk.type === 'finish') finish = chunk.reason;
                 yield chunk;

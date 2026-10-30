@@ -3,7 +3,7 @@ import type { TaskListOptions } from '../../shared/tasks'
 import { bindOperations, type TaskDomain } from './contracts'
 
 const operations = [
-  'getTask', 'searchTasks', 'listTasks', 'createTask', 'updateTask', 'setChecklistItemDone', 'completeTask', 'reopenTask', 'deleteTask',
+  'getTask', 'searchTasks', 'listTasks', 'statistics', 'createTask', 'updateTask', 'setChecklistItemDone', 'completeTask', 'reopenTask', 'deleteTask',
   'generateScheduledOccurrences', 'claimDueReminders',
   'exportBackup', 'validateBackup', 'restoreBackup', 'listTrash', 'restoreTrash', 'purgeTrash',
   'listProjects', 'listGroups', 'createGroup', 'renameGroup', 'deleteGroup', 'moveProject', 'createProject', 'renameProject',

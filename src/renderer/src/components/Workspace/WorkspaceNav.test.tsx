@@ -2,6 +2,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 import WorkspaceNav from './WorkspaceNav'
 
+it('offers an accessible dashboard destination with current-page feedback', () => {
+  const html = renderToStaticMarkup(<WorkspaceNav activePage="dashboard" onNavigate={() => {}} status="就绪" />)
+  expect(html).toMatch(/data-workspace-nav="dashboard"[^>]*aria-label="看板"[^>]*aria-current="page"/)
+})
+
 it('shows unread chat counts while viewing another workspace page', () => {
   const html = renderToStaticMarkup(<WorkspaceNav activePage="tasks" onNavigate={() => {}} status="就绪" unreadCount={3} />)
   expect(html).toContain('会话，3 条未读消息')

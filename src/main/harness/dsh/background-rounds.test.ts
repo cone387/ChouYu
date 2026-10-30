@@ -8,6 +8,7 @@ import { DshRuntimePool } from './runtime'
 import { startMockProvider } from './fixtures/mock-provider.mjs'
 import type { BackgroundHarnessInput } from '../contracts'
 import type { AIResponseMetadata } from '../../../shared/ai-usage'
+import { initializeUsage, closeUsage, getUsageStore } from '../../usage'
 
 const cleanup: (() => void | Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
@@ -23,6 +24,26 @@ async function fixture(provider: 'openai' | 'claude', options = {}) {
       assertContext: async () => {}, citationContext: async () => '', privateContext: '', skillContext: '', communication: '' })
   return { mock, pool, input, controller, home }
 }
+
+it.each([['openai', false], ['openai', true], ['claude', false], ['claude', true]] as const)('persists every actual DSH %s tool round once with budget mode %s', async (provider, budgeted) => {
+  const { mock, pool, input, home } = await fixture(provider)
+  initializeUsage(home); cleanup.push(closeUsage)
+  if (budgeted) Object.assign(input, { rounds: { maxOutputTokens: 1024, beforeRound: () => 700, onMetadata() {}, afterRound() {} } })
+  const lease = await pool.acquire(input)
+  await lease.run(input, () => {})
+  await lease.release()
+  expect(mock.requests).toHaveLength(2)
+  expect(getUsageStore().statistics(7)).toMatchObject({ calls: 2, reported: 2, tokens: 36 })
+}, 60000)
+
+it('records a DSH request whose provider does not report token usage as unknown', async () => {
+  const { pool, input, home } = await fixture('openai', { tools: false, omitUsage: true })
+  initializeUsage(home); cleanup.push(closeUsage)
+  const lease = await pool.acquire(input)
+  await lease.run(input, () => {})
+  await lease.release()
+  expect(getUsageStore().statistics(7)).toMatchObject({ calls: 1, reported: 0, tokens: null })
+}, 60000)
 
 for (const provider of ['openai', 'claude'] as const) it(`reserves and settles each actual SDK ${provider} request with the lower logged output cap`, async () => {
   const { mock, pool, input, home } = await fixture(provider)

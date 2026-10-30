@@ -170,7 +170,7 @@ export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, Contact
 export interface AgentSummary { tasks: number; activeTasks: number; memories: number; calls: number; reported: number; tokens: number }
 export type AgentActivityContext = Pick<AgentOverview, 'settings' | 'focusTopicId' | 'topics' | 'nextAt' | 'callsToday'>
 export interface AgentDashboardContact extends AgentActivityContext { highlights?: ReturnType<typeof import('./contact-home').cardHighlights>; summary: AgentSummary; run?: AgentRun; latestActivity?: AgentEvent; lastWorkedAt?: number }
-export interface AgentDashboard { contacts: Record<string, AgentDashboardContact>; events: (AgentEvent & { characterId: string; topicTitle: string })[] }
+export interface AgentDashboard { contacts: Record<string, AgentDashboardContact>; events: (AgentEvent & { characterId: string; topicTitle: string; topicId?: string | null })[] }
 export function validateAgentSettings(raw: unknown): AgentSettings {
   if (!raw || typeof raw !== 'object') throw new Error('工作设置无效。')
   const value = raw as AgentSettings

@@ -3,6 +3,7 @@ import { joinApiUrl } from '../../../../shared/ai'
 import type { AppConfig } from '../../../../shared/config'
 import type { AIToolCall, AIToolDefinition } from '../../../../shared/tools'
 import { readAIUsage, type AIResponseMetadata } from '../../../../shared/ai-usage'
+import { beginUsageCall } from '../../../usage'
 import type { NativeConversation, NativeStreamCallback, NativeStreamOptions } from '../types'
 import { createRequestGuard, rethrowRequestError, readSseStream, REQUEST_TIMEOUT_MS } from './request'
 
@@ -71,33 +72,29 @@ async function streamOpenAIRound(
     const requestBody: Record<string, unknown> = { model: config.model, messages: apiMessages, stream: true }
     if (options.maxOutputTokens) requestBody.max_tokens = options.maxOutputTokens
     if (config.thinkingDisabledModels?.includes(config.model)) requestBody.thinking = { type: 'disabled' }
-    if (options.onMetadata) requestBody.stream_options = { include_usage: true }
+    requestBody.stream_options = { include_usage: true }
     if (tools?.length) {
       requestBody.tools = tools
       requestBody.tool_choice = 'auto'
     }
+    let usageCall = beginUsageCall(config.model)
     let response = await fetch(joinApiUrl(config.baseUrl, 'chat/completions'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
       body: JSON.stringify(requestBody),
       signal: guard.signal
     })
-    if (!response.ok && tools?.length && [400, 404, 422].includes(response.status)) {
-      console.warn(`[AI] ${config.model} rejected tool definitions; retrying without tools`)
+    for (let retry = 0; !response.ok && retry < 2; retry++) {
+      // A rejected telemetry option says nothing about support for tools.
+      if (requestBody.stream_options && [400, 422].includes(response.status) && /stream_options|include_usage/i.test(await response.clone().text())) {
+        delete requestBody.stream_options
+      } else if (requestBody.tools && [400, 404, 422].includes(response.status)) {
+        console.warn(`[AI] ${config.model} rejected tool definitions; retrying without tools`)
+        delete requestBody.tools
+        delete requestBody.tool_choice
+      } else break
       await response.text().catch(() => '')
-      delete requestBody.tools
-      delete requestBody.tool_choice
-      response = await fetch(joinApiUrl(config.baseUrl, 'chat/completions'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify(requestBody),
-        signal: guard.signal
-      })
-    }
-    if (!response.ok && requestBody.stream_options && [400, 422].includes(response.status) && /stream_options|include_usage/i.test(await response.clone().text())) {
-      // Older compatible endpoints may explicitly reject usage reporting.
-      await response.text()
-      delete requestBody.stream_options
+      usageCall = beginUsageCall(config.model)
       response = await fetch(joinApiUrl(config.baseUrl, 'chat/completions'), {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
         body: JSON.stringify(requestBody), signal: guard.signal
@@ -111,7 +108,9 @@ async function streamOpenAIRound(
     let text = ''
     await readSseStream(response.body, (payload) => {
       guard.progress()
-      if (options.onMetadata) { metadata = readAIUsage(payload, 'openai', metadata); options.onMetadata(metadata) }
+      metadata = readAIUsage(payload, 'openai', metadata)
+      usageCall.update(metadata)
+      options.onMetadata?.(metadata)
       const delta = accumulateOpenAIToolCalls(payload, accumulators)
       if (delta.text) {
         guard.textProgress()

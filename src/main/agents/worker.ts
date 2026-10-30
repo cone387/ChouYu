@@ -6,6 +6,7 @@ import { ContactCommandQueue } from '../agent-space/command-queue'
 import { dispatchContactCommand } from '../agent-space/worker-commands'
 import { contactStorageDiagnostic, initializeContactStorage } from '../storage/contact-database'
 import { WorkerRecoveryPort } from '../agent-space/recovery-port'
+import { initializeUsage, closeUsage } from '../usage'
 const port = process.parentPort!
 const recoveryBudget = new WorkerRecoveryPort(message => port.postMessage({ recoveryRequest: message }))
 let service: WorkLoopHost | undefined
@@ -23,6 +24,7 @@ port.on('message', event => {
         if (!Array.isArray(args) || args.length < 1 || args.length > 2 || typeof args[0] !== 'string' || !args[0].trim()
           || args[1] !== undefined && (!args[1] || typeof args[1] !== 'object' || Array.isArray(args[1]))) throw new Error('联系人初始化参数无效。')
         port.postMessage({ requestId, started: true })
+        initializeUsage(dirname(args[0]), () => port.postMessage({ usageCollectionIssue: true }))
         const smoke = process.env.CHOUYU_SMOKE_TEST === '1' && Boolean(process.env.CHOUYU_SMOKE_USER_DATA)
         service = await initializeContactStorage(() => new WorkLoopHost(args[0], characterId => port.postMessage({ changed: characterId }), undefined, smoke ? async (url) => {
           const fixtures: Record<string, string> = {
@@ -42,10 +44,11 @@ port.on('message', event => {
       else if (!service) throw new Error('Agent 执行进程尚未初始化。')
       else {
         result = await dispatchContactCommand(messages, service, method, id, args, () => port.postMessage({ requestId, started: true }))
-        if (method === 'close') service = undefined
+        if (method === 'close') { service = undefined; closeUsage() }
       }
       port.postMessage({ requestId, result })
     } catch (error) {
+      if (method === 'init') closeUsage()
       if (process.env.CHOUYU_SMOKE_TEST === '1') console.error('Agent RPC failed', method, error)
       port.postMessage({ requestId, error: error instanceof Error ? error.message : 'Agent 操作失败。', storage: contactStorageDiagnostic(error) })
     }

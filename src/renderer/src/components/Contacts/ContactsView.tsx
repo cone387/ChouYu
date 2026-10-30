@@ -7,7 +7,6 @@ import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import { ContactAgentPanel, type ContactAgentTab } from './ContactAgentPanel'
 import ContactWorkToolbar from '../ChatPanel/ContactWorkToolbar'
 import ContactCardStats from './ContactCardStats'
-import ContactsActivityLog from './ContactsActivityLog'
 import { useContactsDashboard } from './useContactsDashboard'
 import { compareMetrics } from './contactMetrics'
 import './Contacts.css'
@@ -258,6 +257,8 @@ function ContactMenu({ character, active, onEdit, onDelete }: {
 
 export default function ContactsView({ active, config, focusCharacterId, onFocusConsumed, detailOnly = false, onDismiss, onOpenChat, onDeleted }: ContactsViewProps) {
   const [characters, setCharacters] = useState<CharacterStats[]>([])
+  const [directoryLoaded, setDirectoryLoaded] = useState(false)
+  const [directoryError, setDirectoryError] = useState('')
   const [profiles, setProfiles] = useState<ResolvedProviderProfile[]>([])
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('all')
@@ -279,7 +280,9 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const [confirmDelete, setConfirmDelete] = useState<CharacterStats | null>(null)
 
   const refresh = useCallback(() => {
-    void window.electronAPI.characters.list().then(setCharacters).catch(() => {})
+    void window.electronAPI.characters.list().then(items => {
+      setCharacters(items); setDirectoryLoaded(true); setDirectoryError('')
+    }).catch(() => setDirectoryError('联系人读取失败，请重新读取。'))
     void window.electronAPI.providerProfiles.list().then(setProfiles).catch(() => {})
   }, [])
 
@@ -412,7 +415,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
 
   // 捕获阶段拦截 Escape，避免冒泡到 ChatPanel 把整个面板收起。
   useEffect(() => {
-    if (!active || (!detail && !form && !confirmDelete)) return
+    if (!active || (!detail && !form && !confirmDelete && !(detailOnly && focusCharacterId))) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       // Native task/skill dialogs own Escape; keep the contact detail underneath.
@@ -422,11 +425,12 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       if (expandedTab) setExpandedTab(null)
       else if (form) setForm(null)
       else if (confirmDelete) setConfirmDelete(null)
+      else if (!detail && detailOnly) onDismiss?.()
       else setDetail(null)
     }
     window.addEventListener('keydown', closeOnEscape, true)
     return () => window.removeEventListener('keydown', closeOnEscape, true)
-  }, [active, detail, form, confirmDelete, expandedTab])
+  }, [active, detail, form, confirmDelete, expandedTab, detailOnly, focusCharacterId, onDismiss])
 
   const detailProfile = detail && (
     <section className="contacts-profile-details" aria-label="人设">
@@ -435,6 +439,15 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   )
 
   return <div className={detailOnly ? 'contacts-view contacts-view-overlay' : 'contacts-view'} data-contacts-root>
+    {detailOnly && !detail && focusCharacterId && <ResizableModal className="contacts-detail" role="dialog" label="联系人详情"
+      initialWidth={480} minWidth={280} minHeight={160} dataAttributes={{ 'data-contact-load-dialog': '' }}>
+      <h3>联系人详情</h3>
+      {directoryError || (directoryLoaded && !characters.some(character => character.id === focusCharacterId))
+        ? <p role="alert">{directoryError || '这位联系人已不存在，请关闭后重新选择。'}</p>
+        : <p role="status">正在读取联系人…</p>}
+      <div className="contacts-detail-actions"><button type="button" onClick={onDismiss}>关闭</button>
+        <button type="button" onClick={refresh}>重新读取</button></div>
+    </ResizableModal>}
     {!detailOnly && <>
     <div className="contacts-toolbar">
       <div className="contacts-search-box">
@@ -478,6 +491,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       </div>}
     </div>
     {error && !form && !confirmDelete && <div className="contacts-error" role="alert">{error}</div>}
+    {directoryError && <div className="contacts-error" role="alert">{directoryError}<button type="button" onClick={refresh}>重新读取</button></div>}
     <div className="contacts-body">
     <div className="contacts-columns">
     <div className="contacts-scroll">
@@ -530,9 +544,6 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       </div>
       {filtered.length === 0 && <p className="contacts-empty">没有匹配的角色</p>}
     </div>
-    <aside className="contacts-activity-sidebar" aria-label="联系人活动侧栏">
-      <ContactsActivityLog data={dashboard} error={dashboardError} characters={characters} active={active} onDetail={setDetail} />
-    </aside>
     </div>
     </div>
     </>}

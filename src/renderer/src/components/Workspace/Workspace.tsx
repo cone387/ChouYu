@@ -18,6 +18,7 @@ import type { AgentDiscussion } from '../Contacts/agentDiscussion'
 import Settings from '../Settings/Settings'
 import ConversationSidebar from '../ConversationSidebar/ConversationSidebar'
 import ContactsView from '../Contacts/ContactsView'
+import DashboardView from '../Dashboard/DashboardView'
 import ToolApprovalDialog from '../ToolApproval/ToolApprovalDialog'
 import MemorySettingsTab from '../Settings/MemorySettingsTab'
 import type { ToolApprovalRequest, ToolExecutionEvent } from '../../../../shared/tools'
@@ -548,6 +549,12 @@ export default function Workspace({ visible, position, onPositionChange, petStat
                 config={config} onSaveConfig={saveMemoryWorkspaceConfig} focusMemoryId={memoryCorrectionId || undefined} />
             </div>
           </>}
+        </section>
+        <section className="workspace-page workspace-dashboard" hidden={activePage !== 'dashboard'} aria-label="看板工作区">
+          {visitedPages.dashboard && <DashboardView active={visible && activePage === 'dashboard'} config={config}
+            onNavigate={page => { void navigate(page) }}
+            onOpenChat={characterId => { void openCharacterChat(characterId).catch(error => setNavigationError(error.message)) }}
+            onDeleted={handleCharactersDeleted} />}
         </section>
         <section className="workspace-page workspace-contacts" hidden={activePage !== 'contacts'} aria-label="通讯录工作区">
           {visitedPages.contacts && <ContactsView active={visible && activePage === 'contacts'} config={config} focusCharacterId={contactsFocusId} onFocusConsumed={clearContactsFocus}

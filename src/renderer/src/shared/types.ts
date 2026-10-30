@@ -73,6 +73,7 @@ export interface PluginInfo {
 }
 
 export interface ElectronAPI {
+  usage: import('../../../shared/usage').UsageAPI
   skills: import('../../../shared/skills').SkillAPI
   agents: import('../../../shared/agents').AgentAPI
   journal: import('../../../shared/journal').JournalAPI

@@ -371,6 +371,7 @@ export function formatTaskDue(at: number): string {
 }
 
 export interface TasksAPI {
+  statistics(range: import('./dashboard').DashboardRange): Promise<import('./dashboard').TaskStatistics>
   onChanged(callback: () => void): () => void
   get(id: string): Promise<TaskRecord | null>
   exportBackup(settings: TaskUISettings): Promise<boolean>

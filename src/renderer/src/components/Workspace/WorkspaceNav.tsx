@@ -7,6 +7,7 @@ export type { WorkspacePage } from '../../core/workspace-state'
 
 const pages: { id: WorkspacePage; label: string; path: string }[] = [
   { id: 'chat', label: '会话', path: 'M4 4h16v12H9l-5 4V4zM8 8h8M8 12h5' },
+  { id: 'dashboard', label: '看板', path: 'M3 3h7v8H3zM14 3h7v5h-7zM3 15h7v6H3zM14 12h7v9h-7z' },
   { id: 'contacts', label: '通讯录', path: 'M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
   { id: 'tasks', label: '任务', path: 'M9 4h6l1 2h4v15H4V6h4l1-2zM8 12l2 2 5-5' },
   { id: 'journal', label: '活动', path: 'M12 3a9 9 0 1 1-9 9 9 9 0 0 1 9-9zM12 7v5l3 2' },

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { DshTransport } from './transport';
 import { DshStreamReducer } from './stream';
 import { dshMetadata } from './metadata';
+import { beginUsageCall, markUsageCollectionIssue } from '../../usage';
 import { DEFAULT_APP_CONFIG } from '../../../shared/config';
 import type { RpcPeer } from '../../../../runtime/dsh/wire.mjs';
 import { mapProvider } from '../../../../runtime/dsh/provider.mjs';
@@ -30,6 +31,7 @@ type Active = {
     settlement?: Promise<void>;
     failure?: unknown;
     executionFinished: Promise<void>;
+    usageCalls: Map<number, ReturnType<typeof beginUsageCall>>;
 };
 class DshRuntime {
     private transport: DshTransport;
@@ -53,6 +55,19 @@ class DshRuntime {
             if (!current || current.input.requestId !== value.requestId || current.input.attemptId !== value.attemptId)
                 throw new Error('DSH 请求已经结束或归属无效。');
             const { input, emit } = current;
+            // Account at the actual provider boundary, independently of budget and UI stream events.
+            // Late usage remains valid during cancellation until this attempt has been drained.
+            if (method === 'usage:before' || method === 'usage:update') {
+                if (!Number.isSafeInteger(value.call) || value.call < 0) throw new Error('DSH 用量归属无效。');
+                if (method === 'usage:before') {
+                    if (!current.usageCalls.has(value.call)) current.usageCalls.set(value.call, beginUsageCall(input.config.model));
+                } else {
+                    const call = current.usageCalls.get(value.call);
+                    if (!call) throw new Error('DSH 用量调用不存在。');
+                    call.update(dshMetadata(value.usage));
+                }
+                return true;
+            }
             if (method === 'round:after') {
                 if (!input.rounds || !current.roundPending || value.round !== current.round) throw new Error('DSH 后台结算归属无效。');
                 try {
@@ -157,7 +172,7 @@ class DshRuntime {
         const stream = new DshStreamReducer();
         let finishExecution!: () => void;
         const executionFinished = new Promise<void>(resolve => { finishExecution = resolve; });
-        const active: Active = {input,emit,stream,hostWork:new Set(),finishing:false,round:0,roundPending:false,executionFinished};
+        const active: Active = {input,emit,stream,hostWork:new Set(),finishing:false,round:0,roundPending:false,executionFinished,usageCalls:new Map()};
         this.active.set(input.attemptId, active);
         let cancelling: Promise<void> | undefined;
         const abort = () => { cancelling = this.cancel(input).catch(() => { }); };
@@ -171,7 +186,9 @@ class DshRuntime {
             input.signal.throwIfAborted();
             const result = await this.plugin.request('run', { requestId: input.requestId, attemptId: input.attemptId, sessionId: input.attemptId, prompt: last.content }) as HarnessResult & {
                 committedSeq?: number;
+                usageIncomplete?: boolean;
             };
+            if (result.usageIncomplete) markUsageCollectionIssue();
             if (active.failure) throw active.failure;
             if (result.state === 'completed' && !stream.verify(result.committedSeq!))
                 throw new Error('DSH 正式回复与流记录不一致。');

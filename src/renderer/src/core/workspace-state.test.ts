@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getWorkspaceGeometry, parseWorkspaceMode } from './workspace-state'
+import { getWorkspaceGeometry, parseWorkspaceMode, parseWorkspacePage } from './workspace-state'
 
 describe('workspace presentation', () => {
+  it('restores the dashboard while preserving existing saved destinations', () => {
+    for (const page of ['dashboard', 'contacts', 'chat', 'tasks', 'journal', 'memory', 'settings']) expect(parseWorkspacePage(page)).toBe(page)
+    expect(parseWorkspacePage('unknown')).toBe('chat')
+  })
   const viewport = { width: 1280, height: 900 }
   it('accepts only known saved modes', () => {
     expect(parseWorkspaceMode('chat')).toBe('chat')

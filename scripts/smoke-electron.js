@@ -45,6 +45,7 @@ const env = {
   CHOUYU_SMOKE_CONTACT_LIVE: process.argv.includes('--contact-live') ? '1' : '0',
   CHOUYU_SMOKE_CAPTURE_ONLY: nativeCapture ? '1' : '0',
   CHOUYU_SMOKE_NAVIGATION_ONLY: process.argv.includes('--navigation') ? '1' : '0',
+  CHOUYU_SMOKE_DASHBOARD_ONLY: process.argv.includes('--dashboard') ? '1' : '0',
   CHOUYU_SMOKE_CHAT_ONLY: process.argv.includes('--chat') || process.argv.includes('--chat-close') || process.argv.includes('--chat-edit') || process.argv.includes('--chat-scroll') ? '1' : '0',
   CHOUYU_SMOKE_CHAT_SCROLL_ONLY: process.argv.includes('--chat-scroll') ? '1' : '0',
   CHOUYU_SMOKE_CHAT_CLOSE_ONLY: process.argv.includes('--chat-close') ? '1' : '0',

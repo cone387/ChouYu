@@ -3,6 +3,7 @@ import { joinApiUrl } from '../../../../shared/ai'
 import type { AppConfig } from '../../../../shared/config'
 import type { AIToolCall, AIToolDefinition } from '../../../../shared/tools'
 import { readAIUsage, type AIResponseMetadata } from '../../../../shared/ai-usage'
+import { beginUsageCall } from '../../../usage'
 import type { NativeConversation, NativeStreamCallback, NativeStreamOptions } from '../types'
 import { createRequestGuard, rethrowRequestError, readSseStream, REQUEST_TIMEOUT_MS } from './request'
 
@@ -93,6 +94,7 @@ async function streamClaudeRound(
       stream: true
     }
     if (tools?.length) requestBody.tools = tools
+    let usageCall = beginUsageCall(config.model)
     let response = await fetch(joinApiUrl(config.baseUrl, 'messages'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' },
@@ -103,6 +105,7 @@ async function streamClaudeRound(
       console.warn(`[AI] ${config.model} rejected tool definitions; retrying without tools`)
       await response.text().catch(() => '')
       delete requestBody.tools
+      usageCall = beginUsageCall(config.model)
       response = await fetch(joinApiUrl(config.baseUrl, 'messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' },
@@ -118,7 +121,9 @@ async function streamClaudeRound(
     let text = ''
     await readSseStream(response.body, (payload) => {
       guard.progress()
-      if (options.onMetadata) { metadata = readAIUsage(payload, 'claude', metadata); options.onMetadata(metadata) }
+      metadata = readAIUsage(payload, 'claude', metadata)
+      usageCall.update(metadata)
+      options.onMetadata?.(metadata)
       const delta = accumulateClaudeToolCalls(payload, accumulators)
       if (delta.text) {
         guard.textProgress()

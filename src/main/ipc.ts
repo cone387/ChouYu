@@ -9,6 +9,7 @@ import { registerConfigHandlers } from './ipc/config'
 import { registerCaptureHandlers } from './ipc/capture'
 import { registerDesktopHandlers } from './ipc/desktop'
 import { registerToolsHandlers } from './ipc/tools'
+import { registerUsageHandlers } from './ipc/usage'
 
 let runtime: ChatRuntime | undefined
 let releaseHandlers: (() => void) | undefined
@@ -24,7 +25,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): () => void {
   }
   try {
     for (const register of [registerDesktopHandlers, registerSessionsHandlers, registerMemoryHandlers,
-      registerConfigHandlers, registerCaptureHandlers, registerToolsHandlers]) releases.push(register(mainWindow))
+      registerConfigHandlers, registerCaptureHandlers, registerToolsHandlers, registerUsageHandlers]) releases.push(register(mainWindow))
     releases.push(registerChatHandlers(runtime))
     releases.push(registerDomain(ipcMain, ipc => ipc.cleanup(registerSkillHandlers(mainWindow, ipc))))
     releaseHandlers = dispose

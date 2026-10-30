@@ -2,7 +2,7 @@ import { useContactVisible } from './useContactVisible'
 import { useEffect, useState } from 'react'
 import type { AgentDashboard } from '../../../../shared/agents'
 
-export function useContactsDashboard(surfaceActive: boolean) {
+export function useContactsDashboard(surfaceActive: boolean, reloadKey = 0) {
   const active = useContactVisible(surfaceActive)
   const [data, setData] = useState<AgentDashboard>()
   const [error, setError] = useState('')
@@ -29,6 +29,6 @@ export function useContactsDashboard(surfaceActive: boolean) {
     const disposeCharacters = window.electronAPI.characters.onChanged(changed)
     const timer = setInterval(() => { void refresh() }, 5000)
     return () => { alive = false; clearTimeout(pending); clearInterval(timer); disposeAgents(); disposeCharacters() }
-  }, [active])
+  }, [active, reloadKey])
   return { data, error }
 }

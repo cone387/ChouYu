@@ -2,6 +2,8 @@ import type { AppConfig } from '../../shared/config'
 import type { MemoryCandidateInput, MemoryType } from '../../shared/memory'
 import { containsSecret, normalizeMemoryKey } from '../../shared/memory'
 import { joinApiUrl } from '../../shared/ai'
+import { readAIUsage } from '../../shared/ai-usage'
+import { beginUsageCall } from '../usage'
 
 export interface ExtractedMemory extends MemoryCandidateInput {
   certainty: 'explicit' | 'inferred' | 'uncertain'
@@ -91,9 +93,12 @@ export async function extractMemoriesWithLLM(text: string, config: AppConfig, re
     headers.Authorization = `Bearer ${config.apiKey}`
     body = { model: config.model, temperature: 0, max_tokens: 800, messages: [{ role: 'system', content: MEMORY_SYSTEM_PROMPT }, { role: 'user', content: userMessage }] }
   }
+  const usageCall = beginUsageCall(config.model)
   const response = await request(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) })
   if (!response.ok) throw new Error(`Memory extraction API error ${response.status}`)
-  const output = readResponseText(await response.json(), config.provider)
+  const payload = await response.json()
+  usageCall.update(readAIUsage(config.provider === 'claude' ? { message: payload } : payload, config.provider))
+  const output = readResponseText(payload, config.provider)
   if (!output) return []
   let parsed: unknown
   try {

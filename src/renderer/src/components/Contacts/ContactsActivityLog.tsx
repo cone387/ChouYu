@@ -3,12 +3,14 @@ import type { AgentDashboard } from '../../../../shared/agents'
 import type { CharacterStats } from '../../../../shared/characters'
 import { workLogActivity } from './workLogActivity'
 import { advanceLogScroll } from './logScroll'
+import './ContactsActivityLog.css'
 
-type Row = { key: string; at: number; characterId: string; text: string; kind: string; topicTitle?: string }
+type Row = { key: string; at: number; characterId: string; text: string; kind: string; topicTitle?: string; topicId?: string | null }
 const clock = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false })
 
-export default function ContactsActivityLog({ data, error, characters, active, onDetail }: {
+export default function ContactsActivityLog({ data, error, characters, active, onDetail, onTask, title = '全员活动' }: {
   data?: AgentDashboard; error: string; characters: CharacterStats[]; active: boolean; onDetail(character: CharacterStats): void
+  title?: string; onTask?: (characterId: string, topicId: string) => void
 }) {
   const [now, setNow] = useState(Date.now())
   const viewport = useRef<HTMLDivElement>(null)
@@ -76,9 +78,9 @@ export default function ContactsActivityLog({ data, error, characters, active, o
     return () => { cancelAnimationFrame(frame); observer.disconnect(); wakeScroll.current = () => {} }
   }, [active])
   const running = monitors.filter(monitor => monitor.label === 'RUNNING').length
-  return <section className="contacts-activity" data-contacts-activity aria-label="所有联系人活动日志">
-    <header><strong><i aria-hidden="true" data-live={Boolean(monitors.length && !error)} />全员活动</strong>
-      <span>{error ? '正在重连' : `${running} 执行 · ${monitors.length - running} 等待`}</span>
+  return <section className="contacts-activity" data-contacts-activity aria-label={title}>
+    <header><strong><i aria-hidden="true" data-live={Boolean(monitors.length && !error)} />{title}</strong>
+      <span>{error ? '正在重连' : !data ? '正在读取' : `${running} 执行 · ${monitors.length - running} 等待`}</span>
       <time aria-live="off">{clock(now)}</time>
     </header>
     <div ref={viewport} className="contacts-activity-viewport" role="log" aria-label="全员最近活动与状态心跳" aria-live="off">
@@ -93,6 +95,7 @@ export default function ContactsActivityLog({ data, error, characters, active, o
           <span title={`${row.topicTitle ? `${row.topicTitle}\n` : ''}${row.text}`}>
             {row.kind === 'heartbeat' && <b>心跳</b>}{row.text.split('\n')[0]}
           </span>
+          {row.topicId && onTask && <button className="contacts-activity-task" type="button" onClick={() => onTask(row.characterId, row.topicId!)} aria-label={`查看任务：${row.topicTitle || '原任务'}`}>查看任务{row.topicTitle ? ` · ${row.topicTitle}` : ''}</button>}
         </li>
       })}</ol>
     </div>

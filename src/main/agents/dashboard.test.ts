@@ -39,6 +39,7 @@ describe('contacts dashboard', () => {
       expect(data.contacts.alice.latestActivity?.text).toBe('second round')
       expect(data.contacts['new-contact'].summary.tasks).toBe(0)
       expect(data.events.some(e => e.runId === first && e.characterId === 'alice' && e.topicTitle === 'alice task')).toBe(true)
+      expect(data.events.find(e => e.runId === first)).toHaveProperty('topicId', store.overview('alice').topics[0].id)
       expect(data.events.some(e => e.runId === second)).toBe(true)
       expect(data.events.every(e => e.characterId !== 'excluded')).toBe(true)
       store.remove('bob')

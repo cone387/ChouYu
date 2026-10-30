@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { createUsageBridge } from './bridges/usage'
 import { createSkillsBridge } from './bridges/skills'
 import { createAgentsBridge } from './bridges/agents'
 import { createJournalBridge } from './bridges/journal'
@@ -14,6 +15,7 @@ import { createSessionsBridge } from './bridges/sessions'
 import { createPluginsBridge } from './bridges/plugins'
 
 const api = {
+  ...createUsageBridge(ipcRenderer),
   ...createSkillsBridge(ipcRenderer),
   ...createAgentsBridge(ipcRenderer),
   ...createJournalBridge(ipcRenderer),

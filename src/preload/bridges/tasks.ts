@@ -12,6 +12,7 @@ return {
     selectBackup: () => ipcRenderer.invoke('tasks:selectBackup'),
     restoreBackup: (token, settings) => ipcRenderer.invoke('tasks:restoreBackup', token, settings),
     list: options => ipcRenderer.invoke('tasks:list', options),
+    statistics: range => ipcRenderer.invoke('tasks:statistics', range),
     get: id => ipcRenderer.invoke('tasks:get', id),
     onChanged: callback => {
       const listener = () => callback()

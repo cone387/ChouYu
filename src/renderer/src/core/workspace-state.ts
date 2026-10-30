@@ -1,8 +1,8 @@
-export type WorkspacePage = 'chat' | 'contacts' | 'tasks' | 'journal' | 'memory' | 'settings'
+export type WorkspacePage = 'chat' | 'dashboard' | 'contacts' | 'tasks' | 'journal' | 'memory' | 'settings'
 export const WORKSPACE_PAGE_STATE_KEY = 'workspace-active-page'
 
 export function parseWorkspacePage(value: unknown): WorkspacePage {
-  return value === 'contacts' || value === 'tasks' || value === 'journal' || value === 'memory' || value === 'settings' ? value : 'chat'
+  return value === 'dashboard' || value === 'contacts' || value === 'tasks' || value === 'journal' || value === 'memory' || value === 'settings' ? value : 'chat'
 }
 
 export type WorkspaceMode = 'workspace' | 'sessions' | 'chat'

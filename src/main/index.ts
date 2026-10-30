@@ -22,6 +22,7 @@ import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
 import { initializeAssistantRoutines, closeAssistantRoutines } from './assistant-routines'
 import { initializeAgents, closeAgents, startIdeaLab } from './agents'
+import { initializeUsage, closeUsage } from './usage'
 import { initializeTasks, closeTasks, stopTaskScheduling } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
 import { runTaskAssistantSmoke } from './smoke/task-assistant-smoke'
@@ -48,6 +49,7 @@ import { runJournalPlaybookSmoke } from './smoke/journal-playbook-smoke'
 import { attachMainWindowMouseEvents } from './mouse-events'
 import { runStorageRuntimeSmoke } from './smoke/storage-smoke'
 import { runContactsSmoke } from './smoke/contacts-smoke'
+import { runDashboardSmoke } from './smoke/dashboard-smoke'
 import { runChatRuntimeSmoke } from './smoke/chat-smoke'
 import { runContactLiveSmoke } from './smoke/contact-live-smoke'
 import { runProviderProfilesUISmoke } from './smoke/provider-profiles-ui-smoke'
@@ -160,6 +162,8 @@ function createWindow(): void {
           await stage('reminders', () => runRemindersSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_PRESENTATION_ONLY === '1') {
           await runDeliveryPresentationSmoke(mainWindow!)
+        } else if (process.env.CHOUYU_SMOKE_DASHBOARD_ONLY === '1') {
+          await runDashboardSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_AGENTS_ONLY === '1') {
           await runAgentsSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_CONTACTS_ONLY === '1' || process.env.CHOUYU_SMOKE_CONTACT_EXPERIENCE_ONLY === '1') {
@@ -247,6 +251,7 @@ app.whenReady().then(async () => {
   if (process.platform === 'win32') app.setAppUserModelId('com.chouyu.app')
   // Init database first (needed by plugins and IPC handlers)
   initDatabase()
+  initializeUsage(app.getPath('userData'))
   try{await recoverHarnessModules();setState('harness:recovery-error','')}catch(error){setState('harness:recovery-error',error instanceof Error?error.message:'执行记录恢复失败。')}
   registerBuiltInCapabilities()
   initializeMemory()
@@ -484,6 +489,7 @@ app.on('before-quit', (event) => {
   closeReminders()
   closeTasks()
   closeMemory()
+  closeUsage()
   globalShortcut.unregisterAll()
 })
 

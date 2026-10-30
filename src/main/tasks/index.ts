@@ -105,6 +105,7 @@ export function initializeTasks(options: TasksModuleOptions): void {
     return result
   }
   ipcMain.handle('tasks:list', (_event, options) => store!.listTasks(options ?? {}))
+  ipcMain.handle('tasks:statistics', (_event, range) => store!.statistics(range))
   ipcMain.handle('tasks:trash', () => store!.listTrash())
   ipcMain.handle('tasks:restoreTrash', (_event, id: string) => notifyChange(() => store!.restoreTrash(id)))
   ipcMain.handle('tasks:purgeTrash', (_event, id: string) => notifyChange(() => store!.purgeTrash(id)))
@@ -186,6 +187,7 @@ export function stopTaskScheduling(): void {
 export function closeTasks(): void {
   shuttingDown = true
   ipcMain.removeHandler('tasks:setChecklistItemDone')
+  ipcMain.removeHandler('tasks:statistics')
   pendingBackups.clear()
   for (const channel of ['tasks:get', 'tasks:trash', 'tasks:restoreTrash', 'tasks:purgeTrash', 'tasks:exportBackup', 'tasks:selectBackup', 'tasks:restoreBackup']) ipcMain.removeHandler(channel)
   for (const channel of ['tasks:groups', 'tasks:createGroup', 'tasks:renameGroup', 'tasks:deleteGroup', 'tasks:moveProject', 'tasks:list', 'tasks:create', 'tasks:update', 'tasks:complete', 'tasks:reopen', 'tasks:delete', 'tasks:projects', 'tasks:createProject', 'tasks:renameProject', 'tasks:archiveProject', 'tasks:favoriteProject', 'tasks:deleteProject', 'tasks:views', 'tasks:createView', 'tasks:updateView', 'tasks:deleteView', 'tasks:fields', 'tasks:createField', 'tasks:updateField', 'tasks:deleteField']) ipcMain.removeHandler(channel)
