@@ -14,6 +14,7 @@ export interface Message {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  editRevision?: number
   timestamp: number
   imageUrl?: string
   snoozeKey?: string

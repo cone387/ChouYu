@@ -17,6 +17,7 @@ return {
     summary: id => ipcRenderer.invoke('agents:summary', id),
     analytics: (id, query) => ipcRenderer.invoke('agents:analytics', id, query),
     interactions: (id, topicId, cursor) => ipcRenderer.invoke('agents:interactions', id, topicId, cursor),
+    taskRequests: (id, topicId, cursor) => ipcRenderer.invoke('agents:taskRequests', id, topicId, cursor),
     delivery: (id, topicId, version) => ipcRenderer.invoke('agents:delivery', id, topicId, version),
     deliveryFeedback: (id, topicId, revision, version, action, reason, requestId, citation, scope) => ipcRenderer.invoke('agents:deliveryFeedback', id, topicId, revision, version, action, reason, requestId, citation, scope),
     deliveryFeedbackList: (id, topicId) => ipcRenderer.invoke('agents:deliveryFeedbackList', id, topicId),

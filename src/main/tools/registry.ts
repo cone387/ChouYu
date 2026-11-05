@@ -6,6 +6,7 @@ import { validateToolArguments } from '../../shared/tools'
 import { filterCaptureSources } from '../../shared/capture'
 
 export interface ToolExecutionContext {
+  taskRequest?: import('../../shared/contact-task-requests').TaskRequestSource
   /** Trusted user messages and accepted times; never populated from model tool arguments. */
   taskSource?: { text: string; acceptedAt: number; turns: { text: string; at: number }[] }
   /** Trusted invocation/action identity, stable across result-delivery retries. */
@@ -178,17 +179,17 @@ export async function executeRegisteredTool(
   return (await prepareRegisteredToolAsync(name, arguments_, mainWindow, sessionId)).execute()
 }
 
-export async function prepareRegisteredToolAsync(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string, secureInput?: string, executionId?: string, taskSource?: ToolExecutionContext['taskSource']): Promise<PreparedTool> {
+export async function prepareRegisteredToolAsync(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string, secureInput?: string, executionId?: string, taskSource?: ToolExecutionContext['taskSource'], taskRequest?: ToolExecutionContext['taskRequest']): Promise<PreparedTool> {
   const tool = tools.find(candidate => candidate.name === name)
   if (!tool) throw new Error(`未知工具：${name}`)
-  return tool.prepareAsync ? tool.prepareAsync(validateToolArguments(tool.inputSchema, arguments_), { mainWindow, sessionId, secureInput, executionId, taskSource }) : prepareRegisteredTool(name, arguments_, mainWindow, sessionId, taskSource)
+  return tool.prepareAsync ? tool.prepareAsync(validateToolArguments(tool.inputSchema, arguments_), { mainWindow, sessionId, secureInput, executionId, taskSource, taskRequest }) : prepareRegisteredTool(name, arguments_, mainWindow, sessionId, taskSource, taskRequest)
 }
 
-export function prepareRegisteredTool(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string, taskSource?: ToolExecutionContext['taskSource']): PreparedTool {
+export function prepareRegisteredTool(name: string, arguments_: Record<string, unknown>, mainWindow: BrowserWindow, sessionId?: string, taskSource?: ToolExecutionContext['taskSource'], taskRequest?: ToolExecutionContext['taskRequest']): PreparedTool {
   const tool = tools.find(candidate => candidate.name === name)
   if (!tool) throw new Error(`未知工具：${name}`)
   if (tool.prepareAsync) throw new Error('此工具需要异步准备与确认。')
   const args = validateToolArguments(tool.inputSchema, arguments_)
-  const context = { mainWindow, sessionId, taskSource }
+  const context = { mainWindow, sessionId, taskSource, taskRequest }
   return tool.prepare ? tool.prepare(args, context) : { execute: () => tool.execute(args, context) }
 }

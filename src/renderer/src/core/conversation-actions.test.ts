@@ -25,12 +25,12 @@ describe('getEditedConversation', () => {
 
   it('truncates after the edited message and replaces its content, keeping id and timestamp', () => {
     const edited = getEditedConversation(messages, 'u1', '改后的第一条')
-    expect(edited).toEqual([userMessage({ id: 'u1', content: '改后的第一条', timestamp: 1 })])
+    expect(edited).toEqual([userMessage({ id: 'u1', content: '改后的第一条', timestamp: 1, editRevision: 1 })])
   })
 
   it('edits the last user message without dropping it', () => {
     const only = [userMessage({ id: 'u1', content: '唯一' })]
-    expect(getEditedConversation(only, 'u1', '改后')).toEqual([userMessage({ id: 'u1', content: '改后' })])
+    expect(getEditedConversation(only, 'u1', '改后')).toEqual([userMessage({ id: 'u1', content: '改后', editRevision: 1 })])
   })
 
   it('keeps the image attachment of the edited message', () => {
@@ -43,7 +43,7 @@ describe('getEditedConversation', () => {
     expect(edited).toEqual([
       userMessage({ id: 'u1', content: '第一条' }),
       assistantMessage({ id: 'a1' }),
-      userMessage({ id: 'u2', content: '改后的第二条', timestamp: 1 })
+      userMessage({ id: 'u2', content: '改后的第二条', timestamp: 1, editRevision: 1 })
     ])
   })
 

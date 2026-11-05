@@ -6,6 +6,8 @@ export function parseAIStreamRequest(value: unknown): AIStreamRequest | null {
   const input = value as Record<string, unknown>
   if (typeof input.requestId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.requestId)) return null
   if (typeof input.systemPrompt !== 'string' || input.systemPrompt.length > 50_000) return null
+  if (input.sourceMessageId !== undefined && (typeof input.sourceMessageId !== 'string' || !input.sourceMessageId.trim() || input.sourceMessageId.length > 240 || /[\0\r\n]/.test(input.sourceMessageId))) return null
+  if (input.sourceMessageRevision !== undefined && (!input.sourceMessageId || !Number.isSafeInteger(input.sourceMessageRevision) || Number(input.sourceMessageRevision) < 0)) return null
   if (!Array.isArray(input.messages) || input.messages.length > 30) return null
 
   const messages: AIChatMessage[] = []
@@ -28,5 +30,5 @@ export function parseAIStreamRequest(value: unknown): AIStreamRequest | null {
   const characterId = typeof input.characterId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(input.characterId) ? input.characterId : undefined
 
   const sessionId = typeof input.sessionId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(input.sessionId) ? input.sessionId : undefined
-  return { requestId: input.requestId, systemPrompt: input.systemPrompt, messages, characterId, sessionId }
+  return { requestId: input.requestId, sourceMessageId: input.sourceMessageId as string | undefined, sourceMessageRevision: input.sourceMessageRevision as number | undefined, systemPrompt: input.systemPrompt, messages, characterId, sessionId }
 }

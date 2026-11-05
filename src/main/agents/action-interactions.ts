@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { containsSecret } from '../../shared/memory'
 import { validateContactActionRequest, validateContactActionResponse, type ContactActionInteraction, type ContactActionOutcome, type ContactActionResponse } from '../../shared/contact-actions'
 import type { ContactTaskStore } from '../task-center/contact-store'
+import { taskRequestPayload, TRACKED_TASK_TOOLS } from '../../shared/contact-task-requests'
 
 type StoredAction = ContactActionInteraction & { sequence: number; sourceKey: string; delivered?: boolean; executionStarted?: boolean }
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -27,11 +28,15 @@ export class ContactActions {
   offer(owner: string, sourceKey: string, raw: unknown): ContactActionInteraction {
     if (!this.store.profile(owner)) throw new Error('联系人不存在。')
     if (typeof sourceKey !== 'string' || !sourceKey || sourceKey.length > 512) throw new Error('交互事项来源无效。')
-    const request = validateContactActionRequest(raw), id = `action:${hash(JSON.stringify([owner, sourceKey]))}`
+    const request = validateContactActionRequest(raw)
+    const tracked = !!request.taskRequest && request.actions.every(action => TRACKED_TASK_TOOLS.has(action.tool))
+    if (tracked) sourceKey = `task-request:${request.taskRequest!.requestId}`
+    const id = `action:${hash(JSON.stringify([owner, sourceKey]))}`
+    const intent = (value: typeof request) => taskRequestPayload({ source: value.taskRequest!, tool: 'pending_task_action', arguments: { subject: value.subject, actions: value.actions, input: value.input } })
     return this.store.db.transaction(() => {
       if (this.store.db.prepare('SELECT 1 FROM contact_interactions WHERE id=?').get(id)) {
         const existing = this.read(owner, id)
-        if (JSON.stringify(existing.request) !== JSON.stringify(request)) throw new Error('同一请求不能替换成不同操作。')
+        if (tracked ? !existing.request.taskRequest || intent(existing.request) !== intent(request) : JSON.stringify(existing.request) !== JSON.stringify(request)) throw new Error('同一请求不能替换成不同操作。')
         return this.get(owner, id)
       }
       const record: StoredAction = { id, version: '', sequence: 1, sourceKey, characterId: owner, kind: 'action', status: 'pending', createdAt: Date.now(), topicTitle: request.title, budgets: [], request }

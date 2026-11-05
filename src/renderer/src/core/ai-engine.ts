@@ -43,12 +43,15 @@ export async function streamChat(
   if (signal?.aborted) throw createAbortError()
 
   const requestId = createRequestId()
+  const sourceMessage = messages.findLast(message => message.role === 'user')
   onRequestStart?.(requestId)
   const request: AIStreamRequest = {
     requestId,
     systemPrompt,
     characterId,
     sessionId,
+    sourceMessageId: sourceMessage?.id,
+    sourceMessageRevision: sourceMessage?.editRevision,
     messages: messages.map((message) => ({
       role: message.role,
       content: message.content,

@@ -237,6 +237,7 @@ function sanitizeMessages(value: unknown): Message[] {
       id: String(message.id || randomUUID()).slice(0, 128),
       content: String(message.content ?? ''),
       timestamp: Number.isFinite(message.timestamp) ? message.timestamp : Date.now(),
+      editRevision: message.role === 'user' && Number.isSafeInteger(message.editRevision) && message.editRevision! > 0 ? message.editRevision : undefined,
       replyCompletedAt: message.role === 'assistant' && !message.toolData && !message.responseStatus
         && String(message.content ?? '').trim() && Number.isFinite(message.replyCompletedAt) && Number(message.replyCompletedAt) > 0
         ? Number(message.replyCompletedAt) : undefined,

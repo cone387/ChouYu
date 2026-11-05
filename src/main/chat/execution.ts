@@ -22,6 +22,7 @@ import { getConfig, getCharacter, getSession, setState } from '../database'
 import type { ChatExecution } from './service'
 import type { ChatToolApprovals } from './tool-approvals'
 import { isToolEnabled } from './tool-policy'
+import { chatTaskRequestSource } from './task-request-source'
 
 function getErrorMessage(error: unknown): string { return error instanceof Error && error.message ? error.message : 'AI 请求失败，请检查 Provider 配置和网络后重试。' }
 function sendToolEvent(sender: ChatExecution['sender'], event: ToolExecutionEvent) { if (!sender.isDestroyed()) sender.send('ai:tool-event', event) }
@@ -41,6 +42,7 @@ export async function executeChat({ sender, request, requestKey, controller }: C
   if (owner && request.characterId && owner !== request.characterId) return { ok: false, error: '会话与联系人不匹配。' }
 
   if (owner) request.characterId = owner
+  const taskRequest = chatTaskRequestSource(request, request.sessionId ? getSession(request.sessionId)?.messages ?? [] : [], acceptedAt)
 
   // Freeze the choice before context preparation or intent routing can yield.
   const selectedEngine = chatHarness.engineFor(owner)
@@ -106,9 +108,9 @@ export async function executeChat({ sender, request, requestKey, controller }: C
           && (!SKILL_TOOLS.some(skill => skill.name === tool.name) || skillTools.definitions.some(skill => skill.name === tool.name))
           && (owner === DEFAULT_CHARACTER_ID || !['inspect_contacts', 'list_assistant_routines', 'save_assistant_routine'].includes(tool.name))),
         getDefinition: getRegisteredTool, getConfig, isToolEnabled, assertContext,
-        prepare: async (call, args) => SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : prepareRegisteredToolAsync(call.name, args, mainWindow, request.sessionId, undefined, `chat:${request.requestId}:${call.id}`, taskSource),
+        prepare: async (call, args) => SKILL_TOOLS.some(tool => tool.name === call.name) ? { execute: () => skillTools.executeResult(call) } : prepareRegisteredToolAsync(call.name, args, mainWindow, request.sessionId, undefined, `chat:${request.requestId}:${call.id}`, taskSource, taskRequest),
         contactPolicy: async () => owner ? (await contactAgentsCall(owner, 'get') as import('../../shared/agents').AgentOverview).settings.toolPermissionMode : undefined,
-        offerAction: (key, action) => contactAgentsCall(owner!, 'offerAction', [key, validateContactActionRequest(action)]),
+        offerAction: (key, action) => contactAgentsCall(owner!, 'offerAction', [key, validateContactActionRequest({ ...(action as object), ...(taskRequest ? { taskRequest } : {}) })]),
         approve: (call, preview) => approvals.request(sender, request.requestId, call, signal, preview),
         emit: toolEvent => sendToolEvent(sender, toolEvent)
       }) : undefined
@@ -123,7 +125,7 @@ export async function executeChat({ sender, request, requestKey, controller }: C
         submitInteraction: async (id, submission) => {
           const card = (await pendingContactInteractions(owner)).find(card => card.id === id)
           if (!card) throw new Error('该事项已处理或不属于可处理的联系人，请重新读取。')
-          return submitContactInteraction(card.characterId, id, submission, mainWindow)
+          return submitContactInteraction(card.characterId, id, submission, mainWindow, card.characterId === owner ? taskRequest : undefined)
         },
         assistant: owner === DEFAULT_CHARACTER_ID,
         read: (method, args) => dispatchContactCall(owner, method, args),

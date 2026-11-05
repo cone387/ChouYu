@@ -18,6 +18,18 @@ function fixture() {
   const request = { purpose: 'configuration', title: '修改工作时间', body: '仅修改此联系人的工作时间。', sessionId: 'chat', subject: { kind: 'contact' }, actions: [{ id: 'apply', label: '应用', tool: 'edit_contact_work_settings', arguments: { revision: store.overview('alice').revision, workStart: '20:00', workEnd: '23:00', reason: '晚上工作' } }] }
   return { store, actions, request, path }
 }
+it('deduplicates task confirmation cards by the host request across different tool calls and restart', () => {
+  const f = fixture()
+  const request = { ...f.request, taskRequest: { requestId: 'chat:one', sessionId: 'chat', text: '帮我研究这个问题', acceptedAt: 100 },
+    actions: [{ id: 'apply', label: '开始', tool: 'assign_contact_task', arguments: { description: '研究这个问题' } }] }
+  const first = f.actions.offer('alice', 'call:random-one', request)
+  const reopened = new ContactTaskStore(f.path); cleanups.push(() => reopened.close())
+  const retried = reopened.actions.offer('alice', 'call:random-two', { ...request, body: '请确认', taskRequest: { ...request.taskRequest, acceptedAt: 200 } })
+  expect(retried).toEqual(first)
+  expect(reopened.decisions.pending('alice')).toHaveLength(1)
+  expect(() => reopened.actions.offer('alice', 'call:three', { ...request, actions: [{ ...request.actions[0], arguments: { description: '另一项工作' } }] })).toThrow('不同操作')
+  expect(reopened.actions.offer('alice', 'call:four', { ...request, taskRequest: { ...request.taskRequest, requestId: 'chat:two' } }).id).not.toBe(first.id)
+})
 it('invalidates a stopped harness pending card without hiding an executing action',()=>{
  const f=fixture(),card=f.actions.offer('alice','stop',f.request)
  expect(f.actions.cancelPending('alice',card.id,card.version)).toMatchObject({status:'obsolete',result:expect.stringContaining('取消')})

@@ -17,6 +17,7 @@ import { withinWorkHours } from '../../../shared/work-settings';
 import { RunRow, failureDelay } from './types';
 import type { ContactStoreOperations } from './operations';
 interface Ports {
+  requests: Pick<import('./requests').ContactTaskRequests, 'bindRun'>
   recoveryLimits?: import('../recovery').ContactStoreRecovery['limits']
   isRestoredRun?: import('../recovery').ContactStoreRecovery['oldRun']
   feedbackLedger: Pick<import('../../agents/feedback-ledger').FeedbackLedger, 'resume'>
@@ -122,6 +123,7 @@ export class ContactScheduling {
       const withContext = { ...JSON.parse(input), taskContext: taskFeedbackSnapshot(this.db, id, topic.id) }
       const runInput = JSON.stringify(assignment ? { ...withContext, assignment: true, conversation: scheduled!.conversation || context.slice(-4000) } : withContext)
       this.db.prepare('INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input,topic_id,topic_revision) VALUES(?,?,?,\'queued\',?,?,?,?,?)').run(runId, id, profile.revision, now, now, runInput, topic.id, topic.revision)
+      this.ports.requests.bindRun(runId)
       this.ports.handoffs.bindRun(runId)
       if (assignment) this.db.prepare("UPDATE task_schedule SET pending=0,conversation='' WHERE topic_id=?").run(topic.id)
       if (revisionScope !== 'presentation' && (settings.maxConcurrentTasks ?? 1) > 1) this.db.prepare('INSERT OR IGNORE INTO task_schedule(topic_id) VALUES(?)').run(topic.id)

@@ -12,6 +12,7 @@ import { AgentDeliveries } from '../../agents/delivery';
 import { type DeliveryUpdate } from '../../../shared/agent-delivery';
 import type { ContactStoreOperations } from './operations';
 interface Ports {
+  requests: Pick<import('./requests').ContactTaskRequests, 'complete'>
   endings: Pick<import('./endings').ContactEndings, 'produced'>
   dependencies: Pick<import('../../agents/delivery-dependencies').DeliveryDependencies, 'published'>
   feedbackLedger: Pick<import('../../agents/feedback-ledger').FeedbackLedger, 'complete'>
@@ -68,6 +69,7 @@ export class ContactCompletion {
       if (run.topic_id && progress && JSON.parse(run.input).deliveryVersion === 1) this.ports.deliveries.commit(run.topic_id, report, progress, delivery)
       const committed = run.topic_id ? this.ports.deliveries.get(run.topic_id) : null
       if (committed?.runId === runId) {
+        this.ports.requests.complete(runId, committed.version)
         this.ports.feedbackLedger.complete(runId, committed.version)
         this.ports.dependencies.published(run.character_id, committed)
       }

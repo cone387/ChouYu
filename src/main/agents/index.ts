@@ -305,7 +305,7 @@ function validateMemoryBoundary(owner: string, method: string, args: unknown[]) 
     if (session?.characterId !== owner || !session.messages.some(message => message.id === source.messageId)) throw new Error('对话来源不存在或不属于此联系人。')
   }
 }
-export async function submitContactInteraction(id: string, interactionId: string, submission: import('../../shared/contact-interactions').ContactInteractionSubmission, window: BrowserWindow) {
+export async function submitContactInteraction(id: string, interactionId: string, submission: import('../../shared/contact-interactions').ContactInteractionSubmission, window: BrowserWindow, taskRequest?: import('../../shared/contact-task-requests').TaskRequestSource) {
   await ensure(); await syncContact(id)
   const card = await rpc('getInteraction', id, [interactionId])
   if (card.storageRecovery) {
@@ -318,6 +318,10 @@ export async function submitContactInteraction(id: string, interactionId: string
     broadcastChanged(id)
     return rpc('getInteraction', id, [interactionId])
   }
+  if (card.kind === 'question' && taskRequest) {
+    if (getSession(taskRequest.sessionId)?.characterId !== id) throw new Error('任务回复的会话归属无效。')
+    return contactAgentsCall(id, 'answerInteractionRequest', [interactionId, submission, taskRequest])
+  }
   if (card.kind !== 'action') return contactAgentsCall(id, 'submitInteraction', [interactionId, submission])
   await executeContactAction({
     read: () => readContactAction(id, interactionId), claim: (version, response) => contactAgentsCall(id, 'claimAction', [interactionId, version, response]),
@@ -327,7 +331,7 @@ export async function submitContactInteraction(id: string, interactionId: string
     prepare: async (option, sessionId, credential) => {
       if (getSession(sessionId)?.characterId !== id) throw new Error('原会话已删除或归属变化，此操作未执行。')
       if (!getConfig().aiToolsEnabled || getState(`tool:${option.tool}:enabled`) === 'false') throw new Error('工具已被用户禁用，此操作未执行。')
-      return prepareRegisteredToolAsync(option.tool, option.arguments, window, sessionId, credential, `action:${interactionId}`)
+      return prepareRegisteredToolAsync(option.tool, option.arguments, window, sessionId, credential, `action:${interactionId}`, card.request.taskRequest ? { text: card.request.taskRequest.text, acceptedAt: card.request.taskRequest.acceptedAt, turns: [{ text: card.request.taskRequest.text, at: card.request.taskRequest.acceptedAt }] } : undefined, card.request.taskRequest)
     }
   }, submission)
   return contactAgentsCall(id, 'getInteraction', [interactionId])
@@ -409,7 +413,7 @@ export function initializeAgents() {
     owner: sessionId => sessionId ? getSession(sessionId)?.characterId : undefined,
     prepare: (option, context) => {
       if (!getConfig().aiToolsEnabled || getState(`tool:${option.tool}:enabled`) === 'false') throw new Error('此操作工具已被禁用。')
-      return prepareRegisteredToolAsync(option.tool, option.arguments, context.mainWindow, context.sessionId, undefined, context.executionId)
+      return prepareRegisteredToolAsync(option.tool, option.arguments, context.mainWindow, context.sessionId, undefined, context.executionId, context.taskSource, context.taskRequest)
     },
     offer: (owner, key, request) => contactAgentsCall(owner, 'offerAction', [key, request])
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
@@ -513,7 +517,7 @@ export function initializeAgents() {
       await ensure(); await syncContact(id); return dispatchAgentCommand(method, id, args)
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  for (const method of ['getInteraction', 'outputPreferences', 'setOutputPreference', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'delivery', 'deliveryFeedback', 'deliveryFeedbackList', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
+  for (const method of ['getInteraction', 'outputPreferences', 'setOutputPreference', 'get', 'save', 'savePreferences', 'run', 'pause', 'detail', 'answer', 'remember', 'forget', 'commitHandoff', 'handoffs', 'handoffState', 'returnReview', 'fileList', 'readContactFile', 'contactHome', 'materialList', 'saveMaterial', 'readMaterial', 'materialHistory', 'withdrawMaterial', 'materialInventory', 'purgeMaterial', 'memoryList', 'createMemory', 'updateMemory', 'memoryHistory', 'forgetMemory', 'createTopic', 'assignTopic', 'deleteTopic', 'editTopic', 'topicStatus', 'focusTopic', 'topicDetail', 'interactions', 'taskRequests', 'delivery', 'deliveryFeedback', 'deliveryFeedbackList', 'portfolio', 'validateCitation', 'reviseCitation', 'setDeliveryFavorite', 'saveDeliveryReading', 'deliveryReading', 'reviseTopic', 'continueTopic', 'setTaskBudget', 'analytics', 'summary']) {
     contactHandle(`agents:${method}`, async (_event, id: string, ...args: unknown[]) => {
       if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('此联系人不支持持续工作。')
       validateMemoryBoundary(id, method, args)

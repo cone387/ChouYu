@@ -22,7 +22,7 @@ export function getEditedConversation(messages: Message[], userMessageId: string
   if (userMessage.role !== 'user' || userMessage.toolData || userMessage.pluginData) return null
   if (!newContent.trim()) return null
   return messages.slice(0, userIndex + 1).map((message, index) =>
-    index === userIndex ? { ...message, content: newContent } : message
+    index === userIndex ? { ...message, content: newContent, editRevision: (message.editRevision ?? 0) + 1 } : message
   )
 }
 

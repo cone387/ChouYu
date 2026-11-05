@@ -1,4 +1,5 @@
 import { endingRequestFromTool, taskEndingToolSchema } from '../tools/task-ending-source'
+import { withTaskRequestReplay } from './task-request-tools'
 import { contactCommandDispatcher, type UnknownContactDispatch } from '../task-center/command-boundary'
 import type { AgentOverview, AgentRunDetail } from '../../shared/agents'
 import { TOPIC_STATUS } from '../../shared/agents'
@@ -15,6 +16,8 @@ interface Access {
 }
 export function createContactTools(access: Access): RegisteredTool[] {
   const request = contactCommandDispatcher(access.dispatchUnknown)
+  const feedback = (context: ToolExecutionContext, tool: string, arguments_: Record<string, unknown>, id: string, values: [number, string, unknown[]]) =>
+    request('feedback', id, context.taskRequest ? [...values, { source: context.taskRequest, tool, arguments: arguments_ }] : values)
   const owner = (context: ToolExecutionContext) => {
     const id = access.owner(context.sessionId)
     if (!id || id === ASSISTANT_CHARACTER_ID) throw new Error('请在具体联系人的聊天中操作其事项。')
@@ -74,7 +77,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
       consumed = true
       if (owner(context) !== id) throw new Error('聊天归属已变化，请重新确认。')
       // The worker checks the captured revision atomically with the mutation.
-      const result = await request('feedback', id, [overview.revision, method, values]) as AgentOverview
+      const result = await feedback(context, answer ? 'answer_contact_question' : 'update_contact_topic', args, id, [overview.revision, method, values]) as AgentOverview
       if (args.action === 'delete') {
         if (result.topics.some(topic => topic.id === topicId)) throw new Error('未能确认任务已删除。')
         return { content: JSON.stringify({ saved: true, deleted: true, message: '已删除这项任务及其成果和执行历史。', workCompleted: false }), summary: '已删除任务' }
@@ -96,7 +99,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
     topicId: { type: 'string' as const, description: '从 get_contact_topics 获取的事项 ID', maxLength: 128 },
     revision: { type: 'number' as const, description: '当前事项 revision，禁止猜测' }
   }
-  return [
+  const tools: RegisteredTool[] = [
     { ...common, name: 'get_contact_topics', displayName: '读取联系人事项', risk: 'read', requiresConfirmation: false, alwaysConfirm: false,
       description: '读取当前聊天联系人的真实事项及待回复问题。只能操作当前联系人，用户指代不明确时先询问；更新前必须读取版本。',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -136,7 +139,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
           if (consumed) throw new Error('此任务已经提交，请勿重复创建。')
           consumed = true
           if (owner(context) !== id) throw new Error('聊天归属已变化，请重新发起。')
-          const result = await request('feedback', id, [overview.revision, schedule ? 'assignCalendarTopic' : 'assignTopic', schedule ? [{ ...schedule, ...(endingRequest ? { endingRequest } : {}), title: description.slice(0, 100), instruction: description, kind: 'contact-summary', enabled: true }, `用户：${description}`] : endingRequest ? [description, undefined, undefined, endingRequest] : [description]]) as AgentOverview
+          const result = await feedback(context, 'assign_contact_task', args, id, [overview.revision, schedule ? 'assignCalendarTopic' : 'assignTopic', schedule ? [{ ...schedule, ...(endingRequest ? { endingRequest } : {}), title: description.slice(0, 100), instruction: description, kind: 'contact-summary', enabled: true }, `用户：${description}`] : endingRequest ? [description, undefined, undefined, endingRequest] : [description]]) as AgentOverview
           const topic = result.topics.find(topic => !overview.topics.some(previous => previous.id === topic.id))
           if (schedule) {
             if (!topic?.calendar || !result.taskSchedule?.[topic.id]) throw new Error('未能确认日历安排已保存。')
@@ -176,7 +179,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
           if (consumed) throw new Error('本次修改已提交，请勿重复执行。')
           consumed = true
           if (owner(context) !== id) throw new Error('聊天归属已变化。')
-          const result = await request('feedback', id, [data.revision, 'editTaskFromChat', [topic.id, topic.revision, patch, args.reason]]) as AgentOverview
+          const result = await feedback(context, 'edit_contact_task', args, id, [data.revision, 'editTaskFromChat', [topic.id, topic.revision, patch, args.reason]]) as AgentOverview
           const saved = result.topics.find(t => t.id === topic.id)
           if (!saved) throw new Error('没有读取到保存后的任务。')
           return { content: JSON.stringify({ saved: true, workCompleted: false, topic: saved, message: `已保存「${saved.title}」的新要求。${['paused', 'completed', 'abandoned'].includes(saved.status) ? `任务仍为${TOPIC_STATUS[saved.status]}。` : '后续按新要求执行。'}已有成果保留。` }), summary: '任务新要求已保存' }
@@ -203,7 +206,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
           if (consumed) throw new Error('此安排已经提交。')
           consumed = true
           if (owner(context) !== id) throw new Error('聊天归属已变化。')
-          const result = await request('feedback', id, [data.revision, 'editCalendarTopic', [topic.id, topic.revision, input, args.reason]]) as AgentOverview
+          const result = await feedback(context, 'set_contact_schedule', args, id, [data.revision, 'editCalendarTopic', [topic.id, topic.revision, input, args.reason]]) as AgentOverview
           const saved = result.topics.find(t => t.id === topic.id)
           if (!saved?.calendar || saved.revision <= topic.revision) throw new Error('没有读取到保存后的安排。')
           const nextAt = result.taskSchedule?.[topic.id]?.nextAt
@@ -267,9 +270,19 @@ export function createContactTools(access: Access): RegisteredTool[] {
           if (consumed) throw new Error('此修改已提交，请勿重复执行。')
           consumed = true
           if (owner(context) !== id) throw new Error('聊天归属已变化，请重新发起。')
-          const result = await request('feedback', id, [data.revision, 'reviseTopic', [topic.id, revision, reason, undefined, 'presentation', version]]) as AgentOverview
+          const result = await feedback(context, 'revise_contact_presentation', args, id, [data.revision, 'reviseTopic', [topic.id, revision, reason, undefined, 'presentation', version]]) as AgentOverview
           return { content: JSON.stringify({ requestAccepted: true, workCompleted: false, baseVersion: version, run: result.runs?.find(r => r.topicId === topic.id), message: '样式修订已提交。尚未保存新版本，不能声称已改好；后续读取实际成果核实。' }), summary: '已提交样式修订，正文保持不变' }
         } }
       }, execute: () => { throw new Error('请先预览样式修改。') } }
   ]
+  tools.push({ source: 'builtin', risk: 'read', requiresConfirmation: false,
+    name: 'get_contact_task_requests', displayName: '读取任务请求记录',
+    description: '核对用户要求是否已保存、进入执行或已有正式成果。按原始请求关联真实轮次和成果版本；saved仅保存要求，suppliedAt仅表示携带要求取得模型响应，不证明要求已全部落实。按nextCursor分页，原文较长时给出摘要预览和完整长度；不能把排队或仅有报告当成完成。',
+    inputSchema: { type: 'object', properties: { topicId: topicProperties.topicId, cursor: { type: 'number', description: '上一页返回的nextCursor，首次省略' } }, required: ['topicId'], additionalProperties: false },
+    async execute(args, context) {
+      const page = await request('taskRequests', owner(context), [String(args.topicId), args.cursor as number | undefined])
+      return { content: JSON.stringify({ ...page, items: page.items.map(row => ({ ...row, source: { ...row.source, text: row.source.text.slice(0, 1200), characters: row.source.text.length }, attempts: row.attempts.slice(0, 3) })) }), summary: '已读取真实任务请求记录。' }
+    }
+  })
+  return tools.map(tool => withTaskRequestReplay(tool, request, access.owner))
 }

@@ -14,7 +14,7 @@ export function createInteractionTools(access: {
       const owner = access.owner(context.sessionId)
       if (!owner || !context.sessionId) throw new Error('请在具体联系人的会话中发送卡片。')
       if (typeof args.request !== 'string' || args.request.length > 100000) throw new Error('交互请求无效或过长。')
-      const request = validateContactActionRequest({ ...JSON.parse(args.request), sessionId: context.sessionId })
+      const request = validateContactActionRequest({ ...JSON.parse(args.request), sessionId: context.sessionId, taskRequest: context.taskRequest })
       const previews: string[] = []
       for (const option of request.actions) {
         const prepared = await access.prepare(option, context)

@@ -227,6 +227,7 @@ declare global {
 export type PetState = 'idle' | 'thinking' | 'talking' | 'sleeping' | 'happy'
 
 export interface Message {
+  editRevision?: number
   harnessSource?:import('../../../shared/harness').HarnessSource
   communication?: import('../../../shared/contact-communication').ContactCommunication
   agentNotice?: import('../../../shared/agents').AgentMessageRef

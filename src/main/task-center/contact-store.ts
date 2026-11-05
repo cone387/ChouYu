@@ -1,6 +1,7 @@
 import { CONTACT_TASK_SCHEMA_VERSION } from '../../shared/contact-backups'
 import { ContactCompletion } from './contact/completion';
 import { ContactEndings } from './contact/endings'
+import { ContactTaskRequests } from './contact/requests'
 import { FeedbackLedger } from '../agents/feedback-ledger';
 import { DeliveryDependencies } from '../agents/delivery-dependencies';
 import { ContactMutations } from './contact/mutations';
@@ -37,6 +38,7 @@ import { AgentDeliveries } from '../agents/delivery';
 import { ContactStoreRecovery } from './recovery'
 
 export class ContactTaskStore {
+  readonly requests: ContactTaskRequests
   readonly endings: ContactEndings
   readonly recovery: ContactStoreRecovery
   readonly completion: ContactCompletion
@@ -135,6 +137,7 @@ export class ContactTaskStore {
       this.handoffs = new AgentHandoffs(this)
       this.dependencies = new DeliveryDependencies(this)
       this.feedbackLedger = new FeedbackLedger(this)
+      this.requests = new ContactTaskRequests(this.db)
       this.memoryLibrary = new AgentMemories(this.db)
       if (version < 10) this.db.transaction(() => {
         // Scope is part of the new identity; equal text in different scopes must remain independent.
@@ -184,6 +187,7 @@ export class ContactTaskStore {
         event: this.event.bind(this)
       })
       this.scheduling = new ContactScheduling(this.db, {
+        requests: this.requests,
         recoveryLimits: this.recovery.limits.bind(this.recovery),
         isRestoredRun: this.recovery.oldRun.bind(this.recovery),
         feedbackLedger: this.feedbackLedger,
@@ -242,6 +246,7 @@ export class ContactTaskStore {
         setTaskBudget: this.setTaskBudget.bind(this)
       })
       this.completion = new ContactCompletion(this.db, {
+        requests: this.requests,
         endings: this.endings,
         dependencies: this.dependencies,
         feedbackLedger: this.feedbackLedger,

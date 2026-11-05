@@ -159,6 +159,7 @@ export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, Contact
   focusTopic(characterId: string, topicId: string): Promise<AgentOverview>
   topicDetail(characterId: string, topicId: string, cursor?: number): Promise<AgentTopicDetail>
   interactions(characterId: string, topicId: string, cursor?: number): Promise<AgentInteractionPage>
+  taskRequests(characterId: string, topicId: string, cursor?: number): Promise<import('./contact-task-requests').TaskRequestPage>
   analytics(characterId: string, query: import('./agent-analytics').AnalyticsQuery): Promise<import('./agent-analytics').AgentAnalytics>
   pause(characterId: string): Promise<AgentOverview>
   detail(characterId: string, runId: string): Promise<AgentRunDetail>

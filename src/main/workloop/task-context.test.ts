@@ -77,7 +77,7 @@ it.each((['native', 'dsh'] as const).flatMap(engine => [false, true].map(corrupt
       expect(host.store.db.prepare('SELECT MAX(version) AS version FROM delivery_versions WHERE topic_id=?').get(topicId)).toEqual({ version: 5 })
       return
     }
-    expect(host.store.overview('alice').runs[0].status).toBe('completed')
+    expect(host.store.getRun(latestRunId)?.status, host.store.getRun(latestRunId)?.error).toBe('completed')
     const planCalls = calls.filter(call => call.prompt.startsWith('为联系人的同一个事项'))
     const writeCalls = calls.filter(call => !call.prompt.startsWith('为联系人的同一个事项'))
     expect(planCalls[0].prompt).toContain(MEMORY)

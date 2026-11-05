@@ -31,7 +31,7 @@ it.each([false, true])('executes selected DSH, switches the next round and clean
     await host.request('run', identity.id)
     await vi.waitFor(() => expect(engines).toEqual(['dsh']), { timeout: 10000 })
     host.syncContact({ ...identity, backgroundHarnessEngine: 'native' })
-    await vi.waitFor(() => expect(host.store.overview(identity.id).reports).toHaveLength(1), { timeout: 30000 })
+    await vi.waitFor(() => { const current = host.store.overview(identity.id); expect(current.reports, JSON.stringify(current.runs[0])).toHaveLength(1) }, { timeout: 30000 })
     const first = host.store.overview(identity.id).runs[0]
     expect(JSON.parse(host.store.getRun(first.id)!.input).backgroundHarnessEngine).toBe('dsh')
     expect(host.store.tokens.usage(identity.id)).toMatchObject({ today: 18, estimated: 0 })
