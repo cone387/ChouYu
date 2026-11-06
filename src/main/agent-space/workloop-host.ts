@@ -23,9 +23,16 @@ import type { DshRuntimeOptions } from '../harness/contracts'
 import { ContactStorageBarrier, StorageBoundaryTimeout } from './storage-barrier'
 import { ContactBackups } from '../storage/contact-backups'
 import type { ContactBackupStatus } from '../../shared/contact-backups'
+import {ResultDesignerModule} from '../result-designer/module'
+import {ContactResultSources,type ResultSourcePort} from '../result-designer/sources'
+import type {DesignPreviewPort} from '../result-designer/preview-port'
+import {runResultDesign} from '../result-designer/workflow'
+import {createDesignModel} from '../result-designer/model'
+import {DesignBudget} from '../result-designer/budget'
+import {RESULT_DESIGNER_CHARACTER_ID,DESIGN_ENVIRONMENT_VERSION,validateTaskRef,taskKey} from '../../shared/result-design'
 
 export type { ContactIdentity } from '../contact-agent/contracts'
-export interface WorkLoopHostOptions { capacity?: number; modules?: readonly string[]; harnesses?: HarnessRegistry; dshRuntime?: DshRuntimeOptions; recoveryBudget?: import('./recovery-port').RecoveryBudgetPort }
+export interface WorkLoopHostOptions { capacity?: number; modules?: readonly string[]; harnesses?: HarnessRegistry; dshRuntime?: DshRuntimeOptions; recoveryBudget?: import('./recovery-port').RecoveryBudgetPort; designPreview?:DesignPreviewPort; assistantSources?:ResultSourcePort }
 const signature = (identity: ContactIdentity) => createHash('sha256').update(JSON.stringify({ soul: identity.soul,
   config: identity.config, searchKey: identity.searchKey, skillToolsEnabled: identity.skillToolsEnabled,
   disabledSkillTools: identity.disabledSkillTools })).digest('hex')
@@ -90,8 +97,21 @@ export class WorkLoopHost {
         activeRun: id => this.scheduler.get(id), cleanupThread: id => this.cleanupThread(id) })
       this.modules.register('workloop', owner => new WorkLoop(owner, this.store, this.runtime, this.scheduler,
         this.skillRunner, id => this.notify(id), () => this.wake(), (method, id, args) => this.request(method, id, args), modelFactory, readSkills, this.harnesses, options.recoveryBudget))
+      this.modules.register('result-designer',owner=>new ResultDesignerModule(owner,this.store,this.scheduler,async(job,signal)=>{
+        if(!options.designPreview)throw new Error('真实界面预览服务不可用。')
+        const source=this.resultSources(job.task.domain)
+        const settings=JSON.parse(this.store.profile(owner.id)!.settings) as import('../../shared/agents').AgentSettings
+        const model=createDesignModel(structuredClone(owner.identity),this.harnesses,new DesignBudget(this.store,job.runId,settings.defaultTaskTokenLimit),async()=>{
+          signal.throwIfAborted();this.store.assertLive(job.runId)
+          const current=JSON.parse(this.store.profile(owner.id)!.settings) as import('../../shared/agents').AgentSettings
+          if(!current.enabled||current.readContactDeliveries===false)throw new Error('设计师已暂停或成果读取权限已关闭。')
+          await source.read(job.source,signal)
+        })
+        await runResultDesign(job,{store:this.store.designs,source,model,preview:options.designPreview},signal)
+      },id=>this.notify(id)))
       this.modules.resolve(options.modules ?? ['workloop'])
       this.store.recover()
+      this.store.designs.recover()
       this.eventLoop.enable()
       this.timer = setInterval(() => this.tick(), 15000)
       this.backupTimer = setInterval(() => { void this.backupNow() }, 300000)
@@ -183,7 +203,7 @@ export class WorkLoopHost {
     if (contact) contact.update(identity)
     else {
       contact = new ContactAgent(identity, this.modules)
-      contact.mount((this.options.modules ?? ['workloop']).filter(id => id !== 'workloop' || identity.workLoopEnabled !== false))
+      contact.mount(identity.id===RESULT_DESIGNER_CHARACTER_ID?['result-designer']:(this.options.modules ?? ['workloop']).filter(id => id !== 'workloop' || identity.workLoopEnabled !== false))
       this.contacts.set(identity.id, contact)
       this.subscriptions.set(identity.id, this.events.subscribe(identity.id, () => this.wake()))
     }
@@ -266,6 +286,27 @@ export class WorkLoopHost {
     validateContactCommand(rawMethod, owner, rawArgs)
     const method = rawMethod, id = owner as string, args = rawArgs as unknown[]
     this.assertOpen()
+    if(method.startsWith('result')){
+      this.identity(id)
+      const task=validateTaskRef(args[0]);if(task.ownerId!==id)throw new Error('成果归属不匹配。')
+      const source=this.resultSources(task.domain),signal=new AbortController().signal
+      const latest=await source.latest(task,signal)
+      if(!latest)return method==='resultGet'?{hasUpdate:false}:Promise.reject(new Error('尚无正式成果。'))
+      this.store.designs.accept(latest,DESIGN_ENVIRONMENT_VERSION)
+      if(method==='resultAccept'){this.wake();return}
+      if(method==='resultGet'){
+        const snapshot=args[1]?await source.version?.(task,String(args[1]),signal):latest
+        if(!snapshot)throw new Error('成果版本不存在。')
+        this.wake();return {...this.store.designs.view(snapshot.ref),source:snapshot}
+      }
+      if(method==='resultRequest'){const receipt=this.store.designs.request(task,String(args[1]),String(args[2]));this.notify(id);return receipt}
+      if(method==='resultRetry'){const view=this.store.designs.view(latest.ref);const receipt=this.store.designs.retry(view.receipt!.requestId);this.notify(id);return receipt}
+      if(method==='resultRestore'){
+        const record=this.store.designs.design(String(args[1]));if(taskKey(record.task)!==taskKey(task))throw new Error('设计归属不匹配。')
+        await source.assertCurrent(record.source,'explicit',signal);const view=this.store.designs.restore(record.id);this.notify(id);return {...view,source:latest}
+      }
+      throw new Error('成果设计操作无效。')
+    }
     const recovery = this.store.recovery.identity(id)
     if (recovery) {
       if (method === 'notices') return this.store.notices.pending(id).filter(notice => !this.store.recovery.original(id).notices.includes(notice.id))
@@ -317,6 +358,11 @@ export class WorkLoopHost {
   tick() {
     if (!this.ready || this.closed || this.ticking || this.storage.blocked) return
     void this.storage.operation(() => this.tickAdmitted()).catch(error => this.faults.set('', safeAgentFailure(error)))
+  }
+  private resultSources(domain:'contact'|'assistant'):ResultSourcePort {
+    if(domain==='contact')return new ContactResultSources(this.store)
+    if(!this.options.assistantSources)throw new Error('助手成果读取服务不可用。')
+    return this.options.assistantSources
   }
   private tickAdmitted() {
     if (Date.now() >= this.nextCleanupAt) { this.nextCleanupAt = Date.now() + 15000; void this.recoverCleanup() }

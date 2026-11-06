@@ -179,7 +179,7 @@ export default function Workspace({ visible, position, onPositionChange, petStat
   const activeCharacter = characters.find((character) => character.id === activeCharacterId) ?? null
   // 自定义角色自带 Provider 配置（主进程 resolveCharacterConfig 解析），
   // 全局 AI 配置为空时也允许对话；内置角色仍依赖设置页的全局配置。
-  const customCharacterActive = Boolean(activeCharacter && !activeCharacter.builtIn)
+  const customCharacterActive = Boolean(activeCharacter && activeCharacter.id !== 'chouyu')
   // 工作区首次加载按最近更新时间排列，后续更新保留卡片位置。
   // 不要在显示层重新排序：自动保存也会修改 updatedAt。
   const openMemoryWorkspace = useCallback((focusId = '') => {

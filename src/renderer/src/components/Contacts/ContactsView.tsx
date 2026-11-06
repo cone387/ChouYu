@@ -310,7 +310,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   const assistant = characters.find((character) => character.id === DEFAULT_CHARACTER_ID)
 
   const distinctModels = useMemo(
-    () => [...new Set(characters.map((character) => character.builtIn || !character.model ? config.model : character.model).filter(Boolean))]
+    () => [...new Set(characters.map((character) => character.id === DEFAULT_CHARACTER_ID || !character.model ? config.model : character.model).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b)),
     [characters, config.model])
 
@@ -325,10 +325,10 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       .filter((character) => character.id !== ASSISTANT_CHARACTER_ID && character.id !== DEFAULT_CHARACTER_ID)
       .filter((character) => category === 'all'
         || (category === 'other' ? !character.category : character.category === category))
-      .filter((character) => modelFilter === 'all' || (character.builtIn || !character.model ? config.model : character.model) === modelFilter)
+      .filter((character) => modelFilter === 'all' || (character.id === DEFAULT_CHARACTER_ID || !character.model ? config.model : character.model) === modelFilter)
       .filter((character) => !normalized
         || character.name.toLowerCase().includes(normalized)
-        || (character.builtIn || !character.model ? config.model : character.model).toLowerCase().includes(normalized))
+        || (character.id === DEFAULT_CHARACTER_ID || !character.model ? config.model : character.model).toLowerCase().includes(normalized))
       .sort((a, b) => sort === 'tokens' || sort === 'tasks'
         ? compareMetrics(dashboard?.contacts[a.id]?.summary, dashboard?.contacts[b.id]?.summary, `${sort}-${sortDirection}`) || sortByName(a, b)
         : compareBySort(a, b, sort) * (sort === 'pinyin' ? sortDirection === 'asc' ? 1 : -1 : sortDirection === 'desc' ? 1 : -1))
@@ -340,7 +340,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
   }, [characters, query, category, modelFilter, sort, dashboard, sortDirection, config.model])
 
   const profileNameOf = useCallback((character: CharacterStats): string => {
-    const id = character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId
+    const id = character.id === DEFAULT_CHARACTER_ID ? DEFAULT_PROFILE_ID : character.providerProfileId
     if (id === DEFAULT_PROFILE_ID) return defaultServiceLabel(config)
     const profile = profiles.find((item) => item.id === id)
     return profile?.name ?? '未找到服务配置'
@@ -362,9 +362,9 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
       name: character.name,
       avatar: character.avatar,
       category: character.category,
-      soulMd: character.builtIn ? config.soulMd : character.soulMd,
-      providerProfileId: character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId,
-      model: character.builtIn ? config.model : character.model
+      soulMd: character.id === DEFAULT_CHARACTER_ID ? config.soulMd : character.soulMd,
+      providerProfileId: character.id === DEFAULT_CHARACTER_ID ? DEFAULT_PROFILE_ID : character.providerProfileId,
+      model: character.id === DEFAULT_CHARACTER_ID ? config.model : character.model
     })
   }, [profiles, config])
 
@@ -513,8 +513,8 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         {assistant && <button type="button" className="contacts-card-detail" data-contacts-card-detail={assistant.id} onClick={() => setDetail(assistant)}>详情</button>}
         </div>
         {filtered.map((character) => {
-          const model = character.builtIn || !character.model ? `跟随默认 · ${config.model}` : character.model
-          const soulSummary = summarizeSoulMd(character.builtIn ? config.soulMd : character.soulMd)
+          const model = character.id === DEFAULT_CHARACTER_ID || !character.model ? `跟随默认 · ${config.model}` : character.model
+          const soulSummary = summarizeSoulMd(character.id === DEFAULT_CHARACTER_ID ? config.soulMd : character.soulMd)
           return <div key={character.id} className="contacts-card-container">
           <button type="button" data-contacts-item={character.id}
             className="contacts-card" onClick={() => onOpenChat(character.id)}>
@@ -570,7 +570,7 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <section className="contacts-profile-details" aria-label="角色资料" hidden={detailTab === 'work'}>
           <details><summary>角色资料与模型</summary>
           <dl className="contacts-detail-fields">
-            <div><dt>模型</dt><dd>{detail.builtIn || !detail.model ? `跟随默认 · ${config.model}` : detail.model}</dd></div>
+            <div><dt>模型</dt><dd>{detail.id === DEFAULT_CHARACTER_ID || !detail.model ? `跟随默认 · ${config.model}` : detail.model}</dd></div>
             <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
             <div><dt>AI 服务</dt><dd title={`角色使用的服务连接：${profileNameOf(detail)}；模型由模型字段指定。`}>{profileNameOf(detail)}</dd></div>
             <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>

@@ -880,7 +880,7 @@ export function updateCharacter(id: string, draft: unknown, requestReason?: stri
   if (expected !== undefined && (typeof expected !== 'string' || expected !== getContactProfile(id).revision)) throw new Error('联系人资料已变化，请重新打开后修改。')
   const input = sanitizeCharacterDraft(draft && typeof draft === 'object' ? { harnessEngine: character.harnessEngine ?? 'native', backgroundHarnessEngine: character.backgroundHarnessEngine ?? 'native', ...draft } : draft)
   if (!input) throw new Error('角色名称和模型为必填项。')
-  if (character.builtIn && input.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置角色固定使用默认档案。')
+  if (character.id === DEFAULT_CHARACTER_ID && input.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置助手固定使用默认档案。')
   if (!getProviderProfiles(store.config).some((profile) => profile.id === input.providerProfileId)) {
     throw new Error('所选供应商档案不存在，请先到设置页创建。')
   }
@@ -890,7 +890,7 @@ export function updateCharacter(id: string, draft: unknown, requestReason?: stri
   const previous = { ...character }, previousConfig = store.config, previousState = store.state
   try {
     const updatedAt = Math.max(Date.now(), character.updatedAt + 1)
-    if (character.builtIn) {
+    if (character.id === DEFAULT_CHARACTER_ID) {
       Object.assign(character, { name: input.name, avatar: input.avatar, category: input.category, harnessEngine: input.harnessEngine, backgroundHarnessEngine: input.backgroundHarnessEngine, updatedAt })
       // Built-in effective fields and receipt commit together, without a second save.
       store.config = normalizeConfig({ ...store.config, soulMd: input.soulMd, model: input.model })

@@ -3,6 +3,7 @@ import type { AgentDelivery } from '../../shared/agent-delivery'
 import type { ContactTaskStore } from '../task-center/contact-store'
 
 export interface ResultSourcePort {
+  version?(task:ResultTaskRef,sourceId:string,signal:AbortSignal):Promise<ResultSourceSnapshot|null>
   read(ref: ResultSourceRef, signal: AbortSignal): Promise<ResultSourceSnapshot>
   latest(task: ResultTaskRef, signal: AbortSignal): Promise<ResultSourceSnapshot | null>
   assertCurrent(ref: ResultSourceRef, intent: 'automatic'|'explicit', signal: AbortSignal): Promise<void>
@@ -22,6 +23,12 @@ export class ContactResultSources implements ResultSourcePort {
   async latest(task: ResultTaskRef, signal: AbortSignal) {
     const topic = this.topic(task,signal), delivery = this.store.deliveries.get(task.taskId)
     return delivery?.sections.length ? contactSnapshot(task.ownerId,task.taskId,topic.title,delivery) : null
+  }
+  async version(task:ResultTaskRef,sourceId:string,signal:AbortSignal){
+    const topic=this.topic(task,signal)
+    if(!/^[1-9]\d*$/.test(sourceId))throw new Error('成果版本无效。')
+    const delivery=this.store.deliveries.get(task.taskId,Number(sourceId))
+    return delivery?.sections.length?contactSnapshot(task.ownerId,task.taskId,topic.title,delivery):null
   }
   async read(ref: ResultSourceRef, signal: AbortSignal) {
     validateSourceRef(ref); const topic = this.topic(ref,signal)

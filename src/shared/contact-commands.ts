@@ -24,6 +24,11 @@ export type DeliveryInspection = {
 
 /** Wire contract. Shared types never import service instances or Electron. */
 export type ContactCommandMap = PublicCommands & {
+  resultGet: Command<[task:import('./result-design').ResultTaskRef,sourceId?:string],import('./result-design').DesignView>
+  resultRequest: Command<[task:import('./result-design').ResultTaskRef,text:string,identity:string],import('./result-design').DesignReceipt>
+  resultRetry: Command<[task:import('./result-design').ResultTaskRef],import('./result-design').DesignReceipt>
+  resultRestore: Command<[task:import('./result-design').ResultTaskRef,designId:string],import('./result-design').DesignView>
+  resultAccept: Command<[task:import('./result-design').ResultTaskRef],void>
   answerInteractionRequest: Command<[id: string, response: import('./contact-interactions').ContactInteractionSubmission, source: import('./contact-task-requests').TaskRequestSource], ContactInteraction>
   deliveryFeedbackRequest: Command<[args: PublicCommands['deliveryFeedback']['args'], submission: import('./contact-task-requests').TaskRequestSubmission], PublicCommands['deliveryFeedback']['result']>
   getTaskRequest: Command<[submission: import('./contact-task-requests').TaskRequestSubmission], import('./contact-task-requests').TaskRequestReceipt | null>
@@ -83,6 +88,7 @@ export interface ContactRequest {
 // Arity is checked at the transport boundary. Object/business rules remain in
 // the domain repositories, including ownership and optimistic concurrency.
 const arities: Record<ContactCommandName, readonly [number, number]> = {
+  resultGet:[1,2],resultRequest:[3,3],resultRetry:[1,1],resultRestore:[2,2],resultAccept:[1,1],
   answerInteractionRequest: [3, 3],
   deliveryFeedbackRequest: [2, 2],
   getTaskRequest: [1, 1], taskRequests: [1, 2],

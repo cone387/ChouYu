@@ -43,7 +43,7 @@ export function createContactProfileTools(access: Access): RegisteredTool[] {
         applyContactProfilePatch(current, patch)
         const description = describeContactProfilePatch(patch)
         let consumed = false
-        return { preview: `${description}${patch.soulMd === undefined ? '' : `\n完整新的人设：\n${patch.soulMd || '（清空）'}`}\n${current.builtIn && patch.model !== undefined ? '此模型同时成为系统默认模型，跟随默认模型的联系人也会使用它。\n' : ''}新的资料用于后续请求，未提及字段保持不变。`, execute: async () => {
+        return { preview: `${description}${patch.soulMd === undefined ? '' : `\n完整新的人设：\n${patch.soulMd || '（清空）'}`}\n${current.characterId === 'chouyu' && patch.model !== undefined ? '此模型同时成为系统默认模型，跟随默认模型的联系人也会使用它。\n' : ''}新的资料用于后续请求，未提及字段保持不变。`, execute: async () => {
           if (consumed) throw new Error('此修改已执行，请重新发起。')
           consumed = true
           if (owner(context) !== id) throw new Error('聊天归属已变化，请重新确认。')

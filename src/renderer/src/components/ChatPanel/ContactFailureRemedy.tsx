@@ -50,9 +50,9 @@ function ModelRemedy({ owner }: { owner: string }) {
   }
   return <div className="contact-model-remedy">
     {profile && <>
-      <label className="contact-interaction-field">供应商档案<select aria-label="故障处理供应商" value={provider} disabled={busy || profile.builtIn} onChange={e => { setProvider(e.target.value); setModels([]) }}>{profile.providers.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}</select></label>
+      <label className="contact-interaction-field">供应商档案<select aria-label="故障处理供应商" value={provider} disabled={busy || (profile.characterId === 'chouyu')} onChange={e => { setProvider(e.target.value); setModels([]) }}>{profile.providers.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}</select></label>
       <label className="contact-interaction-field">模型<input aria-label="故障处理模型" value={model} maxLength={256} list={listId} disabled={busy} onChange={e => setModel(e.target.value)} placeholder="填写模型名称" /><datalist id={listId}>{models.map(value => <option value={value} key={value} />)}</datalist></label>
-      {profile.builtIn && <p>此处会修改系统默认模型，跟随默认模型的联系人也会使用它。</p>}
+      {(profile.characterId === 'chouyu') && <p>此处会修改系统默认模型，跟随默认模型的联系人也会使用它。</p>}
       <div className="contact-interaction-actions"><button type="button" disabled={busy} onClick={() => { setBusy(true); void window.electronAPI.characters.fetchModels(provider).then(result => { setModels(result.models); if (!result.ok) setError(result.message) }).catch(e => setError(String(e))).finally(() => setBusy(false)) }}>获取模型</button><button type="button" data-remedy-save-model disabled={busy} onClick={() => void save()}>保存模型选择</button></div>
     </>}
     {!profile && !error && <p role="status">正在读取模型配置…</p>}

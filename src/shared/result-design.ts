@@ -24,7 +24,14 @@ export type ResultDesignRecord = {
   id: string; version: number; task: ResultTaskRef; source: ResultSourceRef; jobId: string; requestRevision: number
   environmentVersion: string; code: ResultDesignCode; codeHash: string; createdAt: number; evidence?: DesignEvidence
 }
-export type DesignView = { receipt?: DesignReceipt; active?: ResultDesignRecord; error?: string; hasUpdate: boolean }
+export type DesignView = { receipt?: DesignReceipt; active?: ResultDesignRecord; error?: string; hasUpdate: boolean; source?: ResultSourceSnapshot }
+export interface ResultDesignAPI {
+  get(task:ResultTaskRef,sourceId?:string):Promise<DesignView>
+  request(task:ResultTaskRef,text:string,identity:string):Promise<DesignReceipt>
+  retry(task:ResultTaskRef):Promise<DesignReceipt>
+  restore(task:ResultTaskRef,designId:string):Promise<DesignView>
+  onChanged(callback:()=>void):()=>void
+}
 export type DesignEnvironment = { version: string; font: string; tokens: Record<string, string>; width: number; height: number; theme: 'light'|'dark' }
 export type PreviewAction = { kind: 'click'; target: string } | { kind: 'scroll'; y: number } | { kind: 'key'; key: 'Tab'|'Enter'|'Escape'|'ArrowDown'|'ArrowUp' }
 export type PreviewObservation = DesignObservation & { imageUrl: string; controls: { id: string; label: string }[] }

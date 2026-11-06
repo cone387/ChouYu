@@ -24,10 +24,10 @@ export const contactProfileProperties = {
 }
 export function contactProfileSnapshot(character: Character, config: AppConfig): ContactProfileSnapshot {
   const profile: CharacterDraft = { name: character.name, avatar: character.avatar, category: character.category, harnessEngine: character.harnessEngine ?? 'native', backgroundHarnessEngine: character.backgroundHarnessEngine ?? 'native',
-    soulMd: character.builtIn ? config.soulMd : character.soulMd,
-    model: character.builtIn ? config.model : character.model, providerProfileId: character.builtIn ? DEFAULT_PROFILE_ID : character.providerProfileId }
+    soulMd: character.id === 'chouyu' ? config.soulMd : character.soulMd,
+    model: character.id === 'chouyu' ? config.model : character.model, providerProfileId: character.id === 'chouyu' ? DEFAULT_PROFILE_ID : character.providerProfileId }
   const providers = getProviderProfiles(config).map(({ id, name, provider }) => ({ id, name, provider }))
-  const effectiveModel = character.builtIn || !profile.model ? config.model : profile.model
+  const effectiveModel = character.id === 'chouyu' || !profile.model ? config.model : profile.model
   const revision = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify([character.id, character.updatedAt, profile, effectiveModel, providers]))))
   return { characterId: character.id, builtIn: character.builtIn, revision, profile, effectiveModel, providers }
 }
@@ -48,7 +48,7 @@ export function validateContactProfilePatch(raw: unknown): ContactProfilePatch {
 }
 export function applyContactProfilePatch(current: ContactProfileSnapshot, raw: ContactProfilePatch): CharacterDraft {
   const patch = validateContactProfilePatch(raw), merged = { ...current.profile, ...patch }
-  if (current.builtIn && merged.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置联系人使用系统默认供应商档案。')
+  if (current.characterId === 'chouyu' && merged.providerProfileId !== DEFAULT_PROFILE_ID) throw new Error('内置联系人使用系统默认供应商档案。')
   if (!current.providers.some(p => p.id === merged.providerProfileId)) throw new Error('所选供应商档案已不存在。')
   const input = sanitizeCharacterDraft(merged)
   if (!input) throw new Error('该供应商需要填写模型名称。')

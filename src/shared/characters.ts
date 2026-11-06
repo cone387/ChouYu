@@ -1,6 +1,7 @@
 import type { AppConfig } from './config'
 import type { HarnessEngine } from './harness'
 import { DEFAULT_PROFILE_ID, getProviderProfiles, isAIConfigured } from './config'
+import { RESULT_DESIGNER_CHARACTER_ID } from './result-design'
 
 export const DEFAULT_CHARACTER_ID = 'chouyu'
 export const DEFAULT_CHARACTER_NAME = '丑鱼'
@@ -124,6 +125,12 @@ export function createDefaultCharacter(now = Date.now()): Character {
   }
 }
 
+export function createResultDesigner(now = Date.now()): Character {
+  return { id:RESULT_DESIGNER_CHARACTER_ID,name:'界面设计师',avatar:'🎨',category:'tech',
+    soulMd:'你是独立的界面设计师，负责把任务的正式成果设计成清晰、美观、易于阅读的界面。保留作者正文与来源，按内容选择合适的视觉层级、目录、排版和交互。',
+    providerProfileId:DEFAULT_PROFILE_ID,model:'',builtIn:true,backgroundHarnessEngine:'native',harnessEngine:'native',createdAt:now,updatedAt:now }
+}
+
 /** Legacy notification contact ID, retained only for migration and compatibility. */
 export const ASSISTANT_CHARACTER_ID = 'assistant'
 export const ASSISTANT_CHARACTER_NAME = '助手'
@@ -172,7 +179,7 @@ export function normalizeCharacters(value: unknown): Character[] {
   const now = Date.now()
   for (const input of items) {
     const id = typeof input.id === 'string' ? input.id.trim().slice(0, 128) : ''
-    if (!id || isDefaultCharacter(id) || isAssistantCharacter(id)) continue
+    if (!id || isDefaultCharacter(id) || isAssistantCharacter(id) || id === RESULT_DESIGNER_CHARACTER_ID) continue
     if (ids.has(id)) continue
     const draft = sanitizeCharacterDraft({ ...input, harnessEngine: input.harnessEngine === 'dsh' ? 'dsh' : 'native', backgroundHarnessEngine: input.backgroundHarnessEngine === 'dsh' ? 'dsh' : 'native' })
     if (!draft) continue
@@ -186,7 +193,12 @@ export function normalizeCharacters(value: unknown): Character[] {
     custom.push({ id, ...draft, name: characterName, builtIn: false, createdAt, updatedAt })
     if (custom.length >= MAX_CHARACTER_COUNT - 1) break
   }
-  return [defaultCharacter, ...custom]
+  const storedDesigner=items.find(item=>item.id===RESULT_DESIGNER_CHARACTER_ID)
+  const designer=createResultDesigner(now)
+  const draft=storedDesigner&&sanitizeCharacterDraft(storedDesigner)
+  return [defaultCharacter, {...designer,...(draft ?? {}),
+    createdAt:typeof storedDesigner?.createdAt==='number'?storedDesigner.createdAt:designer.createdAt,
+    updatedAt:typeof storedDesigner?.updatedAt==='number'?storedDesigner.updatedAt:designer.updatedAt}, ...custom]
 }
 
 export interface EffectiveChatConfig {
@@ -200,14 +212,14 @@ export interface EffectiveChatConfig {
 export type CharacterResolution = { ok: true; config: EffectiveChatConfig } | { ok: false; error: string }
 
 /** A blank custom persona must never borrow the dedicated assistant's identity. */
-export function resolveCharacterSoul(character: Pick<Character, 'name' | 'builtIn' | 'soulMd'> | undefined | null, config: Pick<AppConfig, 'soulMd'>): string {
+export function resolveCharacterSoul(character: (Pick<Character, 'name' | 'builtIn' | 'soulMd'> & {id?:string}) | undefined | null, config: Pick<AppConfig, 'soulMd'>): string {
   if (character?.soulMd.trim()) return character.soulMd
-  if (!character || character.builtIn) return config.soulMd
+  if (!character || character.builtIn && character.id !== RESULT_DESIGNER_CHARACTER_ID) return config.soulMd
   return `你是「${character.name}」，是与用户独立交流的联系人。按用户当前需求提供帮助，诚实说明已知信息与能力边界，不虚构个人经历。`
 }
 
 export function resolveCharacterConfig(character: Character | undefined | null, config: AppConfig): CharacterResolution {
-  if (!character || character.builtIn) {
+  if (!character || character.builtIn && character.id !== RESULT_DESIGNER_CHARACTER_ID) {
     if (!isAIConfigured(config)) {
       return { ok: false, error: '内置角色使用设置页的 AI 配置，请先完成 Base URL、API Key 和模型设置。' }
     }

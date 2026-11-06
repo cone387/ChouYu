@@ -26,7 +26,7 @@ describe('sanitizeCharacterDraft', () => {
     expect(sanitizeCharacterDraft({ name: '作者', harnessEngine: 'unknown' })).toBeNull()
     expect(sanitizeCharacterDraft({ name: '作者' })?.harnessEngine ?? 'native').toBe('native')
     const saved = normalizeCharacters([{ ...createDefaultCharacter(1), harnessEngine: 'dsh' }, { ...customCharacter, harnessEngine: 'dsh' }])
-    expect(saved.map(c => c.harnessEngine)).toEqual(['dsh', 'dsh'])
+    expect(saved.map(c => c.harnessEngine)).toEqual(['dsh', 'native', 'dsh'])
   })
   it('requires name and model and fills defaults', () => {
     expect(sanitizeCharacterDraft({ name: ' 小猫 ', model: ' m1 ', soulMd: 'x', providerProfileId: 'default' }))
@@ -88,7 +88,7 @@ describe('preset characters', () => {
     }))
     const characters = normalizeCharacters(seeded)
     expect(characters[0]?.id).toBe(DEFAULT_CHARACTER_ID)
-    expect(characters).toHaveLength(PRESET_CHARACTERS.length + 1)
+    expect(characters).toHaveLength(PRESET_CHARACTERS.length + 2)
     for (const preset of PRESET_CHARACTERS) {
       const match = characters.find((character) => character.id === preset.id)
       expect(match).toMatchObject({ name: preset.name, avatar: preset.avatar, category: preset.category, soulMd: preset.soulMd, builtIn: false })
@@ -105,26 +105,26 @@ describe('normalizeCharacters', () => {
       { id: 'c2', name: '小猫', model: 'm2', providerProfileId: 'default' }
     ])
     expect(characters[0]).toMatchObject({ id: DEFAULT_CHARACTER_ID, name: '小鱼干', avatar: '🐠', builtIn: true })
-    expect(characters.slice(1).map((c) => c.name)).toEqual(['小猫', '小猫 2'])
+    expect(characters.slice(2).map((c) => c.name)).toEqual(['小猫', '小猫 2'])
   })
   it('caps characters at the limit', () => {
     const many = Array.from({ length: MAX_CHARACTER_COUNT + 3 }, (_, index) => ({
       id: `c${index}`, name: `角色${index}`, model: 'm', providerProfileId: 'default'
     }))
-    expect(normalizeCharacters(many)).toHaveLength(MAX_CHARACTER_COUNT)
+    expect(normalizeCharacters(many)).toHaveLength(MAX_CHARACTER_COUNT + 1)
   })
   it('suffixes a custom name colliding with a renamed default, in either order', () => {
     const renamedDefault = { id: DEFAULT_CHARACTER_ID, name: '小鱼干', avatar: '🐠', model: 'ignored', providerProfileId: 'default' }
     const sameNameCustom = { id: 'c1', name: '小鱼干', model: 'm', providerProfileId: 'default' }
     const defaultLast = normalizeCharacters([sameNameCustom, renamedDefault])
-    expect(defaultLast.map((c) => c.name)).toEqual(['小鱼干', '小鱼干 2'])
+    expect(defaultLast.map((c) => c.name)).toEqual(['小鱼干', '界面设计师', '小鱼干 2'])
     const defaultFirst = normalizeCharacters([renamedDefault, sameNameCustom])
-    expect(defaultFirst.map((c) => c.name)).toEqual(['小鱼干', '小鱼干 2'])
+    expect(defaultFirst.map((c) => c.name)).toEqual(['小鱼干', '界面设计师', '小鱼干 2'])
   })
   it('returns a single default entry for non-array input', () => {
     for (const junk of [undefined, 'junk']) {
       const characters = normalizeCharacters(junk)
-      expect(characters).toHaveLength(1)
+      expect(characters).toHaveLength(2)
       expect(characters[0]).toMatchObject({ id: DEFAULT_CHARACTER_ID, builtIn: true })
       expect(characters.some(c => c.id === ASSISTANT_CHARACTER_ID)).toBe(false)
     }
@@ -188,7 +188,7 @@ describe('resolveCharacterConfig', () => {
 describe('assistant character', () => {
   it('uses ChouYu as the sole built-in assistant', () => {
     const characters = normalizeCharacters(undefined)
-    expect(characters).toHaveLength(1)
+    expect(characters).toHaveLength(2)
     expect(characters[0]).toMatchObject({ id: DEFAULT_CHARACTER_ID, builtIn: true })
     const many = Array.from({ length: MAX_CHARACTER_COUNT + 3 }, (_, index) => ({
       id: `c${index}`, name: `角色${index}`, model: 'm', providerProfileId: 'default'
@@ -203,12 +203,12 @@ describe('assistant character', () => {
       { id: ASSISTANT_CHARACTER_ID, name: '再来', model: 'm', providerProfileId: 'default' },
       { ...customCharacter }
     ])
-    expect(characters).toHaveLength(2)
-    expect(characters[1]).toMatchObject({ id: customCharacter.id, name: customCharacter.name })
+    expect(characters).toHaveLength(3)
+    expect(characters[2]).toMatchObject({ id: customCharacter.id, name: customCharacter.name })
   })
   it('does not reserve the removed assistant display name', () => {
     const characters = normalizeCharacters([{ ...customCharacter, name: '助手' }])
-    expect(characters.slice(1).map((character) => character.name)).toEqual(['助手'])
+    expect(characters.slice(2).map((character) => character.name)).toEqual(['助手'])
   })
   it('resolves the assistant live from global config with its own soul', () => {
     const resolved = resolveCharacterConfig(createAssistantCharacter(), baseConfig)
