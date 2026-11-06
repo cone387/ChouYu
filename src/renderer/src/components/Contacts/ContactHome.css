@@ -1,6 +1,11 @@
 .contact-home { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; min-width: 0; }
 .contact-home > section { min-width: 0; }
 .contact-home h3 { font-size: 15px; margin: 0 0 12px; }
+.contact-home [data-home-pending] { display: grid; gap: 12px; }
+.contact-home [data-home-pending] > h3 { margin-bottom: 0; }
+.contact-home .contact-interaction { width: 100%; box-sizing: border-box; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+.contact-home .contact-interaction p { margin: 10px 0; }
+.contact-home .contact-home-tasks .topic-list-card { height: 100%; margin-bottom: 0; border-color: var(--border); background: var(--bg-secondary); }
 .contact-home-deliveries { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .contact-home-deliveries button { width: 100%; text-align: left; padding: 14px; }
 .contact-home-deliveries p { margin: 8px 0; line-height: 1.7; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }

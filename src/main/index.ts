@@ -1,4 +1,5 @@
 import { runDshHarnessSmoke } from './smoke/dsh-harness-smoke'
+import { runContactWorkbenchSmoke } from './smoke/contact-workbench-smoke'
 import { runContactReliabilitySmoke } from './smoke/contact-reliability-smoke'
 import { runTaskRequestsSmoke } from './smoke/task-requests-smoke'
 import { runStorageScaleSmoke } from './smoke/storage-scale-smoke'
@@ -147,7 +148,9 @@ function createWindow(): void {
           const designer=await contactAgentsCall('result-designer','get')
           await contactAgentsCall('result-designer','save',[{...designer.settings,enabled:false},designer.revision])
         }
-        if (process.env.CHOUYU_SMOKE_TASK_REQUESTS === '1') {
+        if (process.env.CHOUYU_SMOKE_CONTACT_WORKBENCH === '1') {
+          await stage('contact-workbench', () => runContactWorkbenchSmoke(mainWindow!))
+        } else if (process.env.CHOUYU_SMOKE_TASK_REQUESTS === '1') {
           await stage('task-requests', () => runTaskRequestsSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_CONTACT_RELIABILITY === '1') {
           await stage('contact-reliability', () => runContactReliabilitySmoke(mainWindow!))

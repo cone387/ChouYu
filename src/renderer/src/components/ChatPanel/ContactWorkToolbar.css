@@ -26,14 +26,17 @@
 .contact-work-sheet:not([open]) { display: none; }
 
 .contact-work-dialog-tabs { flex: 1 1 100%; flex-wrap: wrap; order: 3; margin: 0; padding: 0; border: 0; min-width: 0; }
-.contact-work-tab-group { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: 100%; }
-.contact-work-tab-group > small { font-size: 10px; color: var(--text-secondary); margin: 0 4px; }
-.contact-work-tab-group:first-child button { font-weight: 600; }
 .contact-work-sheet-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 14px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
-.contact-work-sheet-heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.contact-work-sheet-heading strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .contact-work-sheet-heading button { flex-shrink: 0; }
 .contact-work-sheet-content { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0; }
 .contact-work-sheet .contact-agent-compact { margin: 0; padding: 0; border: 0; }
+.contact-work-sheet { container: contact-work-sheet / inline-size; }
+.contact-work-sheet .contact-agent-compact:not([data-selected-tab=work]) { padding: 20px; }
+.contact-work-sheet .contact-agent-compact :is(.contact-portfolio, .contact-skills, .contact-analytics) { padding: 0; }
+@container contact-work-sheet (max-width: 520px) {
+  .contact-work-sheet .contact-agent-compact:not([data-selected-tab=work]) { padding: 14px; }
+}
 .contact-work-sheet .agent-heading h3 { font-size: 14px; }
 .agent-message-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .agent-message-links button { font: inherit; font-size: 12px; color: var(--accent); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
@@ -43,8 +46,6 @@
 .agent-confirmation-card .agent-message-links { padding-top: 8px; }
 
 .contact-work-dialog-tabs .contact-work-settings-link { margin-left: auto; }
-.contact-work-sheet .agent-settings-view, .contact-work-sheet .agent-record, .contact-work-sheet .contact-agent-compact > .agent-caption, .contact-work-sheet .agent-history-filter, .contact-work-sheet .agent-history { margin-left: 20px; margin-right: 20px; }
-.contact-work-sheet .agent-settings-view { padding-bottom: 20px; }
 .contact-work-sheet .agent-task-view[hidden], .contact-work-sheet .agent-settings-view[hidden] { display: none; }
 .contact-work-sheet .topic-workspace { max-height: min(62dvh, 500px); }
 .contact-work-sheet .topic-detail-pane { max-height: min(62dvh, 500px); box-sizing: border-box; }

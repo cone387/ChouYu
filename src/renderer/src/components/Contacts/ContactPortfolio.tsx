@@ -60,11 +60,13 @@ export default function ContactPortfolio({ characterId, onOpen, initialRef, init
       <div className="topic-heading"><h4>成果集</h4><span className="agent-caption">已正式保存的作品</span></div>
       {hasUpdates && <p role="status">联系人有更新，当前列表与阅读版本保持不变。<button type="button" data-portfolio-refresh disabled={loading} onClick={() => void load()}>重新读取成果集</button></p>}
       <form className="portfolio-filters" onSubmit={e => { e.preventDefault(); setQuery(q => ({ ...q, query: search })) }}>
-        <label>搜索正文<input data-portfolio-search type="search" value={search} maxLength={1000} onChange={e => setSearch(e.target.value)} placeholder="标题或正文中的文字" /></label>
+        <div className="portfolio-search-row"><label>搜索正文<input data-portfolio-search type="search" value={search} maxLength={1000} onChange={e => setSearch(e.target.value)} placeholder="标题或正文中的文字" /></label>
         <button type="submit" disabled={loading}>搜索</button>
-        <label>任务<select value={query.topicId ?? ''} onChange={e => setQuery(q => ({ ...q, topicId: e.target.value || undefined }))}><option value="">全部任务</option>{topics.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label>
+        </div>
+        <div className="portfolio-filter-row"><label>任务<select value={query.topicId ?? ''} onChange={e => setQuery(q => ({ ...q, topicId: e.target.value || undefined }))}><option value="">全部任务</option>{topics.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label>
         <label>排序<select value={query.sort} onChange={e => setQuery(q => ({ ...q, sort: e.target.value as PortfolioQuery['sort'] }))}><option value="updated">最近更新</option><option value="name">名称</option></select></label>
         <label className="portfolio-favorite-filter"><input type="checkbox" checked={query.favoritesOnly ?? false} onChange={e => setQuery(q => ({ ...q, favoritesOnly: e.target.checked }))} />只看收藏</label>
+        </div>
       </form>
       <ol className="portfolio-list">{items.map(item => <li key={item.ref.topicId} data-portfolio-item={item.ref.topicId}>
         <button type="button" className="portfolio-open" onClick={event => { returnButton.current = event.currentTarget; setOpened(item.ref); onOpen?.(item.ref) }}>

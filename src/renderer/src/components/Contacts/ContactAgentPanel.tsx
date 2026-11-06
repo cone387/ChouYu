@@ -26,10 +26,10 @@ import type { AgentDiscussion } from './agentDiscussion'
 
 const time = (value: number) => new Date(value).toLocaleString()
 export type ContactAgentTab = 'overview' | 'work' | 'portfolio' | 'history' | 'memory' | 'materials' | 'settings' | 'analytics' | 'profile' | 'skills'
-export const CONTACT_TAB_GROUPS: { label: string; tabs: [ContactAgentTab, string][] }[] = [
-  { label: '日常', tabs: [['overview', '概览'], ['work', '任务'], ['portfolio', '成果']] },
-  { label: '个人内容', tabs: [['memory', '独立记忆'], ['materials', '资料']] },
-  { label: '工具', tabs: [['skills', '技能'], ['profile', '人设'], ['settings', '工作设置'], ['history', '工作记录'], ['analytics', '活动与消耗']] }
+export const CONTACT_TABS: [ContactAgentTab, string][] = [
+  ['overview', '概览'], ['work', '任务'], ['portfolio', '成果'],
+  ['memory', '独立记忆'], ['materials', '资料'], ['skills', '技能'],
+  ['profile', '人设'], ['settings', '工作设置'], ['history', '工作记录'], ['analytics', '活动与消耗']
 ]
 export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange, compact = false, focusRequest, onDiscuss, onChat, analyticsReset, onExpand, profile, deliveryFocus, visible: surfaceVisible = true }: {
   visible?: boolean
@@ -176,7 +176,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
     <ContactRuntimeStatus active={visible && tab !== 'profile' && tab !== 'skills'} />
     {data?.recovery && <p className="agent-caption" role="status">已从备份恢复。历史用量不完整；下方统计仅包含可核对的记录。请在原任务卡片核对资料和新增额度。</p>}
     {!compact && <div className="agent-tabs" aria-label="工作内容">
-      {CONTACT_TAB_GROUPS.map(group => <div key={group.label} className="agent-tab-group" role="group" aria-label={group.label}><span className="agent-tab-group-label">{group.label}</span>{group.tabs.filter(([id]) => id !== 'profile' || profile).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-label={`${name}的${label}`} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}</div>)}
+      {CONTACT_TABS.filter(([id]) => id !== 'profile' || profile).map(([id, label]) => <button type="button" key={id} data-agent-tab={id} aria-label={`${name}的${label}`} aria-pressed={tab === id} onClick={() => { if (id === 'analytics') { setAnalyticsTopic(undefined); resetAnalyticsFilter(n => n + 1) }; setTab(id) }}>{label}{id === 'memory' && data ? ` · ${data.memories.length}` : ''}</button>)}
       {onExpand && <button type="button" className="agent-expand" data-agent-expand aria-label="在大窗口中打开" title="在大窗口中打开" onClick={() => onExpand(tab)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg></button>}
     </div>}
     {returnToken && ['settings', 'analytics', 'skills'].includes(tab) && <button type="button" data-contact-return onClick={() => void returnToContent()}>返回原内容</button>}

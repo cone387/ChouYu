@@ -18,6 +18,24 @@ const args = packagedExecutable ? ['--disable-gpu'] : ['--disable-gpu', '.']
 const smokeUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'chouyu-smoke-'))
 const legacyStorePath = path.join(smokeUserData, 'chouyu-data.json')
 const memoryDatabasePath = path.join(smokeUserData, 'chouyu-memory.db')
+// Optional offline snapshot for the read-only workbench visual audit. Never open
+// the user's live database in the application under test.
+if (process.argv.includes('--contact-workbench') && process.env.CHOUYU_WORKBENCH_SNAPSHOT) {
+  fs.mkdirSync(path.join(smokeUserData, 'contact-agents'), { recursive: true })
+  fs.copyFileSync(process.env.CHOUYU_WORKBENCH_SNAPSHOT, path.join(smokeUserData, 'contact-agents', 'agents.db'))
+  fs.copyFileSync(path.join(path.dirname(process.env.CHOUYU_WORKBENCH_SNAPSHOT), 'checkpoints.db'), path.join(smokeUserData, 'contact-agents', 'checkpoints.db'))
+  // Disable execution in the disposable copy before Electron initializes agents.
+  // Keep the supplied snapshot and the user's live data untouched.
+  const { DatabaseSync } = require('node:sqlite')
+  const auditDatabase = new DatabaseSync(path.join(smokeUserData, 'contact-agents', 'agents.db'))
+  try {
+    for (const row of auditDatabase.prepare('SELECT character_id, settings FROM profiles').all()) {
+      const settings = { ...JSON.parse(row.settings), enabled: false }
+      auditDatabase.prepare('UPDATE profiles SET settings=? WHERE character_id=?').run(JSON.stringify(settings), row.character_id)
+    }
+    auditDatabase.exec("UPDATE runs SET status='cancelled' WHERE status IN ('running','queued','interrupted'); DELETE FROM notices;")
+  } finally { auditDatabase.close() }
+}
 fs.writeFileSync(legacyStorePath, JSON.stringify({
   version: 2,
   // Proactive messages share ChouYu's conversation now. Individual reminder tests
@@ -38,6 +56,7 @@ const nativeCapture = process.argv.includes('--native-capture')
 const env = {
   ...process.env,
   CHOUYU_SMOKE_TEST: '1',
+  CHOUYU_SMOKE_CONTACT_WORKBENCH: process.argv.includes('--contact-workbench') ? '1' : '0',
   CHOUYU_SMOKE_STORAGE_SCALE: process.argv.includes('--storage-scale') ? '1' : '0',
   CHOUYU_SMOKE_MIGRATION_FIXTURE: path.resolve(__dirname, '../tests/fixtures/ocr-sample.png'),
   CHOUYU_SMOKE_DSH: process.argv.includes('--dsh-harness') ? '1' : '0',

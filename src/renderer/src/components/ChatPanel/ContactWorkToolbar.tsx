@@ -3,7 +3,7 @@ import ContactCurrentTask from './ContactCurrentTask'
 import { useEffect, useId, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { activatePanel } from '../../core/panel-layer'
-import { CONTACT_TAB_GROUPS, ContactAgentPanel, type ContactAgentTab } from '../Contacts/ContactAgentPanel'
+import { CONTACT_TABS, ContactAgentPanel, type ContactAgentTab } from '../Contacts/ContactAgentPanel'
 import TaskIcon, { type IconName } from '../Tasks/TaskIcon'
 import './ContactWorkToolbar.css'
 import type { AgentFocusRequest } from '../../../../shared/agents'
@@ -138,12 +138,12 @@ export default function ContactWorkToolbar({ characterId, name, onClose, onChat,
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onCancel={event => { event.preventDefault(); close() }}>
       <header className="contact-work-sheet-heading" onPointerDown={event => beginGesture(event, 'move')} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
-        <strong>{name}的{tab === 'overview' ? '今日概览' : tab === 'work' ? '任务' : tab === 'portfolio' ? '成果' : tab === 'history' ? '工作记录' : tab === 'settings' ? '工作设置' : tab === 'analytics' ? '活动与消耗' : tab === 'materials' ? '资料' : tab === 'skills' ? '技能' : '记忆'}</strong>
+        <strong>{name}的{CONTACT_TABS.find(([entry]) => entry === tab)?.[1]}</strong>
       <div className="contact-work-buttons contact-work-dialog-tabs" role="group" aria-label="联系人工作内容">
-        {CONTACT_TAB_GROUPS.map(group => <div key={group.label} className="contact-work-tab-group" role="group" aria-label={group.label}><small>{group.label}</small>{group.tabs.filter(([entry]) => entry !== 'profile' || profile).map(([entry, label]) => <button key={entry} type="button" data-contact-dialog-tab={entry}
+        {CONTACT_TABS.filter(([entry]) => entry !== 'profile' || profile).map(([entry, label]) => <button key={entry} type="button" data-contact-dialog-tab={entry}
           aria-label={`${name}的${label}`} title={hint(entry)} aria-pressed={tab === entry} onClick={() => { if (entry === 'analytics') setAnalyticsReset(n => n + 1); selectFromHeader(entry) }}>
           <span>{label}</span>{badge(entry) !== undefined && <small className="contact-work-count">{badge(entry)}</small>}
-        </button>)}</div>)}
+        </button>)}
       </div>
         {onChat && <button type="button" data-agent-chat aria-label={`与${name}聊天`} onClick={() => { close(); onChat() }}>聊天</button>}
         {onReturn && <button type="button" data-contact-return aria-label={`从${name}的设置返回原事项`} onClick={onReturn}>返回原事项</button>}
