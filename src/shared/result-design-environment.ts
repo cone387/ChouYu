@@ -11,4 +11,5 @@ export const designEnvironmentInstruction=`你负责任务成果区域，不修�
 正文由宿主按 data-result-section="分节ID" 注入，每节一个容器。正文 .result-body 保留原文；只能布局、不能替换、删减或用摘要冒充。缺少容器时会附上原文。
 目录使用真实锚点或按钮滚动到分节。所有正文必须可达，禁止隐藏、裁剪、透明文字；不要用虚假统计。无需网络、第三方包、存储、父窗口或 Electron 接口。
 页面需适应375和1024宽、亮暗主题；正文宜16–19px、行长约40中文字符、清晰的行距。控件有文字名称，支持键盘和减少动画偏好。
+页面按内容自然展开，高度由宿主同步；任务详情统一负责纵向滚动。不要用 vh/dvh、固定正文高度或 overflow:auto/scroll 建立第二层纵向滚动区，不拦截滚轮。长表格可单独横向滚动。
 只生成{title,html,css,script} JSON；html为body内结构片段，css为样式，script为原生JavaScript。可通过只读 window.resultSource 访问当前正式成果。`

@@ -1,4 +1,5 @@
 .contact-portfolio { min-width: 0; }
+.portfolio-reader-toolbar { position: sticky; top: var(--portfolio-sticky-offset, 0px); z-index: 2; padding: 8px 0; background: var(--bg-primary); }
 .contact-work-sheet .contact-portfolio { padding: 16px 20px; }
 .citation-quote { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; margin: 12px 0; padding: 12px; border-left: 2px solid var(--border); font-size: 14px; line-height: 1.7; }
 .contact-citation { margin: 12px 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
@@ -14,6 +15,6 @@
 .portfolio-open span { line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .portfolio-open small { color: var(--text-secondary); }
 .portfolio-item-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; }
-.delivery-reader-scroll { max-height: min(65vh, 720px); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 12px; }
+.delivery-reader { min-width: 0; }
 .portfolio-filters input:focus, .portfolio-filters select:focus { outline: none; box-shadow: none; }
 @media (max-width: 480px) { .portfolio-filters { gap: 8px; } .portfolio-list > li { padding: 12px; } }

@@ -27,11 +27,11 @@ export function validSelectionClear(event: MessageEvent, source: Window | null, 
     return event.data.reason
   } catch { return null }
 }
-export function readingAt(ref: DeliveryRef, section: DeliverySection, scrollRatio: number): ReadingPosition {
-  const text = deliveryText(section.body)
+export function readingAt(ref: DeliveryRef, section: DeliverySection, scrollRatio: number, cached?: { text: string; hash: string }): ReadingPosition {
+  const text = cached?.text ?? deliveryText(section.body)
   // A short verified anchor also detects changes when no text is selected.
   const start = Math.min(Math.max(0, Math.floor(text.length * scrollRatio)), Math.max(0, text.length - 1)), end = Math.min(text.length, start + 120)
-  return { ref: { ...ref, sectionId: section.id }, scrollRatio, updatedAt: Date.now(), ...(text ? { anchor: { start, end, quote: text.slice(start, end), textHash: textHash(text) } } : {}) }
+  return { ref: { ...ref, sectionId: section.id }, scrollRatio, updatedAt: Date.now(), ...(text ? { anchor: { start, end, quote: text.slice(start, end), textHash: cached?.hash ?? textHash(text) } } : {}) }
 }
 /** Preserve DOM occurrence identity while accounting for Markdown's block separators. */
 export function anchorFromRenderedText(canonical: string, rendered: string, start: number, end: number): TextAnchor {

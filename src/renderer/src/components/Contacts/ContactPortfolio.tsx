@@ -1,5 +1,5 @@
 import { contactQueries } from './contactQueries'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { AgentTopic } from '../../../../shared/agents'
 import type { DeliveryRef, PortfolioItem, PortfolioQuery, TextAnchor } from '../../../../shared/contact-content'
 import ContactDeliveryReader from './ContactDeliveryReader'
@@ -17,6 +17,14 @@ export default function ContactPortfolio({ characterId, onOpen, initialRef, init
   const [hasUpdates, setHasUpdates] = useState(false), updates = useRef(0)
   const loadedQuery = useRef(''), topicSnapshot = useRef('')
   const generation = useRef(0), list = useRef<HTMLElement>(null), returnButton = useRef<HTMLButtonElement | null>(null)
+  const root = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const element = root.current, header = element?.closest('.contacts-detail')?.querySelector<HTMLElement>('.contacts-detail-topbar')
+    if (!element || !header || !opened || !active) return
+    const update = () => element.style.setProperty('--portfolio-sticky-offset', `${Math.max(0, header.offsetHeight + (parseFloat(getComputedStyle(header).top) || 0))}px`)
+    const observer = new ResizeObserver(update); observer.observe(header); update()
+    return () => { observer.disconnect(); element.style.removeProperty('--portfolio-sticky-offset') }
+  }, [Boolean(opened), active])
   const load = async (next?: string) => {
     const request = ++generation.current
     const updateAtStart = updates.current
@@ -47,7 +55,7 @@ export default function ContactPortfolio({ characterId, onOpen, initialRef, init
     return () => { alive = false; dispose() }
   }, [characterId, active])
   const topic = topics.find(t => t.id === opened?.topicId)
-  return <section className="contact-portfolio" data-contact-portfolio={characterId} aria-label="成果集">
+  return <section ref={root} className="contact-portfolio" data-contact-portfolio={characterId} aria-label="成果集">
     <section ref={list} hidden={Boolean(opened)}>
       <div className="topic-heading"><h4>成果集</h4><span className="agent-caption">已正式保存的作品</span></div>
       {hasUpdates && <p role="status">联系人有更新，当前列表与阅读版本保持不变。<button type="button" data-portfolio-refresh disabled={loading} onClick={() => void load()}>重新读取成果集</button></p>}
@@ -74,7 +82,7 @@ export default function ContactPortfolio({ characterId, onOpen, initialRef, init
       {cursor && <button type="button" disabled={loading} onClick={() => void load(cursor)}>加载更多</button>}
       <ContactFiles active={active} owner={characterId} topicId={query.topicId} />
     </section>
-    {opened && <><button type="button" data-portfolio-back onClick={() => { setOpened(null); requestAnimationFrame(() => returnButton.current?.focus({ preventScroll: true })) }}>← 返回成果集</button>
+    {opened && <><div className="portfolio-reader-toolbar"><button type="button" data-portfolio-back onClick={() => { setOpened(null); requestAnimationFrame(() => returnButton.current?.focus({ preventScroll: true })) }}>← 返回成果集</button></div>
       {topic && <ContactDeliveryReader active={active} key={`${characterId}:${opened.topicId}:${opened.version}`} characterId={characterId} topic={topic} initialRef={opened} initialAnchor={initialAnchor} />}
       {!loading && !topic && <p role="alert">任务已删除或无法读取，不能打开此成果。</p>}
     </>}

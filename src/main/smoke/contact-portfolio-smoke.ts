@@ -8,7 +8,11 @@ import { runContactCitationSmoke } from './contact-citation-smoke'
 
 /** Actual renderer, preload, worker and isolated SQLite; no production user data. */
 export async function runContactPortfolioSmoke(window: BrowserWindow, owner: string) {
-  const run = (script: string) => window.webContents.executeJavaScript(script)
+  const run = async (script: string) => {
+    try { return await window.webContents.executeJavaScript(script) }
+    catch (error) { console.error('PORTFOLIO_SCRIPT_FAILED', script.slice(0,700)); throw error }
+  }
+  const scrollContainer = "(()=>{for(let p=document.querySelector('.contact-portfolio .delivery-reader')?.parentElement;p;p=p.parentElement){if(/auto|scroll/.test(getComputedStyle(p).overflowY)&&p.clientHeight)return p}return null})()"
   const click = async (selector: string) => {
     const point = await run(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});if(!el||el.disabled)throw Error('Missing portfolio control '+${JSON.stringify(selector)});el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
     window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
@@ -32,14 +36,16 @@ export async function runContactPortfolioSmoke(window: BrowserWindow, owner: str
     await click('.portfolio-open')
     await waitForRenderer(window, 'document.querySelector(".contact-portfolio .contact-delivery")?.dataset.deliveryVersion==="2"')
     await click('.contact-portfolio .delivery-directory button:first-child')
-    const point = await run(`(()=>{const el=document.querySelector('.contact-portfolio .delivery-reader-scroll');el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
+    const point = await run(`(()=>{const el=document.querySelector('.contact-portfolio .delivery-reader');el.scrollIntoView({block:'start'});const pane=(${scrollContainer});window.__portfolioScrollStart=pane.scrollTop;const r=pane.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
     await run('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
     window.webContents.sendInputEvent({ type: 'mouseMove', ...point })
     window.webContents.sendInputEvent({ type: 'mouseWheel', deltaY: -800, deltaX: 0, ...point })
-    await waitForRenderer(window, "document.querySelector('.contact-portfolio .delivery-reader-scroll')?.scrollTop>100").catch(e => { console.error('PORTFOLIO_INITIAL_SCROLL'); throw e })
+    await waitForRenderer(window, `(${scrollContainer})?.scrollTop>window.__portfolioScrollStart+100`).catch(e => { console.error('PORTFOLIO_INITIAL_SCROLL'); throw e })
     // Closing before the debounce expires must still persist the last position.
-    await click('[data-portfolio-back]')
-    await waitForRenderer(window, '!document.querySelector(".contact-portfolio .delivery-reader-scroll")')
+    await run('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+    const back=await run("(()=>{const el=document.querySelector('[data-portfolio-back]'),r=el.getBoundingClientRect(),point={x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};if(document.elementFromPoint(point.x,point.y)!==el)throw Error('Return button obscured: '+JSON.stringify({point,hit:document.elementFromPoint(point.x,point.y)?.outerHTML}));return point})()")
+    window.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...back});window.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...back})
+    await waitForRenderer(window, '!document.querySelector(".contact-portfolio .delivery-reader")')
     await waitForRenderer(window, `(async()=>{const p=await window.electronAPI.agents.deliveryReading(${JSON.stringify(owner)},${JSON.stringify(topic.id)});return p?.ref.version===2&&p.scrollRatio>0})()`)
     const position = store.portfolio.reading(owner, topic.id)!
     if (store.portfolio.list(owner, {}).items[0].sections.filter(s => s.readHash).length !== 1) throw new Error('Unread sections were marked read')
@@ -49,13 +55,15 @@ export async function runContactPortfolioSmoke(window: BrowserWindow, owner: str
     await click('.portfolio-open')
     await waitForRenderer(window, 'Boolean(document.querySelector(".contact-portfolio [data-delivery-resume]"))')
     await click('.contact-portfolio [data-delivery-resume]')
-    await waitForRenderer(window, "document.querySelector('.contact-portfolio .delivery-reader-scroll')?.scrollTop>100").catch(async e => { console.error('PORTFOLIO_RESUME', position, await run("({text:document.querySelector('.contact-portfolio .contact-delivery')?.textContent,scroll:document.querySelector('.contact-portfolio .delivery-reader-scroll')?.scrollTop})")); throw e })
+    await waitForRenderer(window, `(${scrollContainer})?.scrollTop>100`).catch(async e => { console.error('PORTFOLIO_RESUME', position); throw e })
     const beforeVersion = await run('document.querySelector(".contact-portfolio .contact-delivery").dataset.deliveryVersion')
     write('这一版修改了海风的声音。')
     await waitForRenderer(window, 'Boolean(document.querySelector(".contact-portfolio [data-delivery-latest]"))')
     if (await run('document.querySelector(".contact-portfolio .contact-delivery").dataset.deliveryVersion') !== beforeVersion) throw new Error('Background delivery replaced the reading version')
-    await run(`dispatchEvent(new MessageEvent('message',{data:{type:'delivery-reading',nonce:'forged',ref:${JSON.stringify(position.ref)},scrollRatio:1,anchor:${JSON.stringify(position.anchor)}}}))`)
-    if (store.portfolio.reading(owner, topic.id)?.scrollRatio !== position.scrollRatio) throw new Error('Forged frame event changed reading')
+    await run("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))).then(()=>window.dispatchEvent(new Event('chouyu:contact-reader-flush')))")
+    const beforeForgery=await run(`window.electronAPI.agents.deliveryReading(${JSON.stringify(owner)},${JSON.stringify(topic.id)})`)
+    await run(`window.dispatchEvent(new MessageEvent('message',{data:{type:'delivery-reading',nonce:'forged',ref:${JSON.stringify(position.ref)},scrollRatio:1,anchor:${JSON.stringify(position.anchor)}}}))`)
+    if (store.portfolio.reading(owner, topic.id)?.scrollRatio !== beforeForgery.scrollRatio) throw new Error('Forged frame event changed reading')
     const directory = process.env.CHOUYU_SMOKE_ARTIFACTS
     if (directory) {
       mkdirSync(directory, { recursive: true })
@@ -64,9 +72,9 @@ export async function runContactPortfolioSmoke(window: BrowserWindow, owner: str
         await run(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`)
         window.webContents.enableDeviceEmulation({ screenPosition: 'desktop', screenSize: { width, height: 768 }, viewSize: { width, height: 768 }, deviceScaleFactor: 1, scale: 1, viewPosition: { x: 0, y: 0 } })
         await waitForRenderer(window, `innerWidth===${width}`)
-        await run("document.querySelector('.contact-portfolio .delivery-reader-scroll').scrollIntoView({block:'center'})")
+        await run("document.querySelector('.contact-portfolio .delivery-reader').scrollIntoView({block:'start'})")
         await run('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
-        if (!await run("(()=>{const el=document.querySelector('.contact-portfolio .delivery-reader-scroll'),r=el.getBoundingClientRect();return r.width>100&&r.left>=0&&r.right<=innerWidth&&el.scrollWidth<=el.clientWidth+2})()")) throw new Error('Reader exceeds narrow viewport')
+        if (!await run("(()=>{const el=document.querySelector('.contact-portfolio .delivery-reader'),r=el.getBoundingClientRect();return r.width>100&&r.left>=0&&r.right<=innerWidth&&el.scrollWidth<=el.clientWidth+2&&el.scrollHeight<=el.clientHeight+1})()")) throw new Error('Reader exceeds narrow viewport or has nested scrolling')
         await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
         writeFileSync(join(directory, `portfolio-reader-${theme}-${width}.png`), (await window.webContents.capturePage({ x: 0, y: 0, width, height: 768 }, { stayHidden: true, stayAwake: true })).toPNG())
       }
@@ -74,7 +82,9 @@ export async function runContactPortfolioSmoke(window: BrowserWindow, owner: str
       await window.webContents.removeInsertedCSS(stylesheet)
     }
     await click('[data-portfolio-back]')
+    await waitForRenderer(window,"!document.querySelector('.contact-portfolio .delivery-reader')&&Boolean(document.querySelector('.portfolio-filters button[type=submit]'))&&!document.querySelector('.portfolio-filters button[type=submit]').disabled")
     await run(`(()=>{const el=document.querySelector('[data-portfolio-search]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'灯塔');el.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+    await waitForRenderer(window,"!document.querySelector('.portfolio-filters button[type=submit]').disabled")
     await click('.portfolio-filters button[type=submit]')
     await waitForRenderer(window, 'document.querySelector(".portfolio-open")?.textContent.includes("灯塔")')
     await click('.portfolio-open')

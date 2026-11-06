@@ -13,6 +13,7 @@ import type { AgentDelivery } from '../../../../shared/agent-delivery'
 import type { AgentTopic } from '../../../../shared/agents'
 import { deliveryText, textHash, type ContentCitation, type DeliveryRef, type ReadingPosition, type TextAnchor } from '../../../../shared/contact-content'
 import { readingAt, restoreReading, selectedCitation, highlightAnchor } from './deliveryReading'
+import { readingScrollContainer, readingArticleBounds, readingScrollRatio, readingScrollTop } from './deliveryScroll'
 import { navigateContact } from './contactNavigation'
 import ContactFiles from './ContactFiles'
 import ContactContextReferences from './ContactContextReferences'
@@ -67,6 +68,11 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
   const readingTimer = useRef<ReturnType<typeof setTimeout>>()
   const restoring = useRef(false), alive = useRef(true)
   const scrollToPosition = useRef<ReadingPosition | null>(null)
+  const lastReadingSection = useRef('')
+  const readingContent = useMemo(() => {
+    const text = deliveryText(artifact?.sections.find(section => section.id === readingId)?.body ?? '')
+    return { text, hash: textHash(text) }
+  }, [artifact, readingId])
   const [readHashes, setReadHashes] = useState<Record<string, string>>({})
   const readingQueue = useMemo(() => new ReadingSaveQueue(position => window.electronAPI.agents.saveDeliveryReading(characterId, position), position => {
       if (alive.current) { setReadingError(''); if (position.anchor) setReadHashes(h => ({ ...h, [position.ref.sectionId!]: position.anchor!.textHash })) }
@@ -140,19 +146,37 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
     return () => { current = false }
   }, [characterId, artifact?.version, artifact?.runId, readingId, active])
   useEffect(() => { if (!active || view !== 'delivery') flushReading() }, [active, view])
+  useEffect(() => {
+    const article = bodyRef.current, section = artifact?.sections.find(item => item.id === readingId)
+    if (!article || !artifact || !section || !active || view !== 'delivery' || designVisible || loading) return
+    const scroller = readingScrollContainer(article)
+    const onScroll = (event: Event) => {
+      if (restoring.current || !event.isTrusted || !article.getClientRects().length) return
+      const ratio = readingScrollRatio(scroller.scrollTop, scroller.clientHeight, readingArticleBounds(article, scroller))
+      recordReading(readingAt({ characterId, topicId: topic.id, version: artifact.version }, section, ratio, readingContent))
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => { scroller.removeEventListener('scroll', onScroll); flushReading() }
+  }, [artifact, readingId, active, view, designVisible, loading, readingContent])
   useLayoutEffect(() => {
     const el = bodyRef.current
-    if (!el || !artifact) return
+    if (!el || !artifact || !active || view !== 'delivery' || designVisible || !el.getClientRects().length) return
     restoring.current = true
-    const position = scrollToPosition.current
-    el.scrollTop = position?.ref.version === artifact.version && position.ref.sectionId === readingId ? position.scrollRatio * (el.scrollHeight - el.clientHeight) : 0
+    const position = scrollToPosition.current, scroller = readingScrollContainer(el), key = `${artifact.version}:${readingId}`
+    if (position?.ref.version === artifact.version && position.ref.sectionId === readingId) {
+      scroller.scrollTop = readingScrollTop(position.scrollRatio, scroller.clientHeight, readingArticleBounds(el, scroller))
+      scrollToPosition.current = null
+    } else if (lastReadingSection.current && lastReadingSection.current !== key) {
+      scroller.scrollTop = readingScrollTop(0, scroller.clientHeight, readingArticleBounds(el, scroller))
+    }
+    lastReadingSection.current = key
     if (initialAnchor && plain) {
       const section = artifact.sections.find(s => s.id === readingId), container = el.querySelector<HTMLElement>('.contact-markdown')
       if (section && container) try { highlightAnchor(container, section.body, initialAnchor) } catch (e) { setCitationError(String(e)) }
     }
     const frame = requestAnimationFrame(() => { restoring.current = false })
     return () => cancelAnimationFrame(frame)
-  }, [artifact, readingId, plain, loading, initialAnchor])
+  }, [artifact, readingId, plain, loading, initialAnchor, active, view, designVisible])
   useEffect(() => {
     const restore = (event: Event) => { const location = (event as CustomEvent<import('./contactReturnLocation').ContactReturnLocation>).detail; requestAnimationFrame(() => { if (readerRoot.current?.getClientRects().length && readerRoot.current.closest<HTMLElement>('[data-contact-work-surface]')?.dataset.contactWorkSurface === location.surfaceId && location.handoff && location.delivery?.ref.characterId === characterId && location.delivery.ref.topicId === topic.id && location.delivery.ref.version === artifact?.version) setHandoff(true) }) }
     window.addEventListener('chouyu:contact-return', restore); return () => window.removeEventListener('chouyu:contact-return', restore)
@@ -182,11 +206,7 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       {readingError && <p role="alert">{readingError}<button type="button" onClick={flushReading}>重试保存位置</button></p>}
       <ResultDesignView task={{domain:"contact",ownerId:characterId,taskId:topic.id}} sourceId={String(artifact.version)} active={active && view === "delivery"} forcePlain={plain} onModeChange={value=>{setDesignVisible(value);if(value)setPlain(false)}}>
       <nav className="delivery-directory" aria-label="成果目录">{artifact.sections.map(section => <button type="button" key={section.id} aria-pressed={readingId === section.id} onClick={() => { flushReading(); scrollToPosition.current = null; setReadingId(section.id); recordReading(readingAt({ characterId, topicId: topic.id, version: artifact.version }, section, 0)); onNavigate?.({ characterId, topicId: topic.id, version: artifact.version, sectionId: section.id }) }}>{section.title}{readHashes[section.id] ? readHashes[section.id] === textHash(deliveryText(section.body)) ? ' · 已读' : ' · 已修改' : ' · 未读'}</button>)}</nav>
-      {artifact.sections.filter(section => section.id === readingId).map(section => <article ref={bodyRef} className="delivery-reader delivery-reader-scroll" key={section.id} aria-label={section.title} tabIndex={0} onScroll={event => {
-        if (restoring.current || !active || view !== 'delivery' || !event.isTrusted) return
-        const el = event.currentTarget, ratio = el.scrollHeight > el.clientHeight ? el.scrollTop / (el.scrollHeight - el.clientHeight) : 0
-        recordReading(readingAt({ characterId, topicId: topic.id, version: artifact.version }, section, Math.max(0, Math.min(1, ratio))))
-      }}><h5>{section.title}</h5><ContactOutput body={section.body} descriptor={section.output} preferences={outputPreferences} />{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><ContactMaterialLink href={source.url}>[{i + 1}] {source.title}</ContactMaterialLink></li>)}</ol></details> : null}</article>)}
+      {artifact.sections.filter(section => section.id === readingId).map(section => <article ref={bodyRef} className="delivery-reader" key={section.id} aria-label={section.title} tabIndex={0}><h5>{section.title}</h5><ContactOutput body={section.body} descriptor={section.output} preferences={outputPreferences} />{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><ContactMaterialLink href={source.url}>[{i + 1}] {source.title}</ContactMaterialLink></li>)}</ol></details> : null}</article>)}
       </ResultDesignView>
       <details><summary>版本与导出</summary>
       <div className="agent-actions">

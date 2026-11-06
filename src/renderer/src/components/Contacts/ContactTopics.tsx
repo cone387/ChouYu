@@ -2,7 +2,7 @@ import { contactQueries } from './contactQueries'
 import { endingState, taskEndingFacts } from '../../../../shared/task-ending'
 import ContactInteractionCard from '../ChatPanel/ContactInteractionCard'
 import { calendarScheduleLabel } from '../../../../shared/calendar-schedule'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode } from 'react'
 import ContactTaskRunButton from './ContactTaskRunButton'
 import { contactTaskExecution } from './contactTaskExecution'
 import { AGENT_STATUS, TOPIC_STATUS, type AgentOverview, type AgentTopic, type AgentTopicDetail } from '../../../../shared/agents'
@@ -24,6 +24,7 @@ import ResultDesignView from './ResultDesignView'
 import ContactTaskRequestLog from './ContactTaskRequestLog'
 import type { AssistantRoutineHistoryPage } from '../../../../shared/assistant-routines'
 import { navigateContact } from './contactNavigation'
+import { readingScrollContainer } from './deliveryScroll'
 
 const researchable = (topic: AgentTopic) => ['planned', 'researching', 'needs_evidence'].includes(topic.status)
 const tabs = [['overview', '概览'], ['stages', '阶段计划'], ['delivery', '任务成果'], ['interactions', '互动记录'], ['history', '历史记录']] as const
@@ -61,8 +62,18 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const [showSettings, setShowSettings] = useState(false)
   const [runAction, setRunAction] = useState<'start' | 'pause' | null>(null)
   const scrollPane = useRef<HTMLDivElement>(null)
-  useEffect(() => { scrollPane.current?.scrollTo(0, 0) }, [tab])
   const [selected, setSelected] = useState(data.focusTopicId ?? data.topics[0]?.id ?? '')
+  const tabScrollPositions = useRef(new Map<string, number>())
+  const scrollKey = `${characterId}:${selected}:${tab}`
+  useLayoutEffect(() => {
+    const pane = scrollPane.current
+    if (!pane || !active) return
+    const scroller = readingScrollContainer(pane, true), saved = tabScrollPositions.current.get(scrollKey)
+    if (saved !== undefined || scroller === pane) scroller.scrollTop = saved ?? 0
+    const remember = () => tabScrollPositions.current.set(scrollKey, scroller.scrollTop)
+    scroller.addEventListener('scroll', remember, { passive: true })
+    return () => scroller.removeEventListener('scroll', remember)
+  }, [scrollKey, active])
   const [mobileDetail, setMobileDetail] = useState(Boolean(focusRequest))
   useEffect(() => { if (focusRequest) { setSelected(focusRequest.topicId); setMobileDetail(true) } }, [focusRequest])
   const [detail, setDetail] = useState<AgentTopicDetail | null>(null)
@@ -192,7 +203,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       </div>
         </> : <p className="agent-caption">选择任务后查看</p>}
       </aside>
-      <div className="topic-detail-pane" key={selected}>
+      <div className="topic-detail-pane" data-topic-view={tab} key={selected}>
         {!selectedItem && <div className="topic-content-scroll"><header className="topic-content-header"><div className="topic-title-group">{stageToggle}<h4>任务详情</h4></div></header><p className="agent-empty">{selected ? '任务已删除或不存在，请从列表选择其他任务。' : '选择或新建任务，在这里查看进度与成果。'}</p></div>}
     {selectedItem && <>
       <div className="topic-floating-action" data-running={selectedItem.running || undefined}>

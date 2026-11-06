@@ -190,6 +190,8 @@
 .topic-floating-action { position: absolute; top: 16px; right: 24px; z-index: 2; display: flex; align-items: center; gap: 6px; }
 .contact-agent .topic-floating-action button { box-shadow: 0 3px 12px color-mix(in srgb, var(--text-primary) 16%, transparent); }
 .topic-floating-action[data-running] > button:first-child { font-variant-numeric: tabular-nums; }
+.topic-detail-pane[data-topic-view=delivery] > .topic-floating-action { position: static; flex: none; flex-wrap: wrap; justify-content: flex-end; padding: 12px 20px; border-bottom: 1px solid var(--border); }
+.topic-detail-pane[data-topic-view=delivery] .topic-content-header { padding: 16px 0 12px; }
 @container (max-width: 640px) {
   .topic-floating-action { position: static; flex: none; flex-wrap: wrap; padding: 12px 16px 0; }
   .topic-floating-action > button { flex: 1 0 auto; }

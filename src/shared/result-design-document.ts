@@ -30,6 +30,26 @@ export function resultDesignDocument(snapshot:ResultSourceSnapshot,input:ResultD
  const failed=()=>parent.postMessage({type:'result-design-error',source:${json(snapshot.ref)},nonce:${json(nonce)}},'*');
  addEventListener('error',failed);addEventListener('unhandledrejection',failed);
  const script=document.createElement('script');script.nonce=${json(nonce)};script.textContent=code.script;document.body.append(script);
+ if(parent!==window){
+  // The task pane owns vertical scrolling. Measure intrinsic content, not the
+  // iframe viewport (scrollHeight would prevent the frame from shrinking).
+  const hostStyle=document.createElement('style');hostStyle.textContent='html,body{height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important}html{overflow:hidden!important}';document.head.append(hostStyle);
+  let pending=false,lastHeight=0,lastWidth=0,stopped=false;
+  const changes=[];
+  const reportSize=()=>{if(pending||stopped)return;pending=true;requestAnimationFrame(()=>{pending=false;
+   const nested=[root,...root.querySelectorAll('*')].some(el=>{const style=getComputedStyle(el);return el.getClientRects().length&&/(auto|scroll)/.test(style.overflowY)&&el.scrollHeight>el.clientHeight+1});
+   const height=Math.ceil(Math.max(document.body.getBoundingClientRect().height,root.offsetTop+root.scrollHeight+parseFloat(getComputedStyle(document.body).paddingBottom)));
+   if(nested){stopped=true;observer.disconnect();mutations.disconnect();failed();return}
+   if(height!==lastHeight){const now=performance.now(),width=document.body.getBoundingClientRect().width,animating=document.getAnimations().some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime));
+    if(width!==lastWidth||animating||Math.abs(innerHeight-lastHeight)>2)changes.length=0;
+    else changes.push(now);
+    while(changes.length&&changes[0]<now-1000)changes.shift();if(changes.length>20){stopped=true;observer.disconnect();mutations.disconnect();failed();return}
+    lastWidth=width;lastHeight=height;parent.postMessage({type:'result-design-size',source:data.ref,height},'*')}
+  })};
+  const observer=new ResizeObserver(reportSize);observer.observe(document.body);observer.observe(root);reportSize();
+  const mutations=new MutationObserver(reportSize);mutations.observe(root,{subtree:true,attributes:true,childList:true,characterData:true});
+  addEventListener('keydown',event=>{if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.target.closest?.('input,textarea,select,button,a,[contenteditable="true"],[role="textbox"]'))return;const key=event.key;if(!['PageDown','PageUp','Home','End',' '].includes(key))return;event.preventDefault();parent.postMessage({type:'result-design-scroll',source:data.ref,key,shift:event.shiftKey},'*')});
+ }
  setTimeout(()=>parent.postMessage({type:'result-design-ready',source:${json(snapshot.ref)}},'*'),0);
 })();</script></body></html>`
 }
