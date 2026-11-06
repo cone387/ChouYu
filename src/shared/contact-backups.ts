@@ -1,5 +1,5 @@
 export interface ContactBackupFile { schema: number; bytes: number; sha256: string }
-export const CONTACT_TASK_SCHEMA_VERSION = 22
+export const CONTACT_TASK_SCHEMA_VERSION = 23
 export interface ContactBackupManifest {
   format: 1
   id: string

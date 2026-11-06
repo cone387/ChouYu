@@ -37,7 +37,10 @@ import { AgentNotices } from '../agents/notices';
 import { AgentDeliveries } from '../agents/delivery';
 import { ContactStoreRecovery } from './recovery'
 
+import { ResultDesignStore } from '../result-designer/store'
+
 export class ContactTaskStore {
+  readonly designs: ResultDesignStore
   readonly requests: ContactTaskRequests
   readonly endings: ContactEndings
   readonly recovery: ContactStoreRecovery
@@ -138,6 +141,7 @@ export class ContactTaskStore {
       this.dependencies = new DeliveryDependencies(this)
       this.feedbackLedger = new FeedbackLedger(this)
       this.requests = new ContactTaskRequests(this.db)
+      this.designs = new ResultDesignStore(this.db)
       this.memoryLibrary = new AgentMemories(this.db)
       if (version < 10) this.db.transaction(() => {
         // Scope is part of the new identity; equal text in different scopes must remain independent.
