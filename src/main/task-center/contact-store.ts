@@ -142,6 +142,14 @@ export class ContactTaskStore {
       this.feedbackLedger = new FeedbackLedger(this)
       this.requests = new ContactTaskRequests(this.db)
       this.designs = new ResultDesignStore(this.db)
+      this.db.exec(`CREATE TRIGGER IF NOT EXISTS delete_topic_result_design AFTER DELETE ON topics BEGIN
+        DELETE FROM result_design_active WHERE source_key IN (SELECT key FROM result_design_sources WHERE task_key=json_array('contact',OLD.character_id,OLD.id));
+        DELETE FROM result_design_versions WHERE task_key=json_array('contact',OLD.character_id,OLD.id);
+        DELETE FROM result_design_jobs WHERE task_key=json_array('contact',OLD.character_id,OLD.id);
+        DELETE FROM result_design_submissions WHERE task_key=json_array('contact',OLD.character_id,OLD.id);
+        DELETE FROM result_design_requests WHERE task_key=json_array('contact',OLD.character_id,OLD.id);
+        DELETE FROM result_design_sources WHERE task_key=json_array('contact',OLD.character_id,OLD.id);
+      END;`)
       this.memoryLibrary = new AgentMemories(this.db)
       if (version < 10) this.db.transaction(() => {
         // Scope is part of the new identity; equal text in different scopes must remain independent.
@@ -250,6 +258,7 @@ export class ContactTaskStore {
         setTaskBudget: this.setTaskBudget.bind(this)
       })
       this.completion = new ContactCompletion(this.db, {
+        designs: this.designs,
         requests: this.requests,
         endings: this.endings,
         dependencies: this.dependencies,

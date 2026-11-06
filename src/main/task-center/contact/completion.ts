@@ -11,7 +11,10 @@ import { AgentNotices } from '../../agents/notices';
 import { AgentDeliveries } from '../../agents/delivery';
 import { type DeliveryUpdate } from '../../../shared/agent-delivery';
 import type { ContactStoreOperations } from './operations';
+import { contactSnapshot } from '../../result-designer/sources'
+import { DESIGN_ENVIRONMENT_VERSION } from '../../../shared/result-design'
 interface Ports {
+  designs: import('../../result-designer/store').ResultDesignStore
   requests: Pick<import('./requests').ContactTaskRequests, 'complete'>
   endings: Pick<import('./endings').ContactEndings, 'produced'>
   dependencies: Pick<import('../../agents/delivery-dependencies').DeliveryDependencies, 'published'>
@@ -72,6 +75,8 @@ export class ContactCompletion {
         this.ports.requests.complete(runId, committed.version)
         this.ports.feedbackLedger.complete(runId, committed.version)
         this.ports.dependencies.published(run.character_id, committed)
+        if (committed.sections.length && run.topic_id) this.ports.designs.accept(
+          contactSnapshot(run.character_id,run.topic_id,this.ports.topics.get(run.character_id,run.topic_id).title,committed),DESIGN_ENVIRONMENT_VERSION)
       }
       if (delivery?.fileIds?.length) {
         if (!committed || committed.runId !== runId || !run.topic_id) throw new Error('工作文件尚无对应的正式成果。')

@@ -21,6 +21,7 @@ import { taskState } from '../../shared/task-state'
 import type { ContactOutputPreferenceRecord } from '../../shared/contact-output'
 import { taskCenter } from '../task-center/service'
 import { createAssistantDomain, type AssistantTaskCommands } from '../task-center/assistant-domain'
+import { routineSourceEvent, RESULT_SOURCE_OUTBOX } from '../result-designer/source-events'
 
 async function assistantOutputPreferences() {
   const records = await contactAgentsCall(DEFAULT_CHARACTER_ID, 'outputPreferences') as ContactOutputPreferenceRecord[]
@@ -143,7 +144,11 @@ export function initializeAssistantRoutines() {
     changed: notifyAssistantExecution,
     delivered: receipt => Boolean(getState(`reminder-receipt:${receipt}`)),
     commit: (value, history) => {
-      commitApplicationState({ 'assistant-routines-v1': value, [`assistant-routine-history:${history.id}`]: history.value })
+      const event = routineSourceEvent(value,history.id,history.value)
+      const outbox = JSON.parse(getState(RESULT_SOURCE_OUTBOX) || '{}')
+      if (event) outbox[history.id] = event
+      commitApplicationState({ 'assistant-routines-v1': value, [`assistant-routine-history:${history.id}`]: history.value,
+        [RESULT_SOURCE_OUTBOX]:JSON.stringify(outbox) })
       notifyAssistantExecution()
     },
     readHistory: id => getState(`assistant-routine-history:${id}`),
