@@ -89,7 +89,7 @@ export class ContactScheduling {
     }
     for (const id of this.ports.heartbeatRows.keys()) if (!seen.has(id)) this.ports.heartbeatRows.delete(id)
   }
-  createRun(id: string, context: string, now = Date.now(), topicId?: string, revisionScope?: 'presentation'): string {
+  createRun(id: string, context: string, now = Date.now(), topicId?: string): string {
     return this.db.transaction(() => {
       const profile = this.ports.profile(id)
       if (!profile) throw new Error('请先在聊天中交付任务。')
@@ -101,15 +101,15 @@ export class ContactScheduling {
       }
       if (!selected) throw new Error('请先选择一个要持续推进的事项。')
       const topic = this.ports.topics.get(id, selected)
-      if (!canResearch(topic.status) && revisionScope !== 'presentation') throw new Error('当前事项已暂停或结束，请继续此事项或选择其他事项。')
+      if (!canResearch(topic.status)) throw new Error('当前事项已暂停或结束，请继续此事项或选择其他事项。')
       // Task goals replace the removed work-direction field, including legacy profiles.
       const settings = validateAgentSettings({ ...JSON.parse(profile.settings), goal: topic.goal })
       const recovery = this.ports.recoveryLimits?.(id, topic.id)
       if (recovery) settings.dailyCalls = recovery.dailyCalls
       if (this.ports.callCount(id, now) >= settings.dailyCalls) throw new Error('今日模型调用已达上限，明天再试或调整上限。')
       const scheduled = this.ports.scheduled(id).find(task => task.topic_id === topic.id)
-      const assignment = Boolean(scheduled?.pending && revisionScope !== 'presentation')
-      const needed = (revisionScope === 'presentation' ? 1 : agentUsesPlanner(settings) ? 2 : 1) + (assignment ? 1 : 0)
+      const assignment = Boolean(scheduled?.pending)
+      const needed = (agentUsesPlanner(settings) ? 2 : 1) + (assignment ? 1 : 0)
       if (this.ports.callCount(id, now) + needed > settings.dailyCalls) throw new Error(`联系人今日资源不足：已用 ${this.ports.callCount(id, now)}/${settings.dailyCalls} 次，本轮需预留 ${needed} 次（规划与执行）。可等明日恢复或调整联系人资源上限。`)
       this.ports.assertTaskBudget(id, topic.id, needed)
       const runId = randomUUID()
@@ -118,15 +118,15 @@ export class ContactScheduling {
       const baselineRun = this.db.prepare('SELECT topic_revision FROM runs WHERE id=?').get(previous[0]?.runId ?? '') as { topic_revision: number } | undefined
       const candidate = this.db.prepare('SELECT * FROM runs WHERE character_id=? AND topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(id, topic.id) as RunRow | undefined
       const last = candidate && !this.ports.isRestoredRun?.(id, candidate.id) ? candidate : undefined
-      const feedback = last?.status === 'failed' && JSON.parse(last.input).revisionScope !== 'presentation' ? [JSON.parse(last.input).feedback, last.answer ? `对问题「${last.question}」的回复：${last.answer}` : ''].filter(Boolean).join('\n').slice(0, 4000) : undefined
-      const input = JSON.stringify({ revisionScope, revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.ports.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: selectedMemories.items, contextReferences: { memories: selectedMemories.items.map(m => ({ id: m.id, revision: m.revision })) }, memoriesTruncated: selectedMemories.truncated, previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(-4000) })
+      const feedback = last?.status === 'failed' ? [JSON.parse(last.input).feedback, last.answer ? `对问题「${last.question}」的回复：${last.answer}` : ''].filter(Boolean).join('\n').slice(0, 4000) : undefined
+      const input = JSON.stringify({ revisionSectionId: last?.status === 'failed' ? JSON.parse(last.input).revisionSectionId : undefined, deliveryVersion: 1, delivery: this.ports.deliveries.context(topic.id), feedback, researchVersion: 1, baseline: previous[0] && !feedback ? { evidence: previous[0].evidence.map(e => ({ url: e.url, hash: e.hash })), topicRevision: (baselineRun?.topic_revision ?? -1) + 1 } : undefined, settings, topic, memories: selectedMemories.items, contextReferences: { memories: selectedMemories.items.map(m => ({ id: m.id, revision: m.revision })) }, memoriesTruncated: selectedMemories.truncated, previous: previous.map(r => ({ title: r.title, body: r.body.slice(0, 2000), nextStep: r.nextStep })), conversation: context.slice(-4000) })
       const withContext = { ...JSON.parse(input), taskContext: taskFeedbackSnapshot(this.db, id, topic.id) }
       const runInput = JSON.stringify(assignment ? { ...withContext, assignment: true, conversation: scheduled!.conversation || context.slice(-4000) } : withContext)
       this.db.prepare('INSERT INTO runs(id,character_id,revision,status,created_at,updated_at,input,topic_id,topic_revision) VALUES(?,?,?,\'queued\',?,?,?,?,?)').run(runId, id, profile.revision, now, now, runInput, topic.id, topic.revision)
       this.ports.requests.bindRun(runId)
       this.ports.handoffs.bindRun(runId)
       if (assignment) this.db.prepare("UPDATE task_schedule SET pending=0,conversation='' WHERE topic_id=?").run(topic.id)
-      if (revisionScope !== 'presentation' && (settings.maxConcurrentTasks ?? 1) > 1) this.db.prepare('INSERT OR IGNORE INTO task_schedule(topic_id) VALUES(?)').run(topic.id)
+      if ((settings.maxConcurrentTasks ?? 1) > 1) this.db.prepare('INSERT OR IGNORE INTO task_schedule(topic_id) VALUES(?)').run(topic.id)
       this.db.prepare('UPDATE profiles SET next_at=? WHERE character_id=? AND focus_topic_id=?').run(now + settings.intervalMinutes * 60000, id, topic.id)
       this.db.prepare('UPDATE task_schedule SET next_at=? WHERE topic_id=?').run(now + settings.intervalMinutes * 60000, topic.id)
       this.ports.event(runId, 'queued', `已安排事项「${topic.title}」的本轮工作。`, now)

@@ -224,14 +224,14 @@ describe('contact chat routing and receipts', () => {
     expect(f.execute.mock.calls[0]![0]).toMatchObject({ name: 'edit_contact_task' })
     expect(JSON.parse((f.execute.mock.calls[0] as any)[0].arguments)).toEqual({ topicId: 't', revision: 4, reason: '一次汇报一个就行了，可以吗', ...patch })
   })
-  it.each(['pause', 'continue', 'revise', 'answer', 'presentation'])('routes %s using actual persisted identity', async action => {
+  it.each(['pause', 'continue', 'revise', 'answer', 'design'])('routes %s using actual persisted identity', async action => {
     const f = fixture({ kind: 'action', topicId: 't', action, runId: 'r', targetText: '' })
     if (action === 'continue') f.data.runs = []
     await f.run(action === 'continue' ? '继续吧' : '我的明确要求')
     const call = (f.execute.mock.calls[0] as any)[0], args = JSON.parse(call.arguments)
     expect(args).toMatchObject({ topicId: 't', revision: 4 })
     if (action === 'answer') expect(args.answer).toBe('我的明确要求')
-    if (action === 'presentation') expect(args.deliveryVersion).toBe(7)
+    if (action === 'design') expect(args.deliveryVersion).toBe(7)
   })
   it.each(['普通讨论', '不需要修改', '引用别人说：暂停任务', '进度如何', '新建一个其他任务'])('does not mutate when classified as ordinary chat: %s', async message => {
     const f = fixture({ kind: 'none' }); expect(await f.run(message)).toBeUndefined(); expect(f.execute).not.toHaveBeenCalled()

@@ -178,7 +178,7 @@ export class ContactQueries {
       if (!failure || failure.failures < 3) return []
       const run = this.getRun(failure.run_id)
       const latest = this.db.prepare('SELECT id FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(topic.id) as { id: string } | undefined
-      if (!run || latest?.id !== run.id || run.status !== 'failed' || topic.revision !== run.topic_revision || JSON.parse(run.input).revisionScope === 'presentation') return []
+      if (!run || latest?.id !== run.id || run.status !== 'failed' || topic.revision !== run.topic_revision) return []
       if (!this.scheduled(id).some(task => task.topic_id === topic.id) && profile.focus_topic_id !== topic.id) return []
       const delay = providerRecoveryDelay(run.error, failure.failures, settings.paceWriting ? settings.intervalMinutes : 0)
       const input = JSON.parse(run.input)
@@ -197,7 +197,6 @@ export class ContactQueries {
   runnable(): RunRow[] { return this.db.prepare("SELECT * FROM runs WHERE status IN ('queued','interrupted') OR (status='waiting' AND json_extract(input,'$.questionBoundaryRequested')=1) ORDER BY created_at").all() as RunRow[] }
   callsNeededToResume(runId: string): 1 | 3 | 2 {
     const run = this.getRun(runId)!, input = JSON.parse(run.input)
-    if (input.revisionScope === 'presentation') return 1
     const planned = agentUsesPlanner(input.settings)
     if (input.assignment && !input.brief) return planned ? 3 : 2
     return planned && !this.research(runId) ? 2 : 1

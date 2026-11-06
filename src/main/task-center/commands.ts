@@ -74,7 +74,7 @@ export class ContactTaskCommands {
             if (!this.context.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
             this.checkSearch(id)
           }
-          return saveDeliveryFeedback(this.store, id, values[0] as string, values[1] as number, values[2] as number, values[3] as string, values[4] as string, this.context.identity(id).conversation, values[5] as string, values[6] as import('../../shared/contact-content').ContentCitation | undefined, values[7] as 'content' | 'presentation' | undefined)
+          return saveDeliveryFeedback(this.store, id, values[0] as string, values[1] as number, values[2] as number, values[3] as string, values[4] as string, this.context.identity(id).conversation, values[5] as string, values[6] as import('../../shared/contact-content').ContentCitation | undefined, values[7] as 'content' | undefined)
         }
         let result: ReturnType<typeof save> | undefined
         this.store.requests.apply(id, submission, () => {
@@ -151,7 +151,7 @@ export class ContactTaskCommands {
           if (!this.context.identity(id).config) throw new Error('请先为联系人配置可用的模型。')
           this.checkSearch(id)
         }
-        const result = saveDeliveryFeedback(this.store, id, args[0] as string, args[1] as number, args[2] as number, args[3] as string, args[4] as string, this.context.identity(id).conversation, args[5] as string, args[6] as import('../../shared/contact-content').ContentCitation | undefined, args[7] as 'content' | 'presentation' | undefined)
+        const result = saveDeliveryFeedback(this.store, id, args[0] as string, args[1] as number, args[2] as number, args[3] as string, args[4] as string, this.context.identity(id).conversation, args[5] as string, args[6] as import('../../shared/contact-content').ContentCitation | undefined, args[7] as 'content' | undefined)
         this.context.changed(id); if (args[3] === 'revise') this.context.tick(); return contactCommandResult('deliveryFeedback', result)
       }
       case 'deliveryFeedbackList': return contactCommandResult('deliveryFeedbackList', this.store.feedbackLedger.list(id, args[0] as string))
@@ -212,10 +212,7 @@ export class ContactTaskCommands {
         const input = previous ? JSON.parse(previous.input) : undefined
         this.store.db.transaction(() => {
           let next: string
-          if (input?.revisionScope === 'presentation' && topicId) {
-            const topic = this.store.topics.get(id, topicId)
-            next = this.store.revisePresentation(id, topicId, topic.revision, input.feedback, this.context.identity(id).conversation, input.revisionBaseVersion)
-          } else {
+          {
             this.checkSearch(id)
             const calendar = topicId && this.store.calendars.get(topicId)
             next = topicId && input?.calendar && calendar && calendar.revision === input.calendar.revision && calendar.attempt_at === input.calendar.dueAt

@@ -20,6 +20,7 @@ import { useAssistantTasks, type AssistantTaskEntry } from './useAssistantTasks'
 import { contactTaskItems, routineTimesLabel } from './contactTaskPresentation'
 import ContactTaskListCard from './ContactTaskListCard'
 import ContactMarkdown from './ContactMarkdown'
+import ResultDesignView from './ResultDesignView'
 import ContactTaskRequestLog from './ContactTaskRequestLog'
 import type { AssistantRoutineHistoryPage } from '../../../../shared/assistant-routines'
 import { navigateContact } from './contactNavigation'
@@ -76,6 +77,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
   const [history, setHistory] = useState<AssistantRoutineHistoryPage>({ items: [] })
   const [historyError, setHistoryError] = useState('')
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [openResults,setOpenResults]=useState<Set<string>>(()=>new Set())
   const historyEpoch = useRef(0)
   const loadHistory = async (before?: number) => {
     if (!routine) return
@@ -263,7 +265,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
       <details className="topic-goal"><summary>进展说明</summary><dl><dt>当前判断</dt><dd data-topic-judgement>{topic.judgement || '尚未形成判断。'}</dd>{topic.openQuestions && <><dt>待验证问题</dt><dd>{topic.openQuestions}</dd></>}{['completed', 'abandoned', 'paused'].includes(topic.status) && <><dt>停止原因</dt><dd>{topic.reason}</dd></>}</dl></details>
       <details className="topic-goal"><summary>目标与约束</summary><dl><dt>目标</dt><dd>{topic.goal}</dd>{topic.constraints && <><dt>约束</dt><dd>{topic.constraints}</dd></>}</dl></details>
       </div>
-      </> : tab === 'stages' ? <><ContactTaskFacts fields={scheduleFields} /><p className="agent-caption">此任务按触发条件执行，无需分阶段推进。</p></> : <div className="contact-delivery"><h4>任务成果</h4>{routine?.lastResult ? <ContactMarkdown>{routine.lastResult}</ContactMarkdown> : <p className="agent-empty">尚无已保存成果。</p>}</div>}
+      </> : tab === 'stages' ? <><ContactTaskFacts fields={scheduleFields} /><p className="agent-caption">此任务按触发条件执行，无需分阶段推进。</p></> : <div className="contact-delivery"><h4>任务成果</h4>{routine?.lastResult ? <ResultDesignView task={{domain:'assistant',ownerId:characterId,taskId:routine.id}} active={active&&tab==='delivery'}><ContactMarkdown>{routine.lastResult}</ContactMarkdown></ResultDesignView> : <p className="agent-empty">尚无已保存成果。</p>}</div>}
       </section>
       <section role="tabpanel" id={`${tabId}-interactions-panel`} aria-labelledby={`${tabId}-interactions`} hidden={tab !== 'interactions'} tabIndex={0}>
         <ContactTaskRequestLog value={topic?.requestLog ?? routine?.requestLog} />
@@ -296,7 +298,7 @@ export default function ContactTopics({ characterId, data, busy, settingsDirty, 
             <span className="agent-caption">{time(entry.startedAt)} · {{ running: '执行中', completed: '已完成', failed: '执行失败', cancelled: '已取消' }[entry.status]}</span>
             <p>计划时间：{time(entry.scheduledAt)}</p>
             {entry.error && <p>{entry.error}</p>}
-            {entry.content && <details><summary>查看这次结果</summary><ContactMarkdown>{entry.content}</ContactMarkdown></details>}
+            {entry.content && routine && <details onToggle={event=>{const open=event.currentTarget.open;setOpenResults(current=>{const next=new Set(current);if(open)next.add(entry.id);else next.delete(entry.id);return next})}}><summary>查看这次结果</summary><ResultDesignView task={{domain:'assistant',ownerId:characterId,taskId:routine.id}} sourceId={entry.id} active={active&&tab==='history'&&openResults.has(entry.id)}><ContactMarkdown>{entry.content}</ContactMarkdown></ResultDesignView></details>}
             {entry.sessionId && entry.messageId && <button type="button" data-routine-message onClick={() => { setHistoryError(''); void navigateContact({ kind: 'message', sessionId: entry.sessionId!, messageId: entry.messageId! }).catch(error => setHistoryError(error.message)) }}>查看对应聊天消息</button>}
           </li>)}</ol>
           {history.nextCursor !== undefined && <button type="button" disabled={historyLoading} onClick={() => void loadHistory(history.nextCursor)}>更早的执行</button>}

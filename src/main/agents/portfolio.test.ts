@@ -16,10 +16,10 @@ function fixture() {
   cleanup.push(() => store.close())
   for (const owner of ['alice', 'bob']) store.save(owner, { ...DEFAULT_AGENT_SETTINGS, goal: '创作作品', dailyCalls: 200 })
   function topic(owner = 'alice', title = '作品') { return store.topics.create(owner, { title, goal: '写作', constraints: '' }, '用户要求') }
-  function write(id: string, body = '第一段。\n\n第二段😀。', owner = 'alice', at = 1000, styleOnly = false) {
+  function write(id: string, body = '第一段。\n\n第二段😀。', owner = 'alice', at = 1000) {
     const runId = store.createRun(owner, '', Date.now(), id)
     const update = { completionCriteria: '完成正文', stages: [{ id: 's', title: '创作', status: 'active' as const }], summary: '正文已保存',
-      ...(styleOnly ? { presentation: { title: '阅读', html: '<main></main>', css: '', script: '' } } : { section: { id: 's', title: '正文', body } }) }
+      section: { id: 's', title: '正文', body } }
     store.finish(runId, { runId, title: '交付', body, nextStep: '继续', evidence: [], createdAt: at }, [],
       { status: 'researching', judgement: '推进中', openQuestions: '', nextStep: '继续', reason: '已交付' }, update)
     return { characterId: owner, topicId: id, version: store.deliveries.get(id)!.version, sectionId: 's' }
@@ -79,9 +79,9 @@ describe('formal portfolio and reading', () => {
     f.store.portfolio.saveReading('alice', position)
     f.reopen()
     expect(f.store.portfolio.reading('alice', topic.id)).toEqual(position)
-    f.write(topic.id, '', 'alice', 2000, true)
+    f.store.designs.request({ domain: 'contact', ownerId: 'alice', taskId: topic.id }, 'Change layout', 'reading-test')
     const item = f.store.portfolio.list('alice', { favoritesOnly: true }).items[0]
-    expect(item.ref.version).toBe(2)
+    expect(item.ref.version).toBe(1)
     expect(item.sections[0].readHash).toBe(item.sections[0].textHash)
     expect(f.store.portfolio.reading('alice', topic.id)?.ref.version).toBe(1)
     expect(() => f.store.portfolio.saveReading('alice', { ...position, scrollRatio: 2 })).toThrow()
@@ -104,7 +104,7 @@ describe('formal portfolio and reading', () => {
     const f = fixture(), topic = f.topic(); f.write(topic.id)
     f.store.db.exec('DROP TABLE portfolio_read_sections; DROP TABLE portfolio_reading; DROP TABLE portfolio_favorites; DROP TABLE portfolio_versions; PRAGMA user_version=8')
     f.reopen()
-    expect(f.store.db.pragma('user_version', { simple: true })).toBe(22)
+    expect(f.store.db.pragma('user_version', { simple: true })).toBe(23)
     expect(f.store.portfolio.list('alice', {}).items).toHaveLength(1)
     expect(f.store.portfolio.reading('alice', topic.id)).toBeNull()
     expect(f.store.portfolio.list('alice', {}).items[0].sections[0].readHash).toBeNull()

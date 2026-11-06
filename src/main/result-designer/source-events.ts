@@ -23,10 +23,12 @@ export class ResultSourceEvents {
   }
   private async deliver() {
     const events = JSON.parse(this.deps.read() || '{}') as Record<string,ResultSourceEvent>
+    const errors:unknown[]=[]
     for (const [id,event] of Object.entries(events)) {
-      await this.deps.accept(event)
+      try{await this.deps.accept(event)}catch(error){errors.push(error);continue}
       const current = JSON.parse(this.deps.read() || '{}') as Record<string,ResultSourceEvent>
       if (JSON.stringify(current[id]) === JSON.stringify(event)) { delete current[id]; this.deps.write(JSON.stringify(current)) }
     }
+    if(errors.length)throw errors[0]
   }
 }

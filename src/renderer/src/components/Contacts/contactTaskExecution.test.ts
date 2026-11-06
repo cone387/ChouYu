@@ -42,16 +42,3 @@ it('includes future calendar tasks and does not offer to continue a finished onc
   data.taskSchedule.b.finishedAt = Date.now()
   expect(contactTaskExecution(data, topic)).toMatchObject({ canPause: false, action: undefined })
 })
-it('opens the original failed presentation record instead of continuing prose', () => {
-  const data = fixture(), topic = data.topics[0]
-  data.settings.enabled = false
-  data.runs = [{ id: 'style-failed', topicId: 'a', status: 'failed', revisionScope: 'presentation' }] as AgentOverview['runs']
-  expect(contactTaskExecution(data, topic)).toMatchObject({ action: 'inspect', latestRun: { id: 'style-failed' } })
-  topic.status = 'paused'
-  expect(contactTaskExecution(data, topic).action).toBe('inspect')
-  topic.status = 'completed'
-  expect(contactTaskExecution(data, topic).action).toBe('inspect')
-  expect(currentTaskChoices(data).some(item => item.topic.id === topic.id)).toBe(false)
-  topic.status = 'abandoned'
-  expect(contactTaskExecution(data, topic).action).toBe('inspect')
-})

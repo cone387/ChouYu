@@ -17,15 +17,15 @@ export const CONTACT_CHANGE_PROMPT = `判断用户最新一句是否在调整当
 “写一章看看”“写一段试试”等索取新增本次正文、未要求修改已有正式成果或任务设置的请求返回none，交给正常回复生成正文；即使有同名已暂停任务，也不等于授权恢复后台长期任务。若针对已保存正式成果说“这章结尾太急，再给我一版”，仍按revise处理原成果修订，不能套用none。continue只用于用户明确要求恢复/继续任务运行，不能仅因“续写”或作品名称带“续”就改变任务状态。若用户明确要求恢复长期任务，则仍用continue核对对象与实际状态。
 优先区分聊天稿和已保存的正式成果。用户说“刚才这段聊天稿改成第一人称，把主角改为陆白”“把你刚写的聊天这段改一下”等，是对当前对话内容的再创作，返回none，交给正常回复直接交新版；即使tasks里存在同题材任务，也不查询要修改哪项任务，不走action edit/revise，不要求用户额外说后台保持原样。只有明确指向已保存正式成果的正文修改才是action revise；不能把“改”“重写”这些字本身当作后台操作授权。
 同一联系人一次明确调整多个配置领域时返回{"kind":"configuration","changes":[各自的profile/settings/skill/credential/output对象]}，每个领域最多一项，output仅contact范围，同域字段合并在一个patch。程序分别保存待确认步骤及各自回执，可从原卡片继续处理；不是批量任务。不能遗漏其中一项、不能把多个任务操作混入组合。普通闲聊、进度询问、讨论方案、否定修改、引用他人指令、新任务：{"kind":"none"}。
-阅读偏好：{"kind":"output","scope":"contact|task|delivery","topicId":"任务范围时实际ID","deliveryVersion":1,"patch":{}}。只调整阅读类型、间距或表达结构时用output，不改任务目标。patch仅kind(writing/ideas/review/research/plan/briefing/plain/auto)、density(comfortable/compact)、instruction(完整表达要求，保留未撤销要求)。联系人今后所有输出用contact；这项任务以后用task；这次/这份已保存成果用delivery，未知版本省略deliveryVersion由程序读取最新，明确旧版则提供已读取版本。范围不清楚先question，不得把“这次”解释成contact。用户要求重写已保存正式成果的具体正文仍用revise；定制交互页面用presentation。kind只改变安全排版，instruction在未来生成时使用，不声称已重写正文。
+阅读偏好：{"kind":"output","scope":"contact|task|delivery","topicId":"任务范围时实际ID","deliveryVersion":1,"patch":{}}。只调整阅读类型、间距或表达结构时用output，不改任务目标。patch仅kind(writing/ideas/review/research/plan/briefing/plain/auto)、density(comfortable/compact)、instruction(完整表达要求，保留未撤销要求)。联系人今后所有输出用contact；这项任务以后用task；这次/这份已保存成果用delivery，未知版本省略deliveryVersion由程序读取最新，明确旧版则提供已读取版本。范围不清楚先question，不得把“这次”解释成contact。用户要求重写已保存正式成果的具体正文仍用revise；定制交互页面用design。kind只改变安全排版，instruction在未来生成时使用，不声称已重写正文。
 联系人资料修改：{"kind":"profile","patch":{}}。patch仅包含用户明确修改的name、avatar、category、soulMd、providerProfileId、model、harnessEngine；harnessEngine只可为native（ChouYu原生）或dsh（DeepSeek Harness，实验性，仅Windows），只影响当前联系人后续普通聊天，不更换模型、不迁移后台任务；从configuration.profile读取实际资料、供应商目录和版本，保留未撤销人设。角色人设与长期工作规则分别使用profile.soulMd与settings.goal。空人设不得借用ChouYu身份。普通联系人默认档案model为空表示跟随默认；ChouYu模型修改会更新系统默认模型。只能选择目录内供应商，缺少目标才追问；凭据不得写入资料或对话工具。
 已安装技能配置：{"kind":"skill","skillId":"实际目录ID","action":"enable|disable|remove|enable_scripts|disable_scripts"}。从configuration.skills读取真实目录；没有明确指定且多个匹配先追问，不猜ID。启用说明不自动授权脚本，授权脚本必须有用户明确要求。安装、环境准备或其他未在本路由覆盖的配置操作返回none，由对应真实工具继续处理，不得声称已完成。
 对象不明确、缺少必要信息、不支持的能力：{"kind":"question","requestText":"原样复制输入的requestAnchor","message":"仅针对这次请求所缺必要信息的简短追问或能力限制；说明未修改"}。requestAnchor是系统从latest截取的本次原话，不需自行计数；requestText不能取自conversation。旧问题在本次已给出目标或转入新话题时不再追问。
-明确修改：{"kind":"action","topicId":"现有任务ID","action":"edit|pause|continue|answer|revise|presentation|end|abandon|delete|schedule","patch":{},"reason":"用户最新原话"}。
+明确修改：{"kind":"action","topicId":"现有任务ID","action":"edit|pause|continue|answer|revise|design|end|abandon|delete|schedule","patch":{},"reason":"用户最新原话"}。
 edit 用于以后持续遵守的要求、目标、范围、标题、语言、语气、篇幅、汇报单位、任务累计额度和结束条件；patch 只能包含实际变化的 goal、constraints、title、modelCalls、tokens、separateEvaluations、clearTokenLimit、ending。用户明确取消本任务Token上限用 clearTokenLimit:true，不与tokens同时填写；不解除调用次数保护。
 goal/constraints 返回完整字段，保留未撤销的要求，消除被新要求替代的冲突；其他字段省略。不要将单纯要求修改后续汇报误作 revise。
 “一次汇报一个”明确是 edit，必须且只需返回 "patch":{"separateEvaluations":true}，不改 goal，程序会把已保存的多个评价分别交付；用户明确恢复合并汇报时设为false。交付方式调整不能同时改 goal，否则程序拒绝。若同时要求改变工作目标，请澄清先处理哪项。不擅自把研究批次改为一个，不增加频率、冷却或摘要要求。正文仍直接交付。
-仅修改已保存正式成果的一段正文用revise。presentation仅用于定制或修改成果的HTML/CSS/JavaScript展示页面；紧凑/舒适间距、已有阅读类型、表达偏好必须用output，不调用页面重建。例如“这次成果用紧凑间距，只改这版的排版”返回{"kind":"output","scope":"delivery","topicId":"真实任务ID","patch":{"density":"compact"}}，不是action presentation。用户明确暂停/继续用pause/continue。回答当前实际待回复问题用answer，需额外返回runId和answer。
+仅修改已保存正式成果的一段正文用revise。design仅用于定制或修改成果的HTML/CSS/JavaScript展示页面；紧凑/舒适间距、已有阅读类型、表达偏好必须用output，不调用页面重建。例如“这次成果用紧凑间距，只改这版的排版”返回{"kind":"output","scope":"delivery","topicId":"真实任务ID","patch":{"density":"compact"}}，不是action design。用户明确暂停/继续用pause/continue。回答当前实际待回复问题用answer，需额外返回runId和answer。
 continue 是action字段值，不是kind。恢复操作完整格式为{"kind":"action","topicId":"真实任务ID","action":"continue","targetText":"本条指定对象原文"}。必须额外返回 targetText：逐字摘录最新用户消息中明确指定的任务名称、书名或主题；确实没有指定对象（如“继续吧”）才填空字符串。不能用已有任务标题替换用户说的对象。仅有一个任务也必须匹配目标；例如用户说“继续写吞噬星空续”，唯一任务却是音乐修炼小说，必须追问，不得选中该小说。仅说“继续”不是对待回复问题的实际答案；此时用continue让系统展示真实状态或原问题，不编造answer。目录只有一个任务、用户没有指定其他对象且明确说“继续吧”时，返回该任务的continue和空targetText，不重复询问是否继续；正在执行或等回复的情况也交此操作读取实际状态，不重复启动。
 数字额度严格区分调用次数和 Token、任务累计和联系人每日；只填写用户明确指定的数字，不推算，不自行放宽，不清除未提及额度。patch.tokens 和 patch.modelCalls 必须是 JSON 整数，绝不是文字。例如“累计Token上限30万”返回 "patch":{"tokens":300000}，不能返回 "tokens":"累计Token上限30万"。tokens 范围1–1000000000，modelCalls 范围1–10000。
 联系人级设置：{"kind":"settings","patch":{}}，不需要topicId。patch白名单：enabled（自动true/按需false）、paceWriting（间隔true/连续false）、intervalMinutes（15–10080整数）、dailyCalls（每日调用，整数≥2）、dailyTokenLimit（每日Token，1–10亿）、clearDailyTokenLimit（明确取消每日Token上限true）、defaultTaskTokenLimit（新任务默认Token）、clearDefaultTaskTokenLimit（明确取消该默认上限true）、maxConcurrentTasks（并发正整数）、goal（完整长期工作方向，不是角色人设）、notifyProgress（进展消息开关）、toolPermissionMode（inherit沿用系统/confirm逐次确认/auto读取自动修改前确认/full已授权工具自动）、permissionLevel（public公开网页/sources仅指定网页）、sources（完整无凭据HTTPS网页列表，最多5个）、searchEnabled（搜索新网页）、dailySearches（每日搜索1–24次）、shareDeliveries（共享自己的成果）、readContactDeliveries（读取其他联系人共享成果）、workStart/workEnd（完整HH:mm时段，允许跨夜；全天均00:00）。只填明确要求修改的字段，保留其他值；只调时间不自动开启推进；只改一个端点时从settings保留另一端，未知则追问。取消和设置同一上限不能同时填写。调用次数保护不能解除；笼统要求所有额度不限应说明调用保护，不能部分修改后称全部完成。用户明确修改权限可以使用上述字段，不能只写进goal冒充权限设置；仅指定网页需有网页列表并同时关闭搜索，未撤销的网页保留。没有搜索密钥不能声称开启搜索。工具策略不打开关闭的工具，也不暗中批准待确认请求。用户没有明确变更的权限不得扩大。以后/今后表示即刻保存长期要求；明确从未来日期生效尚不支持，追问不能擅自立即生效。
@@ -266,10 +266,10 @@ export async function routeContactChange(messages: AIChatMessage[], deps: Deps):
       if (!waiting) throw new Error('该任务已不在等待这条回复，本次未修改。')
       name = 'answer_contact_question'; args.runId = waiting.id; args.answer = reason; break
     }
-    case 'presentation': {
+    case 'design': {
       const delivery = await deps.read('delivery', [topic.id])
       if (!delivery) throw new Error('还没有正式成果可修改样式。')
-      name = 'revise_contact_presentation'; args.deliveryVersion = delivery.version; break
+      name = 'request_result_design'; args.deliveryVersion = delivery.version; break
     }
     default: throw new Error('当前不支持这种任务操作，本次未修改。')
   }
@@ -284,7 +284,7 @@ export async function routeContactChange(messages: AIChatMessage[], deps: Deps):
     if (receipt.saved === true && valid && typeof receipt.message === 'string') return receipt.message
     throw new Error('没有取得有效的任务状态回执，不能确认操作成功。')
   }
-  if (name === 'revise_contact_presentation' && receipt.requestAccepted) return '已提交阅读样式修改，保存新版本后会通知你；正文保持不变。'
+  if (name === 'request_result_design' && receipt.requestAccepted) return '已提交阅读样式修改，保存新版本后会通知你；正文保持不变。'
   if (receipt.workCompleted === false && typeof receipt.message === 'string') {
     if (plan.action === 'pause') return '已暂停这项任务，已有成果保留。'
     if (plan.action === 'continue') return topic.calendar ? receipt.message : '已提交继续执行，尚未产生新成果。'

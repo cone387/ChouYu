@@ -8,7 +8,7 @@ import { closeChatHarness, disposeIpcHandlers } from './ipc'
 import { runContactSoak } from './evaluation/contact-soak'
 import { runContactCardLinksSmoke } from './smoke/contact-card-links-smoke'
 import { runContactPerformanceSmoke } from './smoke/contact-performance-smoke'
-import { runDeliveryPresentationSmoke } from './smoke/delivery-presentation-smoke'
+import { runResultDesignerSmoke } from './smoke/result-designer-smoke'
 import { runRemindersSmoke } from './smoke/reminders-smoke'
 import { runAssistantRoutinesSmoke } from './smoke/assistant-routines-smoke'
 import { runCompanionSmoke } from './smoke/companion-smoke'
@@ -22,7 +22,7 @@ import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { initializeJournal, closeJournal } from './journal'
 import { initializeAssistantRoutines, closeAssistantRoutines } from './assistant-routines'
-import { initializeAgents, closeAgents, startIdeaLab } from './agents'
+import { initializeAgents, closeAgents, startIdeaLab, contactAgentsCall } from './agents'
 import { initializeUsage, closeUsage } from './usage'
 import { initializeTasks, closeTasks, stopTaskScheduling } from './tasks'
 import { runTasksSmoke } from './smoke/tasks-smoke'
@@ -141,6 +141,12 @@ function createWindow(): void {
         console.log(`CHOUYU_SMOKE_STAGE_PASSED name=${name} durationMs=${Date.now() - started}`)
       }
       try {
+        // These suites exercise author/assistant behavior with text-only provider fixtures.
+        // The dedicated designer suite separately validates automatic visual execution.
+        if(process.env.CHOUYU_SMOKE_AGENTS_ONLY==='1'||process.env.CHOUYU_SMOKE_ASSISTANT_ROUTINES_ONLY==='1'||process.env.CHOUYU_SMOKE_TASK_REQUESTS==='1'){
+          const designer=await contactAgentsCall('result-designer','get')
+          await contactAgentsCall('result-designer','save',[{...designer.settings,enabled:false},designer.revision])
+        }
         if (process.env.CHOUYU_SMOKE_TASK_REQUESTS === '1') {
           await stage('task-requests', () => runTaskRequestsSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_CONTACT_RELIABILITY === '1') {
@@ -163,8 +169,8 @@ function createWindow(): void {
           await stage('assistant-routines', () => runAssistantRoutinesSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_REMINDERS_ONLY === '1') {
           await stage('reminders', () => runRemindersSmoke(mainWindow!))
-        } else if (process.env.CHOUYU_SMOKE_PRESENTATION_ONLY === '1') {
-          await runDeliveryPresentationSmoke(mainWindow!)
+        } else if (process.env.CHOUYU_SMOKE_RESULT_DESIGNER_ONLY === '1') {
+          await runResultDesignerSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_DASHBOARD_ONLY === '1') {
           await runDashboardSmoke(mainWindow!)
         } else if (process.env.CHOUYU_SMOKE_AGENTS_ONLY === '1') {

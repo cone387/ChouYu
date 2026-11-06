@@ -1,4 +1,5 @@
 import {validateDesignCode,type ResultSourceSnapshot,type ResultDesignCode,type DesignEnvironment} from './result-design'
+import {designEnvironment} from './result-design-environment'
 export const resultDesignPolicy=(nonce:string)=>`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'`
 const json=(v:unknown)=>JSON.stringify(v).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029')
 const escape=(s:string)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
@@ -13,6 +14,8 @@ export function resultDesignDocument(snapshot:ResultSourceSnapshot,input:ResultD
  Object.defineProperty(window,'resultSource',{value:freeze(data),writable:false,configurable:false});
  const style=document.createElement('style');style.textContent='*{box-sizing:border-box}html{color-scheme:'+env.theme+'}body{margin:0;padding:24px;background:var(--surface);color:var(--text);font:17px/1.8 '+env.font+';overflow-wrap:anywhere}main{max-width:1120px;margin:auto}.result-body{white-space:pre-wrap;line-height:1.85}section[data-result-section]{scroll-margin-top:24px}button,input,select{font:inherit}button{cursor:pointer}img,svg{max-width:100%}@media(max-width:480px){body{padding:16px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}';
  document.head.append(style);for(const [k,v] of Object.entries(env.tokens))document.documentElement.style.setProperty(k,v);
+ const themes=${json({light:designEnvironment(1024,'light').tokens,dark:designEnvironment(1024,'dark').tokens})};
+ addEventListener('message',event=>{if(event.source!==parent||event.data?.type!=='result-design-theme'||!['light','dark'].includes(event.data.theme))return;const theme=event.data.theme;document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme;for(const [k,v] of Object.entries(themes[theme]))document.documentElement.style.setProperty(k,v)});
  const root=document.getElementById('result-root');root.innerHTML=code.html;
  const custom=document.createElement('style');custom.textContent=code.css;document.head.append(custom);
  for(const section of data.sections){
@@ -27,5 +30,6 @@ export function resultDesignDocument(snapshot:ResultSourceSnapshot,input:ResultD
  const failed=()=>parent.postMessage({type:'result-design-error',source:${json(snapshot.ref)},nonce:${json(nonce)}},'*');
  addEventListener('error',failed);addEventListener('unhandledrejection',failed);
  const script=document.createElement('script');script.nonce=${json(nonce)};script.textContent=code.script;document.body.append(script);
+ setTimeout(()=>parent.postMessage({type:'result-design-ready',source:${json(snapshot.ref)}},'*'),0);
 })();</script></body></html>`
 }

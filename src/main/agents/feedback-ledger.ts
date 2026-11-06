@@ -34,7 +34,7 @@ export class FeedbackLedger {
   submit(owner: string, input: DeliveryFeedbackInput): DeliveryFeedbackReceipt {
     if (!input || typeof input.requestId !== 'string' || !/^[\w:./-]{1,240}$/.test(input.requestId)) throw new Error('成果反馈请求标识无效。')
     if (!['accept', 'revise'].includes(input.action) || typeof input.reason !== 'string' || !input.reason.trim() || input.reason.length > 2000 || containsSecret(input.reason)) throw new Error('成果反馈无效。')
-    if (input.scope !== undefined && !['content', 'presentation'].includes(input.scope)) throw new Error('成果修订范围无效。')
+    if (input.scope !== undefined && !['content'].includes(input.scope)) throw new Error('成果修订范围无效。')
     if (input.citation && (input.citation.ref.characterId !== owner || input.citation.ref.topicId !== input.topicId || input.citation.ref.version !== input.version)) throw new Error('反馈引用与版本不一致。')
     const reason = input.reason.trim(), fingerprint = JSON.stringify([input.topicId, input.revision, input.version, input.action, reason, input.citation, input.scope ?? 'content'])
     return this.store.db.transaction(() => {
@@ -46,9 +46,7 @@ export class FeedbackLedger {
       }
       if (topic.revision !== input.revision) throw new Error('任务已变化，请重新读取。')
       if (!Number.isSafeInteger(input.version) || this.store.deliveries.get(input.topicId)?.version !== input.version) throw new Error('成果版本已变化，请核对当前版本后再反馈。')
-      const runId = input.action !== 'revise' ? null : input.scope === 'presentation'
-        ? this.store.revisePresentation(owner, input.topicId, input.revision, reason, input.conversation ?? '', input.version)
-        : this.store.reviseCitation(owner, input.revision, input.citation ?? { ref: { characterId: owner, topicId: input.topicId, version: input.version } }, reason, input.conversation ?? '')
+      const runId = input.action !== 'revise' ? null : this.store.reviseCitation(owner, input.revision, input.citation ?? { ref: { characterId: owner, topicId: input.topicId, version: input.version } }, reason, input.conversation ?? '')
       const inserted = this.store.db.prepare(`INSERT INTO contact_delivery_feedback(character_id,topic_id,version,action,reason,at,request_id,fingerprint,run_id) VALUES(?,?,?,?,?,?,?,?,?)`)
         .run(owner, input.topicId, input.version, input.action, reason, Date.now(), input.requestId, fingerprint, runId)
       if (runId) this.store.db.prepare('INSERT INTO feedback_attempts VALUES(?,?)').run(inserted.lastInsertRowid, runId)
@@ -74,7 +72,7 @@ export class FeedbackLedger {
     const previous = this.store.getRun(previousId), next = this.store.getRun(nextId)
     if (!previous || !next || previous.id === next.id || !['failed', 'cancelled'].includes(previous.status) || next.status !== 'queued' || previous.character_id !== next.character_id || previous.topic_id !== next.topic_id) return
     const old = JSON.parse(previous.input), input = JSON.parse(next.input)
-    if (old.revisionScope === 'presentation' && input.revisionScope !== 'presentation') return
+    if (old.revisionScope) throw new Error('Retired request cannot resume')
     if (old.revisionCitation && this.store.deliveries.get(previous.topic_id!)?.version !== old.revisionCitation.ref.version) throw new Error('原修改依据已有新版，请核对成果后重新提出修改意见。')
     const fields = ['feedback', 'revisionCitation', 'citationContext', 'revisionSectionId', 'reviewCitation', 'reviewHandoffId', 'revisionBaseVersion', 'handoffPin']
     for (const key of fields) if (old[key] !== undefined) input[key] = old[key]

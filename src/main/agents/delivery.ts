@@ -28,8 +28,7 @@ export class AgentDeliveries {
     const artifact = this.get(topicId)
     return artifact ? { version: artifact.version, createdAt: artifact.createdAt, savedSectionCount: artifact.sections.length,
       savedTextLength: artifact.sections.reduce((n, s) => n + s.body.length, 0),
-      directory: artifact.sections.map(s => ({ id: s.id, title: s.title, characters: s.body.length })),
-      presentation: artifact.presentation ? { title: artifact.presentation.title, editable: true } : null } : null
+      directory: artifact.sections.map(s => ({ id: s.id, title: s.title, characters: s.body.length })) } : null
   }
   inspect(topicId: string, version?: number, sectionId?: string) {
     const artifact = this.get(topicId, version)
@@ -40,7 +39,7 @@ export class AgentDeliveries {
       savedSectionCount: artifact.sections.length, savedTextLength: artifact.sections.reduce((n, s) => n + s.body.length, 0),
       completionCriteria: artifact.completionCriteria, stages: artifact.stages, inputs: artifact.inputs,
       directory: artifact.sections.map(s => ({ id: s.id, title: s.title, characters: s.body.length })),
-      presentation: artifact.presentation ?? null, section,
+      section,
       message: '仅此目录代表正式保存的成果；未选择分节时没有读取正文。展示代码默认跟随系统主题，可以独立修订。' }
   }
   commit(topicId: string, report: AgentReport, progress: AgentTopicProgress, update?: DeliveryUpdate) {
@@ -62,10 +61,9 @@ export class AgentDeliveries {
     if (!sections.length) throw new Error('首次交付必须包含实际正文。')
     if (!value.section && previous && (value.completionCriteria !== previous.completionCriteria || JSON.stringify(value.stages) !== JSON.stringify(previous.stages))) throw new Error('仅更新展示或需求时不能改变完成条件与阶段进度。')
     if (sections.length > 300 || sections.reduce((n, s) => n + s.body.length, 0) > 1000000) throw new Error('单个成果已达到容量上限，请结束此事项并分卷继续。')
-    const presentation = value.presentation === undefined ? previous?.presentation : value.presentation ?? undefined
     const inputs = value.inputs ?? previous?.inputs ?? initial?.inputs
     const fileIds = [...new Set([...(previous?.fileIds ?? []), ...(value.fileIds ?? [])])]
-    const artifact: AgentDelivery = { ...(fileIds.length ? { fileIds } : {}), version: (previous?.version ?? 0) + 1, runId: report.runId, createdAt: report.createdAt, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, sections, ...(presentation ? { presentation } : {}), ...(inputs ? { inputs } : {}) }
+    const artifact: AgentDelivery = { ...(fileIds.length ? { fileIds } : {}), version: (previous?.version ?? 0) + 1, runId: report.runId, createdAt: report.createdAt, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, sections, ...(inputs ? { inputs } : {}) }
     this.db.transaction(() => {
       const manifest = this.blocks.write(artifact)
       this.db.prepare('INSERT INTO delivery_versions VALUES(?,?,?,?)').run(topicId, artifact.version, report.runId, JSON.stringify(manifest))
@@ -82,7 +80,7 @@ export class AgentDeliveries {
       return plan ? { ...plan, version: 0, summary: '接单时的初步计划，尚未交付成果。', directory: [], sections: [] } : null
     }
     // Stable directory and cumulative summary survive beyond the recent-three-report window.
-    return { version: value.version, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, inputs: value.inputs, presentation: value.presentation,
+    return { version: value.version, completionCriteria: value.completionCriteria, stages: value.stages, summary: value.summary, inputs: value.inputs,
       directory: value.sections.map(s => ({ id: s.id, title: s.title })),
       sections: value.sections.slice(-3) }
   }

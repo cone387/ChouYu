@@ -1,3 +1,4 @@
+import { createResultDesignTools } from '../result-designer/request-tool'
 import { endingRequestFromTool, taskEndingToolSchema } from '../tools/task-ending-source'
 import { withTaskRequestReplay } from './task-request-tools'
 import { contactCommandDispatcher, type UnknownContactDispatch } from '../task-center/command-boundary'
@@ -250,30 +251,7 @@ export function createContactTools(access: Access): RegisteredTool[] {
           return { content: JSON.stringify({ saved: true, revision: saved.revision, message: `已保存工作设置：${description}。`, workCompleted: false }), summary: `已保存：${description}` }
         } }
       }, execute: () => { throw new Error('请先预览工作设置修改。') } },
-    { ...common, name: 'revise_contact_presentation', displayName: '修改成果展示样式',
-      description: '你能修改自己的成果排版。用户要求改阅读样式、字体、目录布局或跟随系统亮色时使用。先读取 get_contact_topics 和 get_contact_delivery；仅修改展示代码，程序保证正文、需求与任务进度不变。返回只代表开始修订，不能说已经改好。',
-      inputSchema: { type: 'object', properties: { ...topicProperties,
-        deliveryVersion: { type: 'number', description: '刚读取的最新成果版本，不可猜测' },
-        reason: { type: 'string', description: '完整的展示修改要求，保留用户偏好', maxLength: 2000 }
-      }, required: ['topicId', 'revision', 'deliveryVersion', 'reason'], additionalProperties: false },
-      async prepareAsync(args, context) {
-        const id = owner(context), data = await request('get', id) as AgentOverview
-        const topic = data.topics.find(t => t.id === args.topicId)
-        if (!topic || topic.revision !== args.revision) throw new Error('事项已变化，请重新读取。')
-        if (data.runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status) && r.topicId === topic.id)) throw new Error('当前还有工作未完成，请等待本轮结束；本任务待回复的问题需要先处理。')
-        const artifact = await request('delivery', id, [topic.id])
-        if (!artifact || !Number.isSafeInteger(args.deliveryVersion) || artifact.version !== args.deliveryVersion) throw new Error('成果版本已变化或尚未交付，请重新读取。')
-        if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 2000 || containsSecret(args.reason)) throw new Error('请填写有效的样式修改要求。')
-        const reason = args.reason.trim(), version = artifact.version, revision = topic.revision
-        let consumed = false
-        return { preview: `成果：${topic.title} · 版本 ${version}\n展示修改：${reason}\n只更新阅读样式，正文、需求、阶段与任务状态保持不变，保留旧版本。`, execute: async () => {
-          if (consumed) throw new Error('此修改已提交，请勿重复执行。')
-          consumed = true
-          if (owner(context) !== id) throw new Error('聊天归属已变化，请重新发起。')
-          const result = await feedback(context, 'revise_contact_presentation', args, id, [data.revision, 'reviseTopic', [topic.id, revision, reason, undefined, 'presentation', version]]) as AgentOverview
-          return { content: JSON.stringify({ requestAccepted: true, workCompleted: false, baseVersion: version, run: result.runs?.find(r => r.topicId === topic.id), message: '样式修订已提交。尚未保存新版本，不能声称已改好；后续读取实际成果核实。' }), summary: '已提交样式修订，正文保持不变' }
-        } }
-      }, execute: () => { throw new Error('请先预览样式修改。') } }
+
   ]
   tools.push({ source: 'builtin', risk: 'read', requiresConfirmation: false,
     name: 'get_contact_task_requests', displayName: '读取任务请求记录',
@@ -284,5 +262,6 @@ export function createContactTools(access: Access): RegisteredTool[] {
       return { content: JSON.stringify({ ...page, items: page.items.map(row => ({ ...row, source: { ...row.source, text: row.source.text.slice(0, 1200), characters: row.source.text.length }, attempts: row.attempts.slice(0, 3) })) }), summary: '已读取真实任务请求记录。' }
     }
   })
+  tools.push(...createResultDesignTools(access))
   return tools.map(tool => withTaskRequestReplay(tool, request, access.owner))
 }

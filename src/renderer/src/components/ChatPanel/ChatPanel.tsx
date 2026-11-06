@@ -79,7 +79,7 @@ export default function ChatPanel({ model }: { model: ChatPanelModel }) {
                   <span className="character-context-avatar" aria-hidden="true"><CharacterAvatar character={activeCharacter} /></span>
                   <span className="character-context-name">{activeCharacter.name}</span>
                   {activeCharacter.builtIn && <em className="character-context-badge">内置</em>}
-                  <span className="character-context-model">{activeCharacter.id === 'chouyu' || !activeCharacter.model ? config.model : activeCharacter.model}</span>
+                  <span className="character-context-model">{activeCharacter.id === DEFAULT_CHARACTER_ID || !activeCharacter.model ? config.model : activeCharacter.model}</span>
                   {activeCharacter.category && <span className="character-context-category">{INDUSTRY_LABELS[activeCharacter.category] ?? activeCharacter.category}</span>}
                 </button>
               </div>
@@ -154,9 +154,9 @@ export default function ChatPanel({ model }: { model: ChatPanelModel }) {
               disabled={!workspaceLoaded}
               isStreaming={isStreaming}
               focusRequest={composerFocusRequest}
-              model={activeCharacter && activeCharacter.id !== 'chouyu' && activeCharacter.model ? activeCharacter.model : config.model}
+              model={activeCharacter && activeCharacter.id !== DEFAULT_CHARACTER_ID && activeCharacter.model ? activeCharacter.model : config.model}
               onModelChange={handleModelChange}
-              fetchModels={activeCharacter && activeCharacter.id !== 'chouyu'
+              fetchModels={activeCharacter && activeCharacter.id !== DEFAULT_CHARACTER_ID
                 ? () => window.electronAPI.characters.fetchModels(activeCharacter.providerProfileId)
                 : undefined}
               onScreenshot={onScreenshot}

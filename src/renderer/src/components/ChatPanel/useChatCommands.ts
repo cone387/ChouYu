@@ -198,7 +198,7 @@ export function useChatCommands({ config, setConfig, setShowOnboarding, setConfi
   // 其余字段必须原样带回——漏掉 category 会抹掉行业分类），内置角色仍写回设置页的全局配置。
   // 返回实际落库的模型供反馈文案使用。
   const handleModelChange = useCallback(async (newModel: string): Promise<string> => {
-    if (activeCharacter && activeCharacter.id !== 'chouyu') {
+    if (activeCharacter && activeCharacter.id !== DEFAULT_CHARACTER_ID) {
       const updated = await window.electronAPI.characters.update(activeCharacter.id, {
         name: activeCharacter.name,
         avatar: activeCharacter.avatar,

@@ -10,6 +10,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-06-result-designer-agent-design.md`
 
+## 执行记录（2026-11-06）
+
+用户选择隔离 worktree 内连续实施、末尾独立审查。Task 1–7 的产品链路已接入，Task 8 的本地测试、真实 Electron 与独立复审已执行；具体证据和在线模型未测范围见 [验收记录](../../result-designer-acceptance-20261106.md)。未自动发布或启动真实任务。
+
+实现按现有模块契约使用 `prepare/advance/close`，设计接口放在既有强类型 worker 命令边界；测试位于 `src/main/result-designer/`，UI 通过实际 Electron 验收。新请求额外携带阅读时的固定来源，防止弹窗静默提交到新版正文。下面保留制定计划时的细项作为核对基准，不通过批量打勾冒称所有枚举故障或在线质量均已实测。
+
 ## Global Constraints
 
 - 正式成果自动交给设计师，不要求用户逐项点击。

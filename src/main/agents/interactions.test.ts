@@ -262,28 +262,3 @@ it('does not resurrect a cleared historical message during upgrade', () => {
   expect(store.decisions.pending('alice')).toHaveLength(0)
   expect(store.notices.pending('alice').some(n => n.interactionId)).toBe(false)
 })
-it('retries failed presentation changes in their original scope, including paused tasks', () => {
-  const { store } = fixture(), run = store.createRun('alice', '')
-  store.finish(run, { runId: run, title: '第一节', body: '已保存正文', nextStep: '继续', evidence: [], createdAt: Date.now() }, [],
-    { judgement: '已写第一节', reason: '实际交付', nextStep: '继续', openQuestions: '', status: 'researching' })
-  const topicId = store.getRun(run)!.topic_id!
-  let topic = store.topics.get('alice', topicId)
-  store.changeTopic('alice', topicId, topic.revision, { status: 'paused', reason: '保留正文，仅调整阅读样式' })
-  topic = store.topics.get('alice', topicId)
-  const artifact = store.deliveries.get(topicId)!
-  const revision = store.revisePresentation('alice', topicId, topic.revision, '行距改为两倍', '', artifact.version)
-  store.fail(revision, 'API error 503')
-  const notice = store.notices.pending('alice').find(n => n.runId === revision)!
-  expect(notice.interactionId).toBeTruthy()
-  const card = store.decisions.get('alice', notice.interactionId!)
-  expect(card.status).toBe('pending')
-  expect(card.automaticRetryAt).toBeUndefined()
-  expect(card.failure?.action).toBe('重试本次样式修改')
-  store.decisions.submit('alice', card.id, { version: card.version }, '')
-  store.decisions.submit('alice', card.id, { version: card.version }, '')
-  const queued = store.overview('alice').runs.filter(r => r.status === 'queued')
-  expect(queued).toHaveLength(1)
-  expect(JSON.parse(store.getRun(queued[0].id)!.input)).toMatchObject({ revisionScope: 'presentation', revisionBaseVersion: artifact.version, feedback: '行距改为两倍' })
-  expect(store.deliveries.get(topicId)).toEqual(artifact)
-  expect(store.topics.get('alice', topicId).status).toBe('paused')
-})

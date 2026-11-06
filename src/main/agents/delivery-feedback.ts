@@ -7,7 +7,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { ContentCitation } from '../../shared/contact-content'
 import { withTaskRequestReplay } from './task-request-tools'
 
-export function saveDeliveryFeedback(store: ContactTaskStore, owner: string, topicId: string, revision: number, version: number, action: string, reason: string, conversation: string, requestId: string = randomUUID(), citation?: ContentCitation, scope?: 'content' | 'presentation') {
+export function saveDeliveryFeedback(store: ContactTaskStore, owner: string, topicId: string, revision: number, version: number, action: string, reason: string, conversation: string, requestId: string = randomUUID(), citation?: ContentCitation, scope?: 'content') {
   if (action !== 'accept' && action !== 'revise') throw new Error('成果反馈无效。')
   return store.feedbackLedger.submit(owner, { topicId, revision, version, action, reason, conversation, requestId, citation, scope })
 }

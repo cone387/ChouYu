@@ -22,9 +22,12 @@ export class AssistantResultSources implements ResultSourcePort {
     if(!snapshot||snapshot.ref.contentHash!==ref.contentHash)throw new Error('助手成果已变化。')
     return snapshot
   }
-  async assertCurrent(ref:ResultSourceRef,intent:'automatic'|'explicit',signal:AbortSignal){
+  async assertAvailable(ref:ResultSourceRef,intent:'automatic'|'explicit',signal:AbortSignal){
     const task=this.task(ref,signal)
     if(!task.enabled&&!task.finishedAt&&intent==='automatic')throw new Error('助手任务已暂停。')
+  }
+  async assertCurrent(ref:ResultSourceRef,intent:'automatic'|'explicit',signal:AbortSignal){
+    await this.assertAvailable(ref,intent,signal)
     const latest=await this.latest(ref,signal)
     if(latest?.ref.sourceId!==ref.sourceId||latest.ref.contentHash!==ref.contentHash)throw new Error('助手已有新的正式成果。')
   }

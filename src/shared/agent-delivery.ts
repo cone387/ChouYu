@@ -1,7 +1,6 @@
 import { sanitizeContactOutput, type ContactOutputDescriptor } from './contact-output'
 export interface DeliveryStage { id: string; title: string; status: 'pending' | 'active' | 'done' }
 export interface TaskInputField { id: string; label: string; value: string; required: boolean; hint?: string; options?: string[] }
-export interface DeliveryPresentation { title: string; html: string; css: string; script: string }
 export interface DeliveryPlan { completionCriteria: string; stages: DeliveryStage[]; inputs?: TaskInputField[] }
 export function validateTaskInputs(raw: unknown): TaskInputField[] {
   if (!Array.isArray(raw) || raw.length > 12) throw new Error('任务需求最多包含 12 项。')
@@ -13,13 +12,6 @@ export function validateTaskInputs(raw: unknown): TaskInputField[] {
   })
   if (new Set(result.map(f => f.id)).size !== result.length || JSON.stringify(result).length > 8000) throw new Error('任务需求重复或过长。')
   return result
-}
-export function validatePresentation(raw: unknown): DeliveryPresentation {
-  const value = raw as DeliveryPresentation
-  for (const [key, max] of [['title', 120], ['html', 12000], ['css', 12000], ['script', 16000]] as const) {
-    if (!value || typeof value[key] !== 'string' || value[key].length > max || key === 'title' && !value[key].trim()) throw new Error('成果展示代码无效或过长。')
-  }
-  return { title: value.title.trim(), html: value.html, css: value.css, script: value.script }
 }
 export function validateDeliveryPlan(raw: unknown): DeliveryPlan {
   const plan = raw as DeliveryPlan | undefined
@@ -35,7 +27,6 @@ export interface DeliveryUpdate {
   summary: string
   section?: Pick<DeliverySection, 'id' | 'title' | 'body' | 'output'>
   inputs?: TaskInputField[]
-  presentation?: DeliveryPresentation | null
 }
 export interface AgentDelivery {
   fileIds?: string[]
@@ -43,10 +34,10 @@ export interface AgentDelivery {
   completionCriteria: string; stages: DeliveryStage[]; summary: string
   sections: DeliverySection[]
   inputs?: TaskInputField[]
-  presentation?: DeliveryPresentation
 }
 export function validateDeliveryUpdate(raw: unknown): DeliveryUpdate {
   if (!raw || typeof raw !== 'object') throw new Error('缺少成果内容。')
+  if ('presentation' in raw) throw new Error('作者不能提交展示代码，请将展示要求交给界面设计师。')
   const v = raw as DeliveryUpdate
   if (v.fileIds !== undefined && (!Array.isArray(v.fileIds) || v.fileIds.length > 128 || new Set(v.fileIds).size !== v.fileIds.length || v.fileIds.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(id)))) throw new Error('成果文件引用无效。')
   const text = (s: unknown, max: number): s is string => typeof s === 'string' && Boolean(s.trim()) && s.length <= max
@@ -55,8 +46,8 @@ export function validateDeliveryUpdate(raw: unknown): DeliveryUpdate {
   if (Array.isArray(v.stages) && v.stages.length > 300) throw new Error(`阶段数量 ${v.stages.length} 超过单任务 300 个上限，请分卷继续。`)
   if (!Array.isArray(v.stages) || !v.stages.length || v.stages.length > 300 || v.stages.some(s => !s || !id(s.id) || !text(s.title, 160) || !['pending', 'active', 'done'].includes(s.status)) || new Set(v.stages.map(s => s.id)).size !== v.stages.length) throw new Error('阶段计划无效。')
   if (v.section !== undefined && (!v.section || !id(v.section.id) || !text(v.section.title, 160) || !text(v.section.body, 10000))) throw new Error('成果分节无效。')
-  if (!v.section && v.presentation === undefined && v.inputs === undefined) throw new Error('缺少成果正文或展示更新。')
-  return { ...(v.fileIds === undefined ? {} : { fileIds: [...v.fileIds] }), completionCriteria: v.completionCriteria.trim(), summary: v.summary.trim(), stages: v.stages.map(s => ({ id: s.id, title: s.title.trim(), status: s.status })), ...(v.section ? { section: { id: v.section.id, title: v.section.title.trim(), body: v.section.body.trim(), ...(sanitizeContactOutput(v.section.output) ? { output: sanitizeContactOutput(v.section.output) } : {}) } } : {}), ...(v.inputs === undefined ? {} : { inputs: validateTaskInputs(v.inputs) }), ...(v.presentation === undefined ? {} : { presentation: v.presentation === null ? null : validatePresentation(v.presentation) }) }
+  if (!v.section && v.inputs === undefined) throw new Error('缺少成果正文或展示更新。')
+  return { ...(v.fileIds === undefined ? {} : { fileIds: [...v.fileIds] }), completionCriteria: v.completionCriteria.trim(), summary: v.summary.trim(), stages: v.stages.map(s => ({ id: s.id, title: s.title.trim(), status: s.status })), ...(v.section ? { section: { id: v.section.id, title: v.section.title.trim(), body: v.section.body.trim(), ...(sanitizeContactOutput(v.section.output) ? { output: sanitizeContactOutput(v.section.output) } : {}) } } : {}), ...(v.inputs === undefined ? {} : { inputs: validateTaskInputs(v.inputs) }) }
 }
 export function deliveryMarkdown(title: string, value: AgentDelivery): string {
   return `# ${title}\n\n版本 ${value.version}\n\n## 完成条件\n\n${value.completionCriteria}\n\n## 阶段\n\n${value.stages.map(s => `- [${s.status === 'done' ? 'x' : ' '}] ${s.title}${s.status === 'active' ? '（进行中）' : ''}`).join('\n')}\n\n## 进展摘要\n\n${value.summary}\n\n${value.sections.map(s => `## ${s.title}\n\n${s.body}\n\n${(s.sources || []).map((source, i) => `[${i + 1}] ${source.title}: ${source.url}（读取于 ${new Date(source.capturedAt).toISOString()}）`).join('\n')}\n来源轮次：${s.runId}`).join('\n\n')}\n`

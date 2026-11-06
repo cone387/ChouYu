@@ -7,12 +7,18 @@ import { dispatchContactCommand } from '../agent-space/worker-commands'
 import { contactStorageDiagnostic, initializeContactStorage } from '../storage/contact-database'
 import { WorkerRecoveryPort } from '../agent-space/recovery-port'
 import { initializeUsage, closeUsage } from '../usage'
+import {WorkerPreviewPort} from '../result-designer/preview-port'
+import {WorkerAssistantSources} from '../result-designer/source-port'
 const port = process.parentPort!
 const recoveryBudget = new WorkerRecoveryPort(message => port.postMessage({ recoveryRequest: message }))
+const designPreview=new WorkerPreviewPort(message=>port.postMessage({designPreview:message}))
+const assistantSources=new WorkerAssistantSources(message=>port.postMessage({designSource:message}))
 let service: WorkLoopHost | undefined
 // Only init/close form an exclusive barrier; roster sync fans out per contact.
 const messages = new ContactCommandQueue()
 port.on('message', event => {
+  if(typeof event.data.designPreviewReceipt==='number'){designPreview.receive(event.data.designPreviewReceipt,event.data.result,event.data.error);return}
+  if(typeof event.data.designSourceReceipt==='number'){assistantSources.receive(event.data.designSourceReceipt,event.data.result,event.data.error);return}
   if (typeof event.data.recoveryReceipt === 'number') { recoveryBudget.receive(event.data.recoveryReceipt, event.data.error); return }
   // Probe the event loop independently of a slow, awaited command.
   if (typeof event.data.ping === 'number') { port.postMessage({ pong: event.data.ping }); return }
@@ -39,7 +45,7 @@ port.on('message', event => {
           signal.throwIfAborted()
           if (query !== '团队 免费 替代品' || key !== 'search-smoke-secret') throw new Error('Smoke search only accepts its isolated fixture')
           return [{ url: 'https://chouyu-agent-smoke.invalid/search-evidence', title: '新发现的定价页面' }]
-        } : undefined, id => new SkillLibrary(join(dirname(args[0]), 'contact-skills')).snapshot(id), join(dirname(args[0]), 'contact-skills'), { dshRuntime: args[1], recoveryBudget }), storageRetry => port.postMessage({ requestId, storageRetry }))
+        } : undefined, id => new SkillLibrary(join(dirname(args[0]), 'contact-skills')).snapshot(id), join(dirname(args[0]), 'contact-skills'), { dshRuntime: args[1], recoveryBudget, designPreview, assistantSources }), storageRetry => port.postMessage({ requestId, storageRetry }))
       }
       else if (!service) throw new Error('Agent 执行进程尚未初始化。')
       else {

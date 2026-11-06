@@ -51,7 +51,7 @@ export interface ContactStoreOperations {
   assertTaskBudget(id: string, topicId: string, needed: number): void
   setTaskBudget(id: string, topicId: string, revision: number, raw: unknown): { resourceBudget: TaskResourceBudget; revision: number; updatedAt: number; reason: string; calendar?: import("../../../shared/calendar-schedule").CalendarSchedule; separateEvaluations?: boolean; tokenLimit?: number; initialPlan?: import("../../../shared/agent-delivery").DeliveryPlan; requestLog?: string; id: string; characterId: string; status: AgentTopicStatus; judgement: string; openQuestions: string; nextStep: string; createdAt: number; title: string; goal: string; constraints: string; }
   allocateTaskBudget(runId: string, raw?: TaskResourceBudget): import("../../../shared/agents").AgentTopic
-  createRun(id: string, context: string, now?: number, topicId?: string, revisionScope?: "presentation"): string
+  createRun(id: string, context: string, now?: number, topicId?: string): string
   assignTopic(id: string, description: unknown, conversation: string, requestLog?: string, tokenLimit?: number, endingRequest?: import('../../../shared/task-ending').TaskEndingRequest): import("../../../shared/agents").AgentTopic
   assignCalendarTopic(id: string, raw: unknown, conversation: string, requestLog?: string): import("../../../shared/agents").AgentTopic
   editCalendarTopic(id: string, topicId: string, revision: number, raw: unknown, reason: string): AgentOverview
@@ -82,7 +82,6 @@ export interface ContactStoreOperations {
   completeCalendar(run: RunRow): number | undefined
   pauseForTaskBudget(runId: string): boolean
   deleteTopic(id: string, topicId: string, revision: number): string[]
-  revisePresentation(id: string, topicId: string, revision: number, feedback: unknown, conversation: string, baseVersion: number): string
   reviseCitation(id: string, revision: number, raw: ContentCitation, feedback: string, conversation: string): string
   reviseTopic(id: string, topicId: string, revision: number, feedback: unknown, conversation: string, sectionId?: string): string
   editTaskFromChat(id: string, topicId: string, revision: number, patch: import("../../../shared/contact-task-edit").ContactTaskEdit, reason: string, archivedLog?: string): AgentOverview

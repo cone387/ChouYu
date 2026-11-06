@@ -32,6 +32,26 @@ it('accepts formal sources idempotently inside the caller transaction', () => {
   expect(f.store.accept(snapshot(), 'v1')).toEqual(a)
   expect(f.store.pending()).toHaveLength(1)
 })
+it('copies the configured limit only when a new design task is accepted',()=>{
+  const db=new Database(':memory:');let limit:number|undefined=1000
+  try{
+    const store=new ResultDesignStore(db,()=>limit),first=store.accept(snapshot(),'v1')
+    limit=undefined;store.accept(snapshot(2),'v1')
+    expect(store.tokenLimit(first.requestId)).toBe(1000)
+    const other=store.accept(sourceSnapshot({...task,taskId:'second'},'1','Second',snapshot().sections,[]),'v1')
+    expect(store.tokenLimit(other.requestId)).toBeUndefined()
+  }finally{db.close()}
+})
+it('resumes blocked work only after configuration changes, with durable publication notices',()=>{
+  const f=fixture(),receipt=f.store.accept(snapshot(),'v1')
+  f.store.block(receipt.requestId,'No model');f.store.waitForChange(receipt.requestId,'config-1');f.reopen()
+  f.store.resumeChanged('config-1');expect(f.store.pending()).toHaveLength(0)
+  f.store.resumeChanged('config-2');expect(f.store.pending()).toHaveLength(1)
+  const job=f.store.claim(receipt.requestId,'run'),candidate=f.store.saveCandidate(job.id,code)
+  f.store.publish(job.id,candidate.id,evidence());f.reopen()
+  expect(f.store.notices()).toMatchObject([{id:candidate.id,task,source:snapshot().ref}])
+  f.store.ackNotice(candidate.id);f.reopen();expect(f.store.notices()).toEqual([])
+})
 
 it('keeps source versions separate from design versions and persists fixed bindings', () => {
   const f = fixture(), receipt = f.store.accept(snapshot(), 'v1'), job = f.store.claim(receipt.requestId, 'run-1')

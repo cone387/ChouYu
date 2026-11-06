@@ -19,16 +19,19 @@ export type DeliveryInspection = {
   version: number | null; savedSectionCount: number; directory: { id: string; title: string; characters: number }[]
   message?: string; latestVersion?: number; createdAt?: number; savedTextLength?: number
   completionCriteria?: string; stages?: AgentDelivery['stages']; inputs?: AgentDelivery['inputs']
-  presentation?: AgentDelivery['presentation'] | null; section?: DeliverySection
+  section?: DeliverySection
 }
 
 /** Wire contract. Shared types never import service instances or Electron. */
 export type ContactCommandMap = PublicCommands & {
+  designNotices:Command<[],import('./result-design').ResultDesignNotice[]>
+  designAckNotice:Command<[id:string],void>
   resultGet: Command<[task:import('./result-design').ResultTaskRef,sourceId?:string],import('./result-design').DesignView>
-  resultRequest: Command<[task:import('./result-design').ResultTaskRef,text:string,identity:string],import('./result-design').DesignReceipt>
+  resultRequest: Command<[task:import('./result-design').ResultTaskRef,text:string,identity:string,source:import('./result-design').ResultSourceRef],import('./result-design').DesignReceipt>
   resultRetry: Command<[task:import('./result-design').ResultTaskRef],import('./result-design').DesignReceipt>
   resultRestore: Command<[task:import('./result-design').ResultTaskRef,designId:string],import('./result-design').DesignView>
   resultAccept: Command<[task:import('./result-design').ResultTaskRef],void>
+  resultDocument: Command<[task:import('./result-design').ResultTaskRef,designId:string],{record:import('./result-design').ResultDesignRecord;source:import('./result-design').ResultSourceSnapshot}>
   answerInteractionRequest: Command<[id: string, response: import('./contact-interactions').ContactInteractionSubmission, source: import('./contact-task-requests').TaskRequestSource], ContactInteraction>
   deliveryFeedbackRequest: Command<[args: PublicCommands['deliveryFeedback']['args'], submission: import('./contact-task-requests').TaskRequestSubmission], PublicCommands['deliveryFeedback']['result']>
   getTaskRequest: Command<[submission: import('./contact-task-requests').TaskRequestSubmission], import('./contact-task-requests').TaskRequestReceipt | null>
@@ -88,13 +91,14 @@ export interface ContactRequest {
 // Arity is checked at the transport boundary. Object/business rules remain in
 // the domain repositories, including ownership and optimistic concurrency.
 const arities: Record<ContactCommandName, readonly [number, number]> = {
-  resultGet:[1,2],resultRequest:[3,3],resultRetry:[1,1],resultRestore:[2,2],resultAccept:[1,1],
+  designNotices:[0,0],designAckNotice:[1,1],
+  resultGet:[1,2],resultRequest:[4,4],resultRetry:[1,1],resultRestore:[2,2],resultAccept:[1,1],resultDocument:[2,2],
   answerInteractionRequest: [3, 3],
   deliveryFeedbackRequest: [2, 2],
   getTaskRequest: [1, 1], taskRequests: [1, 2],
   resumeRecovered: [3, 3],
   contactHome: [0, 0], pendingInteractions: [0, 0], getInteraction: [1, 1], outputPreferences: [0, 2], setOutputPreference: [3, 4], submitInteraction: [2, 2],
-  dashboard: [1, 1], summary: [0, 0], continueTopic: [3, 4], setTaskBudget: [3, 3], delivery: [1, 2], reviseTopic: [3, 6], savePreferences: [1, 2], get: [0, 0], save: [1, 2], run: [0, 2],
+  dashboard: [1, 1], summary: [0, 0], continueTopic: [3, 4], setTaskBudget: [3, 3], delivery: [1, 2], reviseTopic: [3, 4], savePreferences: [1, 2], get: [0, 0], save: [1, 2], run: [0, 2],
   createTopic: [1, 1], assignTopic: [1, 4], deleteTopic: [2, 2], editTopic: [4, 5], topicStatus: [4, 4], focusTopic: [1, 1], topicDetail: [1, 2], interactions: [1, 2], analytics: [1, 1], pause: [0, 0], detail: [1, 1], answer: [2, 3], remember: [1, 1], forget: [1, 1],
   validateCitation: [1, 1], reviseCitation: [3, 3], portfolio: [1, 1], setDeliveryFavorite: [2, 2], saveDeliveryReading: [1, 1], deliveryReading: [1, 1],
   memoryList: [0, 0], createMemory: [1, 1], updateMemory: [3, 3], memoryHistory: [1, 1], forgetMemory: [2, 2],

@@ -76,11 +76,10 @@ it('records acceptance without changing work and labels old unlinked feedback ho
   expect(rows.find(r => !r.requestId)?.runId).toBeUndefined()
   expect(() => f.store.feedbackLedger.list('bob', f.topic.id)).toThrow()
 })
-it('keeps the selected section and presentation-only scope from the existing revision dialog', () => {
+it('keeps the selected prose section from the revision dialog', () => {
   const f = fixture()
   const first = f.store.feedbackLedger.submit('alice', { ...f.input, citation: { ref: { characterId: 'alice', topicId: f.topic.id, version: 1, sectionId: 'one' } } })
   expect(JSON.parse(f.store.getRun(first.runId!)!.input).revisionCitation.ref.sectionId).toBe('one')
   f.finish(first.runId!, 'Revised prose')
-  const second = f.store.feedbackLedger.submit('alice', { ...f.input, requestId: 'style:two', scope: 'presentation', version: 2, revision: f.store.topics.get('alice', f.topic.id).revision })
-  expect(JSON.parse(f.store.getRun(second.runId!)!.input).revisionScope).toBe('presentation')
+
 })

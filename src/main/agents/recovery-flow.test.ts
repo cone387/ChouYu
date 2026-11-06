@@ -23,14 +23,10 @@ function fixture() {
   const receipt = store.feedbackLedger.submit('alice', { topicId: topic.id, revision: store.topics.get('alice', topic.id).revision, version: 1, requestId: 'recovery-feedback', action: 'revise', reason: 'Preserve this opinion', citation: { ref: { characterId: 'alice', topicId: topic.id, version: 1, sectionId: 'text' } } })
   return { get store() { return store }, topic, receipt, finish, restart() { store.close(); store = new ContactTaskStore(path); store.recover() } }
 }
-it.each(['content', 'presentation'] as const)('recovers %s feedback through the work-log run command and keeps duplicate clicks idempotent', async scope => {
+it.each(['content'] as const)('recovers %s feedback through the work-log run command and keeps duplicate clicks idempotent', async scope => {
   const f = fixture()
   f.store.fail(f.receipt.runId!, 'network timeout')
-  const receipt = scope === 'content' ? f.receipt : f.store.feedbackLedger.submit('alice', {
-    topicId: f.topic.id, revision: f.store.topics.get('alice', f.topic.id).revision, version: 1,
-    requestId: 'work-log-style', action: 'revise', reason: 'Change presentation', scope: 'presentation'
-  })
-  if (scope === 'presentation') f.store.fail(receipt.runId!, 'network timeout')
+  const receipt = f.receipt
   const commands = new ContactTaskCommands({ store: f.store,
     identity: id => ({ id, soul: '', conversation: '', config: DEFAULT_APP_CONFIG }), changed() {}, tick() {},
     remove: async () => {}, activeFor: () => [], abort() {}, activeRun: () => undefined, cleanupThread: async () => {} })
@@ -40,7 +36,6 @@ it.each(['content', 'presentation'] as const)('recovers %s feedback through the 
   const input = JSON.parse(f.store.getRun(next)!.input)
   expect(input).toMatchObject({ recoveryFrom: receipt.runId })
   if (scope === 'content') expect(input.revisionCitation.ref).toMatchObject({ version: 1, sectionId: 'text' })
-  else expect(input).toMatchObject({ revisionScope: 'presentation', revisionBaseVersion: 1, feedback: 'Change presentation' })
   expect(f.store.feedbackLedger.list('alice', f.topic.id).find(row => row.requestId === receipt.requestId)).toMatchObject({ runId: next, originalRunId: receipt.runId })
   await commands.dispatchUnknown('run', 'alice', [f.topic.id, receipt.runId])
   expect(f.store.overview('alice').runs[0].id).toBe(next)
@@ -115,7 +110,7 @@ it('rechecks restored read permission after repeated failures and preserves feed
   f.finish(next)
   expect(f.store.feedbackLedger.list('alice', f.topic.id)[0]).toMatchObject({ originalRunId: f.receipt.runId, runId: next, resultVersion: 2 })
 })
-it('retries presentation feedback through the same feedback record and rolls causal links back with creation failure', () => {
+it('rolls causal links back with creation failure', () => {
   const f = fixture(); f.store.fail(f.receipt.runId!, 'network timeout')
   const retryRevision = f.store.topics.get('alice', f.topic.id).revision
   f.store.db.exec("CREATE TRIGGER fail_recovery_link BEFORE INSERT ON feedback_attempts BEGIN SELECT RAISE(ABORT,'recovery link failed'); END")
@@ -123,14 +118,7 @@ it('retries presentation feedback through the same feedback record and rolls cau
   expect(f.store.topics.get('alice', f.topic.id).revision).toBe(retryRevision)
   expect(f.store.overview('alice').runs).toHaveLength(2)
   f.store.db.exec('DROP TRIGGER fail_recovery_link')
-  const style = f.store.feedbackLedger.submit('alice', { topicId: f.topic.id, revision: retryRevision, version: 1, requestId: 'style-recovery', action: 'revise', reason: 'Change presentation only', scope: 'presentation' })
-  f.store.fail(style.runId!, 'network timeout')
-  const card = f.store.decisions.pending('alice').find(c => c.runId === style.runId)!
-  f.store.decisions.submit('alice', card.id, { version: card.version }, '')
-  const record = f.store.feedbackLedger.list('alice', f.topic.id).find(r => r.requestId === 'style-recovery')!
-  expect(record).toMatchObject({ originalRunId: style.runId, status: 'queued' })
-  expect(record.runId).not.toBe(style.runId)
-  expect(JSON.parse(f.store.getRun(record.runId!)!.input)).toMatchObject({ revisionScope: 'presentation', revisionBaseVersion: 1, feedback: 'Change presentation only' })
+
 })
 it('preserves the same queued checkpoint and feedback when budget becomes available after restart', () => {
   const f = fixture(), run = f.receipt.runId!

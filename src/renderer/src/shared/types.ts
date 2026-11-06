@@ -76,6 +76,7 @@ export interface ElectronAPI {
   usage: import('../../../shared/usage').UsageAPI
   skills: import('../../../shared/skills').SkillAPI
   agents: import('../../../shared/agents').AgentAPI
+  resultDesign: import('../../../shared/result-design').ResultDesignAPI
   journal: import('../../../shared/journal').JournalAPI
   getAppVersion: () => Promise<string>
   getSystemIdleSeconds: () => Promise<number>

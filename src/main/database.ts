@@ -741,6 +741,11 @@ export function appendAgentNotice(notice: AgentNotice): SessionWorkspace {
   return appendContactMessage({ content: notice.content, communication, title: '工作进展', messageId: `agent:${notice.id}`,
     receiptKeys: [`agent-notice:${notice.characterId}:${notice.id}`], metadata: { agentNotice: ref } })
 }
+export function appendResultDesignNotice(notice:import('../shared/result-design').ResultDesignNotice):SessionWorkspace {
+  const owner='result-designer',href=`#contact-task?${new URLSearchParams({characterId:notice.task.ownerId,topicId:notice.task.domain==='assistant'?`routine:${notice.task.taskId}`:notice.task.taskId})}`
+  return appendContactMessage({content:`《${notice.title}》的成果界面已做好，可以打开阅读了。\n\n[查看任务成果](${href})`,title:'成果界面',timestamp:notice.createdAt,messageId:`result-design:${notice.id}`,
+    receiptKeys:[`result-design:${notice.id}`],communication:{version:1,characterId:owner,intent:'status',source:{kind:'proactive',eventIds:[`result-design:${notice.id}`]}}})
+}
 
 /** A durable action can belong directly to a contact; it has no invented task/run. */
 export function appendContactAction(card: import('../shared/contact-actions').ContactActionInteraction): SessionWorkspace {

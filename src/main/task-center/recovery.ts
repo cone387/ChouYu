@@ -17,6 +17,7 @@ export class ContactStoreRecovery {
       return
     }
     if (previous?.restore_id !== identity.restoreId) this.db.transaction(() => {
+      if(owner==='result-designer')this.db.exec('UPDATE result_design_notices SET sent=1')
       const ids = (table: string, ownerColumn = 'character_id') => (this.db.prepare('SELECT id FROM ' + table + ' WHERE ' + ownerColumn + '=?').all(owner) as { id: string }[]).map(row => row.id)
       const original: Original = { runs: ids('runs'), notices: ids('notices'), interactions: ids('contact_interactions') }
       const date = new Date(), start = new Date(date); start.setHours(0, 0, 0, 0)

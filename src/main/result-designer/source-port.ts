@@ -1,6 +1,6 @@
 import type {ResultSourcePort} from './sources'
 import type {ResultTaskRef,ResultSourceRef,ResultSourceSnapshot} from '../../shared/result-design'
-export type SourceRequest={sequence:number;operation:'latest'|'version'|'read'|'assertCurrent';task:ResultTaskRef|ResultSourceRef;sourceId?:string;intent?:'automatic'|'explicit'}
+export type SourceRequest={sequence:number;operation:'latest'|'version'|'read'|'assertCurrent'|'assertAvailable';task:ResultTaskRef|ResultSourceRef;sourceId?:string;intent?:'automatic'|'explicit'}
 export class WorkerAssistantSources implements ResultSourcePort {
   private sequence=0
   private pending=new Map<number,{resolve(v:any):void;reject(e:Error):void;timer:ReturnType<typeof setTimeout>}>()
@@ -18,4 +18,5 @@ export class WorkerAssistantSources implements ResultSourcePort {
   version(task:ResultTaskRef,sourceId:string,signal:AbortSignal):Promise<ResultSourceSnapshot|null>{return this.call({operation:'version',task,sourceId},signal)}
   read(task:ResultSourceRef,signal:AbortSignal):Promise<ResultSourceSnapshot>{return this.call({operation:'read',task},signal)}
   assertCurrent(task:ResultSourceRef,intent:'automatic'|'explicit',signal:AbortSignal):Promise<void>{return this.call({operation:'assertCurrent',task,intent},signal)}
+  assertAvailable(task:ResultSourceRef,intent:'automatic'|'explicit',signal:AbortSignal):Promise<void>{return this.call({operation:'assertAvailable',task,intent},signal)}
 }

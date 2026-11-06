@@ -38,6 +38,7 @@ import { AgentDeliveries } from '../agents/delivery';
 import { ContactStoreRecovery } from './recovery'
 
 import { ResultDesignStore } from '../result-designer/store'
+import {retireAuthorPresentation} from '../result-designer/retirement'
 
 export class ContactTaskStore {
   readonly designs: ResultDesignStore
@@ -141,8 +142,15 @@ export class ContactTaskStore {
       this.dependencies = new DeliveryDependencies(this)
       this.feedbackLedger = new FeedbackLedger(this)
       this.requests = new ContactTaskRequests(this.db)
-      this.designs = new ResultDesignStore(this.db)
+      this.designs = new ResultDesignStore(this.db,()=>{
+        const profile=this.profile('result-designer')
+        return profile?(JSON.parse(profile.settings) as AgentSettings).defaultTaskTokenLimit:undefined
+      })
       this.db.exec(`CREATE TRIGGER IF NOT EXISTS delete_topic_result_design AFTER DELETE ON topics BEGIN
+        DELETE FROM result_design_notices WHERE task_key=json_array('contact',OLD.character_id,OLD.id);
+        DELETE FROM result_design_reads WHERE job_id IN (SELECT id FROM result_design_jobs WHERE task_key=json_array('contact',OLD.character_id,OLD.id));
+        DELETE FROM result_design_waits WHERE request_id IN (SELECT id FROM result_design_requests WHERE task_key=json_array('contact',OLD.character_id,OLD.id));
+        DELETE FROM result_design_limits WHERE request_id IN (SELECT id FROM result_design_requests WHERE task_key=json_array('contact',OLD.character_id,OLD.id));
         DELETE FROM result_design_active WHERE source_key IN (SELECT key FROM result_design_sources WHERE task_key=json_array('contact',OLD.character_id,OLD.id));
         DELETE FROM result_design_versions WHERE task_key=json_array('contact',OLD.character_id,OLD.id);
         DELETE FROM result_design_jobs WHERE task_key=json_array('contact',OLD.character_id,OLD.id);
@@ -281,6 +289,7 @@ export class ContactTaskStore {
         pauseForTaskBudget: this.pauseForTaskBudget.bind(this)
       })
       this.restoreFailureSchedules()
+      retireAuthorPresentation(this.db)
       if (version < 18) this.db.pragma('user_version = 18')
       if (version < CONTACT_TASK_SCHEMA_VERSION) this.db.pragma(`user_version = ${CONTACT_TASK_SCHEMA_VERSION}`)
       this.dependencies.backfill()
@@ -368,7 +377,6 @@ export class ContactTaskStore {
   private completeCalendar(...args: Parameters<ContactStoreOperations['completeCalendar']>): ReturnType<ContactStoreOperations['completeCalendar']> { return this.scheduling.completeCalendar(...args) }
   private pauseForTaskBudget(...args: Parameters<ContactStoreOperations['pauseForTaskBudget']>): ReturnType<ContactStoreOperations['pauseForTaskBudget']> { return this.mutations.pauseForTaskBudget(...args) }
   deleteTopic(...args: Parameters<ContactStoreOperations['deleteTopic']>): ReturnType<ContactStoreOperations['deleteTopic']> { return this.mutations.deleteTopic(...args) }
-  revisePresentation(...args: Parameters<ContactStoreOperations['revisePresentation']>): ReturnType<ContactStoreOperations['revisePresentation']> { return this.mutations.revisePresentation(...args) }
   reviseCitation(...args: Parameters<ContactStoreOperations['reviseCitation']>): ReturnType<ContactStoreOperations['reviseCitation']> { return this.mutations.reviseCitation(...args) }
   reviseTopic(...args: Parameters<ContactStoreOperations['reviseTopic']>): ReturnType<ContactStoreOperations['reviseTopic']> { return this.mutations.reviseTopic(...args) }
   editTaskFromChat(...args: Parameters<ContactStoreOperations['editTaskFromChat']>): ReturnType<ContactStoreOperations['editTaskFromChat']> { return this.mutations.editTaskFromChat(...args) }

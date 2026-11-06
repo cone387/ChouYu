@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { createUsageBridge } from './bridges/usage'
 import { createSkillsBridge } from './bridges/skills'
 import { createAgentsBridge } from './bridges/agents'
+import {createResultDesignBridge} from './bridges/result-design'
 import { createJournalBridge } from './bridges/journal'
 import { createTasksBridge } from './bridges/tasks'
 import { createCaptureBridge } from './bridges/capture'
@@ -18,6 +19,7 @@ const api = {
   ...createUsageBridge(ipcRenderer),
   ...createSkillsBridge(ipcRenderer),
   ...createAgentsBridge(ipcRenderer),
+  ...createResultDesignBridge(ipcRenderer),
   ...createJournalBridge(ipcRenderer),
   ...createTasksBridge(ipcRenderer),
   ...createCaptureBridge(ipcRenderer),

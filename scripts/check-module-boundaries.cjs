@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
 const slash = value => value.replaceAll('\\', '/')
-const domains = /^src\/main\/(agents|agent-space|contact-agent|workloop|messaging|storage|task-center|assistant-routines|tasks|reminders|memory|journal|chat|harness|skills)\//
+const domains = /^src\/main\/(agents|result-designer|agent-space|contact-agent|workloop|messaging|storage|task-center|assistant-routines|tasks|reminders|memory|journal|chat|harness|skills)\//
 const pages = /^src\/renderer\/src\/components\/(Tasks|Journal|Settings|Contacts|ChatPanel)\//
 const entrypoints = new Set(['Tasks/TasksView', 'Journal/Journal', 'Settings/Settings', 'Contacts/ContactsView', 'ChatPanel/ChatPanel'])
 // Exact legacy edges may be listed here with a reason; never exempt a whole directory.

@@ -29,7 +29,7 @@ export interface AgentSearchResult { url: string; title: string }
 export interface AgentSearchRecord { query: string; at: number; results: AgentSearchResult[]; error?: string }
 export interface AgentResearch { contactQuery?: string; plan: AgentResearchPlan; searches: AgentSearchRecord[]; reads: { url: string; status: 'read' | 'failed'; hash?: string }[]; nextCheckAt?: number; unchanged?: boolean }
 export interface AgentMessageRef { interactionId?: string; topicId: string; runId: string; kind: 'question' | 'progress'; update?: import('./agent-progress').AgentProgressUpdate }
-export interface AgentNotice extends AgentMessageRef { communication?: import('./contact-communication').ContactCommunication; id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' | 'presentation' | 'failure' }
+export interface AgentNotice extends AgentMessageRef { communication?: import('./contact-communication').ContactCommunication; id: string; characterId: string; topicRevision: number; content: string; createdAt: number; purpose?: 'direction' | 'resources' | 'failure' }
 export interface AgentFocusRequest extends AgentMessageRef { tab: 'work' | 'history'; nonce: number }
 export function sanitizeAgentMessageRef(value: unknown): AgentMessageRef | undefined {
   if (!value || typeof value !== 'object') return undefined
@@ -47,7 +47,6 @@ export interface AgentEvidence { url: string; title: string; text: string; captu
 export interface AgentRun {
   calendar?: import('./calendar-schedule').CalendarOccurrence
   contactContext?: import('./contact-content').ContactContextRecord
-  revisionScope?: 'presentation'
   inputFields?: import('./agent-delivery').TaskInputField[]
   id: string; characterId: string; revision: number; status: AgentRunStatus; createdAt: number; updatedAt: number
   topicId: string | null
@@ -142,10 +141,10 @@ export interface AgentAPI extends ContactPortfolioAPI, ContactMemoryAPI, Contact
   continueTopic(characterId: string, topicId: string, revision: number, reason: string, requestId?: string): Promise<AgentOverview>
   setTaskBudget(characterId: string, topicId: string, revision: number, budget: Pick<import('./agent-resources').TaskResourceBudget, 'modelCalls'>): Promise<AgentOverview>
   delivery(characterId: string, topicId: string, version?: number): Promise<import('./agent-delivery').AgentDelivery | null>
-  deliveryFeedback(characterId: string, topicId: string, revision: number, version: number, action: 'accept' | 'revise', reason: string, requestId: string, citation?: import('./contact-content').ContentCitation, scope?: 'content' | 'presentation'): Promise<import('./delivery-feedback').DeliveryFeedbackReceipt>
+  deliveryFeedback(characterId: string, topicId: string, revision: number, version: number, action: 'accept' | 'revise', reason: string, requestId: string, citation?: import('./contact-content').ContentCitation, scope?: 'content'): Promise<import('./delivery-feedback').DeliveryFeedbackReceipt>
   deliveryFeedbackList(characterId: string, topicId: string): Promise<import('./delivery-feedback').DeliveryFeedbackRecord[]>
-  exportDelivery(characterId: string, topicId: string, version: number, format?: 'markdown' | 'html'): Promise<boolean>
-  reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string, scope?: 'content' | 'presentation', deliveryVersion?: number): Promise<AgentOverview>
+  exportDelivery(characterId: string, topicId: string, version: number, format?: 'markdown'): Promise<boolean>
+  reviseTopic(characterId: string, topicId: string, revision: number, feedback: string, sectionId?: string): Promise<AgentOverview>
   savePreferences(characterId: string, settings: AgentSettings, expectedRevision?: number): Promise<AgentOverview>
   searchCredential(characterId: string, key?: string, revision?: number): Promise<{ configured: boolean; revision: number }>
   get(characterId: string): Promise<AgentOverview>

@@ -15,7 +15,7 @@ export function createDesignModel(identity:ContactIdentity,harnesses:HarnessRegi
   return async(messages,systemPrompt,signal,tools)=>{
     let text='',metadata:AIResponseMetadata={model:identity.config!.model}
     const requestId=randomUUID()
-    await harness.run({characterId:identity.id,requestId,messages,systemPrompt,signal,tools,config:{...DEFAULT_APP_CONFIG,...identity.config},
+    await harness.run({characterId:identity.id,requestId,messages,systemPrompt:`${identity.soul}\n${systemPrompt}`,signal,tools,config:{...DEFAULT_APP_CONFIG,...identity.config},
       onChunk:chunk=>{text+=chunk;if(text.length>100000)throw new Error('设计输出过长。')},options:{timeoutMs:120000,maxOutputTokens:12000,
         beforeRound:async(_round,input)=>{signal.throwIfAborted();await check();text='';metadata={model:identity.config!.model};return budget.reserve(input,12000).maxOutputTokens},
         onMetadata:value=>{metadata={...metadata,...value}},afterRound:()=>budget.settle(metadata)}})

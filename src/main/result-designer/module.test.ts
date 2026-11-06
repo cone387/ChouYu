@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { ContactTaskStore } from '../task-center/contact-store'
 import { RunScheduler } from '../agent-space/scheduler'
 import { ResultDesignerModule } from './module'
@@ -19,4 +19,21 @@ it('shares capacity and retains its slot until cancellation settles',async()=>{
   finish();await closing;expect(scheduler.size).toBe(0)
   expect(store.db.prepare('SELECT topic_id FROM runs').get()).toEqual({topic_id:null})
   expect(store.topics.list(id)).toEqual([])
+})
+it('holds paused sources, drains a cancelled model, and resumes saved work',async()=>{
+  const store=new ContactTaskStore(':memory:');stores.push(store)
+  const scheduler=new RunScheduler(1),task={domain:'contact' as const,ownerId:'author',taskId:'t'}
+  store.designs.accept(sourceSnapshot(task,'1','Title',[{id:'s',title:'Body',body:'Body',sources:[]}],[]),'result-ui-v1')
+  let sourceAvailable=false,calls=0
+  const owner={id,identity:{id,soul:'',conversation:'',config:{provider:'openai' as const,baseUrl:'http://localhost',apiKey:'fixture',model:'test',thinkingDisabledModels:[]}}}
+  const module=new ResultDesignerModule(owner,store,scheduler,async(_job,signal)=>{calls++;await new Promise<void>((_,reject)=>signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}))},()=>{},async()=>{if(!sourceAvailable)throw Error('paused')})
+  module.prepare();await Promise.resolve();expect(module.advance()).toBe(false)
+  sourceAvailable=true;await vi.waitFor(()=>{module.prepare();expect(module.advance()).toBe(true)})
+  await vi.waitFor(()=>expect(calls).toBe(1))
+  store.db.prepare("UPDATE profiles SET settings=json_set(settings,'$.enabled',0) WHERE character_id=?").run(id)
+  module.prepare();await scheduler.drain(id);expect(store.designs.pending()).toHaveLength(1)
+  expect(module.advance()).toBe(false)
+  store.db.prepare("UPDATE profiles SET settings=json_set(settings,'$.enabled',1) WHERE character_id=?").run(id)
+  await vi.waitFor(()=>{module.prepare();expect(module.advance()).toBe(true)})
+  await vi.waitFor(()=>expect(calls).toBe(2));await module.close()
 })

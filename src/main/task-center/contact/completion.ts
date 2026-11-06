@@ -25,7 +25,7 @@ interface Ports {
   portfolio: import('../../agents/portfolio').AgentPortfolio
   deliveries: Pick<AgentDeliveries, "get" | "commit">
   research: ContactStoreOperations['research']
-  topics: Pick<AgentTopics, "get" | "presentation" | "advance">
+  topics: Pick<AgentTopics, "get" | "advance">
   files: Pick<AgentFiles, "attach">
   handoffs: Pick<AgentHandoffs, "completeReview">
   notices: Pick<AgentNotices, "enqueue" | "progress">
@@ -55,15 +55,13 @@ export class ContactCompletion {
       if (deliveryInput.deliveryVersion === 1 && this.ports.research(runId)?.plan.action === 'write' && !delivery) throw new Error('写作成果缺少 delivery.section.body，变化摘要不能作为正文保存。')
       validateChapterContinuation({ delivery, progress, nextStep: report.nextStep }, deliveryInput.chapterContinuation?.decision, false)
       const previousDelivery = run.topic_id ? this.ports.deliveries.get(run.topic_id) : null
-      const presentationOnly = deliveryInput.revisionScope === 'presentation'
-      if (presentationOnly && (!previousDelivery || previousDelivery.version !== deliveryInput.revisionBaseVersion || !delivery || delivery.presentation === undefined || delivery.section || delivery.inputs || memories.length || delivery.summary !== previousDelivery.summary || delivery.completionCriteria !== previousDelivery.completionCriteria || JSON.stringify(delivery.stages) !== JSON.stringify(previousDelivery.stages))) throw new Error('样式修订版本已变化或试图修改正文与进度，本轮未保存。')
       if (deliveryInput.answeredInputs?.length) {
         const supplied = deliveryInput.answeredInputs as import('../../../shared/agent-delivery').TaskInputField[]
         const existing = delivery?.inputs ?? previousDelivery?.inputs ?? supplied
         const inputs = [...existing.filter(field => !supplied.some(answer => answer.id === field.id)), ...supplied]
         if (delivery) delivery = { ...delivery, inputs }
       }
-      if (!presentationOnly && run.topic_id && progress?.status === 'completed' && this.ports.topics.get(run.character_id, run.topic_id).initialPlan) {
+      if (run.topic_id && progress?.status === 'completed' && this.ports.topics.get(run.character_id, run.topic_id).initialPlan) {
         if (!delivery) throw new Error('尚未提交实际成果和阶段验收，不能完成任务。')
         const requiredStages = [...this.ports.topics.get(run.character_id, run.topic_id).initialPlan!.stages, ...(previousDelivery?.stages ?? [])]
         if (requiredStages.some(stage => !delivery!.stages.some(next => next.id === stage.id && next.status === 'done'))) throw new Error('仍有计划阶段未交付或被遗漏，不能完成任务。')
@@ -91,10 +89,7 @@ export class ContactCompletion {
         if (!progress) throw new Error('缺少事项进展，本轮不能提交。')
         const before = this.ports.topics.get(run.character_id, run.topic_id)
         const previous = this.db.prepare('SELECT reports.value FROM reports JOIN runs ON runs.id=reports.run_id WHERE runs.topic_id=? AND runs.character_id=? AND runs.id<>? ORDER BY reports.rowid DESC LIMIT 1').get(run.topic_id, run.character_id, runId) as { value: string } | undefined
-        if (presentationOnly) {
-          this.ports.topics.presentation(run.character_id, run.topic_id, run.topic_revision!, runId)
-          this.ports.notices.enqueue({ id: `${runId}:presentation`, purpose: 'presentation', characterId: run.character_id, topicId: run.topic_id, runId, topicRevision: before.revision + 1, kind: 'progress', createdAt: Date.now(), content: `「${before.title}」的阅读样式已保存为版本 ${previousDelivery!.version + 1}，正文与任务进度保持不变。可在任务成果中查看。` })
-        } else {
+        {
           this.ports.topics.advance(run.character_id, run.topic_id, run.topic_revision!, progress, runId)
           const section = committed?.runId === runId ? committed.sections.find(s => s.runId === runId) : delivery?.section
           const deliveryChanged = Boolean(section && !previousDelivery?.sections.some(old => old.title === section.title && old.body === section.body))
@@ -107,7 +102,7 @@ export class ContactCompletion {
       }
       this.db.prepare("UPDATE runs SET status='completed',summary=?,updated_at=? WHERE id=?").run(report.title, Date.now(), runId)
       this.db.prepare("UPDATE runs SET input=json_remove(input,'$.endingCandidate') WHERE id=?").run(runId)
-      if (!presentationOnly) this.ports.taskFailures.clear(run.character_id, run.topic_id)
+      this.ports.taskFailures.clear(run.character_id, run.topic_id)
       if (run.topic_id) this.db.prepare('DELETE FROM research_idle WHERE topic_id=?').run(run.topic_id)
       const research = this.ports.research(runId)
       if (research && !JSON.parse(run.input).calendar) {
@@ -126,9 +121,9 @@ export class ContactCompletion {
         else if (research.plan.action === 'write' && !changedSection) this.ports.event(runId, 'deferred', '本轮没有新增或修改正文，按工作间隔再检查，避免重复消耗额度。')
       }
       this.ports.event(runId, 'completed', report.nextStep || '本轮工作完成。')
-      if (!presentationOnly && committed?.runId === runId) this.ports.endings.produced(run)
-      if (!presentationOnly) this.ports.completeCalendar(run)
-      if (!presentationOnly) this.ports.pauseForTaskBudget(runId)
+      if (committed?.runId === runId) this.ports.endings.produced(run)
+      this.ports.completeCalendar(run)
+      this.ports.pauseForTaskBudget(runId)
     })()
   }
 }

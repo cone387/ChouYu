@@ -53,7 +53,7 @@ export function createChatTools(context: ChatToolContext) {
             const arguments_ = parseToolArguments(call.arguments);
             try {
                 await context.assertContext();
-                const taskMutation = CONTACT_ACTION_TOOLS.includes(call.name as ContactActionTool) || ['request_contact_action', 'edit_contact_profile', 'configure_contact_skill', 'edit_contact_task', 'edit_contact_work_settings', 'set_contact_schedule', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine'].includes(call.name);
+                const taskMutation = CONTACT_ACTION_TOOLS.includes(call.name as ContactActionTool) || ['request_contact_action', 'edit_contact_profile', 'configure_contact_skill', 'edit_contact_task', 'edit_contact_work_settings', 'set_contact_schedule', 'create_task', 'update_task', 'complete_task', 'update_contact_topic', 'answer_contact_question', 'assign_contact_task', 'request_result_design', 'save_assistant_routine'].includes(call.name);
                 if (configurationStep && (!['edit_contact_profile', 'edit_contact_work_settings', 'configure_contact_skill', 'set_contact_search_credential', 'set_contact_output_preference'].includes(call.name) || configurationStepTools.has(call.name) || configurationStepTools.size >= 5 || call.name === 'set_contact_output_preference' && arguments_.scope !== 'contact'))
                     throw new Error('组合设置步骤不在当前联系人允许范围内。');
                 if (taskMutation && taskMutationRequested && !configurationStep)

@@ -3,7 +3,7 @@ import type { ContentCitation } from './contact-content'
 
 export interface DeliveryFeedbackInput {
   topicId: string; revision: number; version: number; action: 'accept' | 'revise'; reason: string; requestId: string; conversation?: string
-  citation?: ContentCitation; scope?: 'content' | 'presentation'
+  citation?: ContentCitation; scope?: 'content'
 }
 export interface DeliveryFeedbackReceipt {
   saved: true; feedbackId: number; requestId: string; topicId: string; version: number; action: 'accept' | 'revise'

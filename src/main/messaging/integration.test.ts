@@ -31,7 +31,7 @@ function card(): ContactActionInteraction {
     actions: [{ id: 'yes', label: '确认', tool: 'edit_contact_profile', arguments: {} }]
   } }
 }
-function request(kind: DeliveryRequest['kind']): DeliveryRequest {
+function request(kind: Exclude<DeliveryRequest['kind'],'result-design'>): DeliveryRequest {
   if (kind === 'assistant') return { kind, content: '保存正文', messageKind: 'rest', receiptIds: ['test:1'] }
   if (kind === 'interaction') return { kind, card: card() }
   return { kind, notice: { id: 'run:progress', characterId: DEFAULT_CHARACTER_ID, topicId: 'topic', runId: 'run', topicRevision: 1, kind: 'progress', content: '保存正文', createdAt: 1 } }

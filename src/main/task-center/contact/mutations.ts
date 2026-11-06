@@ -289,6 +289,7 @@ export class ContactMutations {
   assertLive(runId: string): RunRow {
     const run = this.ports.getRun(runId)
     const profile = run && this.ports.profile(run.character_id)
+    if(run && JSON.parse(run.input).revisionScope === 'presentation')throw new Error('旧作者展示请求已失效。')
     if (!run || !profile || run.revision !== profile.revision || !['running', 'queued', 'interrupted', 'waiting'].includes(run.status)) throw new Error('本轮工作已取消或角色已删除。')
     this.ports.handoffs.checkRun(runId)
     const refs = JSON.parse(run.input).contextReferences as ContextReferences | undefined
@@ -296,7 +297,7 @@ export class ContactMutations {
     assertTaskContextReferences(this.db, run)
     if (run.topic_id) {
       const topic = this.ports.topics.check(run.character_id, run.topic_id, run.topic_revision!)
-      if (!canResearch(topic.status) && JSON.parse(run.input).revisionScope !== 'presentation') throw new Error('此事项已暂停或结束。')
+      if (!canResearch(topic.status)) throw new Error('此事项已暂停或结束。')
     }
     return run
   }
@@ -371,13 +372,6 @@ export class ContactMutations {
     }
     this.db.prepare("UPDATE runs SET status='failed',error=?,updated_at=? WHERE id=?").run(error.slice(0, 600), Date.now(), id)
     this.event(id, 'failed', error)
-    if (JSON.parse(run.input).revisionScope === 'presentation') {
-      if (run.topic_id) {
-        const topic = this.ports.topics.get(run.character_id, run.topic_id)
-        this.ports.notices.enqueue({ id: `${id}:presentation-failed`, purpose: 'presentation', characterId: run.character_id, topicId: topic.id, runId: id, topicRevision: topic.revision, kind: 'progress', createdAt: Date.now(), content: `「${topic.title}」的阅读样式修改未完成，原成果与正文已保留。${contactFailureReason(error)}\n可在这条消息的处理卡片中查看原因、打开对应设置或重试本次样式修改。` })
-      }
-      return
-    }
     if (this.pauseForTaskBudget(id)) return
     const profile = this.ports.profile(run.character_id)!
     const settings = JSON.parse(profile.settings) as AgentSettings
@@ -439,20 +433,6 @@ export class ContactMutations {
       this.ports.taskFailures.refresh(id)
       this.db.prepare('UPDATE profiles SET focus_topic_id=NULL WHERE character_id=? AND focus_topic_id=?').run(id, topicId)
       return [...affected]
-    })()
-  }
-  revisePresentation(id: string, topicId: string, revision: number, feedback: unknown, conversation: string, baseVersion: number): string {
-    if (typeof feedback !== 'string' || !feedback.trim() || feedback.length > 2000 || containsSecret(feedback)) throw new Error('请填写有效的样式修改意见。')
-    return this.db.transaction(() => {
-      this.ports.topics.check(id, topicId, revision)
-      const artifact = this.ports.deliveries.get(topicId)
-      if (!artifact || !Number.isSafeInteger(baseVersion) || artifact.version !== baseVersion) throw new Error('成果版本已变化或尚无正文，请重新读取。')
-      if (this.ports.overview(id).runs.some(r => ['queued', 'running', 'waiting', 'interrupted'].includes(r.status) && r.topicId === topicId)) throw new Error('请先完成、回复或暂停当前工作，再修改样式。')
-      const runId = this.ports.createRun(id, conversation, Date.now(), topicId, 'presentation')
-      const input = JSON.parse(this.ports.getRun(runId)!.input)
-      this.db.prepare('UPDATE runs SET input=? WHERE id=?').run(JSON.stringify({ ...input, revisionSectionId: undefined, revisionBaseVersion: baseVersion, feedback: feedback.trim() }), runId)
-      this.event(runId, 'feedback', `仅修改阅读样式：${feedback.trim()}`)
-      return runId
     })()
   }
   reviseCitation(id: string, revision: number, raw: ContentCitation, feedback: string, conversation: string): string {

@@ -71,10 +71,7 @@ it('persists publication and consumption across a database restart', () => {
 })
 it('does not wake for presentation changes or bypass a fixed calendar or paced interval', () => {
   const f = fixture(), artifact = f.store.deliveries.get(f.topic.id)!
-  const run = f.store.revisePresentation('author', f.topic.id, f.store.topics.get('author', f.topic.id).revision, 'Change layout', '', artifact.version)
-  f.store.finish(run, { runId: run, title: 'Layout', body: '', nextStep: '', evidence: [], createdAt: Date.now() }, [],
-    { status: 'researching', judgement: 'Saved', nextStep: 'Continue', openQuestions: '', reason: 'Layout' },
-    { completionCriteria: artifact.completionCriteria, stages: artifact.stages, summary: artifact.summary, presentation: { title: 'Layout', html: '<main>Reader</main>', css: '', script: '' } })
+  f.store.designs.request({domain:'contact',ownerId:'author',taskId:f.topic.id},'Change layout','layout-request')
   expect(f.store.dependencies.pending('reader')).toEqual([])
   f.write('Changed')
   const settings = f.store.overview('reader').settings

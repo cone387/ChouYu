@@ -2,7 +2,7 @@ import type { ContactInteractionDetails } from './contact-interactions'
 import { containsSecret } from './memory'
 import { validateTaskRequestSource, type TaskRequestSource } from './contact-task-requests'
 
-export const CONTACT_ACTION_TOOLS = ['submit_contact_delivery_feedback', 'set_contact_output_preference', 'edit_contact_work_settings', 'edit_contact_profile', 'configure_contact_skill', 'update_contact_topic', 'answer_contact_question', 'edit_contact_task', 'set_contact_schedule', 'assign_contact_task', 'revise_contact_presentation', 'save_assistant_routine', 'set_contact_search_credential', 'install_contact_skill', 'prepare_contact_skill_environment', 'provide_contact_material', 'remember_contact_memory', 'update_contact_memory', 'forget_contact_memory'] as const
+export const CONTACT_ACTION_TOOLS = ['submit_contact_delivery_feedback', 'set_contact_output_preference', 'edit_contact_work_settings', 'edit_contact_profile', 'configure_contact_skill', 'update_contact_topic', 'answer_contact_question', 'edit_contact_task', 'set_contact_schedule', 'assign_contact_task', 'request_result_design', 'save_assistant_routine', 'set_contact_search_credential', 'install_contact_skill', 'prepare_contact_skill_environment', 'provide_contact_material', 'remember_contact_memory', 'update_contact_memory', 'forget_contact_memory'] as const
 export type ContactActionTool = typeof CONTACT_ACTION_TOOLS[number]
 export interface ContactActionOption {
   id: string

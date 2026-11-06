@@ -203,7 +203,7 @@ export function ContactAgentPanel({ characterId, name, selectedTab, onTabChange,
       </form>
       {logRun.inputFields?.length ? <details open><summary>按任务需求填写</summary><ContactTaskInputForm key={`${logRun.id}:${logRun.question}`} fields={logRun.inputFields} busy={busy} onSubmit={async (reply, values) => { await perform(async () => { await window.electronAPI.agents.answer(characterId, logRun.id, reply, values); setAnswer('') }) }} /></details> : null}
       </section>}
-        {tab === 'work' && logRun && logRun.topicId === topicId && <details className="topic-secondary"><summary>本轮工作日志</summary><ContactWorkLog active={visible} key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} data={data} busy={busy} canRetry={logRun.revisionScope === 'presentation' ? !dirty && !active && data.callsToday < data.settings.dailyCalls : !blocked}
+        {tab === 'work' && logRun && logRun.topicId === topicId && <details className="topic-secondary"><summary>本轮工作日志</summary><ContactWorkLog active={visible} key={`${characterId}:${logRun.id}`} characterId={characterId} run={logRun} data={data} busy={busy} canRetry={!blocked}
           onReport={() => { setTab('history'); setDetail(null); void perform(async () => setDetail(await window.electronAPI.agents.detail(characterId, logRun.id))) }}
           onRetry={() => void perform(() => window.electronAPI.agents.run(characterId, logRun.topicId!, logRun.id))}
           onReply={() => { document.querySelector<HTMLTextAreaElement>('.agent-question textarea')?.focus() }} /></details>}

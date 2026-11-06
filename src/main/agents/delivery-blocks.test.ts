@@ -8,10 +8,10 @@ function fixture() {
   const store = new ContactTaskStore(':memory:'); stores.push(store)
   for (const owner of ['alice', 'bob']) store.ensure(owner)
   const topic = (owner: string) => store.topics.create(owner, { title: 'Book', goal: 'Write', constraints: '' })
-  const write = (owner: string, id: string, style = false) => {
+  const write = (owner: string, id: string) => {
     const runId = store.createRun(owner, '', Date.now(), id)
     const update: DeliveryUpdate = { completionCriteria: 'Finish', stages: [{ id: 'write', title: 'Write', status: 'active' }], summary: 'Saved',
-      ...(style ? { presentation: { title: 'Reading', html: '<main/>', css: 'p{color:red}', script: '' } } : { section: { id: 'one', title: 'First', body: 'Shared immutable prose 😀' } }) }
+      section: { id: 'one', title: 'First', body: 'Shared immutable prose 😀' } }
     store.finish(runId, { runId, title: 'Saved', body: 'Saved', nextStep: 'Continue', evidence: [], createdAt: Date.now() }, [],
       { status: 'researching', judgement: 'Saved', reason: 'Continue', openQuestions: '', nextStep: 'Continue' }, update)
   }
@@ -19,15 +19,15 @@ function fixture() {
 }
 it('marks the incompatible body format newer than the old application accepts', () => {
   const f = fixture()
-  expect(f.store.db.pragma('user_version', { simple: true })).toBe(22)
+  expect(f.store.db.pragma('user_version', { simple: true })).toBe(23)
 })
 it('shares immutable prose across versions and owners without sharing access, and collects only unreferenced blocks', () => {
   const f = fixture(), a = f.topic('alice'), b = f.topic('bob')
-  f.write('alice', a.id); f.write('bob', b.id); f.write('alice', a.id, true)
+  f.write('alice', a.id); f.write('bob', b.id); f.write('alice', a.id)
   expect(f.store.db.prepare('SELECT body FROM delivery_blocks').all()).toEqual([{ body: 'Shared immutable prose 😀' }])
   const rows = f.store.db.prepare('SELECT value FROM delivery_versions').all() as { value: string }[]
   expect(rows.every(r => !r.value.includes('Shared immutable prose'))).toBe(true)
-  expect(f.store.deliveries.get(a.id, 1)?.sections).toEqual(f.store.deliveries.get(a.id, 2)?.sections)
+  expect(f.store.deliveries.get(a.id, 1)?.sections.map(({runId: _, ...section}) => section)).toEqual(f.store.deliveries.get(a.id, 2)?.sections.map(({runId: _, ...section}) => section))
   expect(() => f.store.portfolio.resolve('alice', { characterId: 'bob', topicId: b.id, version: 1 })).toThrow()
   expect(f.store.db.prepare('SELECT text FROM portfolio_texts').all()).toHaveLength(1)
   f.store.deleteTopic('alice', a.id, f.store.topics.get('alice', a.id).revision)

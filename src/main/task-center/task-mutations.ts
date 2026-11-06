@@ -50,10 +50,8 @@ export function mutateTask(store: ContactTaskStore, identity: ContactIdentity, m
       return { topicId: topic.id, effect: 'assignment' }
     }
     case 'reviseTopic': {
-      model(args[4] !== 'presentation')
-      if (args[4] !== undefined && args[4] !== 'content' && args[4] !== 'presentation') throw new Error('修订范围无效。')
-      const runId = args[4] === 'presentation' ? store.revisePresentation(id, topicId, revision, args[2], identity.conversation, args[5] as number)
-        : store.reviseTopic(id, topicId, revision, args[2], identity.conversation, args[3] as string | undefined)
+      model()
+      const runId = store.reviseTopic(id, topicId, revision, args[2], identity.conversation, args[3] as string | undefined)
       return { topicId, effect: 'revision', runId }
     }
   }

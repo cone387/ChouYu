@@ -3,6 +3,7 @@ import type { AgentDelivery } from '../../shared/agent-delivery'
 import type { ContactTaskStore } from '../task-center/contact-store'
 
 export interface ResultSourcePort {
+  assertAvailable?(ref:ResultSourceRef,intent:'automatic'|'explicit',signal:AbortSignal):Promise<void>
   version?(task:ResultTaskRef,sourceId:string,signal:AbortSignal):Promise<ResultSourceSnapshot|null>
   read(ref: ResultSourceRef, signal: AbortSignal): Promise<ResultSourceSnapshot>
   latest(task: ResultTaskRef, signal: AbortSignal): Promise<ResultSourceSnapshot | null>
@@ -42,10 +43,14 @@ export class ContactResultSources implements ResultSourcePort {
     if (snapshot.ref.contentHash !== ref.contentHash) throw new Error('成果内容已变化。')
     return snapshot
   }
-  async assertCurrent(ref: ResultSourceRef, intent: 'automatic'|'explicit', signal: AbortSignal) {
+  async assertAvailable(ref: ResultSourceRef, intent: 'automatic'|'explicit', signal: AbortSignal) {
     const topic = this.topic(ref,signal)
+    if(this.store.recovery.identity(ref.ownerId)&&!this.store.recovery.allowed(ref.ownerId,ref.taskId))throw new Error('成果任务尚未完成恢复核对。')
     if (topic.status === 'abandoned') throw new Error('任务已放弃。')
     if (topic.status === 'paused' && intent === 'automatic') throw new Error('任务已暂停，自动设计等待恢复。')
+  }
+  async assertCurrent(ref: ResultSourceRef, intent: 'automatic'|'explicit', signal: AbortSignal) {
+    await this.assertAvailable(ref,intent,signal)
     const latest = await this.latest(ref,signal)
     if (!latest || latest.ref.sourceId !== ref.sourceId || latest.ref.contentHash !== ref.contentHash) throw new Error('已有新的正式成果。')
   }

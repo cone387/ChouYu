@@ -72,12 +72,11 @@ export class AgentNotices {
       const run = this.db.prepare('SELECT status FROM runs WHERE id=? AND character_id=?').get(notice.runId, id) as { status: string } | undefined
       const topic = this.db.prepare('SELECT value FROM topics WHERE id=? AND character_id=?').get(notice.topicId, id) as { value: string } | undefined
       const direction = notice.purpose === 'direction'
-      const presentation = notice.purpose === 'presentation'
       const failure = notice.purpose === 'failure'
       const savedProgress = !notice.purpose && notice.kind === 'progress' && run?.status === 'completed' && Boolean(this.db.prepare('SELECT 1 FROM reports WHERE run_id=?').get(notice.runId))
       const item = notice.communication?.source.kind === 'task' ? notice.communication.source.artifact?.evaluationIndex : undefined
-      const key = `${notice.topicId}:${failure || savedProgress ? `${notice.runId}:${item ?? 'whole'}` : presentation ? `presentation:${notice.runId}` : direction ? 'direction' : notice.kind}`
-      if (!run || !topic || (failure ? run.status !== 'failed' : savedProgress ? false : presentation ? !['completed', 'failed'].includes(run.status) : direction ? ['cancelled', 'failed'].includes(run.status) : JSON.parse(topic.value).revision !== notice.topicRevision) || (notice.kind === 'question' && run.status !== 'waiting') || seen.has(key)) {
+      const key = `${notice.topicId}:${failure || savedProgress ? `${notice.runId}:${item ?? 'whole'}` : direction ? 'direction' : notice.kind}`
+      if (!run || !topic || (failure ? run.status !== 'failed' : savedProgress ? false : direction ? ['cancelled', 'failed'].includes(run.status) : JSON.parse(topic.value).revision !== notice.topicRevision) || (notice.kind === 'question' && run.status !== 'waiting') || seen.has(key)) {
         this.db.prepare("UPDATE notices SET state='suppressed' WHERE id=?").run(row.id)
       } else { seen.add(key); valid.push(notice) }
     }
@@ -85,7 +84,7 @@ export class AgentNotices {
     if (!profile) return []
     const notifyProgress = JSON.parse(profile.settings).notifyProgress !== false
     return valid.sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question') || Number(b.purpose === 'resources' || b.purpose === 'failure') - Number(a.purpose === 'resources' || a.purpose === 'failure') || a.createdAt - b.createdAt || a.id.localeCompare(b.id))
-      .filter(n => n.kind === 'question' || n.purpose === 'resources' || n.purpose === 'presentation' || n.purpose === 'failure' || notifyProgress).slice(0, 32)
+      .filter(n => n.kind === 'question' || n.purpose === 'resources' || n.purpose === 'failure' || notifyProgress).slice(0, 32)
   }
   ack(id: string, noticeId: string, now = Date.now()) {
     this.db.transaction(() => {

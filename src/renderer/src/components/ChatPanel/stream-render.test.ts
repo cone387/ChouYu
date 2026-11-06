@@ -73,16 +73,16 @@ describe('per-session character resolution', () => {
   })
 
   it('forwards the session character id into streamChat', () => {
-    expect(workspaceSource).toContain('character && !character.builtIn ? character.id : undefined')
+    expect(workspaceSource).toContain('character && character.id !== DEFAULT_CHARACTER_ID ? character.id : undefined')
   })
 
   it('displays the character model and routes model changes through characters.update', () => {
-    expect(panelSource).toContain('model={activeCharacter && !activeCharacter.builtIn && activeCharacter.model ? activeCharacter.model : config.model}')
+    expect(panelSource).toContain('model={activeCharacter && activeCharacter.id !== DEFAULT_CHARACTER_ID && activeCharacter.model ? activeCharacter.model : config.model}')
     expect(panelSource).toContain('characters.update(activeCharacter.id, {')
   })
 
   it('derives customCharacterActive instead of re-testing the builtIn flag inline', () => {
-    expect(panelSource).toContain('const customCharacterActive = Boolean(activeCharacter && !activeCharacter.builtIn)')
+    expect(panelSource).toContain('const customCharacterActive = Boolean(activeCharacter && activeCharacter.id !== DEFAULT_CHARACTER_ID)')
   })
 
   it('does not gate sending on the global AI config while a custom character is active', () => {

@@ -69,7 +69,7 @@ export class WorkLoop implements ContactModule {
       if (run.character_id !== this.owner.id || this.scheduler.get(run.id)) continue
       if (run.topic_id && endingState(this.store.topics.get(run.character_id, run.topic_id).ending).stopped) continue
       if (this.store.recovery.oldRun(run.character_id, run.id) || !this.store.recovery.allowed(run.character_id, run.topic_id)) continue
-      if (!this.owner.identity?.config || JSON.parse(run.input).revisionScope !== 'presentation' && JSON.parse(run.input).settings.searchEnabled && !this.owner.identity?.searchKey) continue
+      if (!this.owner.identity?.config || JSON.parse(run.input).settings.searchEnabled && !this.owner.identity?.searchKey) continue
       const settings = JSON.parse(this.store.profile(run.character_id)!.settings) as AgentSettings
       const active = this.scheduler.activeFor(run.character_id)
       if (JSON.parse(run.input).calendar && (!settings.enabled || !withinWorkHours(settings))) continue
@@ -86,7 +86,7 @@ export class WorkLoop implements ContactModule {
   private startRun(run: NonNullable<ReturnType<ContactTaskStore['getRun']>>, limit: number) {
     try { this.store.handoffs.bindRun(run.id) } catch (error) { this.store.fail(run.id, error instanceof Error ? error.message : '交接来源无法读取。'); this.changed(run.character_id); this.store.releaseRunCalls(run.id); return false }
     run = this.store.getRun(run.id)!
-    if (run.topic_id && JSON.parse(run.input).revisionScope !== 'presentation') this.store.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(run.topic_id, run.character_id)
+    if (run.topic_id) this.store.db.prepare('UPDATE profiles SET focus_topic_id=? WHERE character_id=?').run(run.topic_id, run.character_id)
     const identity = structuredClone(this.identity(run.character_id))
     const input = JSON.parse(run.input)
     if (!Object.hasOwn(input, 'backgroundHarnessEngine')) {

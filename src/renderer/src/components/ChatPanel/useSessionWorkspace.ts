@@ -427,7 +427,7 @@ export function useSessionWorkspace({
           generation.requestId = requestId
           requestSessionRef.current.set(requestId, sessionId)
         },
-        character && character.id !== 'chouyu' ? character.id : undefined,
+        character && character.id !== DEFAULT_CHARACTER_ID ? character.id : undefined,
         sessionId,
         references => { contactContext = references },
         source=>{

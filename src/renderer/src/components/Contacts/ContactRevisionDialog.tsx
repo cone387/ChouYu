@@ -5,7 +5,7 @@ import { deliveryText, type ContentCitation } from '../../../../shared/contact-c
 import type { AgentDelivery } from '../../../../shared/agent-delivery'
 
 export default function ContactRevisionDialog({ characterId, topic, citation, review, scope = 'content', onClose, onSaved }: {
-  characterId: string; topic: AgentTopic; citation: ContentCitation; scope?: 'content' | 'presentation'; onClose: () => void; onSaved: () => void
+  characterId: string; topic: AgentTopic; citation: ContentCitation; scope?: 'content'; onClose: () => void; onSaved: () => void
   review?: { handoffId: string; citation: ContentCitation }
 }) {
   const dialog = useRef<HTMLDialogElement>(null), alive = useRef(true), pending = useRef(false), title = useId()
@@ -33,12 +33,12 @@ export default function ContactRevisionDialog({ characterId, topic, citation, re
   return createPortal(<dialog className="contact-task-dialog" data-contact-revision-dialog data-interactive data-interactive-bounds ref={dialog} aria-labelledby={title}
     onKeyDown={e => { if (e.key === 'Escape') e.stopPropagation() }} onCancel={e => { e.preventDefault(); e.stopPropagation(); if (!pending.current) onClose() }}>
     <form onSubmit={e => { e.preventDefault(); void submit() }} aria-busy={busy}>
-      <h3 id={title}>{scope === 'presentation' ? '修改阅读样式' : '提出修改意见'}</h3>
+      <h3 id={title}>{'提出修改意见'}</h3>
       <p>{topic.title} · 版本 {basis.ref.version}</p>
       {basis.anchor && <blockquote className="citation-quote">{basis.anchor.quote}</blockquote>}
       {review && <p className="citation-quote">交回评审第 {review.citation.ref.version} 版中的意见：{review.citation.anchor?.quote || '当前选择的评审分节'}</p>}
       <label htmlFor={`${title}-feedback`}>修改意见</label>
-      <textarea id={`${title}-feedback`} data-delivery-feedback autoFocus rows={4} maxLength={2000} required disabled={busy} value={feedback} onChange={e => setFeedback(e.target.value)} placeholder={scope === 'presentation' ? '描述希望调整的阅读样式，正文与进度保持不变。' : '例如：保留引用的这一段，调整后面的对话。'} />
+      <textarea id={`${title}-feedback`} data-delivery-feedback autoFocus rows={4} maxLength={2000} required disabled={busy} value={feedback} onChange={e => setFeedback(e.target.value)} placeholder={'例如：保留引用的这一段，调整后面的对话。'} />
       <p className="agent-caption">按所选版本修订一轮，保留旧版本，并沿用任务的额度与权限。</p>
       {error && <p role="alert">{error}</p>}
       {latest && <details open><summary>已有版本 {latest.version}，请先核对变化</summary>

@@ -28,26 +28,6 @@ describe('confirmed contact feedback', () => {
     expect(request).toHaveBeenCalledWith('inspectDelivery', 'alice', ['topic', 4, 'ch02b'])
     expect(result.content).toContain('savedSectionCount')
   })
-  it('prepares a version-bound style revision, reports acceptance instead of completion, and rejects stale or repeated use', async () => {
-    const data = { revision: 7, topics: [{ id: 'topic', title: '小说', revision: 8 }], runs: [] as any[] }
-    let version = 4, chatOwner = 'alice'
-    const request = vi.fn(async (method: string) => method === 'get' ? data : method === 'delivery' ? { version } : { ...data, runs: [{ id: 'run', topicId: 'topic', status: 'queued' }] })
-    const tool = createContactTools({ owner: () => chatOwner, dispatchUnknown: request }).find(t => t.name === 'revise_contact_presentation')!
-    const args = { topicId: 'topic', revision: 8, deliveryVersion: 4, reason: '亮色主题，与系统一致' }
-    const prepared = await tool.prepareAsync!(args, context)
-    expect(prepared.preview).toContain('正文、需求、阶段与任务状态保持不变')
-    const result = JSON.parse((await prepared.execute()).content)
-    expect(result.workCompleted).toBe(false); expect(result.run.status).toBe('queued')
-    expect(request).toHaveBeenLastCalledWith('feedback', 'alice', [7, 'reviseTopic', ['topic', 8, args.reason, undefined, 'presentation', 4]])
-    await expect(prepared.execute()).rejects.toThrow('重复')
-    version = 5; await expect(tool.prepareAsync!(args, context)).rejects.toThrow('版本')
-    version = 4; const pending = await tool.prepareAsync!(args, context); chatOwner = 'bob'
-    await expect(pending.execute()).rejects.toThrow('归属')
-    chatOwner = 'alice'; data.runs.push({ topicId: 'other', status: 'running' })
-    await expect(tool.prepareAsync!(args, context)).resolves.toHaveProperty('preview')
-    data.runs.push({ topicId: 'topic', status: 'running' })
-    await expect(tool.prepareAsync!(args, context)).rejects.toThrow('未完成')
-  })
   it('previews revision feedback and keeps the captured topic and profile versions', async () => {
     const { tools, request } = fixture(), tool = tools[1]
     const prepared = await tool.prepareAsync!({ topicId: 'topic', revision: 2, action: 'revise', reason: '第二节改为团队场景，保留证据局限' }, context)

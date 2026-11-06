@@ -100,18 +100,26 @@ export class WorkLoopHost {
       this.modules.register('result-designer',owner=>new ResultDesignerModule(owner,this.store,this.scheduler,async(job,signal)=>{
         if(!options.designPreview)throw new Error('真实界面预览服务不可用。')
         const source=this.resultSources(job.task.domain)
-        const settings=JSON.parse(this.store.profile(owner.id)!.settings) as import('../../shared/agents').AgentSettings
-        const model=createDesignModel(structuredClone(owner.identity),this.harnesses,new DesignBudget(this.store,job.runId,settings.defaultTaskTokenLimit),async()=>{
+        const model=createDesignModel(structuredClone(owner.identity),this.harnesses,new DesignBudget(this.store,job.runId,this.store.designs.tokenLimit(job.requestId),taskKey(job.task)),async()=>{
           signal.throwIfAborted();this.store.assertLive(job.runId)
           const current=JSON.parse(this.store.profile(owner.id)!.settings) as import('../../shared/agents').AgentSettings
           if(!current.enabled||current.readContactDeliveries===false)throw new Error('设计师已暂停或成果读取权限已关闭。')
+            await source.assertAvailable?.(job.source,job.explicit?'explicit':'automatic',signal)
           await source.read(job.source,signal)
         })
         await runResultDesign(job,{store:this.store.designs,source,model,preview:options.designPreview},signal)
-      },id=>this.notify(id)))
+      },id=>this.notify(id),async job=>{
+        const source=this.resultSources(job.source.domain),signal=new AbortController().signal
+        try{await source.assertAvailable?.(job.source,job.explicit?'explicit':'automatic',signal)}catch(error){
+          const deleted=job.source.domain==='contact'?!this.store.db.prepare('SELECT 1 FROM topics WHERE id=? AND character_id=?').get(job.source.taskId,job.source.ownerId):String(error).includes('助手任务已删除。')
+          if(deleted)this.store.designs.invalidate(job.source)
+          throw error
+        }
+      }))
       this.modules.resolve(options.modules ?? ['workloop'])
       this.store.recover()
       this.store.designs.recover()
+      this.store.db.exec("UPDATE runs SET status='cancelled',error='应用重启，展示设计将从已保存来源重新执行。' WHERE json_extract(input,'$.executionKind')='result-design' AND status IN ('queued','running','waiting','interrupted')")
       this.eventLoop.enable()
       this.timer = setInterval(() => this.tick(), 15000)
       this.backupTimer = setInterval(() => { void this.backupNow() }, 300000)
@@ -175,6 +183,7 @@ export class WorkLoopHost {
   }
   async sync(identities: ContactIdentity[], enqueue: (id: string, operation: () => Promise<void>) => Promise<void> = (_id, operation) => operation(), queuedOwners: string[] = [], changed?: ReadonlySet<string>) {
     this.assertOpen()
+
     if (identities.some(identity => !identity.id) || new Set(identities.map(identity => identity.id)).size !== identities.length) throw new Error('联系人身份重复或无效。')
     const liveIds = new Set(identities.map(identity => identity.id))
     this.store.recovery.setRoster([...liveIds])
@@ -226,6 +235,7 @@ export class WorkLoopHost {
     this.deleting.add(id)
     this.subscriptions.get(id)?.(); this.subscriptions.delete(id)
     try {
+      await this.cancelSourceDesigns(id)
       this.store.cancel(id, '联系人已删除。')
       this.scheduler.abort(id); this.skillRunner.cancel(id)
       await this.contacts.get(id)?.close()
@@ -241,7 +251,7 @@ export class WorkLoopHost {
   }
   private async detachAdmitted(id: string, moduleId: string) {
     this.assertOpen(); this.identity(id)
-    await this.contacts.get(id)!.detach(moduleId)
+    await this.contacts.get(id)!.detach(id===RESULT_DESIGNER_CHARACTER_ID&&moduleId==='workloop'?'result-designer':moduleId)
     this.notify(id)
   }
   private cleanupThread(runId: string): Promise<void> {
@@ -286,10 +296,25 @@ export class WorkLoopHost {
     validateContactCommand(rawMethod, owner, rawArgs)
     const method = rawMethod, id = owner as string, args = rawArgs as unknown[]
     this.assertOpen()
+    if(method==='designNotices'||method==='designAckNotice'){
+      if(id!==RESULT_DESIGNER_CHARACTER_ID)throw new Error('设计通知归属无效。')
+      if(method==='designAckNotice')return this.store.designs.ackNotice(String(args[0]))
+      const notices=this.store.designs.notices(),valid:typeof notices=[]
+      for(const notice of notices){try{await this.resultSources(notice.task.domain).read(notice.source,new AbortController().signal);valid.push(notice)}catch(error){
+        const deleted=notice.task.domain==='contact'?!this.store.db.prepare('SELECT 1 FROM topics WHERE id=? AND character_id=?').get(notice.task.taskId,notice.task.ownerId):String(error).includes('助手任务已删除。')
+        if(deleted)this.store.designs.ackNotice(notice.id);else throw error
+      }}
+      return valid
+    }
     if(method.startsWith('result')){
       this.identity(id)
       const task=validateTaskRef(args[0]);if(task.ownerId!==id)throw new Error('成果归属不匹配。')
       const source=this.resultSources(task.domain),signal=new AbortController().signal
+      if(method==='resultDocument'){
+        const record=this.store.designs.design(String(args[1]))
+        if(taskKey(record.task)!==taskKey(task)||!record.evidence)throw new Error('设计版本未通过检查。')
+        return {record,source:await source.read(record.source,signal)}
+      }
       const latest=await source.latest(task,signal)
       if(!latest)return method==='resultGet'?{hasUpdate:false}:Promise.reject(new Error('尚无正式成果。'))
       this.store.designs.accept(latest,DESIGN_ENVIRONMENT_VERSION)
@@ -299,7 +324,11 @@ export class WorkLoopHost {
         if(!snapshot)throw new Error('成果版本不存在。')
         this.wake();return {...this.store.designs.view(snapshot.ref),source:snapshot}
       }
-      if(method==='resultRequest'){const receipt=this.store.designs.request(task,String(args[1]),String(args[2]));this.notify(id);return receipt}
+      if(method==='resultRequest'){
+        const expected=args[3] as import('../../shared/result-design').ResultSourceRef
+        if(!expected||expected.sourceId!==latest.ref.sourceId||expected.contentHash!==latest.ref.contentHash||taskKey(expected)!==taskKey(task))throw new Error('正式成果已更新，请打开最新成果后再调整界面。')
+        const receipt=this.store.designs.request(task,String(args[1]),String(args[2]));this.notify(id);return receipt
+      }
       if(method==='resultRetry'){const view=this.store.designs.view(latest.ref);const receipt=this.store.designs.retry(view.receipt!.requestId);this.notify(id);return receipt}
       if(method==='resultRestore'){
         const record=this.store.designs.design(String(args[1]));if(taskKey(record.task)!==taskKey(task))throw new Error('设计归属不匹配。')
@@ -332,7 +361,7 @@ export class WorkLoopHost {
     }
     if (method === 'attachModule') {
       this.identity(id)
-      const contact = this.contacts.get(id)!, moduleId = String(args[0])
+      const contact = this.contacts.get(id)!, moduleId = id===RESULT_DESIGNER_CHARACTER_ID&&args[0]==='workloop'?'result-designer':String(args[0])
       if (!contact.module(moduleId)) contact.mount([moduleId])
       this.notify(id)
       return null
@@ -353,7 +382,16 @@ export class WorkLoopHost {
           ...(Number.isFinite(this.eventLoop.mean) ? { eventLoopDelayMs: this.eventLoop.mean / 1e6 } : {}) },
         faults: [...this.faults].map(([characterId, error]) => ({ characterId, error })).concat([...this.cleanupFaults.values()]) }
     }
-    return this.commands.dispatchUnknown(method, id, args)
+    const result=await this.commands.dispatchUnknown(method, id, args)
+    if(method==='deleteTopic')await this.cancelSourceDesigns(id,String(args[0]))
+    return result
+  }
+  private async cancelSourceDesigns(ownerId:string,taskId?:string){
+    const runs=this.scheduler.activeFor(RESULT_DESIGNER_CHARACTER_ID).filter(run=>{
+      try{const [,owner,task]=JSON.parse(run.topicId||'null');return owner===ownerId&&(!taskId||task===taskId)}catch{return false}
+    })
+    for(const run of runs)run.controller.abort()
+    await Promise.all(runs.map(run=>run.promise))
   }
   tick() {
     if (!this.ready || this.closed || this.ticking || this.storage.blocked) return

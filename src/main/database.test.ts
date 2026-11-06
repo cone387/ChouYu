@@ -716,7 +716,7 @@ describe('characters', () => {
     expect(workspace.sessions.find((session) => session.id === 'legacy-1')?.characterId).toBe(DEFAULT_CHARACTER_ID)
     expect(workspace.activeSession.characterId).toBe(DEFAULT_CHARACTER_ID)
     const characters = listCharacters()
-    expect(characters).toHaveLength(PRESET_CHARACTERS.length + 1)
+    expect(characters).toHaveLength(PRESET_CHARACTERS.length + 2)
     expect(characters[0].id).toBe(DEFAULT_CHARACTER_ID)
   })
 
@@ -745,7 +745,7 @@ describe('characters', () => {
     for (let index = 1; index <= MAX_CHARACTER_COUNT - 1 - PRESET_CHARACTERS.length; index++) {
       createCharacter({ ...draft, name: `角色${index}` })
     }
-    expect(listCharacters()).toHaveLength(MAX_CHARACTER_COUNT)
+    expect(listCharacters()).toHaveLength(MAX_CHARACTER_COUNT + 1)
     expect(() => createCharacter({ ...draft, name: '超限角色' })).toThrow(/最多支持/)
   })
 

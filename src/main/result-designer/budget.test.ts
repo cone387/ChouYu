@@ -16,3 +16,10 @@ it('reserves unknown usage under designer identity and enforces per-run token li
   expect(store.tokens.usage(id).today).toBe(100)
   expect(budget.reserve('prompt',1000).maxOutputTokens).toBe(1000)
 })
+it('retains task consumption across retries and respects an unset limit',()=>{
+  const store=new ContactTaskStore(':memory:');stores.push(store);store.ensure(id)
+  const first=new DesignBudget(store,createDesignRun(store),2000,'fixed-task')
+  first.reserve('prompt',1000);first.settle({usage:{totalTokens:1700}})
+  expect(()=>new DesignBudget(store,createDesignRun(store),2000,'fixed-task').reserve('prompt',1000)).toThrow(/额度/)
+  expect(new DesignBudget(store,createDesignRun(store),undefined,'fixed-task').reserve('prompt',1000).maxOutputTokens).toBe(1000)
+})

@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import { AgentDeliveries } from './delivery'
 import { ContactTaskStore } from '../task-center/contact-store'
 import { deliveryMarkdown, type AgentDelivery } from '../../shared/agent-delivery'
-import { deliveryHtmlExport } from '../../shared/delivery-presentation'
 
 const databases: Database.Database[] = []
 afterEach(() => databases.splice(0).forEach(db => db.close()))
@@ -21,7 +20,7 @@ function legacy(count: number) {
       const runId = `run-${version}`
       const artifact: AgentDelivery = { version, runId, createdAt: version, completionCriteria: 'All chapters', summary: 'Saved', stages: [{ id: 'write', title: 'Write', status: 'active' }],
         sections: [...(versions.at(-1)?.sections ?? []), { id: `chapter-${version}`, title: `Chapter ${version}`, body: `${version}:正文😀\n第二段 <>& 与格式`.padEnd(80, 'x'), runId, sources: [{ url: 'https://example.com/', title: 'Source', capturedAt: version }] }],
-        inputs: [{ id: 'genre', label: 'Genre', value: 'Fiction', required: true }], presentation: { title: 'Book', html: '<main id="content"/>', css: 'p{line-height:2}', script: '' }, fileIds: ['existing-file'] }
+        inputs: [{ id: 'genre', label: 'Genre', value: 'Fiction', required: true }], fileIds: ['existing-file'] }
       versions.push(artifact); db.prepare('INSERT INTO runs VALUES(?)').run(runId)
       db.prepare('INSERT INTO delivery_versions VALUES(?,?,?,?)').run('book', version, runId, JSON.stringify(artifact))
     }
@@ -35,7 +34,6 @@ it('reconstructs all 300 legacy versions and exports byte-for-byte after an idem
     const current = deliveries.get('book', old.version)!
     expect(current).toEqual(old)
     expect(deliveryMarkdown('Book', current)).toBe(deliveryMarkdown('Book', old))
-    expect(deliveryHtmlExport('Book', current, 'alice')).toBe(deliveryHtmlExport('Book', old, 'alice'))
   }
   expect(new AgentDeliveries(db).get('book', 1)).toEqual(versions[0])
 }, 60000)
@@ -71,6 +69,6 @@ it('commits the incompatible format guard with schema migration, never before or
     expect(check.prepare('SELECT * FROM delivery_blocks').all()).toEqual([])
     check.exec('DROP TRIGGER schema_failure'); check.close()
     const resumed = new ContactTaskStore(file)
-    try { expect(resumed.db.pragma('user_version', { simple: true })).toBe(22) } finally { resumed.close() }
+    try { expect(resumed.db.pragma('user_version', { simple: true })).toBe(23) } finally { resumed.close() }
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

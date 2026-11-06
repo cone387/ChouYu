@@ -1,6 +1,6 @@
 import { containsSecret } from './memory'
 
-export const TRACKED_TASK_TOOLS = new Set(['edit_contact_task', 'assign_contact_task', 'set_contact_schedule', 'update_contact_topic', 'answer_contact_question', 'revise_contact_presentation', 'submit_contact_delivery_feedback'])
+export const TRACKED_TASK_TOOLS = new Set(['edit_contact_task', 'assign_contact_task', 'set_contact_schedule', 'update_contact_topic', 'answer_contact_question', 'submit_contact_delivery_feedback'])
 
 /** Supplied by the host, never by a model tool's arguments. */
 export interface TaskRequestSource {

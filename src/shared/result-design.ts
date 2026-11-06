@@ -24,17 +24,17 @@ export type ResultDesignRecord = {
   id: string; version: number; task: ResultTaskRef; source: ResultSourceRef; jobId: string; requestRevision: number
   environmentVersion: string; code: ResultDesignCode; codeHash: string; createdAt: number; evidence?: DesignEvidence
 }
-export type DesignView = { receipt?: DesignReceipt; active?: ResultDesignRecord; error?: string; hasUpdate: boolean; source?: ResultSourceSnapshot }
+export type DesignView = { receipt?: DesignReceipt; active?: ResultDesignRecord; error?: string; hasUpdate: boolean; newSourceId?:string; source?: ResultSourceSnapshot; history?:{id:string;version:number;createdAt:number}[] }
 export interface ResultDesignAPI {
   get(task:ResultTaskRef,sourceId?:string):Promise<DesignView>
-  request(task:ResultTaskRef,text:string,identity:string):Promise<DesignReceipt>
+  request(task:ResultTaskRef,text:string,identity:string,source:ResultSourceRef):Promise<DesignReceipt>
   retry(task:ResultTaskRef):Promise<DesignReceipt>
   restore(task:ResultTaskRef,designId:string):Promise<DesignView>
   onChanged(callback:()=>void):()=>void
 }
 export type DesignEnvironment = { version: string; font: string; tokens: Record<string, string>; width: number; height: number; theme: 'light'|'dark' }
 export type PreviewAction = { kind: 'click'; target: string } | { kind: 'scroll'; y: number } | { kind: 'key'; key: 'Tab'|'Enter'|'Escape'|'ArrowDown'|'ArrowUp' }
-export type PreviewObservation = DesignObservation & { imageUrl: string; controls: { id: string; label: string }[] }
+export type PreviewObservation = DesignObservation & { imageUrl: string; controls: { id: string; label: string }[]; contentIntact?:boolean; reachedSections?:string[] }
 
 export const designHash = (value: unknown) => bytesToHex(sha256(new TextEncoder().encode(JSON.stringify(value))))
 export const taskKey = (task: ResultTaskRef) => JSON.stringify([task.domain, task.ownerId, task.taskId])
@@ -76,3 +76,4 @@ export function validateEvidence(record: ResultDesignRecord, evidence: DesignEvi
       o.width === width && o.height === (width === 375 ? 700 : 768) && o.theme === theme && Boolean(o.screenshotId)
       && o.contentComplete && o.interactionsPassed && Array.isArray(o.errors) && !o.errors.length)))) throw new Error('展示检查证据不完整或不匹配。')
 }
+export interface ResultDesignNotice { id:string; task:ResultTaskRef; source:ResultSourceRef; title:string; createdAt:number }

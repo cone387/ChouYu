@@ -11,6 +11,7 @@ const hash = (body: string) => createHash('sha256').update(body, 'utf8').digest(
 /** Internal only: callers must check owner/topic/version before resolving a manifest. */
 export function readStoredDelivery(db: Database.Database, raw: string): AgentDelivery {
   const value = JSON.parse(raw)
+  delete value.presentation
   if (value.storage === undefined) return value as AgentDelivery
   if (value.storage !== 'blocks-v1') throw new Error('不支持的成果存储格式。')
   const { storage: _, sections, ...metadata } = value as StoredDeliveryManifest
@@ -37,7 +38,9 @@ export class DeliveryBlockStore {
       const keys = db.prepare("SELECT topic_id,version FROM delivery_versions WHERE json_extract(value,'$.storage') IS NULL").all() as { topic_id: string; version: number }[]
       for (const key of keys) {
         const row = db.prepare('SELECT topic_id,value FROM delivery_versions WHERE topic_id=? AND version=?').get(key.topic_id, key.version) as { topic_id: string; value: string }
-        const artifact = JSON.parse(row.value) as AgentDelivery, manifest = this.write(artifact)
+        const artifact = JSON.parse(row.value)
+        delete artifact.presentation
+        const manifest = this.write(artifact)
         if (!isDeepStrictEqual(this.read(manifest), artifact)) throw new Error('成果迁移内容不一致。')
         db.prepare('UPDATE delivery_versions SET value=? WHERE topic_id=? AND version=?').run(JSON.stringify(manifest), row.topic_id, artifact.version)
         this.link(row.topic_id, manifest)

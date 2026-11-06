@@ -18,3 +18,11 @@ it('does not erase a newer source event arriving during delivery', async () => {
   await outbox.drain()
   expect(JSON.parse(saved).r.snapshot.ref.sourceId).toBe('e2')
 })
+it('does not let one unavailable source starve independent later results',async()=>{
+  const event=routineSourceEvent('[{"id":"r","title":"Result","enabled":true}]','r','[{"id":"e","status":"completed","content":"body"}]')!
+  let saved=JSON.stringify({bad:event,good:{...event,revision:2}})
+  const accepted:number[]=[]
+  const outbox=new ResultSourceEvents({read:()=>saved,write:v=>{saved=v},accept:async e=>{if(e.revision!==2)throw Error('offline');accepted.push(e.revision)}})
+  await expect(outbox.drain()).rejects.toThrow('offline')
+  expect(accepted).toEqual([2]);expect(Object.keys(JSON.parse(saved))).toEqual(['bad'])
+})

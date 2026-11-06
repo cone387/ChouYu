@@ -12,8 +12,7 @@ export function contactTaskExecution(data: AgentOverview, topic: AgentTopic) {
   const canPause = Boolean(available && (run || queued || data.settings.enabled && (data.focusTopicId === topic.id || data.taskSchedule?.[topic.id])))
   const state = taskState(data, topic)
   const latestRun = data.runs.find(run => run.topicId === topic.id)
-  const action = cutoff ? undefined : latestRun?.status === 'failed' && latestRun.revisionScope === 'presentation' ? 'inspect'
-    : ended ? undefined : run?.status === 'waiting' ? 'reply' : canPause ? 'pause' : 'continue'
+  const action = cutoff ? undefined : ended ? undefined : run?.status === 'waiting' ? 'reply' : canPause ? 'pause' : 'continue'
   return { topic, state, run, latestRun, canPause, action }
 }
 

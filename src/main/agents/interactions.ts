@@ -33,12 +33,11 @@ export class ContactInteractions {
       // cannot be read. Keep the data intact and report its availability as unknown.
       catch { saved = undefined }
     }
-    const presentation = JSON.parse(run.input).revisionScope === 'presentation'
     const input = JSON.parse(run.input)
     const lengthDraft = input.deliveryLengthRepair?.original?.delivery?.section?.body || input.deliveryCountRepair?.original?.delivery?.section?.body
     const hasDraftTable = s.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='writing_drafts'").get()
     const draft = hasDraftTable && s.db.prepare("SELECT 1 FROM writing_drafts WHERE topic_id=? AND json_extract(value,'$.sourceRunId')=? AND updated_at<=? AND length(json_extract(value,'$.body'))>0 LIMIT 1").get(run.topic_id, run.id, run.updated_at)
-    return (presentation ? '本次只修改阅读样式，未改动正文。' : '这次尝试没有保存新的正式正文。')
+    return '这次尝试没有保存新的正式正文。'
       + (saved === undefined ? '之前的正文暂时无法读取，保存情况无法核实，请检查存储记录。' : saved ? '之前已保存的正文仍可在任务中查看。' : '截至这次中断，还没有已保存的正文。')
       + (lengthDraft ? '本轮未交付草稿已保留；再次尝试仍须满足原要求。' : draft ? '任务中另有未交付草稿；相同任务范围下继续时会尝试恢复。' : '')
   }
@@ -48,7 +47,7 @@ export class ContactInteractions {
     const settings = JSON.parse(profile.settings) as AgentSettings
     const sourceRun = this.store.getRun(notice.runId)
     const kind = notice.kind === 'question' ? 'question' : notice.purpose === 'resources' ? 'budget'
-      : notice.purpose === 'failure' || notice.purpose === 'presentation' && sourceRun?.status === 'failed' ? 'retry' : undefined
+      : notice.purpose === 'failure' ? 'retry' : undefined
     if (!kind) return
     const existing = this.store.db.prepare('SELECT id FROM contact_interactions WHERE id=?').get(notice.id)
     if (existing) return notice.id
@@ -102,7 +101,7 @@ export class ContactInteractions {
     for (const row of rows) {
       const notice = JSON.parse(row.value) as AgentNotice
       if (visibleNoticeIds && !visibleNoticeIds.has(notice.id)) continue
-      if (seen.has(notice.topicId) || !['resources', 'failure', 'presentation'].includes(notice.purpose ?? '') && notice.kind !== 'question') continue
+      if (seen.has(notice.topicId) || !['resources', 'failure'].includes(notice.purpose ?? '') && notice.kind !== 'question') continue
       const run = this.store.getRun(notice.runId)
       const topicRow = this.store.db.prepare('SELECT value FROM topics WHERE id=? AND character_id=?').get(notice.topicId, owner) as { value: string } | undefined
       const latest = this.store.db.prepare('SELECT id FROM runs WHERE topic_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(notice.topicId) as { id: string } | undefined
@@ -145,7 +144,7 @@ export class ContactInteractions {
     const s = this.store, run = s.getRun(v.runId)!, topic = s.topics.get(v.characterId, v.topicId)
     const settings = JSON.parse(s.profile(v.characterId)!.settings) as AgentSettings
     const continuing = ['waiting', 'queued', 'interrupted'].includes(run.status)
-    const callsNeeded = continuing ? s.callsNeededToResume(run.id) : JSON.parse(run.input).revisionScope === 'presentation' ? 1 : agentUsesPlanner(settings) ? 2 : 1
+    const callsNeeded = continuing ? s.callsNeededToResume(run.id) : agentUsesPlanner(settings) ? 2 : 1
     const block = s.db.prepare('SELECT needed FROM token_blocks WHERE run_id=?').get(run.id) as { needed: number } | undefined
     const usage = s.tokens.usage(v.characterId), fields: ContactBudgetField[] = []
     const add = (key: ContactBudgetField['key'], label: string, unit: string, used: number, limit: number | undefined, needed: number, max: number) => {
@@ -172,11 +171,9 @@ export class ContactInteractions {
     const v = this.read(owner, id), s = this.store
     if (recovery) return this.recoveryCard(owner, v.topicId, id)
     const sourceRun = s.getRun(v.runId)
-    const presentation = sourceRun && JSON.parse(sourceRun.input).revisionScope === 'presentation'
     if (v.kind === 'retry') {
       const error = s.getRun(v.runId)?.error ?? ''
       v.failure = contactFailure(error)
-      if (presentation) v.failure = { ...v.failure, title: '阅读样式修改中断', message: `这次阅读样式修改未完成。${v.failure.message}`, action: '重试本次样式修改' }
       v.failureDetail = containsSecret(error) || /Bearer\s+\S+|https?:\/\/[^\s]+[?@]/i.test(error)
         ? '原始诊断含有凭据或带参数的地址，已隐藏。请核对对应设置。' : error.slice(0, 600)
       if (sourceRun) v.impact ??= this.failureImpact(sourceRun.id)
@@ -192,10 +189,9 @@ export class ContactInteractions {
       if (v.kind === 'question' && s.db.prepare("SELECT 1 FROM events WHERE run_id=? AND kind='answer' AND id>?").get(v.runId, v.questionEventId ?? Number.MAX_SAFE_INTEGER)) {
         v.status = 'resolved'; v.result = '已收到回复'
       } else if (!run || !topic || !profile || topic.revision !== v.topicRevision || v.kind !== 'retry' && settingsGuard(JSON.parse(profile.settings)) !== v.settingsGuard
-        || !presentation && ['completed', 'abandoned'].includes(topic.status) || newer?.id !== v.runId
-        || presentation && s.deliveries.get(v.topicId)?.version !== JSON.parse(run.input).revisionBaseVersion
+        || ['completed', 'abandoned'].includes(topic.status) || newer?.id !== v.runId
         || v.kind === 'question' && (run.status !== 'waiting' || run.question !== v.question)
-        || v.kind === 'retry' && (run.status !== 'failed' || !presentation && topic.status === 'paused')) {
+        || v.kind === 'retry' && (run.status !== 'failed' || topic.status === 'paused')) {
         v.status = 'obsolete'; v.result = '任务状态已变化，此操作已失效'
       } else {
         if (v.kind === 'retry') {
@@ -209,7 +205,7 @@ export class ContactInteractions {
       }
       if (v.status !== 'pending') this.save(v)
     }
-    if (v.kind === 'retry' && v.status === 'pending' && !presentation) {
+    if (v.kind === 'retry' && v.status === 'pending') {
       const recovery = s.providerRecovery(owner, v.topicId)
       const settings = JSON.parse(s.profile(owner)!.settings) as AgentSettings
       const failure = s.taskFailures.get(v.topicId)
@@ -232,14 +228,12 @@ export class ContactInteractions {
         v.recoveryMessage = scheduled + hours + action
       }
     }
-    if (v.kind === 'retry' && v.status === 'pending' && presentation) v.recoveryMessage = '这次样式修改不会自动重试。可按原修改要求重试，正文保持不变。'
     if (v.kind === 'retry' && v.status !== 'pending') {
       const topicRow = s.db.prepare('SELECT value FROM topics WHERE id=? AND character_id=?').get(v.topicId, owner) as { value: string } | undefined
       const topic = topicRow && JSON.parse(topicRow.value)
       const newer = s.db.prepare('SELECT id,status,error,input FROM runs WHERE topic_id=? AND character_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(v.topicId, owner) as { id: string; status: string; error: string; input: string } | undefined
-      const newerPresentation = presentation && newer && newer.id !== v.runId && JSON.parse(newer.input).revisionScope === 'presentation'
       if (!topic) { v.currentState = 'deleted'; v.result = '任务已删除，此前的重试操作已失效。' }
-      else if (['paused', 'completed', 'abandoned'].includes(topic.status) && !newerPresentation) {
+      else if (['paused', 'completed', 'abandoned'].includes(topic.status)) {
         v.currentState = topic.status
         v.result = topic.status === 'paused' ? '任务已暂停，不会自动重试；需要时可在任务中继续。'
           : topic.status === 'completed' ? '任务现已完成，无需重试此前的失败。' : '任务已结束，不会再重试。'
@@ -298,12 +292,7 @@ export class ContactInteractions {
         s.db.prepare("UPDATE runs SET status='queued',topic_revision=? WHERE id=?").run(topic.revision, run.id)
         record.result = '额度已调整，本轮已排队继续'
       } else {
-        const input = JSON.parse(run.input)
-        if (input.revisionScope === 'presentation') {
-          const retry = s.revisePresentation(owner, topic.id, topic.revision, input.feedback, conversation, input.revisionBaseVersion)
-          s.feedbackLedger.resume(run.id, retry)
-          record.result = '本次样式修改已排队重试，正文保持不变'
-        } else {
+        {
           s.continueTopic(owner, topic.id, topic.revision, current.kind === 'budget' ? '用户通过聊天卡片调整额度并继续。' : '用户通过聊天卡片重试本任务。', conversation)
           record.result = current.kind === 'budget' ? '额度已调整，任务已排队' : '已重试，任务已排队'
         }

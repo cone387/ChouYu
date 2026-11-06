@@ -10,7 +10,6 @@ import { initDatabase, getSession, getSessions, saveSessionMessages, flushDataba
 import { DEFAULT_CHARACTER_ID } from '../../shared/characters'
 import { ContactTaskStore } from '../task-center/contact-store'
 import { deliveryMarkdown } from '../../shared/agent-delivery'
-import { deliveryHtmlExport } from '../../shared/delivery-presentation'
 
 async function sample<T>(operation: () => T) {
   const start = performance.now()
@@ -89,11 +88,11 @@ export async function runStorageScaleSmoke() {
       const read = await sample(() => store.deliveries.get(topic.id, count)!)
       assert.equal(read.value.sections.length, count)
       assert.equal(store.deliveries.get(topic.id, 1)!.sections.length, 1)
-      const exported = await sample(() => ({ md: deliveryMarkdown('Book', read.value), html: deliveryHtmlExport('Book', read.value, 'benchmark') }))
+      const exported = await sample(() => ({ md: deliveryMarkdown('Book', read.value) }))
       for (let i = 1; i <= count; i++) {
         const body = `${i}:`.padEnd(2000, 'x')
         assert.equal(read.value.sections[i - 1].body, body)
-        assert.ok(exported.value.md.includes(body)); assert.ok(exported.value.html.includes(body))
+        assert.ok(exported.value.md.includes(body))
       }
       const snapshots = store.db.prepare('SELECT SUM(length(CAST(value AS BLOB))) AS n FROM delivery_versions').get() as { n: number }
       const hasBlocks = store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='delivery_blocks'").get()

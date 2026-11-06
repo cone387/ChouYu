@@ -13,8 +13,6 @@ import { ContactRuntimeState, appendRuntimeDiagnostic, runtimeDiagnostic } from 
 import { configureContactSkill, contactSkillLibrary, findContactSkills, installContactSkill, contactSkillRunner } from '../skills'
 import { randomUUID } from 'node:crypto'
 import { markUsageCollectionIssue } from '../usage'
-import { registerPresentationProtocol } from './presentation-protocol'
-import { deliveryHtmlExport } from '../../shared/delivery-presentation'
 import { deliverMessage } from '../messaging'
 import { app, BrowserWindow, dialog, utilityProcess, type UtilityProcess } from 'electron'
 import { writeFile } from 'node:fs/promises'
@@ -46,6 +44,18 @@ import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID } from '../../shared/chara
 import type { ContactIdentity } from '../agent-space/workloop-host'
 import { setupIdeaLab } from './idea-lab'
 import { validateMemoryInput } from '../../shared/contact-memories'
+import {ElectronDesignPreview} from '../result-designer/preview'
+import {AssistantResultSources} from '../result-designer/assistant-sources'
+import {ResultSourceEvents,RESULT_SOURCE_OUTBOX} from '../result-designer/source-events'
+import {registerResultProtocol} from '../result-designer/protocol'
+import {validateTaskRef,type ResultTaskRef,type ResultSourceRef} from '../../shared/result-design'
+const assistantDesignSources=new AssistantResultSources(key=>getState(key)||'')
+const designOutbox=new ResultSourceEvents({read:()=>getState(RESULT_SOURCE_OUTBOX)||'',write:value=>setState(RESULT_SOURCE_OUTBOX,value),
+  accept:async event=>{
+    const routines=JSON.parse(getState('assistant-routines-v1')||'[]') as {id:string}[]
+    if(!routines.some(task=>task.id===event.snapshot.ref.taskId))return
+    await contactAgentsCall(event.snapshot.ref.ownerId,'resultAccept',[validateTaskRef(event.snapshot.ref)])}})
+const designPreviews=new Set<ElectronDesignPreview>()
 
 let child: UtilityProcess | undefined
 let starting: Promise<void> | undefined
@@ -90,6 +100,9 @@ async function deliver(id: string) {
       if (!getCharacter(characterId)) continue
       const generation = runtimeState.read().generation
       try {
+        if(characterId==='result-designer')for(const notice of await rpc('designNotices',characterId)){
+          deliverMessage({kind:'result-design',notice});await rpc('designAckNotice',characterId,[notice.id])
+        }
         const notices = await rpc('notices', characterId) as AgentNotice[]
         for (const notice of notices) {
           deliverMessage({ kind: 'agent', notice })
@@ -202,6 +215,8 @@ async function ensure() {
       env: { ...globalThis.process.env, LANGSMITH_TRACING: 'false', LANGCHAIN_TRACING_V2: 'false', LANGCHAIN_TRACING: 'false' }
     })
     child = process
+    const previews=new ElectronDesignPreview(join(app.getPath('userData'),'result-design-previews'))
+    designPreviews.add(previews)
     generations.set(process, generation)
     process.stdout?.resume()
     if (globalThis.process.env.CHOUYU_SMOKE_TEST === '1') process.stderr?.on('data', chunk => console.error('CHOUYU_AGENT_WORKER', String(chunk)))
@@ -210,6 +225,16 @@ async function ensure() {
     process.on('message', message => {
       if (message.usageCollectionIssue === true) { markUsageCollectionIssue(); return }
       if (child !== process) return
+      if(message.designPreview){
+        const request=message.designPreview as import('../result-designer/preview-port').PreviewRequest
+        void previews.dispatch(request).then(result=>{if(child===process)process.postMessage({designPreviewReceipt:request.sequence,result})},error=>{if(child===process)process.postMessage({designPreviewReceipt:request.sequence,error:String(error)})});return
+      }
+      if(message.designSource){
+        const request=message.designSource as import('../result-designer/source-port').SourceRequest,signal=new AbortController().signal
+        const read=()=>request.operation==='latest'?assistantDesignSources.latest(request.task,signal):request.operation==='version'?assistantDesignSources.version(request.task,request.sourceId,signal):
+          request.operation==='read'?assistantDesignSources.read(request.task as ResultSourceRef,signal):request.operation==='assertAvailable'?assistantDesignSources.assertAvailable(request.task as ResultSourceRef,request.intent??'automatic',signal):assistantDesignSources.assertCurrent(request.task as ResultSourceRef,request.intent??'automatic',signal)
+        void read().then(result=>{if(child===process)process.postMessage({designSourceReceipt:request.sequence,result})},error=>{if(child===process)process.postMessage({designSourceReceipt:request.sequence,error:String(error)})});return
+      }
       if (message.recoveryRequest) {
         const request = message.recoveryRequest as import('../agent-space/recovery-port').RecoveryBudgetMessage
         try {
@@ -226,6 +251,7 @@ async function ensure() {
       requests.receive(process, message)
     })
     process.on('exit', () => {
+      void previews.close().finally(()=>designPreviews.delete(previews))
       requests.exited(process)
       if (child !== process) return
       child = undefined
@@ -474,30 +500,28 @@ export function initializeAgents() {
       return result
     }
   })) if (!getRegisteredTool(tool.name)) registerTool(tool)
-  registerPresentationProtocol(async (id, topicId, version) => {
-    if (!getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
-    await ensure()
-    const artifact = await rpc('delivery', id, [topicId, version]) as AgentDelivery | null
-    const detail = await rpc('topicDetail', id, [topicId])
-    return { title: detail.topic.title, artifact }
-  })
+  registerResultProtocol((task,id)=>contactAgentsCall(task.ownerId,'resultDocument',[task,id]))
+  contactHandle('result-design:get',(_event,raw:ResultTaskRef,sourceId?:string)=>{const task=validateTaskRef(raw);return contactAgentsCall(task.ownerId,'resultGet',[task,sourceId])})
+  contactHandle('result-design:request',(_event,raw:ResultTaskRef,text:string,identity:string,source:ResultSourceRef)=>{const task=validateTaskRef(raw);return contactAgentsCall(task.ownerId,'resultRequest',[task,text,identity,source])})
+  contactHandle('result-design:retry',(_event,raw:ResultTaskRef)=>{const task=validateTaskRef(raw);return contactAgentsCall(task.ownerId,'resultRetry',[task])})
+  contactHandle('result-design:restore',(_event,raw:ResultTaskRef,id:string)=>{const task=validateTaskRef(raw);return contactAgentsCall(task.ownerId,'resultRestore',[task,id])})
   contactHandle('agents:pendingInteractions', async (_event, owner: string) => pendingContactInteractions(owner))
   contactHandle('agents:dashboard', async () => {
     await ensure()
     return rpc('dashboard', '', [listCharacters().filter(c => c.id !== ASSISTANT_CHARACTER_ID).map(c => c.id)])
   })
-  contactHandle('agents:exportDelivery', async (event, id: string, topicId: string, version: number, format: 'markdown' | 'html' = 'markdown') => {
+  contactHandle('agents:exportDelivery', async (event, id: string, topicId: string, version: number, format: 'markdown' = 'markdown') => {
     if (typeof id !== 'string' || !getCharacter(id) || id === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
     await ensure()
     const artifact = await rpc('delivery', id, [topicId, version]) as AgentDelivery | null
     const detail = await rpc('topicDetail', id, [topicId])
     if (!artifact) throw new Error('尚无可导出的成果。')
-    if (!['markdown', 'html'].includes(format)) throw new Error('导出格式无效。')
+    if (format !== 'markdown') throw new Error('导出格式无效。')
     const parent = BrowserWindow.fromWebContents(event.sender)
-    const options = { title: '导出此版本成果', defaultPath: `${detail.topic.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80)}-v${artifact.version}.${format === 'html' ? 'html' : 'md'}`, filters: [{ name: format === 'html' ? 'HTML 阅读页面' : 'Markdown', extensions: [format === 'html' ? 'html' : 'md'] }] }
+    const options = { title: '导出此版本成果', defaultPath: `${detail.topic.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80)}-v${artifact.version}.md`, filters: [{ name: 'Markdown', extensions: ['md'] }] }
     const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
     if (result.canceled || !result.filePath) return false
-    await writeFile(result.filePath, format === 'html' ? deliveryHtmlExport(detail.topic.title, artifact, randomUUID()) : deliveryMarkdown(detail.topic.title, artifact), 'utf8')
+    await writeFile(result.filePath, deliveryMarkdown(detail.topic.title, artifact), 'utf8')
     return true
   })
   contactHandle('agents:searchCredential', async (_event, id: string, key?: string, revision?: number) => {
@@ -528,6 +552,7 @@ export function initializeAgents() {
   void ensure().catch(() => {})
   syncTimer = setInterval(() => {
     if (!child || starting || closing) return
+    void designOutbox.drain().catch(()=>{})
     const generation = runtimeState.read().generation
     void syncRoster().then(() => {
       runtimeState.update(generation, { syncedAt: Date.now() })
@@ -543,5 +568,6 @@ export async function closeAgents() {
   runtimeState.update(runtimeState.read().generation, { phase: 'closing' })
   try { await starting; await contactSpace.close(); if (child) await rpc('close') } catch { /* killed processes recover from their checkpoints */ }
   child?.kill(); child = undefined
+  await Promise.all([...designPreviews].map(previews=>previews.close()));designPreviews.clear()
   contactTasks.dispose()
 }
