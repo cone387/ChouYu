@@ -19,8 +19,8 @@ function fixture(error = 'API error 429: 余额不足或无可用资源包') {
   for (let i = 0; i < 3; i++) { vi.setSystemTime(Date.now() + 1000); run = store.createRun('alice', ''); store.charge(run); store.fail(run, error) }
   return { store, path, run, topic: store.getRun(run)!.topic_id! }
 }
-it('restores old billing blocks across restart without resetting failures or bypassing backoff', () => {
-  const { store, path, run, topic } = fixture()
+it.each(['API error 429: 余额不足或无可用资源包', 'API error 500: {"error":{"message":"upstream error: do request failed","code":"do_request_failed"}}'])('restores old provider blocks across restart without resetting failures or bypassing backoff: %s', error => {
+  const { store, path, run, topic } = fixture(error)
   // Old builds recorded only a three-minute wait before permanently stopping.
   store.db.prepare('UPDATE profiles SET next_at=?').run(Date.now() + 180000)
   const reopened = new ContactTaskStore(path); cleanups.push(() => reopened.close())
@@ -39,12 +39,12 @@ it('restores old billing blocks across restart without resetting failures or byp
   expect(reopened.profile('alice')!.failures).toBe(0)
   expect(reopened.overview('alice').reports).toHaveLength(1)
 })
-it('backs off recurring outages to 30 then 60 minutes without a hot loop', () => {
-  const { store, topic } = fixture('API error 503')
+it.each(['API error 503', 'API error 500: do_request_failed'])('backs off recurring outages to 30 then 60 minutes without a hot loop: %s', error => {
+  const { store, topic } = fixture(error)
   for (const minutes of [30, 60, 60]) {
     vi.setSystemTime(store.providerRecovery('alice')!.at)
     const run = store.startScheduledTopic('alice', topic, '')
-    store.fail(run, 'API error 503')
+    store.fail(run, error)
     expect(store.providerRecovery('alice')!.at - Date.now()).toBe(minutes * 60000)
     expect(store.nextScheduledTopic('alice')).toBeUndefined()
   }

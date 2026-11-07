@@ -110,9 +110,9 @@ describe('contacts layout', () => {
     expect(viewSource).toMatch(/else setDetail\(null\)/)
   })
 
-  it('keeps the fetch-models action inline inside the model field row', () => {
+  it('keeps compact model actions beside a themed selector', () => {
     expect(viewSource).toContain('>获取模型</button>')
-    expect(viewSource).toMatch(/data-contacts-model[^\n]*list="contacts-model-options"/)
+    expect(viewSource).toContain('<select data-contacts-model-options')
     expect(cssSource).toMatch(/\.contacts-fetch \{[^}]*flex: none/)
     expect(cssSource).toMatch(/\.contacts-fetch \{[^}]*min-height: 26px/)
     expect(cssSource).toMatch(/\.contacts-hint \{[^}]*padding-left: 54px/)

@@ -8,6 +8,7 @@ import { runContactCapabilitySmoke } from './contact-capability-smoke'
 import { runContactHomeSmoke } from './contact-home-smoke'
 import { runContactNavigationSmoke } from './contact-navigation-smoke'
 import { runContactExperienceSmoke } from './contact-experience-smoke'
+import { runContactCardUiSmoke } from './contact-card-ui-smoke'
 import { contactSkillLibrary } from '../skills'
 import { BrowserWindow } from 'electron'
 import { createServer } from 'http'
@@ -46,6 +47,11 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     let body = ''
     request.on('data', (chunk: Buffer) => { body += chunk.toString() })
     request.on('end', () => {
+      if (request.url?.endsWith('/models')) {
+        response.setHeader('Content-Type', 'application/json')
+        response.end(JSON.stringify({ data: Array.from({ length: 24 }, (_, i) => ({ id: `contact-model-${String(i).padStart(2, '0')}` })) }))
+        return
+      }
       if (request.url?.endsWith('/chat/completions')) {
         const payload = JSON.parse(body || '{}')
         chatBody = payload
@@ -102,6 +108,10 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, "!document.querySelector('[data-contacts-form]')")
     const character = listCharacters().find((item) => item.name === '冒烟猫')
     if (!character) throw new Error('Character was not created')
+    if (process.env.CHOUYU_SMOKE_CONTACT_CARD_UI_ONLY === '1') {
+      await runContactCardUiSmoke(window, character.id)
+      return
+    }
 
     // 卡片直接打开详情；菜单只保留编辑和删除，操作期间保持在通讯录。
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-card-detail="${character.id}"]'))`)
@@ -121,7 +131,7 @@ export async function runContactsSmoke(window: BrowserWindow): Promise<void> {
     await waitForRenderer(window, `Boolean(document.querySelector('[data-contacts-detail="${character.id}"]'))
       && document.querySelector('[data-workspace-page]')?.getAttribute('data-workspace-page') === 'contacts'`)
     if (!await window.webContents.executeJavaScript("Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-close]')) && Boolean(document.querySelector('.contacts-detail-topbar [data-contacts-start-chat]')) && document.querySelector('.contacts-detail-actions').getBoundingClientRect().top < document.querySelector('.contact-agent').getBoundingClientRect().top")) throw new Error('Contact detail actions are not at the top')
-    if (!await window.webContents.executeJavaScript("(() => { const head=document.querySelector('.contacts-detail-head').getBoundingClientRect(); const actions=document.querySelector('.contacts-detail-actions').getBoundingClientRect(); const agent=document.querySelector('.contact-agent'); const fields=document.querySelector('.contacts-detail-fields'); return actions.top < agent.getBoundingClientRect().top && fields?.querySelectorAll('dt').length === 5 && fields.closest('details').getBoundingClientRect().bottom <= agent.getBoundingClientRect().top && !document.querySelector('.contacts-detail-soul') && !agent.nextElementSibling })()")) throw new Error('Contact metadata must remain above tabs; only persona text belongs inside its tab')
+    if (!await window.webContents.executeJavaScript("(() => { const head=document.querySelector('.contacts-detail-head').getBoundingClientRect(); const actions=document.querySelector('.contacts-detail-actions').getBoundingClientRect(); const agent=document.querySelector('.contact-agent'); const fields=document.querySelector('.contacts-detail-fields'); return actions.top < agent.getBoundingClientRect().top && fields?.querySelectorAll('dt').length === 5 && fields.getBoundingClientRect().bottom <= agent.getBoundingClientRect().top && !document.querySelector('.contacts-detail-soul') && !agent.nextElementSibling })()")) throw new Error('Contact metadata must remain above tabs; only persona text belongs inside its tab')
     if (!await window.webContents.executeJavaScript("(() => { const sizes=Array.from(document.querySelectorAll('.contacts-detail-actions button')).map(el => el.getBoundingClientRect()); return sizes.every(rect => rect.height === sizes[0].height && rect.width === sizes[0].width) })()")) throw new Error('Header buttons must have matching sizes')
     const detailHeight = await window.webContents.executeJavaScript("document.querySelector('.contacts-detail').getBoundingClientRect().height")
     if (!await window.webContents.executeJavaScript("document.querySelector('[data-agent-tab=overview]').getAttribute('aria-pressed') === 'true'")) throw new Error('Contact details must default to overview')

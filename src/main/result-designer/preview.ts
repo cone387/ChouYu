@@ -2,7 +2,7 @@ import {BrowserWindow,session as electronSession} from 'electron'
 import {randomUUID} from 'node:crypto'
 import {mkdirSync,writeFileSync} from 'node:fs'
 import {join} from 'node:path'
-import {resultDesignDocument} from '../../shared/result-design-document'
+import {resultDesignDocument,resultDesignPolicy} from '../../shared/result-design-document'
 import type {PreviewAction,PreviewObservation} from '../../shared/result-design'
 import type {DesignPreviewPort,PreviewInput,PreviewSession,PreviewRequest} from './preview-port'
 
@@ -29,12 +29,14 @@ export class ElectronDesignPreview implements DesignPreviewPort {
     if(this.stopped)throw new Error('预览服务已关闭。')
     const {width,height,theme}=input.environment
     if(![375,1024].includes(width)||height!==(width===375?700:768)||!['light','dark'].includes(theme))throw new Error('预览视口无效。')
+    const nonce=randomUUID(),url=`chouyu-result://preview/${randomUUID()}`
+    const document=resultDesignDocument(input.snapshot,input.code,input.environment,nonce)
     const ses=electronSession.fromPartition(`result-preview-${randomUUID()}`)
     ses.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));ses.setPermissionCheckHandler(()=>false)
-    ses.webRequest.onBeforeRequest((details,callback)=>callback({cancel:!details.url.startsWith('data:text/html')}))
+    ses.webRequest.onBeforeRequest((details,callback)=>callback({cancel:details.url!==url||details.resourceType!=='mainFrame'}))
     const window=new BrowserWindow({show:false,width,height,useContentSize:true,focusable:false,webPreferences:{session:ses,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,backgroundThrottling:false}})
-    let closed=false
-    const close=async()=>{if(closed)return;closed=true;this.pendingWindows.delete(close);clearTimeout(lifetime);signal.removeEventListener('abort',aborted);if(!window.isDestroyed())window.destroy();await ses.clearStorageData()}
+    let closed=false,protocolRegistered=false
+    const close=async()=>{if(closed)return;closed=true;this.pendingWindows.delete(close);clearTimeout(lifetime);signal.removeEventListener('abort',aborted);if(!window.isDestroyed())window.destroy();if(protocolRegistered)ses.protocol.unhandle('chouyu-result');await ses.clearStorageData()}
     const aborted=()=>{void close()};signal.addEventListener('abort',aborted,{once:true})
     const lifetime=setTimeout(()=>{void close()},120000)
     this.pendingWindows.add(close)
@@ -67,7 +69,13 @@ export class ElectronDesignPreview implements DesignPreviewPort {
         errors:[...errors,...(observations.overflow?['页面横向溢出']:[])]}
     })
     try{
-      await bounded(()=>window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(resultDesignDocument(input.snapshot,input.code,input.environment,randomUUID()))}`))
+      // Serve the document in this ephemeral session only. Long results must not
+      // enter Chromium's navigation URL (or be echoed into load failure messages).
+      ses.protocol.handle('chouyu-result',request=>request.method==='GET'&&request.url===url
+        ?new Response(document,{headers:{'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':`${resultDesignPolicy(nonce)}; sandbox allow-scripts`,'Cache-Control':'no-store'}})
+        :new Response('预览页面不存在。',{status:404}))
+      protocolRegistered=true
+      await bounded(()=>window.loadURL(url))
       return {inspect,close,act:async(action:PreviewAction)=>{
         await bounded(async()=>{
           if(action.kind==='scroll'&&Number.isFinite(action.y)&&Math.abs(action.y)<=100000)await window.webContents.executeJavaScriptInIsolatedWorld(999,[{code:`window.scrollTo(0,${action.y})`}])

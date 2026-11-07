@@ -28,8 +28,9 @@ function classifyFailure(error: string): NonNullable<ContactInteraction['failure
     : /工具/.test(error) ? '任务需要的工具已关闭。请在系统工具设置中启用所需工具后重试；联系人自动执行策略不会开启被关闭的工具。'
     : '计划读取的网页超出已授权的访问范围。请核对工作设置中的允许网页，或调整任务使用的资料。', action: '已处理，重试本任务', settings: true, ...(!/工具/.test(error) ? { settingsTarget: 'work' as const } : {}) }
   if (/余额不足|无可用资源包|insufficient[_ ]quota|credit.*exhaust|billing|payment required/i.test(error)) return { kind: 'billing', message: '模型服务商的余额或资源包不足。请先在服务商处补充额度，或在模型设置中更换可用服务。任务内加额度不能解决这个问题。', action: '已处理，重试本任务', settings: true }
-  if (/401|403|api.?key|密钥|unauthorized|authentication|model.*not found|模型.*不存在/i.test(error)) return { kind: 'configuration', message: '模型服务的密钥、权限或模型配置不可用。请检查该联系人使用的模型服务，修改后再重试。', action: '已检查，重试本任务', settings: true }
-  if (/429|rate.?limit|超时|timeout|network|网络|ECONN|fetch failed|502|503|504/i.test(error)) return { kind: 'network', message: '模型服务暂时无法连接或请求受限，这次尝试中断。', action: '重试本任务', settings: false }
+  // Request IDs contain arbitrary digits; only standalone HTTP codes describe the failure.
+  if (/\b(?:401|403)\b|api.?key|密钥|unauthorized|authentication|model.*not found|模型.*不存在/i.test(error)) return { kind: 'configuration', message: '模型服务的密钥、权限或模型配置不可用。请检查该联系人使用的模型服务，修改后再重试。', action: '已检查，重试本任务', settings: true }
+  if (/\b(?:429|500|502|503|504)\b|do_request_failed|rate.?limit|超时|timeout|network|网络|ECONN|fetch failed/i.test(error)) return { kind: 'network', message: '模型服务暂时无法连接或请求受限，这次尝试中断。', action: '重试本任务', settings: false }
   if (/格式|校验|字段|JSON|parse|schema/i.test(error)) return { kind: 'format', message: '这次返回的成果没有通过格式校验，未作为新成果保存。可以重新尝试；反复出现时请查看工作记录。', action: '重新尝试', settings: false }
   return { kind: 'unknown', message: '这次尝试遇到尚未识别的异常，无法确定具体原因。下方保留了可安全展示的诊断信息。', action: '重新尝试', settings: false }
 }

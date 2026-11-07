@@ -20,6 +20,21 @@ it('distinguishes billing from transient 429 and leaves format errors actionable
   expect(contactFailure('成果字段 nextStep 校验失败')).toMatchObject({ kind: 'format', settings: false })
   expect(contactFailure('some unexpected error')).toMatchObject({ kind: 'unknown' })
 })
+it.each([
+  'API error 500: {"error":{"message":"upstream error: do request failed (request id: 202611061001237938230558268d9d6oVuInUZH)","type":"new_api_error","code":"do_request_failed"}}',
+  'API error 500: Internal Server Error',
+  'upstream error: do request failed; code=do_request_failed',
+  'API error 500: {"error":{"message":"upstream error: do request failed (request id: 20261106081401403503abc)","code":"do_request_failed"}}'
+])('recognizes temporary provider failure without mistaking request IDs for status codes: %s', error => {
+  expect(contactFailure(error)).toMatchObject({ kind: 'network', settings: false })
+})
+it.each(['401', '403', '429', '500', '502', '503', '504'])('does not classify unknown errors by digits inside a request ID: %s', code => {
+  expect(contactFailure(`unexpected vendor failure (request id: 20261106${code}abc)`)).toMatchObject({ kind: 'unknown' })
+})
+it('keeps explicit billing and configuration remedies for provider 500 responses', () => {
+  expect(contactFailure('API error 500: insufficient_quota')).toMatchObject({ kind: 'billing', settings: true })
+  expect(contactFailure('API error 500: invalid api key')).toMatchObject({ kind: 'configuration', settings: true })
+})
 it('distinguishes malformed plans, access restrictions and skill dependencies with the correct remedy', () => {
   expect(contactFailure('工作计划 urls 必须为数组')).toMatchObject({ kind: 'format', settings: false })
   expect(contactFailure('网页访问权限不足：计划地址不在允许访问的网页范围内。')).toMatchObject({ kind: 'permission', settingsTarget: 'work' })

@@ -53,10 +53,6 @@ function compareBySort(a: CharacterStats, b: CharacterStats, key: SortKey): numb
   return sortByName(a, b)
 }
 
-function summarizeSoulMd(soulMd: string): string {
-  return soulMd.replace(/^#{1,6}\s*/gm, '').replace(/\*\*/g, '').trim()
-}
-
 function defaultServiceLabel(config: Pick<AppConfig, 'provider'>): string {
   return `全局默认 · ${config.provider === 'claude' ? 'Claude' : 'OpenAI 兼容'}`
 }
@@ -514,7 +510,6 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         </div>
         {filtered.map((character) => {
           const model = character.id === DEFAULT_CHARACTER_ID || !character.model ? `跟随默认 · ${config.model}` : character.model
-          const soulSummary = summarizeSoulMd(character.id === DEFAULT_CHARACTER_ID ? config.soulMd : character.soulMd)
           return <div key={character.id} className="contacts-card-container">
           <button type="button" data-contacts-item={character.id}
             className="contacts-card" onClick={() => onOpenChat(character.id)}>
@@ -524,7 +519,6 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
                 <span className="contacts-card-name">{character.name}{character.builtIn && <em className="contacts-builtin">内置</em>}</span>
               </span>
             </span>
-            <span className="contacts-card-desc">{soulSummary || '尚未设置人设'}</span>
             <span className="contacts-card-subtitle">{model}</span>
             <ContactCardStats data={dashboard?.contacts[character.id]?.summary} error={dashboardError} lastWorkedAt={dashboard?.contacts[character.id]?.lastWorkedAt} />
             <span className="contacts-card-tags">
@@ -568,7 +562,6 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         </div>
         </div>
         <section className="contacts-profile-details" aria-label="角色资料" hidden={detailTab === 'work'}>
-          <details><summary>角色资料与模型</summary>
           <dl className="contacts-detail-fields">
             <div><dt>模型</dt><dd>{detail.id === DEFAULT_CHARACTER_ID || !detail.model ? `跟随默认 · ${config.model}` : detail.model}</dd></div>
             <div><dt>行业</dt><dd>{detail.category ? INDUSTRY_LABELS[detail.category] : '—'}</dd></div>
@@ -576,7 +569,6 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <div><dt>会话</dt><dd>{detail.sessionCount} 个</dd></div>
             <div><dt>最近活跃</dt><dd>{detail.lastActiveAt ? new Date(detail.lastActiveAt).toLocaleString() : '—'}</dd></div>
           </dl>
-          </details>
         </section>
         {detail.id === ASSISTANT_CHARACTER_ID && <section className="contact-agent">
           <div className="agent-tabs"><button type="button" data-agent-tab="profile" aria-pressed="true">人设</button></div>
@@ -611,8 +603,8 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             aria-pressed={form.avatar === emoji} onClick={() => setForm({ ...form, avatar: emoji })}>{emoji}</button>)}
         </div>
         <label className="contacts-field"><span className="contacts-field-name">AI 服务</span>
-          <select data-contacts-profile value={form.providerProfileId} disabled={form.id === DEFAULT_CHARACTER_ID}
-            onChange={(event) => setForm({ ...form, providerProfileId: event.target.value })}>
+          <select data-contacts-profile value={form.providerProfileId} disabled={busy || form.id === DEFAULT_CHARACTER_ID}
+            onChange={(event) => { setModels([]); setModelStatus(''); setForm({ ...form, providerProfileId: event.target.value }) }}>
             {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.builtIn ? defaultServiceLabel(config) : profile.name}</option>)}
           </select></label>
         <label className="contacts-field"><span className="contacts-field-name">行业</span>
@@ -621,12 +613,20 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
             <option value="">未分类</option>
             {INDUSTRIES.map((industry) => <option key={industry.id} value={industry.id}>{industry.label}</option>)}
           </select></label>
-        <label className="contacts-field"><span className="contacts-field-name">模型</span>
-          <input data-contacts-model value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} required={form.id === DEFAULT_CHARACTER_ID || form.providerProfileId !== DEFAULT_PROFILE_ID} placeholder={form.providerProfileId === DEFAULT_PROFILE_ID ? `留空跟随系统默认（${config.model}）` : '填写模型名称'} list="contacts-model-options" />
-          {form.id !== DEFAULT_CHARACTER_ID && form.providerProfileId === DEFAULT_PROFILE_ID && <button type="button" className="contacts-fetch" data-contacts-model-default aria-pressed={!form.model} title={`跟随系统默认：${config.model}`} onClick={() => setForm({ ...form, model: '' })}>跟随默认</button>}
-          <button type="button" className="contacts-fetch" data-contacts-fetch-models onClick={() => { void loadModels() }} disabled={busy}>获取模型</button>
-          <datalist id="contacts-model-options">{models.map((model) => <option key={model} value={model} />)}</datalist>
-        </label>
+        <div className="contacts-field contacts-field-model">
+          <label className="contacts-field-name" htmlFor="contacts-model-input">模型</label>
+          <div className="contacts-model-controls">
+            <input id="contacts-model-input" data-contacts-model value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} required={form.id === DEFAULT_CHARACTER_ID || form.providerProfileId !== DEFAULT_PROFILE_ID} placeholder={form.providerProfileId === DEFAULT_PROFILE_ID ? `留空跟随系统默认（${config.model}）` : '填写模型名称'} />
+            <div className="contacts-model-actions">
+              {models.length > 0 && <select data-contacts-model-options aria-label="从列表选择模型" value={models.includes(form.model) ? form.model : ''} onChange={(event) => setForm({ ...form, model: event.target.value })}>
+                <option value="" disabled>选择模型</option>
+                {models.map((model) => <option key={model} value={model}>{model}</option>)}
+              </select>}
+              {form.id !== DEFAULT_CHARACTER_ID && form.providerProfileId === DEFAULT_PROFILE_ID && <button type="button" className="contacts-fetch" data-contacts-model-default aria-pressed={!form.model} title={`跟随系统默认：${config.model}`} onClick={() => setForm({ ...form, model: '' })}>跟随默认</button>}
+              <button type="button" className="contacts-fetch" data-contacts-fetch-models onClick={() => { void loadModels() }} disabled={busy}>获取模型</button>
+            </div>
+          </div>
+        </div>
         {modelStatus && <p className="contacts-hint" role="status">{modelStatus}</p>}
         <label className="contacts-field"><span className="contacts-field-name">聊天执行引擎</span>
           <select data-contacts-harness value={form.harnessEngine} aria-describedby="contact-harness-hint"

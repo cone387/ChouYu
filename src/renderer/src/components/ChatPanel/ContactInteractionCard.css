@@ -1,4 +1,4 @@
-.contact-interaction { width: 360px; max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
+.contact-interaction { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
 .contact-interaction-title { display: block; font-size: 15px; line-height: 1.5; }
 .contact-interaction-task { margin-top: 4px; color: var(--text-secondary); font-size: 12px; }
 .contact-interaction-diagnostic { margin: 10px 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }

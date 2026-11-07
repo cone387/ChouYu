@@ -16,11 +16,13 @@ import {restartAgentsForSmoke,contactAgentsCall} from '../agents'
 import {waitForRenderer} from './storage-smoke'
 import {sourceSnapshot} from '../../shared/result-design'
 import {designEnvironment} from '../../shared/result-design-environment'
+import {runResultPreviewSmoke} from './result-preview-smoke'
 
 /** Real Electron images and Native provider protocol, isolated local fixtures only. */
 export async function runResultDesignerSmoke(window:BrowserWindow){
   const directory=process.env.CHOUYU_SMOKE_ARTIFACTS?join(process.env.CHOUYU_SMOKE_ARTIFACTS,'result-designer'):join(app.getPath('userData'),'result-designer-acceptance')
   mkdirSync(directory,{recursive:true})
+  await runResultPreviewSmoke(directory)
   const store=new ContactTaskStore(join(directory,'fixture.db')),preview=new ElectronDesignPreview(directory)
   let screenshots=0,calls=0,code={title:'',html:'',css:'',script:''}
   const server=createServer((request,response)=>{

@@ -130,7 +130,14 @@
 .contacts-avatar-option:hover { background: color-mix(in srgb, var(--text-muted) 16%, transparent); }
 .contacts-avatar-option[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
 .contacts-field textarea { flex: 1; min-width: 0; resize: vertical; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; line-height: 1.6; padding: 8px; outline: none; }
-/* 获取模型：模型行内的紧凑次级按钮，不另起一整行 */
+/* 模型输入保留完整宽度；候选使用全局主题化的顶层 select，不受弹窗滚动裁切。 */
+.contacts-field-model { align-items: flex-start; }
+.contacts-field-model > .contacts-field-name { padding-top: 6px; }
+.contacts-model-controls { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding-block: 4px; }
+.contacts-model-controls > input { width: 100%; box-sizing: border-box; }
+.contacts-model-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.contacts-model-actions select { flex: 1 1 120px; width: 0; }
+#root .contacts-form .contacts-field select:not([multiple]):not([size]):is(:focus-visible, :open) { outline: none !important; border-color: var(--input-border); box-shadow: none; }
 .contacts-fetch { flex: none; min-height: 26px; margin: 0; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; line-height: 1; cursor: pointer; transition: color .16s ease, border-color .16s ease; }
 .contacts-fetch:hover:not(:disabled) { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 .contacts-fetch:disabled { opacity: .5; cursor: default; }

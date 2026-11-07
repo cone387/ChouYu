@@ -80,7 +80,8 @@ const env = {
   CHOUYU_SMOKE_RESULT_DESIGNER_ONLY: process.argv.includes('--result-designer') ? '1' : '0',
   CHOUYU_SMOKE_AGENTS_ONLY: process.argv.includes('--agents') || process.argv.includes('--contact-conversation') ? '1' : '0',
   CHOUYU_SMOKE_CONTACT_CONVERSATION_ONLY: process.argv.includes('--contact-conversation') ? '1' : '0',
-  CHOUYU_SMOKE_CONTACTS_ONLY: process.argv.includes('--contacts') ? '1' : '0',
+  CHOUYU_SMOKE_CONTACTS_ONLY: process.argv.includes('--contacts') || process.argv.includes('--contact-card-ui') ? '1' : '0',
+  CHOUYU_SMOKE_CONTACT_CARD_UI_ONLY: process.argv.includes('--contact-card-ui') ? '1' : '0',
   CHOUYU_SMOKE_CONTACT_EXPERIENCE_ONLY: process.argv.includes('--contact-experience') ? '1' : '0',
   CHOUYU_SMOKE_USER_DATA: smokeUserData
 }
