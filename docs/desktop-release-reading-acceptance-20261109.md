@@ -1,6 +1,6 @@
 # 桌面候选包与成果阅读验收
 
-日期：2026-11-09。基线 `670e4ac`，分支 `fix/desktop-release-reading`。测试使用独立 userData、合成任务和本地模型协议；未操作用户正在运行的实例、任务或模型配置。
+日期：2026-11-09。基线 `670e4ac`，产品改动提交 `3c6356e`，已快进合并到本地 `master`。测试使用独立 userData、合成任务和本地模型协议；未操作用户正在运行的实例、任务或模型配置。
 
 ## 已修复与验证
 
@@ -32,10 +32,14 @@
 | 最终全量单测 | `full-tests-final.log`：单 worker，317 文件、2,385 项通过，17 文件/62 项按既有条件跳过；无失败或 worker 异常 |
 | 类型与模块边界 | `typecheck-final.log`、`boundaries-final.log`：通过 |
 | 成果设计师 Electron | `smoke-reading-cdp.log`：通过；10 次本地协议调用、41 张真实截图，四类正文、长文中段/末尾、章节、嵌入页及失败回退 |
+| 最终成品完整桌面 | `packaged-final-full.log`：通过，`1.4.3-rc.1 packaged=true`；包含静止鼠标、聊天、日记、确认、联系人、提醒 |
+| 最终成品原生依赖/构建匹配 | `packaged-final-sqlite.log` 通过；`package-source-match.json` 核对 28 个主进程/预加载/界面文件与源码构建逐字节一致 |
+| 最终成品恢复与阅读 | `packaged-final-recovery.log`、`packaged-final-designer.log` 通过；旧数据核对通过，成品设计师 10 次本地请求/41 张实图 |
+| 最终成品成果集 | `packaged-final-portfolio.log`：`--contact-experience` 通过；固定版本、重启继续阅读、精确引用、反馈失败/重试与成果修订；人工复核成品成果集反馈截图 |
 
 最初四 worker 全量测试为 2,376 项通过、62 项按配置跳过，但 `background-selection.test.ts` 的 worker 原生退出（3221226505），因此该次整体失败。该文件独立两项通过；最终固定产品源码的单 worker 全量复核通过，不能据此声称已定位原生退出根因。另有一次运行与新增 TDD 失败回归重叠，捕获了该测试的预期失败（`full-tests-during-tdd.log`），不计入通过结果。
 
-独立整分支审查发现静止鼠标和显式调整两个 Important 缺口，均先用失败回归复现，再修复。没有其余具体代码问题；在线质量、实体硬件、干净系统安装及尚在执行的最终检查保留为待验收，不视为审查通过证据。
+独立整分支审查发现静止鼠标和显式调整两个 Important 缺口，均先用失败回归复现，再修复；最终全量单测与相关实际 Electron 回归通过。没有其余具体代码问题；在线质量、实体硬件、干净系统安装及公开更新保留为待验收，不视为审查通过证据。
 
 人工复核了 `dashboard-final/` 的窄窗深色确认弹窗及宽窗统计页，和 `reading-final2/result-designer/` 的窄窗小说首屏/暗色末尾、宽窗研究及真实任务容器。长文末段无截断，正文在宽窗保持阅读行长。确定性短文夹具仍展示重复标题/封面问题，因此补充了设计指令；不能用指令已修改推断在线生成已改善。
 
@@ -43,9 +47,17 @@
 
 ## 打包与复现
 
+最终候选包：`D:/codespace/ChouYu/dist/desktop-verified-rc/ChouYu Setup 1.4.3-rc.1.exe`，292,872,814 字节。SHA-256：`c9cb6087a0e63f1ee353c0dbf93e10548a782e773124bcd128421f9c927b7bf7`；同目录包含 blockmap 和 `SHA256SUMS.txt`。安装器与应用的 Authenticode 状态为 `NotSigned`，未签名、未公开发布。
+
+`package-verified-installer.log` 构建退出码 0。`installer-payload-test.log` 验证 27,955 个文件 / 1,105,444,517 字节，全部通过；`installer-container-test.log` 直接读取 EXE 内嵌 7z 也通过，额外尾部数据提示来自 NSIS 外壳。`installer-source-match.json` 核对从安装器提取的 `app.asar` 与已运行验证的应用逐字节一致。以上不等同于实际执行安装、卸载或自动更新。
+
 源包版本仍为 `1.4.2`；本地候选通过 metadata 标记为 `1.4.3-rc.1`，未建 tag、上传或发布到公共更新源。
 
 隔离工作树的 `node_modules` 是开发依赖 junction，直接打包曾遗漏 `@langchain/langgraph-checkpoint`（见 `packaged-sqlite.log`）。最终打包使用真实的独立生产依赖目录，不能使用该失败产物。
+
+最终应用位于 `dist/desktop-final-rc/win-unpacked`，安装器使用新的 `dist/desktop-verified-rc` 输出目录。曾中断的最大压缩产物被打包器误当作可复用缓存；该安装器已改名为 `interrupted-installer.exe.invalid`，不可使用。最终从已验证的应用目录在全新输出位置重新归档，设置 `ELECTRON_BUILDER_COMPRESSION_LEVEL=5`；不复用中断缓存。
+
+关键日志与成品阅读截图另存于主工作目录 `artifacts/desktop-release-20261109/`；完整原始失败及诊断日志保留在隔离工作树 `C:/Users/Administrator/.codex/worktrees/8ee3/ChouYu/artifacts/desktop-release/`。
 
 ```powershell
 # 在本工作树执行；temp/package-app 是一次性构建目录，不能指向用户数据。
@@ -55,9 +67,11 @@ npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix temp/package-ap
 npm run build
 npm run build:dsh-runtime
 # 将 out/main、out/preload、out/renderer 复制到干净的 temp/package-app/out。
-node node_modules/electron-builder/cli.js --win --publish never '--config.directories.app=temp/package-app' '--config.extraMetadata.version=1.4.3-rc.1' '--config.directories.output=dist/desktop-clean-rc'
-node scripts/verify-sqlite-runtime.cjs dist/desktop-clean-rc/win-unpacked/ChouYu.exe dist/desktop-clean-rc/win-unpacked/resources/app.asar
-node scripts/smoke-electron.js --packaged dist/desktop-clean-rc/win-unpacked/ChouYu.exe --contact-reliability --upgrade-v134
+$env:ELECTRON_BUILDER_COMPRESSION_LEVEL='5'
+# 使用全新输出目录；中断后也必须换新目录，避免打包器复用残缺归档。
+node node_modules/electron-builder/cli.js --win --publish never '--config.directories.app=temp/package-app' '--config.extraMetadata.version=1.4.3-rc.1' '--config.directories.output=dist/new-desktop-rc'
+node scripts/verify-sqlite-runtime.cjs dist/new-desktop-rc/win-unpacked/ChouYu.exe dist/new-desktop-rc/win-unpacked/resources/app.asar
+node scripts/smoke-electron.js --packaged dist/new-desktop-rc/win-unpacked/ChouYu.exe --contact-reliability --upgrade-v134
 ```
 
 ## 仍需实际验证
