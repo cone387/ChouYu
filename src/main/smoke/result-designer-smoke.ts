@@ -74,9 +74,11 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
       await runResultDesign(job,{store:store.designs,source,model,preview},AbortSignal.timeout(90000))
       assert.equal(JSON.stringify(store.deliveries.get(topic.id)),before);assert.equal(JSON.stringify(store.topics.get('author',topic.id)),state)
       const active=store.designs.view(snapshot.ref).active;assert.ok(active?.evidence);assert.equal(active.evidence.observations.length,4)
+      if(kind==='novel')assert.ok(active.evidence.observations.every(o=>o.readingSamples?.length===2),'长文四种环境均须提供中段与末尾实图')
       report.push({kind,design:active.id,evidence:active.evidence})
     }
-    assert.equal(screenshots,20);assert.equal(calls,8);assert.ok(store.tokens.usage(designer).today>0)
+    const readingScreens=(report as {evidence:{observations:{readingSamples?:unknown[]}[]}}[]).reduce((sum,row)=>sum+row.evidence.observations.reduce((n,o)=>n+(o.readingSamples?.length??0),0),0)
+    assert.equal(screenshots,20+readingScreens);assert.equal(calls,8);assert.ok(store.tokens.usage(designer).today>0)
     const original=getConfig(),originalSession=getActiveSession().id,author=createCharacter({...listCharacters()[0],name:'设计师隔离验收作者',model:'vision-fixture'})
     const chat=createChatSession('成果界面验收',author.id).activeSession.id
     const task={domain:'contact' as const,ownerId:author.id,taskId:''}
@@ -98,7 +100,7 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
       const expression=`window.electronAPI.resultDesign.get(${JSON.stringify(task)})`
       await waitForRenderer(window,`(async()=>Boolean((await ${expression}).active))()`,60000)
       const active=await window.webContents.executeJavaScript(expression)
-      assert.ok(active.active.evidence);assert.equal(calls,10);assert.equal(screenshots,25)
+      assert.ok(active.active.evidence);assert.equal(calls,10);assert.equal(screenshots,25+readingScreens+active.active.evidence.observations.reduce((n:number,o:{readingSamples?:unknown[]})=>n+(o.readingSamples?.length??0),0))
       const navigation=`new Promise((resolve,reject)=>window.dispatchEvent(new CustomEvent('chouyu:contact-navigation',{detail:{target:{kind:'task',characterId:${JSON.stringify(author.id)},topicId:${JSON.stringify(task.taskId)}},handled:false,resolve,reject}})))`
       await window.webContents.executeJavaScript("window.__resultReady=false;window.addEventListener('message',event=>{if(event.data?.type==='result-design-ready')window.__resultReady=true})")
       await window.webContents.executeJavaScript(navigation)
@@ -137,14 +139,31 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
         return window.webContents.mainFrame.frames.find(frame=>frame.url.startsWith('chouyu-result:'))!
       }
       const fixed=await openDesigned()
+      // Focus the native host before its child document. Focusing WebContents
+      // afterwards resets Chromium's focusedFrame to the main frame.
+      window.show();window.focus();window.webContents.focus()
       await fixed.executeJavaScript("window.__keys=[];addEventListener('keydown',e=>window.__keys.push(e.key));document.body.tabIndex=0;document.body.focus()")
       const focusPoint=await window.webContents.executeJavaScript("(()=>{const iframe=document.querySelector('[data-result-design-view] iframe');iframe.scrollIntoView({block:'start'});const r=iframe.closest('.topic-content-scroll').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()")
       await window.webContents.executeJavaScript('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+      // Smoke startup deliberately leaves this window hidden. Native keyboard
+      // injection requires a shown, focused host, unlike capturePage/DOM focus.
       window.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...focusPoint});window.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...focusPoint})
-      window.webContents.sendInputEvent({type:'keyDown',keyCode:'Home'});window.webContents.sendInputEvent({type:'keyUp',keyCode:'Home'})
+      await waitForRenderer(window,"document.hasFocus()&&document.activeElement?.tagName==='IFRAME'")
+      await fixed.executeJavaScript('document.body.blur();document.body.focus()')
+      const focusDeadline=Date.now()+2000
+      while(window.webContents.focusedFrame?.routingId!==fixed.routingId&&Date.now()<focusDeadline)await new Promise(resolve=>setTimeout(resolve,20))
+      assert.ok(window.isFocused(),'键盘验收前原生窗口必须可见且获得焦点')
+      assert.equal(window.webContents.focusedFrame?.routingId,fixed.routingId,'键盘验收必须实际聚焦隔离阅读文档')
+      // Chromium routes CDP keyboard input to the focused cross-process frame;
+      // WebContents.sendInputEvent targets the main widget on this Electron build.
+      const attached=window.webContents.debugger.isAttached();if(!attached)window.webContents.debugger.attach('1.3')
+      const press=async(key:string,windowsVirtualKeyCode:number)=>{for(const type of ['keyDown','keyUp'])await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent',{type,key,code:key,windowsVirtualKeyCode})}
+      await press('Home',36)
       await waitForRenderer(window,'window.__readerScroll.scrollTop===0')
-      window.webContents.sendInputEvent({type:'keyDown',keyCode:'PageDown'});window.webContents.sendInputEvent({type:'keyUp',keyCode:'PageDown'})
+      await press('PageDown',34)
       await waitForRenderer(window,'window.__readerScroll.scrollTop>100').catch(async error=>{console.error('FRAME_KEY_CHECK',await fixed.executeJavaScript('({keys:window.__keys,active:document.activeElement?.tagName})'),await window.webContents.executeJavaScript('({active:document.activeElement?.tagName,top:window.__readerScroll.scrollTop,height:window.__readerScroll.clientHeight,scrollHeight:window.__readerScroll.scrollHeight})'));throw error})
+      assert.deepEqual(await fixed.executeJavaScript("window.__keys.filter(key=>key==='Home'||key==='PageDown')"),['Home','PageDown'],'两个翻页按键都必须到达隔离正文')
+      if(!attached)window.webContents.debugger.detach()
       await fixed.executeJavaScript("document.querySelector('main').animate([{paddingBottom:'0px'},{paddingBottom:'80px'}],{duration:600}).finished")
       assert.ok(await window.webContents.executeJavaScript("Boolean(document.querySelector('[data-result-design-view] iframe'))"),'正常有限动画不应被当成尺寸循环')
       await fixed.executeJavaScript("(()=>{const box=document.createElement('div');box.id='nested-scroll-fixture';box.style.cssText='height:120px;overflow:hidden';box.innerHTML='<div style=\"height:300px\">嵌套滚动夹具</div>';document.querySelector('main').append(box);return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))})()")
@@ -168,5 +187,6 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
     }finally{saveConfig(original);selectChatSession(originalSession);window.webContents.send('sessions:changed')}
     writeFileSync(join(directory,'acceptance.json'),JSON.stringify({calls,screenshots,report},null,2))
     console.log('CHOUYU_RESULT_DESIGNER_SMOKE',JSON.stringify({directory,calls,screenshots}))
-  }finally{await preview.close();store.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
+  }catch(error){console.error('CHOUYU_RESULT_DESIGNER_ERROR',error);throw error}
+  finally{await preview.close();store.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 }

@@ -392,7 +392,13 @@ export async function runChatRuntimeSmoke(window: BrowserWindow): Promise<void> 
       buttons[0].focus();
       buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
       if (document.activeElement !== buttons[1]) throw new Error('Navigation arrow keys did not move focus');
-      if (buttons.length !== 6 || buttons.some(button => button.textContent.trim() || !button.title || !button.getAttribute('aria-label'))) throw new Error('Navigation must have six labelled icon-only controls');
+      const destinations = buttons.map(button => button.dataset.workspaceNav);
+      if (JSON.stringify(destinations) !== JSON.stringify(['chat', 'dashboard', 'contacts', 'tasks', 'journal', 'memory', 'settings'])) throw new Error('Workspace navigation destinations are missing or duplicated: ' + JSON.stringify(destinations));
+      if (buttons.some(button => {
+        const icon = button.cloneNode(true);
+        icon.querySelectorAll('.workspace-nav-badge').forEach(badge => badge.remove());
+        return icon.textContent.trim() || !button.title || !button.getAttribute('aria-label');
+      })) throw new Error('Navigation must have labelled icon controls; status badges are allowed');
       if (buttons.some(button => !['none', 'normal'].includes(getComputedStyle(button, '::before').content))) throw new Error('Navigation must not have a colored edge marker');
     })()`)
     await click(window, '[data-workspace-nav="memory"]')

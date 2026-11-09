@@ -10,7 +10,7 @@ export type ResultSourceSnapshot = { ref: ResultSourceRef; title: string; sectio
 export type ResultDesignCode = { title: string; html: string; css: string; script: string }
 export type DesignState = 'queued' | 'running' | 'validating' | 'ready' | 'blocked' | 'failed' | 'superseded' | 'cancelled'
 export type DesignReceipt = { requestId: string; task: ResultTaskRef; requestRevision: number; state: DesignState }
-export type DesignObservation = { width: number; height: number; theme: 'light'|'dark'; screenshotId: string; contentComplete: boolean; interactionsPassed: boolean; errors: string[] }
+export type DesignObservation = { width: number; height: number; theme: 'light'|'dark'; screenshotId: string; contentComplete: boolean; interactionsPassed: boolean; errors: string[]; readingSamples?: {screenshotId:string; y:number; maxY:number}[] }
 export type DesignEvidence = {
   codeHash: string; sourceHash: string; environmentVersion: string; observations: DesignObservation[]
   visualReview: { requestId: string; response: string; accepted: boolean }; checkedAt: number
@@ -33,8 +33,8 @@ export interface ResultDesignAPI {
   onChanged(callback:()=>void):()=>void
 }
 export type DesignEnvironment = { version: string; font: string; tokens: Record<string, string>; width: number; height: number; theme: 'light'|'dark' }
-export type PreviewAction = { kind: 'click'; target: string } | { kind: 'scroll'; y: number } | { kind: 'key'; key: 'Tab'|'Enter'|'Escape'|'ArrowDown'|'ArrowUp' }
-export type PreviewObservation = DesignObservation & { imageUrl: string; controls: { id: string; label: string }[]; contentIntact?:boolean; reachedSections?:string[] }
+export type PreviewAction = { kind: 'click'; target: string } | { kind: 'scroll'; y: number } | {kind:'scroll';fraction:number} | { kind: 'key'; key: 'Tab'|'Enter'|'Escape'|'ArrowDown'|'ArrowUp' }
+export type PreviewObservation = DesignObservation & { imageUrl: string; controls: { id: string; label: string }[]; contentIntact?:boolean; reachedSections?:string[]; scroll?:{y:number;maxY:number} }
 
 export const designHash = (value: unknown) => bytesToHex(sha256(new TextEncoder().encode(JSON.stringify(value))))
 export const taskKey = (task: ResultTaskRef) => JSON.stringify([task.domain, task.ownerId, task.taskId])

@@ -59,12 +59,12 @@ export class ElectronDesignPreview implements DesignPreviewPort {
         const reached=[],intact=sections.every(s=>{const nodes=[...document.querySelectorAll('[data-result-body]')].filter(el=>el.getAttribute('data-result-body')===s.id);if(nodes.length!==1||nodes[0].textContent!==s.body)return false;if(visible(nodes[0]))reached.push(s.id);return true});
         const all=[...document.querySelectorAll('button,a[href],input,select,summary')];
         const controls=all.map((el,i)=>{el.setAttribute('data-preview-control',String(i));return {el,id:String(i),label:el.getAttribute('aria-label')||el.textContent?.trim()||''}}).filter(c=>visible(c.el)).slice(0,100).map(({el,...c})=>c);
-        return {complete:intact&&reached.length===sections.length,intact,reached,controls,overflow:document.documentElement.scrollWidth>innerWidth+2};
-      })()`}]) as {complete:boolean;intact:boolean;reached:string[];controls:{id:string;label:string}[];overflow:boolean}
+        return {complete:intact&&reached.length===sections.length,intact,reached,controls,overflow:document.documentElement.scrollWidth>innerWidth+2,scroll:{y:scrollY,maxY:Math.max(0,document.documentElement.scrollHeight-innerHeight)}};
+      })()`}]) as {complete:boolean;intact:boolean;reached:string[];controls:{id:string;label:string}[];overflow:boolean;scroll:{y:number;maxY:number}}
       const screenshot=await window.webContents.capturePage(),screenshotId=randomUUID()
       mkdirSync(this.directory,{recursive:true});writeFileSync(join(this.directory,`${screenshotId}.png`),screenshot.toPNG())
       return {width,height,theme,screenshotId,imageUrl:screenshot.toDataURL(),contentComplete:observations.complete,
-        contentIntact:observations.intact,reachedSections:observations.reached,
+        contentIntact:observations.intact,reachedSections:observations.reached,scroll:observations.scroll,
         interactionsPassed:!observations.overflow&&observations.controls.every(c=>Boolean(c.label)),controls:observations.controls,
         errors:[...errors,...(observations.overflow?['页面横向溢出']:[])]}
     })
@@ -78,12 +78,15 @@ export class ElectronDesignPreview implements DesignPreviewPort {
       await bounded(()=>window.loadURL(url))
       return {inspect,close,act:async(action:PreviewAction)=>{
         await bounded(async()=>{
-          if(action.kind==='scroll'&&Number.isFinite(action.y)&&Math.abs(action.y)<=100000)await window.webContents.executeJavaScriptInIsolatedWorld(999,[{code:`window.scrollTo(0,${action.y})`}])
+          if(action.kind==='scroll'&&'fraction' in action&&Number.isFinite(action.fraction)&&action.fraction>=0&&action.fraction<=1)await window.webContents.executeJavaScriptInIsolatedWorld(999,[{code:`window.scrollTo({top:Math.max(0,document.documentElement.scrollHeight-innerHeight)*${action.fraction},behavior:'instant'})`}])
+          else if(action.kind==='scroll'&&'y' in action&&Number.isFinite(action.y)&&Math.abs(action.y)<=100000)await window.webContents.executeJavaScriptInIsolatedWorld(999,[{code:`window.scrollTo({top:${action.y},behavior:'instant'})`}])
           else if(action.kind==='key'&&['Tab','Enter','Escape','ArrowDown','ArrowUp'].includes(action.key)){window.webContents.sendInputEvent({type:'keyDown',keyCode:action.key});window.webContents.sendInputEvent({type:'keyUp',keyCode:action.key})}
           else if(action.kind==='click'&&/^\d{1,3}$/.test(action.target)){
             const point=await window.webContents.executeJavaScriptInIsolatedWorld(999,[{code:`(()=>{const el=document.querySelector('[data-preview-control="${action.target}"]');if(!el)throw Error('控件已失效');el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`}])
             window.webContents.sendInputEvent({type:'mouseDown',...point,button:'left',clickCount:1});window.webContents.sendInputEvent({type:'mouseUp',...point,button:'left',clickCount:1})
           }else throw new Error('预览操作无效。')
+          // Scroll listeners and layout changes must settle before inspection.
+          await window.webContents.executeJavaScriptInIsolatedWorld(999,[{code:'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))'}])
         });return inspect()
       }}
     }catch(error){await close();throw error}

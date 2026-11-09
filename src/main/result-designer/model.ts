@@ -15,10 +15,15 @@ export function createDesignModel(identity:ContactIdentity,harnesses:HarnessRegi
   return async(messages,systemPrompt,signal,tools)=>{
     let text='',metadata:AIResponseMetadata={model:identity.config!.model}
     const requestId=randomUUID()
-    await harness.run({characterId:identity.id,requestId,messages,systemPrompt:`${identity.soul}\n${systemPrompt}`,signal,tools,config:{...DEFAULT_APP_CONFIG,...identity.config},
+    try{await harness.run({characterId:identity.id,requestId,messages,systemPrompt:`${identity.soul}\n${systemPrompt}`,signal,tools,config:{...DEFAULT_APP_CONFIG,...identity.config},
       onChunk:chunk=>{text+=chunk;if(text.length>100000)throw new Error('设计输出过长。')},options:{timeoutMs:120000,maxOutputTokens:12000,
         beforeRound:async(_round,input)=>{signal.throwIfAborted();await check();text='';metadata={model:identity.config!.model};return budget.reserve(input,12000).maxOutputTokens},
-        onMetadata:value=>{metadata={...metadata,...value}},afterRound:()=>budget.settle(metadata)}})
+        onMetadata:value=>{metadata={...metadata,...value}},afterRound:()=>budget.settle(metadata)}})}catch(error){
+      const message=error instanceof Error?error.message:String(error)
+      if(!signal.aborted&&messages.some(m=>m.imageUrl)&&/\b400\b/.test(message)&&(/(?:image_url|image|图片).{0,120}(?:not supported|unsupported|不支持)|(?:unsupported|不支持).{0,40}(?:image|图片)|only supports? text/i.test(message)||/取值范围\s*[:：]?\s*\[\s*['"]text['"]\s*\]/.test(message)))
+        throw new Error('模型拒绝了本次图片输入，无法完成视觉检查。请为界面设计师选择支持图片的模型后重试；原文仍可阅读。',{cause:error})
+      throw error
+    }
     signal.throwIfAborted();await check();return {text,requestId}
   }
 }

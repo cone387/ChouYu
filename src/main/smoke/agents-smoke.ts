@@ -3,6 +3,7 @@ import { runContactChatChangeSmoke } from './contact-chat-change-smoke'
 import { runContactConversationSmoke } from './contact-conversation-smoke'
 import { runContactTaskToolbarSmoke } from './contact-task-toolbar-smoke'
 import { runContactPermissionsSmoke } from './contact-permissions-smoke'
+import { runStationaryPointerSmoke } from './stationary-pointer-smoke'
 import { app, dialog, type BrowserWindow } from 'electron'
 import { createServer } from 'node:http'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -181,6 +182,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await run("document.querySelector('[aria-label=\"关闭面板\"]')?.click()")
     await waitForRenderer(window, "!document.querySelector('.chat-panel') || getComputedStyle(document.querySelector('.chat-panel')).display === 'none'")
     console.log('CHOUYU_SMOKE_AGENTS_STAGE closed-panel')
+    await runStationaryPointerSmoke(window)
     await run('window.electronAPI.db.getSessionWorkspace()')
     fixtureSession = createChatSession('联系人 Agent 验收').activeSession.id
     window.webContents.send('sessions:changed', false)
@@ -426,7 +428,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
       await run(`window.electronAPI.agents.save(${id}, ${JSON.stringify({ ...completed.settings, sources: [`https://chouyu-agent-smoke.invalid/${source}`] })})`)
       await run(`window.electronAPI.agents.run(${id}, ${JSON.stringify(topicId)})`)
       const next = await waitStatus('completed')
-      if (next.runs[0].topicId !== topicId || next.reports.length !== index + 2 || calls !== index + 2) throw new Error('Topic continuity lost across rounds')
+      if (next.runs[0].topicId !== topicId || next.reports.length !== index + 2 || calls !== index + 2) throw new Error('Topic continuity lost across rounds: ' + JSON.stringify({expectedTopic:topicId,actualTopic:next.runs[0].topicId,reports:next.reports.length,calls,expected:index+2}))
       if (!JSON.stringify(modelRequest).includes(index === 0 ? '需求存在，个人付费意愿未知' : '个人用户不愿付费，转向核对团队需求')) throw new Error('Next round omitted the prior topic judgement')
     }
     const topicDetail = await run(`window.electronAPI.agents.topicDetail(${id}, ${JSON.stringify(topicId)})`)
@@ -440,6 +442,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     if (contactSummary.tokens !== 600 || contactSummary.activeTasks !== 0 || contactSummary.tasks !== 1 || contactSummary.memories !== (await get()).memories.length) { console.error('CONTACT_SUMMARY_DIAGNOSTIC', contactSummary, (await get()).memories); throw new Error('Contact summary does not match current task state and retained usage') }
     const analytics = await run(`(() => { const d=new Date(); const date=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-'); return window.electronAPI.agents.analytics(${id}, {date,days:1,topicId:${JSON.stringify(topicId)}}) })()`)
     if (analytics.totals.tokens !== 600 || analytics.totals.calls !== 5 || analytics.totals.reported !== 5 || analytics.totals.executionMs <= 0 || analytics.totals.reports !== 3) throw new Error('Daily analytics disagrees with persisted task usage')
+    // This detail was opened from the dashboard activity log above. Chat
+    // confirmations can change pages; its retained hidden view does not fetch.
+    await run("document.querySelector('[data-workspace-nav=dashboard]').click()")
+    await waitForRenderer(window, "!!document.querySelector('[data-agent-tab=analytics]')?.getClientRects().length")
     await run("document.querySelector('[data-agent-tab=analytics]').click()")
     await waitForRenderer(window, "document.querySelector('.usage-summary')?.textContent.includes('600') === true")
     if (process.env.CHOUYU_SMOKE_ARTIFACTS) {
@@ -681,7 +687,10 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "Boolean(document.querySelector('.contact-task-dialog[open]'))")
     if (!await run("document.querySelectorAll('.contact-task-dialog textarea').length===1 && !document.querySelector('.contact-task-dialog input') && document.querySelector('[data-task-dialog-submit]').disabled")) throw new Error('New task form must require only a description')
     // A body portal must disable native desktop click-through, not just accept DOM .click().
-    await run("window.__taskMouseIgnored = null; window.__stopTaskMouseState = window.electronAPI.onMouseEventsState(value => { window.__taskMouseIgnored = value }); window.electronAPI.setIgnoreMouseEvents(true)")
+    // The main controller deduplicates identical states; it does not acknowledge
+    // a no-op command. Establish an actual false -> true transition before
+    // waiting for the broadcast, regardless of the previous suite's cursor.
+    await run("window.__taskMouseIgnored = null; window.__stopTaskMouseState = window.electronAPI.onMouseEventsState(value => { window.__taskMouseIgnored = value }); window.electronAPI.setIgnoreMouseEvents(false); window.electronAPI.setIgnoreMouseEvents(true)")
     await waitForRenderer(window, 'window.__taskMouseIgnored === true')
     const taskInputHit = await run("(() => { const el=document.querySelector('[data-task-description]'), r=el.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2; if (document.elementFromPoint(x,y)!==el || !el.closest('[data-interactive]')) throw new Error('Task input enables desktop click-through'); el.blur(); return {x,y} })()")
     window.webContents.send('cursor-position', taskInputHit)
@@ -958,6 +967,7 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     console.log('CHOUYU_SMOKE_AGENTS_PASSED utilityProcess=true restart=true calls=3 feedbackRevisionCalls=1 researchCalls=5 isolatedMemory=true evidence=true chatToolbar=true topics=true notices=true deepLinks=true confirmedFeedback=true autonomousResearch=true unchangedBackoff=true deliverableVersions=true export=true revisionForm=true')
   } catch (error) {
     console.error('CHOUYU_AGENT_SMOKE_ERROR', error)
+    console.error('CHOUYU_AGENT_VIEW_STATE', await run(`JSON.stringify({page:document.querySelector('.chat-panel')?.dataset.workspacePage,hidden:document.hidden,tabs:[...document.querySelectorAll('[data-agent-tab][aria-pressed=true]')].map(el=>({tab:el.dataset.agentTab,visible:!!el.getClientRects().length})),analytics:[...document.querySelectorAll('.contact-analytics')].map(el=>({visible:!!el.getClientRects().length,text:el.innerText.slice(0,800)}))})`))
     console.error('CHOUYU_AGENT_UI', await run("(document.querySelector('.contact-work-sheet') || document.querySelector('.contacts-detail'))?.textContent.slice(0, 5000)"))
     console.error('CHOUYU_AGENT_SURFACES', JSON.stringify(await run(`Array.from(document.querySelectorAll('.contact-work-sheet')).map(sheet => ({
       open: sheet.open, view: sheet.dataset.view,

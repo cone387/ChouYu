@@ -22,14 +22,28 @@ function formatUpdateError(error: unknown): string {
 }
 
 export function initAutoUpdater(mainWindow: BrowserWindow): void {
+  // electron-updater emits an error and also rejects its operation promise.
+  // The error listener owns user feedback; consume the rejection once here.
+  const check = () => { void autoUpdater.checkForUpdates().catch(() => {}) }
   if (initialized) {
-    void autoUpdater.checkForUpdates()
+    check()
     return
   }
   initialized = true
 
+  const alive = () => !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()
+  const send = (channel: string, payload?: unknown) => {
+    if (alive()) mainWindow.webContents.send(channel, payload)
+  }
+  const reportError = (error: unknown) => {
+    const message = formatUpdateError(error)
+    console.warn('[Updater]', message)
+    send('update:error', message)
+  }
+
   autoUpdater.on('update-available', (info: UpdateInfo) => {
-    mainWindow.webContents.send('update:available', {
+    if (!alive()) return
+    send('update:available', {
       version: info.version,
       releaseNotes: info.releaseNotes
     })
@@ -44,19 +58,20 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
         cancelId: 1
       })
       .then(({ response }) => {
-        if (response === 0) {
-          autoUpdater.downloadUpdate()
-          mainWindow.webContents.send('update:downloading')
+        if (response === 0 && alive()) {
+          send('update:downloading')
+          void autoUpdater.downloadUpdate().catch(() => {})
         }
       })
+      .catch(reportError)
   })
 
   autoUpdater.on('update-not-available', () => {
-    mainWindow.webContents.send('update:not-available')
+    send('update:not-available')
   })
 
   autoUpdater.on('download-progress', (progress) => {
-    mainWindow.webContents.send('update:progress', {
+    send('update:progress', {
       percent: progress.percent,
       transferred: progress.transferred,
       total: progress.total
@@ -64,7 +79,8 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
   })
 
   autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
-    mainWindow.webContents.send('update:downloaded', { version: info.version })
+    if (!alive()) return
+    send('update:downloaded', { version: info.version })
 
     dialog
       .showMessageBox({
@@ -76,16 +92,14 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
         cancelId: 1
       })
       .then(({ response }) => {
-        if (response === 0) {
+        if (response === 0 && alive()) {
           autoUpdater.quitAndInstall(false, true)
         }
       })
+      .catch(reportError)
   })
 
-  autoUpdater.on('error', (err) => {
-    console.warn('[Updater] Update check failed:', err)
-    mainWindow.webContents.send('update:error', formatUpdateError(err))
-  })
+  autoUpdater.on('error', reportError)
 
-  void autoUpdater.checkForUpdates()
+  check()
 }

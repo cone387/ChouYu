@@ -11,7 +11,7 @@ import { proactiveEngine } from './core/proactive'
 import { stateMachine } from './core/state-machine'
 import { getCenteredPanelPosition } from './core/panel-position'
 import { getDefaultPanelHeight } from './core/panel-state'
-import { isInteractiveHit, setMouseIgnored, syncMouseEvents } from './core/mouse-events'
+import { isInteractiveHit, observeHitTestChanges, setMouseIgnored, syncMouseEvents } from './core/mouse-events'
 
 function App() {
   const [petPosition, setPetPosition] = useState({ x: window.innerWidth - 180, y: window.innerHeight - 180 })
@@ -159,8 +159,9 @@ function App() {
     return () => clearTimeout(timer)
   }, [fileDropError])
 
+  const externalDragging=useRef(false)
   const updateIgnoreAt = useCallback((x: number, y: number) => {
-    if ((window as any).__petDragging) return
+    if ((window as any).__petDragging||externalDragging.current) return
     if (document.querySelector('[data-window-gesture]')) { setMouseIgnored(false); return }
     const el = document.elementFromPoint(x, y)
     setMouseIgnored(!isInteractiveHit(el, x, y))
@@ -168,6 +169,11 @@ function App() {
 
   // 主进程广播真实穿透状态，回写认知，防止托盘等主进程侧变更造成认知失步
   useEffect(() => syncMouseEvents(), [])
+
+  useEffect(()=>observeHitTestChanges(()=>{
+    const {x,y}=cursorPosRef.current
+    if(x>=0&&y>=0)updateIgnoreAt(x,y)
+  }),[updateIgnoreAt])
 
   // Windows uses coordinate polling instead of Electron's global mouse hook.
   // On other platforms this also recovers hover after sleep / DPI changes.
@@ -214,6 +220,7 @@ function App() {
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault()
       dragCounter++
+      externalDragging.current=true
       if (dragCounter === 1) {
         setMouseIgnored(false)
       }
@@ -222,12 +229,14 @@ function App() {
       dragCounter--
       if (dragCounter <= 0) {
         dragCounter = 0
+        externalDragging.current=false
         setMouseIgnored(true)
       }
     }
     const onDrop = (e: DragEvent) => {
       e.preventDefault()
       dragCounter = 0
+      externalDragging.current=false
       // Restore click-through after a short delay (let the Pet's onDrop fire first)
       setTimeout(() => {
         const { x, y } = cursorPosRef.current

@@ -31,31 +31,44 @@ export async function runResultDesign(job:DesignJob,ports:DesignWorkflowPorts,ou
     const response=attempt===0&&reuse?{text:JSON.stringify(previous.code),requestId:'reuse'}:await ports.model(messages,designEnvironmentInstruction,signal,tools)
     let code
     try{code=validateDesignCode(parse(response.text))}catch(error){lastFeedback=String(error);messages.push({role:'assistant',content:response.text},{role:'user',content:`代码无效：${lastFeedback}。修正后返回完整JSON。`});continue}
-    const candidate=ports.store.saveCandidate(job.id,code),observations:PreviewObservation[]=[],interactionImages:PreviewObservation[]=[]
+    const candidate=ports.store.saveCandidate(job.id,code),observations:PreviewObservation[]=[],interactionImages:PreviewObservation[]=[],readingImages:PreviewObservation[]=[]
     for(const width of [375,1024])for(const theme of ['light','dark'] as const){
       const session=await ports.preview.open({jobId:job.id,snapshot:source,code,environment:designEnvironment(width,theme)},signal)
       try{
         const first=await session.inspect();let checked=first,interactionComplete=first.contentIntact??first.contentComplete,interactionPassed=first.interactionsPassed
         const reached=new Set(first.reachedSections??[]),visited=new Set<string>()
         const errors=[...first.errors]
+        const readingSamples:NonNullable<PreviewObservation['readingSamples']>=[]
+        const record=(view:PreviewObservation)=>{interactionComplete&&=view.contentIntact??view.contentComplete;interactionPassed&&=view.interactionsPassed;errors.push(...view.errors);view.reachedSections?.forEach(id=>reached.add(id))}
+        // Bounded representative coverage: first page plus two newly reached
+        // chapter states, each at its middle and end. Never only the first screen.
+        const sampleReading=async(view:PreviewObservation)=>{
+          if(!view.scroll||view.scroll.maxY<view.height/2||readingSamples.length>=6)return
+          for(const fraction of [0.5,1]){
+            const sample=await session.act({kind:'scroll',fraction});record(sample);readingImages.push(sample)
+            if(!sample.scroll||!Number.isFinite(sample.scroll.y)||!Number.isFinite(sample.scroll.maxY)||Math.abs(sample.scroll.y-sample.scroll.maxY*fraction)>2)errors.push('长文滚动未到达预定阅读位置')
+            if(sample.scroll)readingSamples.push({screenshotId:sample.screenshotId,...sample.scroll})
+          }
+          record(await session.act({kind:'scroll',fraction:view.scroll.y/view.scroll.maxY}))
+        }
+        await sampleReading(first)
         for(let count=0;count<100;count++){
           const state=JSON.stringify(checked.reachedSections??[]),control=checked.controls.find(c=>!visited.has(`${c.id}:${state}`));if(!control)break
           visited.add(`${control.id}:${state}`);checked=await session.act({kind:'click',target:control.id})
-          interactionComplete&&=checked.contentIntact??checked.contentComplete;interactionPassed&&=checked.interactionsPassed;errors.push(...checked.errors)
-          if(checked.reachedSections?.some(id=>!reached.has(id)))interactionImages.push(checked)
-          checked.reachedSections?.forEach(id=>reached.add(id))
+          if(checked.reachedSections?.some(id=>!reached.has(id))){interactionImages.push(checked);await sampleReading(checked)}
+          record(checked)
           if(checked.errors.length)break
         }
         // Keyboard and scrolling are actual renderer input, not model assertions.
-        await session.act({kind:'key',key:'Tab'});checked=await session.act({kind:'scroll',y:0})
+        record(await session.act({kind:'key',key:'Tab'}));checked=await session.act({kind:'scroll',y:0});record(checked)
         observations.push({...first,contentComplete:interactionComplete&&(first.reachedSections?source.sections.every(s=>reached.has(s.id)):checked.contentComplete),
-          interactionsPassed:interactionPassed&&checked.interactionsPassed,errors:[...new Set([...errors,...checked.errors])]})
+          interactionsPassed:interactionPassed,errors:[...new Set(errors)],readingSamples})
       }finally{await session.close()}
     }
     const reviewMessages:AIChatMessage[]=[{role:'user',content:JSON.stringify({task:source.title,request:job.text,code,
       directory:source.sections.map(s=>({id:s.id,title:s.title,characters:s.body.length})),observations:observations.map(({imageUrl,controls,...o})=>({...o,controls})),
-      instruction:'逐张检查这四张真实界面截图：排版层级、可读性、主题对比、目录和交互。给出具体问题。只有全部可用且正文完整才返回 accepted:true。仅返回 {accepted:boolean,feedback:string} JSON。'})},
-      ...[...observations,...interactionImages].map(o=>({role:'user' as const,content:`${o.width}×${o.height} ${o.theme}，截图 ${o.screenshotId}`,imageUrl:o.imageUrl}))]
+      instruction:'逐张检查四种环境及长文中段、末尾、章节切换的真实截图：排版层级、行长、可读性、主题对比、目录和交互。检查尾部裁切、遮挡与过大留白。给出具体问题。只有全部可用且正文完整才返回 accepted:true。仅返回 {accepted:boolean,feedback:string} JSON。'})},
+      ...[...observations,...interactionImages,...readingImages].map(o=>({role:'user' as const,content:`${o.width}×${o.height} ${o.theme}，滚动位置 ${o.scroll?.y??0}/${o.scroll?.maxY??0}，截图 ${o.screenshotId}`,imageUrl:o.imageUrl}))]
     const review=await ports.model(reviewMessages,'你是成果阅读界面的视觉验收员。依据实际图片与宿主检查结果验收，不能把生成代码成功当作验收成功。',signal)
     let decision:{accepted:boolean;feedback:string}
     try{decision=parse(review.text)}catch{decision={accepted:false,feedback:'视觉检查没有返回有效结果。'}}

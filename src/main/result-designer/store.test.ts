@@ -107,6 +107,7 @@ it('preserves explicit requirements when new content arrives and does not retry 
   expect(f.store.pending()).toHaveLength(0)
   f.store.accept(snapshot(2, '新正文'), 'v1')
   expect(f.store.pending()[0].text).toBe('保留左侧目录')
+  expect(f.store.pending()[0].explicit).toBe(true)
 })
 
 it('recovers interrupted attempts, retains completed versions and invalidates deleted sources', () => {

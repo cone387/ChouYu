@@ -144,7 +144,7 @@ function createWindow(): void {
       try {
         // These suites exercise author/assistant behavior with text-only provider fixtures.
         // The dedicated designer suite separately validates automatic visual execution.
-        if(process.env.CHOUYU_SMOKE_AGENTS_ONLY==='1'||process.env.CHOUYU_SMOKE_ASSISTANT_ROUTINES_ONLY==='1'||process.env.CHOUYU_SMOKE_TASK_REQUESTS==='1'){
+        if(process.env.CHOUYU_SMOKE_RESULT_DESIGNER_ONLY!=='1'&&process.env.CHOUYU_SMOKE_CONTACT_LIVE!=='1'&&!isContactSoak){
           const designer=await contactAgentsCall('result-designer','get')
           await contactAgentsCall('result-designer','save',[{...designer.settings,enabled:false},designer.revision])
         }

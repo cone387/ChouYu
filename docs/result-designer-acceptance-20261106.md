@@ -1,5 +1,7 @@
 # 任务成果设计师验收记录
 
+后续阅读改进及最新验证边界见 [2026-11-09 桌面与成果阅读验收](desktop-release-reading-acceptance-20261109.md)：增加中段/末尾采样、默认正文行长及模型拒绝图片时的可操作反馈。下文保留原轮次证据，不冒充在线视觉质量通过。
+
 日期：2026-11-06。隔离工作区：`C:/Users/Administrator/.codex/worktrees/5b77/ChouYu`，基线 `8163b10`。实现沿用现有 AgentSpace、WorkLoopHost、Harness、SQLite 及消息投递，不发布安装包、不启动用户真实任务。
 
 ## 已实现

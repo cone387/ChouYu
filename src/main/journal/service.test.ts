@@ -107,7 +107,7 @@ describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s',
     await expect(service.quickBookmark()).rejects.toThrow('窗口已切换')
     expect(mock.writes.some(item => item.method === 'quickBookmark')).toBe(false)
   })
-  it.each(['lock', 'delete', 'configure'] as const)('rejects late bookmark bytes after %s and prevents overlapping captures', async action => {
+  it.each(['lock', 'suspend', 'delete', 'configure'] as const)('rejects late bookmark bytes after %s and prevents overlapping captures', async action => {
     await service.configure({ quickBookmarkEnabled: true })
     let finish!: (value: any) => void
     mock.capture.mockImplementation(() => new Promise(resolve => { finish = resolve }))
@@ -116,6 +116,7 @@ describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s',
     await vi.advanceTimersByTimeAsync(0)
     await expect(service.quickBookmark()).rejects.toThrow('正在保存')
     if (action === 'lock') powerMonitor.emit('lock-screen')
+    else if (action === 'suspend') powerMonitor.emit('suspend')
     else if (action === 'delete') await service.deleteSaved('old')
     else await service.configure({ quickBookmarkEnabled: false })
     finish({ bytes: Buffer.from('late'), width: 100, height: 100 })
@@ -188,12 +189,26 @@ describe.each(['win32', 'darwin'] as const)('journal recording lifecycle on %s',
     expect(mock.writes.filter(item => item.method === 'sample')).toHaveLength(0)
     expect(service.status().state).toBe('paused')
   })
-  it('unlock never resumes a manual pause', async () => {
+  it.each([['lock-screen', 'unlock-screen'], ['suspend', 'resume']])('%s/%s never resumes a manual pause', async (pause, resume) => {
     await service.configure({ enabled: true, paused: true })
-    powerMonitor.emit('lock-screen'); powerMonitor.emit('unlock-screen')
+    powerMonitor.emit(pause); powerMonitor.emit(resume)
     await vi.advanceTimersByTimeAsync(10_000)
     expect(service.status().state).toBe('paused')
     expect(mock.read).not.toHaveBeenCalled()
+  })
+  it('resumes enabled recording after sleep without saving sleep time as activity', async () => {
+    await service.configure({ enabled: true })
+    await vi.advanceTimersByTimeAsync(0)
+    const before = mock.writes.filter(item => item.method === 'sample').length
+    expect(before).toBeGreaterThan(0)
+    powerMonitor.emit('suspend')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(service.status().state).toBe('locked')
+    expect(mock.writes.filter(item => item.method === 'sample')).toHaveLength(before)
+    powerMonitor.emit('resume')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(service.status().state).toBe('recording')
+    expect(mock.writes.filter(item => item.method === 'sample').length).toBeGreaterThan(before)
   })
   it('does not persist excluded or idle activity', async () => {
     await service.configure({ enabled: true, excludedApps: ['editor.exe'] })

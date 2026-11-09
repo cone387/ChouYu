@@ -49,7 +49,9 @@ export class ResultDesignStore {
       if (!row) {
         this.db.prepare("INSERT INTO result_design_requests(id,task_key,source_key,revision,state,environment) VALUES(?,?,?,1,'queued',?)").run(randomUUID(), task, key, environment)
       } else if (row.source_key !== key || row.environment !== environment) {
-        this.db.prepare("UPDATE result_design_requests SET source_key=?,environment=?,revision=revision+1,state='queued',explicit=0,error='' WHERE id=?").run(key, environment, row.id)
+        // A source update may supersede a job, but cannot erase an unfinished
+        // user edit. Once that edit is published, automatic reuse is allowed.
+        this.db.prepare("UPDATE result_design_requests SET source_key=?,environment=?,revision=revision+1,state='queued',explicit=?,error='' WHERE id=?").run(key, environment, row.state==='ready'?0:row.explicit, row.id)
       }
       row = this.db.prepare('SELECT * FROM result_design_requests WHERE task_key=?').get(task) as RequestRow
       this.db.prepare('INSERT OR IGNORE INTO result_design_limits VALUES(?,?)').run(row.id,this.defaultLimit()??null)
