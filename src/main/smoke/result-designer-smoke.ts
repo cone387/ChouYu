@@ -161,6 +161,9 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
       await press('Home',36)
       await waitForRenderer(window,'window.__readerScroll.scrollTop===0')
       await press('PageDown',34)
+      // CDP acknowledgement and parent scrolling do not guarantee that the
+      // cross-process child has finished dispatching its keyboard event.
+      await fixed.executeJavaScript("new Promise((resolve,reject)=>{const deadline=Date.now()+5000;const check=()=>{if(window.__keys.includes('PageDown'))return resolve(true);if(Date.now()>deadline)return reject(Error('PageDown did not reach the isolated reader'));setTimeout(check,20)};check()})")
       await waitForRenderer(window,'window.__readerScroll.scrollTop>100').catch(async error=>{console.error('FRAME_KEY_CHECK',await fixed.executeJavaScript('({keys:window.__keys,active:document.activeElement?.tagName})'),await window.webContents.executeJavaScript('({active:document.activeElement?.tagName,top:window.__readerScroll.scrollTop,height:window.__readerScroll.clientHeight,scrollHeight:window.__readerScroll.scrollHeight})'));throw error})
       assert.deepEqual(await fixed.executeJavaScript("window.__keys.filter(key=>key==='Home'||key==='PageDown')"),['Home','PageDown'],'两个翻页按键都必须到达隔离正文')
       if(!attached)window.webContents.debugger.detach()
