@@ -85,6 +85,9 @@ jobs:
       - name: Verify packaged SQLite checkpoint persistence
         run: node scripts/verify-sqlite-runtime.cjs dist/win-unpacked/ChouYu.exe dist/win-unpacked/resources/app.asar
 
+      - name: Verify Windows installer long paths and legacy upgrade
+        run: npm run test:installer && npm run test:installer-upgrade
+
       - name: Verify packaged application and legacy migration
         run: npm run test:smoke:packaged
 
