@@ -41,14 +41,21 @@ export function registerDesktopHandlers(mainWindow: BrowserWindow) {
       })
     })
 
-    ipc.handle('check-for-updates', () => {
-      if (!app.isPackaged) {
-        // Dev mode: updater won't work, notify renderer directly
-        mainWindow.webContents.send('update:error', '开发模式下无法检查更新')
-        return null
-      }
-      initAutoUpdater(mainWindow)
-      return null
+    ipc.handle('update:get-state', () => initAutoUpdater(mainWindow).snapshot())
+    ipc.handle('check-for-updates', async () => {
+      const updater = initAutoUpdater(mainWindow)
+      await updater.check()
+      return updater.snapshot()
+    })
+    ipc.handle('update:download', async () => {
+      const updater = initAutoUpdater(mainWindow)
+      await updater.download()
+      return updater.snapshot()
+    })
+    ipc.handle('update:install', () => {
+      const updater = initAutoUpdater(mainWindow)
+      updater.requestInstall()
+      return updater.snapshot()
     })
   })
 }

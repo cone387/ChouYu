@@ -25,3 +25,4 @@ jobs:
       - run: npm run test:memory-eval
       - run: npm run build
       - run: npm run test:smoke:built
+      - run: node scripts/smoke-electron.js --updates

@@ -55,6 +55,7 @@ if (process.argv.includes('--upgrade-v134')) {
 const nativeCapture = process.argv.includes('--native-capture')
 const env = {
   ...process.env,
+  CHOUYU_SMOKE_UPDATES_ONLY: process.argv.includes('--updates') ? '1' : '0',
   CHOUYU_SMOKE_TEST: '1',
   CHOUYU_SMOKE_CONTACT_WORKBENCH: process.argv.includes('--contact-workbench') ? '1' : '0',
   CHOUYU_SMOKE_STORAGE_SCALE: process.argv.includes('--storage-scale') ? '1' : '0',

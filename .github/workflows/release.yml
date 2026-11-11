@@ -24,6 +24,7 @@ jobs:
       - run: npm run test:runtime-packaging
       - run: npm run test:memory-eval
       - run: npm run test:smoke
+      - run: node scripts/smoke-electron.js --updates
 
   prepare-release:
     needs: quality
@@ -63,6 +64,9 @@ jobs:
       - name: Verify packaged SQLite checkpoint persistence
         run: node scripts/verify-sqlite-runtime.cjs dist/mac-universal/ChouYu.app/Contents/MacOS/ChouYu dist/mac-universal/ChouYu.app/Contents/Resources/app.asar
 
+      - name: Verify packaged update interface
+        run: node scripts/smoke-electron.js --packaged dist/mac-universal/ChouYu.app/Contents/MacOS/ChouYu --updates
+
   build-windows:
     needs: prepare-release
     runs-on: windows-latest
@@ -94,6 +98,9 @@ jobs:
 
       - name: Verify packaged application and legacy migration
         run: npm run test:smoke:packaged
+
+      - name: Verify packaged update interface
+        run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --updates
 
       - name: Verify packaged DSH runtime
         run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --dsh-harness

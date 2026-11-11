@@ -94,7 +94,7 @@ ChouYu 住在桌面上，支持问候、休息提醒、回来提示和自然语�
 
 ## 从源码运行
 
-开发环境使用 Node.js 24（见 `.nvmrc`）。当前代码版本为 `1.4.5`，更新内容见 [发布说明](docs/releases/v1.4.5.md)，功能与验证边界见 [当前状态](docs/current-status.md) 和 [桌面与阅读验收](docs/desktop-release-reading-acceptance-20261109.md)。历史候选包记录不代表当前构建。Windows 图片附件支持[离线文字识别](docs/offline-ocr.md)。
+开发环境使用 Node.js 24（见 `.nvmrc`）。当前代码版本为 `1.4.6`，更新内容见 [发布说明](docs/releases/v1.4.6.md)，功能与验证边界见 [当前状态](docs/current-status.md) 和 [桌面与阅读验收](docs/desktop-release-reading-acceptance-20261109.md)。历史候选包记录不代表当前构建。Windows 图片附件支持[离线文字识别](docs/offline-ocr.md)。
 
 ```bash
 # 安装依赖

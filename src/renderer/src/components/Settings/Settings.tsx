@@ -1,3 +1,4 @@
+import UpdateStatus from '../Updates/UpdateStatus'
 import ProviderDiagnosticResults from './ProviderDiagnosticResults'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { AppConfig, PaletteId, PluginInfo } from '../../shared/types'
@@ -94,7 +95,6 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
   useEffect(() => { setVisitedTabs(previous => previous[activeNav] ? previous : { ...previous, [activeNav]: true }) }, [activeNav])
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [appVersion, setAppVersion] = useState<string>('')
-  const [updateStatus, setUpdateStatus] = useState<string>('')
   const [searchHotkeyDraft, setSearchHotkeyDraft] = useState(DEFAULT_CONFIG.searchHotkey)
   const [hotkeyDraft, setHotkeyDraft] = useState(DEFAULT_CONFIG.hotkey)
   const [saveError, setSaveError] = useState('')
@@ -167,20 +167,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
     window.electronAPI.plugin.getPlugins().then(setPlugins)
     window.electronAPI.getAppVersion().then(setAppVersion)
 
-    const cleanups = [
-      window.electronAPI.onConfigChanged(setConfig),
-      window.electronAPI.update.onAvailable((info) => setUpdateStatus(`发现新版本 v${info.version}`)),
-      window.electronAPI.update.onNotAvailable(() => setUpdateStatus('已是最新版本')),
-      window.electronAPI.update.onDownloading(() => setUpdateStatus('正在下载更新…')),
-      window.electronAPI.update.onProgress((progress) => setUpdateStatus(`下载中 ${Math.round(progress.percent)}%`)),
-      window.electronAPI.update.onDownloaded((info) => setUpdateStatus(`v${info.version} 已下载，退出时安装`)),
-      window.electronAPI.update.onError((msg) => setUpdateStatus(`检查失败: ${msg}`)),
-    ]
-    // If no event fires within 10s, assume up-to-date
-    const timer = setTimeout(() => {
-      setUpdateStatus((prev) => prev === '检查中...' ? '已是最新版本' : prev)
-    }, 10000)
-    return () => { cleanups.forEach((fn) => fn()); clearTimeout(timer) }
+    return window.electronAPI.onConfigChanged(setConfig)
   }, [])
 
   const pluginNavItems = plugins
@@ -794,16 +781,7 @@ export default function Settings({ onClose, petVisible, onPetVisibleChange, drag
               <div className="settings-about-name">ChouYu</div>
               <div className="settings-about-version">v{appVersion}</div>
               <div className="settings-about-desc">你的桌面 AI 宠物助手</div>
-              <button
-                className="settings-about-update-btn"
-                onClick={() => {
-                  setUpdateStatus('检查中...')
-                  window.electronAPI.checkForUpdates().catch(() => setUpdateStatus('检查失败'))
-                }}
-                disabled={updateStatus === '检查中...'}
-              >
-                {updateStatus || '检查更新'}
-              </button>
+              <UpdateStatus />
             </div>
           )}
 

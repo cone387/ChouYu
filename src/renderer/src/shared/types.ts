@@ -1,3 +1,4 @@
+import type { AppUpdateAPI, AppUpdateState } from '../../../shared/updates'
 import type { AssistantMessageKind } from '../../../shared/assistant-message'
 import type { StorageStatus } from '../../../shared/storage'
 import type { AppConfig, PaletteId, ResolvedProviderProfile } from '../../../shared/config'
@@ -82,7 +83,7 @@ export interface ElectronAPI {
   getSystemIdleSeconds: () => Promise<number>
   quitApp: () => Promise<void>
   setAutoStart: (enabled: boolean) => Promise<void>
-  checkForUpdates: () => Promise<void>
+  checkForUpdates: () => Promise<AppUpdateState>
   setIgnoreMouseEvents: (ignore: boolean) => void
   onMouseEventsState: (callback: (ignored: boolean) => void) => () => void
   onCursorPosition: (callback: (point: { x: number; y: number }) => void) => () => void
@@ -209,14 +210,7 @@ export interface ElectronAPI {
     isAuthenticated: (pluginId: string) => Promise<boolean>
     getPlugins: () => Promise<PluginInfo[]>
   }
-  update: {
-    onAvailable: (callback: (info: { version: string }) => void) => () => void
-    onNotAvailable: (callback: () => void) => () => void
-    onDownloading: (callback: () => void) => () => void
-    onProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void) => () => void
-    onDownloaded: (callback: (info: { version: string }) => void) => () => void
-    onError: (callback: (message: string) => void) => () => void
-  }
+  update: AppUpdateAPI
 }
 
 declare global {

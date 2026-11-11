@@ -1,4 +1,5 @@
 import { runDshHarnessSmoke } from './smoke/dsh-harness-smoke'
+import { runUpdatesSmoke } from './smoke/updates-smoke'
 import { runContactWorkbenchSmoke } from './smoke/contact-workbench-smoke'
 import { runContactReliabilitySmoke } from './smoke/contact-reliability-smoke'
 import { runTaskRequestsSmoke } from './smoke/task-requests-smoke'
@@ -36,7 +37,7 @@ import { runTaskSchedulingUISmoke } from './smoke/task-scheduling-ui-smoke'
 import { setTrayUnread, setupTray } from './tray'
 import { registerHotkey } from './hotkey'
 import { initDatabase, setState, getConfig, flushDatabase, closeDatabase, getStorageStatus, getAssistantUnreadCount, getAssistantUnreadPreview } from './database'
-import { initAutoUpdater } from './updater'
+import { initAutoUpdater, cancelPendingUpdateInstall, hasPendingUpdateInstall, installPendingUpdate } from './updater'
 import { pluginRegistry } from './plugins/registry'
 import { registerPluginTools } from './tools/plugin-tools'
 import { closeMemory, createMemoryTopic, getMemoryInsights, getMemoryProvider, importMemories, initializeMemory, listMemoryClusters, previewMemoryImport, proposeMemoryCandidate, runMemoryMaintenance, searchMemories, splitMemoryCluster } from './memory/service'
@@ -148,7 +149,9 @@ function createWindow(): void {
           const designer=await contactAgentsCall('result-designer','get')
           await contactAgentsCall('result-designer','save',[{...designer.settings,enabled:false},designer.revision])
         }
-        if (process.env.CHOUYU_SMOKE_CONTACT_WORKBENCH === '1') {
+        if (process.env.CHOUYU_SMOKE_UPDATES_ONLY === '1') {
+          await stage('updates', () => runUpdatesSmoke(mainWindow!))
+        } else if (process.env.CHOUYU_SMOKE_CONTACT_WORKBENCH === '1') {
           await stage('contact-workbench', () => runContactWorkbenchSmoke(mainWindow!))
         } else if (process.env.CHOUYU_SMOKE_TASK_REQUESTS === '1') {
           await stage('task-requests', () => runTaskRequestsSmoke(mainWindow!))
@@ -267,7 +270,7 @@ app.whenReady().then(async () => {
   try{await recoverHarnessModules();setState('harness:recovery-error','')}catch(error){setState('harness:recovery-error',error instanceof Error?error.message:'执行记录恢复失败。')}
   registerBuiltInCapabilities()
   initializeMemory()
-  if (isSmokeTest && !isContactSoak && process.env.CHOUYU_SMOKE_CAPTURE_ONLY !== '1') {
+  if (isSmokeTest && !isContactSoak && process.env.CHOUYU_SMOKE_CAPTURE_ONLY !== '1' && process.env.CHOUYU_SMOKE_UPDATES_ONLY !== '1') {
     try {
       const capabilityCatalog = capabilityRegistry.list(getConfig())
       const activeMemoryEngines = capabilityCatalog.filter((item) => item.kind === 'memory-engine' && item.active)
@@ -417,6 +420,7 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers immediately after window creation
   registerIpcHandlers(mainWindow!)
+  if (app.isPackaged && !isSmokeTest) initAutoUpdater(mainWindow!)
 
   // Async plugin init (network requests etc) - IPC handlers already available
   await pluginRegistry.initializePlugins()
@@ -434,8 +438,6 @@ app.whenReady().then(async () => {
       openAtLogin: config.autoStart ?? false
     })
 
-    // Delay update check to avoid competing with startup I/O
-    setTimeout(() => initAutoUpdater(mainWindow!), 5000)
   }
 })
 
@@ -463,6 +465,7 @@ app.on('before-quit', (event) => {
   if (journalClosing && !journalClosed) { event.preventDefault(); return }
   if (!journalClosed && !storageQuit.mayExit()) {
     event.preventDefault()
+    cancelPendingUpdateInstall()
     mainWindow?.show()
     return
   }
@@ -503,6 +506,12 @@ app.on('before-quit', (event) => {
   closeMemory()
   closeUsage()
   globalShortcut.unregisterAll()
+  if (hasPendingUpdateInstall()) {
+    // macOS must finish its asynchronous native updater handoff before it can quit.
+    // The updater owns the next quit, which passes this branch because pending is cleared.
+    event.preventDefault()
+    installPendingUpdate()
+  }
 })
 
 export { mainWindow }

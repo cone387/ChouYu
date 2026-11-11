@@ -1,3 +1,4 @@
+import type { AppUpdateState } from '../../shared/updates'
 
 import type { IpcRenderer } from 'electron'
 
@@ -82,33 +83,13 @@ return {
   },
 
   update: {
-    onAvailable: (callback: (info: { version: string }) => void) => {
-      const handler = (_e: unknown, info: { version: string }) => callback(info)
-      ipcRenderer.on('update:available', handler)
-      return () => { ipcRenderer.removeListener('update:available', handler) }
-    },
-    onNotAvailable: (callback: () => void) => {
-      ipcRenderer.on('update:not-available', callback)
-      return () => { ipcRenderer.removeListener('update:not-available', callback) }
-    },
-    onDownloading: (callback: () => void) => {
-      ipcRenderer.on('update:downloading', callback)
-      return () => { ipcRenderer.removeListener('update:downloading', callback) }
-    },
-    onProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void) => {
-      const handler = (_e: unknown, progress: { percent: number; transferred: number; total: number }) => callback(progress)
-      ipcRenderer.on('update:progress', handler)
-      return () => { ipcRenderer.removeListener('update:progress', handler) }
-    },
-    onDownloaded: (callback: (info: { version: string }) => void) => {
-      const handler = (_e: unknown, info: { version: string }) => callback(info)
-      ipcRenderer.on('update:downloaded', handler)
-      return () => { ipcRenderer.removeListener('update:downloaded', handler) }
-    },
-    onError: (callback: (message: string) => void) => {
-      const handler = (_e: unknown, msg: string) => callback(msg)
-      ipcRenderer.on('update:error', handler)
-      return () => { ipcRenderer.removeListener('update:error', handler) }
+    getState: () => ipcRenderer.invoke('update:get-state') as Promise<AppUpdateState>,
+    download: () => ipcRenderer.invoke('update:download') as Promise<AppUpdateState>,
+    install: () => ipcRenderer.invoke('update:install') as Promise<AppUpdateState>,
+    onState: (callback: (state: AppUpdateState) => void) => {
+      const handler = (_event: unknown, state: AppUpdateState) => callback(state)
+      ipcRenderer.on('update:state', handler)
+      return () => { ipcRenderer.removeListener('update:state', handler) }
     }
   }
 }
