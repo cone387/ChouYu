@@ -33,7 +33,7 @@ for (const file of ['helper.mjs', 'plugin.mjs', 'budget.mjs', 'wire.mjs', 'provi
 fs.copyFileSync(node, path.join(output, 'node.exe'));
 fs.copyFileSync(path.join(extracted, 'LICENSE'), path.join(output, 'NODE-LICENSE'));
 const omitted = copyRuntimeDependencies(path.join(runtime, 'node_modules'), path.join(output, 'node_modules'));
-console.log(`DSH packaging omitted ${omitted.files} build-only files (${omitted.bytes} bytes); development dependencies unchanged.`);
+console.log(`DSH packaging omitted ${omitted.files} build-only or other-platform files (${omitted.bytes} bytes); development dependencies unchanged.`);
 const inventory = [];
 function scan(dir) { for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, item.name);

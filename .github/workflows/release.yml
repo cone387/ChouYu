@@ -89,6 +89,9 @@ jobs:
       - name: Verify Windows installer long paths and legacy upgrade
         run: npm run test:installer && npm run test:installer-upgrade
 
+      - name: Install actual Windows release and verify every runtime resource
+        run: node scripts/test-packaged-installer.cjs
+
       - name: Verify packaged application and legacy migration
         run: npm run test:smoke:packaged
 

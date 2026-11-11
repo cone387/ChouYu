@@ -2,9 +2,9 @@
 
 ## 变更
 
-1.4.5 的发布复制步骤排除 `.d.ts`、`.d.mts`、`.d.cts` 及 JS/TS 源码映射。运行时 TypeScript、普通 `.map` 资源、文档、许可证、原生组件及全部功能依赖继续保留。开发用 `runtime/dsh/node_modules` 不受裁剪影响。
+1.4.5 的发布复制步骤排除 `.d.ts`、`.d.mts`、`.d.cts`、JS/TS 源码映射，以及 node-pty 中不适用于 Windows x64 的预编译文件。运行时 TypeScript、普通 `.map` 资源、文档、许可证、Windows x64 原生组件及功能依赖继续保留。开发用 `runtime/dsh/node_modules` 不受裁剪影响。
 
-固定依赖版本的运行时从 27,807 个文件、600,817,723 字节，减至 14,821 个文件、521,893,035 字节；减少 12,986 个文件（46.7%）和 78,924,688 字节。
+固定依赖版本的最终运行时从 27,807 个文件、600,817,723 字节，减至 14,807 个文件、508,557,267 字节；减少 13,000 个文件（46.8%）和 92,260,456 字节。
 
 不改变 NSIS 安装/卸载行为和增量更新格式。直接切换 ZIP 解压会要求关闭 differentialPackage，并改变解压失败处理，因此本轮不采用；旧版本升级仍会先处理旧版完整文件集合。
 
@@ -24,3 +24,6 @@
 - 同一成品未修改代码，独立 DSH 启动探针 901ms 成功；完整 DSH 成品复测通过（`speed-dsh-smoke-recheck.log`）。复测时仍有一项压缩运行，不能据此确认首次超时原因。
 - 首次完整桌面冒烟失败于 `window.__floatingMouseIgnored === false` 的状态等待，日志 `speed-smoke.log` 保留；新成品 `out/main/index.js` 与 `out/preload/index.js` 已与本机正式 1.4.4 成品逐字节比对一致，界面测试失败不作为本次已修复问题。
 - 未改变代码的完整桌面复测通过（`speed-smoke-recheck.log`）。
+- 完整基线安装实际退出为 0，但校验发现 4 个 ARM64 conpty PE 文件缺失；本机正式 1.4.4 安装也缺少相同文件。7-Zip 列表确认这些归档项采用 `ARM64 LZMA2` 方法。它们不用于 x64，最终规则排除 node-pty 的其他平台预编译文件，保留 win32-x64 和本机 fallback；用最终运行时实际创建 x64 PTY 执行固定 echo 验证通过。
+- 旧基线的上述四项缺失显式记录；基准仅对旧负载允许这四项已知差异，新包仍要求全部文件存在、尺寸匹配、无旧文件残留。首次基线未在校验失败前保留时长，不将其估算秒数作为结果；恢复基准会重新测量基线首次安装。恢复命令：`node scripts/benchmark-windows-installer.cjs <新win-unpacked> --resume artifacts/install-speed-<原后缀>`。
+- 最终平台裁剪后的全量复核：317 文件、2,385 项通过，17 文件、62 项跳过（114.94 秒）；最终 14,807 文件成品 DSH 完整冒烟通过（`speed-dsh-smoke-final.log`）。
