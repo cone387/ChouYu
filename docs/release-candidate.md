@@ -1,5 +1,7 @@
 # 最新本地候选包：1.4.3-rc.1
 
+2026-11-11：正式版 [v1.4.4](https://github.com/cone387/ChouYu/releases/tag/v1.4.4) 已公开为 Latest，修复 Windows 安装升级的长路径失败。两平台发布与安装专项证据见 [发布验证](release-checklist-v1.4.4.md)；以下均为历史候选和 1.4.3 的记录。
+
 2026-11-10：正式版 [v1.4.3](https://github.com/cone387/ChouYu/releases/tag/v1.4.3) 已通过标签质量检查及 Windows/macOS 成品验证并公开，详情见 [发布验证](release-checklist-v1.4.3.md)。以下保留原候选包的历史证据；正式安装包由 CI 重新构建，不复用候选文件。
 
 2026-11-09：桌面与成果阅读改动已集成本地 `master`，未上传或公开发布。

@@ -18,4 +18,18 @@
 
 版本与 lockfile 同步为 1.4.4。使用 `v1.4.4` 标签触发现有流水线：质量检查成功后创建草稿；Windows/macOS 分别构建，完成 SQLite、桌面冒烟、DSH、数据升级、联系人恢复及新增安装器检查；全部成功且附件齐全后公开为 Latest。
 
-本文件初始提交时正式流水线尚未执行，不能将本地通过等同于正式发布成功。正式状态和产物校验在流水线结束后补充。
+## 正式发布结果
+
+标签 `v1.4.4` 指向 `153881e70f857ab0c9c2c082e33be905d31eea84`。[发布流水线 42949658892](https://github.com/cone387/ChouYu/actions/runs/42949658892) 的 quality、prepare-release、build-windows、build-macos、publish-release 全部成功，2026-11-11 11:24:53（Asia/Shanghai）公开并设为 Latest。API 确认不是草稿或预发布，8 项附件齐全。
+
+标签云端全量为 317 文件、2,385 项通过，17 文件、62 项跳过。Windows 的长路径迁移、已有前缀、失败退出码与环境恢复，以及旧版安装、失败回滚、修复后升级、APPDATA 保留、卸载回归均通过。两平台 SQLite 和 Windows 完整桌面、DSH、v1.3.4 数据升级、联系人恢复验证通过。
+
+下载正式附件后验证：Windows EXE 为 277,467,746 字节，SHA-256 `7f3b69e07886bd1e4f4bcd82a84ff27f8cfc09c04f53c39f193d77a14854bf09`；macOS ZIP 为 261,358,321 字节。二者 SHA-512 均与版本为 1.4.4 的更新清单完全一致，SHA-256 与 Release API 的 digest 一致。正式 Windows 安装包已复制到用户下载目录。
+
+原始流水线日志、API 快照、更新清单和校验结果保存在 `artifacts/release-1.4.4/`（`release-workflow.log`、`workflow.json`、`release.json`、`latest-release.json`、`verified-assets.json`）。
+
+## 独立 master CI 失败记录
+
+同一提交的 [master Quality 42949658883](https://github.com/cone387/ChouYu/actions/runs/42949658883) 首次有 6 文件、10 项测试/清理超时，涉及 `database.test.ts`、`agents/assignment.test.ts`、`agents/chapter-continuation.test.ts`、`agents/chat-controls.test.ts`、`agents/delivery-counts.test.ts`、`agents/task-context.test.ts`。重跑仍有 3 项 5 秒测试超时：`database.test.ts` 的历史正文懒加载、`agents/delivery.test.ts` 的偏好与输出元数据、`tasks/store.test.ts` 的 v10 视图备份升级。日志分别为 `master-ci-failed.log`、`master-ci-recheck-failed.log`。
+
+未放宽超时、跳过断言或继续重跑直到通过；保留该独立流水线失败状态，不将发布标签流水线成功描述为所有 CI 均成功。安装修复不包含这些运行时/测试稳定性问题的根因修复。

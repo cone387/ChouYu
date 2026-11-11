@@ -2,9 +2,9 @@
 
 联系人任务的现行产品与 UI 规范统一见 [联系人任务 spec](contact-task-spec.md)，其中第 10 节列出已实现能力与尚存缺口；历史验收不能替代这些缺口的验证。
 
-更新日期：2026-11-10。
+更新日期：2026-11-11。
 
-`v1.4.3` 已正式发布：标签流水线质量检查、Windows/macOS 打包及成品验证全部通过，Windows 安装包与更新清单校验一致，已公开并设为 Latest。更新范围与已知限制见 [发布说明](releases/v1.4.3.md)，执行证据及本地复核失败记录见 [发布验证](release-checklist-v1.4.3.md)，安装包见 [GitHub Release](https://github.com/cone387/ChouYu/releases/tag/v1.4.3)。下述候选包验收保留其原始时间和边界。
+`v1.4.4` 已正式发布并设为 Latest，修复 Windows 覆盖升级时长路径失败却提示“ChouYu 无法关闭”的问题。标签流水线质量检查、Windows/macOS 打包、成品验证及新增安装升级专项全部通过；Windows EXE 和 macOS ZIP 与各自更新清单的 SHA-512 一致。更新范围见 [发布说明](releases/v1.4.4.md)，执行证据及独立 master CI 的超时记录见 [发布验证](release-checklist-v1.4.4.md)，安装包见 [GitHub Release](https://github.com/cone387/ChouYu/releases/tag/v1.4.4)。下述候选包验收保留其原始时间和边界。
 
 本轮完整桌面回归已通过，修正更新失败/关闭窗口回调与静止鼠标的穿透重判；此前 `1.4.3-rc.1` 本地候选安装包的完整桌面、SQLite、任务恢复、v1.3.4 数据升级和成果设计师检查通过。设计师补充长文中段/末尾实图复核、默认正文行长、图片能力失败提示，并保留未完成的界面调整优先级。候选产物与验证边界见 [桌面与阅读验收](desktop-release-reading-acceptance-20261109.md)；正式产物见上方发布验证，在线视觉质量、实体睡眠/多屏及干净系统安装仍未验收。
 
@@ -22,7 +22,7 @@
 
 联系人 Agent 最新迭代增加阶段计划、累积成果与版本、单成果 Markdown 导出，以及用户答复和修改意见后的实际修订。源码与验收边界见 [持续交付计划](agent-delivery-plan.md)；仍需应用运行，不代表已发布安装包或全天验收完成。
 
-代码版本为 `1.4.3`（以 `package.json` 为准），包含应用总览、Token 统计、任务请求追踪、独立成果界面设计师与桌面可靠性修复。发布内容见 [v1.4.3 说明](releases/v1.4.3.md)；源码验证结果不能替代安装包验收。此前正式版见 [v1.4.2 发布验证](release-checklist-v1.4.2.md)。
+代码版本为 `1.4.4`（以 `package.json` 为准），在 1.4.3 的应用总览、Token 统计、任务请求追踪、独立成果界面设计师与桌面可靠性改进基础上修复 Windows 安装升级。发布内容见 [v1.4.4 说明](releases/v1.4.4.md)；源码验证结果不能替代安装包验收。此前正式版见 [v1.4.3 发布验证](release-checklist-v1.4.3.md)。
 
 ## 已有能力
 

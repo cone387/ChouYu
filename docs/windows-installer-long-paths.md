@@ -26,3 +26,7 @@
 ## 本地交付
 
 `dist/installer-fixed/ChouYu-Setup-1.4.3-fixed.exe` 构建成功，319,659,019 字节，已复制到用户下载目录。复制后 SHA-256 一致，记录为 `installer-fixed-integrity.json`。这是本地修正版普通安装包，不需要额外启动脚本；未发布或替换 GitHub 正式附件，未自动升级用户现有的 1.4.2。
+
+## 正式发布
+
+用户随后要求正式发布。2026-11-11，修复已随 [v1.4.4](https://github.com/cone387/ChouYu/releases/tag/v1.4.4) 公开并设为 Latest，正式附件由标签 CI 重新构建，两平台更新清单与下载文件校验一致。安装器回归改用 electron-builder 的工具定位接口，不依赖开发机的 NSIS 缓存目录。正式验证和独立 master CI 的超时记录见 [1.4.4 发布验证](release-checklist-v1.4.4.md)。

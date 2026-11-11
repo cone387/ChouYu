@@ -43,7 +43,7 @@ ChouYu 住在桌面上，支持问候、休息提醒、回来提示和自然语�
 - **Windows**：选择 `ChouYu-Setup-版本号.exe`。
 - **macOS**：选择 `ChouYu-版本号-universal.dmg`，也提供 ZIP 包。
 
-当前正式版为 **v1.4.3**，更新内容与已知限制见 [发布说明](docs/releases/v1.4.3.md)。模型服务需要自行配置，费用按所选服务计算；平台相关能力及验证范围见 [当前状态](docs/current-status.md)。
+当前正式版为 **v1.4.4**，修复 Windows 覆盖升级时误报“ChouYu 无法关闭”的安装失败，更新内容与已知限制见 [发布说明](docs/releases/v1.4.4.md)。模型服务需要自行配置，费用按所选服务计算；平台相关能力及验证范围见 [当前状态](docs/current-status.md)。
 
 ### 开始使用
 
@@ -94,7 +94,7 @@ ChouYu 住在桌面上，支持问候、休息提醒、回来提示和自然语�
 
 ## 从源码运行
 
-开发环境使用 Node.js 24（见 `.nvmrc`）。当前代码版本为 `1.4.3`，更新内容见 [发布说明](docs/releases/v1.4.3.md)，功能与验证边界见 [当前状态](docs/current-status.md) 和 [桌面与阅读验收](docs/desktop-release-reading-acceptance-20261109.md)。历史候选包记录不代表当前构建。Windows 图片附件支持[离线文字识别](docs/offline-ocr.md)。
+开发环境使用 Node.js 24（见 `.nvmrc`）。当前代码版本为 `1.4.4`，更新内容见 [发布说明](docs/releases/v1.4.4.md)，功能与验证边界见 [当前状态](docs/current-status.md) 和 [桌面与阅读验收](docs/desktop-release-reading-acceptance-20261109.md)。历史候选包记录不代表当前构建。Windows 图片附件支持[离线文字识别](docs/offline-ocr.md)。
 
 ```bash
 # 安装依赖
