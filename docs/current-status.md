@@ -4,7 +4,7 @@
 
 更新日期：2026-11-11。
 
-`v1.4.5` 已正式发布并设为 Latest，Windows 运行时减少 13,000 个冗余文件（46.8%），沿用 1.4.4 的长路径升级修复。同机同配置对照包首次安装耗时减少约 34%；正式默认压缩包已在云端完成真实安装、14,807 个运行时文件完整校验和卸载数据保留检查。标签流水线、独立 master CI 均通过，Windows EXE 和 macOS ZIP 与发布摘要及更新清单一致。更新范围见 [发布说明](releases/v1.4.5.md)，实测条件及失败复核记录见 [安装性能](windows-install-performance.md) 和 [发布验证](release-checklist-v1.4.5.md)，安装包见 [GitHub Release](https://github.com/cone387/ChouYu/releases/tag/v1.4.5)。下述候选包验收保留其原始时间和边界。
+`v1.4.6` 已正式发布并设为 Latest：后台检查与下载更新，顶部及关于页显示真实进度和“重启更新”，点击后先完成保存再安装，普通退出不自动安装。主分支质量、两平台更新界面及 Windows 实际安装和成品回归通过；首次 DSH 云端失败、同包本地复核和重跑通过均保留记录。Windows EXE 与 macOS ZIP 已核对发布摘要和更新清单。详见 [发布说明](releases/v1.4.6.md)、[发布验证](release-checklist-v1.4.6.md) 和 [GitHub Release](https://github.com/cone387/ChouYu/releases/tag/v1.4.6)。沿用 1.4.5 的安装文件精简和 1.4.4 的升级修复，安装性能的实测条件见 [记录](windows-install-performance.md)。下述候选包验收保留其原始时间和边界。
 
 本轮完整桌面回归已通过，修正更新失败/关闭窗口回调与静止鼠标的穿透重判；此前 `1.4.3-rc.1` 本地候选安装包的完整桌面、SQLite、任务恢复、v1.3.4 数据升级和成果设计师检查通过。设计师补充长文中段/末尾实图复核、默认正文行长、图片能力失败提示，并保留未完成的界面调整优先级。候选产物与验证边界见 [桌面与阅读验收](desktop-release-reading-acceptance-20261109.md)；正式产物见上方发布验证，在线视觉质量、实体睡眠/多屏及干净系统安装仍未验收。
 

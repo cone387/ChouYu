@@ -19,4 +19,22 @@
 
 沿用标签流水线的质量检查、双平台构建、SQLite、Windows 真实安装文件校验和数据保留、完整桌面、DSH、旧数据升级及联系人恢复验证；新增 Windows/macOS 成品更新界面冒烟。
 
-本机为 Windows，macOS 原生更新交接依据本地 electron-updater 实现修正，并由平台构建和界面验证补充；尚未实测两台平台从本版升级到未来正式版的完整在线自动更新。界面夹具测试不替代该端到端验证。正式发布结果待流水线完成后补录。
+本机为 Windows，macOS 原生更新交接依据本地 electron-updater 实现修正，并由平台构建和界面验证补充；尚未实测两台平台从本版升级到未来正式版的完整在线自动更新。界面夹具测试不替代该端到端验证。
+
+## 云端质量结果
+
+提交 `7f760ce58a5d5fe490e9cc93e8479f0a033c8774` 的 [master Quality 42973683484](https://github.com/cone387/ChouYu/actions/runs/42973683484) 已通过：类型、全量单测、依赖审计、运行时裁剪、记忆评估、完整桌面与更新界面专项均通过。完整桌面包含聊天滚动和隐藏授权等待超过 60 秒的真实场景。标签发布流水线的独立 quality 作业也通过。本地失败记录继续保留，不据云端通过宣称其间歇性根因已经解决。
+
+标签流水线首次 Windows 构建通过实际安装、完整桌面和更新界面，随后 DSH 后台报告等待超时，公开步骤按门槛跳过。普通 DSH 聊天、工具及人工交互已完成；日志未记录后台的具体原始异常，不能据此断言为网络或更新改动。失败日志及首轮作业快照保存在 `artifacts/release-1.4.6/first-failure.log`、`first-workflow.json`；保留该安装包进行独立复核，并只重跑失败的 Windows 作业。
+
+同一首轮 Windows 安装包解出成品后，在本地隔离数据下完整 DSH 复核通过：真实 SDK、工具原卡片、隐藏未读、重复点击、拒绝/取消、切回原生、后台设置重启保留以及后台真实报告保存均通过。日志 `artifacts/release-1.4.6/local-dsh-recheck.log` 和 `local-dsh-acceptance.json`；原包 `ChouYu-Setup-1.4.6-first-attempt.exe` 保留，不与重建后的发布附件混用。该复核不证明首轮云端超时根因已修复。
+
+## 正式发布结果
+
+`v1.4.6` 指向 `7f760ce58a5d5fe490e9cc93e8479f0a033c8774`。[发布流水线 42973683399](https://github.com/cone387/ChouYu/actions/runs/42973683399) 最终五项作业全部成功，2026-11-11 15:18:58（Asia/Shanghai）公开为 Latest，非草稿或预发布，8 项附件齐全。
+
+重建后的 Windows 包再次通过 SQLite、长路径/旧版升级、真实安装的运行时完整校验和数据保留、完整桌面、更新界面、DSH 后台真实报告、v1.3.4 数据升级及联系人恢复。macOS 包通过 SQLite 和更新界面。Windows 作业只在原门槛全部通过后公开，没有跳过失败检查。
+
+最终 Windows EXE 为 258,887,147 字节，SHA-256 `5e43531d1ba8c8f78d6284904ca6b7b0677edaa507fda70da522c14d596b870b`；macOS ZIP 为 261,360,931 字节，SHA-256 `76d491274f6c0a1b4a2ae10cbdc5b246e1610aa976cdc1bf8ffe7349dfff15fd`。两者均与更新清单的 SHA-512、文件大小和 Release API 的 SHA-256 摘要一致。正式 EXE 已放入用户 Downloads，复制后哈希一致；没有启动安装器或退出用户应用。
+
+API 快照、最终流水线日志、更新清单、附件校验和交付记录位于 `artifacts/release-1.4.6/`。本地间歇性桌面失败与首轮云端 DSH 失败仍按上述范围保留，不将后续通过解释为根因已经消除。
