@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
+const { copyRuntimeDependencies } = require('./copy-dsh-runtime.cjs');
 const root = path.resolve(__dirname, '..'), manifest = JSON.parse(fs.readFileSync(path.join(root, 'resources/dsh-runtime-manifest.json'), 'utf8'));
 if (process.platform !== 'win32' || process.arch !== 'x64')
     throw new Error('DSH Windows runtime packaging requires Windows x64; macOS legacy packaging is unchanged.');
@@ -31,7 +32,8 @@ for (const file of ['helper.mjs', 'plugin.mjs', 'budget.mjs', 'wire.mjs', 'provi
     fs.copyFileSync(path.join(runtime, file), path.join(output, file));
 fs.copyFileSync(node, path.join(output, 'node.exe'));
 fs.copyFileSync(path.join(extracted, 'LICENSE'), path.join(output, 'NODE-LICENSE'));
-fs.cpSync(path.join(runtime, 'node_modules'), path.join(output, 'node_modules'), { recursive: true, dereference: true });
+const omitted = copyRuntimeDependencies(path.join(runtime, 'node_modules'), path.join(output, 'node_modules'));
+console.log(`DSH packaging omitted ${omitted.files} build-only files (${omitted.bytes} bytes); development dependencies unchanged.`);
 const inventory = [];
 function scan(dir) { for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, item.name);

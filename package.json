@@ -1,6 +1,6 @@
 {
   "name": "chouyu",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Desktop AI pet assistant",
   "author": "cone387",
   "main": "./out/main/index.js",
@@ -20,6 +20,7 @@
     "postinstall": "node scripts/install-electron.js",
     "test": "vitest --run",
     "test:installer": "node scripts/test-windows-installer.cjs",
+    "test:runtime-packaging": "node --test scripts/test-dsh-runtime-copy.cjs",
     "test:installer-upgrade": "node scripts/test-windows-installer-upgrade.cjs",
     "check:boundaries": "node scripts/check-module-boundaries.cjs",
     "test:journal-retrieval": "node scripts/evaluate-journal-retrieval.cjs",
