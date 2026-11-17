@@ -14,6 +14,8 @@ import { createTaskTool } from './task-tool'
 import { createTaskAssistantTools } from './assistant-tools'
 import { taskCenter } from '../task-center/service'
 import { createTodoDomain, type TodoCommands } from '../task-center/todo-domain'
+import { resolveTodoReminder, finishTodoReminder } from '../reminders/source-state'
+import { reminderSourcesChanged } from '../reminders/source-versions'
 
 let database: TasksStore | undefined
 let store: TodoCommands | undefined
@@ -34,6 +36,7 @@ async function writeBackup(path: string, backup: TaskBackup): Promise<void> {
 }
 
 const broadcast = (channel: string, payload?: unknown): void => {
+  if (channel === 'tasks:changed') reminderSourcesChanged('@todo')
   if (shuttingDown) return
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send(channel, payload)
@@ -73,7 +76,9 @@ export function initializeTasks(options: TasksModuleOptions): void {
         const identified = entries.map(entry => ({ entry, id: JSON.stringify([entry.task.id, entry.itemId ?? '', entry.reminderAt, entry.task.updatedAt]) }))
         const unsent = identified.filter(item => !getState(`reminder-receipt:${item.id}`))
         if (backlog) {
-          deliverMessage({ kind: 'assistant', content: `错过了 ${unsent.length} 条任务提醒。打开任务查看当前安排。`, messageKind: 'task-backlog', receiptIds: (unsent.length ? unsent : identified).map(item => item.id) })
+          const missed = unsent.length ? unsent : identified
+          deliverMessage({ kind: 'assistant', content: `错过了 ${unsent.length} 条任务提醒。打开任务查看当前安排。`, messageKind: 'task-backlog', receiptIds: missed.map(item => item.id),
+            taskReminders: missed.map(({ entry }) => ({ ref: { taskId: entry.task.id, checklistId: entry.itemId, reminderAt: entry.reminderAt! }, title: entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title })) })
         } else for (const { entry, id } of identified) {
           deliverMessage({ kind: 'assistant', content: `任务提醒：${entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title}`, messageKind: 'task',
             receiptIds: [id], taskReminder: { taskId: entry.task.id, checklistId: entry.itemId, reminderAt: entry.reminderAt! }
@@ -213,4 +218,13 @@ export function resolveTaskReminder(ref: TaskReminderRef): string | null {
     return item && !item.done && item.reminders?.some(r => r.at === ref.reminderAt) ? `${task.title} · ${item.title}` : null
   }
   return task.reminders?.some(r => r.at === ref.reminderAt) ? task.title : null
+}
+
+export function taskReminderState(ref: TaskReminderRef) {
+  if (!store) throw new Error('任务系统尚未就绪。')
+  return resolveTodoReminder(store, ref)
+}
+export async function finishTaskReminder(ref: TaskReminderRef): Promise<void> {
+  if (!store) throw new Error('任务系统尚未就绪。')
+  finishTodoReminder(store, ref); broadcast('tasks:changed')
 }

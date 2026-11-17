@@ -6,6 +6,9 @@ import type { ToolActivityData } from './tools'
 import type { MemoryFeedbackValue } from './memory'
 
 export interface Message {
+  reminderIds?: string[]
+  reminderFollowup?: boolean
+  reminderReadIds?: string[]
   harnessSource?:import('./harness').HarnessSource
   communication?: ContactCommunication
   contactCitations?: import('./contact-content').ContentCitation[]

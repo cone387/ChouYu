@@ -6,7 +6,7 @@ import type { SessionWorkspace } from '../database'
 
 export type DeliveryRequest =
   | {kind:'result-design';notice:import('../../shared/result-design').ResultDesignNotice}
-  | { kind: 'assistant'; content: string; timestamp?: number; messageKind?: AssistantMessageKind; receiptIds: string[]; taskReminder?: TaskReminderRef; snoozeKey?: string; messageId?: string }
+  | { kind: 'assistant'; content: string; timestamp?: number; messageKind?: AssistantMessageKind; receiptIds: string[]; taskReminder?: TaskReminderRef; taskReminders?: { ref: TaskReminderRef; title: string }[]; snoozeKey?: string; messageId?: string }
   | { kind: 'agent'; notice: AgentNotice }
   | { kind: 'interaction'; card: ContactActionInteraction }
 export interface PersistedDelivery {

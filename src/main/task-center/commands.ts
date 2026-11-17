@@ -1,4 +1,5 @@
 import { contactCommandResult } from './command-boundary'
+import { resolveContactReminder } from '../reminders/source-state'
 import { contactHome } from '../agents/home'
 import { citationContext, validateCitation } from '../agents/citations'
 import { buildContactContext } from '../agents/context'
@@ -88,6 +89,11 @@ export class ContactTaskCommands {
       }
       case 'contactHome': return contactCommandResult('contactHome', contactHome(this.store, id))
       case 'pendingInteractions': return contactCommandResult('pendingInteractions', this.store.decisions.pending(id))
+      case 'reminderSource': return resolveContactReminder(args[0] as import('../../shared/reminder-followups').ReminderSource, {
+        interaction: key => this.store.db.prepare('SELECT 1 FROM contact_interactions WHERE character_id=? AND id=?').get(id, key) ? this.store.decisions.get(id, key) : undefined,
+        task: key => this.store.topics.list(id).find(topic => topic.id === key),
+        run: key => { const run = this.store.getRun(key); return run?.character_id === id ? run : undefined }
+      })
       case 'getInteraction': return contactCommandResult('getInteraction', { ...this.store.decisions.get(id, String(args[0])), characterName: this.context.identity(id).name })
       case 'offerAction': { const result = this.store.actions.offer(id, String(args[0]), args[1]); this.context.changed(id); return contactCommandResult('offerAction', result) }
       case 'claimAction': { const result = this.store.actions.claim(id, String(args[0]), String(args[1]), args[2] as import('../../shared/contact-actions').ContactActionResponse); this.context.changed(id); return contactCommandResult('claimAction', result) }

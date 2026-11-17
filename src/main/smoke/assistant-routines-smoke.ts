@@ -314,7 +314,9 @@ export async function runAssistantRoutinesSmoke(window: BrowserWindow) {
 
     await run(`window.electronAPI.characters.remove(${JSON.stringify(comparisonContact)})`)
     comparisonContact = ''
-    await run("document.querySelector('.message-area a[href^=\"#contact-task?\"]').click()")
+    // The summary can contain other real contacts (including the result designer).
+    // Exercise the deleted source itself, not whichever task sorts first.
+    await run(`[...document.querySelectorAll('.message-area a[href^="#contact-task?"]')].find(a => new URLSearchParams(a.getAttribute('href').split('?')[1]).get('topicId') === ${JSON.stringify(topicId)}).click()`)
     await waitForRenderer(window, "[...document.querySelectorAll('[role=alert]')].some(el => el.textContent.includes('已删除'))")
     if (await run("Boolean(document.querySelector('.contact-work-sheet[open]'))")) throw new Error('Deleted task link opened a different task')
 

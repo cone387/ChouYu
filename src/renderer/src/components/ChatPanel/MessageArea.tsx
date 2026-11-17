@@ -3,7 +3,8 @@ import { interactionReferences } from '../../../../shared/contact-interactions'
 import ContactInteractionCard from './ContactInteractionCard'
 import AgentProgressCard from './AgentProgressCard'
 import { legacyProgressUpdate } from '../../../../shared/agent-progress'
-import ReminderActions from './ReminderActions'
+import ReminderActions, { TrackedReminderActions } from './ReminderActions'
+import type { ReminderView } from '../../../../shared/reminder-followups'
 import AgentQuestionState from './AgentQuestionState'
 import { useReminderRead, isLatestMessageVisible, type ReplyViewport } from './useReminderRead'
 import type { AssistantSnooze } from '../../../../shared/reminders'
@@ -183,6 +184,29 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
     return () => { if (replyViewportRef.current === viewport) replyViewportRef.current = null }
   }, [replyViewportRef, sessionId, active, searching, previewImage])
   const [snoozes, setSnoozes] = useState<AssistantSnooze[]>([])
+  const [reminderItems, setReminderItems] = useState<ReminderView[]>([])
+  const [reminderError, setReminderError] = useState('')
+  const hasTrackedReminders = messages.some(message => message.reminderIds?.length)
+  const updateReminder = (item: ReminderView) => setReminderItems(previous => previous.map(old => old.id === item.id && old.revision <= item.revision ? item : old))
+  useEffect(() => {
+    setReminderItems([]); setReminderError('')
+    if (!active || !sessionId || !hasTrackedReminders) return
+    let disposed = false, revision = 0, timeout: ReturnType<typeof setTimeout> | undefined
+    const refresh = () => {
+      const request = ++revision
+      void window.electronAPI.reminders.items(sessionId).then(items => {
+        if (!disposed && request === revision) { setReminderItems(previous => items.map(item => {
+          const newer = previous.find(old => old.id === item.id && old.revision > item.revision)
+          return newer ?? item
+        })); setReminderError('') }
+      }).catch(error => { if (!disposed && request === revision) setReminderError(error instanceof Error ? error.message : '提醒状态读取失败，请重试。') })
+    }
+    const schedule = () => { if (timeout) clearTimeout(timeout); timeout = setTimeout(refresh, 100) }
+    refresh()
+    const off = window.electronAPI.onSessionsChanged(schedule), offRead = window.electronAPI.onAssistantUnread(schedule)
+    const poll = setInterval(schedule, 15000)
+    return () => { disposed = true; off(); offRead(); clearInterval(poll); if (timeout) clearTimeout(timeout) }
+  }, [active, sessionId, hasTrackedReminders])
   useEffect(() => {
     if (!active || !canSnooze) return
     let disposed = false, revision = 0
@@ -354,7 +378,8 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
               <ContactDeliveryReceipt communication={msg.communication} />
               <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>查看本轮记录</button>
             </div>}
-              {sessionId && assistantKind && ['rest', 'task', 'snooze', 'task-backlog'].includes(assistantKind) && <ReminderActions sessionId={sessionId} message={msg} pending={snoozes} canPostpone={assistantKind !== 'task-backlog'} />}
+              {msg.reminderIds?.length ? <TrackedReminderActions message={msg} items={reminderItems} error={reminderError} onUpdated={updateReminder} />
+                : sessionId && assistantKind && ['rest', 'task', 'snooze', 'task-backlog'].includes(assistantKind) && <ReminderActions sessionId={sessionId} message={msg} pending={snoozes} canPostpone={assistantKind !== 'task-backlog'} />}
             <div className="message-meta">
               <span className="message-time">{formatTime(msg.timestamp)}</span>
               {msg.responseStatus === 'stopped' && <span className="message-state">已停止</span>}

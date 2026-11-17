@@ -22,6 +22,10 @@ export class ConversationRepository {
     const more = rows.length > limit, page = rows.slice(0, limit).reverse(), first = page[0]
     return { messages: page.map(row => JSON.parse(row.value)), before: more ? { position: first.position, id: first.id } : null }
   }
+  readMessage(sessionId: string, id: string): Message | undefined {
+    const row = this.db.prepare('SELECT value FROM messages WHERE session_id=? AND id=?').get(sessionId, id) as { value: string } | undefined
+    return row ? JSON.parse(row.value) : undefined
+  }
   search(query: string): ChatSessionSummary[] {
     // SQLite LIKE/NOCASE do not share JavaScript's Unicode /iu substring semantics.
     this.db.function('chouyu_text_match', { deterministic: true }, (value: unknown) => Number(Boolean(findTextMatch(String(value), query))))
@@ -77,7 +81,7 @@ export class ConversationRepository {
     const row = this.db.prepare("SELECT json_extract(value,'$.timestamp') AS timestamp FROM messages WHERE session_id=? ORDER BY position DESC LIMIT 1").get(id) as { timestamp: number } | undefined
     return row?.timestamp ?? 0
   }
-  appendDelivered(input: { sessionId: string; message: Message; receiptKeys: string[] }): { session: Omit<ChatSession, 'messages'>; projection: ConversationProjection; appended: boolean } {
+  appendDelivered(input: { sessionId: string; message: Message; receiptKeys: string[]; state?: Record<string, string> }): { session: Omit<ChatSession, 'messages'>; projection: ConversationProjection; appended: boolean } {
     return this.db.transaction(() => {
       const current = this.readMetadata(input.sessionId)
       if (input.receiptKeys.length && input.receiptKeys.every(key => this.metadata.getState(key))) return { ...current, appended: false }
@@ -98,6 +102,7 @@ export class ConversationRepository {
       }
       this.db.prepare('UPDATE sessions SET value=?,projection=? WHERE id=?').run(JSON.stringify(session), JSON.stringify(projection), session.id)
       for (const key of input.receiptKeys) this.metadata.setState(key, 'delivered')
+      for (const [key, value] of Object.entries(input.state ?? {})) this.metadata.setState(key, value)
       return { session, projection, appended: true }
     })()
   }
@@ -110,6 +115,20 @@ export class ConversationRepository {
         FROM messages WHERE session_id=? AND position<=?`).get(id, boundary?.position ?? Number.MAX_SAFE_INTEGER) as { latest: number | null }
       session.lastReadAt = Math.max(session.lastReadAt ?? 0, row.latest ?? 0, messageId ? 0 : Date.now())
       return this.saveMetadata(session)
+    })()
+  }
+  markReminderRead(sessionId: string, reminderId: string): { session: Omit<ChatSession, 'messages'>; projection: ConversationProjection } {
+    return this.db.transaction(() => {
+      const current = this.readMetadata(sessionId)
+      const rows = this.db.prepare("SELECT id,value FROM messages WHERE session_id=? AND EXISTS (SELECT 1 FROM json_each(messages.value,'$.reminderIds') AS refs WHERE refs.value=?)").all(sessionId, reminderId) as { id: string; value: string }[]
+      for (const row of rows) {
+        const message = JSON.parse(row.value) as Message
+        message.reminderReadIds = [...new Set([...(message.reminderReadIds ?? []), reminderId])]
+        this.db.prepare('UPDATE messages SET value=? WHERE session_id=? AND id=?').run(JSON.stringify(message), sessionId, row.id)
+      }
+      const projection = projectConversation(this.readSession(sessionId)!)
+      this.db.prepare('UPDATE sessions SET projection=? WHERE id=?').run(JSON.stringify(projection), sessionId)
+      return { session: current.session, projection }
     })()
   }
   /** Metadata-only changes must never serialize or upsert the conversation body. */

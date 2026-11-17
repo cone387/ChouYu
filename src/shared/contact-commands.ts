@@ -24,6 +24,7 @@ export type DeliveryInspection = {
 
 /** Wire contract. Shared types never import service instances or Electron. */
 export type ContactCommandMap = PublicCommands & {
+  reminderSource: Command<[source: import('./reminder-followups').ReminderSource], import('./reminder-followups').ReminderSourceState>
   designNotices:Command<[],import('./result-design').ResultDesignNotice[]>
   designAckNotice:Command<[id:string],void>
   resultGet: Command<[task:import('./result-design').ResultTaskRef,sourceId?:string],import('./result-design').DesignView>
@@ -91,6 +92,7 @@ export interface ContactRequest {
 // Arity is checked at the transport boundary. Object/business rules remain in
 // the domain repositories, including ownership and optimistic concurrency.
 const arities: Record<ContactCommandName, readonly [number, number]> = {
+  reminderSource: [1, 1],
   designNotices:[0,0],designAckNotice:[1,1],
   resultGet:[1,2],resultRequest:[4,4],resultRetry:[1,1],resultRestore:[2,2],resultAccept:[1,1],resultDocument:[2,2],
   answerInteractionRequest: [3, 3],

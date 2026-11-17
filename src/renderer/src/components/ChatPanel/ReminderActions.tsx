@@ -2,6 +2,15 @@ import { useState } from 'react'
 import type { Message } from '../../shared/types'
 import { reminderKey, type AssistantSnooze } from '../../../../shared/reminders'
 import { openTaskWorkspace } from '../Tasks/taskNavigation'
+import FollowupActions from './FollowupActions'
+import type { ReminderView } from '../../../../shared/reminder-followups'
+export function TrackedReminderActions({ message, items, error, onUpdated }: { message: Message; items: ReminderView[]; error?: string; onUpdated(item: ReminderView): void }) {
+  return <>{message.reminderIds?.map(id => {
+    const item = items.find(item => item.id === id)
+    return item ? <FollowupActions key={id} item={item} showSource={message.reminderFollowup || (message.reminderIds?.length ?? 0) > 1} onUpdated={onUpdated} />
+      : <div key={id} className="reminder-actions" role={error ? 'alert' : 'status'}>{error || '正在读取提醒状态…'}</div>
+  })}</>
+}
 export default function ReminderActions({ sessionId, message, pending, canPostpone }: { sessionId: string; message: Message; pending: AssistantSnooze[]; canPostpone: boolean }) {
   const [minutes, setMinutes] = useState(10)
   const [busy, setBusy] = useState(false)

@@ -5,7 +5,7 @@ import type { DeliveryRequest, PersistedDelivery } from './contracts'
 export function persistDelivery(request: DeliveryRequest): PersistedDelivery {
   if(request.kind==='result-design')return {disposition:'delivered',workspace:appendResultDesignNotice(request.notice)}
   if (request.kind === 'assistant') return { disposition: 'delivered', workspace: appendAssistantMessage(request.content, request.timestamp, request.messageKind, {
-    receiptIds: request.receiptIds, messageId: request.messageId, taskReminder: request.taskReminder, snoozeKey: request.snoozeKey
+    receiptIds: request.receiptIds, messageId: request.messageId, taskReminder: request.taskReminder, taskReminders: request.taskReminders, snoozeKey: request.snoozeKey
   }) }
   if (request.kind === 'agent') return { disposition: 'delivered', workspace: appendAgentNotice(request.notice) }
   if (!getSession(request.card.request.sessionId)) return { disposition: 'obsolete', workspace: retireContactAction(request.card) }

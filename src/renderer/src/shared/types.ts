@@ -222,6 +222,9 @@ declare global {
 export type PetState = 'idle' | 'thinking' | 'talking' | 'sleeping' | 'happy'
 
 export interface Message {
+  reminderIds?: string[]
+  reminderFollowup?: boolean
+  reminderReadIds?: string[]
   editRevision?: number
   harnessSource?:import('../../../shared/harness').HarnessSource
   communication?: import('../../../shared/contact-communication').ContactCommunication

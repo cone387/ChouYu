@@ -1,4 +1,7 @@
 import { normalizeTaskReminderRef, type TaskReminderRef } from '../shared/reminders'
+import { enrollReminders } from './reminders/enrollment'
+import { reminderSourcesChanged } from './reminders/source-versions'
+import { REMINDER_STATE_PREFIX, parseReminderItem, type ReminderItem } from '../shared/reminder-followups'
 import { normalizeAssistantMessageKind, type AssistantMessageKind } from '../shared/assistant-message'
 import { sanitizeCitations, validateCitationShapes } from '../shared/contact-citations'
 import { sanitizeContactContext } from '../shared/contact-content'
@@ -14,7 +17,7 @@ import { openApplicationDatabase, type ApplicationDatabase } from './storage/app
 import { migrateLegacyStore } from './storage/legacy-migration'
 import { ConversationCache } from './storage/conversation-cache'
 import { DeliveryMessageConflictError } from './storage/conversations'
-import { projectConversation, messageReadTimestamp, type ConversationProjection } from '../shared/conversation-projection'
+import { projectConversation, messageReadTimestamp, isUnreadMessage, type ConversationProjection } from '../shared/conversation-projection'
 import { findTextMatch, searchExcerpt, searchableMessageText } from '../shared/conversation-search'
 import { AppConfig, DEFAULT_APP_CONFIG, DEFAULT_PROFILE_ID, getProviderProfiles, normalizeConfig } from '../shared/config'
 import {
@@ -133,6 +136,7 @@ function publishIdentityChanges() {
     const revision = getContactIdentityRevision(owner)
     if (identityPublished.get(owner) === revision) continue
     identityPublished.set(owner, revision)
+    reminderSourcesChanged(owner)
     for (const listener of identityListeners) { try { listener(owner) } catch { /* A committed save cannot be undone by an observer. */ } }
   }
 }
@@ -661,7 +665,9 @@ function markSessionReadUpToNow(session: ChatSession): void {
 /** Shared durable delivery. Existing receipt keys remain compatible across upgrades. */
 function appendContactMessage(input: {
   content: string; communication: ContactCommunication; receiptKeys: string[]; messageId: string; timestamp?: number
-  title: string; sessionId?: string; metadata?: Pick<Message, 'assistantKind' | 'agentNotice' | 'taskReminder' | 'snoozeKey'>
+  title: string; sessionId?: string; metadata?: Pick<Message, 'assistantKind' | 'agentNotice' | 'taskReminder' | 'snoozeKey' | 'reminderIds' | 'reminderFollowup'>
+  taskReminders?: { ref: TaskReminderRef; title: string }[]
+  state?: Record<string, string>
 }): SessionWorkspace {
   const owner = input.communication.characterId
   if (!getCharacter(owner) || owner === ASSISTANT_CHARACTER_ID) throw new Error('联系人不存在。')
@@ -679,21 +685,31 @@ function appendContactMessage(input: {
     .reduce<ChatSession | null>((latest, candidate) => !latest || candidate.updatedAt > latest.updatedAt ? candidate : latest, null)
   if (!session) { session = createSession([], input.title, at, owner); store.sessions.unshift(session) }
   const incremental = canPersistConversationIncrementally()
+  // Followups have no new generated body to preserve. Keep their attempt fully
+  // transactional so a failed group cannot be replayed alongside a newer group.
+  if (input.metadata?.reminderFollowup && !incremental) throw new Error('应用存储尚未就绪，持续提醒将在恢复后重试。')
   if (!Number.isFinite(input.timestamp)) at = Math.max(at, (session.lastReadAt ?? 0) + 1,
     incremental ? application!.conversations.lastMessageTimestamp(session.id) + 1 : (session.messages.at(-1)?.timestamp ?? 0) + 1)
   const message: Message = { id: input.messageId, role: 'assistant', content: input.content, timestamp: at, communication, ...input.metadata }
+  const enrollment = enrollReminders(message, session.id, owner, getState, input.taskReminders)
+  const initialEnrollment = { ...enrollment.values }
+  const previousDomainState = Object.fromEntries(Object.keys(input.state ?? {}).map(key => [key, store.state[key]]))
+  Object.assign(enrollment.values, input.state ?? {})
+  message.reminderIds = enrollment.ids
   if (incremental) {
     let committed: ReturnType<NonNullable<typeof application>['conversations']['appendDelivered']>
     try {
       fs.mkdirSync(path.dirname(filePath), { recursive: true })
-      committed = application!.conversations.appendDelivered({ sessionId: session.id, message, receiptKeys: input.receiptKeys })
+      committed = application!.conversations.appendDelivered({ sessionId: session.id, message, receiptKeys: input.receiptKeys, state: enrollment.values })
     } catch (failure) {
       if (failure instanceof DeliveryMessageConflictError) throw failure
+      if (message.reminderFollowup) throw failure
       // Preserve the failed delivery in the same pinned dirty state used by ordinary edits.
       session.messages.push(message)
       markMessagesDirty(session.id)
       session.updatedAt = at
       for (const key of input.receiptKeys) store.state[key] = 'delivered'
+      Object.assign(store.state, initialEnrollment)
       const error = '聊天数据保存失败，最新修改尚未写入磁盘。请检查剩余空间和目录权限后重试；恢复前请勿退出。'
       updateStorageStatus({ error })
       throw new Error(error)
@@ -703,6 +719,7 @@ function appendContactMessage(input: {
       messageRevisions.set(session.id, (messageRevisions.get(session.id) ?? 0) + 1)
     }
     for (const key of input.receiptKeys) store.state[key] = 'delivered'
+    Object.assign(store.state, enrollment.values)
     publishConversationCommit(session, committed)
     return getSessionWorkspace()
   }
@@ -711,15 +728,19 @@ function appendContactMessage(input: {
   markMessagesDirty(session.id)
   session.updatedAt = at
   for (const key of input.receiptKeys) store.state[key] = 'delivered'
-  persist()
+  Object.assign(store.state, enrollment.values)
+  try { persist() } catch (error) {
+    if (message.reminderFollowup) Object.assign(store.state, previousDomainState)
+    throw error
+  }
   return getSessionWorkspace()
 }
 
 /** Assistant reminders adapt to the same contact delivery contract. */
-export function appendAssistantMessage(content: string, timestamp?: number, kind?: AssistantMessageKind, delivery?: { receiptIds: string[]; taskReminder?: TaskReminderRef; snoozeKey?: string; messageId?: string }): SessionWorkspace {
+export function appendAssistantMessage(content: string, timestamp?: number, kind?: AssistantMessageKind, delivery?: { receiptIds: string[]; taskReminder?: TaskReminderRef; taskReminders?: { ref: TaskReminderRef; title: string }[]; snoozeKey?: string; messageId?: string }): SessionWorkspace {
   const messageId = delivery?.messageId ?? randomUUID()
   const normalizedKind = normalizeAssistantMessageKind(kind) ?? 'notification'
-  return appendContactMessage({ content, timestamp, messageId, title: 'ChouYu 的消息',
+  return appendContactMessage({ content, timestamp, messageId, title: 'ChouYu 的消息', taskReminders: delivery?.taskReminders,
     receiptKeys: (delivery?.receiptIds ?? []).map(id => `reminder-receipt:${id}`),
     communication: { version: 1, characterId: DEFAULT_CHARACTER_ID,
       intent: ['greeting', 'return'].includes(normalizedKind) ? 'check-in' : normalizedKind === 'notification' ? 'status' : 'reminder',
@@ -944,12 +965,15 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
   const previousImages = new Map(session.messages.filter((message) => message.imageUrl && isAttachmentReference(message.imageUrl)).map((message) => [message.id, message.imageUrl]))
   const previousSnoozeKeys = new Map(session.messages.filter(m => m.snoozeKey).map(m => [m.id, m.snoozeKey]))
   const previousReminders = new Map(session.messages.filter(m => m.taskReminder).map(m => [m.id, m.taskReminder]))
-  const previousProactive = new Map(session.messages.filter(m => m.agentNotice || m.assistantKind || m.communication?.source.kind === 'interaction').map(m => [m.id, m]))
+  const previousProactive = new Map(session.messages.filter(m => m.reminderIds?.length || m.agentNotice || m.assistantKind || m.communication?.source.kind === 'interaction').map(m => [m.id, m]))
   const previousNotices = new Map(session.messages.filter(message => message.agentNotice).map(message => [message.id, message.agentNotice]))
   const previousKinds = new Map(session.messages.filter(message => message.assistantKind).map(message => [message.id, message.assistantKind]))
   const previousReplies = new Map(session.messages.filter(message => message.replyReadAt).map(message => [message.id, message]))
   let nextMessages: Message[] = sanitizeMessages(messages).map((message) => previousProactive.get(message.id) ?? ({
     ...message,
+    reminderIds: undefined,
+    reminderFollowup: undefined,
+    reminderReadIds: undefined,
     contactContext: verifiedContexts.get(message.id),
     communication: message.role === 'assistant' && !message.toolData && !message.pluginData && message.content.trim()
       ? { version: 1, characterId: session.characterId, intent: 'reply', source: { kind: 'conversation', sessionId: session.id } }
@@ -972,6 +996,7 @@ export function saveSessionMessages(id: string, messages: Message[], readMessage
   }
   session.messages = nextMessages
   markMessagesDirty(session.id)
+  reminderSourcesChanged(session.characterId)
   // A receipt for this reply must not acknowledge unrelated proactive deliveries.
   const readReply = readMessageId ? session.messages.find(message => message.id === readMessageId) : undefined
   if (readReply?.replyCompletedAt) readReply.replyReadAt = readReply.replyCompletedAt
@@ -1008,8 +1033,56 @@ export function getState(key: string): string | null {
   return store.state[key] ?? null
 }
 
+export function getReminderItems(): ReminderItem[] {
+  return Object.entries(store.state).filter(([key]) => key.startsWith(REMINDER_STATE_PREFIX)).map(([, value]) => parseReminderItem(value))
+}
+/** Indexed original-message reads keep periodic checks independent of conversation body size. */
+export function getReminderLocations(item: ReminderItem): { sessionId: string; messageId: string; read: boolean }[] {
+  return (item.locations ?? [{ sessionId: item.sessionId, messageId: item.messageId }]).flatMap(location => {
+    const session = store.sessions.find(session => session.id === location.sessionId && session.characterId === item.owner)
+    if (!session) return []
+    const message = application && !sessionChanged(session) ? application.conversations.readMessage(session.id, location.messageId) : session.messages.find(message => message.id === location.messageId)
+    return message ? [{ ...location, read: !isUnreadMessage(session, message) }] : []
+  })
+}
+export function saveReminderItems(items: ReminderItem[]): void {
+  commitApplicationState(Object.fromEntries(items.map(item => [REMINDER_STATE_PREFIX + item.id, JSON.stringify(item)])))
+}
+export function hasPersistedReminderReceipt(receipt: string): boolean {
+  if (!application) throw new Error('应用存储不可用。')
+  return Boolean(application.metadata.getState(`reminder-receipt:followup:${receipt}`))
+}
+export function markReminderRead(item: ReminderItem): void {
+  if (!application || writesBlocked) throw new Error('应用存储不可用，未保存已读状态。')
+  const sessions = store.sessions.filter(session => session.characterId === item.owner && (session.id === item.sessionId || item.locations?.some(location => location.sessionId === session.id)))
+  if (!sessions.length) throw new Error('原会话已删除。')
+  if (!canPersistConversationIncrementally()) persist(false)
+  for (const session of sessions) {
+    const committed = application.conversations.markReminderRead(session.id, item.id)
+    conversationCache.remove(session.id)
+    messageRevisions.set(session.id, (messageRevisions.get(session.id) ?? 0) + 1)
+    publishConversationCommit(session, committed)
+  }
+}
+/** Re-check revisions synchronously at the delivery boundary, after asynchronous source checks. */
+export function appendReminderFollowup(items: ReminderItem[], receipt: string): void {
+  const current = getReminderItems()
+  const valid = items.filter(item => current.some(v => v.id === item.id && v.revision === item.revision && v.status === 'pending'))
+  if (valid.length !== items.length || !items.length) throw new Error('提醒状态已变化，未发送旧提醒。')
+  const first = items[0]
+  if (items.some(item => item.sessionId !== first.sessionId || item.owner !== first.owner)) throw new Error('提醒归属不一致。')
+  if (items.some(item => !getReminderLocations(item).some(location => location.sessionId === item.sessionId && location.messageId === item.messageId))) throw new Error('原提醒消息已清除或转移。')
+  appendContactMessage({ title: '待处理提醒', content: items.length === 1 ? '这条提醒还等你处理。' : `还有 ${items.length} 条提醒等你处理。`,
+    sessionId: first.sessionId, messageId: `followup:${receipt}`, receiptKeys: [`reminder-receipt:followup:${receipt}`],
+    communication: { version: 1, characterId: first.owner, intent: 'reminder', source: { kind: 'proactive', eventIds: [receipt] } },
+    metadata: { reminderIds: items.map(item => item.id), reminderFollowup: true },
+    state: Object.fromEntries(items.map(item => [REMINDER_STATE_PREFIX + item.id, JSON.stringify({ ...item, revision: item.revision + 1,
+      nextAt: Date.now() + item.intervalMinutes * 60000, lastRemindedAt: Date.now(), postponed: false, error: undefined })])) })
+}
+
 export function setState(key: string, value: string): void {
   if (key.startsWith('tool:') && key.endsWith(':enabled') && store.state[key] !== value) toolPolicyRevision++
+  if (key === 'assistant-routines-v1' && store.state[key] !== value) reminderSourcesChanged(DEFAULT_CHARACTER_ID)
   store.state[key] = value
   persist()
 }
@@ -1025,6 +1098,7 @@ export function setContactRecoveryState(key: string, value: string): void {
 export function commitApplicationState(values: Record<string, string>): void {
   if (!application || writesBlocked || storageStatus.error) throw new Error('应用存储不可用，状态尚未保存。')
   application.transaction(() => { for (const [key, value] of Object.entries(values)) application!.metadata.setState(key, value) })
+  if (values['assistant-routines-v1'] !== undefined && values['assistant-routines-v1'] !== store.state['assistant-routines-v1']) reminderSourcesChanged(DEFAULT_CHARACTER_ID)
   Object.assign(store.state, values)
   markBackupDirty()
 }

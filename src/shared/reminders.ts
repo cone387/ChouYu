@@ -1,6 +1,8 @@
 export interface TaskReminderRef { taskId: string; checklistId?: string; reminderAt: number }
 export interface AssistantSnooze { id: string; key: string; content: string; dueAt: number; taskRef?: TaskReminderRef }
 export interface ReminderAPI {
+  items(sessionId: string): Promise<import('./reminder-followups').ReminderView[]>
+  act(id: string, revision: number, action: import('./reminder-followups').ReminderAction, minutes?: number): Promise<import('./reminder-followups').ReminderView>
   list(): Promise<AssistantSnooze[]>
   schedule(sessionId: string, messageId: string, minutes: number): Promise<AssistantSnooze>
   cancel(key: string): Promise<void>

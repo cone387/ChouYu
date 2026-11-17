@@ -2,7 +2,8 @@ import type { ChatSession, ChatSessionSummary, Message } from './conversations'
 import { buildSessionPreview } from './sessions'
 export const messageReadTimestamp = (message: Message): number => Math.max(message.timestamp, message.replyCompletedAt ?? 0)
 export function isUnreadMessage(session: ChatSession, message: Message): boolean {
-  return message.role === 'assistant' && (Boolean(message.assistantKind) || Boolean(message.agentNotice) || message.communication?.source.kind === 'interaction'
+  if (message.reminderIds?.length && message.reminderIds.every(id => message.reminderReadIds?.includes(id))) return false
+  return message.role === 'assistant' && (Boolean(message.reminderIds?.length) || Boolean(message.assistantKind) || Boolean(message.agentNotice) || message.communication?.source.kind === 'interaction'
     || Boolean(message.replyCompletedAt && message.replyCompletedAt > (message.replyReadAt ?? 0)))
     && messageReadTimestamp(message) > (session.lastReadAt ?? 0)
 }

@@ -18,6 +18,8 @@ return {
   },
 
   reminders: {
+    items: (sessionId: string) => ipcRenderer.invoke('reminders:items', sessionId),
+    act: (id: string, revision: number, action: import('../../shared/reminder-followups').ReminderAction, minutes?: number) => ipcRenderer.invoke('reminders:act', id, revision, action, minutes),
     list: () => ipcRenderer.invoke('reminders:list'),
     schedule: (sessionId: string, messageId: string, minutes: number) => ipcRenderer.invoke('reminders:schedule', sessionId, messageId, minutes),
     cancel: (key: string) => ipcRenderer.invoke('reminders:cancel', key)

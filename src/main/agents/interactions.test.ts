@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ContactTaskStore } from '../task-center/contact-store'
 import { DEFAULT_AGENT_SETTINGS } from '../../shared/agents'
+import { resolveContactReminder } from '../reminders/source-state'
 const cleanups: (() => void)[] = []
 afterEach(() => { for (const close of cleanups.splice(0).reverse()) close() })
 function fixture() {
@@ -24,6 +25,22 @@ function budgetCard(store: ContactTaskStore) {
   if (card.kind !== 'budget') throw new Error('Expected a task budget interaction')
   return card
 }
+it('keeps failure followup pending while a submitted retry is queued or running', () => {
+  const { store } = fixture(), run = store.createRun('alice', '')
+  store.fail(run, 'API error 500')
+  const card = store.decisions.pending('alice')[0]
+  store.decisions.submit('alice', card.id, { version: card.version }, '')
+  const state = () => resolveContactReminder({ kind: 'interaction', interactionId: card.id }, {
+    interaction: id => store.decisions.get('alice', id), task: () => undefined, run: () => undefined
+  })
+  expect(store.decisions.get('alice', card.id)).toMatchObject({ status: 'resolved', currentState: 'queued' })
+  expect(state().status).toBe('pending')
+  const newer = store.overview('alice').runs[0]
+  store.setStatus(newer.id, 'running'); expect(state().status).toBe('pending')
+  store.finish(newer.id, { runId: newer.id, title: '恢复', body: '已保存正文', nextStep: '继续', evidence: [], createdAt: Date.now() }, [],
+    { judgement: '已保存', reason: '有实际结果', nextStep: '继续', openQuestions: '', status: 'researching' })
+  expect(state().status).toBe('processed')
+})
 it('states the failure impact and recovery separately and follows newer work without stale retry time', () => {
   const { store } = fixture(), run = store.createRun('alice', '')
   store.fail(run, '资料不在本轮目录快照内，请按本轮提供的版本读取。')

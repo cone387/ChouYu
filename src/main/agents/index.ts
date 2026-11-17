@@ -31,6 +31,7 @@ import { createContactProfileTools } from './profile-tools'
 import { createOutputTools } from './output-tools'
 import { createDeliveryFeedbackTools } from './delivery-feedback'
 import { notifyJournalConfig } from '../journal'
+import { reminderSourcesChanged } from '../reminders/source-versions'
 import { createMemoryTools } from './memory-tools'
 import { createMaterialTools } from './material-tools'
 import { loadMaterialImport } from './material-import'
@@ -120,6 +121,7 @@ async function deliver(id: string) {
 const contextListeners = new Set<(owner: string) => void>()
 export function onContactContextChanged(listener: (owner: string) => void) { contextListeners.add(listener); return () => { contextListeners.delete(listener) } }
 function broadcastChanged(characterId: string) {
+  reminderSourcesChanged(characterId)
   for (const listener of contextListeners) listener(characterId)
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('agents:changed', characterId)
   void deliver(characterId)
