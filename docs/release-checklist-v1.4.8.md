@@ -20,4 +20,21 @@ Windows SHM 映射测试原先假设向 PowerShell 写入释放信号后必在�
 
 `3da7214` 的[主干完整 Quality](https://github.com/cone387/ChouYu/actions/runs/44016182891)第二轮在原测试配置下也已通过，包括完整桌面和退出落盘核验；保留首轮失败，不将复跑成功当成所有托管机器时序问题已消失。
 
-新标签验收进行中。必须通过标签质量、双平台构建和成品门槛后才公开；保留 1.4.7 原失败日志与标签，不用重写标签掩盖失败。
+2026-11-17，[v1.4.8](https://github.com/cone387/ChouYu/releases/tag/v1.4.8) 已公开为 Latest，标签指向 `b18a1068e65269faa6db4de7e1f0014eacbf56bb`。[发布工作流](https://github.com/cone387/ChouYu/actions/runs/44018438168)的质量、Windows/macOS 构建与成品验证、公开作业全部成功；同一提交的[主干完整 Quality](https://github.com/cone387/ChouYu/actions/runs/44018438212)也通过。保留 1.4.7 原失败日志与标签，不重写标签。
+
+Windows 通过实际安装、长路径及旧安装升级、包内资源检查、完整桌面回归、DSH 运行时、v1.3.4 数据升级及联系人恢复；Windows/macOS 均通过包内 SQLite 检查、更新界面及退出后保存核验。macOS 在 arm64 托管机器执行成品验证，产物为 universal 包。原始工作流与日志归档于本地 `artifacts/release-1.4.8/`。
+
+## 下载包本机复核
+
+从该标签下载 Windows 安装器并解包，实际启动其中的 `ChouYu.exe`，日志确认 `version=1.4.8 packaged=true`。使用约 288 MiB 联系人数据库的隔离副本，临退出经真实接口新增事项：从验收就绪至进程退出 7,287 ms（含固定 300 ms 触发等待），最后修改在主库及最新备份中一致，两库摘要、完整性、外键及检查点归属验证通过。日志为 `artifacts/release-1.4.8/packaged-shutdown.log`。
+
+这个场景增加了临退出写入，且运行的是下载后的正式包；不能将它与 1.4.7 记录的无额外写入对照混算提速比例。退出仍需完成真实保存，较大数据库或在途工作会影响耗时，不承诺瞬时退出。
+
+公开后重新读取 GitHub 标签及 Latest 元数据，确认均为 v1.4.8、非草稿且非预发布。下载的 Windows EXE 与 macOS ZIP 均通过 GitHub SHA-256、更新清单 SHA-512 和文件大小交叉核验；`latest.yml`、`latest-mac.yml` 均指向 1.4.8。
+
+| 文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| ChouYu-Setup-1.4.8.exe | 258891964 | `5497cf080a61991da05513bed84ba5f5ba23e953604cff40cd5b0173ce882699` |
+| ChouYu-1.4.8-universal-mac.zip | 261368945 | `14ab0fc608cf5c5e8089776ed8317eed8088568cef768f1785fabe602009c656` |
+
+Windows 安装包已复制到本机下载目录并再次核对摘要，未覆盖用户安装。诊断数据库仅为本地隔离副本，未上传；自动清理被执行策略拦截，暂留 `temp/quit-probe/data`。

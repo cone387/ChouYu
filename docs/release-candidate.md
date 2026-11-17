@@ -1,5 +1,7 @@
 # 最新本地候选包：1.4.3-rc.1
 
+2026-11-17：正式版 [v1.4.8](https://github.com/cone387/ChouYu/releases/tag/v1.4.8) 已公开为 Latest，包含已读/已处理与未处理持续提醒、退出最终备份提速。主干及标签质量、双平台成品门槛、Windows 实际安装和下载包退出保存复核通过；下载附件与更新清单摘要一致。详见[发布验证](release-checklist-v1.4.8.md)。1.4.7 未公开发布，保留原失败记录；以下为历史记录。
+
 2026-11-11：正式版 [v1.4.6](https://github.com/cone387/ChouYu/releases/tag/v1.4.6) 已公开为 Latest，增加后台更新检测/下载和界面内重启提示。双平台构建、更新界面、Windows 实际安装及成品回归通过；首次失败和复核边界见 [发布验证](release-checklist-v1.4.6.md)。
 
 2026-11-11：正式版 [v1.4.5](https://github.com/cone387/ChouYu/releases/tag/v1.4.5) 已公开为 Latest，精简 Windows 安装依赖，沿用长路径升级修复，并通过实际安装后的完整校验。两平台发布与安装专项证据见 [发布验证](release-checklist-v1.4.5.md)；以下均为历史候选和 1.4.3 的记录。
