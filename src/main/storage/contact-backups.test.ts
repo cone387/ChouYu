@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -56,4 +56,27 @@ it('refuses a checkpoint belonging to a missing task run', async () => {
   checkpoints.prepare('INSERT INTO checkpoints VALUES(?)').run('orphan')
   await expect(backups.create()).rejects.toThrow(/检查点/)
   expect(backups.list()).toHaveLength(0)
+})
+
+it('validates each old generation only once when saving and rotating the final snapshot', async () => {
+  const { backups } = fixture()
+  const ids = []
+  for (let i = 0; i < 3; i++) ids.push((await backups.create()).id)
+  const verify = vi.spyOn(backups, 'verify')
+  const saved = await backups.create()
+  for (const id of ids) expect(verify.mock.calls.filter(([checked]) => checked === id)).toHaveLength(1)
+  expect(verify.mock.calls.some(([id]) => id === saved.id)).toBe(false)
+  verify.mockRestore()
+  expect(backups.list().map(item => item.id)).toEqual([saved.id, ids[2], ids[1]])
+})
+
+it('retains three verified generations even if a newer old group is damaged', async () => {
+  const { backups, directory } = fixture()
+  const ids = []
+  for (let i = 0; i < 3; i++) ids.push((await backups.create()).id)
+  const damaged = join(directory, 'backups', ids[2], 'tasks.db')
+  writeFileSync(damaged, 'damaged')
+  const saved = await backups.create()
+  expect(backups.list().map(item => item.id)).toEqual([saved.id, ids[1], ids[0]])
+  expect(readFileSync(damaged, 'utf8')).toBe('damaged')
 })

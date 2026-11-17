@@ -204,6 +204,13 @@ function createWindow(): void {
           await stage('agents', () => runAgentsSmoke(mainWindow!))
           await stage('reminders', () => runRemindersSmoke(mainWindow!))
         }
+        if (process.env.CHOUYU_SMOKE_SHUTDOWN === '1') {
+          const title = `退出保存验收 ${Date.now()}`
+          const saved = await contactAgentsCall('result-designer', 'createTopic', [{ title, goal: '仅保存，不执行', constraints: '' }])
+          const topic = saved.topics.find(topic => topic.title === title)
+          if (!topic) throw new Error('退出验收修改未保存。')
+          console.log(`CHOUYU_SHUTDOWN_EVIDENCE topicId=${topic.id}`)
+        }
         console.log(`CHOUYU_SMOKE_READY version=${app.getVersion()} packaged=${app.isPackaged}`)
         setTimeout(() => app.quit(), 300)
       } catch (error) {

@@ -63,25 +63,34 @@ export class ContactBackups {
     return value
   }
   list(): ContactBackupManifest[] {
-    if (!existsSync(this.directory)) return []
-    return readdirSync(this.directory, { withFileTypes: true }).flatMap(entry => {
-      if (!entry.isDirectory() || entry.isSymbolicLink() || !groupId.test(entry.name)) return []
-      try { return [this.verify(entry.name)] } catch { return [] }
+    return this.ownedGroups().flatMap(id => {
+      try { return [this.verify(id)] } catch { return [] }
     }).sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
+  }
+  private ownedGroups(): string[] {
+    if (!existsSync(this.directory)) return []
+    return readdirSync(this.directory, { withFileTypes: true }).filter(entry => entry.isDirectory() && !entry.isSymbolicLink() && groupId.test(entry.name)).map(entry => entry.name)
   }
   create(): Promise<ContactBackupManifest> {
     if (!this.databases) return Promise.reject(new Error('备份源数据库未打开。'))
     if (this.inFlight) return this.inFlight
     this.inFlight = this.exclusive(async () => {
       mkdirSync(this.directory, { recursive: true })
-      const createdAt = Math.max(Date.now(), this.lastCreatedAt + 1, (this.list()[0]?.createdAt ?? 0) + 1)
+      // Ordering needs only our timestamped names, not a full read of every old
+      // database. Integrity is checked once, after publishing, before rotation.
+      const latest = this.ownedGroups().reduce((at, id) => Math.max(at, Number(id.slice(0, 13))), 0)
+      const createdAt = Math.max(Date.now(), this.lastCreatedAt + 1, latest + 1)
       this.lastCreatedAt = createdAt
       const id = `${createdAt}-${randomUUID()}`, staging = join(this.directory, '.pending-' + id)
       mkdirSync(staging)
       try {
         for (const role of roles) {
           const filename = join(staging, role + '.db')
-          await this.databases![role].backup(filename)
+          // Bound each transfer to about 8 MiB while yielding between batches.
+          // The driver's 100-page default adds hundreds of small disk writes to
+          // large final snapshots, including the database's reusable free pages.
+          const pageSize = this.databases![role].pragma('page_size', { simple: true }) as number
+          await this.databases![role].backup(filename, { progress: () => Math.max(1, Math.floor(8 * 1024 * 1024 / pageSize)) })
           durableFile(filename)
         }
         const manifest: ContactBackupManifest = { format: 1, id, createdAt, files: this.inspect(staging) }
@@ -89,7 +98,13 @@ export class ContactBackups {
         writeFileSync(metadata, JSON.stringify(manifest)); durableFile(metadata)
         renameSync(staging, this.path(id))
         // Only completed and verified groups owned by this feature are rotated.
-        for (const old of this.list().slice(3)) rmSync(this.path(old.id), { recursive: true })
+        // The new group was just inspected and fsynced. Audit each old group
+        // once; preserve damaged groups for recovery investigation and retain
+        // two verified predecessors in addition to this new verified snapshot.
+        const predecessors = this.ownedGroups().filter(previous => previous !== id).flatMap(previous => {
+          try { return [this.verify(previous)] } catch { return [] }
+        }).sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
+        for (const old of predecessors.slice(2)) rmSync(this.path(old.id), { recursive: true })
         return manifest
       } finally {
         if (existsSync(staging)) {
