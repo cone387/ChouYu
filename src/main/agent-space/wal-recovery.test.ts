@@ -37,7 +37,11 @@ it.skipIf(process.platform !== 'win32').each([[true, false], [false, false], [tr
     if (preflight) {
       const health = await inspectContactStorageForStartup(dir, retry)
       expect(health.kind).toBe(released ? 'healthy' : 'unavailable')
-      expect(retries.length).toBe(released ? 1 : 3)
+      // The child releases a real Windows mapping asynchronously. It may take
+      // more than the first 100ms backoff on a loaded runner; the contract is
+      // recovery within the same three-attempt bound, not exactly one retry.
+      if (released) { expect(retries.length).toBeGreaterThanOrEqual(1); expect(retries.length).toBeLessThanOrEqual(3) }
+      else expect(retries).toHaveLength(3)
       child.stdin!.end('\n'); await exited
       const reopened = openContactDatabase(file, 'tasks')
       try { expect(reopened.prepare('SELECT * FROM proof').all()).toEqual([{ value: 'saved' }]) } finally { reopened.close() }

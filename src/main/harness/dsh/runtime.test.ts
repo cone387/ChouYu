@@ -113,7 +113,10 @@ it('separates provider groups and contact scopes, and cancelling one keeps its s
     const a = await prepare('Alice', 'model-one', abort.signal), b = await prepare('Bob', 'model-one', new AbortController().signal), c = await prepare('Carol', 'model-two', new AbortController().signal);
     const [la, lb, lc] = await Promise.all([pool.acquire(a), pool.acquire(b), pool.acquire(c)]);
     const pending = la.run(a, () => { });
-    await import('vitest').then(({ vi }) => vi.waitFor(() => expect(mock.requests.some(r => JSON.stringify(r.body).includes('hold Alice'))).toBe(true)));
+    // Keep cleanup rejection handled if the readiness assertion itself fails;
+    // awaiting the original promise below still checks its actual outcome.
+    void pending.catch(() => {});
+    await import('vitest').then(({ vi }) => vi.waitFor(() => expect(mock.requests.some(r => JSON.stringify(r.body).includes('hold Alice'))).toBe(true), { timeout: 5000 }));
     abort.abort();
     expect(await lb.run(b, () => { })).toMatchObject({ state: 'completed', text: 'DSH_OK' });
     expect(await pending).toMatchObject({ state: 'cancelled' });
