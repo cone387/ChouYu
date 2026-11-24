@@ -45,8 +45,16 @@ export async function runRemindersSmoke(window: BrowserWindow): Promise<void> {
     await click('更多通知操作'); await click('提醒设置')
     await waitForRenderer(window, "document.querySelector('[data-assistant-kind=task] .reminder-actions')?.textContent.includes('每 60 分钟提醒')")
     await snapshots(window, 'reminder-card-settings', '[data-assistant-kind="task"]')
-    await window.webContents.executeJavaScript("document.querySelector('.notification-card-popup').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
+    // A real pointer action resets the app's previous Escape restoration guard.
+    await window.webContents.executeJavaScript("document.querySelector('.notification-card-popup button').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))")
+    await click('取消')
     await waitForRenderer(window, "!document.querySelector('.notification-card-popup') && document.activeElement?.getAttribute('aria-label') === '更多通知操作'")
+    await click('更多通知操作'); await click('提醒设置')
+    await window.webContents.executeJavaScript("document.querySelector('.notification-card-popup').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))")
+    // Escape deliberately clears restored button focus across the application.
+    // Wait through both cleanup frames instead of observing transient focus.
+    await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    await waitForRenderer(window, "!document.querySelector('.notification-card-popup') && Boolean(document.querySelector('.chat-panel .message-area')) && document.activeElement?.getAttribute('aria-label') !== '更多通知操作'")
     const pendingItem = tracked()
     saveReminderItems([{ ...pendingItem, nextAt: Date.now() - 1, revision: pendingItem.revision + 1 }]); notifyReminderChanges()
     await waitForRenderer(window, "document.querySelectorAll('.notification-card').length >= 2", 25000)

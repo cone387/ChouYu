@@ -24,6 +24,9 @@ export async function runTaskSchedulingUISmoke(window: BrowserWindow): Promise<v
   const id: string = await run(`window.electronAPI.tasks.create({title:'重复提醒界面验收',dueAt:new Date(2030,0,31,9).getTime(),reminderTimes:[new Date(2030,0,31,8,43).getTime()]}).then(t=>t.id)`)
   await run(`window.dispatchEvent(new CustomEvent('chouyu:task-navigation',{detail:{taskId:${JSON.stringify(id)}}}))`)
   await waitForRenderer(window, `document.querySelector('[aria-label="任务标题"]')?.value==='重复提醒界面验收'`)
+  // Let editor autofocus and its resulting scroll settle before opening a menu;
+  // the shared menu controller intentionally dismisses menus on page scroll.
+  await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   await click('[aria-label=设置任务提醒]')
   await waitForRenderer(window, `!!document.querySelector('[aria-label=任务提醒设置]:popover-open')`)
   await fill('[aria-label="添加提醒"]', '3600000')
