@@ -85,7 +85,11 @@ jobs:
       - name: Build & Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run build && npm run build:dsh-runtime && npx electron-builder --win --publish always
+        run: |
+          # The runtime packager invokes Windows PowerShell. Do not let it import
+          # PowerShell 7's incompatible Archive module through the inherited path.
+          $env:PSModulePath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules'
+          npm run build && npm run build:dsh-runtime && npx electron-builder --win --publish always
 
       - name: Verify packaged SQLite checkpoint persistence
         run: node scripts/verify-sqlite-runtime.cjs dist/win-unpacked/ChouYu.exe dist/win-unpacked/resources/app.asar

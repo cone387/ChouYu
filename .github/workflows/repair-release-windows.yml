@@ -1,0 +1,76 @@
+name: Repair and verify Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing draft release tag to rebuild
+        required: true
+      source_run:
+        description: Release run with successful quality and macOS jobs for this tag
+        required: true
+
+jobs:
+  repair:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      SOURCE_RUN: ${{ inputs.source_run }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Require verified source and draft release
+        run: |
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.path -ne '.github/workflows/release.yml' -or $run.event -ne 'push' -or $run.head_branch -ne $env:RELEASE_TAG) { throw 'Source must be the release workflow pushed for this exact tag' }
+          $source = gh run view $env:SOURCE_RUN --json headSha,jobs | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $source.headSha -ne (git rev-parse HEAD)) { throw 'Source run does not match the checked-out release tag' }
+          foreach ($name in @('quality', 'build-macos')) {
+            $job = @($source.jobs | Where-Object { $_.name -eq $name })
+            if ($job.Count -ne 1 -or $job[0].conclusion -ne 'success') { throw "$name must have passed for this release commit" }
+          }
+          $release = gh release view $env:RELEASE_TAG --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !$release.isDraft) { throw 'Repair only accepts an unpublished draft' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build Windows assets
+        run: |
+          $env:PSModulePath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules'
+          npm run build && npm run build:dsh-runtime && npx electron-builder --win --publish never
+      - name: Verify packaged SQLite checkpoint persistence
+        run: node scripts/verify-sqlite-runtime.cjs dist/win-unpacked/ChouYu.exe dist/win-unpacked/resources/app.asar
+      - name: Verify Windows installer long paths and legacy upgrade
+        run: npm run test:installer && npm run test:installer-upgrade
+      - name: Install actual Windows release and verify every runtime resource
+        run: node scripts/test-packaged-installer.cjs
+      - name: Verify packaged application and legacy migration
+        run: npm run test:smoke:packaged
+      - name: Verify packaged update interface and graceful shutdown
+        run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --updates --shutdown
+      - name: Verify packaged DSH runtime
+        run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --dsh-harness
+      - name: Verify v1.3.4 data upgrade
+        run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --navigation --upgrade-v134
+      - name: Verify packaged contact recovery
+        run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --contact-reliability
+      - name: Publish fully verified release
+        run: |
+          $files = @(Get-ChildItem -LiteralPath dist -File | Where-Object { $_.Name -match '\.exe(\.blockmap)?$|^latest\.yml$' } | ForEach-Object FullName)
+          if ($files.Count -lt 3) { throw 'Missing local Windows release assets' }
+          gh release upload $env:RELEASE_TAG @files --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Windows asset upload failed' }
+          $release = gh release view $env:RELEASE_TAG --json assets,isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !$release.isDraft) { throw 'Expected an unpublished draft' }
+          $names = @($release.assets.name)
+          foreach ($pattern in @('\.dmg$', '\.zip$', '\.exe$', '^latest\.yml$', '^latest-mac\.yml$')) {
+            if (!($names -match $pattern)) { throw "Missing release asset: $pattern" }
+          }
+          gh release edit $env:RELEASE_TAG --draft=false --latest --title $env:RELEASE_TAG --notes-file "docs/releases/${env:RELEASE_TAG}.md"

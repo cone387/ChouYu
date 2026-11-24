@@ -9,3 +9,15 @@
 第二轮在最后的通知卡片 Escape 检查失败，与同提交主干 CI 的失败一致。`core/escape.ts` 明确在 Esc 关闭浮层后清除恢复的按钮焦点，已有单测与联系人文档均确认该规则。新增通知验收错误地要求按钮持续聚焦，专项通过只能说明曾观测到瞬时焦点，不能证明最终状态。现分开验证鼠标取消恢复入口焦点、Esc 关闭后经过两帧清理且底层聊天保留、入口不残留焦点；不修改生产焦点规则。独立审查确认该冲突。
 
 本地日志保留于 `artifacts/release-1.4.9/` 与 `artifacts/release-1.4.10/`。1.4.10 构建通过，Escape 与通知卡片相关 13 项测试通过。正式发布必须继续通过完整标签流水线，不跳过检查。
+
+## 完整质量检查
+
+发布提交 `8045732` 的[主干 Quality](https://github.com/cone387/ChouYu/actions/runs/45342777187)全部通过：334 文件、2473 项测试通过，17 文件、62 项跳过；安全、类型、运行时打包、记忆评估、完整 Electron 桌面回归和更新/退出落盘检查通过。[标签流水线](https://github.com/cone387/ChouYu/actions/runs/45342800281)的质量作业也通过，随后开始 Windows/macOS 成品构建与验证。
+
+本地 1.4.10 类型检查、构建、通知与任务日程桌面专项均通过。通知专项实际验证了取消恢复焦点与 Esc 清理焦点；没有删除或跳过失败场景。
+
+## Windows 构建环境修复
+
+原标签流水线的 macOS 成品构建及验证全部成功。Windows 在打包 DSH 之前失败：托管机 PowerShell 7 的 `PSModulePath` 被 `powershell.exe` 子进程继承，错误导入 PS7 Archive 模块，日志报 `ExtractToDirectory` 三参数重载不存在，随后固定 Node 路径 ENOENT。此时未产生 Windows 安装包，发布仍为草稿。
+
+构建流程在调用旧 Windows PowerShell 前将模块路径限定为系统 WindowsPowerShell 模块；本地从固定校验档案解包后，Node 实际输出 `v24.15.0`。新增 Windows 修复流程要求原发布 run 与检出标签同 SHA、quality/macOS 成功且仍为草稿；检出原标签构建，执行与原流程相同的 SQLite、安装/升级、资源、完整桌面、更新/退出、DSH、旧版数据升级及联系人恢复检查，全部通过后才上传并公开。标签及产品源码不变。两个工作流 YAML 解析通过。
