@@ -44,6 +44,9 @@ export async function runContactCardUiSmoke(window: BrowserWindow, characterId: 
   })()`)) throw new Error('Contact metadata must be expanded without a disclosure card')
   await capture('contact-metadata-expanded')
   await click(`[data-contacts-edit="${characterId}"]`)
+  await waitForRenderer(window, "document.querySelectorAll('.contacts-avatar-artwork img').length === 14 && [...document.querySelectorAll('.contacts-avatar-artwork img')].every(img => img.complete && img.naturalWidth === 256)")
+  await click('[aria-label="使用设计师头像"]')
+  if (!await js("document.querySelector('[aria-label=使用设计师头像]').getAttribute('aria-pressed') === 'true' && !document.querySelector('[data-contacts-avatar]') && !document.querySelector('[aria-label=快速选择头像]') && !!document.querySelector('.contacts-avatar-preview img')")) throw new Error('Legacy avatar controls remain or artwork selection failed')
   await click('[data-contacts-fetch-models]')
   await waitForRenderer(window, "document.querySelector('[data-contacts-model-options]')?.options.length === 25")
   for (const width of [1024, 375]) {
@@ -52,6 +55,9 @@ export async function runContactCardUiSmoke(window: BrowserWindow, characterId: 
     for (const theme of ['light', 'dark']) {
       await js(`document.documentElement.dataset.theme = '${theme}'`)
       await js('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      await js("document.querySelector('.contacts-avatar-artwork').scrollIntoView({block:'center'})")
+      await capture(`contact-avatars-${width}-${theme}`)
+      if (!await js("document.querySelector('.contacts-form').scrollWidth <= document.querySelector('.contacts-form').clientWidth + 1 && [...document.querySelectorAll('.contacts-avatar-artwork img')].every(img => img.complete && img.naturalWidth > 0)")) throw new Error('Avatar gallery overflow or missing image')
       await openPicker()
       await capture(`contact-model-picker-${width}-${theme}`)
       if (!await js(`(() => { const el = document.querySelector('[data-contacts-model-options]');
@@ -95,9 +101,11 @@ export async function runContactCardUiSmoke(window: BrowserWindow, characterId: 
   await click('[data-contacts-save]')
   await waitForRenderer(window, "!document.querySelector('[data-contacts-form]')")
   if (getCharacter(characterId)?.model !== selected) throw new Error('Selected model was not persisted')
+  if (getCharacter(characterId)?.avatar !== '@design') throw new Error('Selected avatar was not persisted')
   window.webContents.disableDeviceEmulation()
   await click(`[data-contacts-menu="${characterId}"]`)
   await click(`[data-contacts-menu-edit="${characterId}"]`)
+  await waitForRenderer(window, "document.querySelector('[aria-label=使用设计师头像]')?.getAttribute('aria-pressed') === 'true'")
   await click('[data-contacts-model-default]')
   await click('[data-contacts-save]')
   await waitForRenderer(window, "!document.querySelector('[data-contacts-form]')")

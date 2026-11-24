@@ -87,11 +87,13 @@ describe('contacts layout', () => {
     expect(cssSource).toMatch(/\.contacts-form \{[^}]*position: absolute/)
   })
 
-  it('makes the avatar editable with a live preview and emoji quick picks', () => {
+  it('offers only built-in artwork with a live preview', () => {
     expect(viewSource).toContain('contacts-avatar-preview')
     expect(viewSource).toContain('contacts-avatar-palette')
     expect(viewSource).toContain('contacts-avatar-option')
-    expect(viewSource).toContain("aria-pressed={form.avatar === emoji}")
+    expect(viewSource).toContain('aria-pressed={builtinAvatar(avatarDraftIdentity(form))?.token === item.token}')
+    expect(viewSource).not.toContain('AVATAR_CHOICES')
+    expect(viewSource).not.toContain('data-contacts-avatar')
     expect(cssSource).toMatch(/\.contacts-avatar-preview \{[^}]*border-radius: 50%/)
     expect(cssSource).toMatch(/\.contacts-avatar-option\[aria-pressed="true"\]/)
   })
@@ -139,7 +141,7 @@ describe('contacts layout', () => {
     const hooks = [
       'data-contacts-root', 'data-contacts-search', 'data-contacts-new', 'data-contacts-item',
       'data-contacts-edit', 'data-contacts-delete', 'data-contacts-confirm-delete', 'data-contacts-form',
-      'data-contacts-name', 'data-contacts-avatar', 'data-contacts-profile', 'data-contacts-model',
+      'data-contacts-name', 'data-contacts-profile', 'data-contacts-model',
       'data-contacts-soulmd', 'data-contacts-save', 'data-contacts-fetch-models'
     ]
     for (const hook of hooks) expect(viewSource).toContain(hook)

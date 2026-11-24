@@ -4,6 +4,7 @@ import { ASSISTANT_CHARACTER_ID, DEFAULT_CHARACTER_ID, INDUSTRIES, INDUSTRY_LABE
 import { DEFAULT_PROFILE_ID, type AppConfig, type ResolvedProviderProfile } from '../../../../shared/config'
 import type { SessionWorkspace } from '../../shared/types'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
+import { BUILTIN_AVATARS, builtinAvatar, avatarDraftIdentity } from '../CharacterAvatar/builtinAvatars'
 import { ContactAgentPanel, type ContactAgentTab } from './ContactAgentPanel'
 import ContactWorkToolbar from '../ChatPanel/ContactWorkToolbar'
 import ContactCardStats from './ContactCardStats'
@@ -65,7 +66,6 @@ const SORT_OPTIONS: readonly { value: SortKey; label: string }[] = [
   { value: 'tasks', label: '任务数量' }
 ]
 
-const AVATAR_CHOICES: readonly string[] = ['🐟', '🦊', '🐱', '🐶', '🐼', '🦉', '🐧', '🍀', '🌙', '⚡', '💡', '🎯', '🩺', '⚖️', '🎨', '🧭']
 
 type PanelRect = { left: number; top: number; width: number; height: number | null }
 type ResizeEdge = 'n' | 's' | 'e' | 'w'
@@ -385,8 +385,9 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
     setBusy(true)
     setError('')
     try {
-      if (form.id) await window.electronAPI.characters.update(form.id, form)
-      else await window.electronAPI.characters.create(form)
+      const draft = { ...form, avatar: avatarDraftIdentity(form).avatar }
+      if (form.id) await window.electronAPI.characters.update(form.id, draft)
+      else await window.electronAPI.characters.create(draft)
       setForm(null)
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存失败，请重试。')
@@ -595,12 +596,16 @@ export default function ContactsView({ active, config, focusCharacterId, onFocus
         <h3>{form.id ? '编辑角色' : '新建角色'}</h3>
         <label className="contacts-field"><span className="contacts-field-name">名字</span>
           <input data-contacts-name value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={24} /></label>
-        <label className="contacts-field contacts-field-avatar"><span className="contacts-field-name">头像</span>
-          <span className="contacts-avatar-preview" aria-hidden="true"><CharacterAvatar character={{ id: form.id ?? 'draft', name: form.name, avatar: form.avatar || Array.from(form.name.trim())[0] || '?' }} /></span>
-          <input data-contacts-avatar value={form.avatar} onChange={(event) => setForm({ ...form, avatar: event.target.value })} maxLength={8} placeholder="emoji 或单字，留空取首字" /></label>
-        <div className="contacts-avatar-palette" role="group" aria-label="快速选择头像">
-          {AVATAR_CHOICES.map((emoji) => <button key={emoji} type="button" className="contacts-avatar-option"
-            aria-pressed={form.avatar === emoji} onClick={() => setForm({ ...form, avatar: emoji })}>{emoji}</button>)}
+        <div className="contacts-field contacts-field-avatar"><span className="contacts-field-name">头像</span>
+          <span className="contacts-avatar-preview" aria-hidden="true"><CharacterAvatar character={avatarDraftIdentity(form)} /></span>
+          <span>{builtinAvatar(avatarDraftIdentity(form))?.label}</span></div>
+        <div className="contacts-avatar-palette contacts-avatar-artwork" role="group" aria-label="内置头像">
+          {BUILTIN_AVATARS.map(item => <button key={item.token} type="button" className="contacts-avatar-option"
+            title={item.label} aria-label={`使用${item.label}头像`}
+            aria-pressed={builtinAvatar(avatarDraftIdentity(form))?.token === item.token}
+            onClick={() => setForm({ ...form, avatar: item.token })}>
+            <CharacterAvatar character={{ id: form.id ?? 'draft', name: item.label, avatar: item.token }} />
+          </button>)}
         </div>
         <label className="contacts-field"><span className="contacts-field-name">AI 服务</span>
           <select data-contacts-profile value={form.providerProfileId} disabled={busy || form.id === DEFAULT_CHARACTER_ID}

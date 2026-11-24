@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { A2uiSurface, createComponentImplementation, type ReactCatalogComponent } from '@a2ui/react'
 import { Catalog, MessageProcessor, type SurfaceModel } from '@a2ui/web_core'
-import { CommonSchemas } from '@a2ui/web_core/v1_0'
 import { z } from 'zod'
+import { readingSchema } from './readingSchema'
 import { createResultReadingSurface, RESULT_READING_CATALOG } from '../../../../shared/result-a2ui'
 import type { ResultSourceSnapshot } from '../../../../shared/result-design'
 import type { ResultReadingLayout } from '../../../../shared/result-reading-layout'
@@ -20,7 +20,7 @@ function useReading() {
 }
 
 const Document = createComponentImplementation({
-  name: 'ReadingDocument', schema: z.object({ children: CommonSchemas.ChildList })
+  name: 'ReadingDocument', schema: readingSchema(z.object({ children: z.array(z.string()).max(300).describe('REF:ChildList') }))
 }, ({ props, buildChild }) => {
   const { saved } = useReading()
   return <div className={`result-a2ui-document result-a2ui-${saved.layout.kind}`} data-reading-kind={saved.layout.kind}><header><h2>{saved.title}</h2></header>
@@ -29,7 +29,7 @@ const Document = createComponentImplementation({
       : <div key={`${child.id}:${child.basePath}`}>{buildChild(child.id, child.basePath)}</div>)}
   </div>
 })
-const Contents = createComponentImplementation({ name: 'ReadingContents', schema: z.object({}) }, () => {
+const Contents = createComponentImplementation({ name: 'ReadingContents', schema: readingSchema(z.object({})) }, () => {
   const { saved, navigate } = useReading()
   if (saved.sections.length < 2) return null
   return <details className="result-a2ui-contents" open><summary>目录</summary><nav aria-label="成果分节目录">
@@ -38,15 +38,17 @@ const Contents = createComponentImplementation({ name: 'ReadingContents', schema
     })}
   </nav></details>
 })
-const Sections = createComponentImplementation({ name: 'ReadingSections', schema: z.object({ children: CommonSchemas.ChildList }) }, ({ props, buildChild }) =>
+const Sections = createComponentImplementation({ name: 'ReadingSections', schema: readingSchema(z.object({ children: z.array(z.string()).max(300).describe('REF:ChildList') })) }, ({ props, buildChild }) =>
   <div className="result-a2ui-sections">{Array.isArray(props.children) && props.children.map(child => <div className="result-a2ui-section-slot" key={typeof child === 'string' ? child : child.id}>
     {typeof child === 'string' ? buildChild(child) : buildChild(child.id, child.basePath)}
   </div>)}</div>
 )
 const Section = createComponentImplementation({
-  name: 'SavedSection', schema: z.object({ sectionIndex: z.number().int().min(0).max(299), treatment: z.enum(['body', 'emphasis']) })
+  name: 'SavedSection', schema: readingSchema(z.object({ sectionIndex: z.number().int().min(0).max(299), treatment: z.enum(['body', 'emphasis']) }))
 }, ({ props }) => {
-  const { saved } = useReading(), section = saved.sections[props.sectionIndex]
+  const { saved } = useReading()
+  if (typeof props.sectionIndex !== 'number') throw new Error('成果分节编号无效。')
+  const section = saved.sections[props.sectionIndex]
   if (!section) throw new Error('成果分节不存在。')
   return <section className={`result-a2ui-section result-a2ui-${props.treatment}`} data-reading-section={props.sectionIndex} data-result-section={section.id} tabIndex={-1}>
     {!(saved.sections.length === 1 && (section.title === saved.title || /^(正文|正式成果|成果|执行结果|本次结果)$/.test(section.title))) && <h3>{section.title}</h3>}<ContactMarkdown imageMode="link">{section.body}</ContactMarkdown>
@@ -66,9 +68,9 @@ export default function ResultA2uiReader({ source, layout, onError, active = tru
     let errors: { unsubscribe(): void } | undefined
     try {
       const saved = createResultReadingSurface(source, layout)
-      const catalog = new Catalog<ReactCatalogComponent>(RESULT_READING_CATALOG, '1.0', [Document, Contents, Sections, Section])
+const catalog = new Catalog<ReactCatalogComponent>(RESULT_READING_CATALOG, '1.0', [Document, Contents, Sections, Section])
       processor = new MessageProcessor<ReactCatalogComponent>([catalog], undefined, { errorHandler: () => fail.current() })
-      errors = processor.model.onError.subscribe(() => fail.current())
+      errors = processor.model.onError.subscribe(error => { console.warn('Result reading SDK error', error); fail.current() })
       processor.processMessages([...saved.messages])
       const surface = processor.model.surfacesMap.get(saved.surfaceId)
       if (!surface) throw new Error('成果阅读界面未创建。')
