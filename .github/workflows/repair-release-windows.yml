@@ -63,7 +63,13 @@ jobs:
         run: node scripts/smoke-electron.js --packaged dist/win-unpacked/ChouYu.exe --contact-reliability
       - name: Publish fully verified release
         run: |
-          $files = @(Get-ChildItem -LiteralPath dist -File | Where-Object { $_.Name -match '\.exe(\.blockmap)?$|^latest\.yml$' } | ForEach-Object FullName)
+          # Match electron-builder's published names. GitHub otherwise replaces
+          # spaces with dots, breaking the hyphenated URLs in latest.yml.
+          $files = @(Get-ChildItem -LiteralPath dist -File | Where-Object { $_.Name -match '\.exe(\.blockmap)?$|^latest\.yml$' } | ForEach-Object {
+            $destination = Join-Path $_.DirectoryName ($_.Name -replace ' ', '-')
+            if ($destination -ne $_.FullName) { Move-Item -LiteralPath $_.FullName -Destination $destination }
+            $destination
+          })
           if ($files.Count -lt 3) { throw 'Missing local Windows release assets' }
           gh release upload $env:RELEASE_TAG @files --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Windows asset upload failed' }
@@ -72,5 +78,9 @@ jobs:
           $names = @($release.assets.name)
           foreach ($pattern in @('\.dmg$', '\.zip$', '\.exe$', '^latest\.yml$', '^latest-mac\.yml$')) {
             if (!($names -match $pattern)) { throw "Missing release asset: $pattern" }
+          }
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          foreach ($name in @("ChouYu-Setup-$version.exe", "ChouYu-Setup-$version.exe.blockmap")) {
+            if ($name -notin $names) { throw "Missing exact updater asset: $name" }
           }
           gh release edit $env:RELEASE_TAG --draft=false --latest --title $env:RELEASE_TAG --notes-file "docs/releases/${env:RELEASE_TAG}.md"

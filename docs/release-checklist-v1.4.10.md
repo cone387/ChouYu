@@ -21,3 +21,14 @@
 原标签流水线的 macOS 成品构建及验证全部成功。Windows 在打包 DSH 之前失败：托管机 PowerShell 7 的 `PSModulePath` 被 `powershell.exe` 子进程继承，错误导入 PS7 Archive 模块，日志报 `ExtractToDirectory` 三参数重载不存在，随后固定 Node 路径 ENOENT。此时未产生 Windows 安装包，发布仍为草稿。
 
 构建流程在调用旧 Windows PowerShell 前将模块路径限定为系统 WindowsPowerShell 模块；本地从固定校验档案解包后，Node 实际输出 `v24.15.0`。新增 Windows 修复流程要求原发布 run 与检出标签同 SHA、quality/macOS 成功且仍为草稿；检出原标签构建，执行与原流程相同的 SQLite、安装/升级、资源、完整桌面、更新/退出、DSH、旧版数据升级及联系人恢复检查，全部通过后才上传并公开。标签及产品源码不变。两个工作流 YAML 解析通过。
+
+## 正式发布结果
+
+2026-11-24，[v1.4.10](https://github.com/cone387/ChouYu/releases/tag/v1.4.10) 已公开为 Latest，非草稿、非预发布，标签仍指向 `8045732714ef318e511d96876a1b13c14747872e`。[Windows 修复与完整验证](https://github.com/cone387/ChouYu/actions/runs/45344944076)全部成功，原标签流水线保留 Windows 首次构建失败及公开作业跳过记录；其中 quality/macOS 成功不变。[构建修复提交的主干 Quality](https://github.com/cone387/ChouYu/actions/runs/45344913221)也全部通过。
+
+公开后核验发现 `gh release upload` 将本地安装器名称的空格变成点，与 builder 更新清单的连字符名称不符。已按清单重命名远端 EXE 和 blockmap，内容摘要不变；修复工作流同步在上传前规范名称，并在公开前检查准确名称。未修改更新清单去迁就错误文件名。再次下载确认 Windows EXE 与 macOS ZIP 的 GitHub SHA-256、清单 SHA-512、字节数全部一致，两个更新清单版本均为 1.4.10；八项资产均已上传。日志保存于 `artifacts/release-1.4.10/`。
+
+| 文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| ChouYu-Setup-1.4.10.exe | 262597895 | `2db9459cd7dd2d7e78e9a1215c4fd9249f8b11f9fb2278894ed90a8c464f31f3` |
+| ChouYu-1.4.10-universal-mac.zip | 266593141 | `2777e92b6f1487d0eaf4458cba2643f9f261161a9cfb6581ad8cd3b7b10ca84a` |
