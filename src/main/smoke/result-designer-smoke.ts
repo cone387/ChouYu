@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {app,BrowserWindow} from 'electron'
 import {createServer} from 'node:http'
 import {join} from 'node:path'
-import {mkdirSync,writeFileSync} from 'node:fs'
+import {copyFileSync,mkdirSync,writeFileSync} from 'node:fs'
 import {ContactTaskStore} from '../task-center/contact-store'
 import {ContactResultSources} from '../result-designer/sources'
 import {ElectronDesignPreview} from '../result-designer/preview'
@@ -14,9 +14,12 @@ import {RESULT_DESIGNER_CHARACTER_ID as designer} from '../../shared/result-desi
 import {createCharacter,createChatSession,listCharacters,getConfig,saveConfig,selectChatSession,getSessions,getSession,getActiveSession} from '../database'
 import {restartAgentsForSmoke,contactAgentsCall} from '../agents'
 import {waitForRenderer} from './storage-smoke'
-import {sourceSnapshot} from '../../shared/result-design'
+import {sourceSnapshot,type ResultDesignCode,type DesignObservation} from '../../shared/result-design'
+import type {ResultReadingKind} from '../../shared/result-reading-layout'
 import {designEnvironment} from '../../shared/result-design-environment'
 import {runResultPreviewSmoke} from './result-preview-smoke'
+import {runResultA2uiSmoke} from './result-a2ui-smoke'
+import {runResultPortfolioSmoke} from './result-portfolio-smoke'
 
 /** Real Electron images and Native provider protocol, isolated local fixtures only. */
 export async function runResultDesignerSmoke(window:BrowserWindow){
@@ -24,7 +27,7 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
   mkdirSync(directory,{recursive:true})
   await runResultPreviewSmoke(directory)
   const store=new ContactTaskStore(join(directory,'fixture.db')),preview=new ElectronDesignPreview(directory)
-  let screenshots=0,calls=0,code={title:'',html:'',css:'',script:''}
+  let screenshots=0,calls=0,code:ResultDesignCode={title:'',html:'',css:'',script:''}
   const server=createServer((request,response)=>{
     let input='';request.on('data',chunk=>input+=chunk);request.on('end',()=>{
       try{
@@ -57,23 +60,23 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
     store.ensure(designer);store.db.prepare("UPDATE profiles SET settings=json_set(settings,'$.dailyCalls',100,'$.enabled',1) WHERE character_id=?").run(designer)
     for(const [kind,title,body] of [
       ['novel','雨停之前','雨从傍晚开始下。林音合上书，听见窗外有人轻轻叩门。\n\n她翻开最后一页，上面写着：请在雨停之前回来。'],
-      ['research','访谈研究','结论：团队管理员需要权限审计。\n证据：六次访谈中四次提及记录追踪；样本有限，仍需验证。'],
-      ['ideas','三个产品想法','阅读进度书签：帮助长篇读者回到上次位置。\n研究资料对照：并列核对结论与证据。\n评审意见收件箱：按来源整理待处理意见。'],
-      ['review','评审结论','结论：建议修改后采用。\n依据：目标明确，但缺少边界条件与失败处理。\n建议：补齐两个失败场景，保留原有主流程。']]){
+      ['research','访谈研究','## 结论\n团队管理员需要权限审计。\n\n## 访谈证据\n六次访谈中四次提及记录追踪；样本有限，仍需验证。'],
+      ['ideas','三个产品想法','- **阅读进度书签**：帮助长篇读者回到上次位置。\n- **研究资料对照**：并列核对结论与证据。\n- **评审意见收件箱**：按来源整理待处理意见。'],
+      ['review','评审结论','## 结论\n建议修改后采用。\n\n## 依据\n目标明确，但缺少边界条件与失败处理。\n\n## 建议\n补齐两个失败场景，保留原有主流程。']]){
       store.ensure('author')
       const content=kind==='novel'?Array.from({length:160},(_,index)=>`${index+1}. ${body}`).join('\n\n'):body
       const topic=store.topics.create('author',{title,goal:title,constraints:''}),run=store.createRun('author','',Date.now(),topic.id)
       store.finish(run,{runId:run,title,body:content,nextStep:'继续',evidence:[],createdAt:Date.now()},[],{status:'researching',judgement:'已保存',reason:'正式交付',nextStep:'继续',openQuestions:''})
       const source=new ContactResultSources(store),snapshot=(await source.latest({domain:'contact',ownerId:'author',taskId:topic.id},new AbortController().signal))!
       const before=JSON.stringify(store.deliveries.get(topic.id)),state=JSON.stringify(store.topics.get('author',topic.id))
-      code={title,html:`<header><h1>${title}</h1><button id="read">开始阅读</button></header><section data-result-section="${snapshot.sections[0].id}"></section>`,
-        css:'header{padding:24px 0 32px;border-bottom:1px solid var(--line)}h1{font-size:30px;letter-spacing:.02em}main{max-width:720px}section{margin:32px 0}button{padding:8px 16px;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:5px}',
-        script:`document.getElementById('read').onclick=()=>document.querySelector('[data-result-section]').scrollIntoView()`}
+      code={title,html:'',css:'',script:'',a2ui:{kind:({novel:'story',research:'report',ideas:'ideas',review:'report'} as Record<string,ResultReadingKind>)[kind],sections:snapshot.sections.map(s=>({id:s.id,treatment:kind==='review'?'emphasis':'body'}))}}
       const designRun=createDesignRun(store),job=store.designs.claim(store.designs.pending().find(p=>p.task.taskId===topic.id)!.requestId,designRun)
       const model=createDesignModel({id:designer,soul:'设计师',conversation:'',config:{provider:'openai',baseUrl:`http://127.0.0.1:${port}/v1`,apiKey:'isolated-fixture',model:'vision-fixture',thinkingDisabledModels:[]}},createBackgroundHarnesses(),new DesignBudget(store,designRun),async()=>{store.assertLive(designRun)})
       await runResultDesign(job,{store:store.designs,source,model,preview},AbortSignal.timeout(90000))
       assert.equal(JSON.stringify(store.deliveries.get(topic.id)),before);assert.equal(JSON.stringify(store.topics.get('author',topic.id)),state)
       const active=store.designs.view(snapshot.ref).active;assert.ok(active?.evidence);assert.equal(active.evidence.observations.length,4)
+      assert.deepEqual(active.code.a2ui,code.a2ui)
+      for(const observation of active.evidence.observations)copyFileSync(join(directory,`${observation.screenshotId}.png`),join(directory,`adaptive-${kind}-${observation.width}-${observation.theme}.png`))
       if(kind==='novel')assert.ok(active.evidence.observations.every(o=>o.readingSamples?.length===2),'长文四种环境均须提供中段与末尾实图')
       report.push({kind,design:active.id,evidence:active.evidence})
     }
@@ -93,12 +96,14 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
           fixture.finish(run,{runId:run,title:'正式成果',body:Array.from({length:36},(_,i)=>`第${i+1}段：这份正式正文经过独立设计师的真实工作进程、预览窗口和消息通道。长文阅读应沿同一个滚动区域连续进行，不能在正文边缘卡住。`).join('\n\n'),nextStep:'继续',evidence:[],createdAt:Date.now()},[],{status:'researching',judgement:'已保存',reason:'正式交付',nextStep:'继续',openQuestions:''})
           task.taskId=topic.id
           const section=fixture.deliveries.get(topic.id)!.sections[0]
-          code={title:topic.title,html:`<h1>成果阅读</h1><section data-result-section="${section.id}"></section>`,css:'main{max-width:720px}h1{font-size:32px}',script:''}
+          code={title:topic.title,html:'',css:'',script:'',a2ui:{kind:'document',sections:[{id:section.id,treatment:'body'}]}}
         }finally{fixture.close()}
       })
       selectChatSession(chat);window.webContents.send('characters:changed');window.webContents.send('sessions:changed');window.webContents.send('open-chat-panel')
       const expression=`window.electronAPI.resultDesign.get(${JSON.stringify(task)})`
-      await waitForRenderer(window,`(async()=>Boolean((await ${expression}).active))()`,60000)
+      try{await waitForRenderer(window,`(async()=>Boolean((await ${expression}).active))()`,60000)}catch(error){
+        console.error('DESIGN_WORKER_VIEW',JSON.stringify(await window.webContents.executeJavaScript(expression)));throw error
+      }
       const active=await window.webContents.executeJavaScript(expression)
       assert.ok(active.active.evidence);assert.equal(calls,10);assert.equal(screenshots,25+readingScreens+active.active.evidence.observations.reduce((n:number,o:{readingSamples?:unknown[]})=>n+(o.readingSamples?.length??0),0))
       const navigation=`new Promise((resolve,reject)=>window.dispatchEvent(new CustomEvent('chouyu:contact-navigation',{detail:{target:{kind:'task',characterId:${JSON.stringify(author.id)},topicId:${JSON.stringify(task.taskId)}},handled:false,resolve,reject}})))`
@@ -106,6 +111,29 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
       await window.webContents.executeJavaScript(navigation)
       await waitForRenderer(window,"[...document.querySelectorAll('button')].some(b=>b.textContent==='任务成果')")
       await window.webContents.executeJavaScript("[...document.querySelectorAll('button')].find(b=>b.textContent==='任务成果').click()")
+      await waitForRenderer(window,"Boolean(document.querySelector('[data-result-a2ui] [data-reading-section]'))")
+      assert.ok(await window.webContents.executeJavaScript("document.querySelector('[data-result-a2ui]').textContent.includes('第36段')"),'打开任务成果即出现完整阅读展示')
+      assert.ok(await window.webContents.executeJavaScript("[...document.querySelectorAll('[data-result-design-view] button')].find(b=>b.textContent==='成果界面').getAttribute('aria-pressed')==='true'"),'已发布 A2UI 设计默认可见')
+      await runResultPortfolioSmoke(window,directory,active.source)
+      await window.webContents.executeJavaScript(navigation)
+      await waitForRenderer(window,"[...document.querySelectorAll('button')].some(b=>b.textContent==='任务成果')")
+      await window.webContents.executeJavaScript("[...document.querySelectorAll('button')].find(b=>b.textContent==='任务成果').click()")
+      // Install an explicitly labelled legacy history fixture with real preview evidence.
+      // New model output is A2UI-only; old records still need the existing iframe regressions.
+      const legacyCode:ResultDesignCode={title:'历史界面',html:`<h1>成果阅读</h1><section data-result-section="${active.source.sections[0].id}"></section>`,css:'main{max-width:720px}h1{font-size:32px}',script:''}
+      const legacyObservations:DesignObservation[]=[]
+      for(const width of [375,1024])for(const theme of ['light','dark'] as const){
+        const session=await preview.open({jobId:'legacy-fixture',snapshot:active.source,code:legacyCode,environment:designEnvironment(width,theme)},new AbortController().signal)
+        try{const {imageUrl:_,controls:__,...observation}=await session.inspect();assert.ok(observation.contentComplete&&observation.interactionsPassed);legacyObservations.push(observation)}finally{await session.close()}
+      }
+      await restartAgentsForSmoke(()=>{
+        const fixture=new ContactTaskStore(join(app.getPath('userData'),'contact-agents','agents.db'))
+        try{const request=fixture.designs.request(task,'已保存的旧界面回归夹具','legacy-history-fixture'),job=fixture.designs.claim(request.requestId,'legacy-fixture'),record=fixture.designs.saveCandidate(job.id,legacyCode)
+          fixture.designs.publish(job.id,record.id,{codeHash:record.codeHash,sourceHash:record.source.contentHash,environmentVersion:record.environmentVersion,observations:legacyObservations,visualReview:{requestId:'legacy-fixture',response:'隔离测试历史记录；实际截图与正文结构用于旧版回归。',accepted:true},checkedAt:Date.now()});fixture.designs.ackNotice(record.id)
+        }finally{fixture.close()}
+      })
+      await waitForRenderer(window,"[...document.querySelectorAll('[data-result-design-view] button')].some(b=>b.textContent==='查看新版界面')")
+      await window.webContents.executeJavaScript("[...document.querySelectorAll('[data-result-design-view] button')].find(b=>b.textContent==='查看新版界面').click()")
       await waitForRenderer(window,"Boolean(document.querySelector('[data-result-design-view] iframe'))")
       await waitForRenderer(window,'window.__resultReady===true')
       await waitForRenderer(window,"document.querySelector('[data-result-design-view] iframe')?.clientHeight>1000")
@@ -115,7 +143,9 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
       assert.ok(await window.webContents.executeJavaScript("!document.querySelector('[data-result-design-view] [role=alert]')"))
       await window.webContents.executeJavaScript("document.querySelector('[data-result-design-view]').scrollIntoView({block:'start'})")
       writeFileSync(join(directory,'production-reader.png'),(await window.webContents.capturePage()).toPNG())
+      await runResultA2uiSmoke(window,directory)
       await window.webContents.executeJavaScript("[...document.querySelectorAll('[data-result-design-view] button')].find(b=>b.textContent==='原文').click()")
+      await waitForRenderer(window,"!document.querySelector('[data-result-a2ui]')&&!document.querySelector('[data-result-design-view] iframe')&&document.querySelector('.delivery-reader')?.getClientRects().length>0")
       assert.ok(await window.webContents.executeJavaScript("document.querySelector('[data-result-design-view]').textContent.includes('真实工作进程')"))
       assert.ok(await window.webContents.executeJavaScript("(()=>{const body=document.querySelector('.delivery-reader');return body.scrollHeight<=body.clientHeight+1})()"),'正文不应在任务详情内再建立纵向滚动框')
       assert.ok(await window.webContents.executeJavaScript("(()=>{const detail=document.querySelector('[data-topic-view=delivery]');return detail.querySelector('.topic-floating-action').getBoundingClientRect().bottom<=detail.querySelector('.topic-content-scroll').getBoundingClientRect().top+1})()"),'固定操作栏不能遮挡正在滚动的正文')
@@ -123,7 +153,10 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
       await window.webContents.executeJavaScript('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
       window.webContents.sendInputEvent({type:'mouseMove',...scrollPoint})
       window.webContents.sendInputEvent({type:'mouseWheel',deltaX:0,deltaY:-500,...scrollPoint})
-      await waitForRenderer(window,'window.__readerScroll.scrollTop>window.__readerStart+100')
+      try{await waitForRenderer(window,'window.__readerScroll.scrollTop>window.__readerStart+100')}catch(error){
+        console.error('READER_WHEEL_GEOMETRY',await window.webContents.executeJavaScript("JSON.stringify({start:window.__readerStart,now:window.__readerScroll.scrollTop,height:window.__readerScroll.clientHeight,scrollHeight:window.__readerScroll.scrollHeight,viewport:[innerWidth,innerHeight],body:document.querySelector('.delivery-reader')?.getBoundingClientRect().toJSON(),pane:window.__readerScroll.getBoundingClientRect().toJSON(),hit:document.elementFromPoint("+scrollPoint.x+","+scrollPoint.y+")?.outerHTML.slice(0,300)})"))
+        writeFileSync(join(directory,'wheel-failure.png'),(await window.webContents.capturePage()).toPNG());throw error
+      }
       await waitForRenderer(window,`(async()=>{const saved=await window.electronAPI.agents.deliveryReading(${JSON.stringify(author.id)},${JSON.stringify(task.taskId)});return saved?.scrollRatio>0})()`)
       const beforeTab=await window.webContents.executeJavaScript('window.__readerScroll.scrollTop')
       await window.webContents.executeJavaScript("[...document.querySelectorAll('button[role=tab]')].find(b=>b.textContent==='概览').click()")
@@ -157,7 +190,17 @@ export async function runResultDesignerSmoke(window:BrowserWindow){
       // Chromium routes CDP keyboard input to the focused cross-process frame;
       // WebContents.sendInputEvent targets the main widget on this Electron build.
       const attached=window.webContents.debugger.isAttached();if(!attached)window.webContents.debugger.attach('1.3')
-      const press=async(key:string,windowsVirtualKeyCode:number)=>{for(const type of ['keyDown','keyUp'])await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent',{type,key,code:key,windowsVirtualKeyCode})}
+      const press=async(key:string,windowsVirtualKeyCode:number)=>{
+        // Scrolling Home may move the child out of view; refocus without scrolling
+        // before each native key, also avoiding foreground focus stolen by other apps.
+        if(window.webContents.focusedFrame?.routingId!==fixed.routingId){
+          window.focus();window.webContents.focus();await fixed.executeJavaScript('document.body.blur();document.body.focus({preventScroll:true})')
+          const deadline=Date.now()+2000
+          while(window.webContents.focusedFrame?.routingId!==fixed.routingId&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20))
+        }
+        assert.equal(window.webContents.focusedFrame?.routingId,fixed.routingId,`${key} 必须在子文档实际获得焦点后发送`)
+        for(const type of ['keyDown','keyUp'])await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent',{type,key,code:key,windowsVirtualKeyCode})
+      }
       await press('Home',36)
       await waitForRenderer(window,'window.__readerScroll.scrollTop===0')
       await press('PageDown',34)

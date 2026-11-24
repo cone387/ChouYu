@@ -22,6 +22,7 @@ import ContactRevisionDialog from './ContactRevisionDialog'
 import ContactHandoffDialog from './ContactHandoffDialog'
 import ContactHandoffs from './ContactHandoffs'
 import ContactDeliveryFeedback from './ContactDeliveryFeedback'
+import { resultReadingSelection } from './resultReadingSelection'
 
 const stageLabel = { pending: '待开始', active: '进行中', done: '已完成' }
 export default function ContactDeliveryReader({ characterId, topic, busy = false, onAction = async action => { await action() }, onReport, view = 'delivery', active = true, initialRef, initialAnchor, onNavigate, onCite }: {
@@ -52,10 +53,11 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
     if (!artifact) return
     setCitationError('')
     try {
-      if(designVisible){setPlain(true);throw new Error('已打开原文，请重新选择要引用的正文。')}
-      const section = artifact.sections.find(s => s.id === readingId)
+      const reading = resultReadingSelection(readerRoot.current, readingId)
+      if(designVisible&&!reading){setPlain(true);throw new Error('已打开原文，请重新选择要引用的正文。')}
+      const section = artifact.sections.find(s => s.id === (reading?.sectionId ?? readingId))
       const ref = { characterId, topicId: topic.id, version: artifact.version }
-      const citation = await window.electronAPI.agents.validateCitation(characterId, section ? selectedCitation(ref, section, bodyRef.current?.querySelector('.contact-markdown') ?? null) : {ref})
+      const citation = await window.electronAPI.agents.validateCitation(characterId, section ? selectedCitation(ref, section, reading?.body ?? bodyRef.current?.querySelector('.contact-markdown') ?? null) : {ref})
       if (!alive.current) return
       if (action === 'discuss') { if (onCite) onCite(citation); else await navigateContact({ kind: 'discuss', citation }) }
       else setRevisionDialog({ citation, scope: action })
@@ -204,7 +206,10 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
       {latest > artifact.version && <p role="status">有新版成果可读。<button type="button" data-delivery-latest onClick={() => void load(latest, resume)}>查看版本 {latest}</button></p>}
       {resume && <button type="button" data-delivery-resume onClick={() => { setPlain(true); void load(resume.ref.version, resume) }}>继续阅读 · 版本 {resume.ref.version}</button>}
       {readingError && <p role="alert">{readingError}<button type="button" onClick={flushReading}>重试保存位置</button></p>}
-      <ResultDesignView task={{domain:"contact",ownerId:characterId,taskId:topic.id}} sourceId={String(artifact.version)} active={active && view === "delivery"} forcePlain={plain} onModeChange={value=>{setDesignVisible(value);if(value)setPlain(false)}}>
+      <ResultDesignView task={{domain:"contact",ownerId:characterId,taskId:topic.id}} sourceId={String(artifact.version)} active={active && view === "delivery"} forcePlain={plain} initialSectionId={initialRef?.sectionId} onReadingPosition={(sectionId, ratio)=>{
+        const section=artifact.sections.find(s=>s.id===sectionId)
+        if(section){setReadingId(sectionId);recordReading(readingAt({characterId,topicId:topic.id,version:artifact.version},section,ratio,sectionId===readingId?readingContent:undefined))}
+      }} onModeChange={value=>{setDesignVisible(value);if(value)setPlain(false)}}>
       <nav className="delivery-directory" aria-label="成果目录">{artifact.sections.map(section => <button type="button" key={section.id} aria-pressed={readingId === section.id} onClick={() => { flushReading(); scrollToPosition.current = null; setReadingId(section.id); recordReading(readingAt({ characterId, topicId: topic.id, version: artifact.version }, section, 0)); onNavigate?.({ characterId, topicId: topic.id, version: artifact.version, sectionId: section.id }) }}>{section.title}{readHashes[section.id] ? readHashes[section.id] === textHash(deliveryText(section.body)) ? ' · 已读' : ' · 已修改' : ' · 未读'}</button>)}</nav>
       {artifact.sections.filter(section => section.id === readingId).map(section => <article ref={bodyRef} className="delivery-reader" key={section.id} aria-label={section.title} tabIndex={0}><h5>{section.title}</h5><ContactOutput body={section.body} descriptor={section.output} preferences={outputPreferences} />{section.sources?.length ? <details><summary>本节资料来源</summary><ol>{section.sources.map((source, i) => <li key={`${source.url}:${i}`}><ContactMaterialLink href={source.url}>[{i + 1}] {source.title}</ContactMaterialLink></li>)}</ol></details> : null}</article>)}
       </ResultDesignView>
@@ -234,9 +239,10 @@ export default function ContactDeliveryReader({ characterId, topic, busy = false
     {revisionDialog && <ContactRevisionDialog characterId={characterId} topic={topic} citation={revisionDialog.citation} scope={revisionDialog.scope} onClose={() => setRevisionDialog(null)} onSaved={() => setNotice('修改意见已保存，将沿用任务额度修订一轮。')} />}
     {artifact && handoff && <ContactHandoffDialog source={{ characterId, topicId: topic.id, version: artifact.version, ...(readingId ? { sectionId: readingId } : {}) }} title={topic.title} onClose={() => setHandoff(false)} onSaved={() => setNotice('评审任务已保存，接收者会按原权限和额度执行。')} />}
     {artifact && <ContactHandoffs active={active} owner={characterId} topicId={topic.id} getCitation={async () => {
-      if(designVisible){setPlain(true);throw new Error('已打开原文，请重新选择要引用的正文。')}
-      const section = artifact.sections.find(s => s.id === readingId), ref = { characterId, topicId: topic.id, version: artifact.version }
-      return window.electronAPI.agents.validateCitation(characterId, section ? selectedCitation(ref, section, bodyRef.current?.querySelector('.contact-markdown') ?? null) : { ref })
+      const reading = resultReadingSelection(readerRoot.current, readingId)
+      if(designVisible&&!reading){setPlain(true);throw new Error('已打开原文，请重新选择要引用的正文。')}
+      const section = artifact.sections.find(s => s.id === (reading?.sectionId ?? readingId)), ref = { characterId, topicId: topic.id, version: artifact.version }
+      return window.electronAPI.agents.validateCitation(characterId, section ? selectedCitation(ref, section, reading?.body ?? bodyRef.current?.querySelector('.contact-markdown') ?? null) : { ref })
     }} />}
     {notice && <p role="status">{notice}</p>}
     </div>

@@ -7,6 +7,7 @@ import type {ResultSourcePort} from './sources'
 import type {DesignPreviewPort} from './preview-port'
 import type {DesignModel} from './model'
 import {designSourceTools} from './tools'
+import {defaultResultLayout,validateResultLayout} from '../../shared/result-a2ui'
 export interface DesignWorkflowPorts {store:ResultDesignStore;source:ResultSourcePort;model:DesignModel;preview:DesignPreviewPort}
 const parse=(text:string)=>JSON.parse(text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''))
 export async function runResultDesign(job:DesignJob,ports:DesignWorkflowPorts,outer:AbortSignal):Promise<void>{
@@ -17,12 +18,12 @@ export async function runResultDesign(job:DesignJob,ports:DesignWorkflowPorts,ou
   for(const section of source.sections)ports.store.recordRead(job.id,section.id,0,Math.min(600,section.body.length))
   const messages:AIChatMessage[]=[{role:'user',content:JSON.stringify({task:source.title,request:job.text,
     source:source.ref,directory:source.sections.map(s=>({id:s.id,title:s.title,characters:s.body.length,opening:s.body.slice(0,600)})),
-    environment:designEnvironment(1024,'light'),instruction:'先读取需要了解的正式正文，再编程设计成果界面；输出代码JSON。'})}]
+    environment:designEnvironment(1024,'light'),instruction:'先读取需要了解的正式正文，再组合适合此内容的 A2UI 成果布局；输出布局JSON。'})}]
   const previous=ports.store.reusable(job.task,job.environmentVersion)
   if(previous)messages.push({role:'user',content:JSON.stringify({previousCode:previous.code,instruction:'这是本任务已验证的新机制界面，保留适用的阅读设计；按本次要求和新的正文目录调整。'})})
-  const reuse=previous&&!job.explicit&&JSON.stringify(ports.store.readSource(previous.source).sections.map(s=>s.id))===JSON.stringify(source.sections.map(s=>s.id))
+  const reuse=previous?.code.a2ui&&!job.explicit&&JSON.stringify(ports.store.readSource(previous.source).sections.map(s=>s.id))===JSON.stringify(source.sections.map(s=>s.id))
   if(!reuse){
-    const reference=await ports.preview.open({jobId:job.id,snapshot:source,code:previous?.code??{title:source.title,html:'',css:'',script:''},environment:designEnvironment(1024,'light')},signal)
+    const reference=await ports.preview.open({jobId:job.id,snapshot:source,code:{title:source.title.slice(0,120)||'成果',html:'',css:'',script:'',a2ui:defaultResultLayout(source)},environment:designEnvironment(1024,'light')},signal)
     try{const view=await reference.inspect();messages.push({role:'user',content:'这是当前成果容器的实际阅读界面，作为本次设计的参考。',imageUrl:view.imageUrl})}finally{await reference.close()}
   }
   let lastFeedback=''
@@ -30,7 +31,7 @@ export async function runResultDesign(job:DesignJob,ports:DesignWorkflowPorts,ou
     signal.throwIfAborted()
     const response=attempt===0&&reuse?{text:JSON.stringify(previous.code),requestId:'reuse'}:await ports.model(messages,designEnvironmentInstruction,signal,tools)
     let code
-    try{code=validateDesignCode(parse(response.text))}catch(error){lastFeedback=String(error);messages.push({role:'assistant',content:response.text},{role:'user',content:`代码无效：${lastFeedback}。修正后返回完整JSON。`});continue}
+    try{code=validateDesignCode(parse(response.text));if(!code.a2ui)throw new Error('新设计必须使用 A2UI 布局，不能生成 HTML/CSS/JavaScript。');validateResultLayout(code.a2ui,source)}catch(error){lastFeedback=String(error);messages.push({role:'assistant',content:response.text},{role:'user',content:`布局无效：${lastFeedback}。修正后返回完整JSON。`});continue}
     const candidate=ports.store.saveCandidate(job.id,code),observations:PreviewObservation[]=[],interactionImages:PreviewObservation[]=[],readingImages:PreviewObservation[]=[]
     for(const width of [375,1024])for(const theme of ['light','dark'] as const){
       const session=await ports.preview.open({jobId:job.id,snapshot:source,code,environment:designEnvironment(width,theme)},signal)

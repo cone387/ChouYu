@@ -1,6 +1,7 @@
 import {app,protocol} from 'electron'
 import {randomUUID} from 'node:crypto'
-import {resultDesignDocument,resultDesignPolicy} from '../../shared/result-design-document'
+import {resultDesignPolicy} from '../../shared/result-design-document'
+import {resultPresentationDocument} from './document'
 import {designEnvironment} from '../../shared/result-design-environment'
 import {validateTaskRef,type ResultTaskRef,type ResultDesignRecord,type ResultSourceSnapshot} from '../../shared/result-design'
 protocol.registerSchemesAsPrivileged([{scheme:'chouyu-result',privileges:{standard:true,secure:true}}])
@@ -16,7 +17,7 @@ export function registerResultProtocol(read:(task:ResultTaskRef,id:string)=>Prom
       if(!/^[a-zA-Z0-9_-]{1,160}$/.test(id))throw Error('Not found')
       const {record,source}=await read(task,id),nonce=randomUUID()
       const theme=url.searchParams.get('theme')==='dark'?'dark':'light'
-      return new Response(resultDesignDocument(source,record.code,designEnvironment(1024,theme),nonce),{headers:{'Content-Type':'text/html; charset=utf-8',
+      return new Response(resultPresentationDocument(source,record.code,designEnvironment(1024,theme),nonce),{headers:{'Content-Type':'text/html; charset=utf-8',
         'Content-Security-Policy':`${resultDesignPolicy(nonce)}; sandbox allow-scripts`,'Cache-Control':'no-store'}})
     }catch{return new Response('展示暂不可用，请查看原文。',{status:404})}
   })

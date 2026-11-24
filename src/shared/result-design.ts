@@ -1,5 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
+import { validateReadingLayout, type ResultReadingLayout } from './result-reading-layout'
 
 export const RESULT_DESIGNER_CHARACTER_ID = 'result-designer'
 export const DESIGN_ENVIRONMENT_VERSION = 'result-ui-v1'
@@ -7,7 +8,7 @@ export type ResultTaskRef = { domain: 'contact' | 'assistant'; ownerId: string; 
 export type ResultSourceRef = ResultTaskRef & { sourceId: string; contentHash: string }
 export type ResultSection = { id: string; title: string; body: string; sources: { title: string; url: string }[] }
 export type ResultSourceSnapshot = { ref: ResultSourceRef; title: string; sections: ResultSection[]; fileIds: string[] }
-export type ResultDesignCode = { title: string; html: string; css: string; script: string }
+export type ResultDesignCode = { title: string; html: string; css: string; script: string; a2ui?: ResultReadingLayout }
 export type DesignState = 'queued' | 'running' | 'validating' | 'ready' | 'blocked' | 'failed' | 'superseded' | 'cancelled'
 export type DesignReceipt = { requestId: string; task: ResultTaskRef; requestRevision: number; state: DesignState }
 export type DesignObservation = { width: number; height: number; theme: 'light'|'dark'; screenshotId: string; contentComplete: boolean; interactionsPassed: boolean; errors: string[]; readingSamples?: {screenshotId:string; y:number; maxY:number}[] }
@@ -52,7 +53,11 @@ export function validateSourceRef(value: unknown): ResultSourceRef {
 }
 export function validateDesignCode(value: unknown): ResultDesignCode {
   const v = value as ResultDesignCode
-  if (!v || typeof v !== 'object' || Object.keys(v).some(k => !['title','html','css','script'].includes(k))) throw new Error('展示代码字段无效。')
+  if (!v || typeof v !== 'object' || Object.keys(v).some(k => !['title','html','css','script','a2ui'].includes(k))) throw new Error('展示代码字段无效。')
+  if (v.a2ui !== undefined) {
+    if (typeof v.title !== 'string' || !v.title.trim() || v.title.length > 120 || ['html','css','script'].some(k => v[k as 'html'] !== undefined && v[k as 'html'] !== '')) throw new Error('组件布局不能混入可执行展示代码。')
+    return { title: v.title.trim(), html: '', css: '', script: '', a2ui: validateReadingLayout(v.a2ui) }
+  }
   for (const [key, max] of [['title',120],['html',12000],['css',12000],['script',16000]] as const)
     if (typeof v[key] !== 'string' || v[key].length > max || key === 'title' && !v[key].trim()) throw new Error('展示代码无效或过长。')
   return { title: v.title.trim(), html: v.html, css: v.css, script: v.script }

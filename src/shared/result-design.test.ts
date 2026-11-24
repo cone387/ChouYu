@@ -6,6 +6,12 @@ it('validates bounded executable code separately from source content', () => {
   expect(() => validateDesignCode({ title: 'x', html: '', css: '', script: '', source: 'forged' })).toThrow()
   expect(validateDesignCode({ title: ' 页面 ', html: '<div id="content"></div>', css: '', script: '' }).title).toBe('页面')
 })
+it('accepts a declarative reading composition but never mixes it with executable code', () => {
+  const a2ui = { kind: 'report', sections: [{ id: 's', treatment: 'emphasis' }] }
+  expect(validateDesignCode({ title: '报告', a2ui }).a2ui).toEqual(a2ui)
+  expect(() => validateDesignCode({ title: '报告', a2ui, html: '<div/>', css: '', script: '' })).toThrow()
+  expect(() => validateDesignCode({ title: '报告', a2ui: { ...a2ui, sections: [{ id: 's', treatment: 'hidden' }] } })).toThrow()
+})
 it('binds hashes to exact complete source data and rejects arbitrary task domains', () => {
   const task = { domain: 'contact' as const, ownerId: 'a', taskId: 'b' }
   const a = sourceSnapshot(task, '1', 'x', [{ id: 's', title: 't', body: '正文', sources: [] }], [])

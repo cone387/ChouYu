@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
+import { validateResultLayout } from '../../shared/result-a2ui'
 import { codeHash, sourceSnapshot, taskKey, sourceKey, validateTaskRef, validateSourceRef, validateDesignCode, validateEvidence,
   type ResultTaskRef, type ResultSourceRef, type ResultSourceSnapshot, type ResultDesignCode, type ResultDesignRecord,
   type DesignEvidence, type DesignJob, type DesignPending, type DesignReceipt, type DesignState, type DesignView } from '../../shared/result-design'
@@ -109,6 +110,7 @@ export class ResultDesignStore {
   saveCandidate(jobId: string, input: ResultDesignCode): ResultDesignRecord {
     return this.db.transaction(() => {
       const job = this.live(jobId), code = validateDesignCode(input)
+      if (code.a2ui) validateResultLayout(code.a2ui, this.readSource(job.source))
       const n = this.db.prepare('SELECT COALESCE(MAX(version),0)+1 AS n FROM result_design_versions WHERE task_key=?').get(taskKey(job.task)) as {n:number}
       const record: ResultDesignRecord = { id: randomUUID(),version:n.n,task:job.task,source:job.source,jobId,requestRevision:job.requestRevision,
         environmentVersion:job.environmentVersion,code,codeHash:codeHash(code),createdAt:Date.now() }

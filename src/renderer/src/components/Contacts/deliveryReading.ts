@@ -1,4 +1,5 @@
 import type { DeliverySection } from '../../../../shared/agent-delivery'
+import { resultReadingDOMText } from '../../../../shared/result-reading-integrity'
 import { deliveryText, textHash, validateAnchor, validateDeliveryRef, type DeliveryRef, type ReadingPosition, type TextAnchor } from '../../../../shared/contact-content'
 
 export function restoreReading(position: ReadingPosition, sections: DeliverySection[]): { sectionId: string; anchor?: TextAnchor; changed: boolean } {
@@ -57,16 +58,29 @@ export function selectedCitation(ref: DeliveryRef, section: DeliverySection, con
   if (!container?.contains(range.startContainer) || !container.contains(range.endContainer)) throw new Error('请选择当前正文分节中的文字。')
   const before = document.createRange(); before.selectNodeContents(container); before.setEnd(range.startContainer, range.startOffset)
   const through = document.createRange(); through.selectNodeContents(container); through.setEnd(range.endContainer, range.endOffset)
-  const anchor = anchorFromRenderedText(deliveryText(section.body), container.textContent ?? '', before.toString().length, through.toString().length)
+  const anchor = anchorFromRenderedText(deliveryText(section.body), resultReadingDOMText(container), resultReadingDOMText(before.cloneContents()).length, resultReadingDOMText(through.cloneContents()).length)
   return { ref: { ...ref, sectionId: section.id }, anchor }
 }
 export function highlightAnchor(container: HTMLElement, body: string, anchor: TextAnchor): void {
   const canonical = deliveryText(body)
   validateAnchor(anchor, canonical)
   const targetStart = canonical.slice(0, anchor.start).replace(/\s/g, '').length, targetEnd = canonical.slice(0, anchor.end).replace(/\s/g, '').length
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT), range = document.createRange()
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT), range = document.createRange()
   let count = 0, started = false, node: Node | null
   while ((node = walker.nextNode())) {
+    const element = node instanceof Element ? node : node.parentElement
+    if (element?.closest('[data-footnotes],[data-footnote-ref],[data-reading-image-alt=""]')) continue
+    if (node instanceof HTMLImageElement) {
+      const length = (node.alt ?? '').replace(/\s/g,'').length
+      if (!started && targetStart >= count && targetStart < count + length) { range.setStartBefore(node); started = true }
+      count += length
+      if (started && count >= targetEnd) {
+        range.setEndAfter(node); const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+        node.scrollIntoView({ block: 'center' }); return
+      }
+      continue
+    }
+    if (node.nodeType !== Node.TEXT_NODE) continue
     const text = node.textContent ?? ''
     for (let i = 0; i < text.length; i++) {
       if (/\s/.test(text[i])) continue

@@ -2,7 +2,10 @@ import {BrowserWindow,session as electronSession} from 'electron'
 import {randomUUID} from 'node:crypto'
 import {mkdirSync,writeFileSync} from 'node:fs'
 import {join} from 'node:path'
-import {resultDesignDocument,resultDesignPolicy} from '../../shared/result-design-document'
+import {resultDesignPolicy} from '../../shared/result-design-document'
+import {resultPresentationDocument} from './document'
+import {deliveryText} from '../../shared/contact-content'
+import {resultReadingDOMText} from '../../shared/result-reading-integrity'
 import type {PreviewAction,PreviewObservation} from '../../shared/result-design'
 import type {DesignPreviewPort,PreviewInput,PreviewSession,PreviewRequest} from './preview-port'
 
@@ -30,7 +33,7 @@ export class ElectronDesignPreview implements DesignPreviewPort {
     const {width,height,theme}=input.environment
     if(![375,1024].includes(width)||height!==(width===375?700:768)||!['light','dark'].includes(theme))throw new Error('预览视口无效。')
     const nonce=randomUUID(),url=`chouyu-result://preview/${randomUUID()}`
-    const document=resultDesignDocument(input.snapshot,input.code,input.environment,nonce)
+    const document=resultPresentationDocument(input.snapshot,input.code,input.environment,nonce)
     const ses=electronSession.fromPartition(`result-preview-${randomUUID()}`)
     ses.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));ses.setPermissionCheckHandler(()=>false)
     ses.webRequest.onBeforeRequest((details,callback)=>callback({cancel:details.url!==url||details.resourceType!=='mainFrame'}))
@@ -54,9 +57,12 @@ export class ElectronDesignPreview implements DesignPreviewPort {
     // Code passed here is host-owned and runs in a separate JavaScript world.
     const inspect=async():Promise<PreviewObservation>=>bounded(async()=>{
       const observations=await window.webContents.executeJavaScriptInIsolatedWorld(999,[{code:`(()=>{
-        const sections=${JSON.stringify(input.snapshot.sections.map(s=>({id:s.id,body:s.body}))).replace(/</g,'\\u003c')};
+        const semantic=${Boolean(input.code.a2ui)};
+        const sections=${JSON.stringify(input.snapshot.sections.map(s=>({id:s.id,body:input.code.a2ui?deliveryText(s.body):s.body}))).replace(/</g,'\\u003c')};
         const visible=el=>{for(let p=el;p;p=p.parentElement){const s=getComputedStyle(p),alpha=s.color.startsWith('rgba(')?Number(s.color.slice(5,-1).split(',')[3]):1;if(alpha<0.9||s.display==='none'||s.visibility!=='visible'||Number(s.opacity)<0.9||parseFloat(s.fontSize)<12||s.clipPath!=='none'||s.filter!=='none')return false;if(['hidden','clip'].includes(s.overflowY)&&p.scrollHeight>p.clientHeight+2)return false}const r=el.getBoundingClientRect();return r.width>40&&r.height>12&&r.right>0&&r.left<innerWidth&&r.bottom+scrollY>0&&r.top+scrollY<document.documentElement.scrollHeight&&el.scrollHeight<=el.clientHeight+2};
-        const reached=[],intact=sections.every(s=>{const nodes=[...document.querySelectorAll('[data-result-body]')].filter(el=>el.getAttribute('data-result-body')===s.id);if(nodes.length!==1||nodes[0].textContent!==s.body)return false;if(visible(nodes[0]))reached.push(s.id);return true});
+        const normalize=text=>semantic?text.replace(/\\s/g,''):text;
+        const semanticText=${resultReadingDOMText.toString()};
+        const reached=[],intact=sections.every(s=>{const nodes=semantic?[...document.querySelectorAll('[data-result-section]')].filter(el=>el.getAttribute('data-result-section')===s.id).map(el=>el.querySelector('.contact-markdown')):[...document.querySelectorAll('[data-result-body]')].filter(el=>el.getAttribute('data-result-body')===s.id);if(nodes.length!==1||!nodes[0]||normalize(semantic?semanticText(nodes[0]):nodes[0].textContent)!==normalize(s.body))return false;if(visible(nodes[0]))reached.push(s.id);return true});
         const all=[...document.querySelectorAll('button,a[href],input,select,summary')];
         const controls=all.map((el,i)=>{el.setAttribute('data-preview-control',String(i));return {el,id:String(i),label:el.getAttribute('aria-label')||el.textContent?.trim()||''}}).filter(c=>visible(c.el)).slice(0,100).map(({el,...c})=>c);
         return {complete:intact&&reached.length===sections.length,intact,reached,controls,overflow:document.documentElement.scrollWidth>innerWidth+2,scroll:{y:scrollY,maxY:Math.max(0,document.documentElement.scrollHeight-innerHeight)}};
@@ -76,6 +82,7 @@ export class ElectronDesignPreview implements DesignPreviewPort {
         :new Response('预览页面不存在。',{status:404}))
       protocolRegistered=true
       await bounded(()=>window.loadURL(url))
+      if(input.code.a2ui)await bounded(()=>window.webContents.executeJavaScriptInIsolatedWorld(999,[{code:`new Promise((resolve,reject)=>{const start=Date.now();const check=()=>{if(document.querySelector('[data-reading-error]'))return reject(Error('成果组件预览失败'));if(document.querySelectorAll('[data-reading-section]').length===${input.snapshot.sections.length})return requestAnimationFrame(()=>requestAnimationFrame(resolve));if(Date.now()-start>10000)return reject(Error('成果组件预览超时'));setTimeout(check,20)};check()})`}]))
       return {inspect,close,act:async(action:PreviewAction)=>{
         await bounded(async()=>{
           if(action.kind==='scroll'&&'fraction' in action&&Number.isFinite(action.fraction)&&action.fraction>=0&&action.fraction<=1)await window.webContents.executeJavaScriptInIsolatedWorld(999,[{code:`window.scrollTo({top:Math.max(0,document.documentElement.scrollHeight-innerHeight)*${action.fraction},behavior:'instant'})`}])

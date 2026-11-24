@@ -40,6 +40,8 @@
     "build:dsh-runtime": "node scripts/build-dsh-runtime.cjs"
   },
   "dependencies": {
+    "@a2ui/react": "0.15.0",
+    "@a2ui/web_core": "0.15.0",
     "@langchain/core": "1.2.12",
     "@langchain/langgraph": "1.4.17",
     "@langchain/langgraph-checkpoint-sqlite": "1.0.4",
@@ -54,7 +56,8 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
-    "unified": "^11.0.5"
+    "unified": "^11.0.5",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
@@ -65,12 +68,17 @@
     "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "esbuild": "0.25.12",
     "fast-check": "^3.23.2",
+    "jsdom": "29.0.1",
     "typescript": "^5.6.3",
     "vite": "^7.3.6",
     "vitest": "^5.0.0"
   },
   "overrides": {
+    "@a2ui/markdown-it": {
+      "@a2ui/web_core": "$@a2ui/web_core"
+    },
     "@langchain/langgraph-checkpoint-sqlite": {
       "better-sqlite3": "$better-sqlite3"
     },
