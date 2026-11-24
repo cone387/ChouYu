@@ -33,6 +33,19 @@ import { readApplicationSnapshot } from './storage/legacy-migration'
 import { getContactIdentityRevision, getContactIdentityConversation, onContactIdentityChanged } from './database'
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aP1kAAAAASUVORK5CYII='
+it('keeps the last message date when an old session is opened and autosaved', () => {
+  const session = getActiveSession()
+  const at = new Date(2025, 9, 3, 9).getTime(), completed = at + 60000
+  saveSessionMessages(session.id, [{ id: 'old', role: 'assistant', content: '旧会话', timestamp: at, replyCompletedAt: completed }])
+  expect(getSessions().find(item => item.id === session.id)!.lastMessageAt).toBe(completed)
+  markSessionRead(session.id)
+  saveSessionMessages(session.id, getSession(session.id)!.messages)
+  flushDatabase(); initDatabase()
+  expect(getSessions().find(item => item.id === session.id)!.lastMessageAt).toBe(completed)
+  const newer = completed + 86400000
+  saveSessionMessages(session.id, [...getSession(session.id)!.messages, { id: 'next', role: 'user', content: '继续', timestamp: newer }])
+  expect(getSessions().find(item => item.id === session.id)!.lastMessageAt).toBe(newer)
+})
 it('invalidates only the changed identity for message edits and default-model followers', () => {
   saveConfig({ baseUrl: 'https://example.com', apiKey: 'identity-test-key', model: 'old-default-model' })
   const alice = createCharacter({ name: 'Alice', providerProfileId: 'default', model: 'fixed-model', soulMd: '' })

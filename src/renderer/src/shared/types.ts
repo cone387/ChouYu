@@ -255,6 +255,7 @@ export interface ChatSession {
   characterId: string
   createdAt: number
   updatedAt: number
+  lastReadAt?: number
 }
 
 export interface ChatSessionSummary {
@@ -265,6 +266,7 @@ export interface ChatSessionSummary {
   characterId: string
   createdAt: number
   updatedAt: number
+  lastMessageAt?: number
   unreadCount?: number
 }
 

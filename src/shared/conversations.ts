@@ -49,6 +49,7 @@ export interface ChatSessionSummary {
   characterId: string
   createdAt: number
   updatedAt: number
+  lastMessageAt?: number
   unreadCount: number
 }
 

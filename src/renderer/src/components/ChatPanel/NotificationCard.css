@@ -1,0 +1,30 @@
+.reminder-actions.notification-card { display: flex; flex-direction: column; align-items: stretch; gap: 10px; width: 100%; min-width: 0; box-sizing: border-box; margin: 6px 0 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); }
+.notification-card-header { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.notification-card-kind { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 13px; flex: 1; min-width: 0; }
+.notification-card-kind svg { color: #087f73; flex: none; }
+.notification-card-read { color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.notification-card-read.is-unread::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; background: #087f73; vertical-align: middle; }
+.notification-card button.notification-card-more { border: 0; background: transparent; padding: 0; min-height: 28px; min-width: 28px; font-size: 22px; line-height: 1; }
+.notification-card-content { min-width: 0; overflow-wrap: anywhere; font-size: 15px; line-height: 1.65; }
+.notification-card .reminder-followup-title { font-size: 16px; line-height: 1.5; margin: 2px 0 0; font-weight: 600; }
+.message:has(.notification-card) { width: min(640px, 85%); }
+.message .reminder-actions.notification-card .message-bubble { border: 0; background: transparent; border-radius: 0; padding: 0; max-width: none; box-shadow: none; }
+.notification-card .reminder-followup-state { color: var(--text-secondary); font-size: 12px; }
+.notification-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.notification-card-actions button { min-height: 34px; padding: 6px 14px; border-radius: 7px; }
+.notification-card-actions button.notification-card-primary { background: #087f73; border-color: #087f73; color: #fff; font-weight: 500; }
+.notification-card-actions button.notification-card-primary:hover { background: #06685f; }
+.notification-card-delay { display: inline-flex; gap: 10px; align-items: center; justify-content: center; }
+.notification-card .notification-card-popup { position: fixed; inset: auto; margin: 0; box-sizing: border-box; padding: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-primary); color: var(--text-primary); box-shadow: var(--shadow-lg); overflow-y: auto; z-index: 1000; font-size: 13px; }
+.notification-card .notification-card-popup > button { display: block; text-align: left; width: 100%; border: 0; background: transparent; padding: 8px 10px; }
+.notification-card .notification-card-popup > button:enabled:hover { background: var(--bg-secondary); }
+.notification-card-popup button:disabled { cursor: default; opacity: .45; }
+.notification-card-popup > strong, .notification-card-popup > p { display: block; margin: 8px 10px; line-height: 1.6; }
+.notification-card-popup > p { color: var(--text-secondary); }
+.notification-card-popup form { margin: 0 10px 6px; }
+.notification-card-popup .reminder-interval-editor { padding: 4px 0 10px; }
+.notification-card-popup .reminder-interval-editor input { flex: 1; min-width: 0; width: 5em; }
+.notification-card-popup .reminder-interval-editor input:focus { outline: none; box-shadow: none; border-color: var(--border); }
+.notification-settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.notification-card-popup [role='alert'] { display: block; padding: 6px 10px; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .message:has(.notification-card) { width: 100%; max-width: 100%; } .reminder-actions.notification-card { padding: 12px; gap: 9px; } .notification-card-actions button { padding-inline: 10px; } }

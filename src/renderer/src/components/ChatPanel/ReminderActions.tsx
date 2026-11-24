@@ -1,14 +1,21 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { Message } from '../../shared/types'
 import { reminderKey, type AssistantSnooze } from '../../../../shared/reminders'
 import { openTaskWorkspace } from '../Tasks/taskNavigation'
 import FollowupActions from './FollowupActions'
 import type { ReminderView } from '../../../../shared/reminder-followups'
-export function TrackedReminderActions({ message, items, error, onUpdated }: { message: Message; items: ReminderView[]; error?: string; onUpdated(item: ReminderView): void }) {
-  return <>{message.reminderIds?.map(id => {
+export function TrackedReminderActions({ message, items, error, active = true, children, onUpdated }: { message: Message; items: ReminderView[]; error?: string; active?: boolean; children?: ReactNode; onUpdated(item: ReminderView): void }) {
+  if (!message.reminderIds?.length) return <>{children}</>
+  const multiple = message.reminderIds.length > 1
+  const label = message.communication?.intent === 'delivery' ? '成果通知' : message.assistantKind === 'rest' ? '休息提醒'
+    : message.assistantKind === 'greeting' ? '日常问候' : message.assistantKind === 'return' ? '回来提醒' : '通知提醒'
+  return <>{multiple && !message.reminderFollowup && children}{message.reminderIds.map(id => {
     const item = items.find(item => item.id === id)
-    return item ? <FollowupActions key={id} item={item} showSource={message.reminderFollowup || (message.reminderIds?.length ?? 0) > 1} onUpdated={onUpdated} />
-      : <div key={id} className="reminder-actions" role={error ? 'alert' : 'status'}>{error || '正在读取提醒状态…'}</div>
+    return item ? <FollowupActions key={id} item={{ ...item, read: message.reminderReadIds?.includes(id) ?? false }} label={label} active={active} onUpdated={onUpdated}>
+      {!message.reminderFollowup && !multiple ? message.taskReminder && !message.content.includes('\n')
+        ? <h3 className="reminder-followup-title">{message.content.replace(/^任务提醒：/, '')}</h3> : children : undefined}
+    </FollowupActions>
+      : <div key={id} className="notification-card">{!multiple && children}<div role={error ? 'alert' : 'status'}>{error || '正在读取提醒状态…'}</div></div>
   })}</>
 }
 export default function ReminderActions({ sessionId, message, pending, canPostpone }: { sessionId: string; message: Message; pending: AssistantSnooze[]; canPostpone: boolean }) {

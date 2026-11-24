@@ -89,7 +89,7 @@ export class FollowupService {
     if (this.running || this.stopped) return
     this.running = true
     try {
-      const groups = new Map<string, ReminderItem[]>()
+      const candidates: ReminderItem[] = []
       const versions = new Map<string, number>()
       for (const entry of this.ports.items()) {
         if (this.stopped) return
@@ -98,12 +98,12 @@ export class FollowupService {
         const item = await this.reconcile(entry)
         if (!item || item.status !== 'pending' || item.error || item.nextAt > this.now()) continue
         versions.set(item.id, version)
-        const group = groups.get(item.sessionId) ?? []; group.push(item); groups.set(item.sessionId, group)
+        candidates.push(item)
       }
-      for (const group of groups.values()) {
-        // Source checks may have yielded while another item in this group was handled.
-        const due = group.filter(item => this.unchanged(item) && !this.actions.has(item.id) && versions.get(item.id) === (this.ports.sourceVersion?.(item) ?? 0))
-        if (!due.length || this.stopped) continue
+      for (const item of candidates) {
+        // Recheck each item immediately before its own delivery, including after earlier deliveries.
+        if (!this.unchanged(item) || this.actions.has(item.id) || versions.get(item.id) !== (this.ports.sourceVersion?.(item) ?? 0)) continue
+        const due = [item]
         const receipt = createHash('sha256').update(JSON.stringify(due.map(item => [item.id, item.nextAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))))).digest('hex')
         try {
           if (!this.ports.delivered(receipt)) this.ports.deliver(due, receipt)

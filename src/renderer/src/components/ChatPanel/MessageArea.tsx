@@ -298,9 +298,10 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
           <div className="message-body">
             {msg.role === 'assistant' && <span className="message-sender">{character?.name || '联系人'}</span>}
             {searching && !focusMessageId && (msg.role !== 'user' || msg.toolData) && <SearchMatch text={searchableMessageText(msg)} query={normalizedQuery} />}
+            <TrackedReminderActions message={msg} items={reminderItems} error={reminderError} active={active} onUpdated={updateReminder}>
             <div className={`message-bubble${msg.agentNotice?.kind === 'question' ? ' agent-confirmation-card' : ''}`}>
               {msg.agentNotice?.kind === 'question' && !msg.agentNotice.interactionId && <><strong className="agent-confirmation-heading">任务确认</strong>{character?.id && <AgentQuestionState characterId={character.id} runId={msg.agentNotice.runId} content={msg.content} />}</>}
-              {assistantKind && <AssistantMessageLabel kind={assistantKind} />}
+              {assistantKind && !msg.reminderIds?.length && <AssistantMessageLabel kind={assistantKind} />}
               {msg.imageUrl && (
                 <img src={msg.imageUrl} className="message-image" alt="截图" onClick={() => setPreviewImage(msg.imageUrl!)} />
               )}
@@ -378,8 +379,8 @@ export default function MessageArea({ sessionId = '', focusMessageId, onClearMes
               <ContactDeliveryReceipt communication={msg.communication} />
               <button type="button" onClick={() => onAgentNotice(msg.agentNotice!, 'history')}>查看本轮记录</button>
             </div>}
-              {msg.reminderIds?.length ? <TrackedReminderActions message={msg} items={reminderItems} error={reminderError} onUpdated={updateReminder} />
-                : sessionId && assistantKind && ['rest', 'task', 'snooze', 'task-backlog'].includes(assistantKind) && <ReminderActions sessionId={sessionId} message={msg} pending={snoozes} canPostpone={assistantKind !== 'task-backlog'} />}
+            </TrackedReminderActions>
+              {!msg.reminderIds?.length && sessionId && assistantKind && ['rest', 'task', 'snooze', 'task-backlog'].includes(assistantKind) && <ReminderActions sessionId={sessionId} message={msg} pending={snoozes} canPostpone={assistantKind !== 'task-backlog'} />}
             <div className="message-meta">
               <span className="message-time">{formatTime(msg.timestamp)}</span>
               {msg.responseStatus === 'stopped' && <span className="message-state">已停止</span>}

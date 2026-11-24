@@ -7,7 +7,7 @@ import type { TaskBackup } from './backup'
 import { openTasksStore, type TasksStore } from './store'
 import { startTaskScheduler } from './scheduler'
 import { registerTool, getRegisteredTool } from '../tools/registry'
-import { getSession, getState } from '../database'
+import { getSession } from '../database'
 import { deliverMessage } from '../messaging'
 import type { TaskReminderRef } from '../../shared/reminders'
 import { createTaskTool } from './task-tool'
@@ -69,17 +69,12 @@ export function initializeTasks(options: TasksModuleOptions): void {
   }
   if (database.quarantinedAt) storeRebuilt = true
   scheduler = startTaskScheduler(
-    (now, backlog) => {
+    now => {
       if (store!.generateScheduledOccurrences(now)) broadcast('tasks:changed')
       return store!.claimDueReminders(now, entries => {
         if (!entries.length) return
         const identified = entries.map(entry => ({ entry, id: JSON.stringify([entry.task.id, entry.itemId ?? '', entry.reminderAt, entry.task.updatedAt]) }))
-        const unsent = identified.filter(item => !getState(`reminder-receipt:${item.id}`))
-        if (backlog) {
-          const missed = unsent.length ? unsent : identified
-          deliverMessage({ kind: 'assistant', content: `错过了 ${unsent.length} 条任务提醒。打开任务查看当前安排。`, messageKind: 'task-backlog', receiptIds: missed.map(item => item.id),
-            taskReminders: missed.map(({ entry }) => ({ ref: { taskId: entry.task.id, checklistId: entry.itemId, reminderAt: entry.reminderAt! }, title: entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title })) })
-        } else for (const { entry, id } of identified) {
+        for (const { entry, id } of identified) {
           deliverMessage({ kind: 'assistant', content: `任务提醒：${entry.itemTitle ? `${entry.task.title} · ${entry.itemTitle}` : entry.task.title}`, messageKind: 'task',
             receiptIds: [id], taskReminder: { taskId: entry.task.id, checklistId: entry.itemId, reminderAt: entry.reminderAt! }
           })

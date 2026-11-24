@@ -159,5 +159,7 @@ it('does not duplicate a failed followup when another item becomes due during re
   const reminders = database.getSession(first.sessionId)!.messages.filter(message => message.reminderFollowup)
   expect(reminders.filter(message => message.reminderIds?.includes(first.id))).toHaveLength(1)
   expect(reminders.filter(message => message.reminderIds?.includes(second.id))).toHaveLength(1)
+  expect(reminders).toHaveLength(2)
+  expect(reminders.every(message => message.reminderIds?.length === 1)).toBe(true)
   expect(items().every((item: any) => item.nextAt > Date.now())).toBe(true)
 })

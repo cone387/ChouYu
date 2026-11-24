@@ -2,16 +2,33 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-const state = vi.hoisted(() => ({ dir: '', handlers: new Map<string, (...args: any[]) => any>(), tools: new Map<string, any>() }))
+const state = vi.hoisted(() => ({ dir: '', handlers: new Map<string, (...args: any[]) => any>(), tools: new Map<string, any>(), messages: [] as { content: string; kind: string; options: any }[] }))
 vi.mock('electron', () => ({ app: { getPath: () => state.dir }, BrowserWindow: { getAllWindows: () => [] }, dialog: {}, Notification: { isSupported: () => false },
   ipcMain: { handle: (name: string, fn: (...args: any[]) => any) => state.handlers.set(name, fn), removeHandler: (name: string) => state.handlers.delete(name), on: () => {}, removeAllListeners: () => {} } }))
-vi.mock('../database', () => ({ getState: () => null, getSession: (id: string) => id === 'chat' ? { id, title: 'Work chat' } : undefined, appendAssistantMessage: () => {}, flushDatabase: () => ({}) }))
+vi.mock('../database', () => ({ getState: () => null, getSession: (id: string) => id === 'chat' ? { id, title: 'Work chat' } : undefined, appendAssistantMessage: (content: string, _at: number, kind: string, options: any) => { state.messages.push({ content, kind, options }) }, flushDatabase: () => ({}) }))
 vi.mock('../reminder-events', () => ({ notifyReminderChanges: () => {} }))
 vi.mock('../tools/registry', () => ({ getRegisteredTool: (name: string) => state.tools.get(name), registerTool: (tool: any) => state.tools.set(tool.name, tool) }))
 import { initializeTasks, closeTasks, stopTaskScheduling } from './index'
 import { taskCenter } from '../task-center/service'
 
-afterEach(() => { closeTasks(); vi.useRealTimers(); if (state.dir) rmSync(state.dir, { recursive: true, force: true }); state.dir = ''; state.handlers.clear(); state.tools.clear() })
+afterEach(() => { closeTasks(); vi.useRealTimers(); if (state.dir) rmSync(state.dir, { recursive: true, force: true }); state.dir = ''; state.handlers.clear(); state.tools.clear(); state.messages = [] })
+it.each(['restart', 'resume'])('delivers overdue tasks individually after %s with their own source and receipt', mode => {
+  vi.useFakeTimers(); vi.setSystemTime(1000)
+  state.dir = mkdtempSync(join(tmpdir(), 'chouyu-todo-notices-'))
+  const options = { notificationsEnabled: () => false, openTasksWorkspace: () => {} }
+  initializeTasks(options)
+  const first = state.handlers.get('tasks:create')!({}, { title: '第一项', remindAt: 2000 })
+  const second = state.handlers.get('tasks:create')!({}, { title: '第二项', remindAt: 3000 })
+  if (mode === 'restart') closeTasks()
+  vi.setSystemTime(600_000)
+  if (mode === 'restart') initializeTasks(options)
+  else vi.advanceTimersByTime(30_000)
+  expect(state.messages.map(message => message.content)).toEqual(['任务提醒：第一项', '任务提醒：第二项'])
+  expect(state.messages.map(message => message.options.taskReminder.taskId)).toEqual([first.id, second.id])
+  expect(state.messages.every(message => message.options.receiptIds.length === 1 && message.kind === 'task')).toBe(true)
+  vi.advanceTimersByTime(60_000)
+  expect(state.messages).toHaveLength(2)
+})
 it('stops scheduled generation before storage shutdown while keeping task commands available to draining tools', async () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 27, 8))
   state.dir = mkdtempSync(join(tmpdir(), 'chouyu-todo-stop-'))

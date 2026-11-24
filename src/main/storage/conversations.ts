@@ -11,7 +11,17 @@ export class ConversationRepository {
   constructor(private db: Database.Database, private metadata: ApplicationMetadataRepository) {}
   listMetadata(): (Omit<ChatSession, 'messages'> & ConversationProjection)[] {
     return (this.db.prepare('SELECT value,projection FROM sessions ORDER BY position').all() as { value: string; projection: string }[])
-      .map(row => ({ ...JSON.parse(row.value), ...JSON.parse(row.projection) }))
+      .map(row => {
+        const session = JSON.parse(row.value) as Omit<ChatSession, 'messages'>
+        const projection = JSON.parse(row.projection) as ConversationProjection
+        if (projection.summary.lastMessageAt === undefined) {
+          const latest = this.db.prepare(`SELECT MAX(MAX(json_extract(value,'$.timestamp'), COALESCE(json_extract(value,'$.replyCompletedAt'),0))) AS at FROM messages WHERE session_id=?`)
+            .get(session.id) as { at: number | null }
+          projection.summary.lastMessageAt = latest.at ?? session.createdAt
+          this.db.prepare('UPDATE sessions SET projection=? WHERE id=?').run(JSON.stringify(projection), session.id)
+        }
+        return { ...session, ...projection }
+      })
   }
   readMessages(id: string, before?: MessageCursor, limit = 100): MessagePage {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new Error('Invalid page limit')
@@ -93,6 +103,8 @@ export class ConversationRepository {
         .run(session.id, message.id, session.id, JSON.stringify(message), searchableMessageText(message))
       session.updatedAt = message.timestamp
       projection.summary.updatedAt = session.updatedAt
+      projection.summary.lastMessageAt = projection.summary.messageCount
+        ? Math.max(projection.summary.lastMessageAt ?? 0, messageReadTimestamp(message)) : messageReadTimestamp(message)
       projection.summary.messageCount++
       if (message.content.trim()) projection.summary.preview = buildSessionPreview([message])
       if (isUnreadMessage({ ...session, messages: [] }, message)) {

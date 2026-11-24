@@ -21,6 +21,21 @@ const session = (): ChatSession => ({ id: 's', title: 'Saved', characterId: 'ali
     { id: 'b', role: 'assistant', content: 'body', timestamp: 2, replyCompletedAt: 3, replyReadAt: 3,
       communication: { version: 1, characterId: 'alice', intent: 'reply', source: { kind: 'conversation', sessionId: 's' } } }] })
 
+it('backfills old list dates from message completion without changing routing or unread state', () => {
+  const { app } = fixture()
+  app.conversations.saveSession(session())
+  app.db.exec("UPDATE sessions SET projection=json_remove(projection,'$.summary.lastMessageAt')")
+  const before = JSON.parse((app.db.prepare('SELECT projection FROM sessions').get() as { projection: string }).projection)
+  const record = app.conversations.listMetadata()[0]
+  expect(record.summary.lastMessageAt).toBe(3)
+  expect(record.updatedAt).toBe(2)
+  expect(record.summary).toEqual({ ...before.summary, lastMessageAt: 3 })
+  expect(record.unread).toEqual(before.unread)
+  expect(app.conversations.search('body')[0].lastMessageAt).toBe(3)
+  app.conversations.appendDelivered({ sessionId: 's', message: { id: 'new', role: 'assistant', content: 'new', timestamp: 10 }, receiptKeys: [] })
+  expect(app.conversations.listMetadata()[0].summary.lastMessageAt).toBe(10)
+})
+
 it('writes only changed rows and keeps receipt plus message atomic on real SQL failure', () => {
   const { app } = fixture(), first = session()
   app.conversations.saveSession(first)

@@ -16,5 +16,7 @@ export function projectConversation(session: ChatSession): ConversationProjectio
     if (!unread || at > unread.at) unread = { at, preview: buildSessionPreview([message]) }
   }
   return { summary: { id: session.id, title: session.title, characterId: session.characterId, createdAt: session.createdAt,
-    updatedAt: session.updatedAt, messageCount: session.messages.length, preview: buildSessionPreview(session.messages), unreadCount }, unread }
+    updatedAt: session.updatedAt,
+    lastMessageAt: session.messages.length ? session.messages.reduce((latest, message) => Math.max(latest, messageReadTimestamp(message)), 0) : session.createdAt,
+    messageCount: session.messages.length, preview: buildSessionPreview(session.messages), unreadCount }, unread }
 }

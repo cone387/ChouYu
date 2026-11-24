@@ -3,6 +3,7 @@ import { DEFAULT_CHARACTER_ID, DEFAULT_CHARACTER_NAME, type CharacterStats } fro
 import type { ChatSessionSummary } from '../../shared/types'
 import CharacterAvatar from '../CharacterAvatar/CharacterAvatar'
 import './ConversationSidebar.css'
+import { formatSessionTime, sessionTimeTitle } from './sessionTime'
 
 interface ConversationSidebarProps {
   sessions: ChatSessionSummary[]
@@ -18,15 +19,6 @@ interface ConversationSidebarProps {
   onExport: (id: string) => Promise<boolean>
 }
 
-function formatSessionTime(timestamp: number): string {
-  const date = new Date(timestamp)
-  const now = new Date()
-  if (date.toDateString() === now.toDateString()) {
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  }
-  return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
-}
-
 export default function ConversationSidebar({
   sessions,
   characters,
@@ -40,6 +32,14 @@ export default function ConversationSidebar({
   onDelete,
   onExport
 }: ConversationSidebarProps) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const refresh = () => setNow(Date.now())
+    const timer = window.setInterval(refresh, 60_000)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh) }
+  }, [])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -195,7 +195,7 @@ export default function ConversationSidebar({
                   <span className="conversation-item-body">
                     <span className="conversation-item-title-row">
                       <span className="conversation-item-character">{character?.name ?? DEFAULT_CHARACTER_NAME}</span>
-                      <time className="conversation-item-time" dateTime={new Date(session.updatedAt).toISOString()}>{formatSessionTime(session.updatedAt)}</time>
+                      <time className="conversation-item-time" dateTime={new Date(session.lastMessageAt ?? session.updatedAt).toISOString()} title={sessionTimeTitle(session.lastMessageAt ?? session.updatedAt)}>{formatSessionTime(session.lastMessageAt ?? session.updatedAt, now)}</time>
                     </span>
                     <span className="conversation-item-preview-row">
                       {streamingSessionIds.has(session.id) && <span className="conversation-item-streaming" role="status">回复中</span>}

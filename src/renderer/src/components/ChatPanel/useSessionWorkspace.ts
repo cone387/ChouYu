@@ -140,8 +140,8 @@ export function useSessionWorkspace({
     const sessionId = workspace.activeSession.id
     const cached = sessionMessagesRef.current.get(sessionId)
     const activeMessages = notificationRefresh || sessionGenerationsRef.current.has(sessionId)
-      ? (cached ? mergeForeignMessages(cached, workspace.activeSession.messages) : workspace.activeSession.messages)
-      : workspace.activeSession.messages
+      ? mergeForeignMessages(cached ?? [], workspace.activeSession.messages, workspace.activeSession.lastReadAt)
+      : mergeForeignMessages([], workspace.activeSession.messages, workspace.activeSession.lastReadAt)
     activeSessionIdRef.current = sessionId
     latestMessagesRef.current = activeMessages
     sessionMessagesRef.current.set(sessionId, activeMessages)

@@ -42,10 +42,21 @@ it('postpones once then resumes the configured interval', async () => {
   expect(f.saved.get('a')).toMatchObject({ nextAt: 4_201_000, intervalMinutes: 60, status: 'pending', postponed: false })
   f.time(4_201_000); await f.service.tick(); expect(f.deliveries.size).toBe(2)
 })
-it('merges offline backlog without losing items or repeating missed intervals', async () => {
+it('delivers each overdue item separately without replaying missed intervals', async () => {
   const f = fixture(); f.add(); f.add('b'); f.time(99_001_000); await f.service.tick(); await f.service.tick()
-  expect([...f.deliveries.values()]).toEqual([['a', 'b']]); expect(f.saved.size).toBe(2)
+  expect([...f.deliveries.values()]).toEqual([['a'], ['b']]); expect(f.saved.size).toBe(2)
   expect(f.saved.get('a')!.nextAt).toBe(100_801_000)
+})
+it('keeps each delivery receipt stable when another due item fails or joins after restart', async () => {
+  const f = fixture(); f.add(); f.add('b'); f.time(1_801_000)
+  const deliver = f.deps.deliver
+  f.deps.deliver = (items, receipt) => { if (items.some(item => item.id === 'b')) throw new Error('delivery'); deliver(items, receipt) }
+  await f.service.tick()
+  expect([...f.deliveries.values()]).toEqual([['a']])
+  expect(f.saved.get('b')!.nextAt).toBe(1_801_000)
+  f.add('c'); f.deps.deliver = deliver
+  await new FollowupService(f.deps).tick()
+  expect([...f.deliveries.values()]).toEqual([['a'], ['b'], ['c']])
 })
 it('retires completed and obsolete sources but preserves source read failures', async () => {
   const f = fixture(); f.add(); f.add('b'); f.add('c')
