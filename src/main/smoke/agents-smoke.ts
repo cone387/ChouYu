@@ -881,6 +881,11 @@ export async function runAgentsSmoke(window: BrowserWindow) {
     await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .contact-delivery')?.clientWidth > 0 && Boolean(document.querySelector('.contact-work-sheet[open] [data-delivery-revise]'))")
     const beforeRevision = await run(`window.electronAPI.agents.delivery(${id}, ${JSON.stringify(target.id)})`)
     revisedSectionId = beforeRevision.sections[0].id; revisingDelivery = true
+    // This scenario revises saved source text. The default reading presentation
+    // loads asynchronously; select the source explicitly before citing it.
+    await waitForRenderer(window, "Boolean([...document.querySelectorAll('.contact-work-sheet[open] [data-result-design-view] button')].find(b => b.textContent === '原文'))")
+    await run("[...document.querySelectorAll('.contact-work-sheet[open] [data-result-design-view] button')].find(b => b.textContent === '原文').click()")
+    await waitForRenderer(window, "document.querySelector('.contact-work-sheet[open] .delivery-reader')?.getClientRects().length > 0")
     await run("document.querySelector('.contact-work-sheet[open] [data-delivery-revise]').click()")
     await waitForRenderer(window, "Boolean(document.querySelector('[data-contact-revision-dialog][open]'))")
     await fill('[data-delivery-feedback]', '明确指出团队付费仍缺乏证据')
